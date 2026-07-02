@@ -1,5 +1,5 @@
 import express from "express";
-import { isJiuwenClawAdoptId, requireClawOwner, resolveRuntimeAgentId } from "./helpers";
+import { isAuthorizedInternalRequest, isJiuwenClawAdoptId, requireClawOwner, resolveRuntimeAgentId } from "./helpers";
 import { OpenClawCronProvider } from "./cron/openclaw-cron-provider";
 import { JiuwenClawCronProvider } from "./cron/jiuwenclaw-cron-provider";
 import { startCronRunWatcher } from "./cron/cron-run-watcher";
@@ -35,8 +35,7 @@ function toJiuwenClawHandle(claw: any): SharedCronProviderHandle {
 }
 
 async function resolveClaw(req: express.Request, res: express.Response, adoptId: string) {
-  const internalKey = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
-  if (req.headers["x-internal-key"] === internalKey) {
+  if (isAuthorizedInternalRequest(req)) {
     const { getClawByAdoptId } = await import("../db");
     const claw = await getClawByAdoptId(adoptId);
     if (!claw) {

@@ -9,7 +9,7 @@ import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
-import { requireClawOwner, OPENCLAW_HOME, OPENCLAW_JSON_PATH, resolveRuntimeAgentId } from "./helpers";
+import { isAuthorizedInternalRequest, requireClawOwner, OPENCLAW_HOME, OPENCLAW_JSON_PATH, resolveRuntimeAgentId } from "./helpers";
 import { createOpenClawRuntimeAdapter } from "./runtime";
 import { auditActor, auditRequest, recordAuditBestEffort } from "./audit-events";
 
@@ -339,14 +339,12 @@ export async function desktopPollWeixinBind(
 }
 
 export function registerWeixinRoutes(app: express.Express) {
-  const WEIXIN_INTERNAL_KEY = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
-
   app.get("/api/claw/weixin/status", async (req, res) => {
     try {
       const adoptId = String(req.query.adoptId || "").trim();
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       let claw: any;
-      if (req.headers["x-internal-key"] === WEIXIN_INTERNAL_KEY) {
+      if (isAuthorizedInternalRequest(req)) {
         const { getClawByAdoptId } = await import("../db");
         claw = await getClawByAdoptId(adoptId);
         if (!claw) return res.status(404).json({ error: "NOT_FOUND" });

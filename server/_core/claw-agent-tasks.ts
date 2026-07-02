@@ -1,7 +1,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
-import { requireClawOwner } from "./helpers";
+import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
 import {
   createAgentTask,
   getBusinessAgent,
@@ -57,8 +57,7 @@ function parseJsonArray(raw: unknown): any[] {
 }
 
 async function resolveClaw(req: express.Request, res: express.Response, adoptId: string) {
-  const internalKey = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
-  if (req.headers["x-internal-key"] === internalKey) {
+  if (isAuthorizedInternalRequest(req)) {
     const { getClawByAdoptId } = await import("../db");
     const claw = await getClawByAdoptId(adoptId);
     if (!claw) {

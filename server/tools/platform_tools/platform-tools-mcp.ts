@@ -8,7 +8,7 @@
  * - get_user_channels: 查询可用渠道
  * - list_available_agents / submit_agent_task: 提交外部 Agent 异步任务
  */
-const INTERNAL_KEY = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
+const INTERNAL_KEY = process.env.INTERNAL_API_KEY || "";
 const ADOPT_ID = process.env.LINGXIA_ADOPT_ID || process.env.JIUWEN_CHANNEL_ID || "";
 const BASE = process.env.INTERNAL_BASE_URL || process.env.LINGXIA_INTERNAL_BASE_URL || "http://127.0.0.1:5180";
 

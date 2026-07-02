@@ -1,5 +1,5 @@
 import express from "express";
-import { requireClawOwner } from "./helpers";
+import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
@@ -103,15 +103,12 @@ export async function sendNotification(adoptId: string, text: string, title?: st
 }
 
 export function registerNotifyRoutes(app: express.Express) {
-  // 获取通知配置
-  const NOTIFY_INTERNAL_KEY = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
-
   app.get("/api/claw/notify/config", async (req, res) => {
     try {
       const adoptId = String(req.query.adoptId || "").trim();
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       let claw: any;
-      if (req.headers["x-internal-key"] === NOTIFY_INTERNAL_KEY) {
+      if (isAuthorizedInternalRequest(req)) {
         const { getClawByAdoptId } = await import("../db");
         claw = await getClawByAdoptId(adoptId);
         if (!claw) return res.status(404).json({ error: "NOT_FOUND" });
@@ -162,9 +159,7 @@ export function registerNotifyRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
 
       // 支持内部调用（X-Internal-Key）和用户调用（requireClawOwner）
-      const internalKey = req.headers["x-internal-key"] || "";
-      const expectedKey = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
-      if (internalKey !== expectedKey) {
+      if (!isAuthorizedInternalRequest(req)) {
         const claw = await requireClawOwner(req, res, adoptId);
         if (!claw) return;
       }

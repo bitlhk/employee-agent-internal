@@ -12,6 +12,25 @@ import {
   sanitizeRelPath,
 } from "./helpers";
 
+const HTML_PREVIEW_CSP = [
+  "default-src 'none'",
+  "script-src 'none'",
+  "connect-src 'none'",
+  "img-src 'self' data: blob: http: https:",
+  "style-src 'unsafe-inline'",
+  "font-src data: http: https:",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'self'",
+].join("; ");
+
+function setHtmlPreviewHeaders(res: express.Response) {
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.removeHeader("X-Frame-Options");
+  res.setHeader("Content-Security-Policy", HTML_PREVIEW_CSP);
+}
+
 export function registerDownloadRoutes(app: express.Express) {
 
   // ── Sandbox 文件下载 ──────────────────────────────────────────────
@@ -81,9 +100,7 @@ export function registerDownloadRoutes(app: express.Express) {
       const isPreview = req.query.preview === "1";
       const isHtml = /\.html?$/i.test(fileName);
       if (isPreview && isHtml) {
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.removeHeader("X-Frame-Options");
-        res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *");
+        setHtmlPreviewHeaders(res);
         const stream = createReadStream(filePath);
         stream.on("error", (_err: any) => {
           if (!res.headersSent) res.status(500).json({ error: "file read error" });
@@ -172,9 +189,7 @@ export function registerDownloadRoutes(app: express.Express) {
       const isPreview = req.query.preview === "1";
       const isHtml = /\.html?$/i.test(fileName);
       if (isPreview && isHtml) {
-        res.setHeader("Content-Type", "text/html; charset=utf-8");
-        res.removeHeader("X-Frame-Options");
-        res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; frame-ancestors *");
+        setHtmlPreviewHeaders(res);
         const stream = createReadStream(filePath);
         stream.on("error", (_err: any) => {
           if (!res.headersSent) res.status(500).json({ error: "file read error" });

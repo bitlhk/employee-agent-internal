@@ -15,7 +15,8 @@ import {
   readSessionEpoch, bumpSessionEpoch, lookupSessionRegistry,
   upsertSessionRegistry, clearAgentSessionsCache, isPrivateUrl, APP_ROOT,
   buildRuntimeSessionKey, buildSessionRegistryScope,
-  OPENCLAW_BASE_HOME, OPENCLAW_JSON_PATH, openClawAgentDir, openClawWorkspaceDir
+  OPENCLAW_BASE_HOME, OPENCLAW_JSON_PATH, openClawAgentDir, openClawWorkspaceDir,
+  isAuthorizedInternalRequest,
 } from "./helpers";
 import { ResponseAccumulator } from "./response-accumulator";
 // 2026-04-18: eager import 避免首次 HTTP 聊天冷启动挂死（配合 claw-ws-proxy 保持一致）
@@ -144,9 +145,8 @@ export function registerChatStreamRoutes(app: express.Express) {
       return;
     }
 
-    const INTERNAL_KEY = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
     let claw: any;
-    if (req.headers["x-internal-key"] === INTERNAL_KEY) {
+    if (isAuthorizedInternalRequest(req)) {
       const { getClawByAdoptId } = await import("../db");
       claw = await getClawByAdoptId(String(adoptId));
       if (!claw) { res.status(404).json({ error: "NOT_FOUND" }); return; }
@@ -201,9 +201,8 @@ export function registerChatStreamRoutes(app: express.Express) {
     }
 
     // 内部 bridge 调用跳过 auth（通过 X-Internal-Key 头）
-    const INTERNAL_KEY = process.env.INTERNAL_API_KEY || "lingxia-bridge-2026";
     let claw: any;
-    if (req.headers["x-internal-key"] === INTERNAL_KEY) {
+    if (isAuthorizedInternalRequest(req)) {
       const { getClawByAdoptId } = await import("../db");
       claw = await getClawByAdoptId(String(adoptId));
       if (!claw) { res.status(404).json({ error: "NOT_FOUND" }); return; }

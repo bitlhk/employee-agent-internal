@@ -11,6 +11,7 @@ import path from "path";
 import { randomInt } from "crypto";
 import {
   APP_ROOT,
+  isAuthorizedInternalRequest,
   jiuwenClawAgentId,
   jiuwenClawWorkspaceDir,
   requireClawOwner,
@@ -226,12 +227,6 @@ function sanitizeRoutePart(value: unknown, fallback: string): string {
 
 function expectedBridgeToken(): string {
   return String(process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN || process.env.INTERNAL_API_KEY || "").trim();
-}
-
-function requestBearerToken(req: express.Request): string {
-  const authorization = String(req.headers.authorization || "").trim();
-  if (authorization.toLowerCase().startsWith("bearer ")) return authorization.slice(7).trim();
-  return String(req.headers["x-internal-key"] || req.headers["x-linggan-token"] || "").trim();
 }
 
 function accountsBaseUrl(domain: FeishuDomain) {
@@ -769,8 +764,7 @@ export function registerFeishuRoutes(app: express.Express) {
 
   app.post("/api/internal/jiuwen/feishu/bind-code", async (req, res) => {
     try {
-      const configuredToken = expectedBridgeToken();
-      if (configuredToken && requestBearerToken(req) !== configuredToken) {
+      if (!isAuthorizedInternalRequest(req, expectedBridgeToken())) {
         return res.status(401).json({ ok: false, error: "UNAUTHORIZED", reply: "绑定失败：服务授权未通过。" });
       }
 
@@ -815,8 +809,7 @@ export function registerFeishuRoutes(app: express.Express) {
 
   app.post("/api/internal/jiuwen/feishu/resolve", async (req, res) => {
     try {
-      const configuredToken = expectedBridgeToken();
-      if (configuredToken && requestBearerToken(req) !== configuredToken) {
+      if (!isAuthorizedInternalRequest(req, expectedBridgeToken())) {
         return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
       }
 

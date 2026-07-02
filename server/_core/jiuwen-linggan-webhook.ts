@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import express from "express";
 import { getClawByAdoptId } from "../db";
 import { findJiuwenCronRouteMeta, findJiuwenCronRunRouteMeta, recordJiuwenCronRun } from "./cron/jiuwenclaw-cron-provider";
+import { isAuthorizedInternalRequest } from "./helpers";
 
 type LingganCallbackBody = {
   content?: unknown;
@@ -15,12 +16,6 @@ type LingganCallbackBody = {
 
 function expectedToken(): string {
   return String(process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN || process.env.INTERNAL_API_KEY || "").trim();
-}
-
-function bearerToken(req: express.Request): string {
-  const authorization = String(req.headers.authorization || "").trim();
-  if (authorization.toLowerCase().startsWith("bearer ")) return authorization.slice(7).trim();
-  return String(req.headers["x-internal-key"] || req.headers["x-linggan-token"] || "").trim();
 }
 
 function isPlaceholder(body: LingganCallbackBody): boolean {
@@ -64,8 +59,7 @@ function cronTaskId(cron: Record<string, unknown>): string {
 export function registerJiuwenLingganWebhookRoutes(app: express.Express) {
   app.post("/api/internal/jiuwen/linggan/callback", async (req, res) => {
     try {
-      const configuredToken = expectedToken();
-      if (configuredToken && bearerToken(req) !== configuredToken) {
+      if (!isAuthorizedInternalRequest(req, expectedToken())) {
         return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
       }
 

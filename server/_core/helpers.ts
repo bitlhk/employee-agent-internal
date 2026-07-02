@@ -88,6 +88,32 @@ export const appendLogAsync = (fileName: string, payload: any) => {
   appendFile(`${LOG_DIR}/${fileName}`, `${JSON.stringify(payload)}\n`, "utf8").catch(() => {});
 };
 
+// ── Internal API auth ──
+export function isLoopbackRequest(req: Request): boolean {
+  const candidates = [
+    req.ip,
+    req.socket.remoteAddress,
+    String(req.headers["x-forwarded-for"] || "").split(",")[0]?.trim(),
+  ].filter(Boolean).map((value) => String(value).replace(/^::ffff:/, ""));
+  return candidates.some((addr) => addr === "127.0.0.1" || addr === "::1" || addr === "localhost");
+}
+
+export function configuredInternalApiKey(): string {
+  return String(process.env.INTERNAL_API_KEY || "").trim();
+}
+
+export function requestInternalToken(req: Request): string {
+  const authorization = String(req.headers.authorization || "").trim();
+  if (authorization.toLowerCase().startsWith("bearer ")) return authorization.slice(7).trim();
+  return String(req.headers["x-internal-key"] || req.headers["x-linggan-token"] || "").trim();
+}
+
+export function isAuthorizedInternalRequest(req: Request, expectedToken?: string): boolean {
+  const expected = String(expectedToken || configuredInternalApiKey()).trim();
+  if (expected) return requestInternalToken(req) === expected;
+  return process.env.NODE_ENV !== "production" && isLoopbackRequest(req);
+}
+
 // ── SSRF 防护 ──
 export function isPrivateUrl(url: string): boolean {
   try {
