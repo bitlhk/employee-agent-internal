@@ -361,7 +361,7 @@ class SDKServer {
           id: session.userId,
           openId: null,
           name: session.name || (isAdmin ? "admin" : "test-user"),
-          email: isAdmin ? "admin@huawei.com" : `${session.name || "test-user"}@local.dev`,
+          email: isAdmin ? "admin@example.com" : `${session.name || "test-user"}@local.dev`,
           password: null,
           loginMethod: "email",
           role: isAdmin ? "admin" : "user",

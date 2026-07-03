@@ -187,6 +187,7 @@ async function inspectAuditTable(db: AuditDbExecutor, name: AuditTableName, time
 }
 
 async function tableExists(db: AuditDbExecutor, table: AuditTableName): Promise<boolean> {
+  if (!AUDIT_TABLES.some((item) => item.name === table)) return false;
   const rows = await queryRows(db, `SHOW TABLES LIKE '${table}'`);
   return rows.length > 0;
 }

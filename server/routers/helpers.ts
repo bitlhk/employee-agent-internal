@@ -1,5 +1,5 @@
-// 测试模式：仅当显式设置 TEST_MODE=true 时启用（默认关闭）
-export const TEST_MODE = process.env.TEST_MODE === "true";
+// 测试模式：仅当非生产环境显式设置 TEST_MODE=true 时启用（默认关闭）
+export const TEST_MODE = process.env.NODE_ENV !== "production" && process.env.TEST_MODE === "true";
 
 import path from "path";
 

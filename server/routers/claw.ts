@@ -1129,14 +1129,16 @@ export const clawRouter = router({
         })
         .filter((agent: any) => agent.model && availableModelIds.size > 0 && !availableModelIds.has(agent.model));
 
-      const dbTables = ["users", "business_agent_audit", "business_agent_tenant_map", "skill_marketplace"];
+      const dbTables = ["users", "business_agent_audit", "business_agent_tenant_map", "skill_marketplace"] as const;
+      const dbTableSet = new Set<string>(dbTables);
       const dbHealth: any = { ok: false, tables: [] as any[], skillMarketApproved: null, claws: null, error: "" };
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
         dbHealth.ok = true;
         for (const table of dbTables) {
-          const result: any = await db.execute(`SHOW TABLES LIKE '${table.replace(/'/g, "")}'`);
+          if (!dbTableSet.has(table)) continue;
+          const result: any = await db.execute(`SHOW TABLES LIKE '${table}'`);
           const rows = Array.isArray(result) ? (Array.isArray(result[0]) ? result[0] : result) : [];
           dbHealth.tables.push({ name: table, exists: rows.length > 0 });
         }

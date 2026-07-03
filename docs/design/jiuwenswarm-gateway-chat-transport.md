@@ -242,5 +242,4 @@ Run locally before any Shanghai sync:
 4. Reuse existing EA SSE normalization for text/tool/permission events.
 5. Run local smoke with `JIUWENCLAW_CHAT_TRANSPORT=gateway`.
 6. Keep default as `agentserver` until smoke passes.
-7. After local validation, switch Shanghai EA `123.60.154.110` only.
-
+7. After local validation, switch the target EA environment only.

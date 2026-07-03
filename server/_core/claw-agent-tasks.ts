@@ -1,7 +1,7 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
-import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
+import { isAuthorizedInternalRequest, isPrivateUrl, requireClawOwner } from "./helpers";
 import {
   createAgentTask,
   getBusinessAgent,
@@ -151,6 +151,36 @@ function endpoint(baseUrl: string, pathValue?: string) {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const path = String(pathValue || "").replace(/^\//, "");
   return new URL(path, base).toString();
+}
+
+function splitCsv(value: string) {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function isAgentEndpointAllowlisted(url: URL) {
+  const allowlist = splitCsv(process.env.EA_AGENT_ENDPOINT_ALLOWLIST || "");
+  return allowlist.some((entry) => {
+    const normalized = entry.toLowerCase();
+    return normalized === url.hostname.toLowerCase() || normalized === url.host.toLowerCase();
+  });
+}
+
+function assertAllowedAgentEndpoint(rawUrl: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Agent endpoint URL is invalid");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Agent endpoint must use http or https");
+  }
+  if (isPrivateUrl(parsed.toString())) {
+    const allowPrivate = String(process.env.EA_ALLOW_PRIVATE_AGENT_ENDPOINTS || "").toLowerCase() === "true";
+    if (!allowPrivate && !isAgentEndpointAllowlisted(parsed)) {
+      throw new Error("Agent endpoint points to a private network address; configure EA_AGENT_ENDPOINT_ALLOWLIST or EA_ALLOW_PRIVATE_AGENT_ENDPOINTS to allow it");
+    }
+  }
 }
 
 function authHeaders(token?: string | null) {
@@ -411,6 +441,7 @@ function isA2ACompleteEvent(event: any): boolean {
 async function runA2ATask(agent: any, input: string): Promise<{ text: string; remoteTaskId?: string; rawEvents: any[] }> {
   const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as AgentEndpointConfig;
   const rpcUrl = endpoint(String(agent.apiUrl || ""), endpointConfig.rpcPath ?? endpointConfig.path ?? "");
+  assertAllowedAgentEndpoint(rpcUrl);
   const method = String(endpointConfig.method || (endpointConfig.stream === true ? "message/stream" : "message/send"));
   const taskText = [
     String(endpointConfig.taskPrefix || "").trim(),

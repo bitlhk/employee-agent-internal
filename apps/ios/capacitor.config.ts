@@ -1,6 +1,6 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
-const serverUrl = process.env.LINGXIA_IOS_SERVER_URL || "https://www.linggan.top";
+const serverUrl = process.env.LINGXIA_IOS_SERVER_URL || "https://example.com";
 
 const config: CapacitorConfig = {
   appId: process.env.LINGXIA_IOS_APP_ID || "com.linggan.employeeagent",

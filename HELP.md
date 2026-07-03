@@ -329,7 +329,7 @@ curl -fsSL -o /tmp/bootstrap-install.sh \
 bash /tmp/bootstrap-install.sh \
   --dir "$HOME/employee-agent" \
   --port 5180 \
-  --host 111.119.236.165 \
+  --host <your-server-ip-or-domain> \
   --branch main
 ```
 

@@ -252,8 +252,3 @@ pm2 logs employee-agent | grep "WS.*ready"
 ### 业务 Agent 不显示
 - 检查 business_agents 表是否有数据且 enabled=1
 - 检查 Agent 后端服务是否可达
-
-### Dreaming 导致主聊天回复异常
-- OpenClaw 的 dreaming 功能可能产生大量元数据
-- 运行清理脚本: `bash scripts/cleanup-dreaming.sh`
-- 该脚本已配置为每天 3:30 自动执行

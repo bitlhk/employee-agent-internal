@@ -1,6 +1,7 @@
 import type express from "express";
 import { createHash, randomUUID } from "crypto";
 import { auditErrorMetadata, auditRequest, recordAuditBestEffort } from "./audit-events";
+import { isPrivateUrl } from "./helpers";
 
 type ProtocolAdapterInput = {
   providerType: "mcp" | "a2a";
@@ -53,6 +54,36 @@ function endpoint(baseUrl: string, pathValue?: string) {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const path = String(pathValue || "").replace(/^\//, "");
   return new URL(path, base).toString();
+}
+
+function splitCsv(value: string) {
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function isAgentEndpointAllowlisted(url: URL) {
+  const allowlist = splitCsv(process.env.EA_AGENT_ENDPOINT_ALLOWLIST || "");
+  return allowlist.some((entry) => {
+    const normalized = entry.toLowerCase();
+    return normalized === url.hostname.toLowerCase() || normalized === url.host.toLowerCase();
+  });
+}
+
+function assertAllowedAgentEndpoint(rawUrl: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Agent endpoint URL is invalid");
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("Agent endpoint must use http or https");
+  }
+  if (isPrivateUrl(parsed.toString())) {
+    const allowPrivate = String(process.env.EA_ALLOW_PRIVATE_AGENT_ENDPOINTS || "").toLowerCase() === "true";
+    if (!allowPrivate && !isAgentEndpointAllowlisted(parsed)) {
+      throw new Error("Agent endpoint points to a private network address; configure EA_AGENT_ENDPOINT_ALLOWLIST or EA_ALLOW_PRIVATE_AGENT_ENDPOINTS to allow it");
+    }
+  }
 }
 
 function formatToolText(text: string) {
@@ -232,6 +263,7 @@ async function recordMcpAudit(input: ProtocolAdapterInput, args: {
 
 async function runMcpToolsV1(input: ProtocolAdapterInput) {
   const rpcUrl = endpoint(input.apiUrl, input.endpointConfig.rpcPath ?? input.endpointConfig.path ?? "/mcp");
+  assertAllowedAgentEndpoint(rpcUrl);
   const baseHeaders: Record<string, string> = {
     ...authHeaders(input.apiToken),
   };
@@ -300,6 +332,7 @@ async function runMcpToolsV1(input: ProtocolAdapterInput) {
 
 async function runA2ATaskV1(input: ProtocolAdapterInput) {
   const rpcUrl = endpoint(input.apiUrl, input.endpointConfig.rpcPath ?? input.endpointConfig.path ?? "");
+  assertAllowedAgentEndpoint(rpcUrl);
   const method = input.endpointConfig.stream === true ? "message/stream" : "message/send";
   status(input.res, `A2A: ${method}...`);
   const message = {

@@ -273,8 +273,8 @@ export const authRouter = router({
         // 测试模式：跳过所有验证，直接返回成功
         if (TEST_MODE) {
           const fakeUserId = Math.floor(Math.random() * 100000);
-          // 测试账号 admin@huawei.com/admin 直接给管理员权限
-          const isAdmin = input.email.toLowerCase() === 'admin@huawei.com';
+          // 测试账号 admin@example.com/admin 直接给管理员权限
+          const isAdmin = input.email.toLowerCase() === "admin@example.com";
           const sessionToken = await sdk.signSession({
             userId: fakeUserId,
             name: input.email.split('@')[0],
