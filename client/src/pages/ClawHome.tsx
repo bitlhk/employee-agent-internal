@@ -1,6 +1,6 @@
 /**
  * ClawHome — 岗位智能体独立首页（路径模式）
- * 风格：白色主题，与灵感官网一致
+ * 风格：白色主题，与平台首页一致
  * 功能：Hero + 功能介绍 + 创建/进入
  */
 
@@ -53,18 +53,23 @@ function getRuntimeCardMeta(adoptId: unknown) {
   }
   if (id.startsWith("lgh-")) {
     return {
-      name: "Hermes 已归档",
+      name: "历史实例",
       icon: "/uploads/jiuwenswarm.svg",
       badgeClass: "bg-slate-100 text-slate-600",
-      buttonClass: "bg-emerald-600 hover:bg-emerald-700",
+      buttonClass: "bg-slate-300",
     };
   }
   return {
-    name: "OpenClaw",
+    name: "存量实例",
     icon: "/uploads/openclaw.png",
-    badgeClass: "bg-primary/10 text-primary",
-    buttonClass: "bg-primary hover:bg-primary/90",
+    badgeClass: "bg-amber-100 text-amber-700",
+    buttonClass: "bg-slate-300",
   };
+}
+
+function isArchivedRuntimeAdoption(adoption: any) {
+  const adoptId = String(adoption?.adoptId || "");
+  return adoptId.startsWith("lgc-") || adoptId.startsWith("lgh-") || adoption?.actualRuntime === "hermes_archived";
 }
 
 // ── 岗位智能体 SVG Logo 动画组件 ──
@@ -175,7 +180,6 @@ export default function ClawHome() {
   const [provisioning, setProvisioning] = useState(false);
   const [provisionStep, setProvisionStep] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState("general-assistant");
-  const [migrationOpenFor, setMigrationOpenFor] = useState("");
 
   useEffect(() => {
     const previous = document.body.getAttribute("data-home-light");
@@ -252,7 +256,6 @@ export default function ClawHome() {
 
       toast.success(result.reused ? "已为你打开智能体工作台" : "申请成功！");
       await refetchClawMe();
-      setMigrationOpenFor("");
       setLocation(`/claw/${adoptId}`);
     } catch (error: any) {
       toast.error(error?.message || "创建失败，请稍后重试");
@@ -273,7 +276,7 @@ export default function ClawHome() {
       ? [(clawMe as any).adoption]
       : [];
   const hasAnyClaw = adoptions.length > 0;
-  const jiuwenAdoption = adoptions.find((a: any) => String(a?.adoptId || "").startsWith("lgj-"));
+  const hasOnlyArchivedAdoptions = hasAnyClaw && adoptions.every(isArchivedRuntimeAdoption);
 
   const rolePicker = (
     <div className="rounded-xl border border-border/60 bg-white/85 p-3 text-left shadow-sm">
@@ -394,16 +397,13 @@ export default function ClawHome() {
                 </div>
               )}
 
-              {/* 已有虾 → 进入（支持 OpenClaw / JiuwenClaw） */}
+              {/* 已有岗位智能体：JiuwenSwarm 可进入，历史实例仅保留归档提示 */}
               {user && !isLoading && hasAnyClaw && (
                 <div className="space-y-3">
                   {adoptions.map((a: any) => {
                     const runtime = getRuntimeCardMeta(a.adoptId);
                     const adoptId = String(a.adoptId || "");
-                    const isOpenClaw = adoptId.startsWith("lgc-");
-                    const isHermesArchived = adoptId.startsWith("lgh-") || a.actualRuntime === "hermes_archived";
-                    const shouldMigrate = isOpenClaw || isHermesArchived;
-                    const isMigrationOpen = migrationOpenFor === adoptId;
+                    const isArchivedRuntime = isArchivedRuntimeAdoption(a);
                     return (
                       <Card key={a.adoptId} className="border-border/50 bg-white/80 backdrop-blur-sm overflow-hidden">
                         <div className="p-5">
@@ -429,67 +429,51 @@ export default function ClawHome() {
                               </span>
                             </div>
                           </div>
-                          {isOpenClaw ? (
+                          {isArchivedRuntime ? (
                             <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-left">
-                              <p className="text-sm font-medium text-amber-900">OpenClaw 已切换到 JiuwenSwarm</p>
+                              <p className="text-sm font-medium text-amber-900">存量实例已归档</p>
                               <p className="mt-1 text-xs leading-5 text-amber-800">
-                                旧 OpenClaw 实例会保留，但新工作台请按岗位职责重新申请 JiuwenSwarm 智能体。
-                              </p>
-                            </div>
-                          ) : null}
-                          {isHermesArchived ? (
-                            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-left">
-                              <p className="text-sm font-medium text-slate-900">Hermes Runtime 已归档</p>
-                              <p className="mt-1 text-xs leading-5 text-slate-700">
-                                该历史实例不再提供工作台服务，请按岗位职责迁移到 JiuwenSwarm 智能体。
+                                该实例保留历史记录，不再进入工作台，也不再提供迁移入口。请按当前岗位重新申请岗位智能体。
                               </p>
                             </div>
                           ) : null}
                           <Button
                             className={`w-full text-white ${runtime.buttonClass}`}
+                            disabled={isArchivedRuntime}
                             onClick={() => {
-                              if (!shouldMigrate) {
-                                setLocation(`/claw/${a.adoptId}`);
-                                return;
-                              }
-                              if (jiuwenAdoption?.adoptId) {
-                                toast.info("已为你打开 JiuwenSwarm 智能体");
-                                setLocation(`/claw/${jiuwenAdoption.adoptId}`);
-                                return;
-                              }
-                              setSelectedRoleId(String(a.roleTemplate || "general-assistant"));
-                              setMigrationOpenFor(isMigrationOpen ? "" : adoptId);
+                              if (isArchivedRuntime) return;
+                              setLocation(`/claw/${adoptId}`);
                             }}
                           >
-                            {shouldMigrate ? (jiuwenAdoption ? "进入 JiuwenSwarm" : "申请 JiuwenSwarm") : "进入工作台"}
-                            <ArrowRight className="w-4 h-4 ml-2" />
+                            {isArchivedRuntime ? "已归档，请重新申请" : "进入工作台"}
+                            {!isArchivedRuntime ? <ArrowRight className="w-4 h-4 ml-2" /> : null}
                           </Button>
-                          {shouldMigrate && isMigrationOpen && !jiuwenAdoption ? (
-                            <div className="mt-3 space-y-3">
-                              {rolePicker}
-                              <Button
-                                className="w-full bg-emerald-600 text-white hover:bg-emerald-700"
-                                onClick={() => handleAdopt({ preferRuntime: "jiuwenswarm" })}
-                                disabled={provisioning}
-                              >
-                                {provisioning ? (
-                                  <>
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                    {provisionStep}
-                                  </>
-                                ) : (
-                                  <>
-                                    按岗位申请 JiuwenSwarm
-                                    <ArrowRight className="ml-2 h-4 w-4" />
-                                  </>
-                                )}
-                              </Button>
-                            </div>
-                          ) : null}
                         </div>
                       </Card>
                     );
                   })}
+                  {hasOnlyArchivedAdoptions ? (
+                    <div className="space-y-3">
+                      {rolePicker}
+                      <Button
+                        className="w-full bg-primary text-white hover:bg-primary/90"
+                        onClick={() => handleAdopt()}
+                        disabled={provisioning}
+                      >
+                        {provisioning ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            {provisionStep}
+                          </>
+                        ) : (
+                          <>
+                            申请新的岗位智能体
+                            <ArrowRight className="ml-2 h-4 w-4" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               )}
 

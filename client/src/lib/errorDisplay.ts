@@ -2,10 +2,12 @@ export type DisplayErrorKind =
   | "forbidden"
   | "timeout"
   | "model"
-  | "openclaw"
+  | "runtime"
   | "history"
   | "network"
   | "unknown";
+type LegacyDisplayErrorKind = "openclaw";
+type DisplayErrorContext = DisplayErrorKind | LegacyDisplayErrorKind;
 
 export type DisplayError = {
   kind: DisplayErrorKind;
@@ -18,9 +20,14 @@ function errorText(error: unknown) {
   return String(error || "");
 }
 
-export function classifyDisplayError(error: unknown, context: DisplayErrorKind = "unknown"): DisplayError {
+function normalizeErrorContext(context: DisplayErrorContext): DisplayErrorKind {
+  return context === "openclaw" ? "runtime" : context;
+}
+
+export function classifyDisplayError(error: unknown, context: DisplayErrorContext = "unknown"): DisplayError {
   const text = errorText(error);
   const lower = text.toLowerCase();
+  const normalizedContext = normalizeErrorContext(context);
 
   if (/\b403\b|forbidden|unauthorized|permission|无权|权限/.test(lower)) {
     return {
@@ -34,27 +41,27 @@ export function classifyDisplayError(error: unknown, context: DisplayErrorKind =
     return {
       kind: "timeout",
       title: "请求超时",
-      detail: "服务响应时间过长。可能是 OpenClaw、模型服务或网络链路暂时较慢。",
+      detail: "服务响应时间过长。可能是 Agent Runtime、模型服务或网络链路暂时较慢。",
     };
   }
 
-  if (/model|模型|unknown model|not exposed|provider/.test(lower) || context === "model") {
+  if (/model|模型|unknown model|not exposed|provider/.test(lower) || normalizedContext === "model") {
     return {
       kind: "model",
       title: "模型配置不可用",
-      detail: "当前模型或 provider 配置无法使用。请检查 OpenClaw 默认模型、模型认证和 provider 名称。",
+      detail: "当前模型或 provider 配置无法使用。请检查运行时默认模型、模型认证和 provider 名称。",
     };
   }
 
-  if (/openclaw|gateway|ws|websocket|连接/.test(lower) || context === "openclaw") {
+  if (/openclaw|gateway|ws|websocket|连接/.test(lower) || normalizedContext === "runtime") {
     return {
-      kind: "openclaw",
-      title: "OpenClaw 连接异常",
-      detail: "当前工作台暂时无法稳定连接 OpenClaw。请查看设置里的健康诊断。",
+      kind: "runtime",
+      title: "运行时连接异常",
+      detail: "当前工作台暂时无法稳定连接 Agent Runtime。请查看健康诊断。",
     };
   }
 
-  if (/history|session|conversation|历史|会话/.test(lower) || context === "history") {
+  if (/history|session|conversation|历史|会话/.test(lower) || normalizedContext === "history") {
     return {
       kind: "history",
       title: "历史会话读取失败",
@@ -71,13 +78,13 @@ export function classifyDisplayError(error: unknown, context: DisplayErrorKind =
   }
 
   return {
-    kind: context,
+    kind: normalizedContext,
     title: "操作失败",
     detail: text || "发生未知错误，请稍后重试或查看健康诊断。",
   };
 }
 
-export function displayErrorMessage(error: unknown, context: DisplayErrorKind = "unknown") {
+export function displayErrorMessage(error: unknown, context: DisplayErrorContext = "unknown") {
   const classified = classifyDisplayError(error, context);
   return classified.detail ? `${classified.title}：${classified.detail}` : classified.title;
 }

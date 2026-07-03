@@ -1,7 +1,7 @@
 /* banking-tokens.css
    Enterprise-facing visual tokens for banking-fy pages/components.
 
-   This is intentionally small for the first rollout. It keeps Lingxia's red
+   This is intentionally small for the first rollout. It keeps the platform red
    as the brand anchor while moving enterprise surfaces toward light, compact,
    neutral backgrounds.
 
@@ -10,7 +10,7 @@
 */
 
 :root {
-  /* Brand anchor: keep Lingxia red, but use it sparingly. */
+  /* Brand anchor: keep platform red, but use it sparingly. */
   --banking-brand-red: var(--primary, #ff5c5c);
   --banking-brand-red-hover: var(--oc-accent-hover, #ff7070);
   --banking-brand-red-subtle: color-mix(in oklab, var(--banking-brand-red) 10%, transparent);

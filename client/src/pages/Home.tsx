@@ -1,12 +1,12 @@
 /**
  * Home.tsx — Workforce Agent Platform console
- * Renders the sub-claw control panel when accessed via /claw/:adoptId or a lingxia subdomain.
+ * Renders the agent console when accessed via /claw/:adoptId or a legacy agent subdomain.
  * The linggan homepage code has been removed (dead code on this server).
  */
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties } from "react";
-import { OpenClawWSClient } from "@/lib/openclaw-ws";
+import { RuntimeWSClient } from "@/lib/runtime-ws";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useBrand } from "@/lib/useBrand";
@@ -670,7 +670,7 @@ async function handleStreamTruncated(
       ...next[idx],
       recovering: true,
       partialText: partialSnapshot,
-      text: (partialSnapshot || "") + "\n\n_⏳ 上游连接提前结束，正在从 OpenClaw 后台补全完整内容（最多 5 分钟）..._",
+      text: (partialSnapshot || "") + "\n\n_⏳ 上游连接提前结束，正在从运行时后台补全完整内容（最多 5 分钟）..._",
     };
     return next;
   });
@@ -740,7 +740,7 @@ async function handleStreamTruncated(
       setTimeout(poll, INTERVAL_MS);
     }
   };
-  // 第一次也等 5s——给 OpenClaw 写 trace.artifacts 留时间
+  // 第一次也等 5s——给运行时写 trace.artifacts 留时间
   setTimeout(poll, INTERVAL_MS);
 }
 
@@ -991,7 +991,7 @@ export default function Home() {
   }, [availableModels, cachedLingxiaModelId, clawSettings]);
   const effectiveLingxiaModelId = lingxiaModelId || defaultLingxiaModelId || cachedLingxiaModelId;
   // 模型兜底：优先用户在前端选过的偏好（claw-model-overrides.json），其次 isDefault，最后第一个
-  // 修复刷新后下拉强制回 GLM5.1 但 OpenClaw 实际跑用户上次选的 model 的前后端不一致 bug
+  // 修复刷新后下拉强制回 GLM5.1 但运行时实际跑用户上次选的 model 的前后端不一致 bug
   useEffect(() => {
     if (!availableModels || availableModels.length === 0) return;
     const ids = (availableModels as any[]).map((m: any) => m.id);
@@ -1043,7 +1043,7 @@ export default function Home() {
     streamSeq: number;
     triggered?: boolean;
   } | null>(null);
-  const wsClientRef = useRef<OpenClawWSClient | null>(null);
+  const wsClientRef = useRef<RuntimeWSClient | null>(null);
   const restoredSessionKeyRef = useRef<string>("");
   const pendingConversationRestoreRef = useRef<{ conversationId: string; messages: any[] } | null>(null);
   const suppressSessionPersistRef = useRef<string>("");
@@ -1281,7 +1281,7 @@ export default function Home() {
       setClawHealthError("");
       markClientLoadMetric("health", "ok", data?.readiness?.status || "ready", requestStartedAt);
     } catch (error: any) {
-      const classified = classifyDisplayError(error, "openclaw");
+      const classified = classifyDisplayError(error, "runtime");
       setClawHealthError(classified.detail || classified.title);
       markClientLoadMetric("health", "error", classified.title, requestStartedAt);
     } finally {
@@ -2138,11 +2138,11 @@ export default function Home() {
     return uploads;
   };
 
-  // 初始化 WSS 连接（后台自动尝试，不阻塞 UI）—— 仅 OpenClaw (lgc-*)
+  // 初始化 WSS 连接（后台自动尝试，不阻塞 UI）—— 仅存量 lgc-* 运行时
   useEffect(() => {
     if (!ENABLE_OPENCLAW_WS_CHAT || !resolvedAdoptId || !webConversationId || isDirectHttpRuntime || chatV2Enabled) return;
     const apiBase = (import.meta as any).env?.VITE_API_URL || "";
-    const ws = new OpenClawWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
+    const ws = new RuntimeWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
     wsClientRef.current = ws;
     ws.connect().then((ok) => { if (ok) setWsConnected(true); });
     return () => { ws.disconnect(); wsClientRef.current = null; setWsConnected(false); };
@@ -2459,7 +2459,7 @@ export default function Home() {
       const runtimeName = isJiuwenRuntime ? "jiuwenclaw" : isHermesRuntime ? "hermes" : "openclaw";
       let wsClient = ENABLE_OPENCLAW_WS_CHAT && !isDirectHttpRuntime ? wsClientRef.current : null;
       if (!wsClient && ENABLE_OPENCLAW_WS_CHAT && !isDirectHttpRuntime && resolvedAdoptId && webConversationId) {
-        wsClient = new OpenClawWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
+        wsClient = new RuntimeWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
         wsClientRef.current = wsClient;
       }
       if (wsClient && wsClient.state !== "connected") {

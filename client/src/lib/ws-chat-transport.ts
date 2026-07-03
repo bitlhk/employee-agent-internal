@@ -1,5 +1,5 @@
 import type { ChatEvent } from "@shared/runtime/chat-event";
-import { OpenClawWSClient, type WSState } from "./openclaw-ws";
+import { RuntimeWSClient, type RuntimeWSState } from "./runtime-ws";
 import { parseWirePayloadToChatEvents } from "./chat-event-parser";
 import type {
   ChatEventHandler,
@@ -11,7 +11,7 @@ import type {
 } from "./chat-transport";
 import { ChatTransportError } from "./chat-transport";
 
-function mapWsState(state: WSState): ChatTransportState {
+function mapWsState(state: RuntimeWSState): ChatTransportState {
   if (state === "idle") return "idle";
   if (state === "connecting") return "connecting";
   if (state === "connected") return "connected";
@@ -20,7 +20,7 @@ function mapWsState(state: WSState): ChatTransportState {
 
 export class WsChatTransport implements ChatTransport {
   readonly kind = "ws" as const;
-  private client: OpenClawWSClient | null = null;
+  private client: RuntimeWSClient | null = null;
   private readonly apiBase: string;
   private readonly handlers = new Set<ChatEventHandler>();
   private state: ChatTransportState = "idle";
@@ -77,7 +77,7 @@ export class WsChatTransport implements ChatTransport {
     this.emit({ type: "transport.disconnected", transport: "ws", reason });
   }
 
-  private async ensureClient(adoptId: string, channel?: string, conversationId?: string): Promise<OpenClawWSClient> {
+  private async ensureClient(adoptId: string, channel?: string, conversationId?: string): Promise<RuntimeWSClient> {
     if (
       !this.client
       || this.context.adoptId !== adoptId
@@ -85,7 +85,7 @@ export class WsChatTransport implements ChatTransport {
       || this.context.conversationId !== conversationId
     ) {
       this.client?.disconnect();
-      this.client = new OpenClawWSClient(adoptId, this.apiBase, { channel, conversationId });
+      this.client = new RuntimeWSClient(adoptId, this.apiBase, { channel, conversationId });
       this.client.setHandlers(
         (delta) => {
           if (delta.error) this.emit({ type: "transport.error", transport: "ws", message: delta.error });
