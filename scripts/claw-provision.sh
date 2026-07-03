@@ -298,9 +298,6 @@ if found:
 PY
 fi
 
-node "${SCRIPT_DIR}/patch-openclaw-weixin-media.mjs" >/dev/null 2>&1 \
-  || echo "[WARN] OpenClaw 微信媒体补丁未完全生效，请检查 openclaw-weixin 插件。" >&2
-
 cat <<JSON
 {"ok":true,"action":"create","adoptId":"$ADOPT_ID","agentId":"$AGENT_ID","workspace":"$WORKSPACE_DIR","openclawHome":"$OPENCLAW_HOME_DIR","profile":"$PROFILE","ttlDays":"$TTL_DAYS","existed":$agent_exists}
 JSON

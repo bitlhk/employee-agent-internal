@@ -246,7 +246,7 @@ function resolveTemplateToWorkspace(args: {
   return { templateId: builtin.id, templateName: builtin.name, templatePath: rel };
 }
 
-async function callOpenClawOffice(args: {
+async function callAgentRuntimeOffice(args: {
   claw: any;
   runtimeAgentId: string;
   sessionChannel: string;
@@ -306,18 +306,18 @@ async function callOpenClawOffice(args: {
       });
       res.on("end", () => {
         const text = out.trim();
-        if (!text) reject(new Error("OpenClaw 返回结果为空"));
+        if (!text) reject(new Error("Agent Runtime 返回结果为空"));
         else resolve(text);
       });
     });
     req.on("error", reject);
-    req.setTimeout(args.timeoutMs || 300_000, () => req.destroy(new Error("OpenClaw PPT 处理超时")));
+    req.setTimeout(args.timeoutMs || 300_000, () => req.destroy(new Error("Agent Runtime PPT 处理超时")));
     req.write(body);
     req.end();
   });
 }
 
-async function streamOpenClawOffice(args: {
+async function streamAgentRuntimeOffice(args: {
   claw: any;
   runtimeAgentId: string;
   sessionChannel: string;
@@ -406,13 +406,13 @@ async function streamOpenClawOffice(args: {
       });
       upstream.on("end", () => {
         const text = out.trim();
-        if (!text) reject(new Error("OpenClaw 返回结果为空"));
+        if (!text) reject(new Error("Agent Runtime 返回结果为空"));
         else resolve(text);
       });
     });
     args.onRequest?.(req);
     req.on("error", reject);
-    req.setTimeout(args.timeoutMs || 300_000, () => req.destroy(new Error("OpenClaw PPT 处理超时")));
+    req.setTimeout(args.timeoutMs || 300_000, () => req.destroy(new Error("Agent Runtime PPT 处理超时")));
     req.write(body);
     req.end();
   });
@@ -1723,7 +1723,7 @@ function buildResultSummary(args: {
     "",
     "## 生成方式",
     "",
-    "OpenClaw 负责生成可审核的 PPT 大纲和 PPT_BLUEPRINT_JSON；employee-agent 使用固定商务版式生成 PPTX。",
+    "Agent Runtime 负责生成可审核的 PPT 大纲和 PPT_BLUEPRINT_JSON；Workforce Agent Platform 使用固定商务版式生成 PPTX。",
     "",
     "## 页面清单",
     "",
@@ -1834,7 +1834,7 @@ export function registerOfficePptRoutes(app: express.Express) {
         "",
       ].join("\n"), "utf8");
 
-      const outline = await callOpenClawOffice({
+      const outline = await callAgentRuntimeOffice({
         claw,
         runtimeAgentId,
         sessionChannel: "office-ppt-outline",
@@ -1931,7 +1931,7 @@ export function registerOfficePptRoutes(app: express.Express) {
       writeEvent("stage", { id: "prepare", label: "准备模板和材料", status: "done" });
       writeEvent("stage", { id: "outline", label: "生成分页大纲", status: "running" });
 
-      const outline = await streamOpenClawOffice({
+      const outline = await streamAgentRuntimeOffice({
         claw,
         runtimeAgentId,
         sessionChannel: "office-ppt-outline",

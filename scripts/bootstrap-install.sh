@@ -42,7 +42,7 @@ Options:
   --host <ip-or-host>      Public host/IP for FRONTEND_URL. Auto-detected by default.
   --db-mode <mode>         mysql-auto | existing | compose. Default mysql-auto.
   --skip-mysql             Do not install mysql-server.
-  --skip-docker            Do not install docker.io for OpenClaw sandbox.
+  --skip-docker            Do not install docker.io for the optional sandbox.
   --skip-start             Do not build/start PM2 service.
   --skip-admin             Do not create the default admin account.
   --overwrite-env          Regenerate .env if it already exists.
@@ -331,7 +331,7 @@ Change this password immediately after first login.
 
 Health checks:
   curl http://127.0.0.1:${PORT}/health
-  bash scripts/check-local-openclaw-node.sh
+  curl http://127.0.0.1:${PORT}/api/brand
 
 EOF
 }

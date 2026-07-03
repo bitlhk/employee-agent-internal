@@ -142,7 +142,7 @@ function listTaskOutputFiles(workspace: string, taskId: string) {
   return out;
 }
 
-async function callOpenClawOffice(args: {
+async function callAgentRuntimeOffice(args: {
   claw: any;
   runtimeAgentId: string;
   sessionChannel: string;
@@ -202,12 +202,12 @@ async function callOpenClawOffice(args: {
       });
       res.on("end", () => {
         const text = out.trim();
-        if (!text) reject(new Error("OpenClaw 返回结果为空"));
+        if (!text) reject(new Error("Agent Runtime 返回结果为空"));
         else resolve(text);
       });
     });
     req.on("error", reject);
-    req.setTimeout(args.timeoutMs || 240_000, () => req.destroy(new Error("OpenClaw Excel 处理超时")));
+    req.setTimeout(args.timeoutMs || 240_000, () => req.destroy(new Error("Agent Runtime Excel 处理超时")));
     req.write(body);
     req.end();
   });
@@ -347,7 +347,7 @@ export function registerOfficeExcelRoutes(app: express.Express) {
       writeFileSync(path.join(workspace, requestPath), requestMd, "utf8");
 
       const prompt = buildPlanPrompt({ taskId, workbookPath, contextPaths, instruction, planPath });
-      const plan = await callOpenClawOffice({
+      const plan = await callAgentRuntimeOffice({
         claw,
         runtimeAgentId,
         sessionChannel: "office-excel-plan",
@@ -406,7 +406,7 @@ export function registerOfficeExcelRoutes(app: express.Express) {
         resultPath,
         resultNotePath,
       });
-      const resultSummary = await callOpenClawOffice({
+      const resultSummary = await callAgentRuntimeOffice({
         claw,
         runtimeAgentId,
         sessionChannel: "office-excel-apply",

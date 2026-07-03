@@ -9,7 +9,7 @@
 ## 适合做什么
 
 - 给每个岗位或员工申请一个隔离的智能体实例，用于日常对话、资料处理、文件生成和任务执行。
-- 统一接入 JiuwenSwarm、OpenClaw 或自定义 HTTP Agent，前端和管理后台不需要随运行时重写。
+- 统一接入 JiuwenSwarm、A2A 或自定义 HTTP Agent，前端和管理后台不需要随运行时重写。
 - 把企业内部工具、MCP 服务、专业技能、岗位权限和审计记录接入一个可管理的平台。
 - 做企业岗位助手、金融投研工具、客户经理助手、办公自动化和团队协作类原型。
 
@@ -18,7 +18,7 @@
 ```text
 浏览器 / iOS 壳
   -> 岗位智能体平台 Web 服务 (React + Node.js)
-  -> JiuwenSwarm / OpenClaw / HTTP Runtime Adapter
+  -> JiuwenSwarm / A2A / HTTP Runtime Adapter
   -> 本机 workspace / sandbox / tools
   -> MySQL
 ```
@@ -31,7 +31,7 @@
 
 **多 Agent Runtime 接入**
 
-平台支持 JiuwenSwarm、OpenClaw 和自定义 HTTP runtime。平台侧负责用户、岗位、技能市场、MCP 授权、审计和协作；运行时侧负责模型推理、工具调用和文件执行。当前企业岗位智能体推荐优先使用 JiuwenSwarm，OpenClaw 保留为兼容运行时。
+平台支持 JiuwenSwarm、A2A 和自定义 HTTP runtime。平台侧负责用户、岗位、技能市场、MCP 授权、审计和协作；运行时侧负责模型推理、工具调用和文件执行。当前企业岗位智能体推荐优先使用 JiuwenSwarm，外部专业 Agent 推荐通过 A2A/HTTP 接入。
 
 **更顺滑的主对话体验**
 
@@ -65,14 +65,14 @@
 | 前端 | React 19, Vite, TailwindCSS 4, Radix UI, tRPC |
 | 后端 | Node.js 22, Express, tRPC, tsx |
 | 数据库 | MySQL 8.0, Drizzle ORM |
-| 运行时 | JiuwenSwarm；OpenClaw Gateway；HTTP Adapter 可选 |
+| 运行时 | JiuwenSwarm；A2A；HTTP Adapter 可选 |
 | 进程管理 | PM2 |
 
 ## 快速部署
 
 推荐系统：Ubuntu 22.04+ / 24.04。
 
-先在同一台机器准备至少一个 Agent Runtime。推荐准备 JiuwenSwarm；如需兼容旧智能体，也可以同时启动 OpenClaw Gateway。然后执行：
+先准备至少一个 Agent Runtime。推荐准备 JiuwenSwarm；外部专业 Agent 可通过 A2A/HTTP 接入。然后执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh | bash

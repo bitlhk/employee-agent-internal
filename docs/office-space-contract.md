@@ -67,9 +67,9 @@ office/ppt-create/20260517-training-deck/
 
 Existing meeting notes may keep reading historical `meeting-notes/` records. New capabilities should use `office/...`.
 
-## OpenClaw Usage
+## Agent Runtime Usage
 
-OpenClaw is the default reasoning and generation runtime for office tasks.
+The configured Agent Runtime is the reasoning and generation layer for office tasks.
 
 Workforce Agent Platform owns:
 
@@ -79,16 +79,16 @@ Workforce Agent Platform owns:
 - preview normalization
 - validation before writing final files
 
-OpenClaw owns:
+The Agent Runtime owns:
 
 - summarization
 - report drafting
 - outline generation
 - reasoning over provided context
 
-For strong-format artifacts such as PPTX, OpenClaw should produce structured content and reviewable plans. Workforce Agent Platform owns the final binary file generation so output paths, downloads, validation, and persistence stay deterministic.
+For strong-format artifacts such as PPTX, the Agent Runtime should produce structured content and reviewable plans. Workforce Agent Platform owns the final binary file generation so output paths, downloads, validation, and persistence stay deterministic.
 
-For hot-topic or latest-trend PPT requests, OpenClaw may search/fetch web evidence when the runtime exposes those tools. The outline must preserve source titles, URLs, dates, and uncertainty. If search tools are unavailable, the outline should explicitly ask the user to provide source material instead of fabricating facts.
+For hot-topic or latest-trend PPT requests, the Agent Runtime may search/fetch web evidence when it exposes those tools. The outline must preserve source titles, URLs, dates, and uncertainty. If search tools are unavailable, the outline should explicitly ask the user to provide source material instead of fabricating facts.
 
 ## Obsidian-Inspired Methods
 
@@ -139,9 +139,9 @@ Excel Fill follows the same rhythm as Meeting Notes:
 1. Upload one workbook into `office/excel-fill/{taskId}/inputs/`.
 2. Optionally upload background files into the same `inputs/` directory.
 3. User enters a fill requirement or chooses a preset requirement.
-4. Workforce Agent Platform calls OpenClaw in a task-scoped session to produce `outputs/fill-plan.md`.
+4. Workforce Agent Platform calls the Agent Runtime in a task-scoped session to produce `outputs/fill-plan.md`.
 5. User reviews the plan.
-6. User confirms write-back; OpenClaw writes a copied workbook to `outputs/filled.xlsx` and a processing note to `outputs/fill-result.md`.
+6. User confirms write-back; the Agent Runtime writes a copied workbook to `outputs/filled.xlsx` and a processing note to `outputs/fill-result.md`.
 
 The original workbook must never be overwritten. Low-confidence or unsupported fields should stay blank and be listed in the processing note.
 
@@ -153,7 +153,7 @@ PPT Creation must not start from a free-form “make a PPT” prompt. It needs a
 2. User optionally uploads source materials.
 3. User enters a presentation requirement.
 4. Workforce Agent Platform copies the selected template into `office/ppt-create/{taskId}/inputs/`.
-5. OpenClaw generates `outputs/outline.md` first.
+5. The Agent Runtime generates `outputs/outline.md` first.
 6. User confirms the outline.
 7. Workforce Agent Platform parses `PPT_BLUEPRINT_JSON` from the outline, or falls back to the Markdown page plan.
 8. Workforce Agent Platform generates `outputs/slides.pptx` with a fixed business layout generator and writes `outputs/ppt-result.md`.
@@ -164,7 +164,7 @@ The built-in first template is `huawei-light`, stored at:
 data/office-templates/huawei-light.pptx
 ```
 
-The first version treats user-uploaded templates as style/reference templates. Complex master/layout fidelity, custom charts, animations, and exact master reuse are best effort; the priority is a valid PPTX, clear structure, and artifact persistence. OpenClaw does not need a PPTX authoring Skill for this product path.
+The first version treats user-uploaded templates as style/reference templates. Complex master/layout fidelity, custom charts, animations, and exact master reuse are best effort; the priority is a valid PPTX, clear structure, and artifact persistence. The Agent Runtime does not need a PPTX authoring Skill for this product path.
 
 Supported first-party visual components:
 
@@ -177,4 +177,4 @@ Supported first-party visual components:
 - bar chart
 - simple table
 
-OpenClaw should set `visualIntent` and optional `visualData.items` in `PPT_BLUEPRINT_JSON`; Workforce Agent Platform maps those into stable PPTX shapes.
+The Agent Runtime should set `visualIntent` and optional `visualData.items` in `PPT_BLUEPRINT_JSON`; Workforce Agent Platform maps those into stable PPTX shapes.

@@ -14,7 +14,6 @@ YES=false
 OVERWRITE_ENV=false
 SKIP_INSTALL=false
 SKIP_DB_PUSH=false
-SKIP_OPENCLAW=false
 PORT_VALUE="${WORKFORCE_AGENT_PORT:-${LINGXIA_PORT:-5180}}"
 HOST_VALUE="${WORKFORCE_AGENT_HOST:-${LINGXIA_HOST:-}}"
 DOMAIN_VALUE="${WORKFORCE_AGENT_DOMAIN:-${LINGXIA_DOMAIN:-}}"
@@ -25,9 +24,6 @@ DB_PORT_VALUE="${WORKFORCE_AGENT_DB_PORT:-${LINGXIA_DB_PORT:-3306}}"
 DB_USER_VALUE="${WORKFORCE_AGENT_DB_USER:-${LINGXIA_DB_USER:-linggan}}"
 DB_PASS_VALUE="${WORKFORCE_AGENT_DB_PASSWORD:-${LINGXIA_DB_PASSWORD:-}}"
 DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-linggan}}"
-
-source "${SCRIPT_DIR}/scripts/lib/openclaw-bin.sh"
-OPENCLAW_BIN="$(resolve_openclaw_bin || true)"
 
 usage() {
   cat <<'EOF'
@@ -49,7 +45,6 @@ Options:
   --db-name <name>               Existing MySQL database.
   --skip-install                 Do not install pnpm dependencies.
   --skip-db-push                 Do not run database migrations.
-  --skip-openclaw                Do not touch ~/.openclaw/openclaw.json.
   -h, --help                     Show this help.
 
 Environment variables mirror the options with WORKFORCE_AGENT_ prefix, for example:
@@ -74,7 +69,6 @@ while [[ $# -gt 0 ]]; do
     --db-name) DB_NAME_VALUE="${2:?missing --db-name value}"; shift 2 ;;
     --skip-install) SKIP_INSTALL=true; shift ;;
     --skip-db-push) SKIP_DB_PUSH=true; shift ;;
-    --skip-openclaw) SKIP_OPENCLAW=true; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
   esac
@@ -167,7 +161,7 @@ if [[ -f "$ENV_FILE" && "$OVERWRITE_ENV" != "true" ]]; then
 fi
 
 if [[ "$SKIP_ENV" != "true" ]]; then
-  echo "Step 1/4: 配置环境变量"
+  echo "Step 1/3: 配置环境变量"
   echo ""
 
   PORT_VALUE=$(ask "  应用端口 [$PORT_VALUE]: " "$PORT_VALUE")
@@ -283,7 +277,6 @@ SQL
   JWT_SECRET=$(gen_secret)
   TENANT_SECRET=$(gen_hex 32)
   INTERNAL_API_KEY=$(gen_hex 32)
-  GW_TOKEN=$(gen_hex 24)
 
   {
     echo "# ── 岗位智能体平台配置（由 setup.sh 生成）──"
@@ -304,18 +297,10 @@ SQL
     echo "INTERNAL_API_KEY=$INTERNAL_API_KEY"
     echo "EMAIL_VERIFICATION_REQUIRED=false"
     echo ""
-    echo "# OpenClaw"
-    echo "CLAW_PROVISION_MODE=local-script"
-    echo "CLAW_CHAT_MODE=local-openclaw"
-    echo "CLAW_OPENCLAW_HOME=$HOME"
-    echo "CLAW_REMOTE_OPENCLAW_HOME=$HOME"
-    echo "CLAW_GATEWAY_PORT=18789"
-    echo "CLAW_GATEWAY_TOKEN=$GW_TOKEN"
-    echo "CLAW_REMOTE_HOST=127.0.0.1"
-    echo "OPENCLAW_SANDBOX_ENABLED=true"
-    echo "OPENCLAW_SANDBOX_IMAGE=openclaw-sandbox:bookworm-slim"
-    echo "OPENCLAW_SANDBOX_AUTO_BUILD=true"
-    echo "OPENCLAW_SANDBOX_REQUIRED=false"
+    echo "# Agent Runtime"
+    echo "# New installs start in platform-only mode. Configure JiuwenSwarm, A2A, or HTTP runtime after setup."
+    echo "CLAW_PROVISION_MODE=mock"
+    echo "CLAW_CHAT_MODE=mock"
     echo "HERMES_HOME=$HOME/.hermes"
     echo "WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
     echo ""
@@ -355,63 +340,7 @@ SQL
 fi
 
 echo ""
-echo "Step 2/4: 检测 OpenClaw"
-
-if [[ "$SKIP_OPENCLAW" == "true" ]]; then
-  echo "  已跳过 OpenClaw 配置。"
-elif [[ -n "$OPENCLAW_BIN" ]]; then
-  OC_VERSION=$("$OPENCLAW_BIN" --version 2>/dev/null | head -1 || true)
-  echo "  检测到 OpenClaw: ${OC_VERSION:-openclaw} (${OPENCLAW_BIN})"
-
-  GW_TOKEN=$(grep "^CLAW_GATEWAY_TOKEN=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
-  CORS_URL=$(grep "^FRONTEND_URL=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
-  OC_HOME="${HOME}/.openclaw"
-  OC_CONFIG="$OC_HOME/openclaw.json"
-
-  if [[ -f "$OC_CONFIG" && -n "$GW_TOKEN" ]]; then
-    echo "  正在同步岗位智能体平台配置到 OpenClaw..."
-    python3 << PYEOF
-import json
-from pathlib import Path
-path = Path("$OC_CONFIG")
-try:
-    cfg = json.loads(path.read_text())
-    changed = False
-    gw = cfg.setdefault("gateway", {})
-    auth = gw.setdefault("auth", {})
-    if auth.get("token") != "$GW_TOKEN":
-        auth["token"] = "$GW_TOKEN"
-        auth["mode"] = "token"
-        changed = True
-        print("    - Gateway Token: 已同步")
-    if gw.get("bind") != "lan":
-        gw["bind"] = "lan"
-        changed = True
-        print("    - bind: 已设为 lan")
-    origins = gw.setdefault("controlUi", {}).setdefault("allowedOrigins", [])
-    for url in ["$CORS_URL", "http://localhost:$PORT_VALUE", "http://127.0.0.1:$PORT_VALUE"]:
-        if url and url not in origins:
-            origins.append(url)
-            changed = True
-            print(f"    - allowedOrigins: 添加 {url}")
-    if changed:
-        path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + "\n")
-        print("  OpenClaw 配置已更新")
-    else:
-        print("  OpenClaw 配置已是最新")
-except Exception as exc:
-    print(f"  OpenClaw 配置同步失败: {exc}")
-PYEOF
-    node "${SCRIPT_DIR}/scripts/patch-openclaw-weixin-media.mjs" || echo "  [WARN] OpenClaw 微信媒体补丁未完全生效，请检查 openclaw-weixin 插件。"
-  elif [[ ! -f "$OC_CONFIG" ]]; then
-    echo "  未找到 $OC_CONFIG。请先运行: openclaw setup"
-  fi
-else
-  echo "  未检测到 OpenClaw。主聊天依赖 OpenClaw，请先安装并运行 openclaw setup。"
-fi
-
-echo ""
-echo "Step 3/4: 安装依赖"
+echo "Step 2/3: 安装依赖"
 if [[ "$SKIP_INSTALL" == "true" ]]; then
   echo "  已跳过依赖安装。"
 else
@@ -429,7 +358,7 @@ if [[ ! -f "ecosystem.config.cjs" && -f "ecosystem.config.cjs.example" ]]; then
 fi
 
 echo ""
-echo "Step 4/4: 数据库迁移"
+echo "Step 3/3: 数据库迁移"
 DB_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "")
 if [[ "$SKIP_DB_PUSH" == "true" ]]; then
   echo "  已跳过数据库迁移。"

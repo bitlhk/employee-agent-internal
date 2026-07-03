@@ -29,7 +29,7 @@ replace service-side data authorization.
 Every business-data MCP must enforce all of the following:
 
 - Trust only runtime-controlled context, such as `x-linggan-agent-id`,
-  `x-jiuwen-channel-id`, `x-openclaw-agent-id`, or an equivalent platform header.
+  `x-jiuwen-channel-id`, `x-agent-runtime-id`, or an equivalent platform header.
 - Resolve the real user / staff identity server-side from the Agent or channel.
 - Apply row-level authorization in the MCP service before returning customer,
   product, policy, loan, portfolio, or document data.

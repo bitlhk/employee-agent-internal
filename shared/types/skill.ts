@@ -3,9 +3,8 @@ import { z } from "zod";
 /**
  * Workforce Agent Platform skill storage contract.
  *
- * See docs/design/SKILL_STORAGE_CONTRACT.md for storage roots, reconcile
- * semantics, migration policy, and multi-tenant invariants. This file contains
- * the shared compile/runtime schema only.
+ * This file contains the shared compile/runtime schema. Runtime sync and
+ * tenant policy live in the server-side registry implementation.
  */
 
 export const SKILL_SOURCE_KINDS = ["builtin", "marketplace", "uploaded", "generated"] as const;

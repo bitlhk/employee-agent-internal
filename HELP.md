@@ -288,7 +288,7 @@
 
 ### 开放申请范围
 
-如果希望所有注册用户都能申请岗位智能体平台，需要把智能体可见性配置为公开。生产环境调整前建议先确认资源容量和 OpenClaw 运行状态。
+如果希望所有注册用户都能申请岗位智能体平台，需要把智能体可见性配置为公开。生产环境调整前建议先确认资源容量、数据库连接和 Agent Runtime 状态。
 
 ### 品牌配置
 
@@ -386,20 +386,20 @@ pm2 restart employee-agent
 
 如果是旧安装目录或兼容升级环境，PM2 进程名可能仍是 `linggan-claw`，以实际 `pm2 list` 为准。
 
-### 检查 OpenClaw
+### 检查平台接口
 
 ```bash
 cd ~/employee-agent
-bash scripts/check-local-openclaw-node.sh
+curl http://127.0.0.1:5180/health
+curl http://127.0.0.1:5180/api/brand
 ```
 
 重点确认：
 
-- OpenClaw Gateway 已启动。
-- `CLAW_GATEWAY_URL` 指向正确 Gateway。
-- `CLAW_GATEWAY_TOKEN` 与 OpenClaw 配置一致。
-- `FRONTEND_URL` 与浏览器访问地址一致。
-- WebSocket / SSE 可以正常访问。
+- PM2 进程在线。
+- `/health` 返回正常。
+- `/api/brand` 返回当前品牌配置。
+- 当前岗位实例绑定的 JiuwenSwarm / A2A / HTTP Runtime 在线。
 
 ### 重新构建和重启
 
@@ -414,11 +414,11 @@ pm2 restart employee-agent
 
 **申请岗位智能体平台失败**
 
-先检查 OpenClaw Gateway、数据库连接和 PM2 日志。
+先检查数据库连接、PM2 日志和当前 runtime 配置。
 
 **聊天一直没有响应**
 
-优先检查 OpenClaw，再看 PM2 日志。
+优先检查当前岗位实例绑定的 runtime，再看 PM2 日志。
 
 **微信或飞书收不到消息**
 
