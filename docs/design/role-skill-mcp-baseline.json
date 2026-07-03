@@ -15,8 +15,7 @@
     ],
     "runtimes": [
       "jiuwenswarm",
-      "a2a",
-      "http"
+      "openclaw"
     ],
     "origins": [
       "opensource",
@@ -41,8 +40,8 @@
   },
   "runtimePolicy": {
     "defaultRuntime": "jiuwenswarm",
-    "fallbackRuntime": "a2a",
-    "selection": "用户选择岗位，不直接选择底层 runtime；新用户默认在 JiuwenSwarm 上创建；外部专业 Agent 通过 A2A/HTTP 接入。"
+    "fallbackRuntime": "openclaw",
+    "selection": "用户选择岗位，不直接选择底层 runtime；新用户默认在 JiuwenSwarm 上创建；OpenClaw 仅作为存量兼容 runtime，不再作为新部署推荐路径。外部专业 Agent 通过 A2A/HTTP 能力接入。"
   },
   "uiPolicy": {
     "applyFlow": "申请 Agent 时按行业分组展示岗位，默认选中 general-assistant；用户不选择专业岗位时直接创建普通助手。",
