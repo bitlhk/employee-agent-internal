@@ -9,6 +9,6 @@ SET
   `industry` = COALESCE(NULLIF(`industry`, ''), 'general'),
   `runtime` = CASE
     WHEN `adoptId` LIKE 'lgj-%' THEN 'jiuwenswarm'
-    WHEN `adoptId` LIKE 'lgh-%' THEN 'hermes'
+    WHEN `adoptId` LIKE 'lgh-%' THEN 'legacy'
     ELSE COALESCE(NULLIF(`runtime`, ''), 'openclaw')
   END;

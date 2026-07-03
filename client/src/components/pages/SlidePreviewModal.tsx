@@ -1,5 +1,5 @@
 /**
- * SlidePreviewModal — Manus 风格全屏 PPT 预览模态框
+ * SlidePreviewModal — full-screen PPT preview modal
  *
  * 布局：
  *   顶部导航栏  文档标题 + 图标 | 下载 / 播放 / 关闭

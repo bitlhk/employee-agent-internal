@@ -6,9 +6,9 @@ const databaseUrl = process.env.DATABASE_URL;
 
 const seedSpaces = [
   { name: '先遣队金融中队', description: '岗位智能体平台先遣队金融协作空间', sortOrder: 10 },
-  { name: '杭州华为', description: '杭州华为协作空间', sortOrder: 20 },
+  { name: '杭州示例企业', description: '杭州示例企业协作空间', sortOrder: 20 },
   { name: '示例试点组', description: '示例银行试点协作空间', sortOrder: 30 },
-  { name: '浦发试点组', description: '浦发银行试点协作空间', sortOrder: 40 },
+  { name: '行业试点组', description: '行业试点协作空间', sortOrder: 40 },
 ];
 
 console.log(`[COLLAB-MIGRATE] Phase 2 collaboration isolation schema ${apply ? 'apply' : 'dry-run'}`);

@@ -70,7 +70,6 @@ docs/RESOURCE_OPTIMIZATION.md
 docs/OPENCLAW_PATCHES.md
 docs/JIUWENSWARM_PATCHES.md
 docs/runtime-snapshots
-docs/hermes-desktop-improvements.md
 EXCLUDES
 
 # ── 2. 确保 .env.example 存在 ──

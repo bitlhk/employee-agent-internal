@@ -1,6 +1,6 @@
 DELETE FROM `business_agents`
 WHERE `id` IN (
-  'task-hermes',
+  'task-legacy',
   'task-trace',
   'task-stock',
   'task-my-wealth',
@@ -12,7 +12,7 @@ WHERE `id` IN (
   'task-slides',
   'task-finance',
   'task-assistant',
-  'task-hermes-example',
+  'task-legacy-example',
   'mcp-tavily-search',
   'a2a-sg-research'
 );

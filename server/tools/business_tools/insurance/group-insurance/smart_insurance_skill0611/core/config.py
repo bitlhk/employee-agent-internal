@@ -26,8 +26,8 @@ class SkillConfig:
         # 从字典创建
         config = SkillConfig.from_dict({
             'mcp': {'server_url': 'http://openclaw:8080'},
-            'vision': {'provider': 'huawei'},
-            'llm': {'default_provider': 'huawei'}
+            'vision': {'provider': 'maas'},
+            'llm': {'default_provider': 'maas'}
         })
 
         # 获取配置
@@ -117,12 +117,12 @@ class SkillConfig:
                 'retry_times': int(os.getenv('MCP_RETRY_TIMES', '3')),
             },
             'vision': {
-                'provider': os.getenv('SMART_INSURANCE_VISION_PROVIDER', 'huawei'),
+                'provider': os.getenv('SMART_INSURANCE_VISION_PROVIDER', 'maas'),
                 'max_concurrency': int(os.getenv('VISION_MAX_CONCURRENCY', '5')),
             },
             'llm': {
-                'default_provider': os.getenv('SMART_INSURANCE_LLM_PROVIDER', 'huawei'),
-                'huawei': {
+                'default_provider': os.getenv('SMART_INSURANCE_LLM_PROVIDER', 'maas'),
+                'maas': {
                     'api_url': os.getenv('SMART_INSURANCE_LLM_API_URL', ''),
                     'api_key': os.getenv('SMART_INSURANCE_LLM_API_KEY', ''),
                 }
@@ -135,7 +135,7 @@ class SkillConfig:
         获取配置值（支持嵌套键）
 
         Args:
-            key: 配置键，支持点分隔的嵌套键（如 'llm.huawei.api_url')
+            key: 配置键，支持点分隔的嵌套键（如 'llm.maas.api_url')
             default: 默认值
 
         Returns:

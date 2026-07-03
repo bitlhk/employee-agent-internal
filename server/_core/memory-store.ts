@@ -1,15 +1,15 @@
 /**
- * memory-store.ts — 平台级用户偏好记忆（写入 OpenClaw workspace）
+ * memory-store.ts - platform-level user preference memory.
  *
- * 复用 Hermes 的存储格式：
+ * Storage format:
  *   - § 分隔的条目
  *   - 字符上限（策展式，满了要替换不能无限加）
  *   - 安全扫描（防 prompt injection）
  *
- * 写入位置：OpenClaw 主聊天 workspace 的 memory/ 目录
+ * 写入位置：runtime workspace 的 memory/ 目录
  *   /root/.openclaw/workspace-lingganclaw/trial_{adoptId}/memory/user-preferences.md
  *
- * OpenClaw 的 memory-core 插件会自动索引这个文件。
+ * Compatible runtimes can index this file.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -25,7 +25,7 @@ const ENTRY_DELIMITER = "\n§\n";
 const MEMORY_CHAR_LIMIT = parseInt(process.env.MEMORY_CHAR_LIMIT || "2200", 10);
 const USER_CHAR_LIMIT = parseInt(process.env.MEMORY_USER_CHAR_LIMIT || "1375", 10);
 
-// ── 直接搬 Hermes 的安全扫描 ────────────────────────────────────────
+// ── 安全扫描 ────────────────────────────────────────────────────────
 
 const THREAT_PATTERNS: [RegExp, string][] = [
   [/ignore\s+(previous|all|above|prior)\s+instructions/i, "prompt_injection"],
@@ -84,7 +84,7 @@ function writeEntries(filePath: string, entries: { user: string[]; memory: strin
   ensureDir(filePath);
   const parts: string[] = [
     "# User Preferences",
-    "_Auto-extracted by LingXia platform (Hermes-style curated memory)_",
+    "_Auto-extracted by Workforce Agent Platform_",
     "",
   ];
 
@@ -100,7 +100,7 @@ function writeEntries(filePath: string, entries: { user: string[]; memory: strin
     parts.push("");
   }
 
-  // 原子写入（Hermes 做法：tmpfile + rename）
+  // 原子写入：tmpfile + rename
   const tmp = filePath + `.tmp.${Date.now()}`;
   try {
     writeFileSync(tmp, parts.join("\n"), "utf-8");
@@ -196,7 +196,7 @@ export function removeMemory(
 
 /**
  * 构建 system prompt 注入块（供业务 Agent 用）
- * 格式完全复用 Hermes 的 MemoryStore._render_block()
+ * 构建和渲染层解耦的记忆注入块。
  */
 export function buildMemoryBlock(adoptId: string): string {
   const entries = readEntries(resolveMemoryFile(adoptId));

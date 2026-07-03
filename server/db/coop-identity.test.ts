@@ -16,13 +16,13 @@ function directory() {
   dir.users.set(2, { id: 2, role: "user" });
   dir.users.set(3, { id: 3, role: "user" });
   dir.users.set(9, { id: 9, role: "admin" });
-  dir.profiles.set(1, { userId: 1, realName: "张三", organizationName: "华为", departmentName: "金融", teamName: "攻坚组", spaceId: 1, status: "active" });
-  dir.profiles.set(2, { userId: 2, realName: "李四", organizationName: "华为", departmentName: "金融", teamName: "攻坚组", spaceId: 1, status: "active" });
+  dir.profiles.set(1, { userId: 1, realName: "张三", organizationName: "示例企业", departmentName: "金融", teamName: "攻坚组", spaceId: 1, status: "active" });
+  dir.profiles.set(2, { userId: 2, realName: "李四", organizationName: "示例企业", departmentName: "金融", teamName: "攻坚组", spaceId: 1, status: "active" });
   dir.profiles.set(3, { userId: 3, realName: "王五", organizationName: "示例银行", departmentName: "示例部门", teamName: "试点组", spaceId: 2, status: "active" });
   dir.profiles.set(4, { userId: 4, realName: "赵六", organizationName: "浦发", departmentName: "AI", teamName: null, spaceId: null, status: "active" });
-  dir.profiles.set(5, { userId: 5, realName: "待审", organizationName: "华为", departmentName: "金融", teamName: null, spaceId: 1, status: "pending" });
-  dir.profiles.set(6, { userId: 6, realName: "禁用", organizationName: "华为", departmentName: "金融", teamName: null, spaceId: 1, status: "disabled" });
-  dir.profiles.set(7, { userId: 7, realName: "空间停用", organizationName: "华为", departmentName: "金融", teamName: null, spaceId: 3, status: "active" });
+  dir.profiles.set(5, { userId: 5, realName: "待审", organizationName: "示例企业", departmentName: "金融", teamName: null, spaceId: 1, status: "pending" });
+  dir.profiles.set(6, { userId: 6, realName: "禁用", organizationName: "示例企业", departmentName: "金融", teamName: null, spaceId: 1, status: "disabled" });
+  dir.profiles.set(7, { userId: 7, realName: "空间停用", organizationName: "示例企业", departmentName: "金融", teamName: null, spaceId: 3, status: "active" });
   dir.sessions.set("cs-a", { id: "cs-a", creatorUserId: 1, spaceId: 1 });
   dir.sessions.set("cs-b", { id: "cs-b", creatorUserId: 3, spaceId: 2 });
   dir.sessions.set("cs-legacy", { id: "cs-legacy", creatorUserId: 1, spaceId: null });

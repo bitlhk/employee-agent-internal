@@ -213,7 +213,7 @@ function BrandSettingsPanel() {
   });
   const [saving, setSaving] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState(() => {
-    return brand.nameEn === DEFAULT_BRAND.nameEn ? "employee-agent" : "custom";
+    return brand.nameEn === DEFAULT_BRAND.nameEn ? "workforce-agent" : "custom";
   });
 
   const applyPreset = (presetId: string) => {
@@ -238,7 +238,7 @@ function BrandSettingsPanel() {
         githubUrl: brand.githubUrl,
         pageTitle: brand.pageTitle,
     });
-    setSelectedPreset(brand.nameEn === DEFAULT_BRAND.nameEn ? "employee-agent" : "custom");
+    setSelectedPreset(brand.nameEn === DEFAULT_BRAND.nameEn ? "workforce-agent" : "custom");
   }, [brand]);
 
   const setBrandMutation = trpc.claw.adminSetBrand.useMutation({
@@ -294,11 +294,11 @@ function BrandSettingsPanel() {
         <p className="text-xs text-muted-foreground mb-4">默认使用岗位智能体平台品牌；需要企业白标时再切换为自定义。</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <button
-            onClick={() => applyPreset("employee-agent")}
+            onClick={() => applyPreset("workforce-agent")}
             className="text-left rounded-xl border p-4 transition-all hover:bg-gray-50"
             style={{
-              borderColor: selectedPreset === "employee-agent" ? DEFAULT_BRAND.accentColor : "rgba(0,0,0,0.08)",
-              boxShadow: selectedPreset === "employee-agent" ? `0 0 0 2px ${DEFAULT_BRAND.accentColor}20` : "none",
+              borderColor: selectedPreset === "workforce-agent" ? DEFAULT_BRAND.accentColor : "rgba(0,0,0,0.08)",
+              boxShadow: selectedPreset === "workforce-agent" ? `0 0 0 2px ${DEFAULT_BRAND.accentColor}20` : "none",
             }}
           >
             <div className="flex items-center gap-2">

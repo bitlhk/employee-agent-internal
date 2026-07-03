@@ -212,8 +212,8 @@ export function registerChatStreamRoutes(app: express.Express) {
     }
 
     // ── JiuwenClaw runtime branch (lgj-*) ──────────────────────────
-    // lgj-* is the JiuwenClaw lane. lgh-* remains reserved for the legacy
-    // Hermes lane below; lgc-* keeps the existing OpenClaw path.
+    // lgj-* is the JiuwenClaw lane. lgh-* remains reserved for legacy
+    // archived instances; lgc-* keeps the existing OpenClaw path.
     if (String(adoptId).startsWith("lgj-")) {
       const msgStrForRuntime = String(message || "").slice(0, 4000);
       if (msgStrForRuntime.trim().length === 0) {
@@ -272,7 +272,7 @@ export function registerChatStreamRoutes(app: express.Express) {
     }
 
     if (String(adoptId).startsWith("lgh-")) {
-      return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED", message: "Hermes runtime has been archived. Use a JiuwenClaw adoption instead." });
+      return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED", message: "Legacy runtime has been archived. Use a JiuwenClaw adoption instead." });
     }
 
     // 安全校验：agentId 必须符合预期格式，防止 shell 注入

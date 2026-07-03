@@ -212,9 +212,12 @@ const normalizeToolChoice = (
 const resolveApiUrl = () =>
   ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
-    : "https://forge.manus.im/v1/chat/completions";
+    : "";
 
 const assertApiKey = () => {
+  if (!resolveApiUrl()) {
+    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
+  }
   if (!ENV.forgeApiKey) {
     throw new Error("OPENAI_API_KEY is not configured");
   }

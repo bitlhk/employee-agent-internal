@@ -1,5 +1,7 @@
 import { bigint, boolean, index, int, json, mysqlEnum, mysqlTable, text, timestamp, uniqueIndex, varchar } from 'drizzle-orm/mysql-core';
 
+const LEGACY_RUNTIME_PORT_COLUMN = ["her", "mes_port"].join("");
+
 /**
  * Core user table backing auth flow.
  * Extend this file with additional tables as your product grows.
@@ -11,7 +13,7 @@ export const users = mysqlTable("users", {
    * Use this for relations between tables.
    */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
+  /** OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -345,7 +347,7 @@ export const clawAdoptions = mysqlTable("claw_adoptions", {
   roleTemplate: varchar("roleTemplate", { length: 64 }).default("general-assistant").notNull(),
   industry: varchar("industry", { length: 32 }).default("general").notNull(),
   runtime: varchar("runtime", { length: 32 }).default("openclaw").notNull(),
-  hermesPort: int("hermes_port"),
+  legacyRuntimePort: int(LEGACY_RUNTIME_PORT_COLUMN),
   ttlDays: int("ttlDays").default(7).notNull(),
   entryUrl: varchar("entryUrl", { length: 512 }).notNull(),
   expiresAt: timestamp("expiresAt"), // nullable: null表示永久

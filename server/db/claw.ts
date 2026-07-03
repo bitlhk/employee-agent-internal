@@ -39,7 +39,7 @@ export async function getCurrentClawByUserId(userId: number): Promise<ClawAdopti
 }
 
 /**
- * 列出用户所有活跃的虾（支持多 runtime: OpenClaw lgc-* / Hermes lgh-*）
+ * 列出用户所有活跃的虾（支持多 runtime: lgc-* / lgh-* legacy archived）
  * orderBy: OpenClaw (lgc-) 优先，其次按 id 升序（老虾在前）
  */
 export async function listClawsByUserId(userId: number): Promise<ClawAdoption[]> {

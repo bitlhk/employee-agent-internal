@@ -11,7 +11,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "deepseek/deepseek-chat": "DeepSeek Chat",
   "openai-codex/gpt-5.5": "GPT-5.5",
   "openai/gpt-5.5": "GPT-5.5",
-  "hermes/hermes-agent": "Hermes Agent",
+  "legacy/legacy-agent": "Legacy Agent",
 };
 
 export function formatModelName(modelId?: string | null, fallback = "默认模型") {

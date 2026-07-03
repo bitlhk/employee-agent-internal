@@ -13,7 +13,7 @@ export const CHANNEL_IDS = ["web", "wechat", "feishu", "dingtalk", "wecom"] as c
 export type ChannelId = (typeof CHANNEL_IDS)[number];
 export const channelIdSchema = z.enum(CHANNEL_IDS);
 
-export const RUNTIME_IDS = ["openclaw", "hermes", "jiuwenclaw"] as const;
+export const RUNTIME_IDS = ["openclaw", "legacy_archived", "jiuwenclaw"] as const;
 export type RuntimeId = (typeof RUNTIME_IDS)[number];
 export const runtimeIdSchema = z.enum(RUNTIME_IDS);
 

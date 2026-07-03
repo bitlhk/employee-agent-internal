@@ -29,8 +29,8 @@ const LOGOUT_CACHE_KEY_PREFIXES = [
 
 const LOGOUT_LEGACY_CACHE_KEYS = [
   "lingxia-chat-history",
-  "manus-runtime-user-info",
 ];
+const USER_INFO_CACHE_KEY = "workforce-agent-user-info";
 
 function clearLogoutLocalCache() {
   if (typeof window === "undefined") return;
@@ -85,11 +85,11 @@ export function useAuth(options?: UseAuthOptions) {
   const state = useMemo(() => {
     if (meQuery.data) {
       localStorage.setItem(
-        "manus-runtime-user-info",
+        USER_INFO_CACHE_KEY,
         JSON.stringify(meQuery.data)
       );
     } else {
-      localStorage.removeItem("manus-runtime-user-info");
+      localStorage.removeItem(USER_INFO_CACHE_KEY);
     }
     return {
       user: meQuery.data ?? null,

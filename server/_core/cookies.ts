@@ -76,10 +76,6 @@ export function clearSessionCookieVariants(req: Request, res: Response) {
     domains.add(normalizedDomain);
     domains.add(`.${normalizedDomain}`);
   }
-  if (hostname === "linggan.top" || hostname.endsWith(".linggan.top")) {
-    domains.add("linggan.top");
-    domains.add(".linggan.top");
-  }
   if (hostname && hostname !== normalizedDomain) domains.add(hostname);
 
   for (const domain of domains) {
@@ -113,10 +109,6 @@ export function setLogoutLockCookieVariants(req: Request, res: Response, maxAgeM
   if (normalizedDomain) {
     domains.add(normalizedDomain);
     domains.add(`.${normalizedDomain}`);
-  }
-  if (hostname === "linggan.top" || hostname.endsWith(".linggan.top")) {
-    domains.add("linggan.top");
-    domains.add(".linggan.top");
   }
   if (hostname && hostname !== normalizedDomain) domains.add(hostname);
 

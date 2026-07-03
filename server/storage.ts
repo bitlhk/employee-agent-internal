@@ -1,5 +1,5 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+// Preconfigured storage helpers for the platform storage proxy.
+// Uses Authorization: Bearer <token>.
 
 import { ENV } from './_core/env';
 

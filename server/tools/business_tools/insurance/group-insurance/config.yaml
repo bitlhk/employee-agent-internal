@@ -11,13 +11,13 @@ mcp:
 # 多模态识别配置（通过MCP调用）
 # 注意：API URL和密钥应在MCP Server端通过环境变量配置，不要在此处配置
 vision:
-  provider: "huawei"                         # 服务商（huawei/aliyun/openai）
+  provider: "maas"                         # 服务商（maas/aliyun/openai）
   max_concurrency: 5                         # 最大并发数
 
 # LLM配置（通过MCP调用）
 # 注意：API URL和密钥应在MCP Server端通过环境变量配置，不要在此处配置
 llm:
-  default_provider: "huawei"                 # 默认服务商（huawei/aliyun/openai）
+  default_provider: "maas"                 # 默认服务商（maas/aliyun/openai）
 
 
 # Pipeline配置

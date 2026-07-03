@@ -1,6 +1,6 @@
 # Enterprise Audit Ledger v1
 
-Enterprise Audit Ledger is the neutral audit baseline for the platform. It is designed for financial-customer deployments and future runtime types such as employee, Hermes, Jiuwen, and custom Claw runtimes.
+Enterprise Audit Ledger is the neutral audit baseline for the platform. It is designed for financial-customer deployments and future runtime types such as employee, Jiuwen, Jiuwen, and custom Claw runtimes.
 
 ## Goals
 

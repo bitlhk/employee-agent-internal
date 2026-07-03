@@ -45,7 +45,7 @@ class MCPClient:
         # 调用LLM工具
         response = mcp_client.call_tool(
             'llm_infer',
-            {'prompt': '请分析这段文本...', 'provider': 'huawei'}
+            {'prompt': '请分析这段文本...', 'provider': 'maas'}
         )
     """
 
@@ -204,7 +204,7 @@ class MCPClient:
 
         arguments = {
             'image_path': image_path,
-            'provider': self.config.get('vision.provider', 'huawei')
+            'provider': self.config.get('vision.provider', 'maas')
         }
 
         if prompt:
@@ -238,7 +238,7 @@ class MCPClient:
 
         arguments = {
             'prompt': prompt,
-            'provider': provider or self.config.get('llm.default_provider', 'huawei')
+            'provider': provider or self.config.get('llm.default_provider', 'maas')
         }
 
         if model:

@@ -25,7 +25,7 @@ type ChannelId = "web" | "wechat" | "feishu" | "wecom";
 
 type CronJobV2 = {
   id: string;
-  runtime?: "openclaw" | "hermes" | "jiuwenclaw";
+  runtime?: "openclaw" | "legacy_archived" | "jiuwenclaw";
   name: string;
   description?: string;
   enabled: boolean;

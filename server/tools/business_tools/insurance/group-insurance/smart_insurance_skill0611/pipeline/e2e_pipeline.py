@@ -116,12 +116,12 @@ class E2EPipeline(BasePipeline):
         # 初始化工具
         self._vision_tool = VisionTool(
             self._mcp_client,
-            provider=self.skill_config.get('vision.provider', 'huawei')
+            provider=self.skill_config.get('vision.provider', 'maas')
         )
 
         self._llm_tool = LLMTool(
             self._mcp_client,
-            provider=self.skill_config.get('llm.default_provider', 'huawei')
+            provider=self.skill_config.get('llm.default_provider', 'maas')
         )
 
         # 初始化模板管理器

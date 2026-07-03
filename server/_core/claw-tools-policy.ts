@@ -73,7 +73,7 @@ export function registerToolsPolicyRoutes(app: express.Express) {
         targetId: adoptId,
         targetName: String((claw as any).agentId || ""),
         agentInstanceId: adoptId,
-        runtimeType: String(adoptId).startsWith("lgh-") ? "hermes" : "openclaw",
+        runtimeType: String(adoptId).startsWith("lgh-") ? "legacy_archived" : "openclaw",
         runtimeAgentId: String((claw as any).agentId || ""),
         policyCode: String(tools.profile || "none"),
         metadata: {
@@ -175,7 +175,7 @@ export function registerToolsPolicyRoutes(app: express.Express) {
         targetId: adoptId,
         targetName: String((claw as any).agentId || ""),
         agentInstanceId: adoptId,
-        runtimeType: String(adoptId).startsWith("lgh-") ? "hermes" : "openclaw",
+        runtimeType: String(adoptId).startsWith("lgh-") ? "legacy_archived" : "openclaw",
         runtimeAgentId: String((claw as any).agentId || ""),
         policyCode: profile,
         metadata: {

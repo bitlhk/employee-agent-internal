@@ -301,7 +301,6 @@ SQL
     echo "# New installs start in platform-only mode. Configure JiuwenSwarm, A2A, or HTTP runtime after setup."
     echo "CLAW_PROVISION_MODE=mock"
     echo "CLAW_CHAT_MODE=mock"
-    echo "HERMES_HOME=$HOME/.hermes"
     echo "WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
     echo ""
     echo "# 岗位智能体平台路由"

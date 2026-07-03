@@ -61,7 +61,7 @@ function getRuntimeCardMeta(adoptId: unknown) {
   }
   return {
     name: "存量实例",
-    icon: "/uploads/openclaw.png",
+    icon: "/uploads/jiuwenswarm.svg",
     badgeClass: "bg-amber-100 text-amber-700",
     buttonClass: "bg-slate-300",
   };
@@ -69,7 +69,7 @@ function getRuntimeCardMeta(adoptId: unknown) {
 
 function isArchivedRuntimeAdoption(adoption: any) {
   const adoptId = String(adoption?.adoptId || "");
-  return adoptId.startsWith("lgc-") || adoptId.startsWith("lgh-") || adoption?.actualRuntime === "hermes_archived";
+  return adoptId.startsWith("lgc-") || adoptId.startsWith("lgh-") || adoption?.actualRuntime === "legacy_archived";
 }
 
 // ── 岗位智能体 SVG Logo 动画组件 ──

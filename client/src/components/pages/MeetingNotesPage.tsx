@@ -419,7 +419,7 @@ export function MeetingNotesPage({ adoptId, onBack }: MeetingNotesPageProps) {
                   <button
                     type="button"
                     onClick={onBack}
-                    title="返回办公空间"
+                    title="返回上一页"
                     className="inline-flex items-center justify-center rounded-md p-1.5"
                     style={{ color: "var(--oc-text-secondary)", border: "1px solid var(--oc-border)", background: "var(--oc-panel)" }}
                   >

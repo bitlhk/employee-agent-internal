@@ -82,14 +82,14 @@ export function AgentPage({ adoptId, skills }: { adoptId: string; skills?: { sha
     setFileSaving(true);
     try {
       // 2026-04-20 review fix: runtime-aware save endpoint
-      // - lgh- (Hermes): SOUL/MEMORY/USER 走 memory/write, target 直接 filename
+      // - lgh- (legacy archived): SOUL/MEMORY/USER 走 memory/write, target 直接 filename
       // - lgc- (OpenClaw): MEMORY.md + memory:YYYY-MM-DD 走 memory/write (budget+audit)
       //                    其他 core files (SOUL/AGENTS/TOOLS/IDENTITY/STYLE/PLAN/KNOWLEDGE) 走 core-files/save
-      const isHermes = String(adoptId).startsWith("lgh-");
+      const isLegacyArchived = String(adoptId).startsWith("lgh-");
       const dailyMemoryMatch = fileName.match(/^memory\/(\d{4}-\d{2}-\d{2})\.md$/);
 
       let r: Response;
-      if (isHermes) {
+      if (isLegacyArchived) {
         r = await fetch("/api/claw/memory/write", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

@@ -73,12 +73,12 @@ import { resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
 
-type ResolvedClawRuntime = "openclaw" | "jiuwenclaw" | "hermes_archived";
+type ResolvedClawRuntime = "openclaw" | "jiuwenclaw" | "legacy_archived";
 
 const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
   const id = String(adoptId || "");
   if (id.startsWith("lgj-")) return "jiuwenclaw";
-  if (id.startsWith("lgh-")) return "hermes_archived";
+  if (id.startsWith("lgh-")) return "legacy_archived";
   return "openclaw";
 };
 
@@ -285,7 +285,7 @@ const getAvailableJiuwenModels = (): RuntimeModelOption[] => {
 const getAvailableModelsForRuntime = (adoptId?: unknown): RuntimeModelOption[] => {
   const runtime = resolveClawRuntime(adoptId);
   if (runtime === "jiuwenclaw") return getAvailableJiuwenModels();
-  if (runtime === "hermes_archived") return [];
+  if (runtime === "legacy_archived") return [];
   return getAvailableClawModelsFromConfig();
 };
 
@@ -522,10 +522,10 @@ export const clawRouter = router({
       .input(z.object({ adoptId: z.string().min(1).max(64), modelId: z.string().min(1).max(120) }))
       .mutation(async ({ input, ctx }) => {
         const runtimeType = resolveClawRuntime(input.adoptId);
-        if (runtimeType === "hermes_archived") {
+        if (runtimeType === "legacy_archived") {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Hermes runtime has been archived. Provision a JiuwenClaw agent instead.",
+            message: "Legacy runtime has been archived. Provision a JiuwenClaw agent instead.",
           });
         }
         const allowed = new Set(getAvailableModelsForRuntime(input.adoptId).map((m) => m.id));
@@ -966,14 +966,14 @@ export const clawRouter = router({
         };
       }),
 
-    adminProvisionHermesClaw: adminProcedure
+    adminProvisionLegacyClaw: adminProcedure
       .input(z.object({
         userId: z.number().int().positive(),
         // Regex 严格限死 profileName 字符范围，execFileSync 再兜底不走 shell
         profileName: z.string().min(1).max(64).regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
       }))
       .mutation(async ({ input }) => {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Hermes runtime has been archived. Provision JiuwenClaw agents instead." });
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Legacy runtime has been archived. Provision JiuwenClaw agents instead." });
       }),
 
     // ── 技能市场管理 ──
@@ -1496,7 +1496,7 @@ export const clawRouter = router({
         if (String(input.adoptId).startsWith("lgh-")) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Hermes runtime has been archived.",
+            message: "Legacy runtime has been archived.",
           });
         }
         const item = await getSkillMarketItem(input.marketId);

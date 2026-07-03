@@ -1,10 +1,10 @@
 /**
- * memory-extractor.ts — Hermes 式策展记忆提取
+ * memory-extractor.ts - curated memory extraction.
  *
- * 机制直接复用 Hermes (run_agent.py):
- *   - _MEMORY_REVIEW_PROMPT: 后台 review 提示词
- *   - MEMORY_SCHEMA: memory tool 的行为指导
- *   - tool calling: 让 LLM 以 function call 形式返回 add/replace/remove
+ * Mechanism:
+ *   - background review prompt
+ *   - memory tool behavior schema
+ *   - tool calling returns add/replace/remove actions
  *
  * 平台适配:
  *   - 写入 OpenClaw workspace .md 文件（不写 MySQL）
@@ -48,9 +48,9 @@ async function resolveAdoptId(userId: number): Promise<string | null> {
   return null;
 }
 
-// ── Hermes 原版提示词（来自 run_agent.py _MEMORY_REVIEW_PROMPT）────
+// ── 记忆评审提示词 ─────────────────────────────────────────────────
 
-const HERMES_REVIEW_PROMPT =
+const MEMORY_REVIEW_PROMPT =
   "Review the conversation above and consider saving to memory if appropriate.\n\n" +
   "Focus on:\n" +
   "1. Has the user revealed things about themselves \u2014 their persona, desires, " +
@@ -60,7 +60,7 @@ const HERMES_REVIEW_PROMPT =
   "If something stands out, save it using the memory tool. " +
   "If nothing is worth saving, just say 'Nothing to save.' and stop.";
 
-// ── Hermes 原版 memory tool schema（来自 tools/memory_tool.py）────
+// ── memory tool schema ────────────────────────────────────────────
 
 const MEMORY_TOOL_DEF = {
   type: "function" as const,
@@ -108,9 +108,7 @@ async function doExtract(
 ): Promise<void> {
   if (!DEEPSEEK_API_KEY) return;
 
-  // 构建消息：复用 Hermes 的 background review 模式
-  // Hermes 做法：把完整对话历史 + review prompt 发给后台 agent
-  // 平台适配：只发当前轮 + 现有记忆 + review prompt
+  // 构建消息：只发送当前轮、现有记忆和 review prompt。
   const existing = readUserMemories(adoptId);
   const existingBlock: string[] = [];
   if (existing.user.length > 0) {
@@ -126,7 +124,7 @@ async function doExtract(
       : []),
     { role: "user", content: userMessage.slice(0, 2000) },
     { role: "assistant", content: assistantReply.slice(0, 3000) },
-    { role: "user", content: HERMES_REVIEW_PROMPT },
+    { role: "user", content: MEMORY_REVIEW_PROMPT },
   ];
 
   const resp = await fetch(`${DEEPSEEK_BASE}/v1/chat/completions`, {
@@ -153,14 +151,14 @@ async function doExtract(
   const data = await resp.json() as any;
   const choice = data?.choices?.[0];
 
-  // 检查 tool calls（Hermes 方式）
+  // 检查 tool calls
   const toolCalls = choice?.message?.tool_calls;
   if (!toolCalls || toolCalls.length === 0) {
     console.log("[MEMORY-EXTRACTOR] nothing to save");
     return;
   }
 
-  // 执行 tool calls（跟 Hermes flush_memories 逻辑一致）
+  // 执行 tool calls
   for (const tc of toolCalls.slice(0, 3)) {
     if (tc.function?.name !== "memory") continue;
     try {

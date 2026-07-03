@@ -2,7 +2,7 @@
 MCP服务器 - 标准版本 (支持HTTP MCP适配器)
 
 负责转发所有外部网络请求，包括：
-- 多模态识别服务（华为、阿里云、OpenAI等）
+- 多模态识别服务（通用、阿里云、OpenAI等）
 - LLM推理服务
 - PDF处理服务
 - 团险审核工作流 (group_insurance_audit_workflow)
@@ -126,7 +126,7 @@ MCP_TOOLS = {
 
 # 服务商配置（从环境变量读取）
 PROVIDERS_CONFIG = {
-    "huawei": {
+    "maas": {
         "api_url": os.getenv("HUAWEI_API_URL", ""),
         "api_key": os.getenv("HUAWEI_API_KEY", ""),
         "vision_model": "qwen-vl-max",
@@ -481,7 +481,7 @@ def handle_vision_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
     Returns:
         工具执行结果
     """
-    provider = arguments.get('provider', 'huawei')
+    provider = arguments.get('provider', 'maas')
     provider_config = PROVIDERS_CONFIG.get(provider)
 
     if not provider_config:
@@ -495,8 +495,8 @@ def handle_vision_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, A
     # 调用多模态API
     if ENV_MODE == "production":
         # 真实API调用
-        if provider == "huawei":
-            result = call_huawei_vision_api(provider_config, image_path, prompt, fewshot_images)
+        if provider == "maas":
+            result = call_maas_vision_api(provider_config, image_path, prompt, fewshot_images)
         elif provider == "aliyun":
             result = call_aliyun_vision_api(provider_config, image_path, prompt, fewshot_images)
         elif provider == "openai":
@@ -526,7 +526,7 @@ def handle_llm_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]
     Returns:
         工具执行结果
     """
-    provider = arguments.get('provider', 'huawei')
+    provider = arguments.get('provider', 'maas')
     provider_config = PROVIDERS_CONFIG.get(provider)
 
     if not provider_config:
@@ -538,8 +538,8 @@ def handle_llm_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]
     # 调用LLM API
     if ENV_MODE == "production":
         # 真实API调用
-        if provider == "huawei":
-            result = call_huawei_llm_api(provider_config, prompt, model)
+        if provider == "maas":
+            result = call_maas_llm_api(provider_config, prompt, model)
         elif provider == "aliyun":
             result = call_aliyun_llm_api(provider_config, prompt, model)
         elif provider == "openai":
@@ -583,13 +583,13 @@ def handle_pdf_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]
 
 # ========== API调用函数（真实实现） ==========
 
-def call_huawei_vision_api(config: Dict, image_path: str, prompt: str, fewshot_images: list) -> Dict:
-    """调用华为多模态API - 真实实现"""
+def call_maas_vision_api(config: Dict, image_path: str, prompt: str, fewshot_images: list) -> Dict:
+    """调用通用多模态API - 真实实现"""
     api_url = config.get('api_url')
     api_key = config.get('api_key')
     model = config.get('vision_model')
 
-    # TODO: 根据华为API文档实现真实调用
+    # TODO: 根据通用API文档实现真实调用
     # 示例请求结构
     headers = {
         'Authorization': f'Bearer {api_key}',
@@ -621,7 +621,7 @@ def call_huawei_vision_api(config: Dict, image_path: str, prompt: str, fewshot_i
             "confidence": 0.95
         }
     except Exception as e:
-        logger.error(f"华为API调用失败: {e}")
+        logger.error(f"通用API调用失败: {e}")
         raise
 
 
@@ -632,7 +632,7 @@ def call_aliyun_vision_api(config: Dict, image_path: str, prompt: str, fewshot_i
     model = config.get('vision_model')
 
     # TODO: 根据阿里云API文档实现真实调用
-    # 类似华为API的结构
+    # 类似通用API的结构
     headers = {
         'Authorization': f'Bearer {api_key}',
         'Content-Type': 'application/json'
@@ -698,8 +698,8 @@ def call_openai_vision_api(config: Dict, image_path: str, prompt: str, fewshot_i
         raise
 
 
-def call_huawei_llm_api(config: Dict, prompt: str, model: str) -> Dict:
-    """调用华为LLM API - 真实实现"""
+def call_maas_llm_api(config: Dict, prompt: str, model: str) -> Dict:
+    """调用通用LLM API - 真实实现"""
     api_url = config.get('api_url')
     api_key = config.get('api_key')
 
@@ -724,7 +724,7 @@ def call_huawei_llm_api(config: Dict, prompt: str, model: str) -> Dict:
             "text": result.get('choices', [{}])[0].get('message', {}).get('content', '')
         }
     except Exception as e:
-        logger.error(f"华为LLM API调用失败: {e}")
+        logger.error(f"通用LLM API调用失败: {e}")
         raise
 
 

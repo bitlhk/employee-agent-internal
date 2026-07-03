@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { defineConfig, loadEnv } from "vite";
-import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 import { imagetools } from "vite-imagetools";
 import { fontDisplayPlugin } from "./vite-font-display-plugin";
 
@@ -75,10 +74,6 @@ export default defineConfig(({ mode }) => {
     fontDisplayPlugin(), // 添加字体加载优化
     htmlEnvPlugin(env),
   ];
-  if (env.VITE_MANUS_RUNTIME === "1") {
-    plugins.splice(3, 0, vitePluginManusRuntime());
-  }
-
   return {
     plugins,
     resolve: {
@@ -182,11 +177,6 @@ export default defineConfig(({ mode }) => {
       port: parseInt(env.VITE_PORT || "5173"),
       strictPort: true, // 端口被占用时直接报错，不自动切换
       allowedHosts: [
-        ".manuspre.computer",
-        ".manus.computer",
-        ".manus-asia.computer",
-        ".manuscomputer.ai",
-        ".manusvm.computer",
         ".linggantest.top",
         "www.linggantest.top",
         "localhost",

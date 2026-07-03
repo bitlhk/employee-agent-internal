@@ -24,7 +24,7 @@ export type UseAgentChatOptions = {
   apiBase?: string;
   channel?: string;
   conversationId?: string;
-  isHermesRuntime?: boolean;
+  skipRuntimeRecovery?: boolean;
   memoryEnabled?: boolean;
   contextTurns?: number;
   runtimeMode?: "fast" | "plan";
@@ -85,7 +85,7 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatResult {
     apiBase = import.meta.env.VITE_API_URL || "",
     channel,
     conversationId,
-    isHermesRuntime = false,
+    skipRuntimeRecovery = false,
     memoryEnabled,
     contextTurns,
     runtimeMode = "fast",
@@ -388,7 +388,7 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatResult {
     };
     let keepStreamingAfterReturn = false;
     try {
-      if (!isHermesRuntime) {
+      if (!skipRuntimeRecovery) {
         try {
           activeTransportRef.current = "ws";
           const firstWsEvent = waitForFirstEvent("ws", WS_FIRST_EVENT_TIMEOUT_MS, controller.signal);
@@ -428,7 +428,7 @@ export function useAgentChat(options: UseAgentChatOptions): UseAgentChatResult {
         abortControllerRef.current = null;
       }
     }
-  }, [adoptId, armStreamingWatchdog, channel, clearStreamingWatchdog, contextTurns, conversationId, dispatchEvent, isHermesRuntime, memoryEnabled, now, runtimeMode, transports, waitForFirstEvent]);
+  }, [adoptId, armStreamingWatchdog, channel, clearStreamingWatchdog, contextTurns, conversationId, dispatchEvent, skipRuntimeRecovery, memoryEnabled, now, runtimeMode, transports, waitForFirstEvent]);
 
   const abort = useCallback((reason?: string) => {
     clearStreamingWatchdog();

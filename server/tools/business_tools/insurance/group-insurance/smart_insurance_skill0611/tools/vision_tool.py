@@ -49,13 +49,13 @@ class VisionTool:
         'quotation': 'vision_extract_quotation'
     }
 
-    def __init__(self, mcp_client: MCPClient, provider: str = 'huawei'):
+    def __init__(self, mcp_client: MCPClient, provider: str = 'maas'):
         """
         初始化多模态工具
 
         Args:
             mcp_client: MCP客户端
-            provider: 服务商（huawei/aliyun/openai/custom）
+            provider: 服务商（maas/aliyun/openai/custom）
         """
         self.mcp_client = mcp_client
         self.provider = provider

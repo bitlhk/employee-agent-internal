@@ -860,7 +860,6 @@ function isRecoverableHistoryMessages(messages: ChatHistoryMessage[]): boolean {
   if (firstText.includes("测试流式输出") || firstText.includes("测试前端流式输出")) return false;
   if (firstText.includes("测试文章") && firstText.includes("不少于")) return false;
   if (firstText.includes("沙箱验收")) return false;
-  if (firstText.includes("office-ppt-outline") && firstText.includes("smoke")) return false;
   return true;
 }
 

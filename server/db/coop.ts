@@ -579,7 +579,7 @@ function generateMockResult(params: {
     detail = `执行结果：
 - 已抽取 Q1 交易数据 3562 条
 - 识别异常模式 7 组，集中于 3 月 18-25 日
-- 数据来源：Hermes 团队脑 + AkShare API
+- 数据来源：团队知识库 + AkShare API
 - 置信度：92%`;
   } else if (groupName?.includes("工具") || groupName?.includes("市场") || groupName?.includes("股票")) {
     detail = `执行结果：

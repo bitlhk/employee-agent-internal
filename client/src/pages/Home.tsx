@@ -923,10 +923,10 @@ export default function Home() {
       setWebConversationId(makeConversationId());
     }
   }, [resolvedAdoptId, userStorageId]);
-  // lgh-* 是 Hermes，lgj-* 是 JiuwenClaw；二者都不走 OpenClaw WSS，直接走 HTTP SSE。
-  const isHermesRuntime = String(resolvedAdoptId || "").startsWith("lgh-");
+  // lgh-* 是历史归档实例，lgj-* 是 JiuwenClaw；二者都不走 OpenClaw WSS，直接走 HTTP SSE。
+  const isLegacyArchivedRuntime = String(resolvedAdoptId || "").startsWith("lgh-");
   const isJiuwenRuntime = String(resolvedAdoptId || "").startsWith("lgj-");
-  const isDirectHttpRuntime = isHermesRuntime || isJiuwenRuntime;
+  const isDirectHttpRuntime = isLegacyArchivedRuntime || isJiuwenRuntime;
 
   const { data: clawByAdoptId, isLoading: clawByAdoptLoading, error: clawByAdoptError } = trpc.claw.getByAdoptId.useQuery(
     { adoptId: resolvedAdoptId || "" },
@@ -1114,7 +1114,7 @@ export default function Home() {
     adoptId: resolvedAdoptId,
     channel: webConversationId ? "web" : undefined,
     conversationId: webConversationId || undefined,
-    isHermesRuntime: isDirectHttpRuntime,
+    skipRuntimeRecovery: isDirectHttpRuntime,
     memoryEnabled: lingxiaMemoryEnabled === "yes",
     contextTurns: lingxiaContextTurns,
     runtimeMode: chatRuntimeMode,
@@ -1318,7 +1318,7 @@ export default function Home() {
   }, [clawByAdoptId, clawByAdoptLoading, clawHealthLoading, isDirectHttpRuntime, resolvedAdoptId]);
 
   const refreshBackendWebSessions = useCallback(async (silent = false) => {
-    if (!resolvedAdoptId || !SESSION_INDEX_KEY || isHermesRuntime) return [];
+    if (!resolvedAdoptId || !SESSION_INDEX_KEY || isLegacyArchivedRuntime) return [];
     if (silent && activeLingxiaStreaming) {
       markClientLoadMetric("sessions", "skip", "聊天处理中，暂停后台历史同步");
       return webSessionsRef.current;
@@ -1413,10 +1413,10 @@ export default function Home() {
     } finally {
       if (shouldShowLoading && isCurrentRequest()) setWebSessionsLoading(false);
     }
-  }, [activeLingxiaStreaming, resolvedAdoptId, SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isHermesRuntime, isJiuwenRuntime, markClientLoadMetric]);
+  }, [activeLingxiaStreaming, resolvedAdoptId, SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isLegacyArchivedRuntime, isJiuwenRuntime, markClientLoadMetric]);
 
   useEffect(() => {
-    if (!resolvedAdoptId || !SESSION_INDEX_KEY || isHermesRuntime) return;
+    if (!resolvedAdoptId || !SESSION_INDEX_KEY || isLegacyArchivedRuntime) return;
     let cancelled = false;
     let timer: number | undefined;
     refreshBackendWebSessions(false)
@@ -1431,10 +1431,10 @@ export default function Home() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [resolvedAdoptId, SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isHermesRuntime, refreshBackendWebSessions]);
+  }, [resolvedAdoptId, SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isLegacyArchivedRuntime, refreshBackendWebSessions]);
 
   useEffect(() => {
-    if (!resolvedAdoptId || !SESSION_INDEX_KEY || isHermesRuntime) return;
+    if (!resolvedAdoptId || !SESSION_INDEX_KEY || isLegacyArchivedRuntime) return;
     const onFocus = () => void refreshBackendWebSessions(true).catch(() => {});
     const timer = window.setInterval(() => {
       void refreshBackendWebSessions(true).catch(() => {});
@@ -1444,7 +1444,7 @@ export default function Home() {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [isHermesRuntime, refreshBackendWebSessions, resolvedAdoptId, SESSION_INDEX_KEY]);
+  }, [isLegacyArchivedRuntime, refreshBackendWebSessions, resolvedAdoptId, SESSION_INDEX_KEY]);
 
   useEffect(() => {
     if (!SESSION_INDEX_KEY) return;
@@ -1462,7 +1462,7 @@ export default function Home() {
   }, [SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isJiuwenRuntime, refreshBackendWebSessions]);
 
   useEffect(() => {
-    if (isHermesRuntime || activeLingxiaStreaming || !webConversationId || activeLingxiaMsgs.length === 0) return;
+    if (isLegacyArchivedRuntime || activeLingxiaStreaming || !webConversationId || activeLingxiaMsgs.length === 0) return;
     const meaningfulMessages = activeLingxiaMsgs.filter((m: any) => normalizeSessionText(m.text || ""));
     if (meaningfulMessages.length === 0) return;
     const refreshKey = `${webConversationId}:${meaningfulMessages.length}`;
@@ -1472,7 +1472,7 @@ export default function Home() {
       void refreshBackendWebSessions().catch(() => {});
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [activeLingxiaMsgs, activeLingxiaStreaming, isHermesRuntime, refreshBackendWebSessions, webConversationId]);
+  }, [activeLingxiaMsgs, activeLingxiaStreaming, isLegacyArchivedRuntime, refreshBackendWebSessions, webConversationId]);
 
   useEffect(() => {
     if (!isDirectHttpRuntime) return;
@@ -2083,7 +2083,7 @@ export default function Home() {
     }
     if (conversationId === webConversationId) {
       const nextSession = next[0];
-      if (nextSession?.sessionKey && !isHermesRuntime) {
+      if (nextSession?.sessionKey && !isLegacyArchivedRuntime) {
         const apiBase = import.meta.env.VITE_API_URL || "";
         try {
           const response = await fetchWithTimeout(`${apiBase}/api/claw/chat-history/messages?adoptId=${encodeURIComponent(resolvedAdoptId)}&sessionKey=${encodeURIComponent(nextSession.sessionKey)}`, {
@@ -2455,8 +2455,8 @@ export default function Home() {
       const controller = new AbortController();
       lingxiaStreamAbortRef.current = controller;
       // ── WSS 优先路径（仅 OpenClaw runtime） ──
-      // Hermes/JiuwenClaw 跳过 WSS 尝试，直接走 HTTP SSE（server 侧按 prefix 分叉）。
-      const runtimeName = isJiuwenRuntime ? "jiuwenclaw" : isHermesRuntime ? "hermes" : "openclaw";
+      // 历史归档实例/JiuwenClaw 跳过 WSS 尝试，直接走 HTTP SSE（server 侧按 prefix 分叉）。
+      const runtimeName = isJiuwenRuntime ? "jiuwenclaw" : isLegacyArchivedRuntime ? "legacy_archived" : "openclaw";
       let wsClient = ENABLE_OPENCLAW_WS_CHAT && !isDirectHttpRuntime ? wsClientRef.current : null;
       if (!wsClient && ENABLE_OPENCLAW_WS_CHAT && !isDirectHttpRuntime && resolvedAdoptId && webConversationId) {
         wsClient = new RuntimeWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
@@ -3412,8 +3412,8 @@ export default function Home() {
     const items: Array<{ key: string; label: string; tone?: "ok" | "warning" | "muted" }> = [];
     if (isJiuwenRuntime) {
       items.push({ key: "jiuwenswarm", label: "SSE 已连接", tone: "ok" });
-    } else if (isHermesRuntime) {
-      items.push({ key: "hermes", label: "SSE 已连接", tone: "ok" });
+    } else if (isLegacyArchivedRuntime) {
+      items.push({ key: "legacy_archived", label: "SSE 已连接", tone: "ok" });
     } else {
       const readiness = clawHealthSummary?.readiness;
       if (readiness?.status === "ready" || readiness?.ok) {
@@ -3443,7 +3443,7 @@ export default function Home() {
     clawHealthError,
     clawHealthLoading,
     clawHealthSummary,
-    isHermesRuntime,
+    isLegacyArchivedRuntime,
     isJiuwenRuntime,
     latestContextMessage,
     wsConnected,
@@ -3558,7 +3558,7 @@ export default function Home() {
               sessionsLoading={webSessionsLoading && webSessions.length === 0}
               footer={(
                 <SidebarFooter
-                  version={isJiuwenRuntime ? jiuwenswarmVersion : isHermesRuntime ? "Hermes v0.10.0" : openclawVersion}
+                  version={isJiuwenRuntime ? jiuwenswarmVersion : isLegacyArchivedRuntime ? "Legacy runtime" : openclawVersion}
                   expiryText={lingxiaExpiryInfo.text}
                   expiryColor={lingxiaExpiryInfo.color}
                   collapsed={sidebarCollapsed}

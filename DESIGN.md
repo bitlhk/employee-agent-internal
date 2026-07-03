@@ -84,8 +84,8 @@
 ```json
 {
   "accentColor": "#C7000B",
-  "logo": "/uploads/brand/icbc-logo.svg",
-  "name": "工银Claw"
+  "logo": "/images/workforce-agent.svg",
+  "name": "岗位智能体平台"
 }
 ```
 

@@ -10,7 +10,7 @@ import type { CronJobInput, CronProviderHandle as SharedCronProviderHandle, Cron
 const openClawCronProvider = new OpenClawCronProvider();
 const jiuwenClawCronProvider = new JiuwenClawCronProvider();
 
-function isHermesAdopt(adoptId: string): boolean {
+function isLegacyArchivedAdopt(adoptId: string): boolean {
   return String(adoptId || "").startsWith("lgh-");
 }
 
@@ -142,8 +142,8 @@ function providerError(error: any) {
   });
 }
 
-function hermesArchivedError() {
-  return Object.assign(new Error("Hermes runtime has been archived"), { status: 410 });
+function archivedRuntimeError() {
+  return Object.assign(new Error("Legacy runtime has been archived"), { status: 410 });
 }
 
 export async function listCronJobsForClaw(claw: any, options?: {
@@ -160,7 +160,7 @@ export async function listCronJobsForClaw(claw: any, options?: {
   const enabled = String(options?.enabled || "all");
   const scheduleKind = String(options?.scheduleKind || "all");
 
-  if (isHermesAdopt(adoptId)) throw hermesArchivedError();
+  if (isLegacyArchivedAdopt(adoptId)) throw archivedRuntimeError();
 
   if (isJiuwenClawAdoptId(adoptId)) {
     const listed = await jiuwenClawCronProvider.listJobs(toJiuwenClawHandle(claw));
@@ -192,7 +192,7 @@ export async function listCronRunsForClaw(claw: any, options?: {
   scope?: string;
 }) {
   const adoptId = String(claw?.adoptId || "").trim();
-  if (isHermesAdopt(adoptId)) throw hermesArchivedError();
+  if (isLegacyArchivedAdopt(adoptId)) throw archivedRuntimeError();
 
   const limit = Math.max(1, Math.min(200, Number(options?.limit || 20)));
   const offset = Math.max(0, Number(options?.offset || 0));
@@ -227,7 +227,7 @@ export function registerCronRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       if (isJiuwenClawAdoptId(adoptId)) {
         const listed = await jiuwenClawCronProvider.listJobs(toJiuwenClawHandle(claw));
@@ -267,7 +267,7 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
       if (isJiuwenClawAdoptId(adoptId)) return res.json({ runtime: "jiuwenclaw", capabilities: jiuwenClawCronProvider.capabilities() });
       return res.json({ runtime: "openclaw", capabilities: openClawCronProvider.capabilities() });
     } catch (e: any) {
@@ -288,7 +288,7 @@ export function registerCronRoutes(app: express.Express) {
       const enabled = String(req.query.enabled || "all");
       const scheduleKind = String(req.query.scheduleKind || "all");
 
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       if (isJiuwenClawAdoptId(adoptId)) {
         const listed = await jiuwenClawCronProvider.listJobs(toJiuwenClawHandle(claw));
@@ -322,7 +322,7 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       const limit = Math.max(1, Math.min(200, Number(req.query.limit || 20)));
       const offset = Math.max(0, Number(req.query.offset || 0));
@@ -378,7 +378,7 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
       if (isJiuwenClawAdoptId(adoptId)) {
         const result = await jiuwenClawCronProvider.previewRuns({
           adoptId,
@@ -412,7 +412,7 @@ export function registerCronRoutes(app: express.Express) {
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
 
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       if (isJiuwenClawAdoptId(adoptId)) {
         const handle = toJiuwenClawHandle(claw);
@@ -480,7 +480,7 @@ export function registerCronRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       if (isJiuwenClawAdoptId(adoptId)) {
         const result = await jiuwenClawCronProvider.updateJob(toJiuwenClawHandle(claw), id, patch);
@@ -513,7 +513,7 @@ export function registerCronRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       if (isJiuwenClawAdoptId(adoptId)) {
         const result = await jiuwenClawCronProvider.runJobNow(toJiuwenClawHandle(claw), id);
@@ -556,7 +556,7 @@ export function registerCronRoutes(app: express.Express) {
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
 
-      if (isHermesAdopt(adoptId)) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
+      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 
       if (isJiuwenClawAdoptId(adoptId)) {
         const result = await jiuwenClawCronProvider.removeJob(toJiuwenClawHandle(claw), id);
