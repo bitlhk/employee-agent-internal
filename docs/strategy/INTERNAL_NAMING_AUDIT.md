@@ -108,22 +108,7 @@ setup.sh 末尾 “岗位智能体平台初始化完成”
 
 ### A5. Financial Harness 本地命名
 
-示例：
-
-```text
-tools/financial-harness-executor.py
-  Lingxia Financial Harness API
-  /home/ubuntu/.lingxia/hermes-runtime-skills
-  .lingxia-policies.json
-  LINGXIA_FIN_HARNESS_ENDPOINT
-```
-
-建议：
-
-- 这是新加坡 Hermes 试验场，不建议马上重命名路径。
-- 可以先在文档里把 `Lingxia Financial Harness` 改为 `Financial Agent Harness`。
-- 环境变量可新增 `FIN_HARNESS_*`，保留 `LINGXIA_FIN_HARNESS_*` fallback。
-- `.lingxia-policies.json` 属于 runtime policy 文件，改名要同步 executor、reconcile、测试脚本，建议单独小 PR。
+已清理。旧 Hermes / Financial Harness 实验工具已从主仓移除，不再作为发布代码的一部分。
 
 ---
 
