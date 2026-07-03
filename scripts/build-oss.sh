@@ -109,7 +109,7 @@ fi
 cd "$OUT_DIR"
 git init
 git add -A
-git commit -m "feat: initial open-source release of Workforce Agent Platform platform"
+git commit -m "feat: initial open-source release of Workforce Agent Platform"
 
 echo ""
 echo "✅ 开源版已生成: $OUT_DIR"

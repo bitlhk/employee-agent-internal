@@ -13,7 +13,7 @@ describe("router helper model fallbacks", () => {
     vi.stubEnv("CLAW_AGENT_MODEL", "");
 
     expect(getFrontendModelFallbacks().map((model) => model.id)).toEqual([
-      "modelarts-maas/glm-5.1",
+      "modelarts-maas/glm-5.2",
       "maas/deepseek-v4-flash",
     ]);
   });

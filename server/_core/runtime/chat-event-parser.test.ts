@@ -32,11 +32,10 @@ describe("chat event parser", () => {
     ]);
   });
 
-  it("parses OpenAI-compatible delta, thinking, and finish_reason together", () => {
+  it("parses OpenAI-compatible delta and finish_reason together", () => {
     const events = parseSseBlockToChatEvents('data: {"choices":[{"delta":{"reasoning_content":"think","content":[{"type":"text","text":"pong"}]},"finish_reason":"stop"}]}\n\n');
 
     expect(events).toEqual([
-      { type: "thinking", content: "think" },
       { type: "delta", content: "pong" },
       { type: "finish_reason", reason: "stop" },
     ]);

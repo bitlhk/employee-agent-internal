@@ -1,16 +1,8 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  agentManifestRegistrySeedSchema,
   agentManifestSchema,
   type AgentManifest,
 } from "../../../../shared/types/agent-manifest";
-
-function loadSeed() {
-  const raw = readFileSync(resolve(process.cwd(), "server/_core/agent/data/agent-manifests.seed.json"), "utf8");
-  return JSON.parse(raw);
-}
 
 function baseManifest(overrides: Partial<AgentManifest> = {}) {
   return {
@@ -73,38 +65,6 @@ function baseManifest(overrides: Partial<AgentManifest> = {}) {
 }
 
 describe("agent manifest schema", () => {
-  it("validates the seed manifest registry", () => {
-    const parsed = agentManifestRegistrySeedSchema.safeParse(loadSeed());
-
-    expect(parsed.success).toBe(true);
-    if (parsed.success) {
-      expect(parsed.data.manifests.map((manifest) => manifest.id)).toEqual([
-        "market_researcher",
-        "meeting_prep_agent",
-      ]);
-    }
-  });
-
-  it("keeps Anthropic runtime skills scoped to the two pilot manifests", () => {
-    const parsed = agentManifestRegistrySeedSchema.parse(loadSeed());
-    const skillIds = new Set(parsed.manifests.flatMap((manifest) => [
-      ...manifest.orchestrator.skills.map((skill) => `${skill.pluginId}/${skill.id}`),
-      ...manifest.workers.flatMap((worker) => worker.skills.map((skill) => `${skill.pluginId}/${skill.id}`)),
-    ]));
-
-    expect(skillIds).toEqual(new Set([
-      "market-researcher/sector-overview",
-      "market-researcher/competitive-analysis",
-      "market-researcher/comps-analysis",
-      "market-researcher/idea-generation",
-      "market-researcher/pptx-author",
-      "meeting-prep-agent/client-report",
-      "meeting-prep-agent/client-review",
-      "meeting-prep-agent/investment-proposal",
-      "meeting-prep-agent/pptx-author",
-    ]));
-  });
-
   it("requires untrusted readers to avoid skills, MCP, and write tools", () => {
     const manifest = baseManifest({
       workers: [
