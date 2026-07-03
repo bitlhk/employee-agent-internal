@@ -1244,25 +1244,13 @@ Implementation note (2026-06-18):
 
 | 项 | 目标 | 验收 | 状态 |
 |---|---|---|---|
-| P7 smoke 脚本 | 检查 baseline、DB grants、resolver、HTTP 审计入口、调用数聚合 | `pnpm run smoke:p7-role-permissions` 本地/上海均通过 | 🔵 |
+| P7 回归检查 | 检查 baseline、DB grants、resolver、HTTP 审计入口、调用数聚合 | 历史 smoke harness 已移出发布仓，必要时在外置归档环境手动执行 | 🔵 |
 | 回归入口文档化 | 升级 OpenClaw/jiuwenswarm/EA 后有固定验收命令 | 文档记录脚本用途、参数、通过标准 | 🔵 |
 
 Implementation note (2026-06-18):
 
-- 新增 `scripts/p7-role-permissions-smoke.ts` 和 npm script
-  `smoke:p7-role-permissions`。脚本检查：
-  `general-assistant` 默认岗位、默认 runtime `jiuwenswarm`、6 个 MVP 岗位、
-  seed grants 已物化到 DB、通用岗位无业务 MCP、财富经理/保险顾问/投顾分析关键 MCP 与
-  Skill grant 可解析。
-- 默认会对 `/api/claw/audit/mcp-tool` 写入一次 `wealth_assistant_customer`
-  smoke 事件，并验证 `listMcpInvocationCounts()` 能聚合到调用数。无服务或只想查 DB 时可加
-  `--skip-http`。
-- 建议在每次同步上海、升级 OpenClaw/jiuwenswarm、调整岗位 baseline 或重跑 seed sync 后执行：
-  `pnpm run smoke:p7-role-permissions -- --base-url=http://127.0.0.1:5180`。
-- 如果目标环境的项目 `.env` 与 PM2 进程环境不一致（例如上海 PM2 `linggan-claw`
-  使用远端 `finance_ai`，项目根 `.env` 仍是旧 localhost），可用
-  `--pm2-env-id=<pm2 id>` 从正在运行的 PM2 进程读取 `DATABASE_URL`：
-  `pnpm run smoke:p7-role-permissions -- --base-url=http://127.0.0.1:5180 --pm2-env-id=25`。
+- 早期曾用独立 smoke harness 覆盖岗位 baseline、DB grants、resolver、HTTP 审计入口和调用数聚合。
+- 该 harness 已移出发布仓，避免把一次性环境验证脚本带入开源/交付代码。后续如需恢复，应放在独立测试仓或本机归档环境中维护。
 
 ### P-Gov — 企业治理底线（进银行 POC 前必补）｜状态 ⬜
 

@@ -87,19 +87,7 @@ client/src/index.css
 
 ### A3. 测试目录与测试报告命名
 
-示例：
-
-```text
-tests/smoke/employee-agent/
-docs/testing/LINGXIA_UPGRADE_SMOKE.md
-scripts/smoke/lingxia-smoke.sh
-```
-
-建议：
-
-- 目录可迁移到 `tests/smoke/employee-agent/`。
-- 保留旧入口脚本一段时间，内部转发到新目录，避免 Claude Code Chrome / IAB 里的旧命令失效。
-- 历史 reports 不必批量改名。
+正式单测保留在代码仓，历史 smoke harness 和浏览器验证脚本已移出发布仓，仅在本机外置归档中保留。
 
 ### A4. 注释和文档残留
 
@@ -390,7 +378,7 @@ OpenClaw gateway / workspace / model
 1. 改注释和脚本文案残留。
 2. 新增 `useAgentChat` / `AgentChatMessage` alias，不强制大规模 rename。
 3. Financial Harness 文案去 `Lingxia`，但路径和 env 先兼容。
-4. smoke 主目录已迁移到 `tests/smoke/employee-agent/`，旧 `tests/smoke/lingxia/` 保留 wrapper 入口。
+4. smoke harness 已移出发布仓；正式回归以 `pnpm test` 和核心构建检查为准。
 
 暂时不要动：
 

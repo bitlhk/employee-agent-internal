@@ -21,7 +21,6 @@
     "db:backup-users": "tsx scripts/backup-user-data.ts",
     "stats:backfill": "tsx scripts/visit-stats-backfill.ts",
     "stats:reconcile": "tsx scripts/visit-stats-reconcile.ts",
-    "smoke:p7-role-permissions": "tsx scripts/p7-role-permissions-smoke.ts",
     "compress:images": "tsx scripts/compress-images.ts",
     "convert:webp": "tsx scripts/convert-to-webp.ts"
   },

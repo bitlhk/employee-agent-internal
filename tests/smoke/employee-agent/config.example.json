@@ -1,7 +1,0 @@
-{
-  "baseUrl": "http://127.0.0.1:15180",
-  "adoptId": "lgc-ofnmjm4joj",
-  "browserChannel": "chrome",
-  "headed": false,
-  "reportDir": "tests/smoke/employee-agent/reports"
-}
