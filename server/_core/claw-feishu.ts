@@ -23,6 +23,13 @@ import type {
   ChannelPayload,
   Result,
 } from "@shared/types/cron";
+import {
+  getChannelBindingByAdopt,
+  getChannelBindingByExternalUser,
+  removeChannelBindingByAdopt,
+  removeChannelBindingsForExternalUser,
+  upsertChannelBinding,
+} from "../db/channel-bindings";
 
 const FEISHU_ACCOUNTS_URL = "https://accounts.feishu.cn";
 const LARK_ACCOUNTS_URL = "https://accounts.larksuite.com";
@@ -123,7 +130,7 @@ function savePendingCodes(codes: Record<string, FeishuBridgeBindCode>) {
   writeFileSync(bridgeCodesPath(), JSON.stringify(codes, null, 2), "utf-8");
 }
 
-function loadBridgeBinding(adoptId: string): FeishuBridgeBinding | null {
+function loadBridgeBindingFile(adoptId: string): FeishuBridgeBinding | null {
   try {
     const p = bridgeBindingPath(adoptId);
     return existsSync(p) ? JSON.parse(readFileSync(p, "utf-8")) : null;
@@ -132,7 +139,7 @@ function loadBridgeBinding(adoptId: string): FeishuBridgeBinding | null {
   }
 }
 
-function loadBridgeBindings(): FeishuBridgeBinding[] {
+function loadBridgeBindingFiles(): FeishuBridgeBinding[] {
   try {
     return readdirSync(FEISHU_BRIDGE_DIR)
       .filter((name) => name.endsWith(".json") && name !== "pending-codes.json")
@@ -149,11 +156,11 @@ function loadBridgeBindings(): FeishuBridgeBinding[] {
   }
 }
 
-function saveBridgeBinding(binding: FeishuBridgeBinding) {
+function saveBridgeBindingFile(binding: FeishuBridgeBinding) {
   writeFileSync(bridgeBindingPath(binding.adoptId), JSON.stringify(binding, null, 2), "utf-8");
 }
 
-function removeBridgeBinding(adoptId: string) {
+function removeBridgeBindingFile(adoptId: string) {
   try {
     unlinkSync(bridgeBindingPath(adoptId));
   } catch {
@@ -161,14 +168,110 @@ function removeBridgeBinding(adoptId: string) {
   }
 }
 
-function removeBridgeBindingsForOpenId(openId: string, exceptAdoptId?: string) {
+function removeBridgeBindingFilesForOpenId(openId: string, exceptAdoptId?: string) {
   const normalizedOpenId = String(openId || "").trim();
   if (!normalizedOpenId) return;
-  for (const binding of loadBridgeBindings()) {
+  for (const binding of loadBridgeBindingFiles()) {
     if (binding.openId === normalizedOpenId && binding.adoptId !== exceptAdoptId) {
-      removeBridgeBinding(binding.adoptId);
+      removeBridgeBindingFile(binding.adoptId);
     }
   }
+}
+
+function toBridgeBindingFromDb(row: any): FeishuBridgeBinding {
+  const boundAt =
+    row?.boundAt instanceof Date
+      ? row.boundAt.toISOString()
+      : row?.boundAt
+        ? new Date(row.boundAt).toISOString()
+        : new Date().toISOString();
+  return {
+    adoptId: String(row.adoptId || ""),
+    userId: Number(row.userId || 0),
+    openId: String(row.externalUserId || ""),
+    chatId: String(row.externalChatId || ""),
+    channelId: String(row.externalChannelId || "feishu"),
+    messageId: row.sourceMessageId ? String(row.sourceMessageId) : undefined,
+    boundAt,
+  };
+}
+
+async function saveBridgeBinding(binding: FeishuBridgeBinding): Promise<void> {
+  try {
+    await upsertChannelBinding({
+      channel: "feishu",
+      adoptId: binding.adoptId,
+      userId: binding.userId,
+      externalUserId: binding.openId,
+      externalChatId: binding.chatId,
+      externalChannelId: binding.channelId || "feishu",
+      sourceMessageId: binding.messageId || null,
+      boundAt: binding.boundAt ? new Date(binding.boundAt) : new Date(),
+    });
+  } catch (error: any) {
+    console.warn("[FEISHU-BRIDGE] DB binding save failed, writing file backup only", error?.message || error);
+  }
+  saveBridgeBindingFile(binding);
+}
+
+async function loadBridgeBinding(adoptId: string): Promise<FeishuBridgeBinding | null> {
+  try {
+    const row = await getChannelBindingByAdopt("feishu", adoptId);
+    if (row) return toBridgeBindingFromDb(row);
+  } catch (error: any) {
+    console.warn("[FEISHU-BRIDGE] DB binding lookup failed, falling back to file", error?.message || error);
+  }
+
+  const fileBinding = loadBridgeBindingFile(adoptId);
+  if (fileBinding?.adoptId && fileBinding.openId) {
+    try {
+      await saveBridgeBinding(fileBinding);
+    } catch (error: any) {
+      console.warn("[FEISHU-BRIDGE] DB binding backfill failed", error?.message || error);
+    }
+  }
+  return fileBinding;
+}
+
+async function loadBridgeBindingByOpenId(openId: string): Promise<FeishuBridgeBinding | null> {
+  const normalizedOpenId = String(openId || "").trim();
+  if (!normalizedOpenId) return null;
+  try {
+    const row = await getChannelBindingByExternalUser("feishu", normalizedOpenId);
+    if (row) return toBridgeBindingFromDb(row);
+  } catch (error: any) {
+    console.warn("[FEISHU-BRIDGE] DB external binding lookup failed, falling back to file", error?.message || error);
+  }
+
+  const fileBinding = loadBridgeBindingFiles().find((item) => item.openId === normalizedOpenId) || null;
+  if (fileBinding?.adoptId && fileBinding.openId) {
+    try {
+      await saveBridgeBinding(fileBinding);
+    } catch (error: any) {
+      console.warn("[FEISHU-BRIDGE] DB external binding backfill failed", error?.message || error);
+    }
+  }
+  return fileBinding;
+}
+
+async function removeBridgeBinding(adoptId: string): Promise<void> {
+  try {
+    await removeChannelBindingByAdopt("feishu", adoptId);
+  } catch (error: any) {
+    console.warn("[FEISHU-BRIDGE] DB binding removal failed", error?.message || error);
+  }
+  removeBridgeBindingFile(adoptId);
+}
+
+async function removeBridgeBindingsForOpenId(openId: string, exceptAdoptId?: string): Promise<void> {
+  const normalizedOpenId = String(openId || "").trim();
+  if (!normalizedOpenId) return;
+  try {
+    await removeChannelBindingsForExternalUser("feishu", normalizedOpenId, exceptAdoptId);
+  } catch (error: any) {
+    console.warn("[FEISHU-BRIDGE] DB external binding removal failed", error?.message || error);
+  }
+  removeBridgeBindingFilesForOpenId(normalizedOpenId, exceptAdoptId);
 }
 
 function randomBindCode(): string {
@@ -315,15 +418,15 @@ function toBindHandle(userId: number, account: FeishuAccount): ChannelBindHandle
   };
 }
 
-export function getFeishuStatus(adoptId: string): {
+export async function getFeishuStatus(adoptId: string): Promise<{
   bound: boolean;
   targetLabel?: string;
   domain?: string;
   bidirectionalBound?: boolean;
   bidirectionalTargetLabel?: string;
-} {
+}> {
   const account = loadAccount(adoptId);
-  const bridge = loadBridgeBinding(adoptId);
+  const bridge = await loadBridgeBinding(adoptId);
   return {
     bound: !!(account?.appId && account?.appSecret),
     targetLabel: bridge?.openId || account?.openId || "",
@@ -484,7 +587,7 @@ export async function sendFeishuMessage(adoptId: string, text: string): Promise<
 }
 
 export async function sendFeishuBridgeMessage(adoptId: string, text: string): Promise<{ ok: boolean; error?: string }> {
-  const binding = loadBridgeBinding(adoptId);
+  const binding = await loadBridgeBinding(adoptId);
   if (!binding?.openId) {
     return { ok: false, error: "feishu bridge not bound" };
   }
@@ -525,7 +628,7 @@ function maskRouteTarget(value?: string): string {
 
 export async function unbindFeishu(adoptId: string): Promise<void> {
   removeAccount(adoptId);
-  removeBridgeBinding(adoptId);
+  await removeBridgeBinding(adoptId);
 }
 
 export function registerFeishuRoutes(app: express.Express) {
@@ -535,7 +638,7 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      res.json(getFeishuStatus(adoptId));
+      res.json(await getFeishuStatus(adoptId));
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "feishu status failed" });
     }
@@ -620,7 +723,7 @@ export function registerFeishuRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      const feishuBinding = loadBridgeBinding(adoptId);
+      const feishuBinding = await loadBridgeBinding(adoptId);
       const feishuSender = loadBridgeSenderAccount();
       const feishuConfigured = !!(feishuSender?.appId && feishuSender?.appSecret);
       const feishuBound = !!feishuBinding?.openId;
@@ -720,7 +823,7 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const binding = loadBridgeBinding(adoptId);
+      const binding = await loadBridgeBinding(adoptId);
       res.json({
         bound: !!binding?.openId,
         targetLabel: binding?.openId || "",
@@ -755,7 +858,7 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      removeBridgeBinding(adoptId);
+      await removeBridgeBinding(adoptId);
       res.json({ ok: true });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "feishu bridge unbind failed" });
@@ -784,8 +887,8 @@ export function registerFeishuRoutes(app: express.Express) {
         return res.status(404).json({ ok: false, error: "code not found", reply: "绑定码无效或已过期，请回到 EA 频道页重新生成。" });
       }
 
-      removeBridgeBindingsForOpenId(openId, pending.adoptId);
-      saveBridgeBinding({
+      await removeBridgeBindingsForOpenId(openId, pending.adoptId);
+      await saveBridgeBinding({
         adoptId: pending.adoptId,
         userId: pending.userId,
         openId,
@@ -817,7 +920,7 @@ export function registerFeishuRoutes(app: express.Express) {
       const chatId = String(req.body?.chat_id || req.body?.chatId || req.body?.feishu_chat_id || "").trim();
       if (!openId) return res.status(400).json({ ok: false, error: "open_id required" });
 
-      const binding = loadBridgeBindings().find((item) => item.openId === openId);
+      const binding = await loadBridgeBindingByOpenId(openId);
       if (!binding) {
         return res.json({
           ok: true,

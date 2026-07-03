@@ -21,7 +21,7 @@ export async function getBoundChannelsForAdopt(adoptId: string): Promise<BoundCh
     });
   }
 
-  const feishu = getFeishuStatus(adoptId);
+  const feishu = await getFeishuStatus(adoptId);
   if (feishu.bound) {
     channels.push({
       channelId: "feishu",

@@ -805,6 +805,32 @@ export const agentTasks = mysqlTable("agent_tasks", {
 export type AgentTask = typeof agentTasks.$inferSelect;
 export type InsertAgentTask = typeof agentTasks.$inferInsert;
 
+// ── External channel bindings ──
+export const channelBindings = mysqlTable("channel_bindings", {
+  id: int("id").autoincrement().primaryKey(),
+  channel: varchar("channel", { length: 32 }).notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  externalUserId: varchar("external_user_id", { length: 128 }).notNull(),
+  externalChatId: varchar("external_chat_id", { length: 128 }),
+  externalChannelId: varchar("external_channel_id", { length: 64 }),
+  sourceMessageId: varchar("source_message_id", { length: 128 }),
+  status: mysqlEnum("status", ["active", "disabled"]).notNull().default("active"),
+  metadataJson: text("metadata_json"),
+  boundAt: timestamp("bound_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  adoptIdx: index("idx_channel_bindings_adopt").on(table.adoptId),
+  externalIdx: index("idx_channel_bindings_external").on(table.externalUserId),
+  channelStatusIdx: index("idx_channel_bindings_channel_status").on(table.channel, table.status),
+  uniqAdoptChannel: uniqueIndex("uk_channel_bindings_adopt").on(table.channel, table.adoptId),
+  uniqExternalChannel: uniqueIndex("uk_channel_bindings_external").on(table.channel, table.externalUserId),
+}));
+
+export type ChannelBinding = typeof channelBindings.$inferSelect;
+export type InsertChannelBinding = typeof channelBindings.$inferInsert;
+
 // ── 技能市场 ──
 export const skillMarketplace = mysqlTable("skill_marketplace", {
   id:            int("id").autoincrement().primaryKey(),

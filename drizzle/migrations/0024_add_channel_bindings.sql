@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS `channel_bindings` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `channel` varchar(32) NOT NULL,
+  `adopt_id` varchar(64) NOT NULL,
+  `user_id` int NOT NULL,
+  `external_user_id` varchar(128) NOT NULL,
+  `external_chat_id` varchar(128) DEFAULT NULL,
+  `external_channel_id` varchar(64) DEFAULT NULL,
+  `source_message_id` varchar(128) DEFAULT NULL,
+  `status` enum('active','disabled') NOT NULL DEFAULT 'active',
+  `metadata_json` text DEFAULT NULL,
+  `bound_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_channel_bindings_adopt` (`channel`, `adopt_id`),
+  UNIQUE KEY `uk_channel_bindings_external` (`channel`, `external_user_id`),
+  KEY `idx_channel_bindings_adopt` (`adopt_id`),
+  KEY `idx_channel_bindings_external` (`external_user_id`),
+  KEY `idx_channel_bindings_channel_status` (`channel`, `status`)
+);

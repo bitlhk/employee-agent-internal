@@ -200,9 +200,9 @@ async function getDesktopUserClaw(user: DesktopUser) {
   return null;
 }
 
-function listDesktopChannels(adoptId: string): { channels: DesktopChannelStatus[] } {
+async function listDesktopChannels(adoptId: string): Promise<{ channels: DesktopChannelStatus[] }> {
   const weixin = getWeixinStatus(adoptId);
-  const feishu = getFeishuStatus(adoptId);
+  const feishu = await getFeishuStatus(adoptId);
 
   return {
     channels: [
@@ -1444,7 +1444,7 @@ export function registerDesktopRoutes(app: express.Express) {
     try {
       const claw = await getDesktopUserClaw(user);
       if (!claw) return res.status(404).json({ error: "no agent assigned" });
-      res.json(listDesktopChannels(claw.adoptId));
+      res.json(await listDesktopChannels(claw.adoptId));
     } catch (error) {
       res.status(500).json({
         error:
