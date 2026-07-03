@@ -1,7 +1,0 @@
-node_modules/
-*.log
-DerivedData/
-ios/App/Pods/
-ios/App/Podfile.lock
-ios/App/build/
-ios/.xcode.env.local

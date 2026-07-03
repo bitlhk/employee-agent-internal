@@ -67,7 +67,6 @@
 | 数据库 | MySQL 8.0, Drizzle ORM |
 | 运行时 | JiuwenSwarm；OpenClaw Gateway；HTTP Adapter 可选 |
 | 进程管理 | PM2 |
-| 移动端 | `apps/ios` 提供 Capacitor iOS 壳，可连接线上 Web 服务 |
 
 ## 快速部署
 

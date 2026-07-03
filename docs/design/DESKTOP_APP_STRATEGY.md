@@ -312,7 +312,6 @@ Current platform strengths:
 - Backend already owns user identity, agent ownership, sessions, skills, MCP/tool policy, audit, and collaboration.
 - OpenClaw integration already supports multiple providers and gateway-based execution.
 - Managed browser and other platform tools are being moved toward governed tools instead of unrestricted sandbox network.
-- Mobile shell already exists under `apps/ios`, which proves a remote-shell model can work.
 
 Current cloud limitation:
 
@@ -469,7 +468,7 @@ Reasons:
 - It can reuse the existing React UI with minimal redesign.
 - The team can prototype quickly.
 
-Capacitor is useful for mobile, but it is not the right primary desktop shell.
+Mobile shells should live outside this repository unless they become an actively maintained product surface.
 
 ## Proposed Repository Layout
 
