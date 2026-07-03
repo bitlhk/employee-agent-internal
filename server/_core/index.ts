@@ -46,6 +46,7 @@ import { registerChatStreamRoutes } from "./claw-chat";
 import { registerRecoverRoutes } from "./claw-recover";
 import { registerCoopUploadRoutes } from "./coop-upload";
 import { registerEaSessionViewRoutes } from "./ea-session-view";
+import { registerEaAssistantRoutes } from "./ea-assistant-routes";
 import { registerWSProxy } from "./claw-ws-proxy";
 import { registerIframeRoutes } from "./claw-iframe";
 import { registerMiscRoutes } from "./claw-misc";
@@ -344,6 +345,7 @@ async function startServer() {
   registerRecoverRoutes(app);
   registerCoopUploadRoutes(app);
   registerEaSessionViewRoutes(app);
+  registerEaAssistantRoutes(app);
   registerWSProxy(server);
   registerDesktopWSProxy(server);
   registerIframeRoutes(app);

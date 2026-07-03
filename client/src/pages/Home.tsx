@@ -133,6 +133,7 @@ type WebChatSessionRecord = {
   sessionId?: string;
   title: string;
   customTitle?: string;
+  autoTitle?: boolean;
   preview: string;
   searchText?: string;
   messageCount: number;
@@ -330,6 +331,7 @@ function mergeWebSessionRecords(local: WebChatSessionRecord[], remote: WebChatSe
     const previousUpdatedAt = Number(previous?.updatedAt || 0);
     const localMeta = {
       customTitle: previous?.customTitle || item.customTitle,
+      autoTitle: Boolean(previous?.autoTitle || item.autoTitle),
       pinnedAt: previous?.pinnedAt || item.pinnedAt,
     };
     if (!previous || itemUpdatedAt >= previousUpdatedAt) {
@@ -1154,6 +1156,7 @@ export default function Home() {
   const [webSessionsLoading, setWebSessionsLoading] = useState(false);
   const webSessionsRef = useRef<WebChatSessionRecord[]>([]);
   const backendSessionsRequestSeqRef = useRef(0);
+  const autoSessionTitleRequestRef = useRef<Record<string, string>>({});
   const restoreConversationRequestSeqRef = useRef(0);
   const lastBackendHistoryRefreshRef = useRef("");
   const [cachedClawStatus, setCachedClawStatus] = useState<string | null>(null);
@@ -1311,6 +1314,8 @@ export default function Home() {
           uiByConversation.set(item.conversationId, {
             ...previous,
             customTitle: item.customTitle || previous?.customTitle,
+            autoTitle: Boolean(item.autoTitle || previous?.autoTitle),
+            title: item.autoTitle ? item.title : previous?.title,
             pinnedAt: item.pinnedAt || previous?.pinnedAt,
           } as WebChatSessionRecord);
         }
@@ -1319,6 +1324,8 @@ export default function Home() {
           return {
             ...item,
             customTitle: ui?.customTitle,
+            title: ui?.autoTitle && ui.title ? ui.title : item.title,
+            autoTitle: ui?.autoTitle,
             pinnedAt: ui?.pinnedAt,
             updatedAt: Number(item.sourceUpdatedAt || item.updatedAt || 0) || item.updatedAt,
             sortUpdatedAt: Number(item.sourceUpdatedAt || item.sortUpdatedAt || item.updatedAt || 0) || item.updatedAt,
@@ -1424,7 +1431,8 @@ export default function Home() {
     const preview = inferSessionPreview(activeLingxiaMsgs as any);
     const existing = readWebSessionIndex(SESSION_INDEX_KEY);
     const previous = existing.find((item) => item.conversationId === webConversationId);
-    const nextTitle = previous?.sessionKey && previous.title ? previous.title : title;
+    const shouldPreserveTitle = Boolean(previous?.sessionKey || previous?.customTitle || previous?.autoTitle);
+    const nextTitle = shouldPreserveTitle && previous?.title ? previous.title : title;
     const nextPreview = previous?.sessionKey && previous.preview ? previous.preview : preview;
     const restoredBaselineCount = Number(restoredConversationMessageCountsRef.current[webConversationId] || 0) || 0;
     const isRestoredBaseline = Boolean(previous && restoredBaselineCount > 0 && meaningfulMessages.length <= restoredBaselineCount);
@@ -1439,6 +1447,7 @@ export default function Home() {
       sessionId: previous?.sessionId,
       title: nextTitle,
       customTitle: previous?.customTitle,
+      autoTitle: previous?.autoTitle,
       preview: nextPreview,
       messageCount: meaningfulMessages.length,
       createdAt: previous?.createdAt || now,
@@ -1475,6 +1484,55 @@ export default function Home() {
     });
   }, [SESSION_INDEX_KEY]);
 
+  useEffect(() => {
+    if (!isDirectHttpRuntime || activeLingxiaStreaming) return;
+    if (!SESSION_INDEX_KEY || !webConversationId) return;
+    const meaningfulMessages = (activeLingxiaMsgs as any[])
+      .map((message) => ({
+        role: String(message?.role || ""),
+        text: normalizeSessionText(String(message?.text || "")),
+      }))
+      .filter((message) => message.text);
+    const hasUser = meaningfulMessages.some((message) => message.role === "user");
+    const hasAssistant = meaningfulMessages.some((message) => message.role === "assistant");
+    if (!hasUser || !hasAssistant) return;
+
+    const existing = readWebSessionIndex(SESSION_INDEX_KEY).find((item) => item.conversationId === webConversationId);
+    if (!existing || existing.customTitle || existing.autoTitle) return;
+
+    const inferredTitle = inferSessionTitle(activeLingxiaMsgs as any);
+    if (normalizeSessionText(existing.title || "") !== normalizeSessionText(inferredTitle)) return;
+
+    const requestKey = `${webConversationId}:${meaningfulMessages.length}`;
+    if (autoSessionTitleRequestRef.current[webConversationId] === requestKey) return;
+    autoSessionTitleRequestRef.current[webConversationId] = requestKey;
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const apiBase = import.meta.env.VITE_API_URL || "";
+        const response = await fetchWithTimeout(`${apiBase}/api/ea/assistant/session-title`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            messages: meaningfulMessages.slice(0, 8),
+          }),
+        }, 12000);
+        if (!response.ok) return;
+        const data = await response.json().catch(() => null);
+        const title = normalizeSessionText(String(data?.title || "")).slice(0, 60);
+        if (!title || title === normalizeSessionText(inferredTitle)) return;
+        const latest = readWebSessionIndex(SESSION_INDEX_KEY).find((item) => item.conversationId === webConversationId);
+        if (!latest || latest.customTitle || latest.autoTitle) return;
+        if (normalizeSessionText(latest.title || "") !== normalizeSessionText(inferredTitle)) return;
+        updateWebSessionMeta(webConversationId, { title, autoTitle: true });
+      } catch (error) {
+        console.warn("[history] auto title failed; keeping inferred title", error);
+      }
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [SESSION_INDEX_KEY, activeLingxiaMsgs, activeLingxiaStreaming, isDirectHttpRuntime, updateWebSessionMeta, webConversationId]);
+
   const ensureEmptyWebSession = useCallback((conversationId: string) => {
     if (!SESSION_INDEX_KEY || !conversationId) return;
     const now = Date.now();
@@ -1488,6 +1546,7 @@ export default function Home() {
         sessionId: existing?.sessionId,
         title: "新对话",
         customTitle: existing?.customTitle,
+        autoTitle: existing?.autoTitle,
         preview: "",
         messageCount: 0,
         createdAt: existing?.createdAt || now,
