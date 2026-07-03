@@ -969,71 +969,80 @@ function addJiuwenUsageEvents(params: {
 }) {
   const adoptId = String(params.adoptId || "").trim();
   if (!adoptId || !isJiuwenClawAdoptId(adoptId)) return;
-  const sessionsDir = jiuwenClawSessionsDir(adoptId, params.dbAgentId);
-  let entries: ReturnType<typeof readdirSync> = [];
-  try {
-    entries = readdirSync(sessionsDir, { withFileTypes: true }) as any;
-  } catch {
-    return;
-  }
-
   const maxSessions = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_JIUWEN_MAX_SESSIONS || process.env.LINGXIA_USAGE_JIUWEN_MAX_SESSIONS || 2000), 1), 50000);
   let scanned = 0;
-  for (const entry of entries as any[]) {
-    if (!entry.isDirectory()) continue;
-    if (scanned >= maxSessions) break;
-    const sessionId = safeJiuwenSessionId(entry.name);
-    if (!sessionId) continue;
-    const historyFile = jiuwenHistoryFileForSession(sessionsDir, sessionId);
-    if (!historyFile || !existsSync(historyFile)) continue;
-    const metadata = readJiuwenSessionMetadata(sessionsDir, sessionId);
-    const channelId = String(metadata?.channel_id || "");
-    if (channelId && channelId !== "web") continue;
-    scanned += 1;
+  const sessionDirs = [
+    jiuwenClawSessionsDir(adoptId, params.dbAgentId),
+    path.join(JIUWENCLAW_HOME, "agent", "sessions"),
+  ];
+  const seenSessionIds = new Set<string>();
 
-    let userMessageCount = 0;
-    let fallbackTs = normalizeJiuwenHistoryTimestamp(metadata?.last_message_at)
-      || normalizeJiuwenHistoryTimestamp(metadata?.created_at);
+  for (const sessionsDir of sessionDirs) {
+    let entries: ReturnType<typeof readdirSync> = [];
     try {
-      if (!fallbackTs) fallbackTs = statSync(historyFile).mtimeMs;
-    } catch {}
+      entries = readdirSync(sessionsDir, { withFileTypes: true }) as any;
+    } catch {
+      continue;
+    }
 
-    try {
-      const lines = readFileSync(historyFile, "utf8").split("\n");
-      for (let index = 0; index < lines.length; index += 1) {
-        const line = lines[index];
-        if (!line.trim() || !line.includes('"role"')) continue;
-        let event: any;
-        try { event = JSON.parse(line); } catch { continue; }
-        const role = String(event?.role || event?.message?.role || "");
-        if (role !== "user") continue;
-        const text = stripPlatformLanguagePolicy(jiuwenHistoryContent(event)).trim();
-        if (!text) continue;
-        const tsMs = normalizeJiuwenHistoryTimestamp(event?.timestamp || event?.created_at || event?.time) || fallbackTs;
-        if (!tsMs) continue;
-        userMessageCount += 1;
+    for (const entry of entries as any[]) {
+      if (!entry.isDirectory()) continue;
+      if (scanned >= maxSessions) break;
+      const sessionId = safeJiuwenSessionId(entry.name);
+      if (!sessionId || seenSessionIds.has(sessionId)) continue;
+      if (!isListableJiuwenWebSession(sessionId, adoptId)) continue;
+      const historyFile = jiuwenHistoryFileForSession(sessionsDir, sessionId);
+      if (!historyFile || !existsSync(historyFile)) continue;
+      const metadata = readJiuwenSessionMetadata(sessionsDir, sessionId);
+      const channelId = String(metadata?.channel_id || "");
+      if (channelId && channelId !== "web" && channelId !== adoptId) continue;
+      seenSessionIds.add(sessionId);
+      scanned += 1;
+
+      let userMessageCount = 0;
+      let fallbackTs = normalizeJiuwenHistoryTimestamp(metadata?.last_message_at)
+        || normalizeJiuwenHistoryTimestamp(metadata?.created_at);
+      try {
+        if (!fallbackTs) fallbackTs = statSync(historyFile).mtimeMs;
+      } catch {}
+
+      try {
+        const lines = readFileSync(historyFile, "utf8").split("\n");
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index];
+          if (!line.trim() || !line.includes('"role"')) continue;
+          let event: any;
+          try { event = JSON.parse(line); } catch { continue; }
+          const role = String(event?.role || event?.message?.role || "");
+          if (role !== "user") continue;
+          const text = stripPlatformLanguagePolicy(jiuwenHistoryContent(event)).trim();
+          if (!text) continue;
+          const tsMs = normalizeJiuwenHistoryTimestamp(event?.timestamp || event?.created_at || event?.time) || fallbackTs;
+          if (!tsMs) continue;
+          userMessageCount += 1;
+          addUsageEvent({
+            byAdopt: params.byAdopt,
+            dailyAll: params.dailyAll,
+            seen: params.seen,
+            key: ["jiuwen", adoptId, sessionId, event?.id || index].join("|"),
+            adoptId,
+            ts: new Date(tsMs).toISOString(),
+            userId: params.userId,
+          });
+        }
+      } catch {}
+
+      if (userMessageCount === 0 && fallbackTs) {
         addUsageEvent({
           byAdopt: params.byAdopt,
           dailyAll: params.dailyAll,
           seen: params.seen,
-          key: ["jiuwen", adoptId, sessionId, event?.id || index].join("|"),
+          key: ["jiuwen-session", adoptId, sessionId].join("|"),
           adoptId,
-          ts: new Date(tsMs).toISOString(),
+          ts: new Date(fallbackTs).toISOString(),
           userId: params.userId,
         });
       }
-    } catch {}
-
-    if (userMessageCount === 0 && fallbackTs) {
-      addUsageEvent({
-        byAdopt: params.byAdopt,
-        dailyAll: params.dailyAll,
-        seen: params.seen,
-        key: ["jiuwen-session", adoptId, sessionId].join("|"),
-        adoptId,
-        ts: new Date(fallbackTs).toISOString(),
-        userId: params.userId,
-      });
     }
   }
 }
