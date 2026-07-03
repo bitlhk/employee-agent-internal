@@ -2137,7 +2137,7 @@
 
 
 /* ══════════════════════════════════════════════════════════════
-   灵虾设计 Token 体系 v1.0
+   岗位智能体平台设计 Token 体系 v1.0
    参考：Linear（暗色）+ Apple（浅色）
    品牌维度（accent）× 主题维度（dark/light）正交
    组件只用 var(--oc-*)，不硬编码颜色/字号/间距
@@ -2172,7 +2172,7 @@
 }
 
 /* ══════════════════════════════════════════════════════════════
-   灵虾设计 Token 体系 v1.0
+   岗位智能体平台设计 Token 体系 v1.0
 
    参考：Linear（暗色） + Apple（浅色）
    架构：品牌维度（accent）× 主题维度（dark/light）正交
@@ -2195,7 +2195,7 @@
   --oc-font-display: var(--oc-font-ui);
 }
 
-/* ── 字号阶梯（基于 Linear 的 10-72px 体系，灵虾取产品常用段）── */
+/* ── 字号阶梯（基于 Linear 的 10-72px 体系，岗位智能体平台取产品常用段）── */
 :root {
   --oc-text-2xs:  10px;   /* 最小标签、overline */
   --oc-text-xs:   11px;   /* 时间戳、微标签 */
@@ -2316,7 +2316,7 @@
   --oc-code-bg:        rgba(255,255,255,0.04);
   --oc-code-text:      #c4b5a0;
 
-  /* 品牌色（默认灵虾红，企业定制时被覆盖）*/
+  /* 品牌色（默认岗位智能体平台红，企业定制时被覆盖）*/
   --oc-accent:         var(--accent, #ff5c5c);
   --oc-accent-hover:   var(--accent-hover, #ff7070);
   --oc-accent-subtle:  var(--accent-subtle, rgba(255,92,92,0.10));
@@ -5809,15 +5809,15 @@ html:has(:root[data-theme-mode="light"]) body {
 }
 
 /* ============================================================
-   LingxiaIcon 动画
+   WorkforceAgentIcon 动画
    ============================================================ */
-.lingxia-icon {
+.workforce-agent-icon {
   display: block;
   flex-shrink: 0;
 }
 
 /* 呼吸动画 — idle 时轻微缩放 */
-.lingxia-icon--breathe {
+.workforce-agent-icon--breathe {
   animation: lingxiaBreathe 3s ease-in-out infinite;
 }
 @keyframes lingxiaBreathe {
@@ -5826,11 +5826,11 @@ html:has(:root[data-theme-mode="light"]) body {
 }
 
 /* hover 时触角摇摆 */
-.lingxia-icon:hover .lingxia-icon__antenna-l {
+.workforce-agent-icon:hover .workforce-agent-icon__antenna-l {
   animation: lingxiaWaveL 0.4s ease-in-out 2;
   transform-origin: 34px 46px;
 }
-.lingxia-icon:hover .lingxia-icon__antenna-r {
+.workforce-agent-icon:hover .workforce-agent-icon__antenna-r {
   animation: lingxiaWaveR 0.4s ease-in-out 2;
   transform-origin: 94px 46px;
 }
@@ -5844,8 +5844,8 @@ html:has(:root[data-theme-mode="light"]) body {
 }
 
 /* hover 时眼睛微眯（稍扁） */
-.lingxia-icon:hover .lingxia-icon__eye-l,
-.lingxia-icon:hover .lingxia-icon__eye-r {
+.workforce-agent-icon:hover .workforce-agent-icon__eye-l,
+.workforce-agent-icon:hover .workforce-agent-icon__eye-r {
   transition: transform 0.25s ease-out;
   transform: scaleY(0.7) !important;
 }

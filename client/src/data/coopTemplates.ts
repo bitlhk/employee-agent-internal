@@ -1,5 +1,5 @@
 /**
- * 灵虾协作模板 — 内置模板（阶段 0：纯前端 const，不依赖 DB）
+ * 岗位智能体协作模板 — 内置模板（阶段 0：纯前端 const，不依赖 DB）
  *
  * 设计：
  *   - 每个模板定义 title / originMessage / memberPrompt / consolidationPrompt

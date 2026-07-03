@@ -79,7 +79,7 @@ export async function sendEmail(
         let fromAddress: string;
         if (isQQMail) {
           // QQ邮箱要求from必须与user一致，但可以添加显示名称
-          fromAddress = `"员工智能体" <${smtpUser}>`;
+          fromAddress = `"岗位智能体" <${smtpUser}>`;
         } else {
           fromAddress = smtpFrom || smtpUser;
         }
@@ -134,11 +134,11 @@ export async function sendVerificationCodeEmail(
   email: string,
   code: string
 ): Promise<boolean> {
-  const subject = "【员工智能体】邮箱验证码";
+  const subject = "【岗位智能体平台】邮箱验证码";
   const text = `您的验证码是：${code}，验证码有效期为10分钟，请勿泄露给他人。`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <h2 style="color: #CF0A2C;">员工智能体 - 邮箱验证码</h2>
+      <h2 style="color: #CF0A2C;">岗位智能体平台 - 邮箱验证码</h2>
       <p>您好，</p>
       <p>您的验证码是：</p>
       <div style="background-color: #f5f5f5; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px;">
@@ -177,11 +177,11 @@ export async function sendPasswordResetEmail(
   // requestOrigin 参数保留向后兼容但不再使用
   
   const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}`;
-  const subject = "【员工智能体】密码重置";
+  const subject = "【岗位智能体平台】密码重置";
   const text = `您请求重置密码。请点击以下链接进行密码重置：${resetUrl}。此链接将在 60 分钟后失效。`;
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <h2 style="color: #CF0A2C;">员工智能体 - 密码重置</h2>
+      <h2 style="color: #CF0A2C;">岗位智能体平台 - 密码重置</h2>
       <p>您好，</p>
       <p>您请求重置密码，请点击下面的链接重置您的密码：</p>
       <div style="text-align: center; margin: 30px 0;">

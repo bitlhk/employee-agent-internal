@@ -2,23 +2,23 @@
  * 品牌配置 — 类型定义 + 默认值
  *
  * 优先级: DB system_configs (brand_*) > 环境变量 (BRAND_*) > 默认值
- * 默认值 = 当前员工智能体硬编码值，不做任何配置时行为完全不变。
+ * 默认值 = 当前岗位智能体平台硬编码值，不做任何配置时行为完全不变。
  */
 
 export interface BrandConfig {
-  /** 产品名（中文），如 "员工智能体" */
+  /** 产品名（中文），如 "岗位智能体平台" */
   name: string;
-  /** 产品名（英文），如 "Employee Agent" */
+  /** 产品名（英文），如 "Workforce Agent Platform" */
   nameEn: string;
-  /** 平台名（中文），如 "员工智能体" */
+  /** 平台名（中文），如 "岗位智能体平台" */
   platform: string;
-  /** 平台名（英文），如 "Employee Agent" */
+  /** 平台名（英文），如 "Workforce Agent Platform" */
   platformEn: string;
   /** 标语 */
   slogan: string;
   /** 主题色 hex，如 "#9e1822" */
   accentColor: string;
-  /** Logo 路径，如 "/images/employee-agent.svg" */
+  /** Logo 路径，如 "/images/workforce-agent.svg" */
   logo: string;
   /** Favicon 路径 */
   favicon: string;
@@ -32,22 +32,22 @@ export interface BrandConfig {
   pageTitle: string;
 }
 
-/** 员工智能体默认值 — 与当前硬编码完全一致 */
+/** 岗位智能体平台默认值 — 与当前硬编码完全一致 */
 export const DEFAULT_BRAND: BrandConfig = {
-  name: "员工智能体",
-  nameEn: "Employee Agent",
-  platform: "员工智能体",
-  platformEn: "Employee Agent",
-  slogan: "企业 AI 员工平台",
+  name: "岗位智能体平台",
+  nameEn: "Workforce Agent Platform",
+  platform: "岗位智能体平台",
+  platformEn: "Workforce Agent Platform",
+  slogan: "企业岗位智能体平台",
   accentColor: "#9e1822",
-  logo: "/images/employee-agent.svg",
+  logo: "/images/workforce-agent.svg",
   favicon: "/favicon.png",
   systemPrompt:
-    "You are Employee Agent, an enterprise AI assistant on the Employee Agent platform.",
+    "You are a professional enterprise AI agent on the Workforce Agent Platform.",
   agentIdentity:
-    "你是员工智能体，一个友好、专业、简洁的 AI 助手。",
+    "你是岗位智能体平台中的岗位智能体，一个友好、专业、简洁的 AI 助手。",
   githubUrl: "https://github.com/bitlhk/employee-agent",
-  pageTitle: "员工智能体 - 企业 AI 员工平台",
+  pageTitle: "岗位智能体平台 - 企业岗位智能体平台",
 };
 
 /** system_configs 表中 brand 配置的 key 前缀 */
@@ -102,8 +102,8 @@ export const BRAND_PRESETS: BrandPreset[] = [
   // ── 默认 ──
   {
     id: "employee-agent",
-    label: "员工智能体 (默认)",
-    description: "员工智能体默认品牌",
+    label: "岗位智能体平台 (默认)",
+    description: "岗位智能体平台默认品牌",
     config: { ...DEFAULT_BRAND },
   },
 

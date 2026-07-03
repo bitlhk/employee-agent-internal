@@ -204,7 +204,7 @@ export async function executePlatformIntent(
       if (jobs.length === 0) {
         writer.writeText("📋 当前没有定时任务。\n\n说「每天 9 点查银行股价发微信」就能创建一个。\n");
       } else {
-        // 非 conversation 渠道 Gateway delivery 是 "none"，真实渠道在灵虾侧 cron-delivery 配置里
+        // 非 conversation 渠道 Gateway delivery 是 "none"，真实渠道在平台侧 cron-delivery 配置里
         // 优先用侧车配置覆盖，保证列表展示的渠道和真正的投递渠道一致
         let getChannel: ((jobId: string, jobName?: string) => string | undefined) | null = null;
         try {
@@ -261,7 +261,7 @@ export async function executePlatformIntent(
         writer.writeError(`删除失败: ${d?.error || delResp.status}`);
         return;
       }
-      // Gateway 删除成功后清理灵虾侧的侧车投递配置，避免后续同名任务串联旧渠道
+      // Gateway 删除成功后清理平台侧的侧车投递配置，避免后续同名任务串联旧渠道
       try {
         const { deleteCronDeliveryConfig } = await import("./cron-delivery");
         await deleteCronDeliveryConfig(adoptId, String(match.id));

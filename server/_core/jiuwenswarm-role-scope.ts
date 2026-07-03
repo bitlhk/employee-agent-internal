@@ -152,7 +152,7 @@ export function buildJiuwenSwarmIdentityMarkdown(
   return [
     "# 身份",
     "",
-    `你是企业员工智能体，当前岗位为「${role.name}」。`,
+    `你是企业岗位智能体，当前岗位为「${role.name}」。`,
     "",
     "## 工作方式",
     "",

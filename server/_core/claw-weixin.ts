@@ -1,5 +1,5 @@
 /**
- * Lingxia WeChat binding facade.
+ * Workforce Agent Platform WeChat binding facade.
  *
  * Product still calls /api/claw/weixin/*, but the implementation is now the
  * official OpenClaw channel plugin: @tencent-weixin/openclaw-weixin.
@@ -144,7 +144,7 @@ function upsertOpenClawWeixinBinding(params: {
   channelConfig.accounts[accountId] = {
     ...(channelConfig.accounts[accountId] || {}),
     enabled: true,
-    name: `Lingxia ${params.adoptId}`,
+    name: `Workforce Agent Platform ${params.adoptId}`,
   };
   channelConfig.defaultAccount = channelConfig.defaultAccount || accountId;
   channelConfig.channelConfigUpdatedAt = new Date().toISOString();
@@ -500,7 +500,7 @@ export function registerWeixinRoutes(app: express.Express) {
       if (!status.bound || !status.accountId) return res.json({ ok: false, error: "weixin not bound" });
       const target = String(status.userId || "").trim();
       if (!target) return res.json({ ok: false, error: "weixin target missing; send a WeChat message to the bot first" });
-      sendOfficialWeixinMessage(status.accountId, target, "员工智能体通知测试\n\n微信绑定成功！这条消息来自员工智能体平台。");
+      sendOfficialWeixinMessage(status.accountId, target, "岗位智能体通知测试\n\n微信绑定成功！这条消息来自岗位智能体平台。");
       res.json({ ok: true });
     } catch (e: any) {
       res.json({ ok: false, error: e.message });

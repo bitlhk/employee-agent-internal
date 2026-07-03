@@ -1,5 +1,5 @@
 #!/bin/bash
-# monitor-health.sh — 灵虾平台健康监控
+# monitor-health.sh — 岗位智能体平台健康监控
 # cron: */5 * * * *
 # 支持 Telegram / 钉钉 / 飞书
 
@@ -8,7 +8,7 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG_DIR="${SCRIPT_DIR}/../logs"
 LOG_FILE="${LOG_DIR}/monitor.log"
-STATE_FILE="/tmp/lingxia-monitor-state"
+STATE_FILE="/tmp/workforce-agent-monitor-state"
 mkdir -p "$LOG_DIR"
 touch "$STATE_FILE"
 
@@ -23,7 +23,7 @@ done
 send_notify() {
   local emoji="$1" label="$2" msg="$3"
   local ts=$(date '+%Y-%m-%d %H:%M:%S')
-  local full="${emoji} 灵虾 [${ts}] ${label}\n${msg}"
+  local full="${emoji} 岗位智能体平台 [${ts}] ${label}\n${msg}"
   echo -e "[${label}] ${ts} ${msg}" >> "$LOG_FILE"
 
   [ -n "${MONITOR_TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${MONITOR_TELEGRAM_CHAT_ID:-}" ] &&     curl -s -X POST "https://api.telegram.org/bot${MONITOR_TELEGRAM_BOT_TOKEN}/sendMessage"       -d "chat_id=${MONITOR_TELEGRAM_CHAT_ID}" -d "text=$(echo -e "$full")"       --max-time 10 >/dev/null 2>&1 || true
@@ -95,7 +95,7 @@ check_port() {
 echo "--- $(date '+%Y-%m-%d %H:%M:%S') ---" >> "$LOG_FILE"
 F=0
 
-check_port  "灵虾平台"       5180 || ((F++))
+check_port  "岗位智能体平台"       5180 || ((F++))
 check_http  "OpenClaw-GW"   "http://127.0.0.1:18789/health" || ((F++))
 check_http  "股票分析"       "http://127.0.0.1:8188/api/v1/auth/status" || ((F++))
 check_port  "stock-analysis" 8188 || ((F++))

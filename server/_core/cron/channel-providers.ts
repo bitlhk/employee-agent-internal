@@ -45,7 +45,7 @@ export class WechatChannelProvider implements ScanChannelProvider {
     const result = await sendWeixinMessage(
       _ctx.adoptId || "",
       _ctx.targetId || "",
-      "员工智能体频道测试\n\n微信频道已连接，后续定时任务可投递到这里。",
+      "岗位智能体频道测试\n\n微信频道已连接，后续定时任务可投递到这里。",
     );
     if (!result.ok) {
       return {
@@ -99,7 +99,7 @@ export class FeishuChannelProvider implements ScanChannelProvider {
     if (!_ctx.adoptId) {
       return { ok: false, error: { kind: "payload_rejected", detail: "adoptId required for feishu test" } };
     }
-    const result = await sendFeishuMessage(_ctx.adoptId, "员工智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
+    const result = await sendFeishuMessage(_ctx.adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
     if (!result.ok) {
       return { ok: false, error: { kind: "channel_unreachable", detail: result.error || "feishu test failed" } };
     }

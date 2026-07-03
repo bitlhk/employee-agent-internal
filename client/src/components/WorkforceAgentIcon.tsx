@@ -1,10 +1,10 @@
 /**
- * LingxiaIcon — 员工智能体动画 SVG 图标
+ * WorkforceAgentIcon — 岗位智能体动画 SVG 图标
  * 替代 🦞 emoji，支持 size/animate/idle 动画
  */
 import { useEffect, useState } from "react";
 
-type LingxiaIconProps = {
+type WorkforceAgentIconProps = {
   /** 图标尺寸 px，默认 22 */
   size?: number;
   /** 是否播放入场动画（首次渲染时绘制路径） */
@@ -15,12 +15,12 @@ type LingxiaIconProps = {
   className?: string;
 };
 
-export function LingxiaIcon({
+export function WorkforceAgentIcon({
   size = 22,
   animate = true,
   breathe = true,
   className = "",
-}: LingxiaIconProps) {
+}: WorkforceAgentIconProps) {
   const [mounted, setMounted] = useState(!animate);
   useEffect(() => {
     if (animate) {
@@ -37,9 +37,9 @@ export function LingxiaIcon({
       height={size}
       viewBox="0 0 128 128"
       xmlns="http://www.w3.org/2000/svg"
-      className={`lingxia-icon ${breathe ? "lingxia-icon--breathe" : ""} ${className}`}
+      className={`workforce-agent-icon ${breathe ? "workforce-agent-icon--breathe" : ""} ${className}`}
       role="img"
-      aria-label="员工智能体"
+      aria-label="岗位智能体"
     >
       <defs>
         <linearGradient id={`${uid}-g`} x1="0" y1="0" x2="1" y2="1">
@@ -52,7 +52,7 @@ export function LingxiaIcon({
       <rect
         x="8" y="8" width="112" height="112" rx="24"
         fill="#fff5f5"
-        className="lingxia-icon__bg"
+        className="workforce-agent-icon__bg"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? "scale(1)" : "scale(0.6)",
@@ -68,7 +68,7 @@ export function LingxiaIcon({
         stroke={`url(#${uid}-g)`}
         strokeWidth="10"
         strokeLinecap="round"
-        className="lingxia-icon__body"
+        className="workforce-agent-icon__body"
         style={{
           strokeDasharray: 120,
           strokeDashoffset: mounted ? 0 : 120,
@@ -79,7 +79,7 @@ export function LingxiaIcon({
       {/* 左眼 */}
       <circle
         cx="50" cy="52" r="6" fill="#111827"
-        className="lingxia-icon__eye-l"
+        className="workforce-agent-icon__eye-l"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? "scale(1)" : "scale(0)",
@@ -90,7 +90,7 @@ export function LingxiaIcon({
       {/* 右眼 */}
       <circle
         cx="78" cy="52" r="6" fill="#111827"
-        className="lingxia-icon__eye-r"
+        className="workforce-agent-icon__eye-r"
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? "scale(1)" : "scale(0)",
@@ -106,7 +106,7 @@ export function LingxiaIcon({
         stroke="#be123c"
         strokeWidth="6"
         strokeLinecap="round"
-        className="lingxia-icon__smile"
+        className="workforce-agent-icon__smile"
         style={{
           strokeDasharray: 60,
           strokeDashoffset: mounted ? 0 : 60,
@@ -120,7 +120,7 @@ export function LingxiaIcon({
         stroke="#fb7185"
         strokeWidth="6"
         strokeLinecap="round"
-        className="lingxia-icon__antenna-l"
+        className="workforce-agent-icon__antenna-l"
         style={{
           strokeDasharray: 20,
           strokeDashoffset: mounted ? 0 : 20,
@@ -134,7 +134,7 @@ export function LingxiaIcon({
         stroke="#fb7185"
         strokeWidth="6"
         strokeLinecap="round"
-        className="lingxia-icon__antenna-r"
+        className="workforce-agent-icon__antenna-r"
         style={{
           strokeDasharray: 20,
           strokeDashoffset: mounted ? 0 : 20,

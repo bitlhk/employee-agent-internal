@@ -1,5 +1,5 @@
 /**
- * 灵虾组织协作 V2 - 通知派发
+ * 岗位智能体协作 V2 - 通知派发
  * 
  * 职责：当 coop 事件发生时，把通知推送到：
  *   (1) 被通知人的微信（通过 claw-weixin-bridge）
@@ -99,7 +99,7 @@ export async function notifyCoopEvent(ev: CoopNotifyEvent): Promise<void> {
             console.log(`[coop-notify] user ${m.userId} has no active adoption, skip weixin`);
             continue;
           }
-          const msg = `【协作邀请】${ev.creatorName} 邀请你参与「${ev.title}」\n分配给你的任务：${m.subtask}\n电脑打开员工智能体，或手机长按链接「在浏览器中打开」（微信内登录态可能不稳）：\n${sessionUrl}`;
+          const msg = `【协作邀请】${ev.creatorName} 邀请你参与「${ev.title}」\n分配给你的任务：${m.subtask}\n电脑打开岗位智能体，或手机长按链接「在浏览器中打开」（微信内登录态可能不稳）：\n${sessionUrl}`;
           try {
             await sendMessageToWeixin(targetAdoptId, msg);
             console.log(`[coop-notify] weixin invite sent to user ${m.userId} (adopt ${targetAdoptId})`);

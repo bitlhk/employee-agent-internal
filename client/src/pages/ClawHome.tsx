@@ -1,5 +1,5 @@
 /**
- * ClawHome — 员工智能体独立首页（路径模式）
+ * ClawHome — 岗位智能体独立首页（路径模式）
  * 风格：白色主题，与灵感官网一致
  * 功能：Hero + 功能介绍 + 创建/进入
  */
@@ -67,7 +67,7 @@ function getRuntimeCardMeta(adoptId: unknown) {
   };
 }
 
-// ── 员工智能体 SVG Logo 动画组件 ──
+// ── 岗位智能体 SVG Logo 动画组件 ──
 function AnimatedLogo({ size = 120 }: { size?: number }) {
   return (
     <motion.svg
@@ -308,7 +308,7 @@ export default function ClawHome() {
         <div className="container flex items-center justify-between h-14 px-6">
           <div className="flex items-center gap-2.5">
             <BrandIcon size={32} />
-            <span className="text-base font-bold text-gray-900">员工智能体</span>
+            <span className="text-base font-bold text-gray-900">岗位智能体</span>
             <span className="text-xs text-muted-foreground hidden sm:inline">AI Agent Platform</span>
           </div>
           <div className="flex items-center gap-2">
@@ -376,7 +376,7 @@ export default function ClawHome() {
 
             <motion.h1 variants={fadeInUp} className="text-3xl md:text-5xl font-bold leading-tight mb-4">
               <span className="text-gray-900">申请一个</span>
-              <span className="text-primary">员工智能体</span>
+              <span className="text-primary">岗位智能体</span>
             </motion.h1>
 
             <motion.p variants={fadeInUp} className="text-base text-muted-foreground mb-2 max-w-lg">
@@ -413,7 +413,7 @@ export default function ClawHome() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 mb-0.5">
-                                <p className="text-sm font-semibold text-gray-900">员工智能体</p>
+                                <p className="text-sm font-semibold text-gray-900">岗位智能体</p>
                                 <span
                                   className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${runtime.badgeClass}`}
                                 >
@@ -510,7 +510,7 @@ export default function ClawHome() {
                       </>
                     ) : (
                       <>
-                        申请员工智能体
+                        申请岗位智能体
                         <ArrowRight className="w-4 h-4 ml-2" />
                       </>
                     )}
@@ -559,7 +559,7 @@ export default function ClawHome() {
               能力一览
             </motion.h2>
             <motion.p variants={fadeInUp} className="text-sm text-muted-foreground">
-              每个员工智能体都是一个独立的 AI Agent 实例
+              每个岗位智能体都是一个独立的 AI Agent 实例
             </motion.p>
           </motion.div>
 

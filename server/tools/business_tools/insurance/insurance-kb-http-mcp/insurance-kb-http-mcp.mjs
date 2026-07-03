@@ -6,7 +6,7 @@
  * 模式B：平台侧部署本机 HTTP MCP Adapter
  * Agent → http://127.0.0.1:9610/mcp → FastGPT API → 保险知识库
  * 
- * 符合灵虾内部 HTTP MCP 接入标准
+ * 符合岗位智能体平台内部 HTTP MCP 接入标准
  */
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";

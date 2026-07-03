@@ -100,13 +100,13 @@ export const smtpRouter = router({
 
         // 发送测试邮件
         const { sendEmail } = await import("../_core/email");
-        const subject = "【员工智能体】SMTP测试邮件";
-        const text = "这是一封来自员工智能体的测试邮件。如果您收到此邮件，说明SMTP配置正确。";
+        const subject = "【岗位智能体平台】SMTP测试邮件";
+        const text = "这是一封来自岗位智能体的测试邮件。如果您收到此邮件，说明SMTP配置正确。";
         const html = `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #CF0A2C;">员工智能体 - SMTP测试邮件</h2>
+            <h2 style="color: #CF0A2C;">岗位智能体平台 - SMTP测试邮件</h2>
             <p>您好，</p>
-            <p>这是一封来自员工智能体的测试邮件。</p>
+            <p>这是一封来自岗位智能体的测试邮件。</p>
             <p>如果您收到此邮件，说明SMTP配置正确，邮件发送功能正常工作。</p>
             <p style="color: #666; font-size: 12px; margin-top: 30px;">
               此邮件由系统自动发送，请勿回复。

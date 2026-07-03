@@ -1,5 +1,5 @@
 /**
- * 员工智能体组织协作 V2 - tRPC 路由
+ * 岗位智能体组织协作 V2 - tRPC 路由
  *
  * 灰度策略：发起相关操作（create / mentionCandidates）限制白名单
  * 查询类（getSession / pendingCount）只需登录（被邀请者需要看）

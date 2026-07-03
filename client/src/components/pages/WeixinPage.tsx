@@ -87,7 +87,7 @@ export function WeixinPage({ adoptId }: { adoptId?: string }) {
               </div>
               <div className="text-sm" style={{ fontWeight: "var(--oc-weight-semibold)", color: "var(--oc-text-primary)", marginBottom: 4 }}>微信已连接</div>
               <div className="text-xs" style={{ color: "var(--oc-text-secondary)", marginBottom: 20 }}>
-                你可以直接在微信里发消息给员工智能体，也会收到定时任务等通知推送
+                你可以直接在微信里发消息给岗位智能体，也会收到定时任务等通知推送
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
                 <button className="btn-primary-soft" onClick={testSend} disabled={testing} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -112,7 +112,7 @@ export function WeixinPage({ adoptId }: { adoptId?: string }) {
               <div className="text-sm" style={{ fontWeight: "var(--oc-weight-semibold)", color: "var(--oc-text-primary)", marginBottom: 4 }}>连接你的微信</div>
               <div className="text-xs" style={{ color: "var(--oc-text-secondary)", marginBottom: 20, lineHeight: 1.6 }}>
                 绑定后你可以：<br/>
-                在微信里直接与员工智能体对话<br/>
+                在微信里直接与岗位智能体对话<br/>
                 接收定时任务完成通知<br/>
                 接收协作请求提醒
               </div>

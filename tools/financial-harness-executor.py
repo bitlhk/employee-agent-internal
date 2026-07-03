@@ -2,7 +2,7 @@
 """
 Financial Agent Harness API.
 
-Runs on the SG Hermes node. It exposes one API to the Employee Agent control plane:
+Runs on the remote financial analysis node. It exposes one API to the Workforce Agent Platform control plane:
 route asks the local Financial Harness profile for a plan; execute runs that
 plan against local Hermes worker profiles.
 """

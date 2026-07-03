@@ -1,6 +1,6 @@
 ﻿import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatEvent } from "@shared/runtime/chat-event";
-import { reduceLingxiaChatState, type LingxiaChatMessage } from "@/lib/chat-state-reducer";
+import { reduceAgentChatState, type AgentChatMessage } from "@/lib/chat-state-reducer";
 import { HttpChatTransport } from "@/lib/http-chat-transport";
 import type { ChatTransport } from "@/lib/chat-transport";
 import { WsChatTransport } from "@/lib/ws-chat-transport";
@@ -19,7 +19,7 @@ type FirstEventWaiter = {
   timer: ReturnType<typeof setTimeout>;
 };
 
-export type UseLingxiaChatOptions = {
+export type UseAgentChatOptions = {
   adoptId?: string | null;
   apiBase?: string;
   channel?: string;
@@ -32,14 +32,14 @@ export type UseLingxiaChatOptions = {
   now?: () => number;
 };
 
-export type UseLingxiaChatResult = {
-  messages: LingxiaChatMessage[];
+export type UseAgentChatResult = {
+  messages: AgentChatMessage[];
   isStreaming: boolean;
   connStatus: "idle" | "connected" | "reconnecting" | "error";
   send(message: string): Promise<void>;
   abort(reason?: string): void;
   clear(): void;
-  restore(messages: LingxiaChatMessage[]): void;
+  restore(messages: AgentChatMessage[]): void;
   dispatchEvent(event: ChatEvent, targetMessageId?: string): void;
 };
 
@@ -79,7 +79,7 @@ function isStreamingProgressEvent(event: ChatEvent) {
     || event.type === "perf";
 }
 
-export function useLingxiaChat(options: UseLingxiaChatOptions): UseLingxiaChatResult {
+export function useAgentChat(options: UseAgentChatOptions): UseAgentChatResult {
   const {
     adoptId,
     apiBase = import.meta.env.VITE_API_URL || "",
@@ -93,9 +93,9 @@ export function useLingxiaChat(options: UseLingxiaChatOptions): UseLingxiaChatRe
     now = Date.now,
   } = options;
 
-  const [messages, setMessages] = useState<LingxiaChatMessage[]>([]);
+  const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [connStatus, setConnStatus] = useState<UseLingxiaChatResult["connStatus"]>("idle");
+  const [connStatus, setConnStatus] = useState<UseAgentChatResult["connStatus"]>("idle");
 
   const messagesRef = useRef(messages);
   const activeAssistantIdRef = useRef<string | undefined>(undefined);
@@ -156,7 +156,7 @@ export function useLingxiaChat(options: UseLingxiaChatOptions): UseLingxiaChatRe
       ?? ("messageId" in event && typeof event.messageId === "string" ? event.messageId : undefined)
       ?? activeAssistantIdRef.current;
 
-    const applyMessageEvent = () => setMessages((prev) => reduceLingxiaChatState(prev, event, {
+    const applyMessageEvent = () => setMessages((prev) => reduceAgentChatState(prev, event, {
       targetMessageId,
       adoptId: adoptId ?? undefined,
       nowMs: now(),
@@ -450,7 +450,7 @@ export function useLingxiaChat(options: UseLingxiaChatOptions): UseLingxiaChatRe
     setMessages([]);
   }, [abort]);
 
-  const restore = useCallback((nextMessages: LingxiaChatMessage[]) => {
+  const restore = useCallback((nextMessages: AgentChatMessage[]) => {
     abort("restore");
     activeAssistantIdRef.current = undefined;
     activeSendStartedAtRef.current = undefined;

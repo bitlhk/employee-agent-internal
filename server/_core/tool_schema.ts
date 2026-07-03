@@ -10,7 +10,7 @@ export const VIRTUAL_EXEC_TOOL = {
   function: {
     name: PLATFORM_EXEC_TOOL_NAME,
     description:
-      "Run shell commands through the Employee Agent platform executor in an isolated sandbox environment. No network. Read-only root filesystem. Limited CPU, memory, process count, timeout, and output size.",
+      "Run shell commands through the Workforce Agent Platform platform executor in an isolated sandbox environment. No network. Read-only root filesystem. Limited CPU, memory, process count, timeout, and output size.",
     parameters: {
       type: "object",
       properties: {
@@ -47,11 +47,11 @@ export function buildRuntimeUserMessage(message: string) {
   if (!userLikelyUsesChinese(rawMessage)) return rawMessage;
 
   return [
-    "[Employee Agent Platform Language Policy]",
+    "[Workforce Agent Platform Language Policy]",
     "The user wrote in Chinese. All assistant-visible text must be Simplified Chinese.",
     "This includes tool-use preambles, status text, brief confirmations, and final answers.",
     "For routine tool calls, call the tool directly without English narration such as \"I'll check...\".",
-    "[/Employee Agent Platform Language Policy]",
+    "[/Workforce Agent Platform Language Policy]",
     "",
     rawMessage,
   ].join("\n");
@@ -60,7 +60,7 @@ export function buildRuntimeUserMessage(message: string) {
 // ── 平台级安全 system prompt（服务端注入，不可被 Agent 覆盖）──────────
 function buildPlatformSecurityPrompt(brandSystemPrompt?: string) {
   return [
-  brandSystemPrompt || "You are Employee Agent, an enterprise AI assistant on the Employee Agent platform.",
+  brandSystemPrompt || "You are Workforce Agent Platform, an enterprise AI assistant on the Workforce Agent Platform platform.",
   "",
   "## Response Language Rules",
   "",
@@ -110,7 +110,7 @@ function buildPlatformSecurityPrompt(brandSystemPrompt?: string) {
   "",
   "1. create_scheduled_task - MUST use when user wants: scheduled/periodic/recurring tasks, daily checks, reminders, cron jobs.",
   "   DO NOT use platform_exec or openclaw CLI for scheduling. The create_scheduled_task tool handles it directly.",
-  "   When user asks to view/list existing scheduled tasks, DO NOT use native cron tools or openclaw CLI. Existing schedules are scoped by Employee Agent platform routing; if no platform list is provided, direct the user to the Employee Agent scheduled tasks page.",
+  "   When user asks to view/list existing scheduled tasks, DO NOT use native cron tools or openclaw CLI. Existing schedules are scoped by Workforce Agent Platform platform routing; if no platform list is provided, direct the user to the Workforce Agent Platform scheduled tasks page.",
   "",
   "2. send_notification - MUST use when user wants to: send to WeChat/WeCom/Feishu/Webhook, push a message, notify externally.",
   "   DO NOT say you cannot send to WeChat. You CAN, via this tool.",

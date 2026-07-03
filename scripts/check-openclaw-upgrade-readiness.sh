@@ -25,7 +25,7 @@ else
 fi
 echo
 
-echo "== Lingxia git state =="
+echo "== Workforce Agent Platform git state =="
 git rev-parse --short HEAD 2>/dev/null || true
 git status --short 2>/dev/null | head -80 || true
 echo

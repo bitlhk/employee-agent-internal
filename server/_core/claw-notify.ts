@@ -54,7 +54,7 @@ async function sendFeishu(config: any, text: string, title?: string): Promise<{ 
     const body = {
       msg_type: "interactive",
       card: {
-        header: { title: { tag: "plain_text", content: title || "员工智能体通知" } },
+        header: { title: { tag: "plain_text", content: title || "岗位智能体通知" } },
         elements: [{ tag: "markdown", content: text }],
       },
     };
@@ -79,7 +79,7 @@ async function sendWebhook(config: any, text: string, title?: string): Promise<{
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title || "员工智能体通知", text, timestamp: Date.now() }),
+      body: JSON.stringify({ title: title || "岗位智能体通知", text, timestamp: Date.now() }),
     });
     return { ok: resp.ok };
   } catch (e: any) {

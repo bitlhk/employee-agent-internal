@@ -41,7 +41,7 @@ const CHANNELS: Array<{
   iconSrc?: string;
   status: "ready" | "jiuwen-ready" | "unsupported";
 }> = [
-  { key: "feishu", label: "飞书", desc: "通过灵感智能体应用绑定当前员工智能体", iconSrc: "/channel-icons/feishu.webp", status: "ready" },
+  { key: "feishu", label: "飞书", desc: "通过灵感智能体应用绑定当前岗位智能体", iconSrc: "/channel-icons/feishu.webp", status: "ready" },
   { key: "dingtalk", label: "钉钉", desc: "JiuwenSwarm 支持，EA 绑定接入中", iconSrc: "/channel-icons/dingtalk.png", status: "jiuwen-ready" },
   { key: "wechat", label: "微信", desc: "等待 JiuwenSwarm 频道支持后适配", iconSrc: "/channel-icons/wechat.png", status: "unsupported" },
   { key: "wecom", label: "企业微信", desc: "等待 JiuwenSwarm 频道支持后适配", iconSrc: "/channel-icons/wecom.webp", status: "unsupported" },
@@ -91,7 +91,7 @@ export function ChannelsPage({ adoptId }: { adoptId?: string }) {
   }, [adoptId]);
 
   return (
-    <PageContainer title="频道" desc="管理员工智能体与你的触达方式。日常对话、协作提醒和定时任务都可以复用这些频道。">
+    <PageContainer title="频道" desc="管理岗位智能体与你的触达方式。日常对话、协作提醒和定时任务都可以复用这些频道。">
       <div className="channel-layout">
         <aside className="settings-card channel-list" aria-label="频道列表">
           {CHANNELS.map((channel) => {
@@ -148,13 +148,13 @@ export function ChannelsPage({ adoptId }: { adoptId?: string }) {
 
 function channelDesc(channel: (typeof CHANNELS)[number], cap: ChannelCapability): string {
   if (cap.routeReady) {
-    if (channel.key === "feishu") return "已路由到当前员工智能体，支持私聊对话和协作提醒";
+    if (channel.key === "feishu") return "已路由到当前岗位智能体，支持私聊对话和协作提醒";
     return "已绑定";
   }
-  if (cap.reason === "not_configured") return "平台飞书应用未配置，配置后即可绑定到员工智能体";
+  if (cap.reason === "not_configured") return "平台飞书应用未配置，配置后即可绑定到岗位智能体";
   if (cap.reason === "ea_adapter_pending") return "JiuwenSwarm 支持该频道，EA 绑定和投递能力接入中";
   if (cap.reason === "waiting_jiuwenswarm_support") return channel.desc;
-  if (cap.reason === "not_bound") return "平台已配置，当前员工智能体尚未绑定";
+  if (cap.reason === "not_bound") return "平台已配置，当前岗位智能体尚未绑定";
   return channel.desc;
 }
 
@@ -228,7 +228,7 @@ function FeishuBridgePanel({
       </div>
       <h2 className="channel-detail__title">飞书绑定</h2>
       <p className="channel-detail__desc">
-        将飞书账号绑定到当前员工智能体后，可以在飞书里直接对话，后续也可复用到定时任务和协作提醒。
+        将飞书账号绑定到当前岗位智能体后，可以在飞书里直接对话，后续也可复用到定时任务和协作提醒。
       </p>
       <div className="channel-bullets">
         <span><CheckCircle2 size={14} /> 联系灵感大王加入企业组织</span>
@@ -238,7 +238,7 @@ function FeishuBridgePanel({
       {routeReady ? (
         <div className="channel-meta">
           <span>路由状态</span>
-          <strong>{targetLabel ? `已路由 ${targetLabel} → 当前员工智能体` : "已绑定飞书双向交互"}</strong>
+          <strong>{targetLabel ? `已路由 ${targetLabel} → 当前岗位智能体` : "已绑定飞书双向交互"}</strong>
         </div>
       ) : null}
       {code && !routeReady ? (

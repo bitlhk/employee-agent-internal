@@ -1,7 +1,7 @@
 /**
- * openclaw-ws.ts — 灵虾前端 WebSocket 客户端
+ * openclaw-ws.ts — 岗位智能体平台前端 WebSocket 客户端
  *
- * 连接 /api/claw/ws?adoptId=xxx，灵虾后端代理到 OpenClaw Gateway。
+ * 连接 /api/claw/ws?adoptId=xxx，岗位智能体平台后端代理到 OpenClaw Gateway。
  * 支持自动降级到 HTTP SSE。
  */
 

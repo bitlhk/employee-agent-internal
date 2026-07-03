@@ -1,14 +1,14 @@
-# Employee Agent Desktop Strategy
+# Workforce Agent Platform Desktop Strategy
 
 Last updated: 2026-06-06
 
 ## Executive Summary
 
-Employee Agent should treat the desktop app as an enterprise edge client, not a forked product.
+Workforce Agent Platform should treat the desktop app as an enterprise edge client, not a forked product.
 
 The recommended direction is:
 
-1. Keep the current Employee Agent web service and customer-owned backend as the source of truth.
+1. Keep the current Workforce Agent Platform web service and customer-owned backend as the source of truth.
 2. Build a cross-platform Electron desktop shell that reuses the existing web UI.
 3. Add local capabilities gradually through a narrow, audited desktop bridge.
 4. Only add a managed local runtime when a customer truly needs intranet, local-file, or offline workflows.
@@ -19,7 +19,7 @@ This avoids destabilizing the current web platform while delivering the concrete
 
 Recent products such as Hermes Desktop and Marvis show a clear pattern: user experience improves when the agent can operate closer to the user's actual working environment.
 
-For Employee Agent, the main value is not simply packaging the website as an app. The value is:
+For Workforce Agent Platform, the main value is not simply packaging the website as an app. The value is:
 
 - Access to documents and internal URLs that cloud sandboxes cannot reach.
 - Lower-friction login and session persistence.
@@ -57,13 +57,13 @@ Reference files in the local copy:
 - `/home/ubuntu/reference/hermes-desktop/src/main/session-cache.ts`
 - `/home/ubuntu/reference/hermes-desktop/tests/electron-security.test.ts`
 
-The goal is to learn from the structure, not copy the product model wholesale. Hermes is more local-runner oriented; Employee Agent is private-deployment enterprise software plus OpenClaw governance.
+The goal is to learn from the structure, not copy the product model wholesale. Hermes is more local-runner oriented; Workforce Agent Platform is private-deployment enterprise software plus OpenClaw governance.
 
 Hermes Desktop is MIT licensed, so a prototype fork is legally practical as long
 as the license notice is preserved. That makes it a reasonable acceleration path
 for validation, but not automatically the best long-term product foundation.
 
-Important difference: the current Employee Agent web chat is not a plain browser
+Important difference: the current Workforce Agent Platform web chat is not a plain browser
 SSE-only client. It already has a WebSocket-first path, HTTP SSE fallback,
 stream truncation recovery, canonical DB reconciliation, and idle watchdogs. A
 desktop main-process proxy can still be valuable, but it must be introduced as a
@@ -97,7 +97,7 @@ Remote management:
 
 所以 Hermes 的“快”不只是“连 localhost”，而是 **localhost gateway + 主进程网络栈 + SSH 远端管理 + 本地缓存/健康检查** 这几件事叠加。
 
-**Employee Agent 是私有化部署产品**，数据在客户自己的 MySQL 里，后端跑在客户自己的服务器上。因此连接延迟取决于部署位置：
+**Workforce Agent Platform 是私有化部署产品**，数据在客户自己的 MySQL 里，后端跑在客户自己的服务器上。因此连接延迟取决于部署位置：
 
 | 场景 | 连接方式 | 速度特征 |
 |------|---------|---------|
@@ -110,8 +110,8 @@ Remote management:
 ### Alternative: Hermes-Derived Desktop Prototype
 
 There is a credible shortcut: start from Hermes Desktop, replace branding and
-entry configuration, point it at OpenClaw/Employee Agent, and then gradually add
-Employee Agent governance.
+entry configuration, point it at OpenClaw/Workforce Agent Platform, and then gradually add
+Workforce Agent Platform governance.
 
 This is viable for a **prototype** because Hermes already has the hardest
 desktop transport pieces:
@@ -124,7 +124,7 @@ desktop transport pieces:
 - Mature desktop UX patterns around runtime profiles.
 
 The risk is product ownership drift. Hermes is built around a personal/local
-runtime mental model. Employee Agent needs enterprise governance:
+runtime mental model. Workforce Agent Platform needs enterprise governance:
 
 - user identity and agent ownership
 - tenant/department boundaries
@@ -144,25 +144,25 @@ Short-term:
   installer, and runtime profile UX.
 
 Medium-term:
-  keep Employee Agent backend as source of truth; make the desktop client call
-  Employee Agent APIs for user, agent, policy, audit, sessions, and tools.
+  keep Workforce Agent Platform backend as source of truth; make the desktop client call
+  Workforce Agent Platform APIs for user, agent, policy, audit, sessions, and tools.
 
 Long-term:
   either keep the Hermes-derived shell if integration remains clean, or migrate
-  the proven pieces into apps/desktop while preserving Employee Agent ownership.
+  the proven pieces into apps/desktop while preserving Workforce Agent Platform ownership.
 ```
 
 The decision should be based on integration friction, not preference. If a
-Hermes-derived prototype can connect to Employee Agent/OpenClaw with a thin
+Hermes-derived prototype can connect to Workforce Agent Platform/OpenClaw with a thin
 adapter and without duplicating governance logic, it is a strong Phase 0 path.
 If it requires invasive rewrites across auth, session, tools, and UI state, then
 building `apps/desktop` directly around the current web UI is cleaner.
 
 #### Phase 0 Variant: Hermes Fork Directly Connected To OpenClaw
 
-The fastest technical prototype is not to connect Hermes to Employee Agent
+The fastest technical prototype is not to connect Hermes to Workforce Agent Platform
 first. It is to connect a Hermes-derived desktop directly to OpenClaw, while
-keeping Employee Agent untouched.
+keeping Workforce Agent Platform untouched.
 
 The first implementation should prefer OpenClaw's OpenAI-compatible HTTP
 endpoint before replacing Hermes transport with raw Gateway WebSocket:
@@ -235,11 +235,11 @@ This is likely fast enough for an internal prototype because each user can have
 their own profile. The access boundary is the user's SSH credential plus the
 OpenClaw gateway token. It is not enterprise governance yet.
 
-For enterprise release, Employee Agent must be reintroduced as the control
+For enterprise release, Workforce Agent Platform must be reintroduced as the control
 plane:
 
 ```
-Desktop -> Employee Agent: login, available agents, policy, audit, runtime lease
+Desktop -> Workforce Agent Platform: login, available agents, policy, audit, runtime lease
 Desktop -> OpenClaw: low-latency execution using the scoped lease/policy
 ```
 
@@ -248,7 +248,7 @@ not as the final governance architecture.
 
 #### Enterprise Control Plane Integration: Runtime Lease
 
-The clean way to reconnect the Phase 0 desktop prototype with Employee Agent
+The clean way to reconnect the Phase 0 desktop prototype with Workforce Agent Platform
 governance is a runtime lease model.
 
 In this model, Desktop keeps the Hermes-like fast execution path, but no longer
@@ -256,7 +256,7 @@ decides permissions locally:
 
 ```
 Control plane:
-  Desktop -> Employee Agent
+  Desktop -> Workforce Agent Platform
     login, available agents, runtime profiles, policy, audit view
 
 Execution plane:
@@ -264,11 +264,11 @@ Execution plane:
     low-latency streaming and tool execution
 
 Audit plane:
-  OpenClaw/tool layer -> Employee Agent
+  OpenClaw/tool layer -> Workforce Agent Platform
     tool call events, run status, summaries, trace ids
 ```
 
-Employee Agent issues a short-lived signed lease before Desktop connects to a
+Workforce Agent Platform issues a short-lived signed lease before Desktop connects to a
 runtime. The lease should include:
 
 - user id and tenant/department scope
@@ -292,19 +292,19 @@ x-employee-trace-id: <traceId>
 
 The first enterprise step can be pragmatic:
 
-1. Desktop logs into Employee Agent.
-2. Employee Agent returns the user's allowed desktop runtime profiles.
+1. Desktop logs into Workforce Agent Platform.
+2. Workforce Agent Platform returns the user's allowed desktop runtime profiles.
 3. User chooses an agent/profile.
-4. Employee Agent issues a short-lived runtime lease.
+4. Workforce Agent Platform issues a short-lived runtime lease.
 5. Desktop still talks directly to OpenClaw through SSH/local gateway for
    performance.
-6. Tool/run audit events are sent from the server side to Employee Agent.
+6. Tool/run audit events are sent from the server side to Workforce Agent Platform.
 
 This preserves the speed of direct OpenClaw execution while keeping Employee
 Agent as the authority for identity, authorization, policy, and audit. Desktop
 must not become the source of truth for "who can use which agent or tool".
 
-## Current Employee Agent Shape
+## Current Workforce Agent Platform Shape
 
 Current platform strengths:
 
@@ -326,7 +326,7 @@ Desktop should solve that limitation with explicit, audited local capabilities r
 
 This is the MVP.
 
-The desktop app loads the existing Employee Agent web UI. Page loads, settings,
+The desktop app loads the existing Workforce Agent Platform web UI. Page loads, settings,
 session list, REST calls, and the current chat transport can continue to use the
 same backend APIs as the browser version.
 
@@ -382,7 +382,7 @@ browser, desktop-renderer, and desktop-main timings.
 
 ### Mode 2: Remote Private Web + Local Bridge
 
-The desktop app still uses the customer's Employee Agent backend, but exposes selected local capabilities through a strict preload bridge.
+The desktop app still uses the customer's Workforce Agent Platform backend, but exposes selected local capabilities through a strict preload bridge.
 
 Candidate bridge capabilities:
 
@@ -400,7 +400,7 @@ This mode addresses the Feishu-style problem without giving every OpenClaw sandb
 This is the practical path for Hermes-like speed and stability before a fully
 managed local runtime exists.
 
-The desktop app connects to a customer-hosted Employee Agent/OpenClaw runtime
+The desktop app connects to a customer-hosted Workforce Agent Platform/OpenClaw runtime
 through SSH port forwarding:
 
 ```text
@@ -409,7 +409,7 @@ Electron renderer
     -> Electron main
       -> ssh -N -L localPort:127.0.0.1:remotePort user@host
       -> http://127.0.0.1:localPort
-      -> remote Employee Agent/OpenClaw runtime
+      -> remote Workforce Agent Platform/OpenClaw runtime
 ```
 
 Main process responsibilities:
@@ -428,25 +428,25 @@ of view the runtime is a stable local endpoint. That reduces browser/network
 edge cases, works better in private enterprise networks, and aligns with Hermes'
 remote mode.
 
-For Employee Agent governance, the private runtime must still enforce user
+For Workforce Agent Platform governance, the private runtime must still enforce user
 identity, role/tool policy, audit, and agent ownership. The tunnel is a
 transport boundary, not an authorization boundary.
 
 ### Mode 3: Managed Local Runtime（高安全场景 — 本地运行时）
 
-This is for high-security or air-gapped deployments where even the Employee Agent backend cannot be network-accessible.
+This is for high-security or air-gapped deployments where even the Workforce Agent Platform backend cannot be network-accessible.
 
-Employee Agent 本身已经是私有化部署产品（后端在客户自己服务器上）。Mode 3 针对更极端的场景：需要在用户本机或完全隔离环境中运行 OpenClaw 执行层，不通过网络访问任何外部后端。
+Workforce Agent Platform 本身已经是私有化部署产品（后端在客户自己服务器上）。Mode 3 针对更极端的场景：需要在用户本机或完全隔离环境中运行 OpenClaw 执行层，不通过网络访问任何外部后端。
 
 ```
 用户桌面（本机运行 OpenClaw 执行层）
   ↕ IPC
-Employee Agent 桌面壳
+Workforce Agent Platform 桌面壳
   ↓（仅同步 policy/audit 时联网）
-Employee Agent 后端（企业内网）
+Workforce Agent Platform 后端（企业内网）
 ```
 
-The desktop app can manage a local OpenClaw or local runner process, but the Employee Agent backend should still own:
+The desktop app can manage a local OpenClaw or local runner process, but the Workforce Agent Platform backend should still own:
 
 - User and role identity.
 - Agent authorization.
@@ -644,7 +644,7 @@ Deliverables:
   debug override is enough for the first build.
 - Validate one end-to-end chat against local OpenClaw and one SSH-tunneled
   remote OpenClaw environment.
-- Keep Employee Agent backend untouched in Phase 0.
+- Keep Workforce Agent Platform backend untouched in Phase 0.
 
 Success criteria:
 
@@ -714,7 +714,7 @@ Deliverables:
 - Managed browser extraction capability.
 - SSH tunnel support for approved gateway targets.
 - Local diagnostics export.
-- Capability audit events sent to Employee Agent backend.
+- Capability audit events sent to Workforce Agent Platform backend.
 - **Session cache（内存 + 本地持久化）**：session 列表首屏从内存读，后台增量同步云端变更。参考 Hermes `session-cache.ts` 的双层架构（内存数组 + 本地 JSON 文件 + 按 `lastSync` 增量拉取）。不做 session cache，切换会话的速度和浏览器版没有区别，Hermes 的"秒开"体验来源于此。
 - SSH private runtime connector hardening: profile-level local port allocation,
   remote API key discovery, remote log viewing, and remote gateway restart for
@@ -778,7 +778,7 @@ gateway validation an early priority. If the goal is Hermes-like stability and
 speed, the important architecture is not "Electron shell"; it is "desktop main
 process owns a local endpoint that represents the runtime."
 
-**Employee Agent 是私有化部署产品**，后端在客户自己的服务器上，不是我们托管的 SaaS。桌面版的价值主张要从这个前提出发：
+**Workforce Agent Platform 是私有化部署产品**，后端在客户自己的服务器上，不是我们托管的 SaaS。桌面版的价值主张要从这个前提出发：
 
 **内网用户**：后端就在局域网里，延迟本来就低。桌面版的价值是稳定性（睡眠重连、session 持久化）和 OS 集成（本地文件、通知），不是速度。
 
@@ -788,6 +788,6 @@ Transport optimization (Mode 1.5) is still worth exploring but should be judged
 by measurements, not assumed. The current web client already has WebSocket-first
 streaming and HTTP recovery that a naive proxy would need to replicate in full.
 
-This approach keeps governance in the customer's Employee Agent backend and
+This approach keeps governance in the customer's Workforce Agent Platform backend and
 creates a clean path for banking and enterprise intranet deployments where local
 access is necessary.

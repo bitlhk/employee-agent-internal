@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Employee Agent setup script.
+# Workforce Agent Platform setup script.
 # Interactive:
 #   bash setup.sh
 # Non-interactive:
@@ -81,7 +81,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo ""
-echo "  员工智能体 — 初始化配置"
+echo "  岗位智能体平台 — 初始化配置"
 echo "  ─────────────────────────────────"
 echo ""
 
@@ -286,7 +286,7 @@ SQL
   GW_TOKEN=$(gen_hex 24)
 
   {
-    echo "# ── 员工智能体配置（由 setup.sh 生成）──"
+    echo "# ── 岗位智能体平台配置（由 setup.sh 生成）──"
     echo "PORT=$PORT_VALUE"
     echo ""
     echo "# 访问"
@@ -319,7 +319,7 @@ SQL
     echo "HERMES_HOME=$HOME/.hermes"
     echo "LINGXIA_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
     echo ""
-    echo "# 员工智能体路由"
+    echo "# 岗位智能体平台路由"
     [[ -n "$DEMO_DOMAIN" ]] && echo "LINGGAN_CLAW_BASE_DOMAIN=$DEMO_DOMAIN"
     [[ -n "$DEMO_DOMAIN" ]] && echo "DEMO_ROUTE_DOMAIN=$DEMO_DOMAIN"
     [[ -n "$COOKIE_DOMAIN" ]] && echo "LINGGAN_CLAW_ENTRY_SCHEME=https" || echo "LINGGAN_CLAW_ENTRY_SCHEME=http"
@@ -369,7 +369,7 @@ elif [[ -n "$OPENCLAW_BIN" ]]; then
   OC_CONFIG="$OC_HOME/openclaw.json"
 
   if [[ -f "$OC_CONFIG" && -n "$GW_TOKEN" ]]; then
-    echo "  正在同步员工智能体配置到 OpenClaw..."
+    echo "  正在同步岗位智能体平台配置到 OpenClaw..."
     python3 << PYEOF
 import json
 from pathlib import Path
@@ -446,7 +446,7 @@ fi
 
 echo ""
 echo "  ─────────────────────────────────"
-echo "  员工智能体初始化完成！"
+echo "  岗位智能体平台初始化完成！"
 echo "  ─────────────────────────────────"
 echo ""
 echo "  启动方式："

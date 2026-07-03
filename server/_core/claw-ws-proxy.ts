@@ -1,5 +1,5 @@
 /**
- * claw-ws-proxy.ts v3 — WebSocket 代理：浏览器 ↔ 灵虾 ↔ OpenClaw Gateway
+ * claw-ws-proxy.ts v3 — WebSocket 代理：浏览器 ↔ 岗位智能体平台 ↔ OpenClaw Gateway
  *
  * Gateway 事件格式（已验证）：
  *   event="agent" stream="assistant" data.delta="文本"              → 流式内容
@@ -645,9 +645,9 @@ export function registerWSProxy(server: Server) {
 
         // ── 已知 no-op 事件短路（避免触发 unmatched warn 日志噪音）──
         // 这两类事件被 normalizer (event-normalizer.ts) 显式 ignore（return []）：
-        //   - lifecycle.start: agent stream 启动信号，灵虾不消费
-        //   - chat.state=delta: cumulative message snapshot，灵虾文本来自 agent/assistant，不重复 append
-        //   - item.start/end: item 生命周期边界，灵虾只消费 item.update(progressText)
+        //   - lifecycle.start: agent stream 启动信号，平台不消费
+        //   - chat.state=delta: cumulative message snapshot，平台文本来自 agent/assistant，不重复 append
+        //   - item.start/end: item 生命周期边界，平台只消费 item.update(progressText)
         // 修改 normalizer 的 no-op 列表时记得同步这里——双层 ignore 必须保持同步，否则要么
         // 出现"normalizer 漏覆盖" warn 噪音，要么"无声 drop"再次成 bug（参考 2026-04-29 教训）
         if (normalized.kind === "noop" || normalized.kind === "ignored") {

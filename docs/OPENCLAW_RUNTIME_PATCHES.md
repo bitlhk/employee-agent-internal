@@ -1,6 +1,6 @@
 # OpenClaw Runtime Patches
 
-This document records the non-upstream OpenClaw runtime patches used by Employee Agent.
+This document records the non-upstream OpenClaw runtime patches used by Workforce Agent Platform.
 
 The patches are operationally important. When OpenClaw or its bundled Codex runtime is reinstalled or upgraded, these files may be overwritten and must be rechecked.
 
@@ -72,7 +72,7 @@ pm2 restart employee-agent
 
 ### Purpose
 
-Employee Agent registers enterprise MCP tools in `~/.openclaw/openclaw.json` under `mcp.servers`. The Codex app-server path must receive those configured MCP servers; otherwise the UI may show MCP tools while the running Codex agent cannot actually call them.
+Workforce Agent Platform registers enterprise MCP tools in `~/.openclaw/openclaw.json` under `mcp.servers`. The Codex app-server path must receive those configured MCP servers; otherwise the UI may show MCP tools while the running Codex agent cannot actually call them.
 
 The patch changes OpenClaw MCP config generation so that:
 

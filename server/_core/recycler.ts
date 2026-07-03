@@ -1,4 +1,4 @@
-// ── 定时回收：每小时检查不活跃的灵虾实例 ──
+// ── 定时回收：每小时检查不活跃的岗位智能体实例 ──
 export function startRecycler() {
   setInterval(async () => {
     try {

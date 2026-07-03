@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Lingxia skill storage contract.
+ * Workforce Agent Platform skill storage contract.
  *
  * See docs/design/SKILL_STORAGE_CONTRACT.md for storage roots, reconcile
  * semantics, migration policy, and multi-tenant invariants. This file contains

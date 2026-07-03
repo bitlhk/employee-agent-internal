@@ -29,7 +29,7 @@ services:
     networks:
       - linggan-net
 
-  # ── 员工智能体 ──
+  # ── 岗位智能体平台 ──
   app:
     build:
       context: .

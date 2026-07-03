@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Bootstrap installer for Employee Agent.
+# Bootstrap installer for Workforce Agent Platform.
 # Intended usage:
 #   curl -fsSL https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh | bash
 # During the transition, the legacy linggan-claw URL remains accepted as a fallback.
@@ -206,7 +206,7 @@ clone_repo() {
 }
 
 checkout_repo() {
-  log "Checking out Employee Agent"
+  log "Checking out Workforce Agent Platform"
   local parent owner
   parent=$(dirname "$INSTALL_DIR")
   owner="${SUDO_USER:-${USER:-$(id -un)}}"
@@ -232,7 +232,7 @@ checkout_repo() {
 }
 
 run_setup() {
-  log "Running Employee Agent setup"
+  log "Running Workforce Agent Platform setup"
   local host_arg
   host_arg=$(detect_host)
   local setup_args=(
@@ -259,7 +259,7 @@ start_app() {
     log "Skipping build and PM2 start"
     return
   fi
-  log "Building and starting Employee Agent"
+  log "Building and starting Workforce Agent Platform"
   if [[ -z "${PM2_APP_NAME:-}" ]] && command -v pm2 >/dev/null 2>&1; then
     if pm2 describe linggan-claw >/dev/null 2>&1 && ! pm2 describe employee-agent >/dev/null 2>&1; then
       export PM2_APP_NAME="linggan-claw"
@@ -314,7 +314,7 @@ print_summary() {
   cat <<EOF
 
 ─────────────────────────────────
-Employee Agent bootstrap completed.
+Workforce Agent Platform bootstrap completed.
 ─────────────────────────────────
 
 Install dir:
@@ -337,7 +337,7 @@ EOF
 }
 
 main() {
-  log "Employee Agent bootstrap installer"
+  log "Workforce Agent Platform bootstrap installer"
   ensure_base_packages
   ensure_node
   ensure_node_tools

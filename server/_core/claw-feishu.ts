@@ -1,5 +1,5 @@
 /**
- * Lingxia Feishu channel binding.
+ * Workforce Agent Platform Feishu channel binding.
  *
  * Feishu uses the same app-registration device flow that OpenClaw uses:
  * init -> begin -> poll. The registration endpoint returns a dynamic appId /
@@ -606,7 +606,7 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const result = await sendFeishuMessage(adoptId, "员工智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
+      const result = await sendFeishuMessage(adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
       res.json(result.ok ? { ok: true } : { ok: false, error: result.error });
     } catch (error: any) {
       res.status(500).json({ ok: false, error: error?.message || "feishu test failed" });
@@ -799,7 +799,7 @@ export function registerFeishuRoutes(app: express.Express) {
       return res.json({
         ok: true,
         adoptId: pending.adoptId,
-        reply: "飞书已绑定到你的员工智能体，后续可以通过这个 Bot 进行双向交互。",
+        reply: "飞书已绑定到你的岗位智能体，后续可以通过这个 Bot 进行双向交互。",
       });
     } catch (error: any) {
       console.error("[FEISHU-BRIDGE] bind-code failed", error?.message || error);
@@ -822,7 +822,7 @@ export function registerFeishuRoutes(app: express.Express) {
         return res.json({
           ok: true,
           bound: false,
-          reply: "还没有绑定到 EA 员工智能体。请先在 EA 的频道页生成绑定码，然后在这里发送“绑定 绑定码”。",
+          reply: "还没有绑定到 EA 岗位智能体。请先在 EA 的频道页生成绑定码，然后在这里发送“绑定 绑定码”。",
         });
       }
 

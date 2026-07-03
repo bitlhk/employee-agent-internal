@@ -1,4 +1,4 @@
-// Frontend-facing runtime-shaped events after Lingxia wire adaptation.
+// Frontend-facing runtime-shaped events after platform wire adaptation.
 // Do not confuse this with server/_core/runtime/types.ts RuntimeEvent, which
 // represents raw OpenClaw-side facts before frontend enrichment.
 export type ChatRuntimeFinishReason = "stop" | "length" | "tool_calls" | "function_call";

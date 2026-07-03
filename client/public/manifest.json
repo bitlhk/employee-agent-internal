@@ -1,6 +1,6 @@
 {
-  "name": "员工智能体",
-  "short_name": "员工智能体",
+  "name": "岗位智能体平台",
+  "short_name": "岗位智能体平台",
   "description": "可定制、可隔离、可协作、可治理的企业 Agent 工作台",
   "start_url": "/",
   "display": "standalone",
@@ -9,7 +9,7 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/images/employee-agent.svg",
+      "src": "/images/workforce-agent.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

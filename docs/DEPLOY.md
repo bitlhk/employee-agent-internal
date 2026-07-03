@@ -1,16 +1,16 @@
-# 员工智能体部署指南
+# 岗位智能体部署指南
 
 ## 架构概览
 
 ```
-用户浏览器 → 员工智能体 (:5180) → OpenClaw Gateway (:18789) → LLM
+用户浏览器 → 岗位智能体 (:5180) → OpenClaw Gateway (:18789) → LLM
                 ↓
             MySQL (本地或远程)
 ```
 
-员工智能体 = Node.js 应用，主聊天依赖 OpenClaw Gateway。
+岗位智能体 = Node.js 应用，主聊天依赖 OpenClaw Gateway。
 
-## 方式一：裸机部署（推荐，适合员工智能体 + OpenClaw 同机）
+## 方式一：裸机部署（推荐，适合岗位智能体 + OpenClaw 同机）
 
 ### 一条命令引导安装
 
@@ -70,7 +70,7 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-这会启动 MySQL + 员工智能体。但默认镜像不包含宿主机 OpenClaw 环境，主聊天如需走本机 OpenClaw，优先使用上面的裸机部署方式。
+这会启动 MySQL + 岗位智能体。但默认镜像不包含宿主机 OpenClaw 环境，主聊天如需走本机 OpenClaw，优先使用上面的裸机部署方式。
 
 ## 方式三：手动部署
 
@@ -87,7 +87,7 @@ mysql --version
 npm install -g pnpm
 ```
 
-### Step 2: 安装员工智能体
+### Step 2: 安装岗位智能体
 
 ```bash
 git clone https://github.com/bitlhk/employee-agent.git
@@ -123,7 +123,7 @@ pm2 start ecosystem.config.cjs
 
 ## OpenClaw 安装与配置
 
-员工智能体的主聊天功能依赖 OpenClaw。不安装 OpenClaw，平台可以启动但主聊天不可用。
+岗位智能体的主聊天功能依赖 OpenClaw。不安装 OpenClaw，平台可以启动但主聊天不可用。
 
 ### 场景 A: 你已有 OpenClaw
 
@@ -132,13 +132,13 @@ pm2 start ecosystem.config.cjs
 ```jsonc
 {
   "gateway": {
-    // 1. 认证 token — 必须与员工智能体 .env 的 CLAW_GATEWAY_TOKEN 一致
+    // 1. 认证 token — 必须与岗位智能体 .env 的 CLAW_GATEWAY_TOKEN 一致
     "auth": { "token": "你的token" },
     
     // 2. 绑定地址 — 必须是 "lan"，不能是默认的 "loopback"
     "bind": "lan",
     
-    // 3. CORS 白名单 — 加入员工智能体的访问地址
+    // 3. CORS 白名单 — 加入岗位智能体的访问地址
     "controlUi": {
       "allowedOrigins": [
         "http://localhost:5180",    // 本机访问
@@ -179,8 +179,8 @@ openclaw setup
 # 3. 同步 OpenClaw gateway 配置
 # 如仍需 OpenClaw gateway，请按场景 A 手工修改已有配置。
 
-# 4. 确保 gateway token 与灵虾一致
-# 查看员工智能体的 token:
+# 4. 确保 gateway token 与岗位智能体平台一致
+# 查看岗位智能体的 token:
 grep CLAW_GATEWAY_TOKEN .env
 # 设置到 openclaw.json 的 gateway.auth.token
 
@@ -194,18 +194,18 @@ openclaw gateway start
 # 检查 gateway 是否在运行
 curl http://localhost:18789/health
 
-# 在员工智能体日志中确认连接
+# 在岗位智能体日志中确认连接
 pm2 logs employee-agent | grep "WS.*ready"
 # 应该看到: [WS] ready: xxx session: xxx
 ```
 
 ## 添加业务 Agent（可选）
 
-员工智能体支持通过 admin 后台添加自定义业务 Agent。每个 Agent 只需要：
+岗位智能体支持通过 admin 后台添加自定义业务 Agent。每个 Agent 只需要：
 - 一个对外暴露 HTTP API 的后端服务
 - 在 admin 后台填写：名称、API 地址、认证 token、System Prompt
 
-不需要修改员工智能体代码。
+不需要修改岗位智能体代码。
 
 ### 支持的 Agent 协议
 
@@ -218,7 +218,7 @@ pm2 logs employee-agent | grep "WS.*ready"
 ### 示例：添加一个 Agent
 
 1. 部署你的 Agent 后端服务（比如一个 Python FastAPI 应用，暴露在 :8080）
-2. 登录员工智能体 admin 后台
+2. 登录岗位智能体 admin 后台
 3. 智能体管理 → 添加
 4. 填写：
    - ID: `my-agent`
@@ -242,7 +242,7 @@ pm2 logs employee-agent | grep "WS.*ready"
 - 检查 OpenClaw gateway 是否运行: `openclaw health`
 - 检查 CLAW_GATEWAY_TOKEN 是否与 openclaw.json 一致
 - 检查 openclaw.json 的 `gateway.bind` 是否为 `"lan"`
-- 检查 `controlUi.allowedOrigins` 是否包含员工智能体访问地址
+- 检查 `controlUi.allowedOrigins` 是否包含岗位智能体访问地址
 
 ### 注册/登录失败
 - 检查 MySQL 是否可达: `mysql -u linggan -p -h localhost linggan`

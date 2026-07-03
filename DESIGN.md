@@ -1,4 +1,4 @@
-# 灵虾设计规范（Design Token System v1.0）
+# 岗位智能体平台设计规范（Design Token System v1.0）
 
 > 参考 Linear（暗色）+ Apple（浅色），面向企业定制化部署。
 

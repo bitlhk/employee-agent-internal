@@ -291,7 +291,7 @@ function BrandSettingsPanel() {
       {/* 模板选择器 */}
       <Card className="p-6 border-border/50 bg-white/80">
         <h3 className="text-sm font-semibold text-gray-900 mb-3">品牌模式</h3>
-        <p className="text-xs text-muted-foreground mb-4">默认使用员工智能体品牌；需要企业白标时再切换为自定义。</p>
+        <p className="text-xs text-muted-foreground mb-4">默认使用岗位智能体平台品牌；需要企业白标时再切换为自定义。</p>
         <div className="grid gap-3 sm:grid-cols-2">
           <button
             onClick={() => applyPreset("employee-agent")}
@@ -303,9 +303,9 @@ function BrandSettingsPanel() {
           >
             <div className="flex items-center gap-2">
               <div className="h-4 w-4 rounded-full" style={{ background: DEFAULT_BRAND.accentColor }} />
-              <span className="text-sm font-semibold text-gray-900">默认员工智能体</span>
+              <span className="text-sm font-semibold text-gray-900">默认岗位智能体</span>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">恢复员工智能体名称、Logo、主题色和默认身份。</p>
+            <p className="mt-1 text-xs text-muted-foreground">恢复岗位智能体名称、Logo、主题色和默认身份。</p>
           </button>
           <button
             onClick={() => setSelectedPreset("custom")}
@@ -327,7 +327,7 @@ function BrandSettingsPanel() {
       <Card className="p-6 space-y-5 border-border/50 bg-white/80">
         <h3 className="text-sm font-semibold text-gray-900">基本信息</h3>
         <div className="grid grid-cols-2 gap-4">
-          {field("name", "产品名称（中文）", { placeholder: "员工智能体" })}
+          {field("name", "产品名称（中文）", { placeholder: "岗位智能体" })}
           {field("nameEn", "产品名称（英文）", { placeholder: "Enterprise Agent" })}
           {field("platform", "平台名称（中文）", { placeholder: "灵感" })}
           {field("platformEn", "平台名称（英文）", { placeholder: "Linggan" })}
@@ -361,7 +361,7 @@ function BrandSettingsPanel() {
               />
             </div>
           </div>
-          {field("logo", "Logo 路径", { placeholder: "/images/employee-agent.svg" })}
+          {field("logo", "Logo 路径", { placeholder: "/images/workforce-agent.svg" })}
         </div>
         {field("favicon", "Favicon 路径", { placeholder: "/favicon.png" })}
       </Card>

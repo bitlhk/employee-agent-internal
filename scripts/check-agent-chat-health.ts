@@ -1,13 +1,13 @@
 #!/usr/bin/env -S npx tsx
 /**
- * check-lingxia-chat-health.ts
+ * check-agent-chat-health.ts
  *
- * Read-only health summary for Lingxia chat runtime migration.
+ * Read-only health summary for Workforce Agent Platform chat runtime migration.
  *
  * Typical use:
- *   pnpm tsx scripts/check-lingxia-chat-health.ts --since-minutes 720
- *   pnpm tsx scripts/check-lingxia-chat-health.ts --since-minutes 1440 --strict
- *   pnpm tsx scripts/check-lingxia-chat-health.ts --json
+ *   pnpm tsx scripts/check-agent-chat-health.ts --since-minutes 720
+ *   pnpm tsx scripts/check-agent-chat-health.ts --since-minutes 1440 --strict
+ *   pnpm tsx scripts/check-agent-chat-health.ts --json
  */
 
 import { existsSync, readFileSync } from "fs";
@@ -19,7 +19,7 @@ const argv = process.argv.slice(2);
 const JSON_MODE = argv.includes("--json");
 const STRICT = argv.includes("--strict");
 const SINCE_MINUTES = numberArg("--since-minutes", 24 * 60);
-const LOG_DIR = process.env.LINGXIA_LOG_DIR || "logs";
+const LOG_DIR = process.env.EA_LOG_DIR || process.env.LINGXIA_LOG_DIR || "logs";
 const cutoffMs = Date.now() - SINCE_MINUTES * 60 * 1000;
 
 function numberArg(name: string, fallback: number) {
@@ -118,7 +118,7 @@ const summary = {
 if (JSON_MODE) {
   console.log(JSON.stringify(summary, null, 2));
 } else {
-  console.log(`Lingxia chat health since ${summary.cutoff} (${SINCE_MINUTES} min)`);
+  console.log(`Workforce Agent Platform chat health since ${summary.cutoff} (${SINCE_MINUTES} min)`);
   console.log("");
   console.log(`  WS natural:        ${counts.wsNatural}`);
   console.log(`  WS abnormal:       ${counts.wsAbnormal}`);

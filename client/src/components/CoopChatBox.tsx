@@ -1,7 +1,7 @@
 /**
  * CoopChatBox — 协作子任务的接收方"工作台" mini chat
  *
- * 接受任务后，接收方在协作页面里直接 chat，跟自己的员工智能体对话完成子任务，
+ * 接受任务后，接收方在协作页面里直接 chat，跟自己的岗位智能体对话完成子任务，
  * 用 epochLabel = `coop-{sid}-u{uid}` 跟主聊天物理隔离（claw-chat.ts:312 已支持）。
  *
  * 演示前 Phase 1 简化：
@@ -202,7 +202,7 @@ export function CoopChatBox({ sessionId, requestId, subtask, coopTitle, onSubmit
     return <div className="flex items-center justify-center py-8 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin mr-2" /> 加载中</div>;
   }
   if (!myAdoptId) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">需要先创建员工智能体才能在这里完成子任务</div>;
+    return <div className="py-6 text-center text-xs text-muted-foreground">需要先创建岗位智能体才能在这里完成子任务</div>;
   }
 
   return (

@@ -1,5 +1,5 @@
 /**
- * Home.tsx — Lingxia (员工智能体) Console
+ * Home.tsx — Workforce Agent Platform console
  * Renders the sub-claw control panel when accessed via /claw/:adoptId or a lingxia subdomain.
  * The linggan homepage code has been removed (dead code on this server).
  */
@@ -25,9 +25,9 @@ import { TopBar } from "@/components/console/TopBar";
 import { MainPanel } from "@/components/console/MainPanel";
 import type { SettingsHealthDiagnostics } from "@/components/settings/SettingsOverlay";
 import { ChatPage } from "@/components/pages/ChatPage";
-import { LingxiaIcon } from "@/components/LingxiaIcon";
+import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
-import { useLingxiaChat } from "@/hooks/useLingxiaChat";
+import { useAgentChat } from "@/hooks/useAgentChat";
 import { formatModelName } from "@/lib/modelDisplay";
 import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -705,7 +705,7 @@ async function handleStreamTruncated(
 }
 
 export default function Home() {
-  // 员工智能体子域名聊天态（MVP）
+  // 岗位智能体子域名聊天态（MVP）
   const brand = useBrand();
   const { confirm, dialog } = useConfirmDialog();
   const clientLoadStartedAtRef = useRef(typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -985,7 +985,7 @@ export default function Home() {
     retry: false,
     onSuccess: () => {
       refetchClawSettings();
-      toast.success("员工智能体设置已保存");
+      toast.success("岗位智能体设置已保存");
     },
   });
 
@@ -1062,7 +1062,7 @@ export default function Home() {
   }, [DRAFT_KEY]);
 
   const chatV2Enabled = isLingxiaChatV2Enabled((user as any)?.id);
-  const chatV2 = useLingxiaChat({
+  const chatV2 = useAgentChat({
     adoptId: resolvedAdoptId,
     channel: webConversationId ? "web" : undefined,
     conversationId: webConversationId || undefined,
@@ -2049,7 +2049,7 @@ export default function Home() {
 
   const uploadLingxiaAttachments = async (files: File[]): Promise<UploadedLingxiaAttachment[]> => {
     if (!files.length) return [];
-    if (!resolvedAdoptId) throw new Error("缺少员工智能体实例 ID");
+    if (!resolvedAdoptId) throw new Error("缺少岗位智能体实例 ID");
     const apiBase = import.meta.env.VITE_API_URL || "";
     const uploads: UploadedLingxiaAttachment[] = [];
 
@@ -3193,7 +3193,7 @@ export default function Home() {
     };
   }, [isLingxiaSubdomain, markClientLoadMetric, resolvedAdoptId, user]);
 
-  // 员工智能体聊天消息区：仅在接近底部时自动跟随
+  // 岗位智能体聊天消息区：仅在接近底部时自动跟随
   const lingxiaMsgsEndRef = useRef<HTMLDivElement>(null);
   const isLingxiaNearBottom = useCallback(() => {
     const el = lingxiaMsgViewportRef.current;
@@ -3303,7 +3303,7 @@ export default function Home() {
       return { severity: "info" as const, text: "正在连接 OpenClaw…", detail: "" };
     }
     if (!clawByAdoptLoading && !clawByAdoptId) {
-      return { severity: "error" as const, text: "未找到当前员工智能体实例", detail: "请确认实例仍有效，或切换到有权限的工作台。" };
+      return { severity: "error" as const, text: "未找到当前岗位智能体实例", detail: "请确认实例仍有效，或切换到有权限的工作台。" };
     }
     if (clawHealthError) {
       return { severity: "warning" as const, text: "健康检查暂时不可用", detail: clawHealthError };
@@ -3524,13 +3524,13 @@ export default function Home() {
   );
 
   if (resolvedAdoptId && !authLoading && !user) {
-    return accessGateShell("请先登录", "登录后才能访问员工智能体工作台，未登录状态不会展示实例页面。");
+    return accessGateShell("请先登录", "登录后才能访问岗位智能体工作台，未登录状态不会展示实例页面。");
   }
 
   if (resolvedAdoptId && user && (clawByAdoptError || (!clawByAdoptLoading && !clawByAdoptId))) {
     return accessGateShell(
       "无权访问该工作台",
-      "当前账号没有该员工智能体实例的访问权限。请切换到实例所属账号，或返回自己的工作台。",
+      "当前账号没有该岗位智能体实例的访问权限。请切换到实例所属账号，或返回自己的工作台。",
       <button
         type="button"
         onClick={() => setLocationCoop("/")}
@@ -3579,7 +3579,7 @@ export default function Home() {
                 className="rounded-full shrink-0 flex items-center justify-center relative"
                 style={{ width: 38, height: 38, background: "var(--oc-sidebar-avatar-bg)", color: "var(--oc-sidebar-muted)" }}
               >
-                <LingxiaIcon size={26} animate={false} breathe={false} />
+                <WorkforceAgentIcon size={26} animate={false} breathe={false} />
                 {sidebarClawOnline ? (
                   <span
                     aria-hidden="true"
@@ -3761,7 +3761,7 @@ export default function Home() {
 
               {!clawByAdoptLoading && !clawByAdoptId && (
                 <div className="max-w-4xl rounded-xl p-4 text-sm" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", color: "#d4a030" }}>
-                  未找到该员工智能体实例，可能已过期或尚未完成创建。
+                  未找到该岗位智能体实例，可能已过期或尚未完成创建。
                 </div>
               )}
 

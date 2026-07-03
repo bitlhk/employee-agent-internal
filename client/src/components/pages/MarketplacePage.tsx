@@ -561,7 +561,7 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
                       )}
                     </div>
                     <span className="skills-market-detail__hint">
-                      安装后会进入“我的技能”，并同步到当前员工智能体运行时。
+                      安装后会进入“我的技能”，并同步到当前岗位智能体运行时。
                     </span>
                   </div>
                 </>

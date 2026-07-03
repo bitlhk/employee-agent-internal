@@ -2,7 +2,7 @@
 /**
  * audit-ui-hardcodes.ts
  *
- * Read-only UI debt scanner for Lingxia frontend pages.
+ * Read-only UI debt scanner for Workforce Agent Platform frontend pages.
  *
  * It intentionally reports likely risks instead of enforcing failures:
  * - hard-coded hex/rgb colors
@@ -209,7 +209,7 @@ function main() {
     return;
   }
 
-  console.log("Lingxia UI hardcode audit");
+  console.log("Workforce Agent Platform UI hardcode audit");
   console.log(`Generated: ${new Date().toISOString()}`);
   console.log("");
   printSummary(reports);

@@ -1,6 +1,6 @@
 # Role-Based Agent Tool Permissions
 
-This document records the proposed design for role-based Skill and MCP permissions in Employee Agent. It is a design note only; the current code does not yet implement the full role-template flow.
+This document records the proposed design for role-based Skill and MCP permissions in Workforce Agent Platform. It is a design note only; the current code does not yet implement the full role-template flow.
 
 ## Goal
 
@@ -141,7 +141,7 @@ The role template should drive three layers consistently:
 
 ```text
 Frontend display
--> Employee Agent API authorization/filtering
+-> Workforce Agent Platform API authorization/filtering
 -> Runtime/MCP exposure
 ```
 
@@ -553,7 +553,7 @@ audit event. Row-level update reuses `adminUpdate`; batch reassignment reuses
 `adminBatchUpdate` (both take a new `role` field on top of the existing
 `permissionProfile`/`status`/`ttlDays` inputs).
 
-## Employee Agent API Layer
+## Workforce Agent Platform API Layer
 
 The server must enforce role filtering even if a user bypasses the frontend.
 
@@ -893,7 +893,7 @@ Upgrade still needs validation around the interfaces we actively depend on:
   `mcp.servers.*.codex.agents` is present in OpenClaw 2026.6.8
   (`bundle-mcp-codex` filters by agent id). It should still be covered by a smoke
   test before role-based MCP filtering is enabled in Shanghai.
-- Gateway streaming events used by Employee Agent desktop/web paths, including
+- Gateway streaming events used by Workforce Agent Platform desktop/web paths, including
   assistant deltas, tool start/result events, terminal done/error events, and
   idle timeout behavior.
 - Skill runtime loading: whether changes to `agents.list[].skills` and workspace
@@ -906,7 +906,7 @@ Upgrade still needs validation around the interfaces we actively depend on:
 
 Recommended sequence for the three environments:
 
-1. First synchronize Employee Agent code and configuration across local,
+1. First synchronize Workforce Agent Platform code and configuration across local,
    Shanghai, and Singapore experiment environments. Do not upgrade OpenClaw while
    EA code/config are divergent; otherwise failures cannot be attributed cleanly.
 2. Freeze and back up current `openclaw.json`, `.env`, workspace directories,
@@ -1371,7 +1371,7 @@ Implementation sketch (once the jiuwen dependency is cleared):
 1. `UiSettings` add `reasoningEnabled: boolean` (distinct from the display-only
    `chatShowThinking`).
 2. `SettingsPanel.tsx` add a switch; default ON (quality first).
-3. `useLingxiaChat.ts` include it in the chat payload (alongside `memoryEnabled`).
+3. `useAgentChat.ts` include it in the chat payload (alongside `memoryEnabled`).
 4. Backend passes it to the runtime; when OFF, inject `thinking:{type:disabled}`
    into the model request. Only meaningful for reasoning models (glm-5.x); harmless
    to pass to others.

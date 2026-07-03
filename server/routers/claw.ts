@@ -437,7 +437,7 @@ export const clawRouter = router({
           status: claw.status,
           entryUrl: claw.entryUrl,
           expiresAt: claw.expiresAt,
-          displayName: String((profile as any)?.displayName || "员工智能体"),
+          displayName: String((profile as any)?.displayName || "岗位智能体"),
           permissionProfile: String(claw.permissionProfile || "starter"),
           roleTemplate: String((claw as any).roleTemplate || "general-assistant"),
           industry: String((claw as any).industry || "general"),
@@ -1603,13 +1603,13 @@ export const clawRouter = router({
       .mutation(async ({ input, ctx }) => {
         if (input.visibility) {
           await upsertSystemConfig(
-            { key: "claw_visibility", value: input.visibility, description: "员工智能体可见性：public/internal" },
+            { key: "claw_visibility", value: input.visibility, description: "岗位智能体可见性：public/internal" },
             ctx.user!.id
           );
         }
         if (input.defaultProfile) {
           await upsertSystemConfig(
-            { key: "claw_default_profile", value: input.defaultProfile, description: "新建员工智能体默认角色：plus=员工，internal=管理员；底层 runtime 单独映射工具权限" },
+            { key: "claw_default_profile", value: input.defaultProfile, description: "新建岗位智能体默认角色：plus=员工，internal=管理员；底层 runtime 单独映射工具权限" },
             ctx.user!.id
           );
         }
@@ -1670,7 +1670,7 @@ export const clawRouter = router({
         } catch {}
         const base = settings || {
           adoptionId: Number(claw.id),
-          displayName: "员工智能体",
+          displayName: "岗位智能体",
           personaPrompt: "",
           stylePreset: "steady_research",
           memoryEnabled: "yes",
@@ -1734,7 +1734,7 @@ export const clawRouter = router({
         const clawVisibility = (await getSystemConfigValue("claw_visibility", "internal")).trim() || "internal";
         const userAccessLevel = ((ctx.user as any)?.accessLevel || "public_only") as "public_only" | "all";
         if (clawVisibility === "internal" && userAccessLevel !== "all") {
-          throw new Error("当前员工智能体为内部访问，仅内部权限用户可创建");
+          throw new Error("当前岗位智能体为内部访问，仅内部权限用户可创建");
         }
 
         // 幂等：普通申请沿用历史行为；迁移申请只复用同 runtime，避免老 lgc-* 阻止创建 lgj-*。
@@ -1936,7 +1936,7 @@ export const clawRouter = router({
             errorCode: "AGENT_CREATE_FAILED",
             metadata: auditErrorMetadata(error),
           });
-          throw new Error(`员工智能体创建失败：${msg}`);
+          throw new Error(`岗位智能体创建失败：${msg}`);
         }
       }),
 
@@ -2124,12 +2124,12 @@ export const clawRouter = router({
               durationMs: Date.now() - startedAt,
               error: msg,
             });
-            throw new Error(`员工智能体对话引擎调用失败：${msg}`);
+            throw new Error(`岗位智能体对话引擎调用失败：${msg}`);
           }
         }
 
         // 默认 mock
-        const reply = `员工智能体已收到：${input.message}\n\n（对话引擎接入中，下一步将切到真实 OpenClaw 会话）`;
+        const reply = `岗位智能体已收到：${input.message}\n\n（对话引擎接入中，下一步将切到真实 OpenClaw 会话）`;
         return {
           ok: true,
           adoptId: input.adoptId,

@@ -6,7 +6,7 @@ import { agentRuntimeFamilySchema } from "./agent";
  *
  * This is the declaration layer for Hermes runtime-level workers, skills,
  * MCP/data access, output schemas, and write-holder boundaries. It is not the
- * Lingxia/OpenClaw SkillHub contract.
+ * Workforce Agent Platform/OpenClaw SkillHub contract.
  */
 
 export const AGENT_MANIFEST_ROLES = ["orchestrator", "reader", "analyst", "writer"] as const;

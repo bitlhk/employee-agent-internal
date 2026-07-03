@@ -420,7 +420,7 @@ export function detectSuspiciousActivity(req: Request, res: Response, next: Next
 
 
 /**
- * 灵虾聊天接口速率限制
+ * 岗位智能体聊天接口速率限制
  * 按 adoptId 限速（优先），兜底按 IP
  * 每个 adoptId 每分钟最多 15 次请求
  */
@@ -447,7 +447,7 @@ export const clawChatLimiter = rateLimit({
         path: req.path.substring(0, 500),
         method: req.method,
         userAgent: req.headers["user-agent"] || null,
-        reason: "灵虾聊天速率限制触发",
+        reason: "岗位智能体聊天速率限制触发",
         details: JSON.stringify({ adoptId: adoptId.slice(0, 64) }),
         severity: "medium",
       });

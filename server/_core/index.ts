@@ -157,7 +157,7 @@ async function guardProtectedClawSpa(req: Request, res: Response): Promise<boole
 
   const claw = await getClawByAdoptId(adoptId).catch(() => null);
   if (!claw || Number((claw as any).userId || 0) !== Number(user?.id || 0)) {
-    res.status(403).send(`<!doctype html><meta charset="utf-8"><title>无权访问</title><body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#0f172a"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:420px;border:1px solid #e2e8f0;background:white;border-radius:14px;padding:32px;text-align:center;box-shadow:0 12px 30px rgba(15,23,42,.08)"><h1 style="font-size:22px;margin:0 0 12px">无权访问该工作台</h1><p style="font-size:14px;line-height:1.7;color:#64748b;margin:0">当前账号没有该员工智能体实例的访问权限。请切换到实例所属账号，或返回自己的工作台。</p><a href="/" style="display:inline-block;margin-top:22px;padding:10px 16px;border-radius:10px;background:#0f172a;color:white;text-decoration:none;font-size:14px">返回首页</a></section></main></body>`);
+    res.status(403).send(`<!doctype html><meta charset="utf-8"><title>无权访问</title><body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#0f172a"><main style="min-height:100vh;display:grid;place-items:center;padding:24px"><section style="max-width:420px;border:1px solid #e2e8f0;background:white;border-radius:14px;padding:32px;text-align:center;box-shadow:0 12px 30px rgba(15,23,42,.08)"><h1 style="font-size:22px;margin:0 0 12px">无权访问该工作台</h1><p style="font-size:14px;line-height:1.7;color:#64748b;margin:0">当前账号没有该岗位智能体实例的访问权限。请切换到实例所属账号，或返回自己的工作台。</p><a href="/" style="display:inline-block;margin-top:22px;padding:10px 16px;border-radius:10px;background:#0f172a;color:white;text-decoration:none;font-size:14px">返回首页</a></section></main></body>`);
     logIosLoadDebug("guard_forbidden", {
       path: req.path,
       adoptId,
@@ -324,7 +324,7 @@ async function startServer() {
   registerFeishuRoutes(app);
   // 启动微信双向聊天桥
   import("./claw-weixin-bridge").then(m => m.startWeixinBridge()).catch(e => console.error("weixin bridge start failed:", e));
-  // 启动 cron 结果投递轮询（灵虾平台侧，补充 Gateway 不支持的渠道）
+  // 启动 cron 结果投递轮询（岗位智能体平台侧，补充 Gateway 不支持的渠道）
   import("./cron-delivery").then(m => m.startCronDeliveryPoller()).catch(e => console.error("cron delivery poller start failed:", e));
   registerSkillRoutes(app);
   registerCollabRoutes(app);
@@ -354,7 +354,7 @@ async function startServer() {
   registerAuditIngestRoutes(app);
   registerDesktopRoutes(app);
 
-  // ── 灵虾流式聊天 SSE 端点 ──
+  // ── 岗位智能体平台流式聊天 SSE 端点 ──
   // Session/auth helpers extracted to ./helpers.ts
 
 

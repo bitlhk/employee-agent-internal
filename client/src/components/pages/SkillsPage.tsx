@@ -1238,7 +1238,7 @@ export function SkillsPage({ adoptId }: {
 
   const onUploadFile = async (file: File) => {
     if (!adoptId) {
-      toast.error("请先进入具体员工智能体实例后再上传技能");
+      toast.error("请先进入具体岗位智能体实例后再上传技能");
       return;
     }
     if (!/\.(zip|skill)$/i.test(file.name)) {

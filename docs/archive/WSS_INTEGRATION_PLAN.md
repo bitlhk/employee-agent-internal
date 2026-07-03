@@ -1,10 +1,10 @@
-# 灵虾 WebSocket 直连 OpenClaw Gateway 方案
+# 岗位智能体平台 WebSocket 直连 OpenClaw Gateway 方案
 
 ## 背景
 
 当前子虾聊天链路：
 ```
-浏览器 → HTTP POST /api/claw/chat-stream → 灵虾 Node.js 代理 → HTTP /v1/chat/completions → Gateway → LLM
+浏览器 → HTTP POST /api/claw/chat-stream → 岗位智能体平台 Node.js 代理 → HTTP /v1/chat/completions → Gateway → LLM
 ```
 
 目标链路（WSS 优先 + HTTP 回退）：
@@ -120,7 +120,7 @@ if (useWSMode) {
 WSS 返回的 RPC 事件需要转换成现有 ChatMessage 组件能消费的格式：
 
 ```typescript
-// Gateway WSS 事件 → 灵虾消息格式
+// Gateway WSS 事件 → 岗位智能体平台消息格式
 {
   "type": "event",
   "event": "sessions.stream.delta",
@@ -163,9 +163,9 @@ WSS 返回的 RPC 事件需要转换成现有 ChatMessage 组件能消费的格�
 
 ## 前端安全考虑
 
-- Gateway token 不能暴露到浏览器端 → 需要灵虾后端签发短时 session token
-- WSS 连接的 token 通过灵虾后端的 `/api/claw/ws-token` 接口获取（一次性，5 分钟有效）
-- 或者灵虾后端做 WSS 代理（浏览器 → 灵虾 WSS → gateway WSS），token 不出服务端
+- Gateway token 不能暴露到浏览器端 → 需要岗位智能体平台后端签发短时 session token
+- WSS 连接的 token 通过岗位智能体平台后端的 `/api/claw/ws-token` 接口获取（一次性，5 分钟有效）
+- 或者岗位智能体平台后端做 WSS 代理（浏览器 → 岗位智能体平台 WSS → gateway WSS），token 不出服务端
 
 ## 工作量估算
 

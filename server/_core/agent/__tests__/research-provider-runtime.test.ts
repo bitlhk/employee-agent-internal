@@ -64,7 +64,7 @@ describe("research provider runtime", () => {
     });
   });
 
-  it("aws-worker receives only SearchPlan and Lingxia still applies EvidenceGate", async () => {
+  it("aws-worker receives only SearchPlan and platform still applies EvidenceGate", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({
       results: [{
         title: "Tencent report on Sequoia AI Ascent 2026",
@@ -156,7 +156,7 @@ describe("research provider runtime", () => {
       provider: "zhipu" as const,
       model: "glm-test",
     }));
-    const { LingxiaLlmSearchPlanner } = await import("../research-provider-runtime");
+    const { PlatformLlmSearchPlanner } = await import("../research-provider-runtime");
     const provider = createResearchProvider({
       planner: { mode: "deterministic" },
       searchExecutor: { mode: "local" },
@@ -165,7 +165,7 @@ describe("research provider runtime", () => {
       env: { TAVILY_API_KEY: "tavily-secret" },
       fetchImpl,
       now: () => new Date("2026-05-05T00:00:00.000Z"),
-      searchPlanner: new LingxiaLlmSearchPlanner({
+      searchPlanner: new PlatformLlmSearchPlanner({
         env: { ZHIPU_API_KEY: "zhipu-secret" },
         provider: "zhipu",
         callLlm,
@@ -202,8 +202,8 @@ describe("research provider runtime", () => {
       provider: "deepseek" as const,
       model: "deepseek-test",
     }));
-    const { LingxiaLlmSourceJudge } = await import("../research-provider-runtime");
-    const judge = new LingxiaLlmSourceJudge({
+    const { PlatformLlmSourceJudge } = await import("../research-provider-runtime");
+    const judge = new PlatformLlmSourceJudge({
       env: { DEEPSEEK_API_KEY: "deepseek-secret" },
       provider: "deepseek",
       callLlm,

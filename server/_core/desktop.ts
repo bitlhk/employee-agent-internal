@@ -1315,7 +1315,7 @@ export function registerDesktopRoutes(app: express.Express) {
       agents: [
         {
           id: agentId,
-          name: process.env.DESKTOP_OPENCLAW_AGENT_NAME || "员工智能体",
+          name: process.env.DESKTOP_OPENCLAW_AGENT_NAME || "岗位智能体",
           description: "Desktop MVP fixed OpenClaw agent",
         },
       ],

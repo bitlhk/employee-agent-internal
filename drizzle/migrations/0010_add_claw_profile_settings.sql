@@ -1,4 +1,4 @@
--- 灵虾个性化设置：灵魂 / 记忆 / 上下文
+-- 岗位智能体个性化设置：灵魂 / 记忆 / 上下文
 
 CREATE TABLE IF NOT EXISTS `claw_profile_settings` (
   `id` BIGINT NOT NULL AUTO_INCREMENT,

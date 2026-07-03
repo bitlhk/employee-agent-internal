@@ -1,18 +1,18 @@
 # 内部命名审计与迁移建议
 
 **日期**: 2026-05-11
-**范围**: 员工智能体代码仓内部历史命名审计
-**目标**: 在不破坏现有上海/新加坡部署的前提下，逐步把旧 `灵虾 / Lingxia / LingganClaw / linggan-claw` 产品痕迹收口为当前“员工智能体”定位。
+**范围**: 岗位智能体平台代码仓内部历史命名审计
+**目标**: 在不破坏现有上海/新加坡部署的前提下，逐步把旧 `岗位智能体平台 / Lingxia / LingganClaw / linggan-claw` 产品痕迹收口为当前“岗位智能体平台”定位。
 
 ---
 
 ## 一、结论摘要
 
-当前可见产品名已经基本切到“员工智能体”，但内部仍保留四类历史命名：
+当前可见产品名已经基本切到“岗位智能体平台”，但内部仍保留四类历史命名：
 
 1. **仓库与部署名**: `linggan-claw`, `~/linggan-claw`, PM2 `linggan-claw`。
 2. **运行时工作区名**: `workspace-lingganclaw`, `lingganclaw:user:*`。
-3. **旧产品名/模块名前缀**: `Lingxia`, `lingxia-*`, `useLingxiaChat`, `.lingxia-policies.json`。
+3. **旧产品名/模块名前缀**: `Lingxia`, `lingxia-*`, `useAgentChat`, `.lingxia-policies.json`。
 4. **OpenClaw 运行时语义**: `claw`, `/api/claw/*`, `clawAdoptions`, `adoptId`。
 
 其中 **1 可以随 GitHub 仓库改名同步改**，**2 和 4 需要兼容迁移方案**，**3 可以分批安全改**。
@@ -34,7 +34,7 @@ grep -RIn \
   -e 'Lingxia' \
   -e 'lingxia' \
   -e '子虾' \
-  -e '灵虾' \
+  -e '岗位智能体平台' \
   -e '领养' \
   .
 ```
@@ -54,11 +54,11 @@ grep -RIn \
 示例：
 
 ```text
-client/src/hooks/useLingxiaChat.ts
+client/src/hooks/useAgentChat.ts
 client/src/lib/chat-state-reducer.ts
-  LingxiaChatMessage
-  reduceLingxiaChatState
-  useLingxiaChat
+  AgentChatMessage
+  reduceAgentChatState
+  useAgentChat
 ```
 
 建议：
@@ -97,12 +97,12 @@ client/src/index.css
 client/src/lib/openclaw-ws.ts 注释
 client/src/data/coopTemplates.ts 注释
 shared/types/*.ts 注释
-setup.sh 末尾 “灵虾初始化完成”
+setup.sh 末尾 “岗位智能体平台初始化完成”
 ```
 
 建议：
 
-- 可以直接改为“员工智能体”。
+- 可以直接改为“岗位智能体平台”。
 - 只改注释和输出文案，不改结构名。
 - 风险低。
 
@@ -313,7 +313,7 @@ OpenClaw gateway / workspace / model
 原因：
 
 - 这些指向底层 OpenClaw 产品或协议，是技术事实。
-- 员工智能体可以支持 OpenClaw，也可以支持 Hermes、MCP、A2A；保留 OpenClaw 命名有助于区分 runtime。
+- 岗位智能体平台可以支持 OpenClaw，也可以支持 Hermes、MCP、A2A；保留 OpenClaw 命名有助于区分 runtime。
 
 建议只改“产品层旧名”，不要把 runtime 供应商名也抹掉。
 
@@ -325,10 +325,10 @@ OpenClaw gateway / workspace / model
 
 目标：不碰数据库、不碰路径、不碰 API。
 
-- `useLingxiaChat` 增加 `useAgentChat` alias。
-- `LingxiaChatMessage` 增加 `AgentChatMessage` alias。
-- 注释、README、测试标题里的 Lingxia 改为 Employee Agent / 员工智能体。
-- setup 输出末尾残留“灵虾初始化完成”改为“员工智能体初始化完成”。
+- `useAgentChat` 增加 `useAgentChat` alias。
+- `AgentChatMessage` 增加 `AgentChatMessage` alias。
+- 注释、README、测试标题里的 Lingxia 改为 Workforce Agent Platform / 岗位智能体平台。
+- setup 输出末尾残留“岗位智能体平台初始化完成”改为“岗位智能体平台初始化完成”。
 - Financial Harness 文案从 `Lingxia Financial Harness` 改为 `Financial Agent Harness`。
 
 ### 阶段 2：仓库改名同步

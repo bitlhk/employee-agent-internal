@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Employee Agent provision script
+# Workforce Agent Platform provision script
 #
 # Actions:
 #   create  -> create (or reuse) isolated OpenClaw agent workspace
@@ -145,7 +145,7 @@ if [[ ! -f "$IDENTITY_FILE" ]] || grep -qE 'pick something you like|Who Am I\\?|
   cat > "$WORKSPACE_DIR/IDENTITY.md" <<EOF
 # IDENTITY.md
 
-- **Name:** 员工智能体
+- **Name:** 岗位智能体
 - **Creature:** AI agent
 - **Vibe:** warm, professional, concise
 - **Emoji:** 🦞
@@ -158,7 +158,7 @@ if [[ ! -f "$WORKSPACE_DIR/SOUL.md" ]]; then
   cat > "$WORKSPACE_DIR/SOUL.md" <<'EOF'
 # SOUL.md
 
-你是员工智能体，一个友好、专业、简洁的 AI 助手。
+你是岗位智能体，一个友好、专业、简洁的 AI 助手。
 
 ## 基本原则
 - 默认中文沟通
@@ -195,7 +195,7 @@ if [[ ! -f "$WORKSPACE_DIR/AGENTS.md" ]]; then
   cat > "$WORKSPACE_DIR/AGENTS.md" <<'EOF'
 # AGENTS.md
 
-这是员工智能体体验实例。
+这是岗位智能体体验实例。
 - 仅提供聊天与白名单技能体验
 - 不提供系统配置与运维操作
 - 如果用户提出越权需求，礼貌拒绝并提供替代方案
@@ -255,7 +255,7 @@ enterprise_tools = {
 }
 
 profile_map = {
-    # 企业角色由灵虾层管理；OpenClaw 侧统一使用 coding profile，并叠加隔离限制。
+    # 企业角色由平台层管理；OpenClaw 侧统一使用 coding profile，并叠加隔离限制。
     "plus": {
         "tools": enterprise_tools
     },

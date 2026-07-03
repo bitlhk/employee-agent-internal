@@ -1,5 +1,5 @@
 /**
- * 灵虾组织协作 V2 - Coop Session 数据层
+ * 岗位智能体协作 V2 - Coop Session 数据层
  * 
  * 设计：一个 coop session = N 条 claw_collab_requests（以 sessionId 串起来）
  * - 老 1:1 协作（collab_requests.sessionId IS NULL）零影响

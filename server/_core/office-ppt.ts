@@ -1495,8 +1495,8 @@ export async function generateImagePptxFromBlueprint(args: {
   const PptxGen = ((pptxgenjs as any).default || pptxgenjs) as any;
   const pptx = new PptxGen();
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "Linggan Employee Agent";
-  pptx.company = "Linggan";
+  pptx.author = "Workforce Agent Platform";
+  pptx.company = "Workforce Agent Platform";
   pptx.subject = args.blueprint.title || "PPT 制作";
   pptx.title = `${args.blueprint.title || "PPT 制作"} - 高保真版`;
   const slides = args.blueprint.slides.slice(0, 20);
@@ -1530,8 +1530,8 @@ export async function generatePptxFromBlueprint(args: {
   const PptxGen = ((pptxgenjs as any).default || pptxgenjs) as any;
   const pptx = new PptxGen();
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "Linggan Employee Agent";
-  pptx.company = "Linggan";
+  pptx.author = "Workforce Agent Platform";
+  pptx.company = "Workforce Agent Platform";
   pptx.subject = args.instruction || args.blueprint.title || "PPT 制作";
   pptx.title = args.blueprint.title || "PPT 制作";
   pptx.theme = {
@@ -1563,7 +1563,7 @@ export async function generatePptxFromBlueprint(args: {
       const title = splitTitle(item.title || args.blueprint.title || "PPT 制作");
       slide.addText(title.label || "汇报材料", { x: 0.72, y: 1.25, w: 2.2, h: 0.36, fontFace: "Microsoft YaHei", fontSize: 11.5, bold: true, color: theme.accent });
       slide.addText(title.main || args.blueprint.title || "PPT 制作", { x: 0.72, y: 1.7, w: 10.8, h: 0.95, fontFace: "Microsoft YaHei", fontSize: 29, bold: true, color: theme.text, fit: "shrink" });
-      slide.addText(args.blueprint.subtitle || item.keyMessage || "由灵感员工智能体生成", { x: 0.75, y: 2.82, w: 9.8, h: 0.36, fontFace: "Microsoft YaHei", fontSize: 11.5, color: theme.muted, fit: "shrink" });
+      slide.addText(args.blueprint.subtitle || item.keyMessage || "由灵感岗位智能体生成", { x: 0.75, y: 2.82, w: 9.8, h: 0.36, fontFace: "Microsoft YaHei", fontSize: 11.5, color: theme.muted, fit: "shrink" });
       if (item.bullets.length) {
         slide.addText(bulletText(item), { x: 0.78, y: 4.2, w: 8.5, h: 1.25, fontFace: "Microsoft YaHei", fontSize: 12.2, color: theme.text, breakLine: false, fit: "shrink" });
       }

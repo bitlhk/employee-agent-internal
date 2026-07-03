@@ -187,7 +187,7 @@ export function CoopSubmitModal({
 
   if (!open) return null;
 
-  // ── 灵虾风格 + 玻璃/磨砂效果 ──
+  // ── 岗位智能体平台风格 + 玻璃/磨砂效果 ──
   // 遮罩：黑半透明 + 背景模糊 8px
   // Modal 本体：oc-bg 88% 透明 + backdrop blur 20px saturate 180%（磨砂玻璃感）
   // 边框：oc-border-strong 高亮边框，配高光 inset

@@ -1,5 +1,5 @@
 /**
- * 灵虾组织协作 V2 - Orchestrator
+ * 岗位智能体协作 V2 - Orchestrator
  *
  * 职责：接收一个 coop session 的 N 份成员结果，合成一份发起人可直接使用的汇总报告
  */

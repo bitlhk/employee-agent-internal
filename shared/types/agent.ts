@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Lingxia agent registry and cluster contract.
+ * Workforce Agent Platform agent registry and cluster contract.
  *
  * See docs/design/AGENT_REGISTRY_AND_CLUSTER_CONTRACT.md for user-facing
  * capability semantics, provider/profile boundaries, artifact rules, and

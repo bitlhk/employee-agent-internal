@@ -1,7 +1,7 @@
 import type { ChatEvent } from "@shared/runtime/chat-event";
 import type { ToolCallEntry } from "@/components/ChatMessage";
 
-export type LingxiaChatMessage = {
+export type AgentChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -30,7 +30,7 @@ function now(options: ChatStateReduceOptions): number {
   return options.nowMs ?? Date.now();
 }
 
-function findTargetAssistantIndex(messages: LingxiaChatMessage[], targetMessageId?: string): number {
+function findTargetAssistantIndex(messages: AgentChatMessage[], targetMessageId?: string): number {
   if (targetMessageId) {
     const idx = messages.findIndex((msg) => msg.id === targetMessageId && msg.role === "assistant");
     return idx;
@@ -49,10 +49,10 @@ function resolveTargetMessageId(event: ChatEvent, options: ChatStateReduceOption
 }
 
 function updateAssistant(
-  messages: LingxiaChatMessage[],
+  messages: AgentChatMessage[],
   targetMessageId: string | undefined,
-  updater: (message: LingxiaChatMessage) => LingxiaChatMessage,
-): LingxiaChatMessage[] {
+  updater: (message: AgentChatMessage) => AgentChatMessage,
+): AgentChatMessage[] {
   const idx = findTargetAssistantIndex(messages, targetMessageId);
   if (idx < 0) return messages;
   const next = [...messages];
@@ -60,11 +60,53 @@ function updateAssistant(
   return next;
 }
 
-function markThinkingDone(message: LingxiaChatMessage, _nowMs: number): LingxiaChatMessage {
-  return message;
+function markThinkingDone(message: AgentChatMessage, _nowMs: number): AgentChatMessage {
+  const toolCalls = message.toolCalls ?? [];
+  const idx = toolCalls.findIndex((tc) => tc.name === "thinking" && tc.status === "running");
+  if (idx < 0) return message;
+
+  const nextToolCalls = [...toolCalls];
+  const current = nextToolCalls[idx];
+  nextToolCalls[idx] = {
+    ...current,
+    status: "done",
+    durationMs: _nowMs - current.ts,
+  };
+  return { ...message, toolCalls: nextToolCalls };
 }
 
-function applyToolStart(message: LingxiaChatMessage, event: Extract<ChatEvent, { type: "tool_call" }>, nowMs: number): LingxiaChatMessage {
+function applyThinking(message: AgentChatMessage, content: string, nowMs: number): AgentChatMessage {
+  if (!content) return message;
+  const toolCalls = message.toolCalls ?? [];
+  const idx = toolCalls.findIndex((tc) => tc.name === "thinking" && tc.status === "running");
+  if (idx >= 0) {
+    const nextToolCalls = [...toolCalls];
+    const current = nextToolCalls[idx];
+    nextToolCalls[idx] = {
+      ...current,
+      result: current.result ? `${current.result}\n${content}` : content,
+    };
+    return { ...message, toolCalls: nextToolCalls };
+  }
+
+  return {
+    ...message,
+    toolCalls: [
+      ...toolCalls,
+      {
+        id: `thinking-${nowMs}`,
+        name: "thinking",
+        arguments: "{}",
+        result: content,
+        status: "running",
+        ts: nowMs,
+        executor: "native",
+      },
+    ],
+  };
+}
+
+function applyToolStart(message: AgentChatMessage, event: Extract<ChatEvent, { type: "tool_call" }>, nowMs: number): AgentChatMessage {
   return {
     ...message,
     toolCalls: [
@@ -82,7 +124,7 @@ function applyToolStart(message: LingxiaChatMessage, event: Extract<ChatEvent, {
   };
 }
 
-function applyToolResult(message: LingxiaChatMessage, event: Extract<ChatEvent, { type: "tool_call" }>, nowMs: number): LingxiaChatMessage {
+function applyToolResult(message: AgentChatMessage, event: Extract<ChatEvent, { type: "tool_call" }>, nowMs: number): AgentChatMessage {
   const toolCalls = message.toolCalls ?? [];
   if (toolCalls.length === 0) return message;
   const idx = toolCalls.findIndex((tc) => tc.id === event.toolCallId);
@@ -104,7 +146,7 @@ function applyToolResult(message: LingxiaChatMessage, event: Extract<ChatEvent, 
   return { ...message, toolCalls: nextToolCalls };
 }
 
-function attachWorkspaceFiles(message: LingxiaChatMessage, event: Extract<ChatEvent, { type: "workspace.files" }>, nowMs: number, adoptId?: string): LingxiaChatMessage {
+function attachWorkspaceFiles(message: AgentChatMessage, event: Extract<ChatEvent, { type: "workspace.files" }>, nowMs: number, adoptId?: string): AgentChatMessage {
   if (event.files.length === 0) return message;
   const toolCall: ToolCallEntry = {
     id: `ws-files-${nowMs}`,
@@ -130,11 +172,11 @@ function attachWorkspaceFiles(message: LingxiaChatMessage, event: Extract<ChatEv
  * clearing history, deleting messages, localStorage writes, fetch polling, and
  * command_output buffering. Those are owned by the future useChat hook.
  */
-export function reduceLingxiaChatState(
-  messages: LingxiaChatMessage[],
+export function reduceAgentChatState(
+  messages: AgentChatMessage[],
   event: ChatEvent,
   options: ChatStateReduceOptions = {},
-): LingxiaChatMessage[] {
+): AgentChatMessage[] {
   const nowMs = now(options);
   const targetMessageId = resolveTargetMessageId(event, options);
 
@@ -146,7 +188,7 @@ export function reduceLingxiaChatState(
       });
 
     case "thinking":
-      return messages;
+      return updateAssistant(messages, targetMessageId, (message) => applyThinking(message, event.content, nowMs));
 
     case "tool_call":
       return updateAssistant(messages, targetMessageId, (message) => (

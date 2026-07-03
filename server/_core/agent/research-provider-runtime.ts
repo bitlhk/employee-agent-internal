@@ -67,7 +67,7 @@ function parseLlmProvider(value: string | undefined): LLMProvider | undefined {
   return value === "zhipu" || value === "deepseek" ? value : undefined;
 }
 
-function assertLingxiaEvidenceGate(config: ResearchRuntimeConfig) {
+function assertPlatformEvidenceGate(config: ResearchRuntimeConfig) {
   if (config.evidenceGate.mode !== "lingxia") {
     throw new Error(`unsupported evidence gate mode: ${config.evidenceGate.mode}`);
   }
@@ -162,7 +162,7 @@ function sourceJudgeEnabled(env: RuntimeEnv): boolean {
   return String(value || "true").toLowerCase() !== "false";
 }
 
-export class LingxiaLlmSearchPlanner implements SearchPlanner {
+export class PlatformLlmSearchPlanner implements SearchPlanner {
   constructor(private readonly options: {
     env?: RuntimeEnv;
     provider?: LLMProvider;
@@ -236,7 +236,7 @@ export class LingxiaLlmSearchPlanner implements SearchPlanner {
   }
 }
 
-export class LingxiaLlmSourceJudge implements SourceJudge {
+export class PlatformLlmSourceJudge implements SourceJudge {
   constructor(private readonly options: {
     env?: RuntimeEnv;
     provider?: LLMProvider;
@@ -363,9 +363,9 @@ export function createResearchProvider(
   config: ResearchRuntimeConfig = loadResearchRuntimeConfig(),
   options: Omit<SourceResearchOptions, "searchExecutor"> = {},
 ): SourceResearchProvider {
-  assertLingxiaEvidenceGate(config);
+  assertPlatformEvidenceGate(config);
   const configuredSearchPlanner = config.planner.mode === "lingxia-llm"
-    ? new LingxiaLlmSearchPlanner({
+    ? new PlatformLlmSearchPlanner({
       env: options.env,
       provider: config.planner.provider,
       model: config.planner.model,
@@ -373,7 +373,7 @@ export function createResearchProvider(
     : undefined;
   const searchPlanner = configuredSearchPlanner || options.searchPlanner;
   const configuredSourceJudge = config.planner.mode === "lingxia-llm" && sourceJudgeEnabled(options.env || process.env)
-    ? new LingxiaLlmSourceJudge({
+    ? new PlatformLlmSourceJudge({
       env: options.env,
       provider: config.planner.provider,
       model: config.planner.model,

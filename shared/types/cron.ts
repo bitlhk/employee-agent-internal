@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Lingxia Cron/Channel contract.
+ * Workforce Agent Platform Cron/Channel contract.
  *
  * See docs/product/CRON_TASK_CENTER_PLAN_V3_ADDENDUM.md for product decisions,
  * runtime mapping tables, density rules, and rollout order. This file is the

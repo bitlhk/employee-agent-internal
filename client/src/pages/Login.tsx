@@ -124,7 +124,7 @@ export default function Login() {
       >
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="space-y-1 text-center">
-            <CardTitle className="text-2xl font-bold">登录员工智能体</CardTitle>
+            <CardTitle className="text-2xl font-bold">登录岗位智能体</CardTitle>
             <CardDescription>
               请输入您的账号信息
             </CardDescription>

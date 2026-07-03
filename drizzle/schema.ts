@@ -30,7 +30,7 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
- * Lingxia collaboration - collaboration space (v1 hard isolation boundary)
+ * Workforce Agent Platform collaboration - collaboration space (v1 hard isolation boundary)
  */
 export const lxCollabSpaces = mysqlTable('lx_collab_spaces', {
   id: int('id').autoincrement().primaryKey(),
@@ -49,7 +49,7 @@ export type LxCollabSpace = typeof lxCollabSpaces.$inferSelect;
 export type InsertLxCollabSpace = typeof lxCollabSpaces.$inferInsert;
 
 /**
- * Lingxia collaboration - user collaboration identity profile
+ * Workforce Agent Platform collaboration - user collaboration identity profile
  */
 export const lxCollabUserProfiles = mysqlTable('lx_collab_user_profiles', {
   userId: int('user_id').primaryKey(),
@@ -298,7 +298,7 @@ export const systemConfigs = mysqlTable("system_configs", {
 });
 
 /**
- * 灵虾组织协作 - 组定义
+ * 岗位智能体协作 - 组定义
  */
 export const lxGroups = mysqlTable("lx_groups", {
   id: int("id").primaryKey(),
@@ -384,7 +384,7 @@ export type ClawAdoptionEvent = typeof clawAdoptionEvents.$inferSelect;
 export type InsertClawAdoptionEvent = typeof clawAdoptionEvents.$inferInsert;
 
 /**
- * 灵虾个性化设置（灵魂/记忆/上下文）
+ * 岗位智能体个性化设置（灵魂/记忆/上下文）
  */
 export const clawProfileSettings = mysqlTable("claw_profile_settings", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
@@ -406,7 +406,7 @@ export type ClawProfileSetting = typeof clawProfileSettings.$inferSelect;
 export type InsertClawProfileSetting = typeof clawProfileSettings.$inferInsert;
 
 /**
- * 灵虾组织协作 - 协作设置（每个 plus agent 可配置）
+ * 岗位智能体协作 - 协作设置（每个 plus agent 可配置）
  */
 export const clawCollabSettings = mysqlTable("claw_collab_settings", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
@@ -426,7 +426,7 @@ export type ClawCollabSetting = typeof clawCollabSettings.$inferSelect;
 export type InsertClawCollabSetting = typeof clawCollabSettings.$inferInsert;
 
 /**
- * 灵虾组织协作 - 协作请求（task delegation，非 session 直通）
+ * 岗位智能体协作 - 协作请求（task delegation，非 session 直通）
  */
 export const clawCollabRequests = mysqlTable("claw_collab_requests", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
@@ -458,7 +458,7 @@ export type ClawCollabRequest = typeof clawCollabRequests.$inferSelect;
 export type InsertClawCollabRequest = typeof clawCollabRequests.$inferInsert;
 
 /**
- * 灵虾组织协作 V2 - 协作 session（N 人协作的父记录）
+ * 岗位智能体协作 V2 - 协作 session（N 人协作的父记录）
  */
 export const lxCoopSessions = mysqlTable("lx_coop_sessions", {
   id: varchar("id", { length: 64 }).primaryKey(),
@@ -483,7 +483,7 @@ export type LxCoopSession = typeof lxCoopSessions.$inferSelect;
 export type InsertLxCoopSession = typeof lxCoopSessions.$inferInsert;
 
 /**
- * 灵虾组织协作 V2 - 用户隐藏的协作 session
+ * 岗位智能体协作 V2 - 用户隐藏的协作 session
  *
  * 用于“我参与的协作”列表的个人归档/隐藏，不改变 session 本身的成员和审计记录。
  */
@@ -501,7 +501,7 @@ export type LxCoopUserHidden = typeof lxCoopUserHidden.$inferSelect;
 export type InsertLxCoopUserHidden = typeof lxCoopUserHidden.$inferInsert;
 
 /**
- * 灵虾组织协作 V2 - 协作事件流（append-only timeline）
+ * 岗位智能体协作 V2 - 协作事件流（append-only timeline）
  */
 export const lxCoopEvents = mysqlTable("lx_coop_events", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),

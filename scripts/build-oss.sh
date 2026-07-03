@@ -45,9 +45,9 @@ scripts/sync-skills.sh
 # 2026-04-19 内部文档不公开（仅在主版本保留）
 docs/TODO.md
 docs/双周报-*.md
-docs/灵虾企业*.md
-docs/灵虾多租户*.md
-docs/灵虾子Agent*.md
+docs/legacy-enterprise-*.md
+docs/legacy-multitenant-*.md
+docs/legacy-sub-agent-*.md
 docs/enterprise-agent-training.md
 docs/scratch
 docs/testing
@@ -88,7 +88,7 @@ if [[ ! -f "$OUT_DIR/LICENSE" ]]; then
 cat > "$OUT_DIR/LICENSE" << 'LICENSE'
 MIT License
 
-Copyright (c) 2026 Employee Agent Contributors
+Copyright (c) 2026 Workforce Agent Platform Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -114,7 +114,7 @@ fi
 cd "$OUT_DIR"
 git init
 git add -A
-git commit -m "feat: initial open-source release of Employee Agent platform"
+git commit -m "feat: initial open-source release of Workforce Agent Platform platform"
 
 echo ""
 echo "✅ 开源版已生成: $OUT_DIR"

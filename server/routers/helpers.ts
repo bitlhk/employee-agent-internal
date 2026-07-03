@@ -328,7 +328,7 @@ export function restartOpenclawGatewayBestEffort() {
 
 
 /**
- * 员工智能体实例编排（MVP）
+ * 岗位智能体实例编排（MVP）
  *
  * CLAW_PROVISION_MODE=mock         -> 仅占位成功（默认）
  * CLAW_PROVISION_MODE=local-script -> 调用本地脚本真实创建

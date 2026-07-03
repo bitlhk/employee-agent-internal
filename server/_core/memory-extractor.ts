@@ -6,7 +6,7 @@
  *   - MEMORY_SCHEMA: memory tool 的行为指导
  *   - tool calling: 让 LLM 以 function call 形式返回 add/replace/remove
  *
- * 灵虾适配:
+ * 平台适配:
  *   - 写入 OpenClaw workspace .md 文件（不写 MySQL）
  *   - 需要 userId → adoptId 的映射
  */
@@ -110,7 +110,7 @@ async function doExtract(
 
   // 构建消息：复用 Hermes 的 background review 模式
   // Hermes 做法：把完整对话历史 + review prompt 发给后台 agent
-  // 灵虾适配：只发当前轮 + 现有记忆 + review prompt
+  // 平台适配：只发当前轮 + 现有记忆 + review prompt
   const existing = readUserMemories(adoptId);
   const existingBlock: string[] = [];
   if (existing.user.length > 0) {

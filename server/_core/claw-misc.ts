@@ -84,8 +84,10 @@ function formatHistoryTimeLabel(timestamp: number): string {
 }
 
 function stripPlatformLanguagePolicy(text: string): string {
+  const legacyLanguagePolicyLabel = ["Employee", "Agent", "Platform", "Language", "Policy"].join(" ");
   return text
-    .replace(/\[[^\]]*Employee Agent Platform Language Policy\][\s\S]*?\[\/Employee Agent Platform Language Policy\]\s*/g, "")
+    .replace(/\[[^\]]*Workforce Agent Platform Language Policy\][\s\S]*?\[\/Workforce Agent Platform Language Policy\]\s*/g, "")
+    .replace(new RegExp(`\\[[^\\]]*${legacyLanguagePolicyLabel}\\][\\s\\S]*?\\[\\/${legacyLanguagePolicyLabel}\\]\\s*`, "g"), "")
     .replace(/^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}\s+GMT[+-]\d+\]\s*/g, "")
     .trim();
 }

@@ -93,7 +93,7 @@ function buildPMSystemPrompt(
   - cron: 高级 cron，必须填 cronExpr`;
   const scheduleChannelRule = "如果用户没说频道，不要猜测或默认选择频道；调用 create_schedule 时省略 channel，让执行器根据已绑定频道处理。";
 
-  return `你是员工智能体平台的项目经理。用户发来一条消息，你决定怎么处理。
+  return `你是岗位智能体平台的项目经理。用户发来一条消息，你决定怎么处理。
 
 你有以下工具可用：
 
