@@ -78,7 +78,7 @@ export const jiuwenClawSessionsDir = (adoptId: string, dbAgentIdRaw: any) =>
   path.join(jiuwenClawAgentDir(adoptId, dbAgentIdRaw), "sessions");
 
 export const INTERNAL_BASE_URL = String(
-  process.env.LINGXIA_INTERNAL_BASE_URL || `http://127.0.0.1:${process.env.PORT || "5180"}`
+  process.env.WORKFORCE_AGENT_INTERNAL_BASE_URL || process.env.LINGXIA_INTERNAL_BASE_URL || `http://127.0.0.1:${process.env.PORT || "5180"}`
 ).replace(/\/+$/, "");
 export const internalApiUrl = (pathname: string) => `${INTERNAL_BASE_URL}${String(pathname || "").startsWith("/") ? pathname : `/${pathname}`}`;
 

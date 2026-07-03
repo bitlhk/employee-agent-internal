@@ -81,7 +81,7 @@ type ClawModelOption = { id: string; name: string; desc?: string; isDefault?: bo
 const DEFAULT_FRONTEND_MODEL_FALLBACKS = ["modelarts-maas/glm-5.2", "maas/deepseek-v4-flash"];
 
 const FRONTEND_MODEL_ALLOWLIST = new Set<string>(
-  String(process.env.LINGXIA_FRONTEND_MODEL_ALLOWLIST || process.env.FRONTEND_MODEL_ALLOWLIST || "")
+  String(process.env.WORKFORCE_AGENT_FRONTEND_MODEL_ALLOWLIST || process.env.LINGXIA_FRONTEND_MODEL_ALLOWLIST || process.env.FRONTEND_MODEL_ALLOWLIST || "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean)
@@ -102,7 +102,8 @@ function modelDisplayName(modelId: string): string {
 
 function configuredFrontendFallbackModelIds(): string[] {
   const explicit = String(
-    process.env.LINGXIA_FRONTEND_MODEL_FALLBACKS
+    process.env.WORKFORCE_AGENT_FRONTEND_MODEL_FALLBACKS
+    || process.env.LINGXIA_FRONTEND_MODEL_FALLBACKS
       || process.env.FRONTEND_MODEL_FALLBACKS
       || process.env.DEFAULT_FRONTEND_MODEL
       || process.env.CLAW_AGENT_MODEL
@@ -201,7 +202,7 @@ export function getAvailableClawModelsFromConfig(): ClawModelOption[] {
     }
 
     // Deployments may optionally restrict the frontend model selector with
-    // LINGXIA_FRONTEND_MODEL_ALLOWLIST. By default, mirror OpenClaw config.
+    // WORKFORCE_AGENT_FRONTEND_MODEL_ALLOWLIST. By default, mirror OpenClaw config.
     for (const k of Array.from(uniq.keys())) {
       if (!isFrontendModelAllowed(k)) uniq.delete(k);
     }

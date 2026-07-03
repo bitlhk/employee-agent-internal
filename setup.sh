@@ -15,16 +15,16 @@ OVERWRITE_ENV=false
 SKIP_INSTALL=false
 SKIP_DB_PUSH=false
 SKIP_OPENCLAW=false
-PORT_VALUE="${LINGXIA_PORT:-5180}"
-HOST_VALUE="${LINGXIA_HOST:-}"
-DOMAIN_VALUE="${LINGXIA_DOMAIN:-}"
-FRONTEND_URL_VALUE="${LINGXIA_FRONTEND_URL:-}"
-DB_MODE_VALUE="${LINGXIA_DB_MODE:-}"
-DB_HOST_VALUE="${LINGXIA_DB_HOST:-localhost}"
-DB_PORT_VALUE="${LINGXIA_DB_PORT:-3306}"
-DB_USER_VALUE="${LINGXIA_DB_USER:-linggan}"
-DB_PASS_VALUE="${LINGXIA_DB_PASSWORD:-}"
-DB_NAME_VALUE="${LINGXIA_DB_NAME:-linggan}"
+PORT_VALUE="${WORKFORCE_AGENT_PORT:-${LINGXIA_PORT:-5180}}"
+HOST_VALUE="${WORKFORCE_AGENT_HOST:-${LINGXIA_HOST:-}}"
+DOMAIN_VALUE="${WORKFORCE_AGENT_DOMAIN:-${LINGXIA_DOMAIN:-}}"
+FRONTEND_URL_VALUE="${WORKFORCE_AGENT_FRONTEND_URL:-${LINGXIA_FRONTEND_URL:-}}"
+DB_MODE_VALUE="${WORKFORCE_AGENT_DB_MODE:-${LINGXIA_DB_MODE:-}}"
+DB_HOST_VALUE="${WORKFORCE_AGENT_DB_HOST:-${LINGXIA_DB_HOST:-localhost}}"
+DB_PORT_VALUE="${WORKFORCE_AGENT_DB_PORT:-${LINGXIA_DB_PORT:-3306}}"
+DB_USER_VALUE="${WORKFORCE_AGENT_DB_USER:-${LINGXIA_DB_USER:-linggan}}"
+DB_PASS_VALUE="${WORKFORCE_AGENT_DB_PASSWORD:-${LINGXIA_DB_PASSWORD:-}}"
+DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-linggan}}"
 
 source "${SCRIPT_DIR}/scripts/lib/openclaw-bin.sh"
 OPENCLAW_BIN="$(resolve_openclaw_bin || true)"
@@ -52,8 +52,8 @@ Options:
   --skip-openclaw                Do not touch ~/.openclaw/openclaw.json.
   -h, --help                     Show this help.
 
-Environment variables mirror the options with LINGXIA_ prefix, for example:
-  LINGXIA_HOST=1.2.3.4 LINGXIA_DB_MODE=mysql-auto bash setup.sh --auto
+Environment variables mirror the options with WORKFORCE_AGENT_ prefix, for example:
+  WORKFORCE_AGENT_HOST=1.2.3.4 WORKFORCE_AGENT_DB_MODE=mysql-auto bash setup.sh --auto
 EOF
 }
 
@@ -317,7 +317,7 @@ SQL
     echo "OPENCLAW_SANDBOX_AUTO_BUILD=true"
     echo "OPENCLAW_SANDBOX_REQUIRED=false"
     echo "HERMES_HOME=$HOME/.hermes"
-    echo "LINGXIA_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
+    echo "WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
     echo ""
     echo "# 岗位智能体平台路由"
     [[ -n "$DEMO_DOMAIN" ]] && echo "LINGGAN_CLAW_BASE_DOMAIN=$DEMO_DOMAIN"

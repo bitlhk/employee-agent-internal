@@ -42,7 +42,6 @@ type FileReport = {
 const DEFAULT_FILES = [
   "client/src/components/pages/SchedulePageV2.tsx",
   "client/src/components/pages/SettingsPage.tsx",
-  "client/src/components/ManusDialog.tsx",
   "client/src/components/CollabDrawer.tsx",
 ];
 

@@ -978,7 +978,7 @@ function addJiuwenUsageEvents(params: {
     return;
   }
 
-  const maxSessions = Math.min(Math.max(Number(process.env.LINGXIA_USAGE_JIUWEN_MAX_SESSIONS || 2000), 1), 50000);
+  const maxSessions = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_JIUWEN_MAX_SESSIONS || process.env.LINGXIA_USAGE_JIUWEN_MAX_SESSIONS || 2000), 1), 50000);
   let scanned = 0;
   for (const entry of entries as any[]) {
     if (!entry.isDirectory()) continue;
@@ -2201,7 +2201,7 @@ export function registerMiscRoutes(app: express.Express) {
       try {
         const jiuwenLogPath = APP_ROOT + "/logs/jiuwenclaw-exec.log";
         if (existsSync(jiuwenLogPath)) {
-          const maxLines = Math.min(Math.max(Number(process.env.LINGXIA_USAGE_JIUWEN_LOG_MAX_LINES || 20000), 100), 500000);
+          const maxLines = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_JIUWEN_LOG_MAX_LINES || process.env.LINGXIA_USAGE_JIUWEN_LOG_MAX_LINES || 20000), 100), 500000);
           const jiuwenLines = readFileSync(jiuwenLogPath, "utf8").split("\n").filter(Boolean).slice(-maxLines);
           for (const line of jiuwenLines) {
             try {
@@ -2230,7 +2230,7 @@ export function registerMiscRoutes(app: express.Express) {
       } catch {}
 
       try {
-        const maxFiles = Math.min(Math.max(Number(process.env.LINGXIA_USAGE_TRAJECTORY_MAX_FILES || 5000), 1), 50000);
+        const maxFiles = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_TRAJECTORY_MAX_FILES || process.env.LINGXIA_USAGE_TRAJECTORY_MAX_FILES || 5000), 1), 50000);
         const trajectoryFiles = listTrajectoryFiles(path.join(OPENCLAW_HOME, "agents"), maxFiles);
         for (const filePath of trajectoryFiles) {
           let raw = "";

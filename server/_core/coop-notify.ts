@@ -14,7 +14,7 @@ import { getDb } from "../db/connection";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import { clawAdoptions, users } from "../../drizzle/schema";
 
-const PUBLIC_BASE_URL = process.env.LINGXIA_PUBLIC_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.FRONTEND_URL || "http://localhost:5180";
+const PUBLIC_BASE_URL = process.env.WORKFORCE_AGENT_PUBLIC_BASE_URL || process.env.LINGXIA_PUBLIC_BASE_URL || process.env.PUBLIC_BASE_URL || process.env.FRONTEND_URL || "http://localhost:5180";
 
 /**
  * 查 user 当前可用的 adoptId（用于发送微信）

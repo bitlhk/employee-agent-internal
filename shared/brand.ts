@@ -69,6 +69,37 @@ export const BRAND_DB_KEYS: Record<keyof BrandConfig, string> = {
   pageTitle: "brand_page_title",
 };
 
+const LEGACY_DEFAULT_BRAND_VALUES: Partial<Record<keyof BrandConfig, Set<string>>> = {
+  name: new Set(["员工智能体", "岗位智能体", "Employee Agent"]),
+  nameEn: new Set(["Employee Agent", "AI Agent Platform"]),
+  platform: new Set(["员工智能体", "岗位智能体", "Employee Agent"]),
+  platformEn: new Set(["Employee Agent", "AI Agent Platform"]),
+  slogan: new Set(["企业 AI 员工平台", "Employee Agent", "AI Agent Platform"]),
+  logo: new Set(["/images/employee-agent.svg"]),
+  systemPrompt: new Set([
+    "You are a professional enterprise AI agent on the Employee Agent Platform.",
+    "You are Employee Agent, an enterprise AI assistant.",
+    "You are Employee Agent, an enterprise AI assistant on the Employee Agent platform.",
+  ]),
+  agentIdentity: new Set([
+    "你是员工智能体，一个友好、专业、简洁的 AI 助手。",
+    "你是员工智能体平台中的员工智能体，一个友好、专业、简洁的 AI 助手。",
+  ]),
+  pageTitle: new Set([
+    "Employee Agent",
+    "Employee Agent - AI Agent Platform",
+    "员工智能体 - 企业 AI 员工平台",
+    "岗位智能体 - AI Agent Platform",
+  ]),
+};
+
+function normalizeBrandDbValue(field: keyof BrandConfig, value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (LEGACY_DEFAULT_BRAND_VALUES[field]?.has(trimmed)) return null;
+  return trimmed;
+}
+
 /**
  * 从 DB 行 (key→value map) 合并出完整的 BrandConfig。
  * 未设置的字段 fallback 到 env → 默认值。
@@ -79,8 +110,9 @@ export function mergeBrandConfig(
   const result = { ...DEFAULT_BRAND };
   for (const [field, dbKey] of Object.entries(BRAND_DB_KEYS)) {
     const dbVal = dbValues[dbKey];
-    if (dbVal !== undefined && dbVal !== null && dbVal.trim() !== "") {
-      (result as any)[field] = dbVal.trim();
+    if (dbVal !== undefined && dbVal !== null) {
+      const normalized = normalizeBrandDbValue(field as keyof BrandConfig, dbVal);
+      if (normalized) (result as any)[field] = normalized;
     }
   }
   return result;

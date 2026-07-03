@@ -308,8 +308,8 @@ export default function ClawHome() {
         <div className="container flex items-center justify-between h-14 px-6">
           <div className="flex items-center gap-2.5">
             <BrandIcon size={32} />
-            <span className="text-base font-bold text-gray-900">岗位智能体</span>
-            <span className="text-xs text-muted-foreground hidden sm:inline">AI Agent Platform</span>
+            <span className="text-base font-bold text-gray-900">{brand.name}</span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">{brand.nameEn}</span>
           </div>
           <div className="flex items-center gap-2">
             {user && (user as any)?.role === "admin" && (

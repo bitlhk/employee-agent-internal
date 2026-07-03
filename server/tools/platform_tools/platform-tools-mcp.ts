@@ -9,8 +9,8 @@
  * - list_available_agents / submit_agent_task: 提交外部 Agent 异步任务
  */
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY || "";
-const ADOPT_ID = process.env.LINGXIA_ADOPT_ID || process.env.JIUWEN_CHANNEL_ID || "";
-const BASE = process.env.INTERNAL_BASE_URL || process.env.LINGXIA_INTERNAL_BASE_URL || "http://127.0.0.1:5180";
+const ADOPT_ID = process.env.AGENT_ADOPT_ID || process.env.WORKFORCE_AGENT_ADOPT_ID || process.env.LINGXIA_ADOPT_ID || process.env.JIUWEN_CHANNEL_ID || "";
+const BASE = process.env.INTERNAL_BASE_URL || process.env.WORKFORCE_AGENT_INTERNAL_BASE_URL || process.env.LINGXIA_INTERNAL_BASE_URL || "http://127.0.0.1:5180";
 
 // MCP stdio protocol: read JSON-RPC from stdin, write to stdout
 let buffer = "";
@@ -155,7 +155,7 @@ async function handleMessage(msg: any) {
     const adoptId = ADOPT_ID;
 
     if (!adoptId) {
-      sendResult(id, { content: [{ type: "text", text: "Error: LINGXIA_ADOPT_ID not set" }], isError: true });
+      sendResult(id, { content: [{ type: "text", text: "Error: AGENT_ADOPT_ID not set" }], isError: true });
       return;
     }
 

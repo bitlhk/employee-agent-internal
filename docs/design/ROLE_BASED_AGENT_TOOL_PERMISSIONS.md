@@ -1370,7 +1370,7 @@ Interim (works today, no per-user control):
 Implementation sketch (once the jiuwen dependency is cleared):
 1. `UiSettings` add `reasoningEnabled: boolean` (distinct from the display-only
    `chatShowThinking`).
-2. `SettingsPanel.tsx` add a switch; default ON (quality first).
+2. Add the switch to the active settings UI; default ON (quality first).
 3. `useAgentChat.ts` include it in the chat payload (alongside `memoryEnabled`).
 4. Backend passes it to the runtime; when OFF, inject `thinking:{type:disabled}`
    into the model request. Only meaningful for reasoning models (glm-5.x); harmless

@@ -23,7 +23,6 @@ import { SessionList } from "@/components/console/SessionList";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import { TopBar } from "@/components/console/TopBar";
 import { MainPanel } from "@/components/console/MainPanel";
-import type { SettingsHealthDiagnostics } from "@/components/settings/SettingsOverlay";
 import { ChatPage } from "@/components/pages/ChatPage";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
@@ -76,22 +75,35 @@ function normalizeIncomingToolName(chunk: any): string {
   return value || "tool";
 }
 
-// 2026-04-28 批次 2 A1：lingxiaMsgs 加稳定 id，恢复时按 id 替换不按 findLastIndex
+// 2026-04-28 批次 2 A1：chat messages 加稳定 id，恢复时按 id 替换不按 findLastIndex
 // 用于 SSE 截断 recover 时精确匹配目标消息——用户在 recover 期间发新消息也不串
 const makeLxMsgId = () => `lx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const makeClientRunId = () => `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const makeConversationId = () => `conv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-const webConversationStorageKey = (userId: string, adoptId: string) => `lingxia_web_conversation_${userId}_${adoptId}`;
-const legacyWebConversationStorageKey = (adoptId: string) => `lingxia_web_conversation_${adoptId}`;
-const webMessagesStorageKey = (userId: string, adoptId: string, conversationId: string) => `lgc_msgs_${userId}_${adoptId}_${conversationId}`;
-const legacyWebMessagesStorageKey = (adoptId: string, conversationId: string) => `lgc_msgs_${adoptId}_${conversationId}`;
-const webDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `lingxia_web_draft_${userId}_${adoptId}_${conversationId}`;
-const webInputHistoryStorageKey = (userId: string, adoptId: string) => `lingxia_web_input_history_${userId}_${adoptId}`;
-const webSessionIndexStorageKey = (userId: string, adoptId: string) => `lingxia_web_sessions_${userId}_${adoptId}`;
-const webHiddenSessionsStorageKey = (userId: string, adoptId: string) => `lingxia_web_sessions_hidden_${userId}_${adoptId}`;
-const clawStatusStorageKey = (userId: string, adoptId: string) => `lingxia_claw_status_${userId}_${adoptId}`;
-const clawModelStorageKey = (userId: string, adoptId: string) => `lingxia_claw_model_${userId}_${adoptId}`;
-const clawModelFallbackStorageKey = (adoptId: string) => `lingxia_claw_model_public_${adoptId}`;
+const webConversationStorageKey = (userId: string, adoptId: string) => `agent_web_conversation_${userId}_${adoptId}`;
+const legacyWebConversationStorageKeys = (userId: string, adoptId: string) => [
+  `lingxia_web_conversation_${userId}_${adoptId}`,
+  `lingxia_web_conversation_${adoptId}`,
+];
+const webMessagesStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_messages_${userId}_${adoptId}_${conversationId}`;
+const legacyWebMessagesStorageKeys = (userId: string, adoptId: string, conversationId: string) => [
+  `lgc_msgs_${userId}_${adoptId}_${conversationId}`,
+  `lgc_msgs_${adoptId}_${conversationId}`,
+];
+const webDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_draft_${userId}_${adoptId}_${conversationId}`;
+const legacyWebDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `lingxia_web_draft_${userId}_${adoptId}_${conversationId}`;
+const webInputHistoryStorageKey = (userId: string, adoptId: string) => `agent_web_input_history_${userId}_${adoptId}`;
+const legacyWebInputHistoryStorageKey = (userId: string, adoptId: string) => `lingxia_web_input_history_${userId}_${adoptId}`;
+const webSessionIndexStorageKey = (userId: string, adoptId: string) => `agent_web_sessions_${userId}_${adoptId}`;
+const legacyWebSessionIndexStorageKey = (userId: string, adoptId: string) => `lingxia_web_sessions_${userId}_${adoptId}`;
+const webHiddenSessionsStorageKey = (userId: string, adoptId: string) => `agent_web_sessions_hidden_${userId}_${adoptId}`;
+const legacyWebHiddenSessionsStorageKey = (userId: string, adoptId: string) => `lingxia_web_sessions_hidden_${userId}_${adoptId}`;
+const clawStatusStorageKey = (userId: string, adoptId: string) => `agent_claw_status_${userId}_${adoptId}`;
+const legacyClawStatusStorageKey = (userId: string, adoptId: string) => `lingxia_claw_status_${userId}_${adoptId}`;
+const clawModelStorageKey = (userId: string, adoptId: string) => `agent_claw_model_${userId}_${adoptId}`;
+const legacyClawModelStorageKey = (userId: string, adoptId: string) => `lingxia_claw_model_${userId}_${adoptId}`;
+const clawModelFallbackStorageKey = (adoptId: string) => `agent_claw_model_public_${adoptId}`;
+const legacyClawModelFallbackStorageKey = (adoptId: string) => `lingxia_claw_model_public_${adoptId}`;
 const JIUWEN_PERMISSION_MARKER_RE = /<!--EA_JIUWEN_PERMISSION:([A-Za-z0-9+/=]+)-->/g;
 
 type ComposerSkillOption = {
@@ -253,9 +265,32 @@ function inferSessionPreview(messages: Array<{ text?: string }>) {
   return truncateSessionText(last?.text || "", 42);
 }
 
-function readWebSessionIndex(key: string): WebChatSessionRecord[] {
+function readLocalStorageWithLegacy(primaryKey: string, legacyKeys: string[] = []): string {
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    const primary = localStorage.getItem(primaryKey);
+    if (primary) return primary;
+    for (const legacyKey of legacyKeys) {
+      const legacy = localStorage.getItem(legacyKey);
+      if (legacy) {
+        localStorage.setItem(primaryKey, legacy);
+        return legacy;
+      }
+    }
+  } catch {}
+  return "";
+}
+
+function removeLocalStorageKeys(keys: Array<string | null | undefined>) {
+  try {
+    for (const key of keys) {
+      if (key) localStorage.removeItem(key);
+    }
+  } catch {}
+}
+
+function readWebSessionIndex(key: string, legacyKeys: string[] = []): WebChatSessionRecord[] {
+  try {
+    const parsed = JSON.parse(readLocalStorageWithLegacy(key, legacyKeys) || "[]");
     return Array.isArray(parsed) ? parsed.filter((item) => item?.conversationId) : [];
   } catch {
     return [];
@@ -268,9 +303,9 @@ function writeWebSessionIndex(key: string, sessions: WebChatSessionRecord[]) {
   } catch {}
 }
 
-function readHiddenWebSessions(key: string): Set<string> {
+function readHiddenWebSessions(key: string, legacyKeys: string[] = []): Set<string> {
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+    const parsed = JSON.parse(readLocalStorageWithLegacy(key, legacyKeys) || "[]");
     return new Set(Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : []);
   } catch {
     return new Set();
@@ -314,9 +349,14 @@ function normalizeSessionViewRecord(item: any): WebChatSessionRecord | null {
   };
 }
 
-function visibleWebSessionIndex(key: string, hiddenKey?: string | null): WebChatSessionRecord[] {
-  const hidden = hiddenKey ? readHiddenWebSessions(hiddenKey) : new Set<string>();
-  return sortWebSessionRecords(readWebSessionIndex(key)
+function visibleWebSessionIndex(
+  key: string,
+  hiddenKey?: string | null,
+  legacyKeys: string[] = [],
+  legacyHiddenKeys: string[] = [],
+): WebChatSessionRecord[] {
+  const hidden = hiddenKey ? readHiddenWebSessions(hiddenKey, legacyHiddenKeys) : new Set<string>();
+  return sortWebSessionRecords(readWebSessionIndex(key, legacyKeys)
     .filter((item) => item?.conversationId && !hidden.has(item.conversationId)));
 }
 
@@ -532,7 +572,7 @@ function ChatStartupSkeleton() {
 }
 
 function isLingxiaChatV2Enabled(userId?: number | string | null): boolean {
-  const mode = String(import.meta.env.VITE_LINGXIA_CHAT_V2 || "off").toLowerCase();
+  const mode = String(import.meta.env.VITE_AGENT_CHAT_V2 || import.meta.env.VITE_LINGXIA_CHAT_V2 || "off").toLowerCase();
   try {
     const params = new URLSearchParams(window.location.search);
     const queryFlag = params.get("chatv2");
@@ -546,7 +586,7 @@ function isLingxiaChatV2Enabled(userId?: number | string | null): boolean {
 
   if (mode === "on") return true;
   if (mode === "allowlist") {
-    const ids = String(import.meta.env.VITE_LINGXIA_CHAT_V2_USERS || "")
+    const ids = String(import.meta.env.VITE_AGENT_CHAT_V2_USERS || import.meta.env.VITE_LINGXIA_CHAT_V2_USERS || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
@@ -836,7 +876,6 @@ export default function Home() {
   }, [sessionMenuOpen]);
   const [lingxiaOpenSections, setLingxiaOpenSections] = useState<Set<string>>(new Set(["soul"]));
   const toggleLingxiaSection = (s: string) => setLingxiaOpenSections(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; });
-  const [lingxiaTopSettingsOpen, setLingxiaTopSettingsOpen] = useState(false);
 
   const { user, loading: authLoading, error: authError } = useAuth({ redirectOnUnauthenticated: false });
 
@@ -869,14 +908,14 @@ export default function Home() {
       return;
     }
     const key = webConversationStorageKey(userStorageId, resolvedAdoptId);
-    const legacyKey = legacyWebConversationStorageKey(resolvedAdoptId);
     try {
       const existing = localStorage.getItem(key);
       if (existing) {
         setWebConversationId(existing);
         return;
       }
-      const legacy = sessionStorage.getItem(legacyKey) || localStorage.getItem(legacyKey);
+      const legacyKeys = legacyWebConversationStorageKeys(userStorageId, resolvedAdoptId);
+      const legacy = legacyKeys.map((legacyKey) => sessionStorage.getItem(legacyKey) || localStorage.getItem(legacyKey)).find(Boolean);
       const conversationId = legacy || makeConversationId();
       localStorage.setItem(key, conversationId);
       setWebConversationId(conversationId);
@@ -915,10 +954,13 @@ export default function Home() {
   }, [availableModels, availableModelsError, availableModelsLoading, markClientLoadMetric, resolvedAdoptId, user]);
   const MODEL_SELECTION_KEY = resolvedAdoptId && userStorageId ? clawModelStorageKey(userStorageId, resolvedAdoptId) : null;
   const MODEL_SELECTION_FALLBACK_KEY = resolvedAdoptId ? clawModelFallbackStorageKey(resolvedAdoptId) : null;
+  const MODEL_SELECTION_LEGACY_KEY = resolvedAdoptId && userStorageId ? legacyClawModelStorageKey(userStorageId, resolvedAdoptId) : "";
+  const MODEL_SELECTION_FALLBACK_LEGACY_KEY = resolvedAdoptId ? legacyClawModelFallbackStorageKey(resolvedAdoptId) : "";
   const [cachedLingxiaModelId, setCachedLingxiaModelId] = useState(() => {
     try {
       const key = MODEL_SELECTION_KEY || MODEL_SELECTION_FALLBACK_KEY;
-      return key ? localStorage.getItem(key) || "" : "";
+      const legacyKeys = key === MODEL_SELECTION_KEY ? [MODEL_SELECTION_LEGACY_KEY].filter(Boolean) : [MODEL_SELECTION_FALLBACK_LEGACY_KEY].filter(Boolean);
+      return key ? readLocalStorageWithLegacy(key, legacyKeys) : "";
     } catch {
       return "";
     }
@@ -930,14 +972,14 @@ export default function Home() {
     }
     try {
       const modelId =
-        (MODEL_SELECTION_KEY ? localStorage.getItem(MODEL_SELECTION_KEY) : "") ||
-        (MODEL_SELECTION_FALLBACK_KEY ? localStorage.getItem(MODEL_SELECTION_FALLBACK_KEY) : "") ||
+        (MODEL_SELECTION_KEY ? readLocalStorageWithLegacy(MODEL_SELECTION_KEY, [MODEL_SELECTION_LEGACY_KEY].filter(Boolean)) : "") ||
+        (MODEL_SELECTION_FALLBACK_KEY ? readLocalStorageWithLegacy(MODEL_SELECTION_FALLBACK_KEY, [MODEL_SELECTION_FALLBACK_LEGACY_KEY].filter(Boolean)) : "") ||
         "";
       setCachedLingxiaModelId(modelId);
     } catch {
       setCachedLingxiaModelId("");
     }
-  }, [MODEL_SELECTION_FALLBACK_KEY, MODEL_SELECTION_KEY]);
+  }, [MODEL_SELECTION_FALLBACK_KEY, MODEL_SELECTION_FALLBACK_LEGACY_KEY, MODEL_SELECTION_KEY, MODEL_SELECTION_LEGACY_KEY]);
   const defaultLingxiaModelId = useMemo(() => {
     if (!availableModels || availableModels.length === 0) return cachedLingxiaModelId;
     const ids = (availableModels as any[]).map((m: any) => m.id);
@@ -1008,24 +1050,30 @@ export default function Home() {
   const restoredConversationMessageCountsRef = useRef<Record<string, number>>({});
   const [wsConnected, setWsConnected] = useState(false);
   const MSGS_KEY = resolvedAdoptId && userStorageId && webConversationId ? webMessagesStorageKey(userStorageId, resolvedAdoptId, webConversationId) : null;
-  const LEGACY_MSGS_KEY = resolvedAdoptId && webConversationId ? legacyWebMessagesStorageKey(resolvedAdoptId, webConversationId) : null;
+  const LEGACY_MSGS_KEY_USER = resolvedAdoptId && userStorageId && webConversationId ? legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, webConversationId)[0] : "";
+  const LEGACY_MSGS_KEY_ADOPT = resolvedAdoptId && userStorageId && webConversationId ? legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, webConversationId)[1] : "";
   const DRAFT_KEY = resolvedAdoptId && userStorageId && webConversationId ? webDraftStorageKey(userStorageId, resolvedAdoptId, webConversationId) : null;
+  const LEGACY_DRAFT_KEY = resolvedAdoptId && userStorageId && webConversationId ? legacyWebDraftStorageKey(userStorageId, resolvedAdoptId, webConversationId) : "";
   const INPUT_HISTORY_KEY = resolvedAdoptId && userStorageId ? webInputHistoryStorageKey(userStorageId, resolvedAdoptId) : "";
+  const LEGACY_INPUT_HISTORY_KEY = resolvedAdoptId && userStorageId ? legacyWebInputHistoryStorageKey(userStorageId, resolvedAdoptId) : "";
   const SESSION_INDEX_KEY = resolvedAdoptId && userStorageId ? webSessionIndexStorageKey(userStorageId, resolvedAdoptId) : null;
+  const LEGACY_SESSION_INDEX_KEY = resolvedAdoptId && userStorageId ? legacyWebSessionIndexStorageKey(userStorageId, resolvedAdoptId) : "";
   const HIDDEN_SESSION_KEY = resolvedAdoptId && userStorageId ? webHiddenSessionsStorageKey(userStorageId, resolvedAdoptId) : null;
+  const LEGACY_HIDDEN_SESSION_KEY = resolvedAdoptId && userStorageId ? legacyWebHiddenSessionsStorageKey(userStorageId, resolvedAdoptId) : "";
   const draftHydratingRef = useRef(false);
   const currentDraftKeyRef = useRef("");
   const messagesHydratingRef = useRef(false);
   const currentMessagesKeyRef = useRef("");
   useEffect(() => {
-    if (!MSGS_KEY || !LEGACY_MSGS_KEY) return;
+    if (!INPUT_HISTORY_KEY) return;
+    readLocalStorageWithLegacy(INPUT_HISTORY_KEY, [LEGACY_INPUT_HISTORY_KEY].filter(Boolean));
+  }, [INPUT_HISTORY_KEY, LEGACY_INPUT_HISTORY_KEY]);
+  useEffect(() => {
+    if (!MSGS_KEY) return;
     try {
-      if (!localStorage.getItem(MSGS_KEY)) {
-        const legacy = localStorage.getItem(LEGACY_MSGS_KEY);
-        if (legacy) localStorage.setItem(MSGS_KEY, legacy);
-      }
+      readLocalStorageWithLegacy(MSGS_KEY, [LEGACY_MSGS_KEY_USER, LEGACY_MSGS_KEY_ADOPT].filter(Boolean));
     } catch {}
-  }, [MSGS_KEY, LEGACY_MSGS_KEY]);
+  }, [MSGS_KEY, LEGACY_MSGS_KEY_ADOPT, LEGACY_MSGS_KEY_USER]);
 
   useEffect(() => {
     draftHydratingRef.current = true;
@@ -1035,11 +1083,11 @@ export default function Home() {
       return;
     }
     try {
-      setLingxiaInput(localStorage.getItem(DRAFT_KEY) || "");
+      setLingxiaInput(readLocalStorageWithLegacy(DRAFT_KEY, [LEGACY_DRAFT_KEY].filter(Boolean)));
     } catch {
       setLingxiaInput("");
     }
-  }, [DRAFT_KEY]);
+  }, [DRAFT_KEY, LEGACY_DRAFT_KEY]);
 
   useEffect(() => {
     if (!DRAFT_KEY || currentDraftKeyRef.current !== DRAFT_KEY) return;
@@ -1179,8 +1227,13 @@ export default function Home() {
       setWebSessions([]);
       return;
     }
-    setWebSessions(visibleWebSessionIndex(SESSION_INDEX_KEY, HIDDEN_SESSION_KEY));
-  }, [SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isJiuwenRuntime]);
+    setWebSessions(visibleWebSessionIndex(
+      SESSION_INDEX_KEY,
+      HIDDEN_SESSION_KEY,
+      [LEGACY_SESSION_INDEX_KEY].filter(Boolean),
+      [LEGACY_HIDDEN_SESSION_KEY].filter(Boolean),
+    ));
+  }, [SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, LEGACY_SESSION_INDEX_KEY, LEGACY_HIDDEN_SESSION_KEY, isJiuwenRuntime]);
 
   useEffect(() => {
     if (!CLAW_STATUS_KEY) {
@@ -1188,11 +1241,12 @@ export default function Home() {
       return;
     }
     try {
-      setCachedClawStatus(localStorage.getItem(CLAW_STATUS_KEY));
+      const legacyKey = resolvedAdoptId && userStorageId ? legacyClawStatusStorageKey(userStorageId, resolvedAdoptId) : "";
+      setCachedClawStatus(readLocalStorageWithLegacy(CLAW_STATUS_KEY, [legacyKey].filter(Boolean)));
     } catch {
       setCachedClawStatus(null);
     }
-  }, [CLAW_STATUS_KEY]);
+  }, [CLAW_STATUS_KEY, resolvedAdoptId, userStorageId]);
 
   useEffect(() => {
     const status = String((clawByAdoptId as any)?.status || "");
@@ -1292,7 +1346,7 @@ export default function Home() {
         return webSessionsRef.current;
       }
       if (!isCurrentRequest()) return webSessionsRef.current;
-      const hidden = HIDDEN_SESSION_KEY ? readHiddenWebSessions(HIDDEN_SESSION_KEY) : new Set<string>();
+      const hidden = HIDDEN_SESSION_KEY ? readHiddenWebSessions(HIDDEN_SESSION_KEY, [LEGACY_HIDDEN_SESSION_KEY].filter(Boolean)) : new Set<string>();
       const remote = (Array.isArray(remoteRows) ? remoteRows : [])
         .map((item: any) => normalizeSessionViewRecord(item) || item)
         .filter(Boolean) as WebChatSessionRecord[];
@@ -1306,7 +1360,7 @@ export default function Home() {
         .sort((a, b) => Number(b.sortUpdatedAt || b.sourceUpdatedAt || b.updatedAt || 0) - Number(a.sortUpdatedAt || a.sourceUpdatedAt || a.updatedAt || 0))
         .slice(0, 30);
       if (isJiuwenRuntime) {
-        const uiSource = [...readWebSessionIndex(SESSION_INDEX_KEY), ...webSessionsRef.current];
+        const uiSource = [...readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean)), ...webSessionsRef.current];
         const uiByConversation = new Map<string, WebChatSessionRecord>();
         for (const item of uiSource) {
           if (!item?.conversationId) continue;
@@ -1340,7 +1394,7 @@ export default function Home() {
       const backendConversationIds = new Set(backendSessions.map((item) => item.conversationId).filter(Boolean));
       let mergedSessions: WebChatSessionRecord[] = [];
       setWebSessions((previous) => {
-        const localSource = [...readWebSessionIndex(SESSION_INDEX_KEY), ...previous].filter((item) => {
+        const localSource = [...readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean)), ...previous].filter((item) => {
           if (!item?.conversationId || hidden.has(item.conversationId)) return false;
           if (!item.sessionKey) return true;
           if (item.conversationId === webConversationIdRef.current) return true;
@@ -1401,7 +1455,7 @@ export default function Home() {
         void refreshBackendWebSessions(true).catch(() => {});
         return;
       }
-      setWebSessions(visibleWebSessionIndex(SESSION_INDEX_KEY, HIDDEN_SESSION_KEY));
+      setWebSessions(visibleWebSessionIndex(SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean), [LEGACY_HIDDEN_SESSION_KEY].filter(Boolean)));
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -1429,7 +1483,7 @@ export default function Home() {
     const now = Date.now();
     const title = inferSessionTitle(activeLingxiaMsgs as any);
     const preview = inferSessionPreview(activeLingxiaMsgs as any);
-    const existing = readWebSessionIndex(SESSION_INDEX_KEY);
+    const existing = readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean));
     const previous = existing.find((item) => item.conversationId === webConversationId);
     const shouldPreserveTitle = Boolean(previous?.sessionKey || previous?.customTitle || previous?.autoTitle);
     const nextTitle = shouldPreserveTitle && previous?.title ? previous.title : title;
@@ -1475,7 +1529,7 @@ export default function Home() {
     if (!SESSION_INDEX_KEY) return;
     let nextSessions: WebChatSessionRecord[] = [];
     setWebSessions((previous) => {
-      const source = previous.length > 0 ? previous : readWebSessionIndex(SESSION_INDEX_KEY);
+      const source = previous.length > 0 ? previous : readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean));
       nextSessions = sortWebSessionRecords(source.map((item) =>
         item.conversationId === conversationId ? { ...item, ...patch } : item
       ));
@@ -1497,7 +1551,7 @@ export default function Home() {
     const hasAssistant = meaningfulMessages.some((message) => message.role === "assistant");
     if (!hasUser || !hasAssistant) return;
 
-    const existing = readWebSessionIndex(SESSION_INDEX_KEY).find((item) => item.conversationId === webConversationId);
+    const existing = readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean)).find((item) => item.conversationId === webConversationId);
     if (!existing || existing.customTitle || existing.autoTitle) return;
 
     const inferredTitle = inferSessionTitle(activeLingxiaMsgs as any);
@@ -1522,7 +1576,7 @@ export default function Home() {
         const data = await response.json().catch(() => null);
         const title = normalizeSessionText(String(data?.title || "")).slice(0, 60);
         if (!title || title === normalizeSessionText(inferredTitle)) return;
-        const latest = readWebSessionIndex(SESSION_INDEX_KEY).find((item) => item.conversationId === webConversationId);
+        const latest = readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean)).find((item) => item.conversationId === webConversationId);
         if (!latest || latest.customTitle || latest.autoTitle) return;
         if (normalizeSessionText(latest.title || "") !== normalizeSessionText(inferredTitle)) return;
         updateWebSessionMeta(webConversationId, { title, autoTitle: true });
@@ -1538,7 +1592,7 @@ export default function Home() {
     const now = Date.now();
     let nextSessions: WebChatSessionRecord[] = [];
     setWebSessions((previous) => {
-      const source = previous.length > 0 ? previous : readWebSessionIndex(SESSION_INDEX_KEY);
+      const source = previous.length > 0 ? previous : readWebSessionIndex(SESSION_INDEX_KEY, [LEGACY_SESSION_INDEX_KEY].filter(Boolean));
       const existing = source.find((item) => item.conversationId === conversationId);
       const placeholder: WebChatSessionRecord = {
         conversationId,
@@ -1635,8 +1689,10 @@ export default function Home() {
       if (hasRestoredMessages) {
         localStorage.setItem(webMessagesStorageKey(userStorageId, resolvedAdoptId, conversationId), JSON.stringify(nextMessages));
       } else {
-        localStorage.removeItem(webMessagesStorageKey(userStorageId, resolvedAdoptId, conversationId));
-        localStorage.removeItem(legacyWebMessagesStorageKey(resolvedAdoptId, conversationId));
+        removeLocalStorageKeys([
+          webMessagesStorageKey(userStorageId, resolvedAdoptId, conversationId),
+          ...legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, conversationId),
+        ]);
       }
     } catch {}
     if (conversationId === webConversationId) {
@@ -1656,8 +1712,7 @@ export default function Home() {
     if (!resolvedAdoptId || !userStorageId || !conversationId) return [];
     try {
       const primaryKey = webMessagesStorageKey(userStorageId, resolvedAdoptId, conversationId);
-      const legacyKey = legacyWebMessagesStorageKey(resolvedAdoptId, conversationId);
-      const raw = localStorage.getItem(primaryKey) || localStorage.getItem(legacyKey) || "";
+      const raw = readLocalStorageWithLegacy(primaryKey, legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, conversationId));
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
@@ -2005,13 +2060,13 @@ export default function Home() {
     writeWebSessionIndex(SESSION_INDEX_KEY, next);
     setWebSessions(next);
     if (HIDDEN_SESSION_KEY) {
-      const hidden = readHiddenWebSessions(HIDDEN_SESSION_KEY);
+      const hidden = readHiddenWebSessions(HIDDEN_SESSION_KEY, [LEGACY_HIDDEN_SESSION_KEY].filter(Boolean));
       hidden.add(conversationId);
       writeHiddenWebSessions(HIDDEN_SESSION_KEY, hidden);
     }
     try {
       localStorage.removeItem(webMessagesStorageKey(userStorageId, resolvedAdoptId, conversationId));
-      localStorage.removeItem(legacyWebMessagesStorageKey(resolvedAdoptId, conversationId));
+      removeLocalStorageKeys(legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, conversationId));
     } catch {}
     if (isJiuwenRuntime && session?.sessionKey) {
       const apiBase = import.meta.env.VITE_API_URL || "";
@@ -2159,11 +2214,7 @@ export default function Home() {
       return;
     }
     try {
-      let saved = localStorage.getItem(MSGS_KEY);
-      if (!saved && LEGACY_MSGS_KEY) {
-        saved = localStorage.getItem(LEGACY_MSGS_KEY);
-        if (saved) localStorage.setItem(MSGS_KEY, saved);
-      }
+      const saved = readLocalStorageWithLegacy(MSGS_KEY, [LEGACY_MSGS_KEY_USER, LEGACY_MSGS_KEY_ADOPT].filter(Boolean));
       if (saved) {
         const parsed = JSON.parse(saved);
         // backfillLxMsgIds 会保留旧 id（如果有）或生成新 id，并兜底必填字段
@@ -2173,7 +2224,7 @@ export default function Home() {
         setLingxiaMsgs([]);
       }
     } catch {}
-  }, [MSGS_KEY, LEGACY_MSGS_KEY]);
+  }, [MSGS_KEY, LEGACY_MSGS_KEY_ADOPT, LEGACY_MSGS_KEY_USER]);
   useEffect(() => {
     if (!MSGS_KEY || currentMessagesKeyRef.current !== MSGS_KEY) return;
     if (messagesHydratingRef.current) {
@@ -3342,120 +3393,6 @@ export default function Home() {
     isDirectHttpRuntime,
     resolvedAdoptId,
     showSlowReadinessHint,
-  ]);
-
-  const settingsHealthDiagnostics = useMemo<SettingsHealthDiagnostics>(() => {
-    const readiness = clawHealthSummary?.readiness;
-    const selectedModel = String(clawHealthSummary?.model?.selected || effectiveLingxiaModelId || "").trim();
-    const modelCount = Array.isArray(availableModels) ? availableModels.length : 0;
-    const skillGroups = lingxiaSkills as any;
-    const skillList = [
-      ...(Array.isArray(skillGroups?.shared) ? skillGroups.shared : []),
-      ...(Array.isArray(skillGroups?.system) ? skillGroups.system : []),
-      ...(Array.isArray(skillGroups?.private) ? skillGroups.private : []),
-    ];
-    const mcpCount = skillList.filter((skill: any) => {
-      const raw = `${skill?.id || ""} ${skill?.name || ""} ${skill?.title || ""} ${skill?.type || ""} ${skill?.category || ""} ${skill?.origin || ""}`.toLowerCase();
-      return raw.includes("mcp") || raw.includes("wind") || raw.includes("qieman") || raw.includes("wealth_assistant");
-    }).length;
-    const sessionMetric = clientLoadMetrics.sessions;
-    const healthElapsed = Number(clawHealthSummary?.timings?.total || 0);
-
-    const connection = isDirectHttpRuntime
-      ? {
-          status: "ok" as const,
-          title: isJiuwenRuntime ? "SSE 已连接" : "HTTP SSE 运行时",
-          detail: isHermesRuntime
-            ? "Hermes 工作台走 HTTP SSE，不依赖 OpenClaw WebSocket。"
-            : "JiuwenSwarm 工作台走 HTTP SSE，由 EA 后端桥接到 JiuwenSwarm AgentServer。",
-        }
-      : wsConnected
-      ? { status: "ok" as const, title: "WS 已连接", detail: "浏览器与 OpenClaw Gateway 的实时通道可用。" }
-      : clawByAdoptLoading || clawHealthLoading
-      ? { status: "pending" as const, title: "正在连接", detail: "正在检查智能体实例和 OpenClaw Gateway。" }
-      : {
-          status: sidebarClawOnline ? "warning" as const : "error" as const,
-          title: sidebarClawOnline ? "实例在线，WS 未连接" : "连接不可用",
-          detail: sidebarClawOnline ? "实例状态正常，但实时通道暂未建立。刷新或稍后重试。" : "智能体实例或 OpenClaw Gateway 未处于可用状态。",
-        };
-
-    const model = availableModelsLoading
-      ? { status: "pending" as const, title: "正在同步模型", detail: "正在读取 OpenClaw 当前可用模型。" }
-      : availableModelsError
-      ? { status: "error" as const, title: "模型列表读取失败", detail: classifyDisplayError(availableModelsError, "model").detail }
-      : modelCount > 0
-      ? {
-          status: "ok" as const,
-          title: selectedModel || selectedLingxiaModelName || "模型已同步",
-          detail: `${modelCount} 个可用模型${clawHealthSummary?.model?.defaultModel ? ` · 默认 ${clawHealthSummary.model.defaultModel}` : ""}`,
-        }
-      : selectedModel
-      ? { status: "ok" as const, title: selectedModel, detail: "当前模型已读取；可选模型列表暂未返回。" }
-      : { status: "warning" as const, title: "暂无可用模型", detail: "前端没有读取到 OpenClaw 可用模型，请检查 provider 配置。" };
-
-    const openclaw = isDirectHttpRuntime
-      ? { status: "skip" as const, title: "当前运行时跳过", detail: "Hermes/JiuwenClaw 不走 OpenClaw Gateway 健康检查。" }
-      : clawHealthError
-      ? { status: "warning" as const, title: "健康检查暂时不可用", detail: clawHealthError, issues: readiness?.issues }
-      : clawHealthLoading && !readiness
-      ? { status: "pending" as const, title: "正在检查", detail: "正在读取模型、会话和 OpenClaw readiness。" }
-      : readiness?.status === "blocked" || readiness?.ok === false
-      ? { status: "error" as const, title: readiness.summary || "配置不可用", detail: healthElapsed ? `检查耗时 ${healthElapsed}ms` : "", issues: readiness.issues }
-      : readiness?.status === "degraded" || (readiness?.issues || []).length > 0
-      ? { status: "warning" as const, title: readiness?.summary || "部分配置需检查", detail: healthElapsed ? `检查耗时 ${healthElapsed}ms` : "", issues: readiness?.issues }
-      : readiness
-      ? { status: "ok" as const, title: readiness.summary || "配置正常", detail: healthElapsed ? `检查耗时 ${healthElapsed}ms` : "" }
-      : { status: "pending" as const, title: "等待健康检查", detail: "" };
-
-    const history = webSessionsLoading && webSessions.length === 0
-      ? { status: "pending" as const, title: "正在读取历史", detail: "正在同步后端历史会话。" }
-      : sessionMetric?.status === "error"
-      ? { status: "warning" as const, title: sessionMetric.detail || "历史接口异常", detail: `本地缓存 ${webSessions.length} 个会话，后端同步稍后会重试。` }
-      : { status: "ok" as const, title: "历史缓存可用", detail: `${webSessions.length} 个本地/后端会话索引。` };
-
-    const mcp = lingxiaSkillsLoading
-      ? { status: "pending" as const, title: "正在加载技能", detail: "正在读取技能市场和 MCP 工具展示数据。" }
-      : lingxiaSkillsError
-      ? { status: "error" as const, title: "技能列表读取失败", detail: classifyDisplayError(lingxiaSkillsError, "network").detail }
-      : {
-          status: "ok" as const,
-          title: "技能与 MCP 展示可用",
-          detail: `${skillList.length} 个技能条目${mcpCount ? ` · ${mcpCount} 个 MCP 相关条目` : ""}`,
-        };
-
-    return {
-      connection,
-      model,
-      openclaw,
-      history,
-      mcp,
-      load: {
-        totalMs: clientLoadMetricList.length ? clientLoadTotalMs : undefined,
-        metrics: clientLoadMetricList,
-      },
-    };
-  }, [
-    availableModels,
-    availableModelsError,
-    availableModelsLoading,
-    clawByAdoptLoading,
-    clawHealthError,
-    clawHealthLoading,
-    clawHealthSummary,
-    clientLoadMetricList,
-    clientLoadMetrics,
-    clientLoadTotalMs,
-    effectiveLingxiaModelId,
-    isDirectHttpRuntime,
-    isHermesRuntime,
-    lingxiaSkills,
-    lingxiaSkillsError,
-    lingxiaSkillsLoading,
-    selectedLingxiaModelName,
-    sidebarClawOnline,
-    webSessions.length,
-    webSessionsLoading,
-    wsConnected,
   ]);
 
   const latestContextMessage = useMemo(() => {

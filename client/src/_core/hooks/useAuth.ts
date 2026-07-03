@@ -9,9 +9,21 @@ type UseAuthOptions = {
 };
 
 const LOGOUT_CACHE_KEY_PREFIXES = [
+  "agent_web_sessions_",
+  "agent_web_sessions_hidden_",
+  "agent_web_conversation_",
+  "agent_web_messages_",
+  "agent_web_draft_",
+  "agent_web_input_history_",
+  "agent_claw_status_",
+  "agent_claw_model_",
   "lingxia_web_sessions_",
   "lingxia_web_sessions_hidden_",
   "lingxia_web_conversation_",
+  "lingxia_web_draft_",
+  "lingxia_web_input_history_",
+  "lingxia_claw_status_",
+  "lingxia_claw_model_",
   "lgc_msgs_",
 ];
 

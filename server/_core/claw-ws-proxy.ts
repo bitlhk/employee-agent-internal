@@ -56,7 +56,7 @@ const DEV_ID = createHash("sha256").update(_raw).digest("hex");
 const GW_URL = `ws://${process.env.CLAW_REMOTE_HOST || "127.0.0.1"}:${process.env.CLAW_GATEWAY_PORT || "18789"}`;
 const GW_TOKEN = process.env.CLAW_GATEWAY_TOKEN || "";
 const SCOPES = ["operator.admin", "operator.read", "operator.write"];
-const ENABLE_WS_DELTA_PACING = process.env.LINGXIA_WS_DELTA_PACING === "1";
+const ENABLE_WS_DELTA_PACING = (process.env.WORKFORCE_AGENT_WS_DELTA_PACING || process.env.LINGXIA_WS_DELTA_PACING) === "1";
 const ROUTINE_ENGLISH_TOOL_PREAMBLE_RE =
   /^\s*(?:sure[,!\s]*)?(?:ok(?:ay)?[,!\s]*)?(?:(?:i'll|i will|let me|i'm going to|i am going to|i need to)\s+(?:check|look|search|find|fetch|open|use|run|get|take|verify|inspect|read|call|query|look up)\b|i'll\s+go ahead\b)/i;
 const ROUTINE_ENGLISH_TOOL_PREAMBLE_PREFIX_RE =
