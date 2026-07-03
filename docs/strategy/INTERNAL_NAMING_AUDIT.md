@@ -234,13 +234,13 @@ adoption
 /api/claw/skills
 /api/claw/cron
 /api/claw/files
-/api/claw/business-chat-stream
 ```
 
 风险：
 
 - 前端、smoke、第三方脚本、渠道回调都依赖这些路径。
 - `claw` 这里一部分是 OpenClaw runtime 语义，不完全是产品旧名。
+- 旧智能体广场相关 `/api/claw/business-*` 路由已移除。
 
 建议：
 

@@ -29,7 +29,6 @@ import { registerWeixinRoutes } from "./claw-weixin";
 import { registerFeishuRoutes } from "./claw-feishu";
 import { registerSkillRoutes } from "./claw-skills";
 import { registerCollabRoutes } from "./claw-collab";
-import { registerBusinessRoutes } from "./claw-business";
 import { registerAgentTaskRoutes } from "./claw-agent-tasks";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
@@ -328,7 +327,6 @@ async function startServer() {
   import("./cron-delivery").then(m => m.startCronDeliveryPoller()).catch(e => console.error("cron delivery poller start failed:", e));
   registerSkillRoutes(app);
   registerCollabRoutes(app);
-  registerBusinessRoutes(app);
   registerAgentTaskRoutes(app);
   registerPlatformToolsMcpRoutes(app);
   registerSkillConfigRoutes(app);

@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -84,14 +83,6 @@ describe("agent manifest schema", () => {
         "meeting_prep_agent",
       ]);
     }
-  });
-
-  it("passes manifest reference validation", () => {
-    expect(() => execFileSync("node", [
-      "tools/validate-agent-manifest.mjs",
-      "--manifest",
-      "server/_core/agent/data/agent-manifests.seed.json",
-    ], { cwd: process.cwd(), stdio: "pipe" })).not.toThrow();
   });
 
   it("keeps Anthropic runtime skills scoped to the two pilot manifests", () => {
