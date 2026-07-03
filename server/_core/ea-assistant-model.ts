@@ -13,6 +13,7 @@ export type EaAssistantModelConfig = {
   apiKey: string;
   timeoutMs: number;
   disableThinking: boolean;
+  tokenParam: "max_completion_tokens" | "max_tokens";
 };
 
 export type EaAssistantCallOptions = {
@@ -77,6 +78,17 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
     || fallbackEnv.EA_ASSISTANT_MODEL_DISABLE_THINKING
     || "true",
   ).toLowerCase() !== "false";
+  const configuredTokenParam = String(
+    process.env.EA_ASSISTANT_MODEL_TOKEN_PARAM
+    || fallbackEnv.EA_ASSISTANT_MODEL_TOKEN_PARAM
+    || "",
+  ).trim();
+  const tokenParam =
+    configuredTokenParam === "max_tokens" || configuredTokenParam === "max_completion_tokens"
+      ? configuredTokenParam
+      : /^openpangu-/i.test(model)
+        ? "max_tokens"
+        : "max_completion_tokens";
 
   return {
     baseUrl: normalizeBaseUrl(baseUrl),
@@ -84,6 +96,7 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
     apiKey,
     timeoutMs,
     disableThinking,
+    tokenParam,
   };
 }
 
@@ -108,8 +121,8 @@ export async function callEaAssistantModel(opts: EaAssistantCallOptions): Promis
       messages: opts.messages,
       temperature: opts.temperature ?? 0.1,
       stream: false,
-      max_completion_tokens: opts.maxTokens ?? 64,
     };
+    body[config.tokenParam] = opts.maxTokens ?? 64;
     if (config.disableThinking) {
       body.chat_template_kwargs = { thinking: false };
     }
