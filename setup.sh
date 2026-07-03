@@ -402,7 +402,6 @@ try:
 except Exception as exc:
     print(f"  OpenClaw 配置同步失败: {exc}")
 PYEOF
-    "${SCRIPT_DIR}/scripts/configure-openclaw-sandbox.sh" || echo "  [WARN] OpenClaw sandbox 配置未完全生效，请检查 Docker 权限与镜像。"
     node "${SCRIPT_DIR}/scripts/patch-openclaw-weixin-media.mjs" || echo "  [WARN] OpenClaw 微信媒体补丁未完全生效，请检查 openclaw-weixin 插件。"
   elif [[ ! -f "$OC_CONFIG" ]]; then
     echo "  未找到 $OC_CONFIG。请先运行: openclaw setup"

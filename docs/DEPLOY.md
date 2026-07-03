@@ -176,9 +176,8 @@ npm install -g openclaw
 # 2. 交互式配置（选择 LLM provider，填入 API Key）
 openclaw setup
 
-# 3. 应用员工智能体配置模板
-# 复制 configs/openclaw-lingxia.json.example 到 ~/.openclaw/openclaw.json
-# 或按场景 A 修改已有配置
+# 3. 同步 OpenClaw gateway 配置
+# 如仍需 OpenClaw gateway，请按场景 A 手工修改已有配置。
 
 # 4. 确保 gateway token 与灵虾一致
 # 查看员工智能体的 token:
