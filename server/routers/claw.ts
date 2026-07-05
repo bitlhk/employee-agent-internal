@@ -3,7 +3,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { execSync } from "child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import path from "path";
 import {
   getCurrentClawByUserId,
   listClawsByUserId,
@@ -54,7 +55,7 @@ import {
   provisionEmployeeAgentInstance,
   writeClawExecAudit,
 } from "./helpers";
-import { isJiuwenClawAdoptId, resolveRuntimeAgentId } from "../_core/helpers";
+import { isJiuwenClawAdoptId, JIUWENCLAW_HOME, jiuwenClawServiceId, resolveRuntimeAgentId } from "../_core/helpers";
 import { getAuditBaselineHealth } from "../_core/audit-health";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
@@ -1132,6 +1133,7 @@ export const clawRouter = router({
       const dbTables = ["users", "business_agent_audit", "business_agent_tenant_map", "skill_marketplace"] as const;
       const dbTableSet = new Set<string>(dbTables);
       const dbHealth: any = { ok: false, tables: [] as any[], skillMarketApproved: null, claws: null, error: "" };
+      const dbStartedAt = Date.now();
       try {
         const db = await getDb();
         if (!db) throw new Error("DB not available");
@@ -1143,12 +1145,26 @@ export const clawRouter = router({
           dbHealth.tables.push({ name: table, exists: rows.length > 0 });
         }
         const approved: any = await db.execute("SELECT COUNT(*) AS count FROM skill_marketplace WHERE status = 'approved'");
-        const claws: any = await db.execute("SELECT COUNT(*) AS total, SUM(status = 'active') AS active FROM claw_adoptions");
+        const claws: any = await db.execute(`
+          SELECT
+            COUNT(*) AS total,
+            SUM(status = 'active') AS active,
+            SUM(status = 'active' AND (runtime = 'jiuwenswarm' OR adoptId LIKE 'lgj-%')) AS jiuwenActive,
+            SUM(status = 'active' AND (runtime = 'openclaw' OR adoptId LIKE 'lgc-%')) AS openclawActive
+          FROM claw_adoptions
+        `);
         dbHealth.skillMarketApproved = Number((approved?.[0]?.[0] || approved?.[0] || {}).count || 0);
         const clawRow = claws?.[0]?.[0] || claws?.[0] || {};
-        dbHealth.claws = { total: Number(clawRow.total || 0), active: Number(clawRow.active || 0) };
+        dbHealth.claws = {
+          total: Number(clawRow.total || 0),
+          active: Number(clawRow.active || 0),
+          jiuwenActive: Number(clawRow.jiuwenActive || 0),
+          openclawActive: Number(clawRow.openclawActive || 0),
+        };
       } catch (e: any) {
         dbHealth.error = String(e?.message || e);
+      } finally {
+        dbHealth.latencyMs = Date.now() - dbStartedAt;
       }
 
       const auditBaseline = await getAuditBaselineHealth();
@@ -1161,9 +1177,163 @@ export const clawRouter = router({
       }));
 
       const processLines = openclawProcesses.output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      type HealthStatus = "ok" | "warning" | "error" | "disabled";
+      type HealthCheck = {
+        key: string;
+        group: "platform" | "runtime" | "database" | "channels" | "audit";
+        label: string;
+        provider?: string;
+        status: HealthStatus;
+        detail: string;
+        meta?: Record<string, unknown>;
+      };
+      const checks: HealthCheck[] = [];
+      const pushCheck = (check: HealthCheck) => checks.push(check);
+      const appStatus = String(app?.pm2_env?.status || "");
+      pushCheck({
+        key: "platform.app",
+        group: "platform",
+        label: "平台服务",
+        provider: "ea",
+        status: health.ok && appStatus === "online" ? "ok" : "error",
+        detail: `${app?.name || appName} · ${appStatus || "unknown"} · CPU ${app?.monit?.cpu ?? "-"}% · 重启 ${app?.pm2_env?.restart_time ?? "-"} 次`,
+      });
+
+      const jiuwenActive = Number(dbHealth.claws?.jiuwenActive || 0);
+      const jiuwenEnabled = jiuwenActive > 0 || process.env.WORKFORCE_AGENT_HEALTH_CHECK_JIUWEN === "true";
+      const jiuwenGlobalSessionsDir = path.join(JIUWENCLAW_HOME, "agent", "sessions");
+      const jiuwenServiceDir = path.join(JIUWENCLAW_HOME, `service_${jiuwenClawServiceId()}`);
+      const countDirs = (dir: string) => {
+        try {
+          return readdirSync(dir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).length;
+        } catch {
+          return 0;
+        }
+      };
+      const jiuwenHomeExists = existsSync(JIUWENCLAW_HOME);
+      const jiuwenGlobalSessionCount = countDirs(jiuwenGlobalSessionsDir);
+      const jiuwenServiceAgentCount = countDirs(jiuwenServiceDir);
+      const jiuwenService = safeExec("systemctl is-active jiuwenswarm.service", 3000);
+      const jiuwenRecentLog = (() => {
+        const logPath = path.join(APP_ROOT, "logs", "jiuwenclaw-exec.log");
+        if (!existsSync(logPath)) return { requests24h: 0, completes24h: 0 };
+        const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+        let requests24h = 0;
+        let completes24h = 0;
+        try {
+          const lines = readFileSync(logPath, "utf8").split(/\r?\n/).filter(Boolean).slice(-5000);
+          for (const line of lines) {
+            try {
+              const event = JSON.parse(line);
+              const ts = Date.parse(String(event?.ts || ""));
+              if (!Number.isFinite(ts) || ts < cutoff) continue;
+              if (event?.event === "chat_stream_request") requests24h += 1;
+              if (event?.event === "chat_stream_complete") completes24h += 1;
+            } catch {}
+          }
+        } catch {}
+        return { requests24h, completes24h };
+      })();
+      pushCheck({
+        key: "runtime.jiuwenswarm",
+        group: "runtime",
+        label: "JiuwenSwarm Runtime",
+        provider: "jiuwenswarm",
+        status: !jiuwenEnabled
+          ? "disabled"
+          : jiuwenHomeExists
+            ? "ok"
+            : "error",
+        detail: !jiuwenEnabled
+          ? "当前没有启用 JiuwenSwarm 智能体"
+          : `${jiuwenActive} 个 active · sessions ${jiuwenGlobalSessionCount} · service agents ${jiuwenServiceAgentCount} · 24h 请求 ${jiuwenRecentLog.requests24h}`,
+        meta: {
+          home: JIUWENCLAW_HOME,
+          serviceId: jiuwenClawServiceId(),
+          serviceStatus: jiuwenService.output || jiuwenService.error || "",
+          ...jiuwenRecentLog,
+        },
+      });
+
+      const openclawActive = Number(dbHealth.claws?.openclawActive || 0);
+      const openclawEnabled = openclawActive > 0 || process.env.WORKFORCE_AGENT_HEALTH_CHECK_OPENCLAW === "true";
+      pushCheck({
+        key: "runtime.openclaw",
+        group: "runtime",
+        label: "OpenClaw Runtime",
+        provider: "openclaw",
+        status: !openclawEnabled
+          ? "disabled"
+          : openclawJson?.gateway?.reachable
+            ? "ok"
+            : processLines.length > 0
+              ? "warning"
+              : "error",
+        detail: !openclawEnabled
+          ? "当前没有启用 OpenClaw 智能体"
+          : `active ${openclawActive} · gateway ${openclawJson?.gateway?.reachable ? "reachable" : "unreachable"} · process ${processLines.length}`,
+      });
+
+      pushCheck({
+        key: "data.database",
+        group: "database",
+        label: "数据库",
+        provider: "mysql",
+        status: dbHealth.ok && (dbHealth.tables || []).every((table: any) => table.exists) ? "ok" : "error",
+        detail: dbHealth.ok
+          ? `active ${dbHealth.claws?.active ?? 0}/${dbHealth.claws?.total ?? 0} · 技能 ${dbHealth.skillMarketApproved ?? 0} · ${dbHealth.latencyMs ?? "-"} ms`
+          : dbHealth.error || "数据库不可用",
+      });
+      pushCheck({
+        key: "data.audit",
+        group: "audit",
+        label: "审计基线",
+        provider: "audit-ledger",
+        status: auditBaseline?.ok ? "ok" : "warning",
+        detail: `表 ${(auditBaseline?.tables || []).filter((table: any) => table.exists).length}/${(auditBaseline?.tables || []).length || 4} · DLQ ${auditBaseline?.dlq?.eventCount ?? 0}`,
+      });
+      pushCheck({
+        key: "channels.status",
+        group: "channels",
+        label: "频道连接",
+        provider: "channels",
+        status: channels.length === 0
+          ? "disabled"
+          : channels.some((channel) => channel.ok)
+            ? channels.some((channel) => channel.warn) ? "warning" : "ok"
+            : "warning",
+        detail: channels.length === 0
+          ? "暂无运行中的频道状态输出"
+          : `${channels.filter((channel) => channel.ok).length}/${channels.length} 运行`,
+      });
+      const summary = {
+        ok: checks.every((check) => check.status === "ok" || check.status === "disabled"),
+        error: checks.filter((check) => check.status === "error").length,
+        warning: checks.filter((check) => check.status === "warning").length,
+        disabled: checks.filter((check) => check.status === "disabled").length,
+      };
 
       return redactHealthValue({
         checkedAt,
+        summary,
+        checks,
+        runtimes: {
+          primary: jiuwenActive > 0 ? "jiuwenswarm" : openclawActive > 0 ? "openclaw" : "none",
+          jiuwenswarm: {
+            enabled: jiuwenEnabled,
+            active: jiuwenActive,
+            home: JIUWENCLAW_HOME,
+            serviceId: jiuwenClawServiceId(),
+            globalSessions: jiuwenGlobalSessionCount,
+            serviceAgents: jiuwenServiceAgentCount,
+            serviceStatus: jiuwenService.output || "",
+            recent: jiuwenRecentLog,
+          },
+          openclaw: {
+            enabled: openclawEnabled,
+            active: openclawActive,
+          },
+        },
         app: {
           name: appName,
           healthOk: health.ok,
