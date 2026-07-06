@@ -4,7 +4,6 @@ import { AgentPage } from "@/components/pages/AgentPage";
 import { WorkspacePage } from "@/components/pages/WorkspacePage";
 import { SchedulePageV2 } from "@/components/pages/SchedulePageV2";
 import { SettingsPage } from "@/components/pages/SettingsPage";
-import { MeetingNotesPage } from "@/components/pages/MeetingNotesPage";
 import { CollabPage } from "@/components/pages/CollabPage";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import type { PageKey } from "@/components/console/Sidebar";
@@ -21,7 +20,6 @@ const PANEL_PAGE_ORDER: PanelPageKey[] = [
   "workspace",
   "schedule",
   "collab",
-  "meeting",
   "settings",
 ];
 
@@ -77,7 +75,6 @@ export function MainPanel({
     if (page === "agent") return <AgentPage adoptId={adoptId || ""} skills={safeSkills.data as any} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;
     if (page === "schedule") return <SchedulePageV2 adoptId={adoptId || ""} />;
-    if (page === "meeting") return <MeetingNotesPage adoptId={adoptId || ""} />;
     if (page === "collab") return <CollabPage adoptId={adoptId || ""} />;
     return <SettingsPage />;
   };

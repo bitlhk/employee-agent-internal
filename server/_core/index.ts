@@ -20,7 +20,7 @@ import { fileURLToPath } from "url";
 import compression from "compression";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
-import { registerVoiceRoutes, registerVoiceWsRoutes } from "./voice";
+import { registerVoiceRoutes } from "./voice";
 import { startRecycler } from "./recycler";
 import { registerCronRoutes } from "./claw-cron";
 import { registerJiuwenLingganWebhookRoutes } from "./jiuwen-linggan-webhook";
@@ -313,7 +313,6 @@ async function startServer() {
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   registerVoiceRoutes(app);
-  registerVoiceWsRoutes(server);
   registerJiuwenLingganWebhookRoutes(app);
   registerCronRoutes(app);
   registerNotifyRoutes(app);

@@ -10,7 +10,6 @@ const PAGE_LABELS: Record<string, string> = {
   workspace: "工作空间",
   collab: "协作",
   schedule: "定时任务",
-  meeting: "会议纪要",
   settings: "设置",
 };
 

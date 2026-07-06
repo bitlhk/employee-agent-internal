@@ -811,7 +811,7 @@ export default function Home() {
         if (v === "agentLab") return "chat";
         if (v === "docs") return "workspace";
         if (v === "weixin") return "channels";
-        if (v === "meeting") return "meeting";
+        if (v === "meeting") return "chat";
         if (v === "office") return "chat";
         return v as PageKey;
       }

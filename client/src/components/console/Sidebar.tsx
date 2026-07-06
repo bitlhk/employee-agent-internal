@@ -9,7 +9,7 @@ import {
 import type { ReactNode } from "react";
 import { SessionList, type SessionListConversation } from "./SessionList";
 
-export type PageKey = "chat" | "skills" | "channels" | "weixin" | "agent" | "workspace" | "schedule" | "collab" | "meeting" | "settings";
+export type PageKey = "chat" | "skills" | "channels" | "weixin" | "agent" | "workspace" | "schedule" | "collab" | "settings";
 
 type NavItem = { key: PageKey; label: string; icon: any; adminOnly?: boolean };
 
