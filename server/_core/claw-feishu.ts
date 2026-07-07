@@ -8,7 +8,7 @@
 import express from "express";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync, readdirSync } from "fs";
 import path from "path";
-import { randomInt } from "crypto";
+import { createHash, randomInt } from "crypto";
 import {
   APP_ROOT,
   isAuthorizedInternalRequest,
@@ -326,6 +326,11 @@ function sanitizeRoutePart(value: unknown, fallback: string): string {
     .slice(0, 96)
     .replace(/^_+|_+$/g, "");
   return normalized || fallback;
+}
+
+function hashRouteId(value: unknown): string {
+  const normalized = String(value || "").trim();
+  return normalized ? createHash("sha256").update(normalized).digest("hex").slice(0, 10) : "";
 }
 
 function expectedBridgeToken(): string {
@@ -921,6 +926,12 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!openId) return res.status(400).json({ ok: false, error: "open_id required" });
 
       const binding = await loadBridgeBindingByOpenId(openId);
+      console.info("[FEISHU-BRIDGE] resolve", {
+        openIdHash: hashRouteId(openId),
+        chatIdHash: hashRouteId(chatId),
+        bound: !!binding,
+        adoptId: binding?.adoptId || "",
+      });
       if (!binding) {
         return res.json({
           ok: true,
