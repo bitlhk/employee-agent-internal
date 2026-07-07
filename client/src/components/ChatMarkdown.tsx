@@ -44,20 +44,74 @@ function normalizeMarkdownContent(content: string): string {
   return repairMarkdownSpacing(content);
 }
 
+function tableCellCount(line: string): number {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return 0;
+  return trimmed.slice(1, -1).split("|").length;
+}
+
+function isMarkdownTableRow(line: string): boolean {
+  const trimmed = line.trim();
+  return trimmed.startsWith("|") && trimmed.endsWith("|") && tableCellCount(trimmed) >= 2;
+}
+
+function isMarkdownTableSeparator(line: string): boolean {
+  const trimmed = line.trim();
+  if (!isMarkdownTableRow(trimmed)) return false;
+  return trimmed
+    .slice(1, -1)
+    .split("|")
+    .every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function prependTableHeaderCell(line: string, label: string): string {
+  const trimmed = line.trim();
+  return `| ${label} | ${trimmed.slice(1).trimStart()}`;
+}
+
+function repairMarkdownTables(content: string): string {
+  const lines = content
+    .split("\n")
+    .filter((line) => line.trim() !== "|");
+
+  for (let i = 0; i < lines.length - 2; i += 1) {
+    if (isMarkdownTableSeparator(lines[i]) && !lines[i + 1].trim() && isMarkdownTableRow(lines[i + 2])) {
+      lines.splice(i + 1, 1);
+      i -= 1;
+    }
+  }
+
+  for (let i = 0; i < lines.length - 1; i += 1) {
+    if (!isMarkdownTableRow(lines[i]) || !isMarkdownTableSeparator(lines[i + 1])) continue;
+    const headerCount = tableCellCount(lines[i]);
+    const separatorCount = tableCellCount(lines[i + 1]);
+    const bodyCount = tableCellCount(lines[i + 2] || "");
+    if (separatorCount === headerCount + 1 && bodyCount === separatorCount) {
+      lines[i] = prependTableHeaderCell(lines[i], "序号");
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function repairMarkdownSpacing(content: string): string {
   const text = String(content || "");
   if (!text) return text;
 
-  return text
+  const spaced = text
     .split("\n")
     .flatMap((rawLine) => {
       let line = rawLine;
       const out: string[] = [];
 
+      line = line.replace(/^(\s{0,3}#{1,6})(?=\S)/, "$1 ");
+
       // Some streaming runtimes concatenate adjacent headings, e.g.
       // "# Title## Section| A | B |". Split only heading markers that
       // appear after non-whitespace content on the same line.
       line = line.replace(/([^\s#])(\s*#{1,6}\s+)/g, "$1\n\n$2");
+      line = line.replace(/(\|\s*(?::?-{3,}:?\s*\|){1,})\s+(?=\|)/g, "$1\n");
+      line = line.replace(/(\|\s*)\|\s+(?=\d+\s*\|)/g, "$1\n| ");
 
       for (const part of line.split("\n")) {
         const listItem = part.replace(/^(\s*[-*+])(?=\S)/, "$1 ");
@@ -82,6 +136,8 @@ function repairMarkdownSpacing(content: string): string {
       return out;
     })
     .join("\n");
+
+  return repairMarkdownTables(spaced);
 }
 
 function normalizeSafeHref(href?: string): string | undefined {

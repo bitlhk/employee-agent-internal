@@ -466,6 +466,14 @@ type LxMsg = {
   partialText?: string;            // 截断时已显示的内容（恢复失败时保留）
 };
 
+function hasPendingJiuwenPermissionMessage(message?: LxMsg | null): boolean {
+  return Boolean(
+    message?.role === "assistant" &&
+    message.jiuwenPermission?.requestId &&
+    message.jiuwenPermission.state === "pending"
+  );
+}
+
 function toolCallToMessageEvent(tool: ToolCallEntry): MessageEventEntry {
   return {
     type: "tool_call",
@@ -1761,6 +1769,7 @@ export default function Home() {
       const idx = current.findIndex((msg) => msg.id === args.assistantMessageId && msg.role === "assistant");
       if (idx < 0 || idx !== current.length - 1) return current;
       const currentMessage = current[idx];
+      if (hasPendingJiuwenPermissionMessage(currentMessage)) return current;
       const canonicalText = String(canonicalLastAssistant.text || "");
       const currentText = String(currentMessage.text || "");
       const shouldMergeText =
@@ -1901,6 +1910,8 @@ export default function Home() {
       .then((r) => r.ok ? r.json() : null)
       .then((payload) => {
         if (cancelled || restoreConversationRequestSeqRef.current !== requestSeq || !Array.isArray(payload?.messages)) return;
+        const currentLast = activeLingxiaMsgsRef.current?.[activeLingxiaMsgsRef.current.length - 1];
+        if (hasPendingJiuwenPermissionMessage(currentLast)) return;
         restoredSessionKeyRef.current = sessionKey;
         activateWebConversation(webConversationId, payload.messages);
       })
@@ -1924,14 +1935,7 @@ export default function Home() {
       const nextLastText = normalizeSessionText(next[next.length - 1]?.text || "");
       const currentLastText = normalizeSessionText(current[current.length - 1]?.text || "");
       const currentLast = current[current.length - 1];
-      if (
-        currentLast?.role === "assistant" &&
-        currentLast.jiuwenPermission?.state === "pending" &&
-        nextTextCount <= currentTextCount &&
-        normalizeSessionText(extractJiuwenPermissionMarker(currentLast.text || "").text) === nextLastText
-      ) {
-        return null;
-      }
+      if (hasPendingJiuwenPermissionMessage(currentLast)) return null;
       if (nextTextCount < currentTextCount) return null;
       if (nextTextCount === currentTextCount && nextLastText === currentLastText) return null;
       return next;
