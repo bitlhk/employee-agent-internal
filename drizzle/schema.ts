@@ -519,6 +519,31 @@ export const lxCoopEvents = mysqlTable("lx_coop_events", {
 export type LxCoopEvent = typeof lxCoopEvents.$inferSelect;
 export type InsertLxCoopEvent = typeof lxCoopEvents.$inferInsert;
 
+/**
+ * Workforce Agent Platform collaboration - session shared files
+ */
+export const lxCoopFiles = mysqlTable("lx_coop_files", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  sessionId: varchar("session_id", { length: 64 }).notNull(),
+  requestId: bigint("request_id", { mode: "number" }),
+  ownerUserId: int("owner_user_id").notNull(),
+  sourceAdoptId: varchar("source_adopt_id", { length: 64 }),
+  sourcePath: varchar("source_path", { length: 1000 }),
+  storedPath: varchar("stored_path", { length: 1200 }).notNull(),
+  name: varchar("name", { length: 300 }).notNull(),
+  size: bigint("size", { mode: "number" }).default(0).notNull(),
+  mime: varchar("mime", { length: 160 }),
+  sourceType: mysqlEnum("source_type", ["upload", "agent_workspace", "final_artifact"]).default("upload").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  sessionIdx: index("idx_lx_coop_files_session").on(table.sessionId),
+  requestIdx: index("idx_lx_coop_files_request").on(table.requestId),
+  ownerIdx: index("idx_lx_coop_files_owner").on(table.ownerUserId),
+}));
+
+export type LxCoopFile = typeof lxCoopFiles.$inferSelect;
+export type InsertLxCoopFile = typeof lxCoopFiles.$inferInsert;
+
 
 /**
  * 工具执行审计表

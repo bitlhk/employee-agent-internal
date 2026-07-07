@@ -10,4 +10,5 @@ export * from "./scenarios";
 export * from "./claw";
 export * from "./role-assets";
 export * from "./collab";
+export * from "./coop-files";
 export * from "./agents";

@@ -12,23 +12,19 @@
  *   * Stream 给客户端，attachment 模式触发浏览器下载
  */
 import express from "express";
-import { mkdirSync, writeFileSync, existsSync, statSync, createReadStream } from "fs";
+import { existsSync, statSync, createReadStream } from "fs";
 import path from "path";
 import { eq } from "drizzle-orm";
 import { resolveRequesterUserId } from "./helpers";
+import {
+  createCoopFileFromBuffer,
+  getCoopFileForDownload,
+  safeCoopFilename,
+} from "../db/coop-files";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const COOP_UPLOAD_DIR = `${APP_ROOT}/data/coop-uploads`;
 const MAX_BYTES = 50 * 1024 * 1024; // 50MB
-
-// 文件名安全化：只保留字母/数字/中文/常见标点，截断 200 字符
-function safeFilename(s: string): string {
-  return s
-    .replace(/[\\/:*?"<>|]/g, "_")
-    .replace(/\.\.+/g, "_") // 防 path traversal
-    .replace(/^\.+/, "_")
-    .slice(0, 200);
-}
 
 // 校验当前 user 是否可查看该协作 session，且 requestId 属于该 session。
 async function userCanAccessCoop(userId: number, sessionId: string, requestId: number): Promise<boolean> {
@@ -80,17 +76,16 @@ export function registerCoopUploadRoutes(app: express.Express) {
         return;
       }
 
-      const safeName = safeFilename(String(filename));
-      const ts = Date.now();
-      const targetDir = path.join(COOP_UPLOAD_DIR, sid, String(rid));
-      mkdirSync(targetDir, { recursive: true });
-      const finalName = `${ts}-${safeName}`;
-      const targetPath = path.join(targetDir, finalName);
-      writeFileSync(targetPath, buf);
-
-      // URL：不直接暴露 fs path，让浏览器走 GET endpoint（带权限校验）
-      const url = `/api/coop/file?sessionId=${encodeURIComponent(sid)}&requestId=${rid}&file=${encodeURIComponent(finalName)}`;
-      res.json({ ok: true, name: safeName, url, size: buf.length });
+      const file = await createCoopFileFromBuffer({
+        sessionId: sid,
+        requestId: rid,
+        ownerUserId: userId,
+        name: String(filename),
+        content: buf,
+        mime: String(req.body?.mime || "") || null,
+        sourceType: "upload",
+      });
+      res.json({ ok: true, fileId: file.id, name: file.name, url: file.url, size: file.size });
     } catch (e: any) {
       console.error("[coop-upload] error:", e);
       res.status(500).json({ error: e?.message || "upload failed" });
@@ -110,7 +105,7 @@ export function registerCoopUploadRoutes(app: express.Express) {
         res.status(400).json({ error: "参数不合法" }); return;
       }
       // 严格防 path traversal：file 必须只包含 . _ - 字母数字 中文
-      const safeFile = safeFilename(file);
+      const safeFile = safeCoopFilename(file);
       if (safeFile !== file) { res.status(400).json({ error: "文件名不合法" }); return; }
 
       const ok = await userCanAccessCoop(userId, sid, rid);
@@ -134,6 +129,32 @@ export function registerCoopUploadRoutes(app: express.Express) {
       createReadStream(resolved).pipe(res);
     } catch (e: any) {
       console.error("[coop-file] error:", e);
+      res.status(500).json({ error: e?.message || "download failed" });
+    }
+  });
+
+  // ── 新共享文件下载：GET /api/coop/files/:fileId ────────────────
+  app.get("/api/coop/files/:fileId", async (req, res) => {
+    try {
+      const userId = await resolveRequesterUserId(req, res);
+      if (!userId) { res.status(401).json({ error: "请先登录" }); return; }
+      const fileId = Number(req.params.fileId || 0);
+      if (!Number.isInteger(fileId) || fileId <= 0) {
+        res.status(400).json({ error: "fileId 不合法" });
+        return;
+      }
+      const found = await getCoopFileForDownload(fileId, userId);
+      if (!found) {
+        res.status(404).json({ error: "文件不存在或无权访问" });
+        return;
+      }
+      const stat = statSync(found.absPath);
+      res.setHeader("Content-Type", found.view.mime || "application/octet-stream");
+      res.setHeader("Content-Length", stat.size);
+      res.setHeader("Content-Disposition", `attachment; filename*=UTF-8''${encodeURIComponent(found.view.name)}`);
+      createReadStream(found.absPath).pipe(res);
+    } catch (e: any) {
+      console.error("[coop-file] shared download error:", e);
       res.status(500).json({ error: e?.message || "download failed" });
     }
   });

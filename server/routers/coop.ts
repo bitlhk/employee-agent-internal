@@ -24,6 +24,7 @@ import {
 import { requireActiveCoopProfile } from "../db/coop-identity";
 import { consolidateCoopSession } from "../_core/coop-orchestrator";
 import { notifyCoopEvent } from "../_core/coop-notify";
+import { listCoopFilesForSession, normalizeCoopAttachments } from "../db/coop-files";
 
 function deriveCoopTitle(text: string): string {
   const clean = String(text || "").replace(/\s+/g, " ").trim();
@@ -229,8 +230,11 @@ export const coopRouter = router({
       attachments: z.array(z.object({
         name: z.string().max(300),
         url: z.string().max(2000),
-        source: z.enum(["chat", "task"]).default("chat"),
+        source: z.enum(["chat", "task", "agent_workspace"]).default("chat"),
         size: z.number().int().nonnegative().optional(),
+        adoptId: z.string().max(80).optional(),
+        path: z.string().max(1000).optional(),
+        fileId: z.number().int().positive().optional(),
       })).max(50).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -256,6 +260,13 @@ export const coopRouter = router({
         throw new TRPCError({ code: "BAD_REQUEST", message: `cannot submit on status=${r.status}` });
       }
 
+      const attachments = await normalizeCoopAttachments({
+        sessionId: r.sessionId!,
+        ownerUserId: ctx.user!.id,
+        requestId: input.requestId,
+        attachments: input.attachments || [],
+      });
+
       // update request
       await db.update(clawCollabRequests)
         .set({
@@ -275,7 +286,7 @@ export const coopRouter = router({
         payload: {
           mode: "manual",
           text: input.resultText,
-          attachments: input.attachments || [],
+          attachments,
         },
       });
 
@@ -368,6 +379,13 @@ export const coopRouter = router({
       return { events, latestId: events.length > 0 ? Number(events[events.length - 1].id) : input.sinceId };
     }),
 
+  // ── 协作共享文件列表 ───────────────────────────────
+  files: protectedProcedure
+    .input(z.object({ sessionId: z.string().min(1).max(80) }))
+    .query(async ({ input, ctx }) => {
+      return await listCoopFilesForSession(input.sessionId, ctx.user!.id);
+    }),
+
   // ── 群消息：当前 session 发起人或成员可发送普通群消息 ─────
   sendMessage: protectedProcedure
     .input(z.object({
@@ -385,12 +403,17 @@ export const coopRouter = router({
     .mutation(async ({ input, ctx }) => {
       const ses = await getCoopSession(input.sessionId, ctx.user!.id);
       if (!ses) throw new TRPCError({ code: "NOT_FOUND", message: "协作不存在或无权访问" });
+      const attachments = await normalizeCoopAttachments({
+        sessionId: input.sessionId,
+        ownerUserId: ctx.user!.id,
+        attachments: input.attachments || [],
+      });
       const { appendCoopEvent } = await import("../db/coop");
       await appendCoopEvent({
         sessionId: input.sessionId,
         eventType: "group_message",
         actorUserId: ctx.user!.id,
-        payload: { text: input.text.trim(), attachments: input.attachments || [] },
+        payload: { text: input.text.trim(), attachments },
       });
       const recipientUserIds = [
         Number((ses.creator as any)?.userId || 0),

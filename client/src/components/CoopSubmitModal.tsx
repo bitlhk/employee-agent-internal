@@ -20,8 +20,11 @@ import { toast } from "sonner";
 export type SubmitAttachment = {
   name: string;
   url: string;
-  source: "chat" | "task";
+  source: "chat" | "task" | "agent_workspace";
   size?: number;
+  fileId?: number;
+  adoptId?: string;
+  path?: string;
 };
 
 interface CoopSubmitModalProps {
@@ -133,7 +136,7 @@ export function CoopSubmitModal({
       if (!r.ok || !data?.ok) {
         throw new Error(data?.error || `上传失败 (${r.status})`);
       }
-      const att: SubmitAttachment = { name: data.name, url: data.url, source: "chat", size: data.size };
+      const att: SubmitAttachment = { fileId: data.fileId, name: data.name, url: data.url, source: "chat", size: data.size };
       setUploadedFiles((prev) => [...prev, att]);
       // 自动勾选刚上传的
       setSelectedUrls((prev) => {

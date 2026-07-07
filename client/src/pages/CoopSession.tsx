@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type EventAttachment = {
+  fileId?: number;
   name: string;
   url: string;
   source?: "chat" | "task" | "agent_workspace";
@@ -218,6 +219,10 @@ export default function CoopSession() {
     { sessionId, sinceId: 0, limit: 200 },
     { enabled: Boolean(sessionId), refetchInterval: 5000 }
   );
+  const filesQ = trpc.coop.files.useQuery(
+    { sessionId },
+    { enabled: Boolean(sessionId), refetchInterval: 5000 }
+  );
   const sendGroupMessageMut = trpc.coop.sendMessage.useMutation({
     onSuccess: () => {
       setGroupInput("");
@@ -311,7 +316,16 @@ export default function CoopSession() {
     })
     .filter((message) => message.text)
     .sort((a, b) => a.id - b.id);
-  const sharedAttachments = [
+  const registeredSharedFiles = ((filesQ.data as any[]) || []).map((file) => ({
+    fileId: Number(file.id || 0) || undefined,
+    name: String(file.name || "文件"),
+    url: String(file.url || ""),
+    source: file.sourceType === "agent_workspace" ? "agent_workspace" : "chat",
+    size: Number(file.size || 0) || undefined,
+    memberName: file.ownerUserId ? `成员 #${file.ownerUserId}` : "共享文件",
+    createdAt: file.createdAt,
+  })).filter((file) => file.url);
+  const eventSharedAttachments = [
     ...completedMembers.flatMap((m: any) =>
       (attachmentsByRequestId.get(m.requestId) || []).map((attachment) => ({
         ...attachment,
@@ -325,6 +339,7 @@ export default function CoopSession() {
       }))
     ),
   ];
+  const sharedAttachments = registeredSharedFiles.length > 0 ? registeredSharedFiles : eventSharedAttachments;
   const runAgentDraft = async (text: string) => {
     const clean = text.trim();
     if (!clean || !myAdoptIdForBack || agentStreaming) return;

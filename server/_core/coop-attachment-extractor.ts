@@ -8,12 +8,17 @@
  */
 import { existsSync, statSync, readFileSync } from "fs";
 import path from "path";
+import { eq } from "drizzle-orm";
+import { lxCoopFiles } from "../../drizzle/schema";
+import { COOP_FILES_DIR } from "../db/coop-files";
+import { getDb } from "../db/connection";
 
 export type Attachment = {
   name: string;
   url: string;
-  source?: "chat" | "task";
+  source?: "chat" | "task" | "agent_workspace";
   size?: number;
+  fileId?: number;
 };
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
@@ -31,8 +36,19 @@ function formatSize(bytes?: number): string {
  * url 格式：/api/coop/file?sessionId=cs-xxx&requestId=N&file=ts-name.ext
  * 本地路径：/data/coop-uploads/{sessionId}/{requestId}/{file}
  */
-function resolveLocalPath(att: Attachment): string | null {
+async function resolveLocalPath(att: Attachment): Promise<string | null> {
   try {
+    const fileId = Number(att.fileId || String(att.url || "").match(/\/api\/coop\/files\/(\d+)/)?.[1] || 0);
+    if (fileId > 0) {
+      const db = await getDb();
+      if (!db) return null;
+      const rows = await db.select().from(lxCoopFiles).where(eq(lxCoopFiles.id, fileId)).limit(1);
+      const row = rows[0];
+      if (!row) return null;
+      const fp = path.resolve(COOP_FILES_DIR, row.storedPath);
+      const root = path.resolve(COOP_FILES_DIR);
+      return fp.startsWith(root + path.sep) && existsSync(fp) ? fp : null;
+    }
     const u = new URL(att.url, "http://placeholder");
     const sid = u.searchParams.get("sessionId");
     const rid = u.searchParams.get("requestId");
@@ -50,7 +66,7 @@ function resolveLocalPath(att: Attachment): string | null {
  * 演示前 A 阶段：只识别 .txt / .md，docx/pdf 留 TODO
  */
 async function extractFileText(att: Attachment, maxChars = 3000): Promise<string | null> {
-  const fp = resolveLocalPath(att);
+  const fp = await resolveLocalPath(att);
   if (!fp) return null;
 
   const ext = path.extname(att.name).toLowerCase();
