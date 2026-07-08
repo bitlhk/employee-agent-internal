@@ -421,6 +421,7 @@ function isListableJiuwenWebSession(sessionId: string, adoptId: string): boolean
   const value = String(sessionId || "").trim();
   if (!value.startsWith(`sess_${adoptId}_web_`)) return false;
   if (value.includes("_conv_linggan_channel_")) return false;
+  if (/\.bak(?:-|$)/i.test(value)) return false;
   return !/(?:^|[_-])(smoke|debug|test|bench|bash_approval)(?:[_-]|$)/i.test(value);
 }
 
@@ -749,21 +750,29 @@ export function listJiuwenChatHistorySessions(args: {
       try { st = statSync(historyFile); } catch { st = null; }
       const updatedAt = normalizeJiuwenHistoryTimestamp(metadata?.last_message_at) || Number(st?.mtimeMs || 0) || 0;
       const createdAt = normalizeJiuwenHistoryTimestamp(metadata?.created_at) || Number(st?.birthtimeMs || updatedAt || 0) || updatedAt;
-      candidates.push({ sessionId, historyFile, metadata, updatedAt, createdAt });
+      const conversationId = jiuwenConversationIdFromSessionId(sessionId, args.adoptId);
+      candidates.push({ conversationId, sessionId, historyFile, metadata, updatedAt, createdAt });
       seen.add(sessionId);
     }
   }
 
-  return candidates
+  const byConversation = new Map<string, any>();
+  for (const candidate of candidates) {
+    const previous = byConversation.get(candidate.conversationId);
+    if (!previous || Number(candidate.updatedAt || 0) > Number(previous.updatedAt || 0)) {
+      byConversation.set(candidate.conversationId, candidate);
+    }
+  }
+
+  return Array.from(byConversation.values())
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, args.limit)
     .map((entry) => {
       const messages = extractJiuwenChatMessages(entry.historyFile, 80);
       const firstUser = messages.find((m) => m.role === "user");
       const last = [...messages].reverse().find((m) => normalizeHistoryText(m.text));
-      const conversationId = jiuwenConversationIdFromSessionId(entry.sessionId, args.adoptId);
       return {
-        conversationId,
+        conversationId: entry.conversationId,
         sessionKey: entry.sessionId,
         sessionId: entry.sessionId,
         title: truncateHistoryText(entry.metadata?.title || firstUser?.text || "", 24) || "新对话",
