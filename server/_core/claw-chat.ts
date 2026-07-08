@@ -67,26 +67,19 @@ async function buildSelectedSkillContext(adoptId: string, selectedSkillId: unkno
   if (!existsSync(skillFile)) return { ok: false, status: 400, error: "所选技能运行时文件不存在" };
 
   const label = String((skill as any)?.source?.displayName || (skill as any)?.displayName || (skill as any)?.label || skillId).trim() || skillId;
-  const skillContentLimit = Math.max(4000, Number(process.env.SELECTED_SKILL_CONTEXT_MAX_CHARS || 12000) || 12000);
-  let skillContent = "";
-  try {
-    skillContent = readFileSync(skillFile, "utf8").slice(0, skillContentLimit);
-  } catch {
-    return { ok: false, status: 400, error: "所选技能运行时文件读取失败" };
-  }
+  const description = String((skill as any)?.source?.description || (skill as any)?.description || "").trim();
   const message = [
     "【本轮已由用户在输入框选择技能 Chip】",
     `selectedSkillId: ${skillId}`,
     `selectedSkillName: ${label}`,
+    description ? `selectedSkillDescription: ${description}` : "",
     `selectedSkillFile: ${skillFile}`,
-    "要求：本轮必须优先使用下方 EA 已注入的 SKILL.md 内容；不要搜索或安装外部技能；不要再调用 skill_tool/read_file 读取这个 SKILL.md；如技能需要额外 references/scripts，可按技能要求读取或执行。",
-    "",
-    "```markdown",
-    skillContent,
-    "```",
+    "要求：本轮必须优先使用用户选择的技能；不要搜索或安装外部技能。",
+    "请按需加载 selectedSkillFile 对应的 SKILL.md，并只在需要时读取相关 references/scripts/examples；不要一次性加载无关材料。",
+    "如果用户输入已经足够启动该技能，请直接进入技能流程；如果缺少必要参数，再简短追问。",
     "",
     `用户问题：${userMessage}`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   return { ok: true, message, skillId, label, skillFile };
 }
 
@@ -237,7 +230,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         conversationId,
         epochLabel,
       });
-      const selectedSkillMessageLimit = Math.max(8000, Number(process.env.SELECTED_SKILL_MESSAGE_MAX_CHARS || 20000) || 20000);
+      const selectedSkillMessageLimit = Math.max(1200, Number(process.env.SELECTED_SKILL_MESSAGE_MAX_CHARS || 4000) || 4000);
       const runtimeMessageBody = selectedSkill?.ok ? selectedSkill.message.slice(0, selectedSkillMessageLimit) : msgStrForRuntime;
       const runtimeMessage = runtimeMessageBody;
       if (selectedSkill?.ok) {
@@ -251,6 +244,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           selectedSkillId: selectedSkill.skillId,
           selectedSkillName: selectedSkill.label,
           selectedSkillFile: selectedSkill.skillFile,
+          injectionMode: "manifest",
         });
       }
       await forwardToJiuwenClaw(
