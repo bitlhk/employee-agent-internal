@@ -140,6 +140,57 @@ function repairMarkdownSpacing(content: string): string {
   return repairMarkdownTables(spaced);
 }
 
+function lastStableBlockBoundary(content: string): number {
+  let boundary = 0;
+  const re = /\n[ \t]*\n/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(content)) !== null) {
+    boundary = match.index + match[0].length;
+  }
+  return boundary;
+}
+
+function hasUnclosedFence(content: string): boolean {
+  return ((content.match(/```/g) || []).length % 2) === 1;
+}
+
+function isStreamingSensitiveTail(tail: string): boolean {
+  const text = String(tail || "");
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  if (hasUnclosedFence(text)) return true;
+
+  const lines = text.split("\n");
+  const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
+  const lastLine = lines[lines.length - 1] || "";
+
+  if (nonEmpty.some((line) => line.startsWith("|") || /\|\s*:?-{3,}:?\s*\|/.test(line))) return true;
+  if (/\|\s*(?::?-{3,}:?\s*\|){1,}/.test(text)) return true;
+  if (/(^|\n)\s{0,3}#{1,6}\s+\S/.test(text) && !text.endsWith("\n")) return true;
+  if (/(^|\n)\s{0,3}(?:[-*+]|\d+[.)])\s+\S/.test(text)) return true;
+  if (/(^|\n)\s{0,3}>\s+\S/.test(text)) return true;
+  if (/^\s{0,3}[-*_]{3,}\s*$/.test(lastLine)) return true;
+
+  return false;
+}
+
+function splitStreamingMarkdown(content: string): { stable: string; pending: string } {
+  const text = String(content || "");
+  if (!text) return { stable: "", pending: "" };
+  if (hasUnclosedFence(text)) {
+    const fenceIndex = text.lastIndexOf("```");
+    return {
+      stable: text.slice(0, Math.max(0, fenceIndex)),
+      pending: text.slice(Math.max(0, fenceIndex)),
+    };
+  }
+
+  const boundary = lastStableBlockBoundary(text);
+  const tail = text.slice(boundary);
+  if (!isStreamingSensitiveTail(tail)) return { stable: text, pending: "" };
+  return { stable: text.slice(0, boundary), pending: tail };
+}
+
 function normalizeSafeHref(href?: string): string | undefined {
   if (!href) return undefined;
   if (href.startsWith("#")) return href;
@@ -228,7 +279,9 @@ type Props = { content: string; phase?: "streaming" | "final" };
 function ChatMarkdownInner({ content, phase = "final" }: Props) {
   const renderStartRef = useRef(0);
   if (typeof performance !== "undefined") renderStartRef.current = performance.now();
-  const normalizedContent = normalizeMarkdownContent(content);
+  const streamingSplit = phase === "streaming" ? splitStreamingMarkdown(content) : null;
+  const normalizedContent = normalizeMarkdownContent(streamingSplit?.stable ?? content);
+  const pendingStreamingText = streamingSplit?.pending || "";
   useLayoutEffect(() => {
     try {
       if (localStorage.getItem("ea_markdown_perf") !== "1") return;
@@ -345,6 +398,9 @@ function ChatMarkdownInner({ content, phase = "final" }: Props) {
       >
         {normalizedContent}
       </ReactMarkdown>
+      {pendingStreamingText ? (
+        <pre className="lingxia-md-streaming-plain">{pendingStreamingText}</pre>
+      ) : null}
     </div>
   );
 }

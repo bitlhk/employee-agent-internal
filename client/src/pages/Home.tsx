@@ -1393,7 +1393,17 @@ export default function Home() {
             sortUpdatedAt: Number(item.sourceUpdatedAt || item.sortUpdatedAt || item.updatedAt || 0) || item.updatedAt,
           };
         });
-        const nextSessions = sortWebSessionRecords(decoratedBackend).slice(0, 30);
+        const backendConversationIds = new Set(decoratedBackend.map((item) => item.conversationId).filter(Boolean));
+        const currentLocalSession = uiSource.find((item) =>
+          item?.conversationId &&
+          item.conversationId === webConversationIdRef.current &&
+          !hidden.has(item.conversationId) &&
+          !backendConversationIds.has(item.conversationId)
+        );
+        const nextSessions = sortWebSessionRecords([
+          ...(currentLocalSession ? [currentLocalSession] : []),
+          ...decoratedBackend,
+        ]).slice(0, 30);
         setWebSessions(nextSessions);
         writeWebSessionIndex(SESSION_INDEX_KEY, nextSessions);
         markClientLoadMetric("sessions", "ok", `${backendSessions.length} jiuwen backend sessions`, requestStartedAt);

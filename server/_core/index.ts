@@ -90,11 +90,28 @@ function readOpenClawVersion(): string {
   }
 }
 
+function readPm2ProcessScriptPath(processName: string): string | null {
+  try {
+    const raw = String(execSync("pm2 jlist", { encoding: "utf-8", timeout: 2500 }) || "").trim();
+    if (!raw) return null;
+    const apps = JSON.parse(raw);
+    if (!Array.isArray(apps)) return null;
+    const found = apps.find((app) => String(app?.name || "") === processName && String(app?.pm2_env?.status || "") === "online");
+    const scriptPath = String(found?.pm2_env?.pm_exec_path || found?.pm_exec_path || "").trim();
+    return scriptPath || null;
+  } catch {
+    return null;
+  }
+}
+
 function readJiuwenSwarmVersion(): string {
+  const runningPython = readPm2ProcessScriptPath("jiuwenswarm-agentserver");
   const pythonCandidates = [
+    runningPython,
     process.env.JIUWENSWARM_PYTHON,
     process.env.JIUWENCLAW_PYTHON,
     "/root/jiuwenclaw/bin/python3",
+    "/home/ubuntu/.venvs/jiuwenswarm-023b1/bin/python",
     "/home/ubuntu/.venvs/jiuwenswarm-022-f538/bin/python3",
     "python3",
   ].filter(Boolean) as string[];
