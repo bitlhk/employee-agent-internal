@@ -11,8 +11,8 @@ const effectiveAssets: EffectiveRoleAssets = {
     optional: ["wind-mcp-skill"],
   },
   mcpServers: {
-    default: ["wealth_assistant_customer"],
-    optional: ["qieman"],
+    default: ["customer_context_tool"],
+    optional: ["market_data_tool"],
   },
 };
 
@@ -26,8 +26,8 @@ describe("openclaw role scope", () => {
       },
       mcp: {
         servers: {
-          wealth_assistant_customer: { codex: { agents: [] } },
-          qieman: { codex: { agents: ["trial_lgc-test"] } },
+          customer_context_tool: { codex: { agents: [] } },
+          market_data_tool: { codex: { agents: ["trial_lgc-test"] } },
           wind_financial_docs: {},
         },
       },
@@ -41,8 +41,8 @@ describe("openclaw role scope", () => {
       mcpProjectionChanged: true,
     });
     expect(config.agents.list[0].skills).toEqual(["wealth-manager-assistant"]);
-    expect(config.mcp.servers.wealth_assistant_customer.codex.agents).toEqual(["trial_lgc-test"]);
-    expect(config.mcp.servers.qieman.codex.agents).toEqual([]);
+    expect(config.mcp.servers.customer_context_tool.codex.agents).toEqual(["trial_lgc-test"]);
+    expect(config.mcp.servers.market_data_tool.codex.agents).toEqual([]);
     expect(config.mcp.servers.wind_financial_docs.codex.agents).toBeUndefined();
   });
 
@@ -122,7 +122,7 @@ describe("openclaw role scope", () => {
         configPath,
         JSON.stringify({
           agents: { list: [{ id: "trial_lgc-test", workspace, skills: ["old-skill"] }] },
-          mcp: { servers: { wealth_assistant_customer: {} } },
+          mcp: { servers: { customer_context_tool: {} } },
         }),
         "utf8",
       );

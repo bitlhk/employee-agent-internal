@@ -38,13 +38,14 @@ const ENABLE_OPENCLAW_WS_CHAT = true;
 const ROLE_DISPLAY_NAMES: Record<string, string> = {
   "investment-researcher": "投顾分析",
   "wealth-manager": "财富经理",
-  "post-loan-risk-control": "风控经理",
   "credential-compliance": "审核专员",
   "insurance-advisor": "保险顾问",
   "general-assistant": "通用助手",
 };
 
-function roleDisplayName(roleTemplate: unknown) {
+function roleDisplayName(roleTemplate: unknown, roleName?: unknown) {
+  const name = String(roleName || "").trim();
+  if (name) return name;
   const role = String(roleTemplate || "").trim();
   return ROLE_DISPLAY_NAMES[role] || "通用助手";
 }
@@ -2268,7 +2269,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!clawSettings) return;
-    setLingxiaDisplayName(roleDisplayName((clawByAdoptId as any)?.roleTemplate));
+    setLingxiaDisplayName(roleDisplayName((clawByAdoptId as any)?.roleTemplate, (clawByAdoptId as any)?.roleName));
     setLingxiaMemoryEnabled(((clawSettings as any).memoryEnabled || "yes") as "yes" | "no");
     setLingxiaContextTurns(Number((clawSettings as any).contextTurns || 20));
     // 模型选择由 availableModels useEffect 统一管理

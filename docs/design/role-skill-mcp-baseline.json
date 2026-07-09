@@ -1,11 +1,10 @@
 {
-  "version": "2026-06-18-v2",
+  "version": "2026-07-09-oss-default",
   "principles": [
-    "用户默认只获得 basic 通用能力，不默认暴露金融专业、中队专区和业务 MCP。",
-    "岗位是权限与能力分配的最小业务单元：industry + role + skills + mcpServers + model + runtime。",
-    "skill 和 MCP 可动态增减；岗位模板只保存基线组合，后台可为单个用户叠加例外。",
-    "用户侧选择岗位身份，后台侧决定 runtime、模型、MCP 白名单和专区可见范围。",
-    "公共数据 MCP 按岗位最小可用开放，内部业务 MCP 必须按岗位和数据权限授权。"
+    "Open-source default grants only general assistant capability.",
+    "Role templates define baseline skills, MCP servers, model, runtime, and visible zones.",
+    "Production deployments should keep business roles and MCP grants in an external baseline file and point ROLE_SKILL_MCP_BASELINE_PATH to it.",
+    "MCP tools are discovered from runtime tools/list; this baseline stores server-level grants only."
   ],
   "schema": {
     "defaultRole": "general-assistant",
@@ -32,19 +31,19 @@
       "squad"
     ],
     "notes": [
-      "defaultSkills 为岗位默认安装并激活的 Skill；optionalSkills 为岗位可见但默认不自动安装的 Skill。",
-      "mcpServers 为 P2 岗位默认允许暴露给 runtime 的 MCP 白名单；mcpTools 仅作未来子工具级授权参考，不进入 P2 grants。",
-      "permissionProfile 只表示沙箱/协作权限档，不表示业务岗位。",
-      "dataScope 当前仅为说明字段，真实数据权限由 MCP 服务按 agent/user context 强制。"
+      "defaultSkills are installed/enabled by default for a role; optionalSkills are visible but not automatically installed.",
+      "mcpServers are server-level runtime grants. Tool-level grants are reserved for future use and should stay empty in the OSS default.",
+      "permissionProfile describes platform permissions, not a business job title.",
+      "dataScope is documentation only; real data isolation must be enforced by each MCP service using agent/user context."
     ]
   },
   "runtimePolicy": {
     "defaultRuntime": "jiuwenswarm",
     "fallbackRuntime": "openclaw",
-    "selection": "用户选择岗位，不直接选择底层 runtime；新用户默认在 JiuwenSwarm 上创建；OpenClaw 仅作为存量兼容 runtime，不再作为新部署推荐路径。外部专业 Agent 通过 A2A/HTTP 能力接入。"
+    "selection": "Users choose a role; administrators decide runtime, model, MCP grants, and visible zones. Open-source defaults are runtime-neutral and contain no business MCP grants."
   },
   "uiPolicy": {
-    "applyFlow": "申请 Agent 时按行业分组展示岗位，默认选中 general-assistant；用户不选择专业岗位时直接创建普通助手。",
+    "applyFlow": "New users start with the general assistant. Add industry roles in an external baseline for production deployments.",
     "groupOrder": [
       "general",
       "banking",
@@ -52,14 +51,14 @@
       "securities"
     ],
     "roleVisibility": {
-      "mvp": "申请页可选",
-      "disabled": "不展示"
+      "mvp": "visible on apply page",
+      "disabled": "hidden"
     },
     "labels": {
       "general": "通用",
-      "banking": "银行",
-      "insurance": "保险",
-      "securities": "证券"
+      "banking": "行业示例",
+      "insurance": "行业示例",
+      "securities": "行业示例"
     }
   },
   "industries": {
@@ -68,7 +67,7 @@
       "roles": {
         "general-assistant": {
           "name": "通用助手",
-          "description": "新用户未选择专业岗位时的默认助手，只开放基础通用能力，不暴露金融专业、中队专区和业务 MCP。",
+          "description": "默认通用岗位智能体，只开放基础对话、文件、技能和平台能力；不默认授予业务 MCP。",
           "status": "mvp",
           "displayOrder": 0,
           "permissionProfile": "plus",
@@ -81,177 +80,28 @@
           "mcpTools": [],
           "defaultModel": "openai/gpt-5.5",
           "runtime": "jiuwenswarm",
-          "dataScope": "无业务数据权限；仅可访问普通助手自身工作目录和通用工具。"
+          "dataScope": "No business data access by default. Only the current agent workspace and explicitly configured tools are available."
         }
       }
     },
     "banking": {
-      "name": "银行",
-      "roles": {
-        "wealth-manager": {
-          "name": "财富经理",
-          "description": "面向银行财富客户经营、客户画像、资产配置、产品筛选、推荐理由和话术生成。",
-          "status": "mvp",
-          "displayOrder": 10,
-          "permissionProfile": "internal",
-          "defaultVisibleZones": [
-            "squad",
-            "finance"
-          ],
-          "defaultSkills": [
-            "wealth-manager-assistant",
-            "wealth-family-advisor",
-            "wealth-healthcheck",
-            "wealth-goalcalc",
-            "portfolio-doctor",
-            "fund-analyst"
-          ],
-          "optionalSkills": [
-            "wind-find-finance-skill",
-            "wind-mcp-skill"
-          ],
-          "mcpServers": [
-            "wealth_assistant_customer",
-            "wealth_assistant_product",
-            "wind_financial_docs"
-          ],
-          "mcpTools": [],
-          "defaultModel": "openai/gpt-5.5",
-          "runtime": "jiuwenswarm",
-          "dataScope": "按客户经理身份隔离客户清单和产品访问；财富助手 MCP 需透传 agent/user context。"
-        },
-        "post-loan-risk-control": {
-          "name": "风控经理",
-          "description": "面向银行信贷风控、企业贷后监测、风险预警、风险评分、处置建议和贷后巡检报告。",
-          "status": "mvp",
-          "displayOrder": 20,
-          "permissionProfile": "internal",
-          "defaultVisibleZones": [
-            "squad"
-          ],
-          "defaultSkills": [
-            "post-loan-risk-prediction"
-          ],
-          "optionalSkills": [
-            "wind-mcp-skill",
-            "wind-find-finance-skill"
-          ],
-          "mcpServers": [
-            "post_loan_risk_data",
-            "wind_financial_docs"
-          ],
-          "mcpTools": [],
-          "defaultModel": "openai/gpt-5.5",
-          "runtime": "jiuwenswarm",
-          "dataScope": "行内信贷数据为内部数据；高风险结论必须提示人工复核。"
-        },
-        "credential-compliance": {
-          "name": "审核专员",
-          "description": "面向银行/保险运营审核，覆盖金融凭证、票据、单证、影像、团险材料等非结构化资料的要素提取和合规检查。",
-          "status": "mvp",
-          "displayOrder": 30,
-          "permissionProfile": "internal",
-          "defaultVisibleZones": [
-            "squad"
-          ],
-          "defaultSkills": [
-            "credential-prompt-generator",
-            "group-insurance-audit"
-          ],
-          "optionalSkills": [
-            "insurance-claim-fraud-detection",
-            "kyc-doc-parse"
-          ],
-          "mcpServers": [
-            "credential_image_workspace",
-            "credential_skills",
-            "group_insurance_audit"
-          ],
-          "mcpTools": [],
-          "defaultModel": "openai/gpt-5.5",
-          "runtime": "jiuwenswarm",
-          "dataScope": "凭证图像、单证材料、团险审核材料属于敏感业务数据，默认仅审核岗位可见；真实数据权限由 MCP 服务按 agent/user context 强制。"
-        }
-      }
+      "name": "行业示例",
+      "roles": {}
     },
     "insurance": {
-      "name": "保险",
-      "roles": {
-        "insurance-advisor": {
-          "name": "保险顾问",
-          "description": "面向保险销售咨询、需求分析、保障规划、产品推荐、外呼话术、异议处理和销售陪练。",
-          "status": "mvp",
-          "displayOrder": 40,
-          "permissionProfile": "internal",
-          "defaultVisibleZones": [
-            "squad"
-          ],
-          "defaultSkills": [
-            "goldencoach-stage-evaluation",
-            "insurance-advisor-pro",
-            "insurance-telesales-recommend"
-          ],
-          "optionalSkills": [],
-          "mcpServers": [
-            "insurance_kb",
-            "insurance_telesales_recommend"
-          ],
-          "mcpTools": [],
-          "defaultModel": "openai/gpt-5.5",
-          "runtime": "jiuwenswarm",
-          "dataScope": "产品知识和条款知识可公共读取；涉及客户画像时需另行接入客户权限。"
-        }
-      }
+      "name": "行业示例",
+      "roles": {}
     },
     "securities": {
-      "name": "证券",
-      "roles": {
-        "investment-researcher": {
-          "name": "投顾分析",
-          "description": "面向证券投顾、投研分析和固收报价支持，覆盖股票、基金、债券、公告、财报、估值、市场环境和 Wind 数据。",
-          "status": "mvp",
-          "displayOrder": 50,
-          "permissionProfile": "internal",
-          "defaultVisibleZones": [
-            "finance"
-          ],
-          "defaultSkills": [
-            "bond-quote-parse",
-            "earnings-analysis",
-            "equity-investment-thesis",
-            "fixed-income-daily-brief",
-            "major_announcement_impact_skill",
-            "market-environment-analysis",
-            "peer_comparison_decision_skill",
-            "valuation_snapshot_skill",
-            "wind-find-finance-skill",
-            "wind-mcp-skill"
-          ],
-          "optionalSkills": [
-            "business_model_decoder_skill",
-            "morning-note",
-            "post-market-debrief",
-            "sector_rotation_radar_skill",
-            "theme_leader_identification_skill"
-          ],
-          "mcpServers": [
-            "bond_quote_parse",
-            "wind_financial_docs",
-            "wind_stock_data"
-          ],
-          "mcpTools": [],
-          "defaultModel": "openai/gpt-5.5",
-          "runtime": "jiuwenswarm",
-          "dataScope": "Wind 等公共授权数据和债券报价语料按岗位开放；报价语料可能包含机构和交易信息，输出必须标注不构成投资建议。"
-        }
-      }
+      "name": "行业示例",
+      "roles": {}
     }
   },
   "extensionModel": {
-    "newIndustry": "增加 industries.<industryKey> 即可扩展大类，如基金、资管、企业办公。",
-    "newRole": "新增岗位需先确认是真实业务岗位，而不是单个技能主题；默认第一期只保留 6 个自助岗位，新增后再进入 industries.<industryKey>.roles。",
-    "newSkill": "上架技能时必须带 roleTag/provider/origin；后台根据 roleTag 映射到岗位模板。",
-    "newMcp": "新增 MCP 时先登记 server，再按岗位加入 mcpServers 白名单；子工具级授权为 future。",
-    "userOverride": "单用户可在岗位模板基础上增加或移除 skill/MCP，但必须留下审计记录。"
+    "newIndustry": "Use the supported industry buckets or extend the schema in code for new top-level industries.",
+    "newRole": "Add production roles in an external baseline file instead of committing customer-specific roles to the public repository.",
+    "newSkill": "Marketplace skills should carry roleTag/provider/origin metadata and be granted through admin workflows.",
+    "newMcp": "Register MCP servers in the runtime, then grant server ids to roles. Tool descriptions are read from MCP tools/list.",
+    "userOverride": "Per-user skill/MCP overrides should be auditable and should not bypass the MCP service data policy."
   }
 }

@@ -132,8 +132,8 @@ describe("visitStats.record", () => {
     const result = await caller.visitStats.record({
       registrationId: 1,
       scenarioId: "acquisition",
-      experienceId: "wealth-assistant",
-      experienceTitle: "银行客户经理财富助手",
+      experienceId: "demo-assistant",
+      experienceTitle: "岗位助手演示",
     });
 
     expect(result).toEqual({
@@ -144,8 +144,8 @@ describe("visitStats.record", () => {
       expect.objectContaining({
         registrationId: 1,
         scenarioId: "acquisition",
-        experienceId: "wealth-assistant",
-        experienceTitle: "银行客户经理财富助手",
+        experienceId: "demo-assistant",
+        experienceTitle: "岗位助手演示",
       })
     );
   });

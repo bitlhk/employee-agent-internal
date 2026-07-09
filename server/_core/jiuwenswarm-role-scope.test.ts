@@ -19,7 +19,7 @@ const role: AgentRoleTemplate = {
   runtime: "jiuwenswarm",
   defaultSkills: ["wealth-manager-assistant"],
   optionalSkills: ["portfolio-doctor"],
-  mcpServers: ["wealth_assistant_customer"],
+  mcpServers: ["customer_context_tool"],
   mcpTools: ["future-tool"],
   defaultVisibleZones: ["squad"],
   dataScope: "客户经理本人授权客户",
@@ -33,7 +33,7 @@ const effectiveAssets: EffectiveRoleAssets = {
     optional: ["portfolio-doctor"],
   },
   mcpServers: {
-    default: ["wealth_assistant_customer"],
+    default: ["customer_context_tool"],
     optional: [],
   },
 };
@@ -43,7 +43,7 @@ const riskRole: AgentRoleTemplate = {
   id: "post-loan-risk-control",
   name: "风控经理",
   defaultSkills: ["post-loan-risk-prediction"],
-  mcpServers: ["post_loan_risk_data"],
+  mcpServers: ["risk_assessment_tool"],
 };
 
 describe("jiuwenswarm role scope manifest", () => {
@@ -52,7 +52,7 @@ describe("jiuwenswarm role scope manifest", () => {
       ...effectiveAssets,
       mcpServers: {
         ...effectiveAssets.mcpServers,
-        default: ["platform_tools", "wealth_assistant_customer"],
+        default: ["customer_context_tool", "platform_tools"],
       },
     };
     expect(buildJiuwenSwarmRoleScopeManifest(role, effectiveAssets)).toEqual({
@@ -82,8 +82,8 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(second.changed).toBe(false);
       expect(first.manifestPath).toBe(path.join(root, JIUWENSWARM_ROLE_SCOPE_MANIFEST));
       expect(JSON.parse(readFileSync(first.manifestPath, "utf8")).effectiveAssets.mcpServers.default).toEqual([
+        "customer_context_tool",
         "platform_tools",
-        "wealth_assistant_customer",
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });

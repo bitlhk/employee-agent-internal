@@ -65,6 +65,7 @@ import { cleanupOpenClawWeixinBindingForAdopt } from "../_core/claw-weixin";
 import type { Skill, SkillSource } from "../../shared/types/skill";
 import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "../_core/core-file-guard";
 import {
+  getAgentRoleTemplate,
   getRoleSkillMcpBaseline,
   listAgentRoleTemplates,
   resolveAgentRoleTemplate,
@@ -441,6 +442,7 @@ export const clawRouter = router({
           displayName: String((profile as any)?.displayName || "岗位智能体"),
           permissionProfile: String(claw.permissionProfile || "starter"),
           roleTemplate: String((claw as any).roleTemplate || "general-assistant"),
+          roleName: getAgentRoleTemplate(String((claw as any).roleTemplate || "general-assistant"))?.name || "通用助手",
           industry: String((claw as any).industry || "general"),
           runtime: String((claw as any).runtime || resolveClawRuntime(claw.adoptId)),
           actualRuntime: resolveClawRuntime(claw.adoptId),

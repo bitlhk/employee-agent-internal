@@ -502,8 +502,6 @@ function toolCallLabel(tc: ToolCallEntry): string {
   if (GATEWAY_TOOL_META[rawName]) return GATEWAY_TOOL_META[rawName].label;
   if (GATEWAY_TOOL_META[lower]) return GATEWAY_TOOL_META[lower].label;
   if (rawName === "[产出文件]" || lower.includes("workspace_files")) return "产出文件";
-  if (lower.includes("wealth_assistant_customer_list")) return "查询客户信息";
-  if (lower.includes("wealth_assistant_context_probe")) return "识别客户经理身份";
   if (lower === "load_tools") return "加载工具";
   if (lower.includes("weather")) return "查询天气";
   if (lower.includes("search")) return "检索信息";

@@ -34,7 +34,7 @@ const CATEGORY_MAP: Record<string, { label: string; Icon: ComponentType<{ size?:
   bond_trading: { label: "债券交易", Icon: BarChart3 },
   credential_audit: { label: "凭证审核", Icon: FileText },
   auto_insurance_sales: { label: "车险外呼", Icon: ShieldCheck },
-  group_insurance_audit: { label: "团险审核", Icon: ShieldCheck },
+  business_audit: { label: "业务审核", Icon: ShieldCheck },
   sales_coaching: { label: "销售陪练", Icon: BriefcaseBusiness },
 };
 
@@ -47,7 +47,6 @@ const ORIGIN_META: Record<OriginKey, { label: string; Icon: ComponentType<{ size
 const ROLE_LABELS: Record<string, string> = {
   "investment-researcher": "投顾分析",
   "wealth-manager":        "财富经理",
-  "post-loan-risk-control":"风控经理",
   "credential-compliance": "审核专员",
   "insurance-advisor":     "保险顾问",
   "general-assistant":     "通用助手",
@@ -111,15 +110,11 @@ function scenarioTagOf(item: MarketSkill): string {
     "bond-quote-parse": "债券交易",
     "credential-prompt-generator": "凭证审核",
     "insurance-telesales-recommend": "车险外呼",
-    "group-insurance-audit": "团险审核",
     "goldencoach-stage-evaluation": "销售陪练",
   };
   if (scenarioBySkillId[skillId]) return scenarioBySkillId[skillId];
   const meta = categoryMeta(category);
   if (meta.label && meta.label !== "通用") return meta.label;
-  if (license.includes("yingmi") || license.includes("qieman") || author.includes("盈米") || skillId.includes("wealth")) {
-    return "个人财富";
-  }
   if (license.includes("wind") || author.includes("wind")) {
     return "专业投研";
   }

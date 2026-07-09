@@ -97,7 +97,7 @@ export const visitStats = mysqlTable("visit_stats", {
   id: int("id").autoincrement().primaryKey(),
   registrationId: int("registrationId").notNull(),
   scenarioId: varchar("scenarioId", { length: 50 }).notNull(), // acquisition, operations, investment
-  experienceId: varchar("experienceId", { length: 50 }).notNull(), // wealth-assistant, insurance-advisor, etc.
+  experienceId: varchar("experienceId", { length: 50 }).notNull(), // demo-assistant, operations-review, etc.
   experienceTitle: varchar("experienceTitle", { length: 200 }).notNull(),
   clickedAt: bigint("clickedAt", { mode: "number" }).notNull(), // UTC timestamp in milliseconds
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -234,7 +234,7 @@ export type InsertScenario = typeof scenarios.$inferInsert;
  */
 export const experienceConfigs = mysqlTable("experience_configs", {
   id: int("id").autoincrement().primaryKey(),
-  experienceId: varchar("experienceId", { length: 100 }).notNull().unique(), // 体验ID，如 "wealth-assistant"
+  experienceId: varchar("experienceId", { length: 100 }).notNull().unique(), // 体验ID，如 "demo-assistant"
   title: varchar("title", { length: 200 }).notNull(), // 体验标题
   description: text("description"), // 体验描述
   url: varchar("url", { length: 500 }).notNull(), // 体验URL地址

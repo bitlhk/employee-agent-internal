@@ -63,7 +63,7 @@ function baseline(overrides: Record<string, unknown> = {}) {
             permissionProfile: "internal",
             defaultVisibleZones: ["squad", "finance"],
             defaultSkills: ["wealth-manager-assistant"],
-            mcpServers: ["wealth_assistant_customer"],
+            mcpServers: ["customer_context_tool"],
           }),
         },
       },

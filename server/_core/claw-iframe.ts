@@ -74,7 +74,7 @@ export function registerIframeRoutes(app: express.Express) {
 
       // 测试环境可选：按 experienceId 动态映射到 demo 子域名（不写库）
       // DEMO_HOST_MAP_ENABLED=true
-      // DEMO_HOST_MAP=wealth-assistant=wa.demo.linggantest.top,finance-skill=fs.demo.linggantest.top
+      // DEMO_HOST_MAP=demo-assistant=assistant.demo.example.com,analysis-tool=analysis.demo.example.com
       // DEMO_HOST_MAP_SCHEME=http|https (默认 http)
       let targetUrl = experienceConfig.url;
       const hostMapEnabled = process.env.DEMO_HOST_MAP_ENABLED === "true";

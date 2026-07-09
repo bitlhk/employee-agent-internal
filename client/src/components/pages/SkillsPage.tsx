@@ -342,8 +342,8 @@ function mcpLiveStatusTone(status?: McpLiveStatus): "ok" | "warn" | "neutral" {
 }
 
 function mcpScopeOf(item: McpToolGroup): "public" | "internal" | "platform" {
-  if (item.category === "公共金融数据" || item.id === "wind" || item.id === "qieman") return "public";
-  if (item.category === "内部业务 MCP" || ["wealth-assistant", "bond-quote-parse", "group-insurance-audit"].includes(item.id)) return "internal";
+  if (item.category === "公共金融数据") return "public";
+  if (item.category === "内部业务 MCP") return "internal";
   return "platform";
 }
 

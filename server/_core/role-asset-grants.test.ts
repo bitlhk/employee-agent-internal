@@ -20,7 +20,7 @@ function role(overrides: Partial<AgentRoleTemplate> = {}): AgentRoleTemplate {
     defaultVisibleZones: ["squad", "finance"],
     defaultSkills: ["wealth-manager-assistant", "wealth-manager-assistant"],
     optionalSkills: ["wind-mcp-skill"],
-    mcpServers: ["wealth_assistant_customer"],
+    mcpServers: ["customer_context_tool"],
     mcpTools: ["ignored_tool"],
     defaultModel: "openai/gpt-5.5",
     runtime: "jiuwenswarm",
@@ -37,7 +37,7 @@ describe("role asset grants", () => {
       {
         roleKey: "wealth-manager",
         assetType: "mcp_server",
-        assetId: "wealth_assistant_customer",
+        assetId: "customer_context_tool",
         grantMode: "default",
         source: "seed",
         enabled: true,
@@ -95,7 +95,7 @@ describe("role asset grants", () => {
 
     expect(plan.prune.map((grant) => grant.assetId)).toEqual(["old-seed"]);
     expect(plan.untouchedDynamic.map((grant) => grant.assetId).sort()).toEqual(["admin-mcp", "market-skill"]);
-    expect(plan.upsert.map((grant) => grant.assetId).sort()).toEqual(["new-default", "wealth_assistant_customer"]);
+    expect(plan.upsert.map((grant) => grant.assetId).sort()).toEqual(["customer_context_tool", "new-default"]);
   });
 
   it("resolves enabled role and wildcard grants with default overriding optional", () => {
@@ -119,7 +119,7 @@ describe("role asset grants", () => {
       {
         roleKey: "wealth-manager",
         assetType: "mcp_server",
-        assetId: "wealth_assistant_customer",
+        assetId: "customer_context_tool",
         grantMode: "default",
         source: "seed",
         enabled: true,
@@ -148,7 +148,7 @@ describe("role asset grants", () => {
         optional: [],
       },
       mcpServers: {
-        default: ["wealth_assistant_customer"],
+        default: ["customer_context_tool"],
         optional: [],
       },
     });
