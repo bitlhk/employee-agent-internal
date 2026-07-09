@@ -1920,14 +1920,25 @@ export const clawRouter = router({
           throw new Error("当前岗位智能体为内部访问，仅内部权限用户可创建");
         }
 
-        // 幂等：普通申请沿用历史行为；迁移申请只复用同 runtime，避免老 lgc-* 阻止创建 lgj-*。
         const preferRuntime = input?.preferRuntime;
-        const existing = preferRuntime
-          ? (await listClawsByUserId(userId)).find((claw) => {
-              const runtime = String((claw as any).runtime || resolveClawRuntime(claw.adoptId));
-              return runtime === preferRuntime || (preferRuntime === "jiuwenswarm" && claw.adoptId.startsWith("lgj-"));
-            }) || null
-          : await getCurrentClawByUserId(userId);
+        const role = resolveSelectableAdoptRoleTemplate(input?.roleTemplate);
+        const provisionPlan = resolveRoleRuntimeProvisionPlan(role, {
+          jiuwenswarmProvisionEnabled: isJiuwenSwarmProvisionEnabled(),
+        });
+        if (preferRuntime && provisionPlan.runtime !== preferRuntime) {
+          throw new Error(
+            preferRuntime === "jiuwenswarm"
+              ? "JiuwenSwarm 当前不可用，请稍后重试"
+              : "OpenClaw 当前不可用，请稍后重试",
+          );
+        }
+
+        // 幂等：只复用目标 runtime 的现有实例，避免老 lgc-* 阻止创建当前默认的 lgj-*。
+        const existing = (await listClawsByUserId(userId)).find((claw) => {
+          const runtime = String((claw as any).runtime || resolveClawRuntime(claw.adoptId));
+          if (runtime === provisionPlan.runtime) return true;
+          return provisionPlan.runtime === "jiuwenswarm" && claw.adoptId.startsWith("lgj-");
+        }) || null;
         if (existing) {
           const normalizedExisting = {
             ...existing,
@@ -1942,18 +1953,7 @@ export const clawRouter = router({
 
         const defaultProfile = (await getSystemConfigValue("claw_default_profile", "plus")).trim() || "plus";
         const profile = input?.permissionProfile || (defaultProfile === "internal" ? "internal" : "plus");
-        const role = resolveSelectableAdoptRoleTemplate(input?.roleTemplate);
         const effectiveAssets = await resolveEffectiveRoleAssets(role.id);
-        const provisionPlan = resolveRoleRuntimeProvisionPlan(role, {
-          jiuwenswarmProvisionEnabled: isJiuwenSwarmProvisionEnabled(),
-        });
-        if (preferRuntime && provisionPlan.runtime !== preferRuntime) {
-          throw new Error(
-            preferRuntime === "jiuwenswarm"
-              ? "JiuwenSwarm 当前不可用，请稍后重试"
-              : "OpenClaw 当前不可用，请稍后重试",
-          );
-        }
         const runtimeAdapter = getRoleRuntimeAdapter(provisionPlan.runtime);
         const ttlDays = 0;
 
@@ -2084,11 +2084,16 @@ export const clawRouter = router({
             });
           });
 
-          const latest = await getCurrentClawByUserId(userId);
+          const latest = await getClawByAdoptId(adoptId);
           return {
             success: true,
             reused: false,
-            adoption: latest,
+            adoption: latest
+              ? {
+                  ...latest,
+                  entryUrl: buildClawEntryUrl(String((latest as any).adoptId || adoptId)),
+                }
+              : null,
           };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
