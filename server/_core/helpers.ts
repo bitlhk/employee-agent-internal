@@ -125,7 +125,7 @@ export function isPrivateUrl(url: string): boolean {
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
     if (/^192\.168\./.test(h)) return true;
     if (/^169\.254\./.test(h)) return true;  // cloud metadata
-    if (/^100\.100\.100\./.test(h)) return true;  // 阿里云 metadata
+    if (/^100\.100\.100\./.test(h)) return true;  // cloud provider metadata
     if (h === 'localhost') return true;
     if (h === '0.0.0.0') return true;
     if (/\.internal$/.test(h)) return true;

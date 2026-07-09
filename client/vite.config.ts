@@ -177,8 +177,6 @@ export default defineConfig(({ mode }) => {
       port: parseInt(env.VITE_PORT || "5173"),
       strictPort: true, // 端口被占用时直接报错，不自动切换
       allowedHosts: [
-        ".linggantest.top",
-        "www.linggantest.top",
         "localhost",
         "127.0.0.1",
       ],

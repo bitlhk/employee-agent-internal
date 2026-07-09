@@ -143,21 +143,3 @@ downstream_skills: []     # 输出消费者
 
 至少一组完整的输入 → 输出示例；risk_level: high 的技能建议补一组
 "数据不足 → 正确终止"的反例。
-
----
-
-## 附：点金 credit-risk-manager 的 8 个技能（选题参考）
-
-| 技能 | 定位 | 我们的可移植性 |
-|------|------|----------------|
-| credit-risk-cot | 给定数据+目标风险点 → 六步证据链 | ★★★ 依赖用户上传财报，改造成本低 |
-| loan-risk-monitor | 批量企业司法/资产/经营/信用/舆情五维扫描 | ★★★ 舆情维度可直接用 tavily 搜索 |
-| credit-policy-analysis | 信贷政策环境分析 | ★★ 需政策库或搜索 |
-| credit-industry-rule-gen | 行业风险规则生成 | ★★ |
-| credit-risk-extraction | 历史案例 → 风险分析框架 | ★★ 知识沉淀型 |
-| vlm-verifier | 跨模态材料核验 | ★ 需视觉模型配置 |
-| post-loan-management | 贷后全周期管理 | ★★ |
-| credit-large-exposure-mgmt | 大额风险暴露集中度 | ★★ 需组合数据 |
-
-> 建议起步：先按本模板写一个你自己业务里最高频的风控场景，跑通
-> "降级策略 + 出口路由 + 人工确认"三件套，再批量铺开。

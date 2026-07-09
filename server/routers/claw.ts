@@ -392,8 +392,7 @@ export const clawRouter = router({
       const normalizeEntry = (c: any) => ({
         ...c,
         entryUrl: String(c?.entryUrl || "")
-          .replace("http://", "https://")
-          .replace(".demo.linggantest.top", `.${process.env.DEMO_ROUTE_DOMAIN || "demo.example.com"}`),
+          .replace("http://", "https://"),
         roleTemplate: String(c?.roleTemplate || "general-assistant"),
         industry: String(c?.industry || "general"),
         runtime: String(c?.runtime || resolveClawRuntime(c?.adoptId)),
@@ -1921,8 +1920,7 @@ export const clawRouter = router({
           const normalizedExisting = {
             ...existing,
             entryUrl: String((existing as any).entryUrl || "")
-              .replace("http://", "https://")
-              .replace(".demo.linggantest.top", `.${process.env.DEMO_ROUTE_DOMAIN || "demo.example.com"}`),
+              .replace("http://", "https://"),
           };
           return {
             success: true,
