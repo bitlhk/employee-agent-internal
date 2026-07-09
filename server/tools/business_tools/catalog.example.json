@@ -1,0 +1,17 @@
+{
+  "businessTools": [
+    {
+      "serverId": "hello_business_tool",
+      "domain": "example",
+      "deployment": "external-mcp",
+      "transport": "streamable-http",
+      "url": "http://127.0.0.1:17999/mcp",
+      "status": "example",
+      "purpose": "Minimal example business MCP service"
+    }
+  ],
+  "notes": [
+    "Production business MCP source code should live in a deployment-specific repository or operations directory.",
+    "EA grants and audits MCP usage by serverId; runtime availability is controlled by JiuwenSwarm mcp.servers."
+  ]
+}
