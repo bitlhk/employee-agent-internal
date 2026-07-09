@@ -129,9 +129,6 @@ function readJiuwenSwarmVersion(): string {
 }
 
 function resolveProtectedClawAdoptId(req: Request): string | null {
-  const host = String(req.hostname || req.headers.host || "").toLowerCase().split(":")[0];
-  const hostMatch = host.match(/^(lgc-[a-z0-9-]+)\.(?:demo\.linggantest\.top|demo\.linggan\.top)$/i);
-  if (hostMatch?.[1]) return hostMatch[1];
   const pathMatch = String(req.path || "").match(/^\/claw\/(lgc-[a-z0-9-]+)(?:\/|$)/i);
   return pathMatch?.[1] || null;
 }

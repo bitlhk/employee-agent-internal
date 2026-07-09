@@ -102,8 +102,6 @@ function roleChipLabel(item: MarketSkill): string {
 }
 
 function scenarioTagOf(item: MarketSkill): string {
-  const license = item.license.toLowerCase();
-  const author = item.author.toLowerCase();
   const skillId = item.skillId.toLowerCase();
   const category = item.category.toLowerCase();
   const scenarioBySkillId: Record<string, string> = {
@@ -115,14 +113,10 @@ function scenarioTagOf(item: MarketSkill): string {
   if (scenarioBySkillId[skillId]) return scenarioBySkillId[skillId];
   const meta = categoryMeta(category);
   if (meta.label && meta.label !== "通用") return meta.label;
-  if (license.includes("wind") || author.includes("wind")) {
-    return "专业投研";
-  }
   return ORIGIN_META[item.origin]?.label || "技能";
 }
 
 function skillTitleOf(item: MarketSkill): string {
-  if (item.license.toLowerCase().includes("wind")) return item.title.replace(/^Wind\s+/i, "");
   return item.title;
 }
 

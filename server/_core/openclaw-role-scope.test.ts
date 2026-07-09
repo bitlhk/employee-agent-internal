@@ -8,7 +8,7 @@ import type { EffectiveRoleAssets } from "./role-asset-grants";
 const effectiveAssets: EffectiveRoleAssets = {
   skills: {
     default: ["wealth-manager-assistant"],
-    optional: ["wind-mcp-skill"],
+    optional: ["market-data-skill"],
   },
   mcpServers: {
     default: ["customer_context_tool"],
@@ -28,7 +28,7 @@ describe("openclaw role scope", () => {
         servers: {
           customer_context_tool: { codex: { agents: [] } },
           market_data_tool: { codex: { agents: ["trial_lgc-test"] } },
-          wind_financial_docs: {},
+          public_data_docs: {},
         },
       },
     };
@@ -43,7 +43,7 @@ describe("openclaw role scope", () => {
     expect(config.agents.list[0].skills).toEqual(["wealth-manager-assistant"]);
     expect(config.mcp.servers.customer_context_tool.codex.agents).toEqual(["trial_lgc-test"]);
     expect(config.mcp.servers.market_data_tool.codex.agents).toEqual([]);
-    expect(config.mcp.servers.wind_financial_docs.codex.agents).toBeUndefined();
+    expect(config.mcp.servers.public_data_docs.codex.agents).toBeUndefined();
   });
 
   it("keeps caller-provided active personal skills in the agent allowlist", () => {
@@ -79,7 +79,7 @@ describe("openclaw role scope", () => {
       mkdirSync(path.join(workspace, "skills"), { recursive: true });
       mkdirSync(path.join(shared, "wealth-manager-assistant"), { recursive: true });
       mkdirSync(path.join(shared, "installed-optional"), { recursive: true });
-      mkdirSync(path.join(shared, "wind-mcp-skill"), { recursive: true });
+      mkdirSync(path.join(shared, "market-data-skill"), { recursive: true });
       writeFileSync(
         configPath,
         JSON.stringify({
@@ -99,7 +99,7 @@ describe("openclaw role scope", () => {
 
       expect(result.linkedSharedSkills).toEqual(["installed-optional", "wealth-manager-assistant"]);
       expect(existsSync(path.join(workspace, "skills", "installed-optional"))).toBe(true);
-      expect(existsSync(path.join(workspace, "skills", "wind-mcp-skill"))).toBe(false);
+      expect(existsSync(path.join(workspace, "skills", "market-data-skill"))).toBe(false);
       const config = JSON.parse(readFileSync(configPath, "utf8"));
       expect(config.agents.list[0].skills).toEqual(["installed-optional", "wealth-manager-assistant"]);
     } finally {

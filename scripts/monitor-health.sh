@@ -97,7 +97,7 @@ F=0
 
 check_port  "岗位智能体平台"       5180 || ((F++))
 check_http  "OpenClaw-GW"   "http://127.0.0.1:18789/health" || ((F++))
-check_http  "股票分析"       "http://127.0.0.1:8188/api/v1/auth/status" || ((F++))
-check_port  "stock-analysis" 8188 || ((F++))
+check_http  "Business-MCP"   "http://127.0.0.1:8188/api/v1/auth/status" || ((F++))
+check_port  "business-mcp"   8188 || ((F++))
 
 echo "Failures: $F" >> "$LOG_FILE"

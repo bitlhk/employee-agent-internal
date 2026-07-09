@@ -110,17 +110,7 @@ type McpToolGroupOverride = {
 
 const DEFAULT_MCP_CATEGORY = "MCP 工具";
 
-const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
-  {
-    id: "wind",
-    name: "Wind 金融数据",
-    category: "公共金融数据",
-    description:
-      "公共授权金融数据源，工具明细以 MCP 服务实时声明为准。",
-    serverIdPrefixes: ["wind_"],
-    recommendedSkills: ["wind-mcp-skill", "wind-find-finance-skill"],
-  },
-];
+const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [];
 
 function readableMcpName(serverId: string): string {
   return serverId

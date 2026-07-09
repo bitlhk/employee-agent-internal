@@ -4,7 +4,7 @@ import { inferMcpServerFromOpenClawToolName, inferSkillIdFromToolArgs } from "./
 describe("openclaw tool audit", () => {
   it("infers skill id from common skill paths", () => {
     expect(inferSkillIdFromToolArgs({ command: "python /workspace/skills/wealth-healthcheck/scripts/run.py" })).toBe("wealth-healthcheck");
-    expect(inferSkillIdFromToolArgs({ path: "/home/ubuntu/.agents/skills/wind-mcp-skill/SKILL.md" })).toBe("wind-mcp-skill");
+    expect(inferSkillIdFromToolArgs({ path: "/home/ubuntu/.agents/skills/market-data-skill/SKILL.md" })).toBe("market-data-skill");
     expect(inferSkillIdFromToolArgs({ path: "/tmp/temp-skills/skills/insurance-advisor/SKILL.md" })).toBe("insurance-advisor");
   });
 
@@ -19,7 +19,7 @@ describe("openclaw tool audit", () => {
 
   it("maps business tool names to MCP server ids", () => {
     expect(inferMcpServerFromOpenClawToolName("mcp_demo_server__lookup_customer")).toBe("demo_server");
-    expect(inferMcpServerFromOpenClawToolName("get_bond_valuation")).toBe("wind_bond_data");
+    expect(inferMcpServerFromOpenClawToolName("mcp_market_data__get_quote")).toBe("market_data");
     expect(inferMcpServerFromOpenClawToolName("execute_cmd")).toBeNull();
   });
 });

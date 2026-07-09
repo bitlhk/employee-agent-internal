@@ -888,17 +888,10 @@ export default function Home() {
 
   const { user, loading: authLoading, error: authError } = useAuth({ redirectOnUnauthenticated: false });
 
-  // ── adoptId 提取：子域名模式 OR 路径模式 ──
-  const currentHost = window.location.hostname.toLowerCase();
-  const adoptIdFromHost = useMemo(() => {
-    const m = currentHost.match(/^(lgc-[a-z0-9-]+)\.(?:demo\.linggantest\.top|demo\.linggan\.top)$/i);
-    return m?.[1] || null;
-  }, [currentHost]);
-  // 路径模式：/claw/:adoptId
+  // ── adoptId 提取：/claw/:adoptId 路径模式 ──
   const [isClawRoute, clawRouteParams] = useRoute("/claw/:adoptId");
   const adoptIdFromPath = isClawRoute ? clawRouteParams?.adoptId || null : null;
-  // 合并：子域名优先，路径兜底
-  const resolvedAdoptId = adoptIdFromHost || adoptIdFromPath;
+  const resolvedAdoptId = adoptIdFromPath;
   const isLingxiaSubdomain = !!resolvedAdoptId;
   useEffect(() => {
     if (!resolvedAdoptId || authLoading || user) return;

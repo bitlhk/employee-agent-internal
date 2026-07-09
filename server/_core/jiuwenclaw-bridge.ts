@@ -191,13 +191,6 @@ export function inferMcpServerForJiuwenTool(toolName: string): string | null {
   if (!name) return null;
   const mcpTool = name.match(/^mcp_([a-zA-Z0-9_]+)__[a-zA-Z0-9_]+$/);
   if (mcpTool?.[1]) return mcpTool[1];
-  if (name.startsWith("get_company_") || name === "get_financial_news") return "wind_financial_docs";
-  if (name.startsWith("get_stock_")) return "wind_stock_data";
-  if (name.startsWith("get_index_")) return "wind_index_data";
-  if (name.startsWith("get_fund_")) return "wind_fund_data";
-  if (name.startsWith("get_bond_")) return "wind_bond_data";
-  if (name.startsWith("get_macro_") || name.startsWith("get_industry_")) return "wind_economic_data";
-  if (name.startsWith("get_technical_") || name.startsWith("get_risk_")) return "wind_analytics_data";
   return null;
 }
 

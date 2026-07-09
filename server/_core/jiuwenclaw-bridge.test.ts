@@ -4,8 +4,7 @@ import { inferMcpServerForJiuwenTool, inferSkillIdFromJiuwenPayload } from "./ji
 describe("jiuwenclaw bridge audit helpers", () => {
   it("maps business tool names to MCP server ids", () => {
     expect(inferMcpServerForJiuwenTool("mcp_demo_server__lookup_customer")).toBe("demo_server");
-    expect(inferMcpServerForJiuwenTool("get_stock_quote")).toBe("wind_stock_data");
-    expect(inferMcpServerForJiuwenTool("get_company_announcements")).toBe("wind_financial_docs");
+    expect(inferMcpServerForJiuwenTool("mcp_market_data__get_quote")).toBe("market_data");
   });
 
   it("does not classify unknown runtime tools as MCP business tools", () => {
