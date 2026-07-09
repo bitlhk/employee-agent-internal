@@ -84,6 +84,19 @@ const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
   return "openclaw";
 };
 
+function publicAppBaseUrl(): string {
+  const raw =
+    process.env.WORKFORCE_AGENT_PUBLIC_BASE_URL
+    || process.env.FRONTEND_URL
+    || process.env.PUBLIC_BASE_URL
+    || "http://localhost:5180";
+  return String(raw || "").replace(/\/+$/, "");
+}
+
+function buildClawEntryUrl(adoptId: string): string {
+  return `${publicAppBaseUrl()}/claw/${encodeURIComponent(adoptId)}`;
+}
+
 type AdminClawAdoption = NonNullable<Awaited<ReturnType<typeof getClawAdoptionAdminById>>>;
 
 const roleResettableStatuses = new Set(["creating", "active", "expiring"]);
@@ -391,8 +404,7 @@ export const clawRouter = router({
 
       const normalizeEntry = (c: any) => ({
         ...c,
-        entryUrl: String(c?.entryUrl || "")
-          .replace("http://", "https://"),
+        entryUrl: buildClawEntryUrl(String(c?.adoptId || "")),
         roleTemplate: String(c?.roleTemplate || "general-assistant"),
         industry: String(c?.industry || "general"),
         runtime: String(c?.runtime || resolveClawRuntime(c?.adoptId)),
@@ -436,7 +448,7 @@ export const clawRouter = router({
         return {
           adoptId: claw.adoptId,
           status: claw.status,
-          entryUrl: claw.entryUrl,
+          entryUrl: buildClawEntryUrl(String(claw.adoptId || "")),
           expiresAt: claw.expiresAt,
           displayName: String((profile as any)?.displayName || "岗位智能体"),
           permissionProfile: String(claw.permissionProfile || "starter"),
@@ -1919,8 +1931,7 @@ export const clawRouter = router({
         if (existing) {
           const normalizedExisting = {
             ...existing,
-            entryUrl: String((existing as any).entryUrl || "")
-              .replace("http://", "https://"),
+            entryUrl: buildClawEntryUrl(String((existing as any).adoptId || "")),
           };
           return {
             success: true,
@@ -1945,13 +1956,11 @@ export const clawRouter = router({
         }
         const runtimeAdapter = getRoleRuntimeAdapter(provisionPlan.runtime);
         const ttlDays = 0;
-        const baseDomain = process.env.DEMO_ROUTE_DOMAIN || "demo.example.com";
-        const entryScheme = (await getSystemConfigValue("claw_demo_entry_scheme", "https")).trim() || "https";
 
         const suffix = randomRuntimeSuffix();
         const adoptId = provisionPlan.runtime === "jiuwenswarm" ? `lgj-${suffix}` : `lgc-${suffix}`;
         const agentId = provisionPlan.runtime === "jiuwenswarm" ? `jiuwen_${adoptId}` : `trial_${adoptId}`;
-        const entryUrl = `${entryScheme}://${adoptId}.${baseDomain}`;
+        const entryUrl = buildClawEntryUrl(adoptId);
         const expiresAt = null;
 
         const adoptionId = await createClawAdoption({
