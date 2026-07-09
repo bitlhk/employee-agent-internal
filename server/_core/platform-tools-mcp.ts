@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { isAuthorizedInternalRequest } from "./helpers";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -66,17 +67,8 @@ function textResult(text: string, extra: Record<string, unknown> = {}) {
   return { content: [{ type: "text", text }], ...extra };
 }
 
-function isLocalRequest(req: Request): boolean {
-  const ip = String(req.ip || req.socket.remoteAddress || "");
-  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
-}
-
 function isAuthorized(req: Request): boolean {
-  if (isLocalRequest(req)) return true;
-  const expected = String(process.env.INTERNAL_API_KEY || "").trim();
-  if (!expected) return false;
-  const provided = String(req.headers["x-internal-key"] || req.headers.authorization?.replace(/^Bearer\s+/i, "") || "").trim();
-  return provided === expected;
+  return isAuthorizedInternalRequest(req);
 }
 
 function pickHeader(req: Request, names: string[]): string {

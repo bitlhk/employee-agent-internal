@@ -29,6 +29,7 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@linggan.local}"
 ADMIN_NAME="${ADMIN_NAME:-Admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_DISPLAY=""
+ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$INSTALL_DIR/.bootstrap-admin-password}"
 
 usage() {
   cat <<'EOF'
@@ -284,14 +285,26 @@ create_default_admin() {
     log "Skipping admin creation"
     return
   fi
+  local generated_password=false
   if [[ -z "$ADMIN_PASSWORD" ]]; then
     ADMIN_PASSWORD="$(gen_admin_password)"
+    generated_password=true
   fi
-  ADMIN_PASSWORD_DISPLAY="$ADMIN_PASSWORD"
+  if [[ "$generated_password" == "true" ]]; then
+    if [[ "$DRY_RUN" == "true" ]]; then
+      ADMIN_PASSWORD_DISPLAY="(would be generated; not printed in dry-run)"
+    else
+      ADMIN_PASSWORD_DISPLAY="(generated; stored in $ADMIN_PASSWORD_FILE with mode 600)"
+      install -m 600 /dev/null "$ADMIN_PASSWORD_FILE"
+      printf "%s\n" "$ADMIN_PASSWORD" > "$ADMIN_PASSWORD_FILE"
+    fi
+  else
+    ADMIN_PASSWORD_DISPLAY="(provided via ADMIN_PASSWORD; not printed)"
+  fi
   log "Creating default admin"
   if [[ "$DRY_RUN" == "true" ]]; then
-    printf "[dry-run] cd %q && ADMIN_EMAIL=%q ADMIN_PASSWORD=%q corepack pnpm tsx scripts/init-admin.ts --email=%q --password=%q --name=%q --skip-if-exists\n" \
-      "$INSTALL_DIR" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" "$ADMIN_NAME"
+    printf "[dry-run] cd %q && ADMIN_EMAIL=%q ADMIN_PASSWORD=<redacted> corepack pnpm tsx scripts/init-admin.ts --email=%q --password=<redacted> --name=%q --skip-if-exists\n" \
+      "$INSTALL_DIR" "$ADMIN_EMAIL" "$ADMIN_EMAIL" "$ADMIN_NAME"
   else
     local output
     output="$(cd "$INSTALL_DIR" && corepack pnpm tsx scripts/init-admin.ts \
@@ -302,6 +315,9 @@ create_default_admin() {
     echo "$output"
     if [[ "$output" == *"existing admin kept"* ]]; then
       ADMIN_PASSWORD_DISPLAY="(existing password kept; not changed)"
+      if [[ "$generated_password" == "true" ]]; then
+        rm -f "$ADMIN_PASSWORD_FILE"
+      fi
     fi
   fi
 }
@@ -325,7 +341,7 @@ Open:
 
 Default admin:
   Email:    ${ADMIN_EMAIL}
-  Password: ${ADMIN_PASSWORD_DISPLAY:-${ADMIN_PASSWORD:-"(not created)"}}
+  Password: ${ADMIN_PASSWORD_DISPLAY:-"(not created or skipped)"}
 
 Change this password immediately after first login.
 

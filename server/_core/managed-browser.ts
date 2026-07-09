@@ -3,7 +3,7 @@ import { lookup } from "dns/promises";
 import { createHash } from "crypto";
 import { isIP } from "net";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
-import { isPrivateUrl } from "./helpers";
+import { isAuthorizedInternalRequest, isPrivateUrl } from "./helpers";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
@@ -26,20 +26,13 @@ function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function isLoopbackRequest(req: express.Request) {
-  const ip = String(req.ip || req.socket.remoteAddress || "");
-  return ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";
-}
-
 function internalToken() {
   return String(process.env.MANAGED_BROWSER_INTERNAL_TOKEN || process.env.WEALTH_ASSISTANT_INTERNAL_TOKEN || "").trim();
 }
 
 function authorizeInternalRequest(req: express.Request) {
   const token = internalToken();
-  if (!token) return isLoopbackRequest(req);
-  const auth = String(req.headers.authorization || "").trim();
-  return auth === `Bearer ${token}`;
+  return isAuthorizedInternalRequest(req, token || undefined);
 }
 
 function readAction(value: unknown): ManagedBrowserAction {
