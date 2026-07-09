@@ -6,7 +6,6 @@ import { createServer } from "node:http";
 
 const HOST = process.env.BOND_QUOTE_HTTP_MCP_HOST || "127.0.0.1";
 const PORT = Number(process.env.BOND_QUOTE_HTTP_MCP_PORT || 17892);
-const DEFAULT_UPSTREAM = "http://121.37.69.112:8500";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ENV_FILE = process.env.BOND_QUOTE_HTTP_MCP_ENV || join(__dirname, "bond-quote-http-mcp.env");
 
@@ -60,7 +59,11 @@ function loadDotenv(path) {
 }
 
 function upstream() {
-  return (process.env.BOND_PARSE_UPSTREAM || DEFAULT_UPSTREAM).replace(/\/+$/, "");
+  const value = (process.env.BOND_PARSE_UPSTREAM || "").trim();
+  if (!value) {
+    throw new Error("BOND_PARSE_UPSTREAM is required for bond quote parsing.");
+  }
+  return value.replace(/\/+$/, "");
 }
 
 function headers() {
