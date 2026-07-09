@@ -33,6 +33,7 @@ COPY --chown=linggan:linggan server ./server
 COPY --chown=linggan:linggan shared ./shared
 COPY --chown=linggan:linggan drizzle ./drizzle
 COPY --chown=linggan:linggan drizzle.config.ts tsconfig.json tsconfig.node.json ./
+COPY --chown=linggan:linggan LICENSE NOTICE ./
 COPY --chown=linggan:linggan HELP.md ./
 
 # 前端构建产物

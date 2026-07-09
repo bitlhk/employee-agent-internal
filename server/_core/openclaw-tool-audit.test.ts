@@ -18,8 +18,7 @@ describe("openclaw tool audit", () => {
   });
 
   it("maps business tool names to MCP server ids", () => {
-    expect(inferMcpServerFromOpenClawToolName("wealth_assistant_customer_detail")).toBe("wealth_assistant_customer");
-    expect(inferMcpServerFromOpenClawToolName("qieman_portfolio_analyze")).toBe("qieman");
+    expect(inferMcpServerFromOpenClawToolName("mcp_demo_server__lookup_customer")).toBe("demo_server");
     expect(inferMcpServerFromOpenClawToolName("get_bond_valuation")).toBe("wind_bond_data");
     expect(inferMcpServerFromOpenClawToolName("execute_cmd")).toBeNull();
   });

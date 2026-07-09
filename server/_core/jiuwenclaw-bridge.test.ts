@@ -3,9 +3,7 @@ import { inferMcpServerForJiuwenTool, inferSkillIdFromJiuwenPayload } from "./ji
 
 describe("jiuwenclaw bridge audit helpers", () => {
   it("maps business tool names to MCP server ids", () => {
-    expect(inferMcpServerForJiuwenTool("wealth_assistant_customer_list")).toBe("wealth_assistant_customer");
-    expect(inferMcpServerForJiuwenTool("wealth_assistant_product_search")).toBe("wealth_assistant_product");
-    expect(inferMcpServerForJiuwenTool("qieman_fund_search")).toBe("qieman");
+    expect(inferMcpServerForJiuwenTool("mcp_demo_server__lookup_customer")).toBe("demo_server");
     expect(inferMcpServerForJiuwenTool("get_stock_quote")).toBe("wind_stock_data");
     expect(inferMcpServerForJiuwenTool("get_company_announcements")).toBe("wind_financial_docs");
   });

@@ -14,12 +14,21 @@
  *   - 下游服务无法从 tenantToken 反推 userId（HMAC 不可逆）
  */
 
-import { createHash, createHmac } from "crypto";
+import { createHash, createHmac, randomBytes } from "crypto";
 import { mkdirSync, existsSync, readFileSync, readdirSync, statSync, cpSync } from "fs";
 import path from "path";
 import { OPENCLAW_HOME, OPENCLAW_JSON_PATH } from "./helpers";
 
-const TENANT_SECRET = process.env.TENANT_SECRET || "linggan-tenant-2026-default-change-me";
+function resolveTenantSecret(): string {
+  const secret = process.env.TENANT_SECRET?.trim();
+  if (secret) return secret;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("TENANT_SECRET is required in production");
+  }
+  return randomBytes(32).toString("hex");
+}
+
+const TENANT_SECRET = resolveTenantSecret();
 const TENANT_ROOT = process.env.TENANT_ROOT || path.join(OPENCLAW_HOME, "workspace", "tenants");
 
 export interface TenantContext {

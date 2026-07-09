@@ -5,10 +5,10 @@ const apply = process.argv.includes('--apply');
 const databaseUrl = process.env.DATABASE_URL;
 
 const seedProfiles = [
-  { userId: 2, realName: '李泓锟', organizationName: '灵感平台', departmentName: '研发', spaceId: 1, status: 'active' },
-  { userId: 6, realName: '赵印伟', organizationName: '灵感平台', departmentName: '研发', spaceId: 1, status: 'active' },
-  { userId: 7, realName: '程威', organizationName: '灵感平台', departmentName: '研发', spaceId: 1, status: 'active' },
-  { userId: 105, realName: '张三', organizationName: '示例银行', departmentName: '试点组', spaceId: 3, status: 'active' },
+  { userId: 2, realName: '示例用户A', organizationName: '示例组织', departmentName: '示例部门', spaceId: 1, status: 'active' },
+  { userId: 6, realName: '示例用户B', organizationName: '示例组织', departmentName: '示例部门', spaceId: 1, status: 'active' },
+  { userId: 7, realName: '示例用户C', organizationName: '示例组织', departmentName: '示例部门', spaceId: 1, status: 'active' },
+  { userId: 105, realName: '示例用户D', organizationName: '示例机构', departmentName: '试点组', spaceId: 3, status: 'active' },
 ] as const;
 
 console.log(`[COLLAB-SEED] Phase 2 collaboration profile seed ${apply ? 'apply' : 'dry-run'}`);

@@ -101,17 +101,8 @@ function summarizeResult(result: unknown) {
 export function inferMcpServerFromOpenClawToolName(toolName: string): string | null {
   const name = String(toolName || "").trim();
   if (!name) return null;
-  if (name.startsWith("wealth_assistant_customer_")) return "wealth_assistant_customer";
-  if (
-    name.startsWith("wealth_assistant_product_")
-    || name === "wealth_assistant_product_search"
-    || name === "wealth_assistant_product_info"
-    || name === "wealth_assistant_fund_info"
-    || name === "wealth_assistant_nav_history"
-    || name === "wealth_assistant_wealth_product"
-    || name === "wealth_assistant_market_news"
-  ) return "wealth_assistant_product";
-  if (name.startsWith("qieman_")) return "qieman";
+  const mcpTool = name.match(/^mcp_([a-zA-Z0-9_]+)__[a-zA-Z0-9_]+$/);
+  if (mcpTool?.[1]) return mcpTool[1];
   if (name.startsWith("get_company_") || name === "get_financial_news") return "wind_financial_docs";
   if (name.startsWith("get_stock_")) return "wind_stock_data";
   if (name.startsWith("get_index_")) return "wind_index_data";
@@ -119,13 +110,6 @@ export function inferMcpServerFromOpenClawToolName(toolName: string): string | n
   if (name.startsWith("get_bond_")) return "wind_bond_data";
   if (name.startsWith("get_macro_") || name.startsWith("get_industry_")) return "wind_economic_data";
   if (name.startsWith("get_technical_") || name.startsWith("get_risk_")) return "wind_analytics_data";
-  if (name.startsWith("insurance_telesales_")) return "insurance_telesales_recommend";
-  if (name.startsWith("insurance_")) return "insurance_kb";
-  if (name.startsWith("credential_image_")) return "credential_image_workspace";
-  if (name.startsWith("credential_")) return "credential_skills";
-  if (name.startsWith("group_insurance_")) return "group_insurance_audit";
-  if (name.startsWith("post_loan_")) return "post_loan_risk_data";
-  if (name.startsWith("bond_quote_")) return "bond_quote_parse";
   return null;
 }
 

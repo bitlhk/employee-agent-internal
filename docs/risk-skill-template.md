@@ -1,10 +1,5 @@
 # 风控技能编写模板（Risk Skill Authoring Template）
 
-> 参考来源：阿里云点金 DianJin-SKILLS（百技图）credit-risk-manager 角色技能的工程模式，
-> 重点精读了 `credit-risk-cot`（风险逆向思维链）与 `loan-risk-monitor`（贷后五维监测）。
-> 仓库：https://github.com/aliyun/qwen-dianjin/tree/master/DianJin-SKILLS/credit-risk-manager
-> 注意：该仓库无 LICENSE，可参考其工程模式自行撰写，不要整段复制原文进对外交付物。
->
 > 用法：新建风控类技能时，复制本模板为 `SKILL.md`，按章节逐项填写。
 > 标注【必填】的章节不允许省略——风控技能宁可写重，不可写漏。
 

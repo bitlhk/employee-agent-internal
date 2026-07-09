@@ -115,17 +115,7 @@
             "wealth_assistant_product",
             "wind_financial_docs"
           ],
-          "mcpTools": [
-            "wealth_assistant_context_probe",
-            "wealth_assistant_customer_list",
-            "wealth_assistant_customer_detail",
-            "wealth_assistant_product_search",
-            "wealth_assistant_product_info",
-            "wealth_assistant_fund_info",
-            "wealth_assistant_nav_history",
-            "wealth_assistant_wealth_product",
-            "wealth_assistant_market_news"
-          ],
+          "mcpTools": [],
           "defaultModel": "openai/gpt-5.5",
           "runtime": "jiuwenswarm",
           "dataScope": "按客户经理身份隔离客户清单和产品访问；财富助手 MCP 需透传 agent/user context。"
@@ -150,25 +140,7 @@
             "post_loan_risk_data",
             "wind_financial_docs"
           ],
-          "mcpTools": [
-            "get_enterprise_profile",
-            "get_loan_account",
-            "get_financial_statements",
-            "get_repayment_history",
-            "get_collateral_info",
-            "get_guarantor_info",
-            "get_credit_rating",
-            "get_judicial_info",
-            "get_public_opinion",
-            "get_business_abnormal",
-            "get_tax_info",
-            "get_dishonest_record",
-            "get_industry_benchmark",
-            "get_industry_rating",
-            "get_macro_indicator",
-            "get_company_announcements",
-            "get_financial_news"
-          ],
+          "mcpTools": [],
           "defaultModel": "openai/gpt-5.5",
           "runtime": "jiuwenswarm",
           "dataScope": "行内信贷数据为内部数据；高风险结论必须提示人工复核。"
@@ -195,25 +167,7 @@
             "credential_skills",
             "group_insurance_audit"
           ],
-          "mcpTools": [
-            "activate-prompt",
-            "classification",
-            "completeness-audit",
-            "compliance-audit",
-            "credential-extractor",
-            "credential_image_extract_from_workspace",
-            "credential-prompt-generator",
-            "group_insurance_audit_workflow",
-            "image-analyzer",
-            "image-classification",
-            "list-credential-types",
-            "locate-all-fields",
-            "locate-field",
-            "prompt-generator",
-            "query-prompt",
-            "relevance-audit",
-            "sync-prompt"
-          ],
+          "mcpTools": [],
           "defaultModel": "openai/gpt-5.5",
           "runtime": "jiuwenswarm",
           "dataScope": "凭证图像、单证材料、团险审核材料属于敏感业务数据，默认仅审核岗位可见；真实数据权限由 MCP 服务按 agent/user context 强制。"
@@ -242,12 +196,7 @@
             "insurance_kb",
             "insurance_telesales_recommend"
           ],
-          "mcpTools": [
-            "insurance_kb_list",
-            "insurance_kb_search",
-            "telesales_analyze_conversation",
-            "telesales_list_intents"
-          ],
+          "mcpTools": [],
           "defaultModel": "openai/gpt-5.5",
           "runtime": "jiuwenswarm",
           "dataScope": "产品知识和条款知识可公共读取；涉及客户画像时需另行接入客户权限。"
@@ -290,23 +239,7 @@
             "wind_financial_docs",
             "wind_stock_data"
           ],
-          "mcpTools": [
-            "bond_parse_batch",
-            "bond_parse_health",
-            "bond_parse_schema",
-            "bond_parse_validate",
-            "get_company_announcements",
-            "get_financial_news",
-            "get_risk_metrics",
-            "get_stock_basicinfo",
-            "get_stock_equity_holders",
-            "get_stock_events",
-            "get_stock_fundamentals",
-            "get_stock_kline",
-            "get_stock_price_indicators",
-            "get_stock_quote",
-            "get_stock_technicals"
-          ],
+          "mcpTools": [],
           "defaultModel": "openai/gpt-5.5",
           "runtime": "jiuwenswarm",
           "dataScope": "Wind 等公共授权数据和债券报价语料按岗位开放；报价语料可能包含机构和交易信息，输出必须标注不构成投资建议。"

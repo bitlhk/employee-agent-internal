@@ -126,8 +126,8 @@ describe("claw misc admin routes", () => {
             function: {
               arguments: JSON.stringify({
                 tool_names: [
-                  "mcp_wealth_assistant_customer_wealth_assistant_context_probe",
-                  "mcp_wealth_assistant_customer_wealth_assistant_customer_list",
+                  "mcp_demo_server__context_probe",
+                  "mcp_demo_server__lookup_customer",
                 ],
               }),
             },
@@ -143,7 +143,7 @@ describe("claw misc admin routes", () => {
             id: "call-customers",
             type: "function",
             function: {
-              name: "mcp_wealth_assistant_customer_wealth_assistant_customer_list",
+              name: "mcp_demo_server__lookup_customer",
               arguments: "{}",
             },
           }],
@@ -154,7 +154,7 @@ describe("claw misc admin routes", () => {
       const assistant = messages.find((message) => message.role === "assistant" && message.toolCalls?.length);
       expect(assistant?.toolCalls?.map((tool) => tool.name)).toEqual([
         "load_tools",
-        "mcp_wealth_assistant_customer_wealth_assistant_customer_list",
+        "mcp_demo_server__lookup_customer",
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });

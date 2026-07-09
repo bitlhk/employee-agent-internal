@@ -98,442 +98,57 @@ function removeSkillPackageIndexRows(adoptId: string, params: { skillId?: string
   return removed;
 }
 
-const MCP_TOOL_CATALOG = [
+type McpToolGroupOverride = {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  serverIds?: string[];
+  serverIdPrefixes?: string[];
+  recommendedSkills?: string[];
+};
+
+const DEFAULT_MCP_CATEGORY = "MCP 工具";
+
+const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
   {
     id: "wind",
     name: "Wind 金融数据",
     category: "公共金融数据",
     description:
-      "公共授权金融数据源，覆盖行情、财务、公告新闻、指数、基金、债券、宏观和市场分析，供投研、投顾、风控等岗位复用。",
-    children: [
-      {
-        id: "wind-financial-docs",
-        name: "金融文档与公告研报",
-        description: "查询公告、新闻、研报、财经资讯和金融资料检索能力。",
-        serverIds: ["wind_financial_docs"],
-        tools: [
-          {
-            name: "get_company_announcements",
-            description: "公告数据：按公司、关键词和时间范围查找上市公司公告。",
-          },
-          {
-            name: "get_financial_news",
-            description: "资讯数据：检索财经新闻、市场动态和相关金融资料。",
-          },
-        ],
-      },
-      {
-        id: "wind-stock-data",
-        name: "股票行情与财务",
-        description: "覆盖 A 股、港股、美股的行情、K 线、财务和公司事件。",
-        serverIds: ["wind_stock_data"],
-        tools: [
-          {
-            name: "get_stock_quote",
-            description: "股票快照：查询最新价、涨跌幅、成交量和行情快照。",
-          },
-          {
-            name: "get_stock_kline",
-            description: "股票走势：获取日线、分钟线和历史 K 线。",
-          },
-          {
-            name: "get_stock_fundamentals",
-            description: "股票基本面：查询财报、股本、分红、公司事件和风险指标。",
-          },
-        ],
-      },
-      {
-        id: "wind-index-data",
-        name: "指数与板块数据",
-        description: "查询指数行情、成分、行业板块和相关基本面数据。",
-        serverIds: ["wind_index_data"],
-        tools: [
-          {
-            name: "get_index_quote",
-            description: "指数快照：查询指数最新行情、涨跌幅和成交信息。",
-          },
-          {
-            name: "get_index_fundamentals",
-            description: "指数基本面：查看指数估值、成分、行业板块和权重变化。",
-          },
-        ],
-      },
-      {
-        id: "wind-fund-data",
-        name: "基金与 ETF 数据",
-        description: "覆盖 ETF、公募基金行情、档案、持仓、业绩和管理人数据。",
-        serverIds: ["wind_fund_data"],
-        tools: [
-          {
-            name: "get_fund_quote",
-            description: "基金行情：查询 ETF、公募基金净值、涨跌和行情快照。",
-          },
-          {
-            name: "get_fund_portfolio",
-            description: "基金画像：查询基金持仓、持有人、业绩、风险和管理公司信息。",
-          },
-        ],
-      },
-      {
-        id: "wind-bond-data",
-        name: "债券数据",
-        description: "查询债券档案、主体、估值、行情和发行人财务数据。",
-        serverIds: ["wind_bond_data"],
-        tools: [
-          {
-            name: "get_bond_basicinfo",
-            description: "债券档案：查询债券基础信息、期限、票息和发行条款。",
-          },
-          {
-            name: "get_bond_valuation",
-            description: "债券估值：查询债券估值、成交、主体财务和评级信息。",
-          },
-        ],
-      },
-      {
-        id: "wind-economic-data",
-        name: "宏观经济数据",
-        description: "查询宏观指标、行业指标、经济周期和统计数据。",
-        serverIds: ["wind_economic_data"],
-        tools: [
-          {
-            name: "get_macro_indicator",
-            description: "宏观指标：查询 GDP、CPI、PMI、社融等经济指标。",
-          },
-          {
-            name: "get_industry_indicator",
-            description: "行业指标：查询行业景气、价格、产量和库存数据。",
-          },
-        ],
-      },
-      {
-        id: "wind-analytics-data",
-        name: "市场分析工具",
-        description: "提供技术指标、风险指标和组合分析相关的数据能力。",
-        serverIds: ["wind_analytics_data"],
-        tools: [
-          { name: "get_technical_indicators", description: "技术指标：查询或计算常用技术分析指标。" },
-          {
-            name: "get_risk_metrics",
-            description: "风险指标：支持风险指标、收益分析和组合诊断。",
-          },
-        ],
-      },
-    ],
+      "公共授权金融数据源，工具明细以 MCP 服务实时声明为准。",
+    serverIdPrefixes: ["wind_"],
     recommendedSkills: ["wind-mcp-skill", "wind-find-finance-skill"],
   },
-  {
-    id: "qieman",
-    name: "且慢财富数据",
-    category: "公共金融数据",
-    description:
-      "公共财富管理数据源，面向基金分析、组合诊断、资产配置和目标测算场景，由财富类技能统一调度。",
-    children: [
-      {
-        id: "qieman-wealth",
-        name: "财富规划与基金分析",
-        description: "查询且慢侧基金、组合、目标测算和财富诊断工具。",
-        serverIds: ["qieman"],
-        tools: [
-          {
-            name: "qieman_fund_search",
-            description: "基金检索：查询基金资料、业绩、风险和持仓特征。",
-          },
-          {
-            name: "qieman_portfolio_analyze",
-            description: "组合诊断：分析组合配置、波动、收益和集中度。",
-          },
-          {
-            name: "qieman_goal_calculate",
-            description: "目标测算：按目标金额、期限和风险偏好做规划测算。",
-          },
-          {
-            name: "qieman_wealth_healthcheck",
-            description: "财富体检：评估资产结构、现金流和风险暴露。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: [
-      "wealth-family-advisor",
-      "wealth-healthcheck",
-      "wealth-goalcalc",
-      "fund-analyst",
-      "portfolio-doctor",
-    ],
-  },
-  {
-    id: "bond-quote-parse",
-    name: "债券报价解析 MCP",
-    category: "内部业务 MCP",
-    description:
-      "内部业务 MCP，解析债券申购群聊、报价语料和 CSV 表格，提取机构、利率、投标量和错误项。",
-    children: [
-      {
-        id: "bond-quote-parse",
-        name: "债券群聊报价解析",
-        description: "从群聊文本或表格中解析债券报价、申购量、机构和异常项。",
-        serverIds: ["bond_quote_parse", "bond-quote-parse"],
-        displayServerId: "bond-quote-parse",
-        tools: [
-          {
-            name: "bond_parse_validate",
-            description: "报价解析：从群聊文本中抽取债券简称、期限、收益率、量和机构，并返回校验结果。",
-          },
-          {
-            name: "bond_parse_batch",
-            description: "批量校验：校验 CSV 或表格中的缺失项、格式错误和重复记录。",
-          },
-          {
-            name: "bond_parse_schema",
-            description: "字段说明：返回债券报价解析的标准字段、类型和枚举约束。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: ["bond-quote-parse"],
-  },
-  {
-    id: "wealth-assistant",
-    name: "财富经理业务数据 MCP",
-    category: "内部业务 MCP",
-    description:
-      "内部业务 MCP，面向客户经理获取本人授权范围内的客户数据、产品数据和推荐上下文，辅助客户经营和产品推荐。",
-    children: [
-      {
-        id: "wealth-assistant",
-        name: "客户经理财富助手",
-        description:
-          "聚合客户数据与推荐产品数据，可查询客户列表、客户详情、基金/理财产品、净值历史和市场新闻。",
-        serverIds: ["wealth_assistant_customer", "wealth_assistant_product"],
-        displayServerId: "wealth-assistant-context",
-        tools: [
-          {
-            name: "wealth_assistant_customer_list",
-            description:
-              "客户列表：查询客户列表、搜索客户，并获取客户画像和资产信息。",
-          },
-          {
-            name: "wealth_assistant_product_search",
-            description:
-              "产品检索：查询基金、理财产品、净值历史和市场新闻，辅助客户经理做产品匹配。",
-          },
-          {
-            name: "wealth_assistant_context_probe",
-            description:
-              "上下文探测：检查调用方 agentId、权限上下文和财富助手服务连通性。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: [],
-  },
-  {
-    id: "group-insurance-audit",
-    name: "团险审核工作流 MCP",
-    category: "内部业务 MCP",
-    description:
-      "内部业务 MCP，面向团险运营审核材料完整性、责任配置、费率风险和审核摘要，当前为内部演示接入。",
-    children: [
-      {
-        id: "group-insurance-audit",
-        name: "团险审核工作流",
-        description:
-          "围绕团单材料理解、配置校验、责任审核和风险摘要输出结构化审核结果。",
-        serverIds: ["group_insurance_audit"],
-        tools: [
-          {
-            name: "group_insurance_audit_workflow",
-            description:
-              "团险审核：执行材料解析、完整性检查、责任配置审核、风险识别和建议摘要。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: [
-      "group-policy-document-understanding",
-      "group-insurance-material-check",
-      "group-insurance-liability-review",
-      "group-insurance-risk-summary",
-    ],
-  },
-  {
-    id: "credential-skills",
-    name: "凭证智能审核 MCP",
-    category: "内部业务 MCP",
-    description:
-      "内部业务 MCP，提供凭证分类、要素提取、图像质量分析与字段定位能力，面向凭证审核与进件合规检查场景。",
-    children: [
-      {
-        id: "credential-classification",
-        name: "凭证分类",
-        description: "将凭证图片自动分类到 60 种预定义凭证类型。",
-        serverIds: ["credential_skills"],
-        tools: [
-          {
-            name: "classification",
-            description: "凭证分类：输入凭证图片，返回凭证类型、置信度与页数。",
-          },
-        ],
-      },
-      {
-        id: "credential-extraction",
-        name: "凭证要素提取",
-        description: "从凭证图像提取关键要素，支持 20 种凭证类型与提取 Prompt 版本管理。",
-        serverIds: ["credential_skills"],
-        tools: [
-          {
-            name: "credential-extractor",
-            description: "要素提取：按凭证类型从图像中提取收款人、金额、日期等关键信息。",
-          },
-          {
-            name: "list-credential-types",
-            description: "类型清单：列出当前支持的全部凭证类型。",
-          },
-          {
-            name: "sync-prompt",
-            description: "Prompt 管理：保存自定义提取 Prompt 配置。",
-          },
-          {
-            name: "query-prompt",
-            description: "Prompt 管理：查询提取 Prompt 配置及版本。",
-          },
-          {
-            name: "activate-prompt",
-            description: "Prompt 管理：激活指定版本的提取 Prompt。",
-          },
-        ],
-      },
-      {
-        id: "credential-image-analysis",
-        name: "凭证图像分析",
-        description: "图像质量分级与字段坐标定位，辅助审核划重点。",
-        serverIds: ["credential_skills"],
-        tools: [
-          {
-            name: "image-analyzer",
-            description: "质量分析：图像特征维度分析与元素等级判断（L1-L4）。",
-          },
-          {
-            name: "locate-field",
-            description: "字段定位：在图像中定位单个字段的 bbox 坐标。",
-          },
-          {
-            name: "locate-all-fields",
-            description: "批量定位：一次定位图像中全部字段的 bbox 坐标。",
-          },
-        ],
-      },
-      {
-        id: "credential-image-workspace",
-        name: "工作目录凭证图片处理",
-        description: "读取当前 Agent 工作目录内的凭证图片或 PDF，安全转换后调用凭证识别服务。",
-        serverIds: ["credential_image_workspace"],
-        tools: [
-          {
-            name: "credential_image_extract_from_workspace",
-            description: "工作目录凭证处理：仅接受 workspace 相对路径，服务端校验边界后执行凭证分类、要素提取或提示词生成。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: ["credential-review"],
-  },
-  {
-    id: "insurance-kb",
-    name: "保险知识库 MCP",
-    category: "内部业务 MCP",
-    description:
-      "内部业务 MCP，连接保险知识库，提供保险产品、条款解释、异议处理和销售辅助知识检索能力。",
-    children: [
-      {
-        id: "insurance-kb-search",
-        name: "保险知识库检索",
-        description: "检索保险产品信息、条款解释、FAQ 和异议处理话术。",
-        serverIds: ["insurance_kb"],
-        tools: [
-          {
-            name: "insurance_kb_search",
-            description:
-              "知识检索：输入保险相关问题，返回匹配的知识片段、相似度和来源。",
-          },
-          {
-            name: "insurance_kb_list",
-            description:
-              "知识库清单：列出可用保险知识库，用于确认检索范围。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: ["insurance-advisor-pro"],
-  },
-  {
-    id: "post-loan-risk-data",
-    name: "贷后风控数据 MCP",
-    category: "内部业务 MCP",
-    description:
-      "内部业务 MCP，提供企业贷后风控所需的企业画像、贷款账户、财报、还款、担保、司法、舆情和行业基准数据。",
-    children: [
-      {
-        id: "post-loan-risk-core",
-        name: "企业贷后风险数据",
-        description: "围绕统一社会信用代码查询贷后风险评估所需的数据，当前为灰度演示版。",
-        serverIds: ["post_loan_risk_data"],
-        tools: [
-          { name: "get_enterprise_profile", description: "企业画像：查询企业基本信息、行业、规模和经营状态。" },
-          { name: "get_loan_account", description: "贷款账户：查询贷款余额、授信额度、五级分类和逾期情况。" },
-          { name: "get_financial_statements", description: "财务报表：查询资产、负债、现金流、利润和偿债指标。" },
-          { name: "get_repayment_history", description: "还款历史：查询逾期次数、最大逾期天数和近期还款记录。" },
-          { name: "get_credit_rating", description: "信用评级：查询内部评级、外部评级和评分变化。" },
-        ],
-      },
-      {
-        id: "post-loan-risk-external",
-        name: "外部风险与行业基准",
-        description: "补充司法、舆情、经营异常、税务、失信、行业和宏观风险信号。",
-        serverIds: ["post_loan_risk_data"],
-        tools: [
-          { name: "get_judicial_info", description: "司法风险：查询诉讼、执行和资产冻结信息。" },
-          { name: "get_public_opinion", description: "舆情风险：查询负面舆情和重大风险报道。" },
-          { name: "get_business_abnormal", description: "经营异常：查询工商异常和严重违法信息。" },
-          { name: "get_dishonest_record", description: "失信记录：查询企业及关联方失信被执行信息。" },
-          { name: "get_industry_benchmark", description: "行业基准：查询偿债、流动性、负债率等行业对标指标。" },
-          { name: "get_industry_rating", description: "行业评级：查询行业风险评级、景气度和政策风险。" },
-          { name: "get_macro_indicator", description: "宏观指标：查询 GDP、PMI、CPI、PPI、LPR、M2 等宏观指标。" },
-        ],
-      },
-    ],
-    recommendedSkills: ["post-loan-risk-prediction"],
-  },
-  {
-    id: "insurance-telesales-recommend",
-    name: "车险智能外呼 MCP",
-    category: "内部业务 MCP",
-    description:
-      "车险电销对话分析 MCP，实时识别客户意图并推荐合规应对话术，面向车险外呼坐席辅助场景。",
-    children: [
-      {
-        id: "telesales-analyze",
-        name: "外呼对话分析",
-        description: "分析外呼通话记录，识别客户意图并推荐应对话术。",
-        serverIds: ["insurance_telesales_recommend"],
-        tools: [
-          {
-            name: "telesales_analyze_conversation",
-            description:
-              "对话分析：输入通话对话历史，返回意图编码、置信度、推荐话术与风险提示。",
-          },
-          {
-            name: "telesales_list_intents",
-            description:
-              "意图清单：返回系统支持的全部意图分类（编码 + 名称 + 关键词）。",
-          },
-        ],
-      },
-    ],
-    recommendedSkills: ["insurance-telesales-recommend"],
-  },
 ];
+
+function readableMcpName(serverId: string): string {
+  return serverId
+    .split(/[._-]+/g)
+    .filter(Boolean)
+    .map(part => {
+      const upper = part.toUpperCase();
+      if (["MCP", "API", "HTTP", "KB", "A2A"].includes(upper)) return upper;
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    })
+    .join(" ") || serverId;
+}
+
+function mcpGroupOverrideFor(serverId: string): McpToolGroupOverride | null {
+  for (const item of MCP_TOOL_GROUP_OVERRIDES) {
+    if (item.serverIds?.includes(serverId)) return item;
+    if (item.serverIdPrefixes?.some(prefix => serverId.startsWith(prefix))) return item;
+  }
+  return null;
+}
+
+function mcpFallbackTool(serverId: string) {
+  return {
+    name: "tools_list_unavailable",
+    description: "MCP 服务 " + serverId + " 已接入；工具明细以服务实时 tools/list 声明为准。",
+    source: "fallback",
+  };
+}
 
 function readOpenClawConfig(): Record<string, any> {
   try {
@@ -564,23 +179,6 @@ export function listConfiguredMcpServers() {
       existsOnDisk: mcpServerExistsOnDisk(serverId, raw),
     }))
     .sort((a, b) => a.serverId.localeCompare(b.serverId));
-}
-
-function readAllowedToolNames(config: Record<string, any>): Set<string> {
-  const names = new Set<string>();
-  const add = (value: unknown) => {
-    if (!Array.isArray(value)) return;
-    for (const item of value) {
-      const name = String(item || "").trim();
-      if (name) names.add(name);
-    }
-  };
-  add(config?.tools?.alsoAllow);
-  add(config?.tools?.sandbox?.tools?.alsoAllow);
-  for (const agent of Array.isArray(config?.agents?.list) ? config.agents.list : []) {
-    add(agent?.tools?.alsoAllow);
-  }
-  return names;
 }
 
 type McpLiveTool = {
@@ -793,7 +391,6 @@ export function listMcpToolGroups(options: {
   const liveStatuses = options.liveStatuses || {};
   const config = readOpenClawConfig();
   const servers = readOpenClawMcpServers(config);
-  const allowedToolNames = readAllowedToolNames(config);
   const serverRows = Object.entries(servers).map(([serverId, raw]) => {
     const disabled = Boolean((raw as any)?.disabled);
     return {
@@ -805,110 +402,88 @@ export function listMcpToolGroups(options: {
     };
   });
   const byId = new Map(serverRows.map(row => [row.serverId, row]));
-  const knownServerIds = new Set<string>();
+  const serverIds = allowedServerIds
+    ? Array.from(allowedServerIds).sort()
+    : serverRows.map(row => row.serverId).sort();
+  const grouped = new Map<string, any>();
 
-  const groups = MCP_TOOL_CATALOG.map(item => {
-    const visibleChildren = allowedServerIds
-      ? item.children.filter(child => child.serverIds.some(serverId => allowedServerIds.has(serverId)))
-      : item.children;
-    const children = visibleChildren.map(child => {
-      const visibleServerIds = allowedServerIds
-        ? child.serverIds.filter(serverId => allowedServerIds.has(serverId))
-        : child.serverIds;
-      for (const id of visibleServerIds) knownServerIds.add(id);
-      const aliasServers = visibleServerIds.map(
-        serverId =>
-          byId.get(serverId) || {
-            serverId,
-            configured: false,
-            enabled: false,
-            status: "missing",
-            existsOnDisk: existsSync(path.join(OPENCLAW_HOME, "mcp", serverId)),
-          }
-      );
-      const activeServer =
-        aliasServers.find(server => server.configured) || aliasServers[0];
-      const toolNames = Array.isArray(child.tools)
-        ? child.tools.map(tool => String(tool?.name || "").trim()).filter(Boolean)
-        : [];
-      const invocationCount = visibleServerIds.reduce((sum, serverId) => sum + Number(invocationCounts[serverId]?.total || 0), 0);
-      const liveRows = visibleServerIds
-        .map(serverId => liveStatuses[serverId])
-        .filter(Boolean);
-      const liveTools = liveRows
-        .filter(row => row.status === "live")
-        .flatMap(row => row.tools || []);
-      const hasLiveProbe = liveRows.length > 0;
-      const hasLiveSuccess = liveRows.some(row => row.status === "live");
-      const hasLiveFailure = liveRows.some(row => row.status === "unavailable");
-      const fallbackTools = Array.isArray(child.tools)
-        ? child.tools.map((tool: any) => {
-          const toolName = String(tool?.name || "").trim();
-          const toolInvocationCount = visibleServerIds.reduce(
-            (sum, serverId) => sum + Number(invocationCounts[serverId]?.tools?.[toolName] || 0),
-            0
-          );
-          return { ...tool, invocationCount: toolInvocationCount };
-        })
-        : child.tools;
-      const liveToolNames = new Set<string>();
-      const tools = liveTools.length > 0
-        ? liveTools
-          .filter(tool => {
-            if (liveToolNames.has(tool.name)) return false;
-            liveToolNames.add(tool.name);
-            return true;
-          })
-          .map(tool => {
-            const toolInvocationCount = visibleServerIds.reduce(
-              (sum, serverId) => sum + Number(invocationCounts[serverId]?.tools?.[tool.name] || 0),
-              0
-            );
-            return { ...tool, invocationCount: toolInvocationCount, source: "live" };
-          })
-        : fallbackTools;
-      const pluginToolsConfigured =
-        toolNames.length > 0 && toolNames.every(toolName => allowedToolNames.has(toolName));
-      const configured = aliasServers.some(server => server.configured) || pluginToolsConfigured;
-      const enabled = aliasServers.some(
-        server => server.configured && server.enabled
-      ) || pluginToolsConfigured;
-      const status = enabled && (!hasLiveProbe || hasLiveSuccess)
-        ? "available"
-        : configured || hasLiveFailure
-          ? "disabled"
-          : "missing";
-      const liveStatus = hasLiveSuccess
-        ? "live"
-        : hasLiveFailure
-          ? "unavailable"
-          : hasLiveProbe
-            ? "unsupported"
-            : "fallback";
-      const liveErrors = liveRows
-        .filter(row => row.error)
-        .map(row => `${row.serverId}: ${row.error}`);
-      return {
-        id: child.id,
-        name: child.name,
-        description: child.description,
-        serverId: (child as any).displayServerId || activeServer.serverId,
-        configured,
-        enabled,
-        status,
-        existsOnDisk: aliasServers.some(server => server.existsOnDisk) || pluginToolsConfigured,
-        invocationCount,
-        tools,
-        toolSource: liveTools.length > 0 ? "live" : "fallback",
-        liveStatus,
-        liveCheckedAt: liveRows.map(row => row.checkedAt).sort().pop() || null,
-        liveError: liveErrors[0] || null,
+  for (const serverId of serverIds) {
+    const override = mcpGroupOverrideFor(serverId);
+    const groupId = override?.id || serverId;
+    const group = grouped.get(groupId) || {
+      id: groupId,
+      name: override?.name || readableMcpName(serverId),
+      category: override?.category || DEFAULT_MCP_CATEGORY,
+      description: override?.description || "MCP 服务能力，工具明细由服务实时声明。",
+      recommendedSkills: override?.recommendedSkills || [],
+      children: [] as any[],
+    };
+    grouped.set(groupId, group);
+
+    const server =
+      byId.get(serverId) || {
+        serverId,
+        configured: false,
+        enabled: false,
+        status: "missing",
+        existsOnDisk: existsSync(path.join(OPENCLAW_HOME, "mcp", serverId)),
       };
+    const liveRow = liveStatuses[serverId];
+    const liveTools = liveRow?.status === "live" ? liveRow.tools || [] : [];
+    const liveToolNames = new Set<string>();
+    const tools = liveTools.length > 0
+      ? liveTools
+        .filter(tool => {
+          if (liveToolNames.has(tool.name)) return false;
+          liveToolNames.add(tool.name);
+          return true;
+        })
+        .map(tool => ({
+          ...tool,
+          invocationCount: Number(invocationCounts[serverId]?.tools?.[tool.name] || 0),
+          source: "live",
+        }))
+      : [{ ...mcpFallbackTool(serverId), invocationCount: 0 }];
+    const hasLiveProbe = Boolean(liveRow);
+    const hasLiveSuccess = liveRow?.status === "live";
+    const hasLiveFailure = liveRow?.status === "unavailable";
+    const status = server.enabled && (!hasLiveProbe || hasLiveSuccess)
+      ? "available"
+      : server.configured || hasLiveFailure
+        ? "disabled"
+        : "missing";
+    const liveStatus = hasLiveSuccess
+      ? "live"
+      : hasLiveFailure
+        ? "unavailable"
+        : hasLiveProbe
+          ? "unsupported"
+          : "fallback";
+
+    group.children.push({
+      id: serverId,
+      name: readableMcpName(serverId),
+      description: "MCP 服务，工具明细以实时 tools/list 声明为准。",
+      serverId,
+      configured: server.configured,
+      enabled: server.enabled,
+      status,
+      existsOnDisk: server.existsOnDisk,
+      invocationCount: Number(invocationCounts[serverId]?.total || 0),
+      tools,
+      toolSource: liveTools.length > 0 ? "live" : "fallback",
+      liveStatus,
+      liveCheckedAt: liveRow?.checkedAt || null,
+      liveError: liveRow?.error || null,
     });
+  }
+
+  const groups = Array.from(grouped.values()).map(item => {
+    const children = item.children as any[];
     const availableCount = children.filter(
-      child => child.status === "available"
+      (child: any) => child.status === "available"
     ).length;
-    const configuredCount = children.filter(child => child.configured).length;
+    const configuredCount = children.filter((child: any) => child.configured).length;
     return {
       id: item.id,
       name: item.name,
@@ -924,7 +499,7 @@ export function listMcpToolGroups(options: {
       availableCount,
       configuredCount,
       serverCount: children.length,
-      invocationCount: children.reduce((sum, child: any) => sum + Number(child.invocationCount || 0), 0),
+      invocationCount: children.reduce((sum: number, child: any) => sum + Number(child.invocationCount || 0), 0),
       liveStatus: children.some((child: any) => child.liveStatus === "live")
         ? "live"
         : children.some((child: any) => child.liveStatus === "unavailable")
@@ -934,7 +509,10 @@ export function listMcpToolGroups(options: {
             : "fallback",
       children,
     };
-  }).filter(group => group.children.length > 0);
+  }).sort((a, b) => {
+    const categoryOrder = a.category.localeCompare(b.category, "zh-CN");
+    return categoryOrder || a.name.localeCompare(b.name, "zh-CN");
+  });
 
   const visibleServerRows = allowedServerIds
     ? serverRows.filter(row => allowedServerIds.has(row.serverId))
