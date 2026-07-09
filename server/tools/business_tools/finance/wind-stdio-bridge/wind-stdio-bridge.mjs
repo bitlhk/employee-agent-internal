@@ -6,7 +6,7 @@ import { join } from "node:path";
 const SERVER_TYPE = process.argv[2];
 const SKILL_DIR =
   process.env.WIND_MCP_SKILL_DIR ||
-  "/root/.openclaw/mcp/wind-mcp-skill";
+  join(homedir(), ".openclaw", "mcp", "wind-mcp-skill");
 
 const SERVERS = {
   stock_data: "https://mcp.wind.com.cn/vserver_stock_data/mcp/",
@@ -113,7 +113,7 @@ async function remoteToolCall(name, args) {
     {
       protocolVersion: "2025-03-26",
       capabilities: {},
-      clientInfo: { name: "openclaw-wind-stdio-bridge", version: "0.1.0" },
+      clientInfo: { name: "ea-wind-stdio-bridge", version: "0.1.0" },
     },
     30_000
   );
@@ -122,7 +122,7 @@ async function remoteToolCall(name, args) {
     {
       name,
       arguments: args || {},
-      _meta: { clientVersion: "openclaw-wind-stdio-bridge/0.1.0" },
+      _meta: { clientVersion: "ea-wind-stdio-bridge/0.1.0" },
     },
     600_000
   );

@@ -1,7 +1,7 @@
 """
 Smart Insurance Skill 0611 - MCP客户端
 
-负责与部署在openclaw服务器上的MCP服务通信
+负责与部署在 EA / JiuwenSwarm 可访问网络中的 MCP 服务通信
 所有网络请求通过MCP服务器转发，绕过沙箱网络限制
 """
 

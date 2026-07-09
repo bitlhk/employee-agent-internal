@@ -90,7 +90,7 @@ curl http://localhost:18008/health
 ## 技术架构
 
 ```
-OpenClaw 平台
+EA / JiuwenSwarm Runtime
     │  MCP Streamable HTTP
     ▼
 ┌──────────────┐     ┌──────────────┐

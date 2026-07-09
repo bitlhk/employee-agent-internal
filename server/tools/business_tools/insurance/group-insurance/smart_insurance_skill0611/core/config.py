@@ -25,7 +25,7 @@ class SkillConfig:
 
         # 从字典创建
         config = SkillConfig.from_dict({
-            'mcp': {'server_url': 'http://openclaw:8080'},
+            'mcp': {'server_url': 'http://mcp-server:8080'},
             'vision': {'provider': 'maas'},
             'llm': {'default_provider': 'maas'}
         })

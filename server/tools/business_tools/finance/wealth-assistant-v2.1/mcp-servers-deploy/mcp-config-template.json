@@ -1,1 +1,18 @@
-{"mcpServers": {"customer-server": {"type": "url", "url": "http://localhost:3101/mcp", "headers": {"Authorization": "Bearer ${WEALTH_API_TOKEN}"}}, "product-server": {"type": "url", "url": "http://localhost:3102/mcp", "headers": {"Authorization": "Bearer ${WEALTH_API_TOKEN}"}}}}
+{
+  "mcpServers": {
+    "wealth_assistant_customer": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:18008/mcp",
+      "headers": {
+        "Authorization": "Bearer ${WEALTH_API_TOKEN}"
+      }
+    },
+    "wealth_assistant_product": {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:18007/mcp",
+      "headers": {
+        "Authorization": "Bearer ${WEALTH_API_TOKEN}"
+      }
+    }
+  }
+}

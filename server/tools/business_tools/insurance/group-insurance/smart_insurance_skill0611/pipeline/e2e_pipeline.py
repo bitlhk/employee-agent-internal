@@ -51,7 +51,7 @@ class E2EPipeline(BasePipeline):
             'task_id': 'T001',
             'pdf_path': './contract.pdf',
             'images': ['./quote1.png', './quote2.png'],
-            'mcp_server_url': 'http://openclaw:8080'
+            'mcp_server_url': 'http://mcp-server:8080'
         })
     """
 

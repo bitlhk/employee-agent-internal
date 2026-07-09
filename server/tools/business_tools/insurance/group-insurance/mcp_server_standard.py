@@ -8,7 +8,7 @@ MCP服务器 - 标准版本 (支持HTTP MCP适配器)
 - 团险审核工作流 (group_insurance_audit_workflow)
 
 部署方式：
-1. 在openclaw服务器上运行此服务器
+1. 在 EA / JiuwenSwarm 可访问的服务器上运行此服务
 2. 配置各个服务商的API密钥和地址
 3. MCP适配器通过/call_tool接口调用
 

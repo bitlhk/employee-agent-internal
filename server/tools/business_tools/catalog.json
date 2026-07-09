@@ -5,6 +5,8 @@
       "domain": "finance",
       "sourcePath": "server/tools/business_tools/finance/wealth-assistant-v2.1/mcp-servers-deploy/customer-mcp-server",
       "runtime": "node",
+      "status": "active",
+      "deployment": "local-http",
       "purpose": "Wealth customer list, profile, and context lookup"
     },
     {
@@ -12,6 +14,8 @@
       "domain": "finance",
       "sourcePath": "server/tools/business_tools/finance/wealth-assistant-v2.1/mcp-servers-deploy/product-mcp-server",
       "runtime": "node",
+      "status": "active",
+      "deployment": "local-http",
       "purpose": "Wealth product search and product information lookup"
     },
     {
@@ -19,13 +23,35 @@
       "domain": "finance",
       "sourcePath": "server/tools/business_tools/finance/wind-stdio-bridge",
       "runtime": "node",
-      "purpose": "Wind financial documents bridge"
+      "status": "active-local-bridge",
+      "deployment": "stdio-or-remote-http",
+      "purpose": "Wind financial documents bridge for local JiuwenSwarm; production may use remote Wind MCP directly"
+    },
+    {
+      "serverId": "wind_stock_data",
+      "domain": "finance",
+      "sourcePath": "server/tools/business_tools/finance/wind-stdio-bridge",
+      "runtime": "node",
+      "status": "active-local-bridge",
+      "deployment": "stdio-or-remote-http",
+      "purpose": "Wind stock data bridge for local JiuwenSwarm; production may use remote Wind MCP directly"
+    },
+    {
+      "serverId": "bond_quote_parse",
+      "domain": "finance",
+      "sourcePath": "server/tools/business_tools/finance/bond-quote-http",
+      "runtime": "node",
+      "status": "active",
+      "deployment": "local-http",
+      "purpose": "Bond quote text/table parsing adapter; requires BOND_PARSE_UPSTREAM"
     },
     {
       "serverId": "post_loan_risk_data",
       "domain": "risk",
       "sourcePath": "server/tools/business_tools/risk/post-loan-risk-data",
-      "runtime": "python/node",
+      "runtime": "node/python",
+      "status": "active",
+      "deployment": "local-http",
       "purpose": "Post-loan enterprise risk data MCP"
     },
     {
@@ -33,21 +59,59 @@
       "domain": "credential",
       "sourcePath": "server/tools/business_tools/credential/credential-image-workspace",
       "runtime": "node",
+      "status": "active",
+      "deployment": "local-http",
       "purpose": "Credential image extraction from user workspace files"
     },
     {
       "serverId": "group_insurance_audit",
       "domain": "insurance",
+      "sourcePath": "server/tools/business_tools/insurance/group-insurance-http",
+      "runtime": "node",
+      "status": "active",
+      "deployment": "local-http",
+      "purpose": "HTTP MCP adapter for group insurance audit workflow"
+    },
+    {
+      "serverId": "group_insurance_workflow",
+      "domain": "insurance",
       "sourcePath": "server/tools/business_tools/insurance/group-insurance",
       "runtime": "python",
-      "purpose": "Group insurance document extraction and audit workflow"
+      "status": "active",
+      "deployment": "local-workflow",
+      "purpose": "Group insurance document extraction and audit workflow backend"
     },
     {
       "serverId": "insurance_kb",
       "domain": "insurance",
       "sourcePath": "server/tools/business_tools/insurance/insurance-kb-http-mcp",
       "runtime": "node",
+      "status": "active",
+      "deployment": "local-http",
       "purpose": "Insurance knowledge-base MCP adapter"
+    }
+  ],
+  "disabledOrExternal": [
+    {
+      "serverId": "qieman",
+      "domain": "finance",
+      "status": "disabled-in-shanghai",
+      "deployment": "remote-http",
+      "purpose": "Qieman remote MCP integration; not kept as active local tool source"
+    },
+    {
+      "serverId": "credential_skills",
+      "domain": "credential",
+      "status": "disabled-in-shanghai",
+      "deployment": "remote-http",
+      "purpose": "Credential service remote adapter; current active local tool is credential_image_workspace"
+    },
+    {
+      "serverId": "insurance_telesales_recommend",
+      "domain": "insurance",
+      "status": "disabled-in-shanghai",
+      "deployment": "remote-http",
+      "purpose": "Car insurance telesales remote MCP"
     }
   ]
 }

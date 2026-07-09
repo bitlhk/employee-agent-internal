@@ -44,7 +44,7 @@ def run_insurance_reading(
         images: 报价单图片路径列表
         task_id: 任务ID
         config_path: 配置文件路径
-        mcp_server_url: MCP服务器地址（如: http://openclaw-server:8080）
+        mcp_server_url: MCP服务器地址（如: http://mcp-server:8080）
 
     Returns:
         解读结果JSON

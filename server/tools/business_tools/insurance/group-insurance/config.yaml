@@ -1,9 +1,9 @@
 # Smart Insurance Skill 0611 配置文件
-# 基于MCP架构，通过openclaw服务器间接访问外部网络
+# 基于 MCP 架构，通过 MCP 服务间接访问外部网络
 
-# MCP服务器配置（部署在openclaw服务器上）
+# MCP服务器配置
 mcp:
-  server_url: "http://openclaw-server:6080"  # MCP服务器地址
+  server_url: "http://mcp-server:6080"       # MCP服务器地址
   timeout: 300                                # 请求超时时间（秒）
   retry_times: 3                             # 重试次数
   retry_delay: 1                             # 重试延迟（秒）
