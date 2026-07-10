@@ -36,8 +36,25 @@ import { skillRegistry } from "./skills/skill-registry";
 type ChatRuntimeMode = "fast" | "plan";
 
 type SelectedSkillContext =
-  | { ok: true; message: string; skillId: string; label: string; skillFile: string }
+  | {
+      ok: true;
+      message: string;
+      skillId: string;
+      label: string;
+      skillFile: string;
+      metadata: SelectedRuntimeSkill;
+    }
   | { ok: false; status: number; error: string };
+
+type SelectedRuntimeSkill = {
+  id: string;
+  name: string;
+  description?: string;
+  skillFile: string;
+  runtimePath: string;
+  sourceKind?: string;
+  version?: string;
+};
 
 function normalizeSelectedSkillId(value: unknown): string {
   const skillId = String(value || "").trim();
@@ -68,6 +85,15 @@ async function buildSelectedSkillContext(adoptId: string, selectedSkillId: unkno
 
   const label = String((skill as any)?.source?.displayName || (skill as any)?.displayName || (skill as any)?.label || skillId).trim() || skillId;
   const description = String((skill as any)?.source?.description || (skill as any)?.description || "").trim();
+  const metadata: SelectedRuntimeSkill = {
+    id: skillId,
+    name: label,
+    ...(description ? { description } : {}),
+    skillFile,
+    runtimePath,
+    sourceKind: String((skill as any)?.source?.kind || "").trim() || undefined,
+    version: String((skill as any)?.source?.version || "").trim() || undefined,
+  };
   const message = [
     "【本轮已由用户在输入框选择技能 Chip】",
     `selectedSkillId: ${skillId}`,
@@ -80,7 +106,7 @@ async function buildSelectedSkillContext(adoptId: string, selectedSkillId: unkno
     "",
     `用户问题：${userMessage}`,
   ].filter(Boolean).join("\n");
-  return { ok: true, message, skillId, label, skillFile };
+  return { ok: true, message, skillId, label, skillFile, metadata };
 }
 
 type OpenAiToolCallAccumulator = {
@@ -260,6 +286,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           clientRunId,
           runtimeMode: normalizedRuntimeMode,
           cancelPendingPermission,
+          selectedSkills: selectedSkill?.ok ? [selectedSkill.metadata] : [],
         },
       );
       return;

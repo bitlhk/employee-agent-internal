@@ -36,6 +36,17 @@ export type JiuwenForwardOptions = {
   clientRunId?: string | null;
   runtimeMode?: unknown;
   cancelPendingPermission?: unknown;
+  selectedSkills?: JiuwenSelectedSkillMetadata[];
+};
+
+export type JiuwenSelectedSkillMetadata = {
+  id: string;
+  name?: string;
+  description?: string;
+  skillFile?: string;
+  runtimePath?: string;
+  sourceKind?: string;
+  version?: string;
 };
 
 export type JiuwenPermissionRequest = {
@@ -627,8 +638,15 @@ export function buildJiuwenAgentServerChatRequest(args: {
   workspaceDir: string;
   model?: string;
   runtimeMode?: unknown;
+  selectedSkills?: JiuwenSelectedSkillMetadata[];
 }) {
   const mode = normalizeJiuwenMode(args.runtimeMode || process.env.JIUWENCLAW_DEFAULT_MODE);
+  const selectedSkills = Array.isArray(args.selectedSkills) ? args.selectedSkills : [];
+  const requestMetadata = {
+    effective_project_dir: args.workspaceDir,
+    source_channel: args.channelId,
+    ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
+  };
   return {
     protocol_version: "1.0",
     request_id: args.requestId,
@@ -640,6 +658,7 @@ export function buildJiuwenAgentServerChatRequest(args: {
       cwd: args.workspaceDir,
       source_channel: args.channelId,
     },
+    metadata: requestMetadata,
     method: "chat.send",
     is_stream: true,
     service_id: args.serviceId,
@@ -653,10 +672,7 @@ export function buildJiuwenAgentServerChatRequest(args: {
       content: args.message,
       project_dir: args.workspaceDir,
       interactive_ask: true,
-      request_metadata: {
-        effective_project_dir: args.workspaceDir,
-        source_channel: args.channelId,
-      },
+      request_metadata: requestMetadata,
       mode,
       ...(args.model ? { model_name: args.model } : {}),
     },
@@ -877,6 +893,7 @@ export async function forwardToJiuwenClaw(
     workspaceDir,
     model: opts.model,
     runtimeMode: opts.runtimeMode,
+    selectedSkills: opts.selectedSkills,
   });
 
   appendLogAsync("jiuwenclaw-exec.log", {
@@ -890,6 +907,7 @@ export async function forwardToJiuwenClaw(
     userId: claw.userId,
     clientRunId: opts.clientRunId || "",
     mode: requestPayload.params?.mode || "",
+    selectedSkillIds: (opts.selectedSkills || []).map((skill) => skill.id).filter(Boolean),
     attempt,
     message: String(message || "").slice(0, 500),
   });

@@ -7,6 +7,7 @@ import {
   bumpSessionEpoch,
   type JiuwenClawRuntimeClaw,
   type JiuwenForwardOptions,
+  type JiuwenSelectedSkillMetadata,
   normalizeJiuwenFileEvent,
   normalizeJiuwenPermissionRequest,
   normalizeJiuwenToolPayload,
@@ -68,8 +69,10 @@ function buildGatewayChatParams(args: {
   workspaceDir: string;
   model?: string;
   runtimeMode?: unknown;
+  selectedSkills?: JiuwenSelectedSkillMetadata[];
 }) {
   const mode = normalizeJiuwenMode(args.runtimeMode || process.env.JIUWENCLAW_DEFAULT_MODE);
+  const selectedSkills = Array.isArray(args.selectedSkills) ? args.selectedSkills : [];
   return {
     service_id: args.serviceId,
     agent_id: args.agentId,
@@ -81,6 +84,7 @@ function buildGatewayChatParams(args: {
     request_metadata: {
       effective_project_dir: args.workspaceDir,
       source_channel: args.channelId,
+      ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
     },
     mode,
     ...(args.model ? { model_name: args.model } : {}),
@@ -292,12 +296,14 @@ export async function forwardToJiuwenGateway(
     workspaceDir,
     model: opts.model,
     runtimeMode: opts.runtimeMode,
+    selectedSkills: opts.selectedSkills,
   });
 
   appendLogAsync("jiuwenclaw-exec.log", {
     ts: new Date().toISOString(),
     event: "gateway_chat_request",
     adoptId: claw.adoptId,
+    selectedSkillIds: (opts.selectedSkills || []).map((skill) => skill.id).filter(Boolean),
     agentId,
     serviceId,
     sessionId,

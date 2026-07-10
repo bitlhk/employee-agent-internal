@@ -13,7 +13,7 @@ import {
   statSync,
 } from "fs";
 import path from "path";
-import type { SkillSource } from "../../shared/types/skill";
+import type { Skill, SkillSource } from "../../shared/types/skill";
 import {
   APP_ROOT,
   requireClawOwner,
@@ -35,6 +35,11 @@ import {
   parseSkillPackageBuffer,
   parseSkillSourceDirectory,
 } from "./skills/skill-source";
+import {
+  generatedSkillDiscoveryExcludedRoots,
+  managedSkillPathReason,
+  shouldDiscoverGeneratedRuntimeSkill,
+} from "./skills/skill-discovery";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -53,6 +58,14 @@ function decodeParam(value: unknown): string {
 
 function skillSourceCacheDir(adoptId: string, skillId: string): string {
   return path.join(APP_ROOT, "data", "generated-skills", adoptId, skillId);
+}
+
+function isManagedGeneratedRegistrySkill(skill: Skill, excludedRoots: string[]): boolean {
+  if (skill.source.kind !== "generated") return false;
+  return Boolean(
+    managedSkillPathReason(skill.source.sourcePath, excludedRoots)
+    || managedSkillPathReason(skill.sync.runtimePath, excludedRoots)
+  );
 }
 
 function skillPackageIndexPath(): string {
@@ -541,11 +554,17 @@ async function discoverGeneratedRuntimeSkills(
   );
   const installed: Array<{ skillId: string; displayName: string }> = [];
   const skipped: Array<{ skillId: string; reason: string }> = [];
+  const excludedRoots = generatedSkillDiscoveryExcludedRoots(OPENCLAW_HOME);
 
   for (const entry of readdirSync(runtimeSkillsRoot, { withFileTypes: true })) {
     const sourceDir = path.join(runtimeSkillsRoot, entry.name);
-    const isSkillDir = entry.isDirectory() || (entry.isSymbolicLink() && existsSync(sourceDir) && statSync(sourceDir).isDirectory());
-    if (!isSkillDir) continue;
+    const discoverable = shouldDiscoverGeneratedRuntimeSkill(sourceDir, excludedRoots);
+    if (!discoverable.ok) {
+      if (existsSync(path.join(sourceDir, "SKILL.md"))) {
+        skipped.push({ skillId: entry.name, reason: discoverable.reason });
+      }
+      continue;
+    }
     if (!existsSync(path.join(sourceDir, "SKILL.md"))) continue;
     if (onlySkillId && entry.name !== onlySkillId) continue;
 
@@ -761,10 +780,12 @@ export function registerSkillRoutes(app: express.Express) {
           .json({ error: result.error.detail, kind: result.error.kind });
         return;
       }
+      const excludedRoots = generatedSkillDiscoveryExcludedRoots(OPENCLAW_HOME);
+      const visibleItems = result.value.filter((skill) => !isManagedGeneratedRegistrySkill(skill, excludedRoots));
       res.json({
-        items: result.value,
+        items: visibleItems,
         roleTemplate,
-        filtered: false,
+        filtered: visibleItems.length !== result.value.length,
       });
     } catch (e) {
       console.error("[skills registry] list failed", e);
