@@ -9,6 +9,7 @@ dist
 
 # 文档
 *.md
+!THIRD_PARTY_NOTICES.md
 README*
 CHANGELOG*
 
