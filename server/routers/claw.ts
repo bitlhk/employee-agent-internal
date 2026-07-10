@@ -2,7 +2,7 @@ import { publicProcedure, protectedProcedure, adminProcedure, router } from "../
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import path from "path";
 import {
@@ -83,6 +83,43 @@ const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
   if (id.startsWith("lgh-")) return "legacy_archived";
   return "openclaw";
 };
+
+function buildRemoteSshArgs(remoteUser: string, remoteHost: string, connectTimeoutSec = 8): string[] {
+  if (process.env.CLAW_REMOTE_PASSWORD) {
+    throw new Error("CLAW_REMOTE_PASSWORD is not supported. Use SSH key or agent authentication with known_hosts.");
+  }
+  const args = [
+    "-o", "BatchMode=yes",
+    "-o", "StrictHostKeyChecking=yes",
+    "-o", `ConnectTimeout=${connectTimeoutSec}`,
+  ];
+  const knownHosts = String(process.env.CLAW_REMOTE_KNOWN_HOSTS_FILE || "").trim();
+  if (knownHosts) args.push("-o", `UserKnownHostsFile=${knownHosts}`);
+  const keyPath = String(process.env.CLAW_REMOTE_SSH_KEY || "").trim();
+  if (keyPath) args.push("-i", keyPath);
+  args.push(`${remoteUser}@${remoteHost}`);
+  return args;
+}
+
+function runRemoteShellCommand(remoteUser: string, remoteHost: string, command: string, timeoutMs = 10000): string {
+  return execFileSync("ssh", [...buildRemoteSshArgs(remoteUser, remoteHost), command], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    timeout: timeoutMs,
+  }).trim();
+}
+
+function execRemoteShellCommand(remoteUser: string, remoteHost: string, command: string, timeoutMs = 10000): void {
+  execFileSync("ssh", [...buildRemoteSshArgs(remoteUser, remoteHost), command], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf8",
+    timeout: timeoutMs,
+  });
+}
 
 function publicAppBaseUrl(): string {
   const raw =
@@ -2166,7 +2203,6 @@ export const clawRouter = router({
 
           const remoteHost = process.env.CLAW_REMOTE_HOST || "";
           const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-          const remotePassword = process.env.CLAW_REMOTE_PASSWORD || "";
           const useRemote = chatMode === "remote-openclaw" || !!remoteHost;
           const runtimeAgentIdForGuard = String((claw as any).agentId || "");
           const coreFileSnapshot = snapshotProtectedCoreFiles(openClawWorkspaceDir(runtimeAgentIdForGuard));
@@ -2180,8 +2216,8 @@ export const clawRouter = router({
 
           const runAgentOnce = () => {
             if (useRemote) {
-              if (!remoteHost || !remotePassword) {
-                throw new Error("remote-openclaw mode requires CLAW_REMOTE_HOST and CLAW_REMOTE_PASSWORD");
+              if (!remoteHost) {
+                throw new Error("remote-openclaw mode requires CLAW_REMOTE_HOST");
               }
               const remoteCmd = [
                 `OPENCLAW_HOME=\"${remoteOpenclawHome}\"`,
@@ -2193,13 +2229,7 @@ export const clawRouter = router({
                 `--timeout ${timeoutSec}`,
               ].join(" ");
 
-              const cmd = `sshpass -p '${remotePassword.replace(/'/g, "'\\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${remoteUser}@${remoteHost} \"${remoteCmd}\"`;
-              return execSync(cmd, {
-                cwd: process.cwd(),
-                env: process.env,
-                stdio: ["ignore", "pipe", "pipe"],
-                encoding: "utf8",
-              }).trim();
+              return runRemoteShellCommand(remoteUser, remoteHost, remoteCmd, (timeoutSec + 10) * 1000);
             }
 
             const cmd = [
@@ -2237,13 +2267,7 @@ export const clawRouter = router({
                     `--workspace \"${OPENCLAW_HOME}/workspace-lingganclaw/${claw.agentId}\"`,
                     "--non-interactive",
                   ].join(" ");
-                  const sshCmd = `sshpass -p '${remotePassword.replace(/'/g, "'\\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${remoteUser}@${remoteHost} \"${addCmd}\"`;
-                  execSync(sshCmd, {
-                    cwd: process.cwd(),
-                    env: process.env,
-                    stdio: ["ignore", "pipe", "pipe"],
-                    encoding: "utf8",
-                  });
+                  execRemoteShellCommand(remoteUser, remoteHost, addCmd, 10000);
                 } else {
                   provisionEmployeeAgentInstance({
                     adoptId: input.adoptId,
@@ -2373,7 +2397,6 @@ export const clawRouter = router({
 
         const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
         const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const remotePassword = process.env.CLAW_REMOTE_PASSWORD || "";
         const userSkillsDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills`;
         const sharedSkillsDir = openClawSharedSkillsDir();
         const systemSkillsDir = `/usr/lib/node_modules/openclaw/skills`;
@@ -2381,7 +2404,7 @@ export const clawRouter = router({
 
         const runRemote = (cmd: string) => {
           if (useRemote) {
-            return execSync(`sshpass -p '${remotePassword.replace(/'/g, "'\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 ${remoteUser}@${remoteHost} "${cmd}"`, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] }).trim();
+            return runRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
           }
           return execSync(cmd, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] }).trim();
         };
@@ -2497,7 +2520,6 @@ export const clawRouter = router({
 
         const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
         const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const remotePassword = process.env.CLAW_REMOTE_PASSWORD || "";
         const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
 
         // 与个人技能链路对齐：运行时优先 trial_{adoptId}
@@ -2513,7 +2535,7 @@ export const clawRouter = router({
 
         const runCmd = (cmd: string) => {
           if (useRemote) {
-            execSync(`sshpass -p '${remotePassword.replace(/'/g, "'\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 ${remoteUser}@${remoteHost} "${cmd}"`, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] });
+            execRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
           } else {
             execSync(cmd, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] });
           }
@@ -2562,7 +2584,6 @@ export const clawRouter = router({
 
         const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
         const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const remotePassword = process.env.CLAW_REMOTE_PASSWORD || "";
         const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
 
         const skillDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills/${input.skillId}`;
@@ -2570,7 +2591,7 @@ export const clawRouter = router({
 
         if (useRemote) {
           const cmd = `mkdir -p "${skillDir}" && printf '%s' '${escaped}' > "${skillDir}/SKILL.md"`;
-          execSync(`sshpass -p '${remotePassword.replace(/'/g, "'\\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 ${remoteUser}@${remoteHost} "${cmd}"`, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] });
+          execRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
         } else {
           const fs = await import("fs");
           fs.mkdirSync(skillDir, { recursive: true });
@@ -2607,12 +2628,11 @@ export const clawRouter = router({
 
         const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
         const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const remotePassword = process.env.CLAW_REMOTE_PASSWORD || "";
         const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
 
         const skillDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills/${input.skillId}`;
         if (useRemote) {
-          execSync(`sshpass -p '${remotePassword.replace(/'/g, "'\\''")}' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=8 ${remoteUser}@${remoteHost} "rm -rf '${skillDir}' 2>/dev/null || true"`, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] });
+          execRemoteShellCommand(remoteUser, remoteHost, `rm -rf '${skillDir}' 2>/dev/null || true`, 8000);
         } else {
           const fs = await import("fs");
           fs.rmSync(skillDir, { recursive: true, force: true });
@@ -2633,7 +2653,6 @@ export const clawRouter = router({
       }),
 
     // getMemory / updateMemory tRPC 端点已删除 (2026-04-20 review)
-    // 原 OpenClaw 硬编码 sshpass 路径; Home.tsx 死代码清理后无调用
     // 前端改用 REST /api/claw/core-files/* + /api/claw/memory/* (已分叉 lgh-/lgc-)
 
     // ── 会话历史（localStorage 为主，DB 备用）─────────────────

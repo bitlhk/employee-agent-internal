@@ -67,11 +67,14 @@ export async function sendEmail(
           },
         };
 
-        // 对于587端口（TLS），需要额外配置
+        // 对于587端口（TLS），默认校验证书；仅在明确配置时才允许自签名证书。
         if (!isSecure && port === 587) {
           transporterConfig.requireTLS = true;
+          const allowSelfSigned =
+            process.env.SMTP_ALLOW_SELF_SIGNED === "true" ||
+            process.env.SMTP_TLS_REJECT_UNAUTHORIZED === "false";
           transporterConfig.tls = {
-            rejectUnauthorized: false, // 允许自签名证书
+            rejectUnauthorized: !allowSelfSigned,
           };
         }
 
@@ -208,4 +211,3 @@ export async function sendPasswordResetEmail(
     return true;
   }
 }
-
