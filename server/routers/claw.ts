@@ -3,7 +3,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { execFileSync, execSync } from "child_process";
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import path from "path";
 import {
   getCurrentClawByUserId,
@@ -83,6 +83,13 @@ function safeChildPath(parentDir: string, childName: string): string {
   const parent = path.resolve(parentDir);
   const child = path.resolve(parent, childName);
   if (child !== parent && child.startsWith(`${parent}${path.sep}`)) return child;
+  throw new Error("路径越权");
+}
+
+function safeDescendantPath(parentDir: string, candidatePath: string): string {
+  const parent = path.resolve(parentDir);
+  const candidate = path.resolve(candidatePath);
+  if (candidate !== parent && candidate.startsWith(`${parent}${path.sep}`)) return candidate;
   throw new Error("路径越权");
 }
 
@@ -1430,7 +1437,7 @@ export const clawRouter = router({
     // 管理员上传技能包（zip）— 通过 Express 路由处理，这里只做元数据入库
     adminPublishSkill: adminProcedure
       .input(z.object({
-        skillId: z.string().min(1).max(64),
+        skillId: skillIdSchema,
         name: z.string().min(1).max(128),
         description: z.string().optional(),
         author: z.string().optional(),
@@ -1504,12 +1511,19 @@ export const clawRouter = router({
         }
         try {
           const marketDir = openClawSkillMarketDir();
-          const { execSync } = await import("child_process");
-          const oldDir = item.packagePath || `${marketDir}/${item.status}/${item.skillId}`;
-          const newDir = `${marketDir}/${input.status}/${item.skillId}-${item.id}`;
+          const itemSkillId = skillIdSchema.parse(String(item.skillId || ""));
+          const oldDir = safeDescendantPath(marketDir, item.packagePath || path.join(marketDir, String(item.status || "pending"), itemSkillId));
+          const statusDir = safeChildPath(marketDir, input.status);
+          const newDir = safeChildPath(statusDir, `${itemSkillId}-${item.id}`);
           if (oldDir !== newDir) {
             try {
-              execSync(`mkdir -p ${newDir} && cp -r ${oldDir}/* ${newDir}/ 2>/dev/null; rm -rf ${oldDir}`, { stdio: "ignore" });
+              mkdirSync(path.dirname(newDir), { recursive: true });
+              if (existsSync(oldDir)) {
+                cpSync(oldDir, newDir, { recursive: true, force: true });
+                rmSync(oldDir, { recursive: true, force: true });
+              } else {
+                mkdirSync(newDir, { recursive: true });
+              }
             } catch {}
           }
           if (input.status === "approved") {
@@ -1678,8 +1692,9 @@ export const clawRouter = router({
       .mutation(async ({ input, ctx }) => {
         const item = await getSkillMarketItem(input.id);
         if (item?.packagePath) {
-          const { execSync } = await import("child_process");
-          try { execSync(`rm -rf ${item.packagePath}`, { stdio: "ignore" }); } catch {}
+          const marketDir = openClawSkillMarketDir();
+          const packagePath = safeDescendantPath(marketDir, String(item.packagePath));
+          try { rmSync(packagePath, { recursive: true, force: true }); } catch {}
         }
         await deleteSkillMarketItem(input.id);
         await recordAuditBestEffort({
@@ -2606,10 +2621,10 @@ export const clawRouter = router({
         const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
 
         const skillDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills/${input.skillId}`;
-        const escaped = input.skillMd.replace(/\\/g, "\\\\").replace(/'/g, "'\\''").replace(/`/g, "\\`");
 
         if (useRemote) {
-          const cmd = `mkdir -p "${skillDir}" && printf '%s' '${escaped}' > "${skillDir}/SKILL.md"`;
+          const encoded = Buffer.from(input.skillMd, "utf8").toString("base64");
+          const cmd = `mkdir -p ${shellQuote(skillDir)} && printf '%s' ${shellQuote(encoded)} | base64 -d > ${shellQuote(`${skillDir}/SKILL.md`)}`;
           execRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
         } else {
           const fs = await import("fs");
