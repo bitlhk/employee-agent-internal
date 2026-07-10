@@ -31,21 +31,32 @@ export function normalizeIp(ip: string): string {
 
 /**
  * 获取客户端IP地址
- * 优先从请求头获取，支持代理服务器场景
+ * 不直接信任可伪造的代理头；生产部署如在反向代理后，需要显式配置 TRUST_PROXY。
  * 
  * 优先级顺序：
- * 1. x-forwarded-for（代理服务器场景，取第一个IP）
- * 2. x-real-ip（nginx 等代理）
- * 3. x-client-ip（某些代理）
- * 4. cf-connecting-ip（Cloudflare）
- * 5. socket.remoteAddress（直接连接）
- * 6. req.ip（Express trust proxy 启用后）
+ * 1. req.ip（由 Express trust proxy 统一计算）
+ * 2. socket.remoteAddress（直接连接）
+ * 3. 显式启用 TRUST_PROXY 时，才读取 x-forwarded-for / x-real-ip 等代理头
  * 
  * @param req Express Request 对象或包含 headers 和 socket 的对象
  * @returns 标准化后的客户端IP地址
  */
 export function getClientIp(req: any): string {
-  // 1. 优先从 x-forwarded-for 获取（代理服务器场景）
+  if (req.ip) {
+    return normalizeIp(req.ip);
+  }
+
+  const remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress;
+  if (remoteAddress) {
+    return normalizeIp(remoteAddress);
+  }
+
+  if (!process.env.TRUST_PROXY) {
+    console.warn("[IP Utils] Could not determine client IP, using 'unknown'");
+    return "unknown";
+  }
+
+  // 显式信任代理时，才从 x-forwarded-for 获取（代理服务器场景）
   // x-forwarded-for 格式：client, proxy1, proxy2
   const xForwardedFor = req.headers?.["x-forwarded-for"] as string;
   if (xForwardedFor) {
@@ -74,18 +85,6 @@ export function getClientIp(req: any): string {
     return normalizeIp(cfConnectingIp);
   }
   
-  // 5. 从 socket.remoteAddress 获取（直接连接）
-  const remoteAddress = req.socket?.remoteAddress || req.connection?.remoteAddress;
-  if (remoteAddress) {
-    return normalizeIp(remoteAddress);
-  }
-  
-  // 6. 从 req.ip 获取（Express trust proxy 启用后）
-  if (req.ip) {
-    return normalizeIp(req.ip);
-  }
-  
   console.warn("[IP Utils] Could not determine client IP, using 'unknown'");
   return "unknown";
 }
-

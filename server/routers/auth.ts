@@ -52,7 +52,18 @@ export const authRouter = router({
 
     // 管理员：查看登录用户列表
     listUsers: adminProcedure.query(async () => {
-      return await getAllAuthUsers();
+      const rows = await getAllAuthUsers();
+      return rows.map((user: any) => ({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        accessLevel: user.accessLevel || "public_only",
+        loginMethod: user.loginMethod,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        lastLoginAt: user.lastLoginAt,
+      }));
     }),
 
     // 管理员：更新用户访问级别

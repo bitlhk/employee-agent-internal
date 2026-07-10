@@ -1890,8 +1890,15 @@ export function registerMiscRoutes(app: express.Express) {
         return res.redirect(frontendUrl);
       }
 
-      // only allow configured domain destinations
-      if (cookieDomain && !nextUrl.hostname.endsWith(cookieDomain.replace(/^\./, ""))) {
+      // only allow configured domain destinations; without COOKIE_DOMAIN, stay on FRONTEND_URL origin.
+      const frontend = new URL(frontendUrl);
+      const allowedDomain = cookieDomain.replace(/^\./, "").toLowerCase();
+      const nextHost = nextUrl.hostname.toLowerCase();
+      const allowedByCookieDomain = allowedDomain
+        ? (nextHost === allowedDomain || nextHost.endsWith(`.${allowedDomain}`))
+        : false;
+      const allowedByFrontendOrigin = nextUrl.origin === frontend.origin;
+      if (!allowedByFrontendOrigin && !allowedByCookieDomain) {
         return res.redirect(frontendUrl);
       }
 

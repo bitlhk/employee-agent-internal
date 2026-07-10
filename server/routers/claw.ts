@@ -3,7 +3,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
 import { execFileSync, execSync } from "child_process";
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import path from "path";
 import {
   getCurrentClawByUserId,
@@ -76,6 +76,15 @@ import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-run
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
 
 type ResolvedClawRuntime = "openclaw" | "jiuwenclaw" | "legacy_archived";
+
+const skillIdSchema = z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "技能ID只能包含小写字母、数字和连字符");
+
+function safeChildPath(parentDir: string, childName: string): string {
+  const parent = path.resolve(parentDir);
+  const child = path.resolve(parent, childName);
+  if (child !== parent && child.startsWith(`${parent}${path.sep}`)) return child;
+  throw new Error("路径越权");
+}
 
 const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
   const id = String(adoptId || "");
@@ -513,19 +522,11 @@ export const clawRouter = router({
         status: role.status,
         mvp: role.status === "mvp",
         displayOrder: role.displayOrder,
-        permissionProfile: role.permissionProfile,
         runtime: role.runtime,
-        defaultVisibleZones: role.defaultVisibleZones,
-        defaultSkills: role.defaultSkills,
-        optionalSkills: role.optionalSkills,
-        mcpServers: role.mcpServers,
-        mcpTools: role.mcpTools,
-        defaultModel: role.defaultModel,
       }));
       return {
         version: baseline.version,
         defaultRole: baseline.schema.defaultRole,
-        runtimePolicy: baseline.runtimePolicy,
         industries: Object.fromEntries(Object.entries(baseline.industries).map(([id, block]) => [id, { name: block.name }])),
         roles,
       };
@@ -1876,10 +1877,9 @@ export const clawRouter = router({
 
     getSettings: protectedProcedure
       .input(z.object({ adoptId: z.string().min(1).max(64) }))
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const startedAt = Date.now();
-        const claw = await getClawByAdoptId(input.adoptId);
-        if (!claw) throw new Error("智能体实例不存在");
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
         const settings = await getClawProfileSettings(Number(claw.id));
         // 读取模型覆盖（存在 claw-model-overrides.json）
         let modelOverride = "";
@@ -2168,10 +2168,9 @@ export const clawRouter = router({
           message: z.string().min(1).max(4000),
         })
       )
-      .mutation(async ({ input }) => {
+      .mutation(async ({ input, ctx }) => {
         const startedAt = Date.now();
-        const claw = await getClawByAdoptId(input.adoptId);
-        if (!claw) throw new Error("智能体实例不存在");
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
 
         // ── 每日对话额度检查 ──
         const profile = String(claw.permissionProfile || "starter");
@@ -2509,7 +2508,7 @@ export const clawRouter = router({
     toggleSkill: protectedProcedure
       .input(z.object({
         adoptId: z.string().min(1).max(64),
-        skillId: z.string().min(1).max(64),
+        skillId: skillIdSchema,
         enable: z.boolean(),
         source: z.enum(["system", "shared"]),  // 只有 system/shared 需要 toggle；private 永远激活
       }))
@@ -2527,27 +2526,47 @@ export const clawRouter = router({
         const trialAgentDir = `${OPENCLAW_HOME}/agents/${trialAgentId}`;
         const runtimeAgentId = existsSync(trialAgentDir) ? trialAgentId : String(claw.agentId || "");
 
-        const userSkillLink = `${openClawWorkspaceDir(runtimeAgentId)}/skills/${input.skillId}`;
+        const userSkillsBase = path.resolve(openClawWorkspaceDir(runtimeAgentId), "skills");
+        const userSkillLink = safeChildPath(userSkillsBase, input.skillId);
         // 源目录：system 来自 openclaw 内置，shared 来自公共库
         const srcDir = input.source === "system"
-          ? `/usr/lib/node_modules/openclaw/skills/${input.skillId}`
-          : `${openClawSharedSkillsDir()}/${input.skillId}`;
-
-        const runCmd = (cmd: string) => {
-          if (useRemote) {
-            execRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
-          } else {
-            execSync(cmd, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] });
-          }
-        };
-
-        const userSkillsBase = `${openClawWorkspaceDir(runtimeAgentId)}/skills`;
+          ? path.resolve("/usr/lib/node_modules/openclaw/skills", input.skillId)
+          : safeChildPath(openClawSharedSkillsDir(), input.skillId);
         if (input.enable) {
           // 使用软链接指向共享源目录，改技能时智能体自动获得最新版本，无需重新 toggle
-          runCmd(`mkdir -p "${userSkillsBase}" && rm -rf "${userSkillLink}" 2>/dev/null || true && ln -sfn "${srcDir}" "${userSkillLink}"`);
+          if (useRemote) {
+            execRemoteShellCommand(
+              remoteUser,
+              remoteHost,
+              [
+                `mkdir -p ${shellQuote(userSkillsBase)}`,
+                `rm -rf ${shellQuote(userSkillLink)} 2>/dev/null || true`,
+                `ln -sfn ${shellQuote(srcDir)} ${shellQuote(userSkillLink)}`,
+              ].join(" && "),
+              8000
+            );
+          } else {
+            mkdirSync(userSkillsBase, { recursive: true });
+            const baseReal = realpathSync(userSkillsBase);
+            const linkParentReal = realpathSync(path.dirname(userSkillLink));
+            if (linkParentReal !== baseReal) throw new Error("路径越权");
+            rmSync(userSkillLink, { recursive: true, force: true });
+            symlinkSync(srcDir, userSkillLink, "dir");
+          }
         } else {
           // 删除软链接（不影响源目录）
-          runCmd(`rm -f "${userSkillLink}" 2>/dev/null || true`);
+          if (useRemote) {
+            execRemoteShellCommand(remoteUser, remoteHost, `rm -f ${shellQuote(userSkillLink)} 2>/dev/null || true`, 8000);
+          } else {
+            const baseReal = existsSync(userSkillsBase) ? realpathSync(userSkillsBase) : path.resolve(userSkillsBase);
+            const linkParentReal = existsSync(path.dirname(userSkillLink)) ? realpathSync(path.dirname(userSkillLink)) : path.resolve(path.dirname(userSkillLink));
+            if (linkParentReal !== baseReal) throw new Error("路径越权");
+            if (existsSync(userSkillLink)) {
+              const stat = lstatSync(userSkillLink);
+              if (stat.isSymbolicLink()) rmSync(userSkillLink, { force: true });
+              else throw new Error("只能移除技能软链接");
+            }
+          }
         }
 
         // 与个人技能安装链路对齐：技能变更后 bump epoch，触发聊天使用新技能快照
@@ -2574,7 +2593,7 @@ export const clawRouter = router({
     upsertPrivateSkill: protectedProcedure
       .input(z.object({
         adoptId: z.string().min(1).max(64),
-        skillId: z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "技能ID只能包含小写字母、数字和连字符"),
+        skillId: skillIdSchema,
         skillMd: z.string().min(10).max(50000),  // SKILL.md 内容
       }))
       .mutation(async ({ input, ctx }) => {
@@ -2619,7 +2638,7 @@ export const clawRouter = router({
     deletePrivateSkill: protectedProcedure
       .input(z.object({
         adoptId: z.string().min(1).max(64),
-        skillId: z.string().min(1).max(64),
+        skillId: skillIdSchema,
       }))
       .mutation(async ({ input, ctx }) => {
         const claw = await getClawByAdoptId(input.adoptId);
@@ -2630,12 +2649,15 @@ export const clawRouter = router({
         const remoteUser = process.env.CLAW_REMOTE_USER || "root";
         const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
 
-        const skillDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills/${input.skillId}`;
+        const skillsBase = path.resolve(openClawWorkspaceDir(String(claw.agentId || "")), "skills");
+        const skillDir = safeChildPath(skillsBase, input.skillId);
         if (useRemote) {
-          execRemoteShellCommand(remoteUser, remoteHost, `rm -rf '${skillDir}' 2>/dev/null || true`, 8000);
+          execRemoteShellCommand(remoteUser, remoteHost, `rm -rf ${shellQuote(skillDir)} 2>/dev/null || true`, 8000);
         } else {
-          const fs = await import("fs");
-          fs.rmSync(skillDir, { recursive: true, force: true });
+          const baseReal = existsSync(skillsBase) ? realpathSync(skillsBase) : path.resolve(skillsBase);
+          const parentReal = existsSync(path.dirname(skillDir)) ? realpathSync(path.dirname(skillDir)) : path.resolve(path.dirname(skillDir));
+          if (parentReal !== baseReal) throw new Error("路径越权");
+          rmSync(skillDir, { recursive: true, force: true });
         }
         await recordAuditBestEffort({
           action: "skill.private.deleted",

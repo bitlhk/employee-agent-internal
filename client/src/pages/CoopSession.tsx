@@ -951,7 +951,7 @@ function ConsolidationPanel({ sessionId, session, members, onRefresh }: {
           <Textarea
             value={customInstructions}
             onChange={(e) => setCustomInstructions(e.target.value)}
-            placeholder="例如：按部门分组列出 / 重点突出风险项 / 限 500 字内 / 大行公文严肃风格 / 用表格呈现 ..."
+            placeholder="例如：按部门分组列出 / 重点突出风险项 / 限 500 字内 / 正式汇报风格 / 用表格呈现 ..."
             className="coop-session-textarea min-h-[60px]"
             disabled={consolidateMut.isPending}
             maxLength={1000}

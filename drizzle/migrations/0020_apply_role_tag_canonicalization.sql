@@ -23,9 +23,9 @@ WHERE `skill_id` IN (
   'goldencoach-stage-evaluation',
   'insurance-claim-fraud-detection',
   'health-verification',
-  'loan-risk-monitor',
+  'business-monitor',
   'kyc-doc-parse',
-  'dd-checklist'
+  'review-checklist'
 );
 
 UPDATE `skill_marketplace`
@@ -34,9 +34,9 @@ SET `role_tag` = CASE `skill_id`
   WHEN 'goldencoach-stage-evaluation' THEN 'insurance-advisor'
   WHEN 'insurance-claim-fraud-detection' THEN 'credential-compliance'
   WHEN 'health-verification' THEN 'insurance-advisor'
-  WHEN 'loan-risk-monitor' THEN 'post-loan-risk-control'
+  WHEN 'business-monitor' THEN 'business-review'
   WHEN 'kyc-doc-parse' THEN 'credential-compliance'
-  WHEN 'dd-checklist' THEN 'post-loan-risk-control'
+  WHEN 'review-checklist' THEN 'business-review'
   ELSE `role_tag`
 END
 WHERE `skill_id` IN (
@@ -44,7 +44,7 @@ WHERE `skill_id` IN (
   'goldencoach-stage-evaluation',
   'insurance-claim-fraud-detection',
   'health-verification',
-  'loan-risk-monitor',
+  'business-monitor',
   'kyc-doc-parse',
-  'dd-checklist'
+  'review-checklist'
 );

@@ -5,9 +5,9 @@ const apply = process.argv.includes('--apply');
 const databaseUrl = process.env.DATABASE_URL;
 
 const seedSpaces = [
-  { name: '先遣队金融中队', description: '岗位智能体平台先遣队金融协作空间', sortOrder: 10 },
+  { name: '示例协作空间 A', description: '岗位智能体平台示例协作空间 A', sortOrder: 10 },
   { name: '杭州示例企业', description: '杭州示例企业协作空间', sortOrder: 20 },
-  { name: '示例试点组', description: '示例银行试点协作空间', sortOrder: 30 },
+  { name: '示例试点组', description: '示例试点协作空间', sortOrder: 30 },
   { name: '行业试点组', description: '行业试点协作空间', sortOrder: 40 },
 ];
 

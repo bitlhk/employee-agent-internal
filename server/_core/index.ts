@@ -189,6 +189,7 @@ async function guardProtectedClawSpa(req: Request, res: Response): Promise<boole
 import {
   setupSecurityHeaders,
   generalLimiter,
+  authActionLimiter,
   authLimiter,
   strictLimiter,
   clawChatLimiter,
@@ -240,9 +241,8 @@ async function startServer() {
     app.set("trust proxy", process.env.TRUST_PROXY.split(",").map(ip => ip.trim()));
     console.log(`[Server] Trust proxy enabled for: ${process.env.TRUST_PROXY}`);
   } else {
-    // 2026-04-18: 生产默认信任 1 层反向代理（nginx），消除 express-rate-limit 的 X-Forwarded-For 告警
-    app.set("trust proxy", 1);
-    console.log("[Server] Trust proxy set to 1 (default: 1 reverse proxy hop)");
+    app.set("trust proxy", false);
+    console.log("[Server] Trust proxy disabled; set TRUST_PROXY explicitly when running behind a trusted reverse proxy");
   }
   
   // ========== 性能优化 ==========
@@ -362,14 +362,17 @@ async function startServer() {
   // ── 岗位智能体平台流式聊天 SSE 端点 ──
   // Session/auth helpers extracted to ./helpers.ts
 
-  // 登录、注册、验证码和密码重置端点必须在 tRPC 处理器之前限流。
+  // 登录、注册端点必须在 tRPC 处理器之前限流。
   app.use([
     "/api/trpc/auth.login",
     "/api/trpc/auth.register",
-    "/api/trpc/auth.sendVerificationCode",
+  ], authLimiter);
+  app.use([
+    "/api/trpc/registration.sendVerificationCode",
     "/api/trpc/auth.sendForgotPasswordVerificationCode",
     "/api/trpc/auth.resetPassword",
-  ], authLimiter);
+    "/api/trpc/auth.requestPasswordReset",
+  ], authActionLimiter);
 
   // tRPC API - 应用速率限制
   app.use(
@@ -398,13 +401,25 @@ async function startServer() {
 
   // ── 品牌配置公开 API（无需登录） ──
   app.get("/api/brand", async (_req, res) => {
+    const toPublicBrand = (brand: any) => ({
+      name: brand.name,
+      nameEn: brand.nameEn,
+      platform: brand.platform,
+      platformEn: brand.platformEn,
+      slogan: brand.slogan,
+      accentColor: brand.accentColor,
+      logo: brand.logo,
+      favicon: brand.favicon,
+      githubUrl: brand.githubUrl,
+      pageTitle: brand.pageTitle,
+    });
     try {
       const { getBrandConfig } = await import("./brand");
       const brand = await getBrandConfig();
-      res.json(brand);
+      res.json(toPublicBrand(brand));
     } catch {
       const { DEFAULT_BRAND } = await import("@shared/brand");
-      res.json(DEFAULT_BRAND);
+      res.json(toPublicBrand(DEFAULT_BRAND));
     }
   });
 

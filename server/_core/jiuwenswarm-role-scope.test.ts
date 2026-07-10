@@ -40,10 +40,10 @@ const effectiveAssets: EffectiveRoleAssets = {
 
 const riskRole: AgentRoleTemplate = {
   ...role,
-  id: "post-loan-risk-control",
-  name: "风控经理",
-  defaultSkills: ["post-loan-risk-prediction"],
-  mcpServers: ["risk_assessment_tool"],
+  id: "business-review",
+  name: "风险管理专员",
+  defaultSkills: ["business-review-assistant"],
+  mcpServers: ["business_assessment_tool"],
 };
 
 describe("jiuwenswarm role scope manifest", () => {
@@ -90,7 +90,7 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
-  it("writes risk-control routing guidance into JiuwenSwarm identity", () => {
+  it("writes external-agent routing guidance into JiuwenSwarm identity", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-risk-"));
     try {
       const result = writeJiuwenSwarmRoleScopeManifest({
@@ -102,9 +102,9 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(result.identityChanged).toBe(true);
       const identity = readFileSync(identityPath, "utf8");
       expect(identity).toContain("轻量数据查询");
-      expect(identity).toContain("优先使用本地已安装的岗位技能和贷后风控 MCP");
-      expect(identity).toContain("完整企业风险评估");
-      expect(identity).toContain("远程风控 Agent 异步任务");
+      expect(identity).toContain("优先使用本地已安装的岗位技能和已授权 MCP");
+      expect(identity).toContain("完整评估");
+      expect(identity).toContain("远程 Agent 异步任务");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

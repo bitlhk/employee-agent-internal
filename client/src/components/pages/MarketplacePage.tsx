@@ -54,7 +54,7 @@ const ROLE_LABELS: Record<string, string> = {
   "insurance-claims":      "保险理赔",
   "insurance-telesales":   "保险外呼",
   "insurance-ops":         "保险审核",
-  "credit-risk":           "信贷风控",
+  "credit-risk":           "风险管理",
   "compliance":            "合规专员",
   "bond-trading":          "债券交易",
   "sales-coaching":        "销售陪练",

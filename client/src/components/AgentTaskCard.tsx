@@ -100,9 +100,6 @@ function compactId(id: string | null | undefined): string {
 
 function displayAgentName(agentId: string, name?: string): string {
   const raw = String(name || agentId || "").trim();
-  if (agentId === "risk-control-a2a" || raw === "risk-control-a2a" || raw === "风控 Agent") {
-    return "风控 Agent";
-  }
   return raw || "外部智能体";
 }
 

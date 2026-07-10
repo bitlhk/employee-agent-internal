@@ -575,24 +575,24 @@ function generateMockResult(params: {
   
   // 根据 groupName 生成差异化结果
   let detail = "";
-  if (groupName?.includes("灯塔") || groupName?.includes("理财") || groupName?.includes("财富")) {
+  if (groupName?.includes("示例") || groupName?.includes("业务") || groupName?.includes("协作")) {
     detail = `执行结果：
-- 已抽取 Q1 交易数据 3562 条
-- 识别异常模式 7 组，集中于 3 月 18-25 日
-- 数据来源：团队知识库 + AkShare API
+- 已抽取示例业务数据 3562 条
+- 识别异常模式 7 组，集中于示例时间窗口
+- 数据来源：团队知识库 + 业务数据接口
 - 置信度：92%`;
-  } else if (groupName?.includes("工具") || groupName?.includes("市场") || groupName?.includes("股票")) {
+  } else if (groupName?.includes("工具") || groupName?.includes("数据") || groupName?.includes("分析")) {
     detail = `执行结果：
 - 完成风险模式分析
 - 高风险项 2 条、中风险 5 条
-- 建议：加强 3 月下旬交易对手审查
+- 建议：加强关键异常项复核
 - 生成详细报告 12 页`;
-  } else if (groupName?.includes("综合") || groupName?.includes("保险") || groupName?.includes("汇总")) {
+  } else if (groupName?.includes("综合") || groupName?.includes("汇总")) {
     detail = `执行结果：
 - 汇总前置成果生成 PPT
 - 共 18 页，含 6 个数据图表
-- 文件：Q1合规报告.pptx
-- 样式：大行标准公文模板`;
+- 文件：示例分析报告.pptx
+- 样式：标准业务汇报模板`;
   } else {
     detail = `执行结果：
 - 已按子任务完成处理

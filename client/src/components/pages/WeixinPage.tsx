@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { MessageCircle, QrCode, Send, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import QRCode from "qrcode";
 
 export function WeixinPage({ adoptId }: { adoptId?: string }) {
   const [status, setStatus] = useState<"idle"|"loading"|"scanning"|"bound">("idle");
-  const [qrcodeUrl, setQrcodeUrl] = useState("");
+  const [qrcodeDataUrl, setQrcodeDataUrl] = useState("");
   const [qrcode, setQrcode] = useState("");
   const [userId, setUserId] = useState("");
   const [testing, setTesting] = useState(false);
@@ -26,7 +27,8 @@ export function WeixinPage({ adoptId }: { adoptId?: string }) {
       const r = await fetch("/api/claw/weixin/qrcode", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adoptId }) });
       const d = await r.json();
       if (!d.qrcodeUrl) { toast.error("获取二维码失败"); setStatus("idle"); return; }
-      setQrcodeUrl(d.qrcodeUrl);
+      const dataUrl = await QRCode.toDataURL(d.qrcodeUrl, { width: 200, margin: 1 });
+      setQrcodeDataUrl(dataUrl);
       setQrcode(d.qrcode);
       setStatus("scanning");
       let baseUrl = "";
@@ -39,7 +41,7 @@ export function WeixinPage({ adoptId }: { adoptId?: string }) {
           else if (sd.status === "expired") { clearInterval(pollRef.current); toast.error("二维码已过期"); setStatus("idle"); }
         } catch {}
       }, 2000);
-    } catch { toast.error("获取二维码失败"); setStatus("idle"); }
+    } catch { toast.error("获取二维码失败"); setStatus("idle"); setQrcodeDataUrl(""); }
   };
 
   const unbind = async () => {
@@ -52,7 +54,7 @@ export function WeixinPage({ adoptId }: { adoptId?: string }) {
     });
     if (!ok) return;
     await fetch("/api/claw/weixin/unbind", { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adoptId }) });
-    setStatus("idle"); setUserId(""); toast.success("已解绑");
+    setStatus("idle"); setUserId(""); setQrcodeDataUrl(""); toast.success("已解绑");
   };
 
   const testSend = async () => {
@@ -101,7 +103,7 @@ export function WeixinPage({ adoptId }: { adoptId?: string }) {
           ) : status === "scanning" ? (
             <div className="settings-card" style={{ padding: 24, textAlign: "center" }}>
               <div className="text-sm" style={{ color: "var(--oc-text-primary)", fontWeight: "var(--oc-weight-medium)", marginBottom: 12 }}>请用微信扫描二维码</div>
-              {qrcodeUrl && <img src={"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(qrcodeUrl)} alt="WeChat QR" style={{ width: 200, height: 200, margin: "0 auto", borderRadius: "var(--oc-radius-md)", background: "#fff" }} />}
+              {qrcodeDataUrl && <img src={qrcodeDataUrl} alt="WeChat QR" style={{ width: 200, height: 200, margin: "0 auto", borderRadius: "var(--oc-radius-md)", background: "#fff" }} />}
               <div className="text-xs" style={{ color: "var(--oc-text-secondary)", marginTop: 12 }}>扫码后请在微信中确认授权</div>
             </div>
           ) : (

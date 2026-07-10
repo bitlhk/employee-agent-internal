@@ -33,8 +33,8 @@ const TOOLS = [
     name: "submit_agent_task",
     description: [
       "Submit an asynchronous task to an external specialized Agent.",
-      "Use this for long-running or complete specialist work, for example full enterprise risk assessment, batch due diligence, formal risk reports, or when the user explicitly asks to call 风控 Agent.",
-      "For lightweight data lookup, field verification, single risk-factor checks, or short explanations, prefer local skills/MCP tools instead of this asynchronous Agent.",
+      "Use this for long-running or complete specialist work that should run outside the current conversation, or when the user explicitly asks to call an external Agent.",
+      "For lightweight lookup, field verification, single-factor checks, or short explanations, prefer local skills/MCP tools instead of this asynchronous Agent.",
       "The result is tracked by EA and written back asynchronously.",
     ].join(" "),
     inputSchema: {

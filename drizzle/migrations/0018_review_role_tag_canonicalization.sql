@@ -16,9 +16,9 @@ SELECT
   CASE
     WHEN `skill_id` = 'credential-prompt-generator' THEN 'credential-compliance'
     WHEN `skill_id` = 'goldencoach-stage-evaluation' THEN 'insurance-advisor'
-    WHEN `skill_id` = 'loan-risk-monitor' THEN 'post-loan-risk-control'
+    WHEN `skill_id` = 'business-monitor' THEN 'business-review'
     WHEN `skill_id` = 'kyc-doc-parse' THEN 'credential-compliance'
-    WHEN `skill_id` = 'dd-checklist' THEN 'post-loan-risk-control'
+    WHEN `skill_id` = 'review-checklist' THEN 'business-review'
     WHEN `skill_id` = 'health-verification' THEN 'insurance-advisor'
     WHEN `skill_id` = 'insurance-claim-fraud-detection' THEN 'credential-compliance'
     ELSE 'TBD'
@@ -27,7 +27,7 @@ FROM `skill_marketplace`
 WHERE `role_tag` IN (
   'compliance',
   'sales-coaching',
-  'credit-risk',
+  'risk-management',
   'insurance-underwriting',
   'insurance-claims'
 )

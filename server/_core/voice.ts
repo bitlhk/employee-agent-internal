@@ -1,8 +1,19 @@
 import express from "express";
+import { resolveRequesterUserId } from "./helpers";
+
+async function requireAuthenticatedUser(req: express.Request, res: express.Response): Promise<boolean> {
+  const userId = await resolveRequesterUserId(req, res);
+  if (!userId) {
+    res.status(401).json({ error: "UNAUTHORIZED" });
+    return false;
+  }
+  return true;
+}
 
 export function registerVoiceRoutes(app: express.Express) {
   app.post("/api/claw/voice/transcribe", async (req, res) => {
     try {
+      if (!(await requireAuthenticatedUser(req, res))) return;
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => chunks.push(chunk));
       req.on("end", async () => {
@@ -176,6 +187,7 @@ export function registerVoiceRoutes(app: express.Express) {
 
   app.post("/api/claw/voice/tts", async (req, res) => {
     try {
+      if (!(await requireAuthenticatedUser(req, res))) return;
       let text = String((req.body as any)?.text || "").trim();
       if (!text) {
         res.status(400).json({ error: "No text" });

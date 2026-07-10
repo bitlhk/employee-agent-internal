@@ -4,6 +4,6 @@ External Agents are long-running or specialized Agent runtimes called by EA thro
 
 They are business capabilities, but they are not MCP business tools. Keep their registration and deployment templates here, separate from `server/tools/business_tools`.
 
-Current Agent:
-
-- `risk-control-a2a`: remote risk-control Agent over A2A.
+Deployment-specific Agent manifests should live outside the public repository
+or be injected through database/configuration during deployment. Keep examples
+generic and avoid committing customer, industry, endpoint, or credential details.

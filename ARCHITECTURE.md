@@ -28,7 +28,7 @@ drizzle/                数据库 schema 与迁移
 ## 运行时
 
 - **JiuwenSwarm**：当前推荐运行时，承载主对话、岗位工具和频道回调。
-- **A2A / HTTP Agent**：用于接入外部业务 Agent，例如异步风控 Agent。
+- **A2A / HTTP Agent**：用于接入外部业务 Agent，例如异步专项任务 Agent。
 - **OpenClaw**：兼容旧部署和部分历史运行时能力，新增场景优先走 JiuwenSwarm 或标准 Agent 接口。
 
 ## 数据与权限

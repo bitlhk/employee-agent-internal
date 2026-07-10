@@ -20,23 +20,23 @@ INSERT INTO `business_agents`
   )
 VALUES
   (
-    'risk-control-a2a',
-    '风控 Agent',
-    '风控智能体，适合企业风险评估、贷后风控、批量尽调等长任务。',
+    'demo-external-a2a-agent',
+    '示例外部 Agent',
+    '示例外部智能体，适合需要异步处理的长任务或专项任务。',
     'remote',
     '',
     'main',
-    '🛡️',
+    '🤖',
     0,
     10,
     'unknown',
     'plus,internal',
-    '风控,贷后,A2A,远端Agent',
+    '示例,A2A,远端Agent',
     '{"badge":"A2A","displayMode":"agent-task","resultFormat":"markdown"}',
     'a2a',
     'agent-a2a-v1',
-    '["agent","async-agent","a2a","risk-control","post-loan-risk"]',
-    '{"path":"/a2a","stream":false,"method":"message/send","timeoutMs":600000,"executionMode":"async","roleTemplates":["post-loan-risk-control"]}'
+    '["agent","async-agent","a2a","business-review","long-running-task"]',
+    '{"path":"/a2a","stream":false,"method":"message/send","timeoutMs":600000,"executionMode":"async","roleTemplates":["business-review"]}'
   )
 ON DUPLICATE KEY UPDATE
   `name` = VALUES(`name`),

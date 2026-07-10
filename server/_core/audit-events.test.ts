@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort } from "./audit-events";
 
 vi.mock("./audit-ledger", () => ({
@@ -7,6 +7,10 @@ vi.mock("./audit-ledger", () => ({
 }));
 
 describe("audit event helpers", () => {
+  afterEach(() => {
+    delete process.env.TRUST_PROXY;
+  });
+
   it("normalizes actor and request context", () => {
     expect(auditActor({ id: "7", name: "Alice", email: "alice@example.com", role: "admin", groupId: 3 })).toEqual({
       actorType: "user",
@@ -26,7 +30,11 @@ describe("audit event helpers", () => {
       },
       socket: { remoteAddress: "127.0.0.1" },
     } as any;
-    expect(auditRequest(req)).toEqual({ ip: "203.0.113.10", userAgent: "test-agent", requestId: "req-1" });
+    expect(auditRequest(req)).toEqual({ ip: "127.0.0.1", userAgent: "test-agent", requestId: "req-1" });
+
+    process.env.TRUST_PROXY = "true";
+    const proxiedReq = { ...req, ip: undefined, socket: undefined, connection: undefined };
+    expect(auditRequest(proxiedReq)).toEqual({ ip: "203.0.113.10", userAgent: "test-agent", requestId: "req-1" });
   });
 
   it("records best effort events in async mode", async () => {

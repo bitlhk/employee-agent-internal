@@ -2,6 +2,7 @@ import type express from "express";
 import { z } from "zod";
 import { generateEaSessionTitle, getEaAssistantModelConfig } from "./ea-assistant-model";
 import { clawChatLimiter } from "./security";
+import { resolveRequesterUserId } from "./helpers";
 
 const sessionTitleSchema = z.object({
   messages: z.array(z.object({
@@ -35,6 +36,11 @@ export function registerEaAssistantRoutes(app: express.Express) {
 
   app.post("/api/ea/assistant/session-title", clawChatLimiter, async (req, res) => {
     try {
+      const userId = await resolveRequesterUserId(req, res);
+      if (!userId) {
+        res.status(401).json({ error: "UNAUTHORIZED" });
+        return;
+      }
       const parsed = sessionTitleSchema.parse(req.body || {});
       const input = compactTitleInput(parsed.messages);
       if (!input) {

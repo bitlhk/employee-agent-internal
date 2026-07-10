@@ -77,49 +77,83 @@ export const generalLimiter = rateLimit({
  */
 export const authLimiter = process.env.NODE_ENV === "development"
   ? ((req: Request, res: Response, next: NextFunction) => {
-      // 开发模式下不限制
       next();
     })
   : rateLimit({
-      windowMs: 15 * 60 * 1000, // 15 分钟
-      max: 5, // 每个 IP 最多 5 次尝试
+      windowMs: 15 * 60 * 1000,
+      max: 5,
       message: "登录尝试次数过多，请 15 分钟后重试",
       standardHeaders: true,
       legacyHeaders: false,
-  skip: (req: Request) => {
-    const trusted = (process.env.CLAW_CHAT_RATELIMIT_TRUSTED_IPS || "").split(",").map(s => s.trim()).filter(Boolean);
-    if (trusted.length === 0) return false;
-    const ip = getClientIp(req);
-    return trusted.includes(ip);
-  },
-      skipSuccessfulRequests: true, // 成功请求不计入限制
+      skip: (req: Request) => {
+        const trusted = (process.env.CLAW_CHAT_RATELIMIT_TRUSTED_IPS || "").split(",").map(s => s.trim()).filter(Boolean);
+        if (trusted.length === 0) return false;
+        return trusted.includes(getClientIp(req));
+      },
+      skipSuccessfulRequests: true,
       handler: async (req: Request, res: Response) => {
-    // 记录暴力破解告警
-    const clientIP = getClientIp(req);
-    try {
-      const { createSecurityLog } = await import("../db");
-      await createSecurityLog({
-        ip: clientIP,
-        path: req.path.substring(0, 500),
-        method: req.method,
-        userAgent: req.headers["user-agent"] || null,
-        reason: "登录/注册速率限制触发：可能的暴力破解尝试",
-        details: JSON.stringify({
-          limit: 5,
-          windowMs: 15 * 60 * 1000,
-          endpoint: req.path,
-        }),
-        severity: "high",
-      });
-    } catch (error) {
-      console.error("[Security] Failed to log auth rate limit:", error);
-    }
-
-    res.status(429).json({
-      error: "登录尝试次数过多，请 15 分钟后重试",
+        const clientIP = getClientIp(req);
+        try {
+          const { createSecurityLog } = await import("../db");
+          await createSecurityLog({
+            ip: clientIP,
+            path: req.path.substring(0, 500),
+            method: req.method,
+            userAgent: req.headers["user-agent"] || null,
+            reason: "登录/注册速率限制触发：可能的暴力破解尝试",
+            details: JSON.stringify({
+              limit: 5,
+              windowMs: 15 * 60 * 1000,
+              endpoint: req.path,
+            }),
+            severity: "high",
+          });
+        } catch (error) {
+          console.error("[Security] Failed to log auth rate limit:", error);
+        }
+        res.status(429).json({ error: "登录尝试次数过多，请 15 分钟后重试" });
+      },
     });
-  },
-});
+
+export const authActionLimiter = process.env.NODE_ENV === "development"
+  ? ((req: Request, res: Response, next: NextFunction) => {
+      next();
+    })
+  : rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: 5,
+      message: "操作过于频繁，请 15 分钟后重试",
+      standardHeaders: true,
+      legacyHeaders: false,
+      skip: (req: Request) => {
+        const trusted = (process.env.CLAW_CHAT_RATELIMIT_TRUSTED_IPS || "").split(",").map(s => s.trim()).filter(Boolean);
+        if (trusted.length === 0) return false;
+        return trusted.includes(getClientIp(req));
+      },
+      skipSuccessfulRequests: false,
+      handler: async (req: Request, res: Response) => {
+        const clientIP = getClientIp(req);
+        try {
+          const { createSecurityLog } = await import("../db");
+          await createSecurityLog({
+            ip: clientIP,
+            path: req.path.substring(0, 500),
+            method: req.method,
+            userAgent: req.headers["user-agent"] || null,
+            reason: "认证敏感操作速率限制触发",
+            details: JSON.stringify({
+              limit: 5,
+              windowMs: 15 * 60 * 1000,
+              endpoint: req.path,
+            }),
+            severity: "high",
+          });
+        } catch (error) {
+          console.error("[Security] Failed to log auth action rate limit:", error);
+        }
+        res.status(429).json({ error: "操作过于频繁，请 15 分钟后重试" });
+      },
+    });
 
 /**
  * 严格速率限制（用于敏感操作）

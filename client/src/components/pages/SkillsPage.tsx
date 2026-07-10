@@ -573,19 +573,19 @@ function agentStatusLabel(agent: ExternalAgentSummary) {
 const AGENT_TECH_CAPABILITIES = new Set(["agent", "async-agent", "a2a"]);
 
 const AGENT_CAPABILITY_DISPLAY: Record<string, { name: string; description: string }> = {
-  "risk-control": {
-    name: "企业风险评估",
-    description: "识别企业经营、信用、司法和履约风险，生成风控结论。",
+  "business-review": {
+    name: "业务风险评估",
+    description: "识别业务异常线索和关键风险因素，生成评估结论。",
   },
-  "post-loan-risk": {
-    name: "贷后风险评估",
-    description: "面向贷后场景评估企业风险等级、关键因子和处置建议。",
+  "long-running-task": {
+    name: "持续跟踪评估",
+    description: "面向持续跟踪场景评估关键因子和处置建议。",
   },
 };
 
 function agentDisplayDescription(agent: ExternalAgentSummary) {
   const description = String(agent.description || "").trim();
-  if (!description) return "风控智能体，适合企业风险评估、贷后风控、批量尽调等长任务。";
+  if (!description) return "外部智能体，适合需要异步处理的长任务或专项任务。";
   return description
     .replace(/^远端\s*JiuwenSwarm\s*/i, "")
     .replace(/专用\s*Agent/g, "智能体")

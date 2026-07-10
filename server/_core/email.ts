@@ -5,12 +5,13 @@
  */
 
 import { getSmtpConfig, getSystemConfigValue } from "../db";
+import { randomInt } from "crypto";
 
 /**
  * 生成6位数字验证码
  */
 export function generateVerificationCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return randomInt(100000, 1000000).toString();
 }
 
 /**
@@ -116,6 +117,10 @@ export async function sendEmail(
     }
   }
 
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("SMTP is not configured");
+  }
+
   // 开发环境：输出到控制台
   console.log("\n" + "=".repeat(60));
   console.log(`[Email] Email to ${to}`);
@@ -154,13 +159,7 @@ export async function sendVerificationCodeEmail(
     </div>
   `;
 
-  try {
-    return await sendEmail(email, subject, text, html);
-  } catch (error) {
-    console.error("[Email] Failed to send verification code email:", error);
-    // 即使失败也返回 true，因为控制台输出也算成功
-    return true;
-  }
+  return await sendEmail(email, subject, text, html);
 }
 
 /**
@@ -203,11 +202,5 @@ export async function sendPasswordResetEmail(
     </div>
   `;
 
-  try {
-    return await sendEmail(email, subject, text, html);
-  } catch (error) {
-    console.error("[Email] Failed to send password reset email:", error);
-    // 即使失败也返回 true，因为控制台输出也算成功
-    return true;
-  }
+  return await sendEmail(email, subject, text, html);
 }
