@@ -176,40 +176,6 @@ export const systemConfigsRouter = router({
         return { success: true };
       }),
 
-    // 获取不走 iframe 的体验 ID 列表（admin）
-    getIframeBypassExperienceIds: adminProcedure.query(async () => {
-      const { getSystemConfigValue } = await import("../db");
-      const value = await getSystemConfigValue("iframe_bypass_experience_ids", "");
-      return { value };
-    }),
-
-    // 获取不走 iframe 的体验 ID 列表（公开给首页）
-    getIframeBypassExperienceIdsPublic: publicProcedure.query(async () => {
-      const { getSystemConfigValue } = await import("../db");
-      const raw = await getSystemConfigValue("iframe_bypass_experience_ids", "");
-      const experienceIds = raw
-        .split(/[\n,]/g)
-        .map((s) => s.trim())
-        .filter(Boolean);
-      return { experienceIds };
-    }),
-
-    // 设置不走 iframe 的体验 ID 列表（每行一个 experienceId）
-    setIframeBypassExperienceIds: adminProcedure
-      .input(z.object({ value: z.string().default("") }))
-      .mutation(async ({ input, ctx }) => {
-        const userId = ctx.user?.id;
-        await upsertSystemConfig(
-          {
-            key: "iframe_bypass_experience_ids",
-            value: input.value,
-            description: "不走 iframe 的体验ID列表：每行一个 experienceId，首页将直接打开原始 URL",
-          },
-          userId
-        );
-        return { success: true };
-      }),
-
     // 设置自动封禁 4xx 错误阈值
     setAutoBlock4xxThreshold: adminProcedure
       .input(z.object({ threshold: z.number().int().positive().max(1000) }))

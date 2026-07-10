@@ -45,7 +45,6 @@ import { registerCoopUploadRoutes } from "./coop-upload";
 import { registerEaSessionViewRoutes } from "./ea-session-view";
 import { registerEaAssistantRoutes } from "./ea-assistant-routes";
 import { registerWSProxy } from "./claw-ws-proxy";
-import { registerIframeRoutes } from "./claw-iframe";
 import { registerMiscRoutes } from "./claw-misc";
 import { registerAuditExportRoutes } from "./audit-export-routes";
 import { registerAuditIngestRoutes } from "./claw-audit-ingest";
@@ -355,7 +354,6 @@ async function startServer() {
   registerEaAssistantRoutes(app);
   registerWSProxy(server);
   registerDesktopWSProxy(server);
-  registerIframeRoutes(app);
   registerMiscRoutes(app);
   registerAuditExportRoutes(app);
   registerAuditIngestRoutes(app);
@@ -364,6 +362,14 @@ async function startServer() {
   // ── 岗位智能体平台流式聊天 SSE 端点 ──
   // Session/auth helpers extracted to ./helpers.ts
 
+  // 登录、注册、验证码和密码重置端点必须在 tRPC 处理器之前限流。
+  app.use([
+    "/api/trpc/auth.login",
+    "/api/trpc/auth.register",
+    "/api/trpc/auth.sendVerificationCode",
+    "/api/trpc/auth.sendForgotPasswordVerificationCode",
+    "/api/trpc/auth.resetPassword",
+  ], authLimiter);
 
   // tRPC API - 应用速率限制
   app.use(
@@ -389,10 +395,6 @@ async function startServer() {
       },
     })
   );
-
-  // 登录/注册端点应用严格速率限制
-  app.use("/api/trpc/auth.login", authLimiter);
-  app.use("/api/trpc/auth.register", authLimiter);
 
   // ── 品牌配置公开 API（无需登录） ──
   app.get("/api/brand", async (_req, res) => {

@@ -29,23 +29,24 @@
   "dependencies": {
     "@trpc/server": "^11.6.0",
     "adm-zip": "^0.5.16",
-    "axios": "^1.14.0",
+    "axios": "^1.18.1",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",
     "cookie": "^1.0.2",
     "croner": "^10.0.1",
     "dotenv": "^17.2.2",
-    "drizzle-orm": "^0.44.5",
+    "drizzle-orm": "^0.45.2",
     "express": "^4.21.2",
-    "express-rate-limit": "^8.2.1",
-    "express-validator": "^7.3.1",
+    "express-rate-limit": "^8.5.2",
+    "express-validator": "^7.3.2",
+    "form-data": "^4.0.6",
     "helmet": "^8.1.0",
     "highlight.js": "^11.11.1",
-    "http-proxy-middleware": "^3.0.5",
+    "http-proxy-middleware": "^4.2.0",
     "jose": "6.1.0",
     "mysql2": "^3.15.0",
     "nanoid": "^5.1.5",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "^9.0.3",
     "qrcode": "^1.5.4",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
@@ -53,11 +54,10 @@
     "superjson": "^1.13.3",
     "tsx": "^4.19.1",
     "typescript": "5.9.3",
-    "ws": "^8.20.0",
+    "ws": "^8.21.0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@builder.io/vite-plugin-jsx-loc": "^0.1.1",
     "@fontsource/noto-sans-sc": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -123,7 +123,13 @@
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
   "pnpm": {
     "overrides": {
-      "tailwindcss>nanoid": "3.3.7"
+      "tailwindcss>nanoid": "3.3.7",
+      "express>path-to-regexp": "0.1.13",
+      "express>qs": "6.15.3",
+      "body-parser>qs": "6.15.3",
+      "micromatch>picomatch": "2.3.2",
+      "express-validator>lodash": "4.18.1",
+      "axios>form-data": "4.0.6"
     }
   }
 }

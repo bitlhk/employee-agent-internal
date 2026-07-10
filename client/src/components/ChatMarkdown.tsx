@@ -228,11 +228,6 @@ function FencedCodeBlock({ code, className }: { code: string; className?: string
     try { await navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
   };
 
-  const onOpenNewTab = () => {
-    const w = window.open("", "_blank");
-    if (w) { w.document.open(); w.document.write(code); w.document.close(); }
-  };
-
   return (
     <div className="lingxia-codeblock">
       <div className="lingxia-codeblock__header">
@@ -243,10 +238,6 @@ function FencedCodeBlock({ code, className }: { code: string; className?: string
               <button className="lingxia-codeblock__copy" onClick={() => setPreviewing(!previewing)} type="button" title={previewing ? "关闭预览" : "预览"}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 {previewing ? "关闭" : "预览"}
-              </button>
-              <button className="lingxia-codeblock__copy" onClick={onOpenNewTab} type="button" title="新窗口打开">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                新窗口
               </button>
             </>
           )}

@@ -163,11 +163,7 @@ function publicWsBaseUrl(req: express.Request): string {
 }
 
 function desktopToken(): string {
-  return (
-    process.env.DESKTOP_GATEWAY_TOKEN ||
-    process.env.INTERNAL_API_KEY ||
-    "desktop-mvp-token"
-  );
+  return String(process.env.DESKTOP_GATEWAY_TOKEN || process.env.INTERNAL_API_KEY || "").trim();
 }
 
 async function toQrDataUrl(data: string): Promise<string> {
@@ -178,12 +174,13 @@ async function toQrDataUrl(data: string): Promise<string> {
   }
 }
 
-function defaultDesktopAgentId(): string {
-  return process.env.DESKTOP_OPENCLAW_AGENT_ID || "trial_lgc-ppstsl9ddr";
+function defaultDesktopAgentId(): string | null {
+  const configured = String(process.env.DESKTOP_OPENCLAW_AGENT_ID || "").trim();
+  return configured || null;
 }
 
-function defaultDesktopAdoptId(): string {
-  return defaultDesktopAgentId().replace(/^trial_/, "");
+function defaultDesktopAdoptId(): string | null {
+  return defaultDesktopAgentId()?.replace(/^trial_/, "") || null;
 }
 
 // Returns the claw record assigned to the desktop user.
@@ -191,7 +188,8 @@ function defaultDesktopAdoptId(): string {
 // Falls back to the global default agent for the MVP token user.
 async function getDesktopUserClaw(user: DesktopUser) {
   if (user.id === "desktop-mvp-user") {
-    return getClawByAdoptId(defaultDesktopAdoptId());
+    const adoptId = defaultDesktopAdoptId();
+    return adoptId ? getClawByAdoptId(adoptId) : null;
   }
   const uid = Number(user.id);
   if (!Number.isNaN(uid) && uid > 0) {
@@ -260,9 +258,10 @@ function bearerTokenFromIncoming(req: IncomingMessage, url: URL): string {
 async function verifyDesktopToken(token: string): Promise<DesktopUser | null> {
   if (!token) return null;
 
-  // Backward-compatible MVP token for local smoke tests only. Real desktop
-  // clients should use /api/desktop/login and send the returned user session.
-  if (token === desktopToken()) {
+  // Backward-compatible MVP token for local smoke tests only. Production must
+  // configure DESKTOP_GATEWAY_TOKEN or use /api/desktop/login sessions.
+  const configuredToken = desktopToken();
+  if (configuredToken && token === configuredToken) {
     return { id: "desktop-mvp-user", name: "Desktop MVP User" };
   }
 
@@ -1312,13 +1311,15 @@ export function registerDesktopRoutes(app: express.Express) {
         `${wsBase}/api/desktop/openclaw/ws`,
       gatewayToken: bearerToken(req),
       defaultAgentId: agentId,
-      agents: [
-        {
-          id: agentId,
-          name: process.env.DESKTOP_OPENCLAW_AGENT_NAME || "岗位智能体",
-          description: "Desktop MVP fixed OpenClaw agent",
-        },
-      ],
+      agents: agentId
+        ? [
+            {
+              id: agentId,
+              name: process.env.DESKTOP_OPENCLAW_AGENT_NAME || "岗位智能体",
+              description: "Desktop gateway agent",
+            },
+          ]
+        : [],
     });
   });
 

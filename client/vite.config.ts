@@ -1,4 +1,3 @@
-import { jsxLocPlugin } from "@builder.io/vite-plugin-jsx-loc";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "node:path";
@@ -60,7 +59,6 @@ export default defineConfig(({ mode }) => {
   const plugins = [
     react(),
     tailwindcss(),
-    jsxLocPlugin(),
     imagetools({
       defaultDirectives: (url) => {
         // 默认压缩图片，转换为 WebP 格式（如果浏览器支持）

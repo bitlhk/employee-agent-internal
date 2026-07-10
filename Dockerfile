@@ -5,7 +5,6 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-lock.yaml ./
-COPY patches ./patches
 RUN pnpm install --frozen-lockfile
 
 COPY client ./client
@@ -24,7 +23,6 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
 COPY package.json pnpm-lock.yaml ./
-COPY patches ./patches
 RUN pnpm install --frozen-lockfile && \
     rm -rf /root/.cache /tmp/*
 
@@ -34,10 +32,11 @@ COPY --chown=linggan:linggan shared ./shared
 COPY --chown=linggan:linggan drizzle ./drizzle
 COPY --chown=linggan:linggan drizzle.config.ts tsconfig.json tsconfig.node.json ./
 COPY --chown=linggan:linggan LICENSE NOTICE ./
-COPY --chown=linggan:linggan HELP.md ./
 
 # 前端构建产物
 COPY --from=builder --chown=linggan:linggan /app/dist/client ./dist/client
+
+RUN chown -R linggan:linggan /app
 
 ENV NODE_ENV=production
 ENV PORT=5180
@@ -47,4 +46,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD node -e "require('http').get('http://localhost:5180/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # 启动时自动执行数据库迁移，然后启动服务
+USER linggan
 CMD ["sh", "-c", "pnpm exec drizzle-kit migrate 2>/dev/null; pnpm exec tsx server/_core/index.ts"]

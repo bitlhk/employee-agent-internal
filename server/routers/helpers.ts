@@ -35,8 +35,6 @@ import {
   getClawByAdoptId,
   getSystemConfigValue,
   getSystemConfigNumber,
-  upsertSystemConfig,
-  getAllExperienceConfigs,
   createIpAccessLog,
   getIpAccessCountToday,
 } from "../db";
@@ -65,17 +63,6 @@ export const clawDailyUsage = (() => {
     },
   };
 })();
-
-export type DemoPublishStatus = {
-  status: "success" | "failed" | "running";
-  at: string;
-  error?: string;
-};
-
-export const DEMO_PUBLISH_STATUS_KEY = "demo_route_publish_status_v1";
-export const DEMO_PUBLISH_META_KEY = "demo_route_publish_meta_v1";
-
-export const IFRAME_BYPASS_KEY = "iframe_bypass_experience_ids";
 
 type ClawModelOption = { id: string; name: string; desc?: string; isDefault?: boolean };
 const DEFAULT_FRONTEND_MODEL_FALLBACKS = ["modelarts-maas/glm-5.2", "maas/deepseek-v4-flash"];
@@ -413,178 +400,6 @@ export function writeClawExecAudit(entry: {
     appendFileSync(`${logDir}/claw-exec.log`, line + "\n", "utf8");
   } catch {
     // ignore
-  }
-}
-export async function ensureIframeBypassExperienceId(experienceId: string, updatedBy?: number) {
-  const raw = await getSystemConfigValue(IFRAME_BYPASS_KEY, "");
-  const set = new Set(
-    (raw || "")
-      .split(/[\n,]/g)
-      .map((x) => x.trim())
-      .filter(Boolean)
-  );
-
-  if (set.has(experienceId)) return { changed: false };
-
-  set.add(experienceId);
-  const value = Array.from(set).join("\n");
-
-  await upsertSystemConfig(
-    {
-      key: IFRAME_BYPASS_KEY,
-      value,
-      description: "不走 iframe 的体验ID列表：每行一个 experienceId，首页将直接打开原始 URL",
-    },
-    updatedBy
-  );
-
-  return { changed: true };
-}
-
-
-export async function readDemoPublishStatusMap(): Promise<Record<string, DemoPublishStatus>> {
-  const raw = await getSystemConfigValue(DEMO_PUBLISH_STATUS_KEY, "{}");
-  try {
-    const obj = JSON.parse(raw || "{}");
-    return obj && typeof obj === "object" ? obj : {};
-  } catch {
-    return {};
-  }
-}
-
-export async function writeDemoPublishStatusMap(map: Record<string, DemoPublishStatus>, updatedBy?: number) {
-  await upsertSystemConfig(
-    {
-      key: DEMO_PUBLISH_STATUS_KEY,
-      value: JSON.stringify(map),
-      description: "demo 路由发布状态（按 experienceId）",
-    },
-    updatedBy
-  );
-}
-
-export async function publishDemoRoutingNow(updatedBy?: number): Promise<{ ok: boolean; message: string }> {
-  const activeConfigs = (await getAllExperienceConfigs("all")).filter((c: any) => c.status === "active" && c.url);
-  const statusMap = await readDemoPublishStatusMap();
-  const nowIso = new Date().toISOString();
-
-  for (const c of activeConfigs as any[]) {
-    statusMap[c.experienceId] = { status: "running", at: nowIso };
-  }
-  await writeDemoPublishStatusMap(statusMap, updatedBy);
-
-  let nginxSitePath = process.env.NGINX_SITE_PATH || "/etc/nginx/sites-available/finance-ai-landing";
-  let nginxBackupPath = "";
-
-  try {
-    const demoDomain = process.env.DEMO_ROUTE_DOMAIN || "demo.example.com";
-    const siteDomain = process.env.SITE_DOMAIN || "www.example.com";
-    nginxSitePath = process.env.NGINX_SITE_PATH || "/etc/nginx/sites-available/finance-ai-landing";
-    const envPath = process.env.DEPLOY_ENV_PATH || "/opt/finance-ai-landing-new/finance-ai-landing/.env.deploy";
-
-    const items: Array<{ id: string; upstream: string; hostHeader: string }> = [];
-    for (const c of activeConfigs as any[]) {
-      try {
-        const u = new URL(c.url);
-        if (!["http:", "https:"].includes(u.protocol)) continue;
-        items.push({
-          id: c.experienceId,
-          upstream: `${u.protocol}//${u.host}`,
-          hostHeader: u.host,
-        });
-      } catch {
-        continue;
-      }
-    }
-
-    const mapUp = ["map $host $demo_upstream {", '    default "";'];
-    const mapHost = ["map $host $demo_host_header {", '    default "";'];
-    const envPairs: string[] = [];
-
-    for (const it of items) {
-      const sub = `${it.id}.${demoDomain}`;
-      // 防止将 demo 域名回写为自己的 upstream（自引用会导致路由死循环）
-      if (it.hostHeader === sub) {
-        console.warn(`[PublishDemoRouting] skip self-referenced upstream: ${it.id} -> ${it.hostHeader}`);
-        continue;
-      }
-      mapUp.push(`    ${sub} ${it.upstream};`);
-      mapHost.push(`    ${sub} ${it.hostHeader};`);
-      envPairs.push(`${it.id}=${sub}`);
-    }
-    mapUp.push("}");
-    mapHost.push("}");
-
-    const mapConn = [
-      "map $http_upgrade $connection_upgrade {",
-      "    default upgrade;",
-      '    "" close;',
-      "}",
-    ];
-
-    const generatedMapBlock = `${mapUp.join("\n")}\n\n${mapHost.join("\n")}\n\n${mapConn.join("\n")}\n`;
-
-    const existingConf = readFileSync(nginxSitePath, "utf8");
-    // 只替换 map 区块，保留现有 server(80/443/专属路由) 以避免覆盖手工增强配置
-    const mapBlockRegex = /map \$host \$demo_upstream \{[\s\S]*?\}\n\nmap \$host \$demo_host_header \{[\s\S]*?\}\n(?:\nmap \$http_upgrade \$connection_upgrade \{[\s\S]*?\}\n)?/m;
-    const conf = mapBlockRegex.test(existingConf)
-      ? existingConf.replace(mapBlockRegex, `${generatedMapBlock}\n`)
-      : `${generatedMapBlock}\n${existingConf}`;
-
-    // 发布前备份，失败可回滚
-    nginxBackupPath = `${nginxSitePath}.bak-publish-${Date.now()}`;
-    writeFileSync(nginxBackupPath, existingConf, "utf8");
-    writeFileSync(nginxSitePath, conf, "utf8");
-
-    // 同步到 sites-enabled（nginx 实际读取的路径）
-    const sitesEnabledPath = nginxSitePath.replace("/sites-available/", "/sites-enabled/");
-    if (sitesEnabledPath !== nginxSitePath) {
-      writeFileSync(sitesEnabledPath, conf, "utf8");
-    }
-
-    let env = readFileSync(envPath, "utf8");
-    env = env
-      .split("\n")
-      .filter((l) => !/^DEMO_HOST_MAP_ENABLED=/.test(l) && !/^DEMO_HOST_MAP_SCHEME=/.test(l) && !/^DEMO_HOST_MAP=/.test(l))
-      .join("\n");
-    if (!env.endsWith("\n")) env += "\n";
-    env += "DEMO_HOST_MAP_ENABLED=true\n";
-    env += `DEMO_HOST_MAP_SCHEME=${process.env.DEMO_HOST_MAP_SCHEME || "http"}\n`;
-    env += `DEMO_HOST_MAP=${envPairs.join(",")}\n`;
-    writeFileSync(envPath, env, "utf8");
-
-    execSync("nginx -t", { stdio: "pipe" });
-    execSync("systemctl reload nginx", { stdio: "pipe" });
-
-    const successAt = new Date().toISOString();
-    for (const c of activeConfigs as any[]) {
-      statusMap[c.experienceId] = { status: "success", at: successAt };
-    }
-    await writeDemoPublishStatusMap(statusMap, updatedBy);
-    await upsertSystemConfig({ key: DEMO_PUBLISH_META_KEY, value: JSON.stringify({ at: successAt, count: items.length }), description: "demo 路由最近发布元信息" }, updatedBy);
-
-    return { ok: true, message: `发布成功，已处理 ${items.length} 个 active demo（Nginx已生效，若新增experienceId需重启服务加载最新DEMO_HOST_MAP）` };
-  } catch (e: any) {
-    // 回滚 nginx 配置（若本次发布已写入过新文件）
-    try {
-      if (nginxBackupPath) {
-        const backupConf = readFileSync(nginxBackupPath, "utf8");
-        writeFileSync(nginxSitePath, backupConf, "utf8");
-        execSync("nginx -t", { stdio: "pipe" });
-        execSync("systemctl reload nginx", { stdio: "pipe" });
-      }
-    } catch (rollbackErr) {
-      console.error("[PublishDemoRouting] rollback failed:", rollbackErr);
-    }
-
-    const err = String(e?.stderr || e?.message || e || "unknown").slice(0, 1200);
-    const failAt = new Date().toISOString();
-    for (const c of activeConfigs as any[]) {
-      statusMap[c.experienceId] = { status: "failed", at: failAt, error: err };
-    }
-    await writeDemoPublishStatusMap(statusMap, updatedBy);
-    await upsertSystemConfig({ key: DEMO_PUBLISH_META_KEY, value: JSON.stringify({ at: failAt, ok: false, error: err }), description: "demo 路由最近发布元信息" }, updatedBy);
-    return { ok: false, message: `发布失败: ${err}` };
   }
 }
 

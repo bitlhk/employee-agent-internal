@@ -29,7 +29,12 @@ const mcpAuditSchema = z.object({
 });
 
 function auditIngestToken(): string {
-  return String(process.env.EA_AUDIT_INGEST_TOKEN || process.env.AUDIT_INGEST_TOKEN || "").trim();
+  return String(
+    process.env.EA_AUDIT_INGEST_TOKEN ||
+    process.env.AUDIT_INGEST_TOKEN ||
+    process.env.INTERNAL_API_KEY ||
+    ""
+  ).trim();
 }
 
 function requestToken(req: express.Request): string {
@@ -55,6 +60,7 @@ function isLocalRequest(req: express.Request): boolean {
 function authorizeAuditIngest(req: express.Request): boolean {
   const expected = auditIngestToken();
   if (expected) return requestToken(req) === expected;
+  if (process.env.NODE_ENV === "production") return false;
   return isLocalRequest(req);
 }
 

@@ -552,11 +552,12 @@ export const registrationRouter = router({
         };
       }),
 
-    // 根据邮箱获取注册记录
+    // 公开接口只返回是否存在，避免枚举邮箱时泄露姓名、公司、创建时间等注册资料。
     getByEmail: publicProcedure
       .input(z.string().email("请输入有效的邮箱地址").toLowerCase().trim())
       .query(async ({ input }) => {
-        return await getRegistrationByEmail(input);
+        const registration = await getRegistrationByEmail(input);
+        return { exists: !!registration };
       }),
 
     // 获取所有注册记录（管理员用）
