@@ -24,7 +24,6 @@ import {
   OPENCLAW_HOME,
   OPENCLAW_JSON_PATH,
   openClawAgentDir,
-  openClawSkillMarketDir,
   resolveRuntimeWorkspaceByIds,
 } from "./helpers";
 import { listApprovedSkillMarketItems, listMcpInvocationCounts, listSkillInvocationCounts, resolveEffectiveRoleAssets } from "../db";
@@ -37,9 +36,15 @@ import {
 } from "./skills/skill-source";
 import {
   generatedSkillDiscoveryExcludedRoots,
-  managedSkillPathReason,
   shouldDiscoverGeneratedRuntimeSkill,
 } from "./skills/skill-discovery";
+import {
+  remapLegacySkillMarketPath,
+  skillStoreMarketplaceDir,
+  skillStoreUploadedDir,
+  skillStoreGeneratedDir,
+  skillSourceDirsForRuntime,
+} from "./skills/skill-store";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -57,15 +62,7 @@ function decodeParam(value: unknown): string {
 }
 
 function skillSourceCacheDir(adoptId: string, skillId: string): string {
-  return path.join(APP_ROOT, "data", "generated-skills", adoptId, skillId);
-}
-
-function isManagedGeneratedRegistrySkill(skill: Skill, excludedRoots: string[]): boolean {
-  if (skill.source.kind !== "generated") return false;
-  return Boolean(
-    managedSkillPathReason(skill.source.sourcePath, excludedRoots)
-    || managedSkillPathReason(skill.sync.runtimePath, excludedRoots)
-  );
+  return skillStoreGeneratedDir(adoptId, skillId);
 }
 
 function skillPackageIndexPath(): string {
@@ -554,7 +551,7 @@ async function discoverGeneratedRuntimeSkills(
   );
   const installed: Array<{ skillId: string; displayName: string }> = [];
   const skipped: Array<{ skillId: string; reason: string }> = [];
-  const excludedRoots = generatedSkillDiscoveryExcludedRoots(OPENCLAW_HOME);
+  const excludedRoots = generatedSkillDiscoveryExcludedRoots(OPENCLAW_HOME, skillSourceDirsForRuntime());
 
   for (const entry of readdirSync(runtimeSkillsRoot, { withFileTypes: true })) {
     const sourceDir = path.join(runtimeSkillsRoot, entry.name);
@@ -780,12 +777,10 @@ export function registerSkillRoutes(app: express.Express) {
           .json({ error: result.error.detail, kind: result.error.kind });
         return;
       }
-      const excludedRoots = generatedSkillDiscoveryExcludedRoots(OPENCLAW_HOME);
-      const visibleItems = result.value.filter((skill) => !isManagedGeneratedRegistrySkill(skill, excludedRoots));
       res.json({
-        items: visibleItems,
+        items: result.value,
         roleTemplate,
-        filtered: visibleItems.length !== result.value.length,
+        filtered: false,
       });
     } catch (e) {
       console.error("[skills registry] list failed", e);
@@ -1092,11 +1087,15 @@ export function registerSkillRoutes(app: express.Express) {
       const displayDescription = requestedDescription || parsed.description;
 
       const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const qDir = `${APP_ROOT}/data/skill-packages/${adoptId}`;
-      mkdirSync(qDir, { recursive: true });
       const ts = Date.now();
-      const zipPath = `${qDir}/${ts}-${safeName}`;
-      writeFileSync(zipPath, fileBuf);
+      const sourceDir = skillStoreUploadedDir(adoptId, parsed.skillId);
+      const tmpZip = path.join("/tmp", `skill-upload-${adoptId}-${parsed.skillId}-${ts}.zip`);
+      writeFileSync(tmpZip, fileBuf);
+      try {
+        skillInstaller.installFromSource(tmpZip, sourceDir);
+      } finally {
+        try { rmSync(tmpZip, { force: true }); } catch {}
+      }
 
       const sha256 = createHash("sha256").update(fileBuf).digest("hex");
 
@@ -1115,7 +1114,7 @@ export function registerSkillRoutes(app: express.Express) {
       const indexRow = {
         adoptId,
         filename: safeName,
-        path: zipPath,
+        path: sourceDir,
         sha256,
         size: fileBuf.length,
         manifest: parsed.manifest || {},
@@ -1127,6 +1126,7 @@ export function registerSkillRoutes(app: express.Express) {
         createdAt: new Date().toISOString(),
       };
       idxRows.push(indexRow);
+      mkdirSync(path.dirname(idxPathUpload), { recursive: true });
       writeFileSync(idxPathUpload, JSON.stringify(idxRows, null, 2), "utf-8");
 
       const source: SkillSource = {
@@ -1134,7 +1134,7 @@ export function registerSkillRoutes(app: express.Express) {
         skillId: parsed.skillId,
         displayName,
         description: displayDescription,
-        sourcePath: zipPath,
+        sourcePath: sourceDir,
         version: String(parsed.manifest?.version || ""),
       };
       const installed = await skillRegistry.install(adoptId, source);
@@ -1224,7 +1224,7 @@ export function registerSkillRoutes(app: express.Express) {
         return;
       }
 
-      const marketDir = openClawSkillMarketDir();
+      const marketDir = skillStoreMarketplaceDir();
       const pendingDir = `${marketDir}/pending/${skill.id}-${Date.now()}`;
       skillInstaller.installFromSource(skill.source.sourcePath, pendingDir);
       const parsed = parseSkillSourceDirectory(pendingDir, skill.id);
@@ -1307,7 +1307,7 @@ export function registerSkillRoutes(app: express.Express) {
         sourcePath: String(found?.path || ""),
       });
 
-      const packagePath = String(found?.path || "").trim();
+      const packagePath = remapLegacySkillMarketPath(String(found?.path || "").trim());
       const sid = String(found?.installedSkillId || "").trim();
       if (sid) {
         const destroyed = await skillRegistry.destroy(adoptId, sid);

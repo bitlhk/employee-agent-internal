@@ -7,11 +7,12 @@ function pathInside(child: string, parent: string): boolean {
   return normalizedChild === normalizedParent || normalizedChild.startsWith(`${normalizedParent}${path.sep}`);
 }
 
-export function generatedSkillDiscoveryExcludedRoots(openclawHome: string): string[] {
-  return [
+export function generatedSkillDiscoveryExcludedRoots(openclawHome: string, extraRoots: string[] = []): string[] {
+  return Array.from(new Set([
     path.join(openclawHome, "skill-market", "approved"),
     path.join(openclawHome, "skills-shared"),
-  ].filter((dir) => existsSync(dir)).map((dir) => {
+    ...extraRoots,
+  ])).filter((dir) => existsSync(dir)).map((dir) => {
     try {
       return realpathSync(dir);
     } catch {

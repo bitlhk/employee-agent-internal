@@ -10,7 +10,8 @@ import path from "path";
 import { writeJiuwenSwarmRoleScopeManifest } from "../_core/jiuwenswarm-role-scope";
 import { ensureJiuwenSwarmWorkspacePermission } from "../_core/jiuwenswarm-permissions";
 import { applyOpenClawRoleScope } from "../_core/openclaw-role-scope";
-import { OPENCLAW_HOME, OPENCLAW_JSON_PATH, openClawWorkspaceDir, resolveRuntimeWorkspaceByIds } from "../_core/helpers";
+import { OPENCLAW_JSON_PATH, openClawWorkspaceDir, resolveRuntimeWorkspaceByIds } from "../_core/helpers";
+import { skillSourceDirsForRuntime } from "../_core/skills/skill-store";
 import { isJiuwenClawRuntimeEnabled } from "../_core/jiuwenclaw-bridge";
 import { bumpClawSessionEpochBestEffort, provisionEmployeeAgentInstance } from "./helpers";
 
@@ -39,10 +40,7 @@ class OpenClawRoleRuntimeAdapter implements RoleRuntimeAdapter {
       effectiveAssets: input.effectiveAssets,
       activeSkillIds: input.activeSkillIds,
       workspaceDir: openClawWorkspaceDir(input.agentId),
-      skillSourceDirs: [
-        `${OPENCLAW_HOME}/skills-shared`,
-        `${OPENCLAW_HOME}/skill-market/approved`,
-      ],
+      skillSourceDirs: skillSourceDirsForRuntime(),
     });
     const changed =
       Number(result.skillAllowlistChanged) +
@@ -106,10 +104,7 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
       role: input.role,
       effectiveAssets: input.effectiveAssets,
       activeSkillIds: input.activeSkillIds,
-      skillSourceDirs: [
-        `${OPENCLAW_HOME}/skills-shared`,
-        `${OPENCLAW_HOME}/skill-market/approved`,
-      ],
+      skillSourceDirs: skillSourceDirsForRuntime(),
     });
     const changed =
       Number(result.changed) +

@@ -55,6 +55,7 @@ import {
 } from "./claw-weixin";
 import { skillRegistry } from "./skills/skill-registry";
 import { parseSkillSourceDirectory } from "./skills/skill-source";
+import { remapLegacySkillMarketPath } from "./skills/skill-store";
 import type { SkillSource } from "../../shared/types/skill";
 import { getAvailableClawModelsFromConfig } from "../routers/helpers";
 
@@ -454,12 +455,13 @@ async function installDesktopMarketSkill(marketId: number, adoptId: string, agen
   if (!item || item.status !== "approved") {
     throw new Error("技能不存在或未上架");
   }
-  if (!item.packagePath || !existsSync(item.packagePath)) {
+  const packagePath = remapLegacySkillMarketPath(String(item.packagePath || ""));
+  if (!packagePath || !existsSync(packagePath)) {
     throw new Error("技能包源不存在");
   }
 
   const parsed = parseSkillSourceDirectory(
-    item.packagePath,
+    packagePath,
     item.skillId || item.name || "market-skill"
   );
   const source: SkillSource = {
@@ -467,7 +469,7 @@ async function installDesktopMarketSkill(marketId: number, adoptId: string, agen
     skillId: parsed.skillId || item.skillId,
     displayName: item.name || parsed.displayName || item.skillId,
     description: item.description || parsed.description || "",
-    sourcePath: item.packagePath,
+    sourcePath: packagePath,
     marketplaceId: String(item.id),
     version: String(item.version || parsed.manifest?.version || "1.0.0"),
   };

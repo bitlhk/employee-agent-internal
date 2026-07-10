@@ -61,6 +61,12 @@ import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, re
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
 import { skillRegistry } from "../_core/skills/skill-registry";
 import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
+import {
+  remapLegacySkillMarketPath,
+  skillStoreMarketplaceDir,
+  safeSkillStorePath,
+  removeSkillStorePath,
+} from "../_core/skills/skill-store";
 import { cleanupOpenClawWeixinBindingForAdopt } from "../_core/claw-weixin";
 import type { Skill, SkillSource } from "../../shared/types/skill";
 import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "../_core/core-file-guard";
@@ -359,8 +365,8 @@ const getAvailableModelsForRuntime = (adoptId?: unknown): RuntimeModelOption[] =
 
 const openClawWorkspaceDir = (runtimeAgentId: string) => `${OPENCLAW_HOME}/workspace-${String(runtimeAgentId || "").trim()}`;
 const openClawAgentStateDir = (runtimeAgentId: string) => `${OPENCLAW_HOME}/agents/${String(runtimeAgentId || "").trim()}`;
-const openClawSkillMarketDir = () => `${OPENCLAW_HOME}/skill-market`;
 const openClawSharedSkillsDir = () => `${OPENCLAW_HOME}/skills-shared`;
+const skillMarketDir = () => skillStoreMarketplaceDir();
 
 function safeExec(command: string, timeout = 8000): { ok: boolean; output: string; error?: string } {
   try {
@@ -1448,7 +1454,7 @@ export const clawRouter = router({
         status: z.enum(["pending", "approved", "rejected", "offline"]).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const marketDir = openClawSkillMarketDir();
+        const marketDir = skillMarketDir();
         const status = input.status || "approved";
         const id = await insertSkillMarketItem({
           skillId: input.skillId,
@@ -1510,9 +1516,10 @@ export const clawRouter = router({
           });
         }
         try {
-          const marketDir = openClawSkillMarketDir();
+          const marketDir = skillMarketDir();
           const itemSkillId = skillIdSchema.parse(String(item.skillId || ""));
-          const oldDir = safeDescendantPath(marketDir, item.packagePath || path.join(marketDir, String(item.status || "pending"), itemSkillId));
+          const oldRaw = item.packagePath || path.join(marketDir, String(item.status || "pending"), itemSkillId);
+          const oldDir = remapLegacySkillMarketPath(oldRaw);
           const statusDir = safeChildPath(marketDir, input.status);
           const newDir = safeChildPath(statusDir, `${itemSkillId}-${item.id}`);
           if (oldDir !== newDir) {
@@ -1520,7 +1527,10 @@ export const clawRouter = router({
               mkdirSync(path.dirname(newDir), { recursive: true });
               if (existsSync(oldDir)) {
                 cpSync(oldDir, newDir, { recursive: true, force: true });
-                rmSync(oldDir, { recursive: true, force: true });
+                try {
+                  const oldStorePath = safeSkillStorePath(oldDir);
+                  rmSync(oldStorePath, { recursive: true, force: true });
+                } catch {}
               } else {
                 mkdirSync(newDir, { recursive: true });
               }
@@ -1608,7 +1618,7 @@ export const clawRouter = router({
         if (!item) throw new TRPCError({ code: "NOT_FOUND" });
         const { readFileSync, readdirSync, existsSync, statSync } = await import("fs");
         const { join } = await import("path");
-        const dir = item.packagePath || "";
+        const dir = remapLegacySkillMarketPath(item.packagePath || "");
         let skillMd = "";
         let scripts: string[] = [];
         const sourceFiles: Array<{ path: string; content: string; size: number; truncated: boolean }> = [];
@@ -1692,9 +1702,10 @@ export const clawRouter = router({
       .mutation(async ({ input, ctx }) => {
         const item = await getSkillMarketItem(input.id);
         if (item?.packagePath) {
-          const marketDir = openClawSkillMarketDir();
-          const packagePath = safeDescendantPath(marketDir, String(item.packagePath));
-          try { rmSync(packagePath, { recursive: true, force: true }); } catch {}
+          try {
+            const packagePath = safeSkillStorePath(remapLegacySkillMarketPath(String(item.packagePath)));
+            removeSkillStorePath(packagePath);
+          } catch {}
         }
         await deleteSkillMarketItem(input.id);
         await recordAuditBestEffort({
@@ -1739,18 +1750,9 @@ export const clawRouter = router({
         if (!item || item.status !== "approved") throw new TRPCError({ code: "NOT_FOUND", message: "技能不存在或未上架" });
         await assertClawOwnerOrThrow(ctx, input.adoptId);
         const claw = await getClawByAdoptId(input.adoptId);
-        // Resolve package path: DB stores absolute path from the server that approved the skill
-        // (e.g. /root/.openclaw/...). On a different machine, remap to local OPENCLAW_HOME.
-        let resolvedPackagePath = item.packagePath || "";
-        if (resolvedPackagePath && !existsSync(resolvedPackagePath)) {
-          const marker = "/.openclaw/";
-          const idx = resolvedPackagePath.indexOf(marker);
-          if (idx !== -1) {
-            const rel = resolvedPackagePath.slice(idx + marker.length);
-            const candidate = OPENCLAW_HOME + "/" + rel;
-            if (existsSync(candidate)) resolvedPackagePath = candidate;
-          }
-        }
+        // DB may contain legacy .openclaw skill-market paths. New installs read
+        // through SKILL_STORE first and only use legacy paths as compatibility.
+        const resolvedPackagePath = remapLegacySkillMarketPath(item.packagePath || "");
         if (!resolvedPackagePath || !existsSync(resolvedPackagePath)) {
           throw new TRPCError({ code: "NOT_FOUND", message: "技能包源不存在" });
         }

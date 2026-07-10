@@ -245,7 +245,26 @@ export function reconcileJiuwenSwarmSharedSkillLinks(params: {
     if (!sharedRoot) continue;
     const sharedPath = path.join(sharedRoot, skillId);
     const linkPath = path.join(workspaceSkillsDir, skillId);
-    if (!existsSync(sharedPath) || existsSync(linkPath)) continue;
+    if (!existsSync(sharedPath)) continue;
+    let linkExists = existsSync(linkPath);
+    try {
+      linkExists = linkExists || lstatSync(linkPath).isSymbolicLink();
+    } catch {}
+    if (linkExists) {
+      let shouldReplace = false;
+      try {
+        if (lstatSync(linkPath).isSymbolicLink()) {
+          const target = readlinkSync(linkPath);
+          const resolvedTarget = path.resolve(path.dirname(linkPath), target);
+          const isManagedLink = sharedRoots.some((sharedRootPath) =>
+            resolvedTarget.startsWith(sharedRootPath + path.sep) || resolvedTarget === sharedRootPath
+          );
+          shouldReplace = isManagedLink && resolvedTarget !== path.resolve(sharedPath);
+        }
+      } catch {}
+      if (!shouldReplace) continue;
+      unlinkSync(linkPath);
+    }
     symlinkSync(path.relative(path.dirname(linkPath), sharedPath), linkPath, "dir");
     linkedSharedSkills.push(skillId);
   }

@@ -30,7 +30,7 @@ import { handleRovingTabKey } from "@/lib/a11y";
 import { MarketplacePage } from "./MarketplacePage";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
-type SourceKind = "builtin" | "marketplace" | "uploaded" | "generated";
+type SourceKind = "builtin" | "role_default" | "marketplace" | "uploaded" | "generated";
 type RuntimeState =
   | "ready"
   | "disabled"
@@ -187,6 +187,7 @@ type ExternalAgentTasksResponse = {
 
 const SOURCE_LABEL: Record<SourceKind, string> = {
   builtin: "平台内置",
+  role_default: "岗位默认",
   marketplace: "广场安装",
   uploaded: "我的上传",
   generated: "对话生成",
@@ -224,6 +225,7 @@ const BUILTIN_DISPLAY: Record<string, { name: string; description?: string }> = 
 
 function sourceIcon(kind: SourceKind) {
   if (kind === "builtin") return <ShieldCheck size={17} aria-hidden="true" />;
+  if (kind === "role_default") return <BriefcaseBusiness size={17} aria-hidden="true" />;
   if (kind === "marketplace") return <Store size={17} aria-hidden="true" />;
   if (kind === "uploaded") return <Package size={17} aria-hidden="true" />;
   return <Sparkles size={17} aria-hidden="true" />;
@@ -285,6 +287,10 @@ function sourceCanRename(skill: RegistrySkill) {
 
 function sourceCanDestroy(skill: RegistrySkill) {
   return skill.source.kind === "uploaded" || skill.source.kind === "generated";
+}
+
+function sourceCanToggle(skill: RegistrySkill) {
+  return skill.source.kind !== "role_default";
 }
 
 function sourceCanUninstall(skill: RegistrySkill) {
@@ -839,6 +845,7 @@ function SkillsToolbar({
   const sourceFilters: { key: SourceFilter; label: string }[] = [
     { key: "all", label: "全部" },
     { key: "builtin", label: "平台内置" },
+    { key: "role_default", label: "岗位默认" },
     { key: "marketplace", label: "广场安装" },
     { key: "uploaded", label: "我的上传" },
     { key: "generated", label: "对话生成" },
@@ -886,6 +893,7 @@ function SkillRow({
   busy: boolean;
 }) {
   const tone = stateTone(skill.state);
+  const canToggle = sourceCanToggle(skill);
   return (
     <div className="skills-row">
       <div className="skills-row-main" onClick={onOpen}>
@@ -906,7 +914,13 @@ function SkillRow({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <button className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`} disabled={busy} onClick={() => onToggle(!skill.enabled)} aria-label={skill.enabled ? "停用技能" : "启用技能"}>
+        <button
+          className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`}
+          disabled={busy || !canToggle}
+          onClick={() => canToggle && onToggle(!skill.enabled)}
+          aria-label={canToggle ? (skill.enabled ? "停用技能" : "启用技能") : "岗位默认技能不可停用"}
+          title={canToggle ? undefined : "岗位默认技能由岗位配置控制"}
+        >
           <span className={`skills-switch-dot ${skill.enabled ? "on" : ""}`} />
         </button>
         <button className="skills-btn" onClick={onOpen}>详情</button>
@@ -973,6 +987,7 @@ function SkillDetailModal({
   }, [skill?.adoptId, skill?.id]);
   if (!skill) return null;
   const tone = stateTone(skill.state);
+  const canToggle = sourceCanToggle(skill);
 
   return (
     <div className="skills-detail-modal" role="dialog" aria-modal="true" aria-label={`${displayNameOf(skill)} 详情`} onClick={onClose}>
@@ -1018,7 +1033,12 @@ function SkillDetailModal({
 
             <div className="settings-row">
               <span className="settings-label">启用状态</span>
-              <button className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`} disabled={busy} onClick={() => onToggle(skill, !skill.enabled)}>
+              <button
+                className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`}
+                disabled={busy || !canToggle}
+                onClick={() => canToggle && onToggle(skill, !skill.enabled)}
+                title={canToggle ? undefined : "岗位默认技能由岗位配置控制"}
+              >
                 <span className={`skills-switch-dot ${skill.enabled ? "on" : ""}`} />
               </button>
             </div>
@@ -1032,10 +1052,12 @@ function SkillDetailModal({
               <div className="settings-label">操作</div>
               <div className="flex items-center gap-2 flex-wrap">
                 <button className="skills-btn" disabled={busy} onClick={() => onReconcile(skill)}><RotateCw size={13} /> 重新同步</button>
-                <button className="skills-btn" disabled={busy} onClick={() => onToggle(skill, !skill.enabled)}>
-                  {skill.enabled ? <PowerOff size={13} /> : <Power size={13} />}
-                  {skill.enabled ? "停用" : "启用"}
-                </button>
+                {canToggle && (
+                  <button className="skills-btn" disabled={busy} onClick={() => onToggle(skill, !skill.enabled)}>
+                    {skill.enabled ? <PowerOff size={13} /> : <Power size={13} />}
+                    {skill.enabled ? "停用" : "启用"}
+                  </button>
+                )}
                 {sourceCanRename(skill) && <button className="skills-btn" disabled={busy} onClick={() => onRename(skill)}><Pencil size={13} /> 重命名</button>}
                 {sourceCanPublish(skill) && <button className="skills-btn" disabled={busy} onClick={() => onPublish(skill)}><Store size={13} /> 提交到中队专区</button>}
                 {sourceCanUninstall(skill) && <button className="skills-btn" disabled={busy} onClick={() => onUninstall(skill)}><Trash2 size={13} /> 卸载</button>}

@@ -14,7 +14,6 @@ import {
   jiuwenClawAgentId,
   jiuwenClawSessionsDir,
   openClawAgentDir,
-  openClawSkillMarketDir,
   openClawWorkspaceDir,
   readSessionEpoch,
   resolveRuntimeAgentId,
@@ -25,6 +24,7 @@ import { createContext } from "./context";
 import { clearSessionCookieVariants, setLogoutLockCookieVariants } from "./cookies";
 import { skillInstaller } from "./skills/skill-installer";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "./skills/skill-source";
+import { skillStoreMarketplaceDir } from "./skills/skill-store";
 
 type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -2073,7 +2073,7 @@ export function registerMiscRoutes(app: express.Express) {
 
           const filename = decodeURIComponent(String(req.header("x-skill-filename") || "uploaded.zip")).trim() || "uploaded.zip";
           const parsed = await parseSkillPackageBuffer(buf, filename);
-          const marketDir = openClawSkillMarketDir();
+          const marketDir = skillStoreMarketplaceDir();
           const uploadId = `upload-${Date.now()}`;
           const tmpZip = path.join("/tmp", `${uploadId}.zip`);
           const finalDir = path.join(marketDir, "pending", `${parsed.skillId}-${uploadId}`);

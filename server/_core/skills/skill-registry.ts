@@ -24,6 +24,7 @@ import type {
 import { APP_ROOT, OPENCLAW_HOME, bumpSessionEpoch, clearAgentSessionsCache, resolveRuntimeAgentId, isJiuwenClawAdoptId, jiuwenClawWorkspaceDir } from "../helpers";
 import { skillInstaller, type SkillInstaller } from "./skill-installer";
 import { parseSkillSourceDirectory } from "./skill-source";
+import { skillSourceDirsForRuntime } from "./skill-store";
 
 type RegistryOptions = {
   appRoot?: string;
@@ -440,6 +441,9 @@ export class FileSkillRegistry implements SkillRegistry {
     const rows = this.loadRegistry();
     const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
     if (!skill) return err("not_found", "skill not found");
+    if (skill.source.kind === "role_default") {
+      return err("permission_denied", "role default skills are controlled by the role configuration");
+    }
     const runtimePath = skill.sync.runtimePath || await this.runtimePath(adoptId, skillId);
     if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
     const next = skill.source.kind === "marketplace"
@@ -576,10 +580,7 @@ export class FileSkillRegistry implements SkillRegistry {
       role,
       effectiveAssets,
       activeSkillIds,
-      skillSourceDirs: [
-        path.join(this.openclawHome, "skills-shared"),
-        path.join(this.openclawHome, "skill-market", "approved"),
-      ],
+      skillSourceDirs: skillSourceDirsForRuntime(),
     });
 
     const changed =
