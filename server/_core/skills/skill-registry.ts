@@ -24,7 +24,7 @@ import type {
 import { APP_ROOT, OPENCLAW_HOME, bumpSessionEpoch, clearAgentSessionsCache, resolveRuntimeAgentId, isJiuwenClawAdoptId, jiuwenClawWorkspaceDir } from "../helpers";
 import { skillInstaller, type SkillInstaller } from "./skill-installer";
 import { parseSkillSourceDirectory } from "./skill-source";
-import { skillSourceDirsForRuntime } from "./skill-store";
+import { skillSourceDirsForRuntime, skillStoreAgentDir, skillStoreMarketplaceInstallDir } from "./skill-store";
 
 type RegistryOptions = {
   appRoot?: string;
@@ -143,6 +143,17 @@ function sourceIsZip(sourcePath?: string): boolean {
   return !!sourcePath && path.extname(sourcePath).toLowerCase() === ".zip";
 }
 
+function pathInside(child: string, parent: string): boolean {
+  const normalizedChild = path.resolve(child);
+  const normalizedParent = path.resolve(parent);
+  return normalizedChild === normalizedParent || normalizedChild.startsWith(`${normalizedParent}${path.sep}`);
+}
+
+function isAgentScopedSkillSource(adoptId: string, sourcePath?: string): boolean {
+  if (!sourcePath) return false;
+  return pathInside(sourcePath, skillStoreAgentDir(adoptId));
+}
+
 
 function readSkillRuntimeName(runtimePath: string | undefined, fallback: string): string {
   try {
@@ -247,6 +258,19 @@ export class FileSkillRegistry implements SkillRegistry {
 
   private async runtimePath(adoptId: string, skillId: string): Promise<string> {
     return path.join(await this.runtimeRoot(adoptId), skillId);
+  }
+
+  private prepareInstallSource(adoptId: string, source: SkillSource): SkillSource {
+    if (source.kind !== "marketplace") return source;
+    if (!source.sourcePath || !existsSync(source.sourcePath)) {
+      throw new Error("marketplace skill source is missing");
+    }
+    const agentSourcePath = skillStoreMarketplaceInstallDir(adoptId, source.skillId);
+    if (path.resolve(source.sourcePath) === path.resolve(agentSourcePath)) return source;
+    if (existsSync(agentSourcePath)) rmSync(agentSourcePath, { recursive: true, force: true });
+    mkdirSync(path.dirname(agentSourcePath), { recursive: true });
+    this.installer.installFromSource(source.sourcePath, agentSourcePath);
+    return { ...source, sourcePath: agentSourcePath };
   }
 
   private async finalizeSkill(adoptId: string, skill: Skill): Promise<Skill> {
@@ -393,24 +417,30 @@ export class FileSkillRegistry implements SkillRegistry {
       const runtimePath = existing.sync.runtimePath || await this.runtimePath(adoptId, source.skillId);
       if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
     }
+    let preparedSource = source;
+    try {
+      preparedSource = this.prepareInstallSource(adoptId, source);
+    } catch (e: any) {
+      return err("source_missing", String(e?.message || e));
+    }
     const skill: Skill = {
-      id: source.skillId,
+      id: preparedSource.skillId,
       adoptId,
-      source,
+      source: preparedSource,
       state: "syncing",
       enabled: true,
       review: { state: "none" },
-      sync: { runtimePath: await this.runtimePath(adoptId, source.skillId) },
+      sync: { runtimePath: await this.runtimePath(adoptId, preparedSource.skillId) },
       scan: existing?.scan,
       capabilities: [],
       examples: [],
       createdAt: existing?.createdAt || now,
       updatedAt: now,
     };
-    const next = rows.filter((x) => !(x.adoptId === adoptId && x.id === source.skillId));
+    const next = rows.filter((x) => !(x.adoptId === adoptId && x.id === preparedSource.skillId));
     next.push(skill);
     this.saveRegistry(next);
-    const report = await this.reconcile(adoptId, { skillId: source.skillId });
+    const report = await this.reconcile(adoptId, { skillId: preparedSource.skillId });
     if (!report.ok) {
       this.saveRegistry(rows);
       return report as SkillRegistryResult<Skill>;
@@ -420,7 +450,7 @@ export class FileSkillRegistry implements SkillRegistry {
       this.saveRegistry(rows);
       return listed;
     }
-    const out = listed.value.find((x) => x.id === source.skillId);
+    const out = listed.value.find((x) => x.id === preparedSource.skillId);
     if (!out) {
       this.saveRegistry(rows);
       return err("sync_failed", "skill was not found after install");
@@ -446,6 +476,9 @@ export class FileSkillRegistry implements SkillRegistry {
     }
     const runtimePath = skill.sync.runtimePath || await this.runtimePath(adoptId, skillId);
     if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
+    if (skill.source.kind === "marketplace" && isAgentScopedSkillSource(adoptId, skill.source.sourcePath) && existsSync(skill.source.sourcePath!)) {
+      rmSync(skill.source.sourcePath!, { recursive: true, force: true });
+    }
     const next = skill.source.kind === "marketplace"
       ? rows.filter((x) => x !== skill)
       : rows.map((x) => x === skill ? { ...x, enabled: false, state: "disabled" as const, updatedAt: iso(this.now) } : x);
@@ -458,8 +491,8 @@ export class FileSkillRegistry implements SkillRegistry {
     const rows = this.loadRegistry();
     const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
     if (!skill) return err("not_found", "skill not found");
-    if (!["uploaded", "generated"].includes(skill.source.kind)) {
-      return err("permission_denied", "only uploaded or generated skills can be destroyed");
+    if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
+      return err("permission_denied", "only uploaded, generated or runtime-imported skills can be destroyed");
     }
     await this.removeRuntimeSkillCopies(adoptId, skill);
     if (skill.source.sourcePath && existsSync(skill.source.sourcePath)) rmSync(skill.source.sourcePath, { recursive: true, force: true });
@@ -487,7 +520,7 @@ export class FileSkillRegistry implements SkillRegistry {
         const parsedDisplayName = normalizeSkillDisplayName(parsed.displayName);
         shouldRemove = shouldRemove
           || parsed.skillId === skill.id
-          || (skill.source.kind === "generated" && !!expectedDisplayName && parsedDisplayName === expectedDisplayName);
+          || (["generated", "runtime_imported"].includes(skill.source.kind) && !!expectedDisplayName && parsedDisplayName === expectedDisplayName);
       } catch {
         // Ignore unreadable sibling directories; destroy should stay best-effort
         // beyond the canonical registry/runtime paths.
@@ -498,12 +531,18 @@ export class FileSkillRegistry implements SkillRegistry {
 
   async setEnabled(adoptId: string, skillId: string, enabled: boolean): Promise<SkillRegistryResult<Skill>> {
     if (!enabled) {
-      const disabled = await this.uninstall(adoptId, skillId);
-      if (!disabled.ok) return disabled as SkillRegistryResult<Skill>;
-      const listed = await this.listSkills(adoptId);
-      if (!listed.ok) return listed;
-      const skill = listed.value.find((x) => x.id === skillId);
-      return skill ? ok(skill) : err("not_found", "skill not found after disable");
+      const rows = this.loadRegistry();
+      const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
+      if (!skill) return err("not_found", "skill not found");
+      if (skill.source.kind === "role_default") {
+        return err("permission_denied", "role default skills are controlled by the role configuration");
+      }
+      const runtimePath = skill.sync.runtimePath || await this.runtimePath(adoptId, skillId);
+      if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
+      const nextSkill = { ...skill, enabled: false, state: "disabled" as const, sync: { ...skill.sync, runtimePath }, updatedAt: iso(this.now) };
+      this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));
+      await this.invalidateRuntime(adoptId);
+      return ok(await this.finalizeSkill(adoptId, nextSkill));
     }
     const rows = this.loadRegistry();
     const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
@@ -523,8 +562,8 @@ export class FileSkillRegistry implements SkillRegistry {
     const rows = this.loadRegistry();
     const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
     if (!skill) return err("not_found", "skill not found");
-    if (!["uploaded", "generated"].includes(skill.source.kind)) {
-      return err("permission_denied", "only uploaded or generated skills can be renamed");
+    if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
+      return err("permission_denied", "only uploaded, generated or runtime-imported skills can be renamed");
     }
     const nextSkill = { ...skill, source: { ...skill.source, displayName: name }, updatedAt: iso(this.now) };
     this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));

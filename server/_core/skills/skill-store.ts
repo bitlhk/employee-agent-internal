@@ -1,5 +1,6 @@
 import path from "path";
 import { existsSync, mkdirSync, realpathSync, rmSync, cpSync, readdirSync } from "fs";
+import type { SkillSourceKind } from "../../../shared/types/skill";
 import { expandHomePath, OPENCLAW_HOME, OPENCLAW_BASE_HOME } from "../helpers";
 
 export const SKILL_STORE_ROOT = path.resolve(
@@ -14,12 +15,29 @@ export function skillStoreMarketplaceDir(status?: "pending" | "approved" | "reje
   return status ? skillStorePath("marketplace", status) : skillStorePath("marketplace");
 }
 
+export function skillStoreAgentDir(adoptId: string, ...parts: string[]): string {
+  return skillStorePath("agents", adoptId, ...parts);
+}
+
+export function skillStoreAgentSourceDir(adoptId: string, kind: Extract<SkillSourceKind, "marketplace" | "uploaded" | "generated" | "runtime_imported">, skillId?: string): string {
+  const bucket = kind === "runtime_imported" ? "runtime-imported" : kind;
+  return skillId ? skillStoreAgentDir(adoptId, bucket, skillId) : skillStoreAgentDir(adoptId, bucket);
+}
+
+export function skillStoreMarketplaceInstallDir(adoptId: string, skillId?: string): string {
+  return skillStoreAgentSourceDir(adoptId, "marketplace", skillId);
+}
+
 export function skillStoreUploadedDir(adoptId: string, skillId?: string): string {
-  return skillId ? skillStorePath("uploaded", adoptId, skillId) : skillStorePath("uploaded", adoptId);
+  return skillStoreAgentSourceDir(adoptId, "uploaded", skillId);
 }
 
 export function skillStoreGeneratedDir(adoptId: string, skillId?: string): string {
-  return skillId ? skillStorePath("generated", adoptId, skillId) : skillStorePath("generated", adoptId);
+  return skillStoreAgentSourceDir(adoptId, "generated", skillId);
+}
+
+export function skillStoreRuntimeImportedDir(adoptId: string, skillId?: string): string {
+  return skillStoreAgentSourceDir(adoptId, "runtime_imported", skillId);
 }
 
 export function legacySkillMarketDir(status?: string): string {
@@ -44,8 +62,7 @@ export function ensureSkillStoreDirs(): void {
     skillStoreMarketplaceDir("approved"),
     skillStoreMarketplaceDir("rejected"),
     skillStoreMarketplaceDir("offline"),
-    skillStorePath("uploaded"),
-    skillStorePath("generated"),
+    skillStorePath("agents"),
     skillStorePath("archive"),
   ]) {
     mkdirSync(dir, { recursive: true });

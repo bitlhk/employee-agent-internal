@@ -7,7 +7,7 @@ import { z } from "zod";
  * tenant policy live in the server-side registry implementation.
  */
 
-export const SKILL_SOURCE_KINDS = ["builtin", "role_default", "marketplace", "uploaded", "generated"] as const;
+export const SKILL_SOURCE_KINDS = ["builtin", "role_default", "marketplace", "uploaded", "generated", "runtime_imported"] as const;
 export type SkillSourceKind = (typeof SKILL_SOURCE_KINDS)[number];
 export const skillSourceKindSchema = z.enum(SKILL_SOURCE_KINDS);
 

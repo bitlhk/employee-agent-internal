@@ -43,6 +43,7 @@ import {
   skillStoreMarketplaceDir,
   skillStoreUploadedDir,
   skillStoreGeneratedDir,
+  skillStoreRuntimeImportedDir,
   skillSourceDirsForRuntime,
 } from "./skills/skill-store";
 
@@ -62,7 +63,7 @@ function decodeParam(value: unknown): string {
 }
 
 function skillSourceCacheDir(adoptId: string, skillId: string): string {
-  return skillStoreGeneratedDir(adoptId, skillId);
+  return skillStoreRuntimeImportedDir(adoptId, skillId);
 }
 
 function skillPackageIndexPath(): string {
@@ -589,10 +590,10 @@ async function discoverGeneratedRuntimeSkills(
       }
 
       const source: SkillSource = {
-        kind: "generated",
+        kind: "runtime_imported",
         skillId: parsed.skillId,
         displayName: parsed.displayName || parsed.skillId,
-        description: parsed.description || "聊天生成的个人技能",
+        description: parsed.description || "运行时导入的个人技能",
         sourcePath: sourceCache,
         version: String(parsed.manifest?.version || ""),
       };
@@ -1207,11 +1208,11 @@ export function registerSkillRoutes(app: express.Express) {
         res.status(404).json({ error: "skill not found" });
         return;
       }
-      if (!["uploaded", "generated"].includes(skill.source.kind)) {
+      if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
         res
           .status(400)
           .json({
-            error: "only uploaded or generated skills can be submitted",
+            error: "only uploaded, generated or runtime-imported skills can be submitted",
           });
         return;
       }

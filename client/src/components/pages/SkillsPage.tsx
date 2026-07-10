@@ -30,7 +30,7 @@ import { handleRovingTabKey } from "@/lib/a11y";
 import { MarketplacePage } from "./MarketplacePage";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
-type SourceKind = "builtin" | "role_default" | "marketplace" | "uploaded" | "generated";
+type SourceKind = "builtin" | "role_default" | "marketplace" | "uploaded" | "generated" | "runtime_imported";
 type RuntimeState =
   | "ready"
   | "disabled"
@@ -191,6 +191,7 @@ const SOURCE_LABEL: Record<SourceKind, string> = {
   marketplace: "广场安装",
   uploaded: "我的上传",
   generated: "对话生成",
+  runtime_imported: "运行时导入",
 };
 
 const STATE_LABEL: Record<RuntimeState, string> = {
@@ -282,11 +283,11 @@ function descriptionOf(skill: RegistrySkill): string {
 }
 
 function sourceCanRename(skill: RegistrySkill) {
-  return skill.source.kind === "uploaded" || skill.source.kind === "generated";
+  return skill.source.kind === "uploaded" || skill.source.kind === "generated" || skill.source.kind === "runtime_imported";
 }
 
 function sourceCanDestroy(skill: RegistrySkill) {
-  return skill.source.kind === "uploaded" || skill.source.kind === "generated";
+  return skill.source.kind === "uploaded" || skill.source.kind === "generated" || skill.source.kind === "runtime_imported";
 }
 
 function sourceCanToggle(skill: RegistrySkill) {
@@ -298,7 +299,7 @@ function sourceCanUninstall(skill: RegistrySkill) {
 }
 
 function sourceCanPublish(skill: RegistrySkill) {
-  return skill.source.kind === "uploaded" || skill.source.kind === "generated";
+  return skill.source.kind === "uploaded" || skill.source.kind === "generated" || skill.source.kind === "runtime_imported";
 }
 
 function SkillPill({ children, tone = "neutral" }: { children: ReactNode; tone?: "ok" | "warn" | "danger" | "neutral" }) {
@@ -849,6 +850,7 @@ function SkillsToolbar({
     { key: "marketplace", label: "广场安装" },
     { key: "uploaded", label: "我的上传" },
     { key: "generated", label: "对话生成" },
+    { key: "runtime_imported", label: "运行时导入" },
   ];
   const stateFilters: { key: StateFilter; label: string }[] = [
     { key: "all", label: "全部状态" },

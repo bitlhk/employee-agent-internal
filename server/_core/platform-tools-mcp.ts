@@ -1,5 +1,13 @@
 import type { Express, Request, Response } from "express";
-import { isAuthorizedInternalRequest } from "./helpers";
+import path from "path";
+import { existsSync, mkdirSync, rmSync } from "fs";
+import { isAuthorizedInternalRequest, resolveRuntimeAgentId, resolveRuntimeWorkspaceByIds } from "./helpers";
+import type { SkillSource } from "../../shared/types/skill";
+import { getClawByAdoptId } from "../db";
+import { parseSkillSourceDirectory, sanitizeSkillId } from "./skills/skill-source";
+import { skillInstaller } from "./skills/skill-installer";
+import { skillRegistry } from "./skills/skill-registry";
+import { skillStoreRuntimeImportedDir } from "./skills/skill-store";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -69,6 +77,12 @@ function textResult(text: string, extra: Record<string, unknown> = {}) {
 
 function isAuthorized(req: Request): boolean {
   return isAuthorizedInternalRequest(req);
+}
+
+function pathInside(child: string, parent: string): boolean {
+  const normalizedChild = path.resolve(child);
+  const normalizedParent = path.resolve(parent);
+  return normalizedChild === normalizedParent || normalizedChild.startsWith(`${normalizedParent}${path.sep}`);
 }
 
 function pickHeader(req: Request, names: string[]): string {
@@ -242,6 +256,85 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
       return;
     }
     res.json({ status: "ok", name: SERVICE_NAME, version: SERVICE_VERSION });
+  });
+
+  app.post("/api/internal/platform-tools/skills/register-runtime", async (req, res) => {
+    if (!isAuthorized(req)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    try {
+      const body = (req.body || {}) as Record<string, unknown>;
+      const adoptId = String(body.adoptId || body.adopt_id || "").trim();
+      const rawRuntimePath = String(body.runtimePath || body.runtime_path || "").trim();
+      const requestedSkillId = sanitizeSkillId(String(body.skillId || body.skill_id || path.basename(rawRuntimePath) || ""));
+      if (!adoptId || !rawRuntimePath || !requestedSkillId) {
+        res.status(400).json({ error: "adoptId, skillId and runtimePath required" });
+        return;
+      }
+      const claw = await getClawByAdoptId(adoptId).catch(() => null);
+      if (!claw) {
+        res.status(404).json({ error: "agent not found" });
+        return;
+      }
+      const runtimeAgentId = resolveRuntimeAgentId(adoptId, String((claw as any).agentId || ""));
+      const workspaceDir = resolveRuntimeWorkspaceByIds(adoptId, runtimeAgentId);
+      const runtimePath = path.resolve(rawRuntimePath);
+      const expectedSkillsRoot = path.join(workspaceDir, "skills");
+      if (!pathInside(runtimePath, expectedSkillsRoot)) {
+        res.status(400).json({ error: "runtimePath is outside agent skills workspace" });
+        return;
+      }
+      if (!existsSync(path.join(runtimePath, "SKILL.md"))) {
+        res.status(400).json({ error: "runtime skill is missing SKILL.md" });
+        return;
+      }
+
+      const parsed = parseSkillSourceDirectory(runtimePath, requestedSkillId);
+      const skillId = parsed.skillId || requestedSkillId;
+      const existing = await skillRegistry.listSkills(adoptId);
+      if (existing.ok) {
+        const registered = existing.value.find((skill) => skill.id === skillId || skill.id === requestedSkillId);
+        if (registered && registered.source.kind !== "runtime_imported") {
+          res.json({
+            ok: true,
+            skipped: true,
+            reason: "skill already managed by registry",
+            skillId: registered.id,
+            sourceKind: registered.source.kind,
+            sourcePath: registered.source.sourcePath || null,
+            runtimePath,
+          });
+          return;
+        }
+      }
+
+      const sourceDir = skillStoreRuntimeImportedDir(adoptId, skillId);
+      if (existsSync(sourceDir)) rmSync(sourceDir, { recursive: true, force: true });
+      mkdirSync(path.dirname(sourceDir), { recursive: true });
+      skillInstaller.installFromSource(runtimePath, sourceDir);
+
+      const source: SkillSource = {
+        kind: "runtime_imported",
+        skillId,
+        displayName: parsed.displayName || skillId,
+        description: parsed.description || "运行时导入的个人技能",
+        sourcePath: sourceDir,
+        version: String(parsed.manifest?.version || ""),
+      };
+      const installed = await skillRegistry.install(adoptId, source);
+      if (!installed.ok) {
+        res.status(500).json({ error: installed.error.detail, kind: installed.error.kind });
+        return;
+      }
+      await skillRegistry.updateScan(adoptId, skillId, {
+        warnings: parsed.warnings,
+        scannedAt: new Date().toISOString(),
+      });
+      res.json({ ok: true, skillId, sourcePath: sourceDir, runtimePath });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e?.message || "register runtime skill failed") });
+    }
   });
 
   app.get("/api/internal/platform-tools/mcp", (req: Request, res: Response) => {

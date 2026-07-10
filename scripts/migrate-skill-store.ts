@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "fs";
 import path from "path";
 import type { Skill } from "../shared/types/skill";
 import { getClawByAdoptId, resolveEffectiveRoleAssets } from "../server/db";
@@ -8,12 +8,16 @@ import { skillRegistry } from "../server/_core/skills/skill-registry";
 import {
   migrateLegacySkillMarketToStore,
   remapLegacySkillMarketPath,
+  skillStoreAgentSourceDir,
+  skillStoreMarketplaceInstallDir,
+  skillStorePath,
   skillSourceDirsForRuntime,
 } from "../server/_core/skills/skill-store";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const APPLY = process.argv.includes("--apply");
 const RECONCILE = process.argv.includes("--reconcile");
+const INCLUDE_LEGACY = process.argv.includes("--include-legacy");
 const ADOPT_ID = process.argv.find((arg) => arg.startsWith("--adoptId="))?.split("=")[1]?.trim();
 
 function readJson<T>(filePath: string, fallback: T): T {
@@ -75,6 +79,27 @@ function remapSourcePath(rawPath: string | undefined): string | undefined {
   return rawPath;
 }
 
+function copyDirIfNeeded(src: string, dst: string): boolean {
+  if (!existsSync(src)) return false;
+  if (path.resolve(src) === path.resolve(dst)) return false;
+  if (existsSync(dst)) rmSync(dst, { recursive: true, force: true });
+  mkdirSync(path.dirname(dst), { recursive: true });
+  cpSync(src, dst, { recursive: true, dereference: false });
+  return true;
+}
+
+function legacyAgentSourcePath(kind: "uploaded" | "generated", adoptId: string, skillId: string): string {
+  return skillStorePath(kind, adoptId, skillId);
+}
+
+function agentSourcePathFor(kind: Skill["source"]["kind"], adoptId: string, skillId: string): string | undefined {
+  if (kind === "marketplace") return skillStoreMarketplaceInstallDir(adoptId, skillId);
+  if (kind === "uploaded" || kind === "generated" || kind === "runtime_imported") {
+    return skillStoreAgentSourceDir(adoptId, kind, skillId);
+  }
+  return undefined;
+}
+
 function linkedOrDirectUnderApprovedSource(filePath: string | undefined, approvedRoots: string[]): boolean {
   return pathUnderAnyRoot(filePath, approvedRoots) || pathUnderAnyRoot(realpathIfExists(filePath), approvedRoots);
 }
@@ -90,7 +115,11 @@ async function defaultSkillsForAdopt(adoptId: string): Promise<Set<string>> {
 async function main() {
   const registryPath = path.join(APP_ROOT, "data", "skill-registry.json");
   const registry = readJson<Skill[]>(registryPath, []);
-  const scoped = ADOPT_ID ? registry.filter((row) => row.adoptId === ADOPT_ID) : registry;
+  const scoped = registry.filter((row) => {
+    if (ADOPT_ID) return row.adoptId === ADOPT_ID;
+    if (INCLUDE_LEGACY) return true;
+    return String(row.adoptId || "").startsWith("lgj-");
+  });
   const roleDefaultCache = new Map<string, Set<string>>();
   const now = new Date().toISOString();
 
@@ -104,11 +133,12 @@ async function main() {
   let remapped = 0;
   let roleDefault = 0;
   let marketplace = 0;
+  let privateCopied = 0;
   const touchedAdopts = new Set<string>();
 
   const next: Skill[] = [];
   for (const row of registry) {
-    if (ADOPT_ID && row.adoptId !== ADOPT_ID) {
+    if (!scoped.includes(row)) {
       next.push(row);
       continue;
     }
@@ -130,18 +160,36 @@ async function main() {
       row.source.kind === "generated" &&
       linkedOrDirectUnderApprovedSource(mappedPath || sourcePath, approvedRoots);
 
-    if (sourceChanged || shouldBeRoleDefault || generatedMarketSource) {
-      const nextKind = shouldBeRoleDefault
-        ? "role_default"
-        : generatedMarketSource
-          ? "marketplace"
-          : nextRow.source.kind;
+    const nextKind = shouldBeRoleDefault
+      ? "role_default"
+      : generatedMarketSource
+        ? "marketplace"
+        : nextRow.source.kind;
+
+    let nextSourcePath = mappedPath || nextRow.source.sourcePath;
+    if (nextKind !== "role_default") {
+      const agentSourcePath = agentSourcePathFor(nextKind, row.adoptId, row.id);
+      const legacySource = nextKind === "uploaded" || nextKind === "generated"
+        ? legacyAgentSourcePath(nextKind, row.adoptId, row.id)
+        : "";
+      const sourceCandidate = existsSync(nextSourcePath || "") ? nextSourcePath! : legacySource;
+      if (agentSourcePath && sourceCandidate && existsSync(sourceCandidate) && path.resolve(sourceCandidate) !== path.resolve(agentSourcePath)) {
+        if (APPLY && copyDirIfNeeded(sourceCandidate, agentSourcePath)) privateCopied++;
+        nextSourcePath = agentSourcePath;
+      } else if (agentSourcePath && nextSourcePath && path.resolve(nextSourcePath) === path.resolve(agentSourcePath)) {
+        nextSourcePath = agentSourcePath;
+      }
+    }
+
+    const privateSourceChanged = !!nextSourcePath && nextSourcePath !== nextRow.source.sourcePath;
+
+    if (sourceChanged || shouldBeRoleDefault || generatedMarketSource || privateSourceChanged) {
       nextRow = {
         ...nextRow,
         source: {
           ...nextRow.source,
           kind: nextKind,
-          sourcePath: mappedPath || nextRow.source.sourcePath,
+          sourcePath: nextSourcePath || nextRow.source.sourcePath,
         },
         state: "syncing",
         sync: {
@@ -160,10 +208,10 @@ async function main() {
     next.push(nextRow);
   }
 
-  console.log(`[SKILL-STORE-MIGRATE] scanned=${scoped.length}, changed=${changed}, remappedPaths=${remapped}, roleDefault=${roleDefault}, marketplace=${marketplace}`);
+  console.log(`[SKILL-STORE-MIGRATE] scanned=${scoped.length}, changed=${changed}, remappedPaths=${remapped}, roleDefault=${roleDefault}, marketplace=${marketplace}, privateCopied=${privateCopied}`);
   console.log(`[SKILL-STORE-MIGRATE] touchedAdopts=${Array.from(touchedAdopts).sort().join(", ") || "<none>"}`);
   if (!APPLY) {
-    console.log("[SKILL-STORE-MIGRATE] dry-run only. Re-run with --apply to update registry.");
+    console.log("[SKILL-STORE-MIGRATE] dry-run only. Re-run with --apply to update registry. Add --include-legacy to include lgc-*.");
     return;
   }
 

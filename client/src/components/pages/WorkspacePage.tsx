@@ -74,6 +74,11 @@ function isProtectedRootFile(file: FileNode): boolean {
   return file.type === "file" && !file.path.includes("/") && PROTECTED_ROOT_FILES.has(file.path);
 }
 
+function isManagedSkillsPath(path: string): boolean {
+  const normalized = String(path || "").replace(/\\/g, "/").replace(/^\/+/, "");
+  return normalized === "skills" || normalized.startsWith("skills/");
+}
+
 function fileSourceHint(file: FileNode): string {
   const path = file.path.toLowerCase();
   if (file.type === "directory") {
@@ -102,6 +107,7 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
   const [uploadError, setUploadError] = useState("");
   const [currentPath, setCurrentPath] = useState<string>("");  // workspace-relative current dir, "" = root
   const [deleteTarget, setDeleteTarget] = useState<FileNode | null>(null);
+  const inManagedSkillsDir = isManagedSkillsPath(currentPath);
 
   const load = async () => {
     if (!adoptId) return;
@@ -276,7 +282,7 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
       <div className="ea-data-page workspace-data-page">
       <div className="ea-data-toolbar workspace-data-toolbar">
         <div className="ea-data-toolbar__actions">
-        {caps?.supportsUpload && (
+        {caps?.supportsUpload && !inManagedSkillsDir && (
           <label className="inline-flex">
             <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
             <span className={`ea-data-btn ea-data-btn--primary ${uploading ? "pointer-events-none opacity-55" : ""}`} aria-disabled={uploading}>
@@ -294,6 +300,11 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
       {uploadError && (
         <div className="mb-3 px-3 py-2 text-xs rounded-md" style={{ background: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca" }}>
           上传失败: {uploadError}
+        </div>
+      )}
+      {inManagedSkillsDir && (
+        <div className="mb-3 px-3 py-2 text-xs rounded-md" style={{ background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0" }}>
+          技能目录由平台管理。请在“我的技能”页面上传、卸载或删除技能。
         </div>
       )}
 
@@ -350,7 +361,7 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
                           </button>
                         </a>
                       )}
-                      {caps?.supportsDelete && !isProtectedRootFile(f) && (
+                      {caps?.supportsDelete && !isProtectedRootFile(f) && !isManagedSkillsPath(f.path) && (
                         <button type="button" onClick={(e) => { e.stopPropagation(); requestDeleteFile(f); }} className="ea-data-icon-btn ea-data-icon-btn--danger" title="删除">
                           <Trash2 className="w-3 h-3" />
                         </button>

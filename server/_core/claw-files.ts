@@ -183,6 +183,11 @@ function isProtectedRootFile(relPath: string): boolean {
   return !normalized.includes("/") && PROTECTED_ROOT_FILES.has(normalized);
 }
 
+function isManagedSkillsPath(relPath: string): boolean {
+  const normalized = path.posix.normalize(String(relPath || "").replace(/\\/g, "/")).replace(/^\/+/, "");
+  return normalized === "skills" || normalized.startsWith("skills/");
+}
+
 function openclawListFiles(workspace: string, subPath: string = ""): LinggFileNode[] {
   if (!existsSync(workspace)) return [];
   const startAbs = safeJoin(workspace, subPath);
@@ -393,6 +398,25 @@ export function registerFilesRoutes(app: express.Express) {
         return res.status(429).json({ error: `workspace file count >= ${MAX_FILES_PER_WORKSPACE}` });
       }
       const targetRel = subPath ? `${subPath}/${filename}` : filename;
+      if (isManagedSkillsPath(targetRel)) {
+        await recordFileAudit({
+          req,
+          claw,
+          adoptId,
+          action: "file.upload.denied",
+          result: "denied",
+          severity: "medium",
+          path: targetRel,
+          filename,
+          ext,
+          size: buf.length,
+          sha256,
+          runtime: runtimeName(adoptId),
+          errorCode: "MANAGED_SKILLS_PATH",
+          policyCode: "skills_managed_by_registry",
+        });
+        return res.status(409).json({ error: "skills_directory_is_managed", message: "技能目录由平台管理，请在“我的技能”页面上传或卸载技能。" });
+      }
       const ws = runtimeWorkspace(claw, adoptId);
       const abs = safeJoin(ws, targetRel);
       if (!abs) {
@@ -450,6 +474,24 @@ export function registerFilesRoutes(app: express.Express) {
       const normalized = path.posix.normalize(relPath.replace(/\\/g, "/"));
       if (normalized === "" || normalized === "." || normalized === "/" || normalized === ".." || normalized.startsWith("../")) {
         return res.status(400).json({ error: "refuse to delete workspace root" });
+      }
+      if (isManagedSkillsPath(normalized)) {
+        const claw = await requireClawOwner(req, res, adoptId);
+        if (claw) {
+          await recordFileAudit({
+            req,
+            claw,
+            adoptId,
+            action: "file.delete.denied",
+            result: "denied",
+            severity: "medium",
+            path: normalized,
+            runtime: runtimeName(adoptId),
+            errorCode: "MANAGED_SKILLS_PATH",
+            policyCode: "skills_managed_by_registry",
+          });
+        }
+        return res.status(409).json({ error: "skills_directory_is_managed", message: "技能目录由平台管理，请在“我的技能”页面卸载或删除技能。" });
       }
       if (isProtectedRootFile(normalized)) {
         const claw = await requireClawOwner(req, res, adoptId);
