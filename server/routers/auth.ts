@@ -1,6 +1,6 @@
 import { COOKIE_NAME } from "@shared/const";
 import { clearSessionCookieVariants, getSessionCookieOptions, setLogoutLockCookieVariants } from "../_core/cookies";
-import { sdk } from "../_core/sdk";
+import { SESSION_MAX_AGE_MS, sdk, sessionAuthVersion } from "../_core/sdk";
 import { publicProcedure, adminProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -11,6 +11,7 @@ import {
   getUserByEmail,
   createUser,
   updateUser,
+  updateUserPasswordAndRevokeSessions,
   getAllAuthUsers,
   updateUserAccessLevel,
   isEmailInInternalAccessWhitelist,
@@ -34,6 +35,7 @@ const assertVerificationCode = (value: unknown) => {
 export const authRouter = router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(async ({ ctx }) => {
+      await sdk.revokeRequestSessions(ctx.req);
       await recordAuditBestEffort({
         action: "auth.logout",
         result: "success",
@@ -128,7 +130,7 @@ export const authRouter = router({
         });
         try {
           const hashedPassword = await bcrypt.hash(input.password, 10);
-          await updateUser(input.userId, { password: hashedPassword });
+          await updateUserPasswordAndRevokeSessions(input.userId, hashedPassword);
           await recordAuditRequired({
             action: "admin.user.password_reset.completed",
             ...auditActor(ctx.user),
@@ -169,12 +171,13 @@ export const authRouter = router({
           const sessionToken = await sdk.signSession({
             userId: fakeUserId,
             name: input.name,
+            authVersion: sessionAuthVersion({ id: fakeUserId }),
           });
           const cookieOptions = getSessionCookieOptions(ctx.req);
           clearSessionCookieVariants(ctx.req, ctx.res);
           ctx.res.cookie(COOKIE_NAME, sessionToken, {
             ...cookieOptions,
-            maxAge: 365 * 24 * 60 * 60 * 1000,
+            maxAge: SESSION_MAX_AGE_MS,
           });
           return {
             success: true,
@@ -253,6 +256,7 @@ export const authRouter = router({
         const sessionToken = await sdk.signSession({
           userId,
           name: input.name,
+          authVersion: sessionAuthVersion({ id: userId, password: hashedPassword }),
         });
 
         // 设置cookie
@@ -260,7 +264,7 @@ export const authRouter = router({
         clearSessionCookieVariants(ctx.req, ctx.res);
         ctx.res.cookie(COOKIE_NAME, sessionToken, {
           ...cookieOptions,
-          maxAge: 365 * 24 * 60 * 60 * 1000, // 1年
+          maxAge: SESSION_MAX_AGE_MS,
         });
 
         return {
@@ -289,12 +293,13 @@ export const authRouter = router({
           const sessionToken = await sdk.signSession({
             userId: fakeUserId,
             name: input.email.split('@')[0],
+            authVersion: sessionAuthVersion({ id: fakeUserId }),
           });
           const cookieOptions = getSessionCookieOptions(ctx.req);
           clearSessionCookieVariants(ctx.req, ctx.res);
           ctx.res.cookie(COOKIE_NAME, sessionToken, {
             ...cookieOptions,
-            maxAge: 365 * 24 * 60 * 60 * 1000,
+            maxAge: SESSION_MAX_AGE_MS,
           });
           return {
             success: true,
@@ -352,6 +357,7 @@ export const authRouter = router({
         const sessionToken = await sdk.signSession({
           userId: user.id,
           name: user.name || user.email || "",
+          authVersion: sessionAuthVersion(user),
         });
 
         // 设置cookie
@@ -359,7 +365,7 @@ export const authRouter = router({
         clearSessionCookieVariants(ctx.req, ctx.res);
         ctx.res.cookie(COOKIE_NAME, sessionToken, {
           ...cookieOptions,
-          maxAge: 365 * 24 * 60 * 60 * 1000, // 1年
+          maxAge: SESSION_MAX_AGE_MS,
         });
 
         await recordAuditBestEffort({
@@ -476,9 +482,7 @@ export const authRouter = router({
         const hashedPassword = await bcrypt.hash(newPassword, 10);
 
         // 4. 更新密码
-        await updateUser(user.id, {
-          password: hashedPassword,
-        });
+        await updateUserPasswordAndRevokeSessions(user.id, hashedPassword);
 
         // 5. 标记token为已使用
         await markPasswordResetTokenAsUsed(token);

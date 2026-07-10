@@ -1,4 +1,5 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME } from "@shared/const";
+import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
@@ -14,6 +15,7 @@ import type {
   GetUserInfoWithJwtRequest,
   GetUserInfoWithJwtResponse,
 } from "./types/oauthTypes";
+import { sessionRevocations } from "./session-revocations";
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
@@ -23,7 +25,26 @@ export type SessionPayload = {
   userId?: number;
   appId?: string;
   name: string;
+  authVersion?: string;
 };
+
+const DEFAULT_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const configuredSessionMaxAge = Number(process.env.SESSION_MAX_AGE_MS || DEFAULT_SESSION_MAX_AGE_MS);
+export const SESSION_MAX_AGE_MS = Number.isFinite(configuredSessionMaxAge)
+  ? Math.max(15 * 60 * 1000, Math.min(MAX_SESSION_MAX_AGE_MS, Math.floor(configuredSessionMaxAge)))
+  : DEFAULT_SESSION_MAX_AGE_MS;
+
+export function sessionAuthVersion(user: { id: number; password?: string | null; openId?: string | null }): string {
+  const credential = user.password ? `password:${user.password}` : `oauth:${user.openId || "local"}`;
+  return createHmac("sha256", ENV.cookieSecret).update(`${user.id}:${credential}`).digest("base64url");
+}
+
+function equalAuthVersion(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
@@ -39,20 +60,15 @@ class OAuthService {
     }
   }
 
-  private decodeState(state: string): string {
-    const redirectUri = atob(state);
-    return redirectUri;
-  }
-
   async getTokenByCode(
     code: string,
-    state: string
+    redirectUri: string
   ): Promise<ExchangeTokenResponse> {
     const payload: ExchangeTokenRequest = {
       clientId: ENV.appId,
       grantType: "authorization_code",
       code,
-      redirectUri: this.decodeState(state),
+      redirectUri,
     };
 
     const { data } = await this.client.post<ExchangeTokenResponse>(
@@ -117,13 +133,13 @@ class SDKServer {
   /**
    * Exchange OAuth authorization code for access token
    * @example
-   * const tokenResponse = await sdk.exchangeCodeForToken(code, state);
+   * const tokenResponse = await sdk.exchangeCodeForToken(code, redirectUri);
    */
   async exchangeCodeForToken(
     code: string,
-    state: string
+    redirectUri: string
   ): Promise<ExchangeTokenResponse> {
-    return this.oauthService.getTokenByCode(code, state);
+    return this.oauthService.getTokenByCode(code, redirectUri);
   }
 
   /**
@@ -191,11 +207,14 @@ class SDKServer {
     openId: string,
     options: { expiresInMs?: number; name?: string } = {}
   ): Promise<string> {
+    const user = await db.getUserByOpenId(openId);
+    if (!user) throw new Error("Cannot create session for unknown OAuth user");
     return this.signSession(
       {
         openId,
         appId: ENV.appId,
         name: options.name || "",
+        authVersion: sessionAuthVersion(user),
       },
       options
     );
@@ -205,13 +224,15 @@ class SDKServer {
     payload: SessionPayload,
     options: { expiresInMs?: number } = {}
   ): Promise<string> {
+    if (!payload.authVersion) throw new Error("authVersion is required to sign a session");
     const issuedAt = Date.now();
-    const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
+    const expiresInMs = Math.min(options.expiresInMs ?? SESSION_MAX_AGE_MS, MAX_SESSION_MAX_AGE_MS);
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
     const jwtPayload: Record<string, unknown> = {
       name: payload.name,
+      authVersion: payload.authVersion,
     };
     
     if (payload.openId) {
@@ -225,13 +246,15 @@ class SDKServer {
 
     return new SignJWT(jwtPayload)
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt()
+      .setJti(randomUUID())
       .setExpirationTime(expirationSeconds)
       .sign(secretKey);
   }
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId?: string; userId?: number; appId?: string; name: string } | null> {
+  ): Promise<{ openId?: string; userId?: number; appId?: string; name: string; authVersion: string } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -242,7 +265,15 @@ class SDKServer {
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],
       });
-      const { openId, userId, appId, name } = payload as Record<string, unknown>;
+      if (!isNonEmptyString(payload.jti) || typeof payload.exp !== "number") {
+        console.warn("[Auth] Session payload missing jti or expiry");
+        return null;
+      }
+      if (sessionRevocations.isRevoked(payload.jti)) {
+        console.warn("[Auth] Session has been explicitly revoked");
+        return null;
+      }
+      const { openId, userId, appId, name, authVersion } = payload as Record<string, unknown>;
 
       if (!isNonEmptyString(name)) {
         console.warn("[Auth] Session payload missing name field");
@@ -254,16 +285,34 @@ class SDKServer {
         console.warn("[Auth] Session payload missing openId or userId");
         return null;
       }
+      if (!isNonEmptyString(authVersion)) {
+        console.warn("[Auth] Session payload missing auth version");
+        return null;
+      }
 
       return {
         openId: isNonEmptyString(openId) ? openId : undefined,
         userId: typeof userId === 'number' ? userId : undefined,
         appId: isNonEmptyString(appId) ? appId : undefined,
         name,
+        authVersion,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
+    }
+  }
+
+  async revokeRequestSessions(req: Request): Promise<void> {
+    const values = this.getCookieValues(req.headers.cookie, COOKIE_NAME);
+    const fallback = this.parseCookies(req.headers.cookie).get(COOKIE_NAME);
+    for (const token of Array.from(new Set([...values, ...(fallback ? [fallback] : [])]))) {
+      try {
+        const { payload } = await jwtVerify(token, this.getSessionSecret(), { algorithms: ["HS256"] });
+        if (isNonEmptyString(payload.jti) && typeof payload.exp === "number") {
+          sessionRevocations.revoke(payload.jti, payload.exp);
+        }
+      } catch {}
     }
   }
 
@@ -388,6 +437,9 @@ class SDKServer {
 
     if (!user) {
       throw ForbiddenError("User not found");
+    }
+    if (!equalAuthVersion(sessionAuthVersion(user), session.authVersion)) {
+      throw ForbiddenError("Session has been revoked");
     }
 
     return user;

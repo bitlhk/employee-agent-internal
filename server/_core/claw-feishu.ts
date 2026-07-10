@@ -105,7 +105,7 @@ function loadAccount(adoptId: string): FeishuAccount | null {
 }
 
 function saveAccount(adoptId: string, account: FeishuAccount) {
-  writeFileSync(accountPath(adoptId), JSON.stringify(account, null, 2), "utf-8");
+  writeFileSync(accountPath(adoptId), JSON.stringify(account, null, 2), { encoding: "utf-8", mode: 0o640 });
 }
 
 function removeAccount(adoptId: string) {

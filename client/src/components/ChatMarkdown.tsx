@@ -223,6 +223,7 @@ function FencedCodeBlock({ code, className }: { code: string; className?: string
   const [previewing, setPreviewing] = useState(false);
   const lang = extractLang(className) || "text";
   const isHtml = lang === "html" || lang === "htm";
+  const safeHtmlPreview = `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; font-src data:; form-action 'none'; base-uri 'none'">${code}`;
 
   const onCopy = async () => {
     try { await navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
@@ -253,8 +254,9 @@ function FencedCodeBlock({ code, className }: { code: string; className?: string
       {previewing && isHtml && (
         <div style={{ background: "#fff", borderRadius: "0 0 8px 8px", overflow: "hidden" }}>
           <iframe
-            srcDoc={code}
-            sandbox="allow-scripts allow-modals"
+            srcDoc={safeHtmlPreview}
+            sandbox=""
+            referrerPolicy="no-referrer"
             style={{ width: "100%", height: 480, border: "none", display: "block" }}
             title="HTML Preview"
           />

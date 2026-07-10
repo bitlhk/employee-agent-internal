@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./runtime-permissions";
 // 全局异常捕获：防止 uncaught exception 导致服务崩溃，并打印完整 stack 方便排查
 process.on("uncaughtException", (err: Error) => {
   console.error("[UNCAUGHT EXCEPTION] Shutting down gracefully...");

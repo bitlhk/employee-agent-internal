@@ -145,6 +145,12 @@ export async function updateUser(id: number, updates: Partial<InsertUser>): Prom
   await db.update(users).set(updates).where(eq(users.id, id));
 }
 
+export async function updateUserPasswordAndRevokeSessions(id: number, password: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ password }).where(eq(users.id, id));
+}
+
 /**
  * 获取全部登录用户（用于后台权限管理）
  */

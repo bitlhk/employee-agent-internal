@@ -153,7 +153,7 @@ export type InsertIpManagement = typeof ipManagement.$inferInsert;
 export const emailVerificationCodes = mysqlTable("email_verification_codes", {
   id: int("id").autoincrement().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),
-  code: varchar("code", { length: 10 }).notNull(), // 验证码（6位数字）
+  code: varchar("code", { length: 10 }).notNull(), // 验证码的截断带密钥摘要
   expiresAt: timestamp("expiresAt").notNull(), // 过期时间
   used: mysqlEnum("used", ["yes", "no"]).default("no").notNull(), // 是否已使用
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -170,7 +170,7 @@ export const smtpConfig = mysqlTable("smtp_config", {
   host: varchar("host", { length: 255 }),
   port: varchar("port", { length: 10 }),
   user: varchar("user", { length: 320 }),
-  password: varchar("password", { length: 255 }), // 加密存储
+  password: varchar("password", { length: 255 }), // AES-256-GCM 信封加密
   from: varchar("from", { length: 320 }),
   enabled: mysqlEnum("enabled", ["yes", "no"]).default("no").notNull(), // 是否启用
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -186,7 +186,7 @@ export type InsertSmtpConfig = typeof smtpConfig.$inferInsert;
 export const passwordResetTokens = mysqlTable("password_reset_tokens", {
   id: int("id").autoincrement().primaryKey(),
   email: varchar("email", { length: 320 }).notNull(),
-  token: varchar("token", { length: 64 }).notNull().unique(),
+  token: varchar("token", { length: 64 }).notNull().unique(), // token 的带密钥摘要
   expiresAt: timestamp("expiresAt").notNull(),
   used: mysqlEnum("used", ["yes", "no"]).default("no").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

@@ -5,9 +5,12 @@
 import express from "express";
 import { createHash } from "crypto";
 import path from "path";
-import { existsSync, statSync, readdirSync, readFileSync, createReadStream, mkdirSync, writeFileSync, unlinkSync, rmSync } from "fs";
+import { existsSync, lstatSync, statSync, readdirSync, readFileSync, createReadStream, writeFileSync, unlinkSync, rmSync } from "fs";
 import { isJiuwenClawAdoptId, requireClawOwner, resolveRuntimeWorkspace } from "./helpers";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "./audit-events";
+import { resolveExistingWorkspacePath, resolveWorkspaceDeletePath, resolveWorkspaceWritePath } from "./file-path-security";
+import { SKILL_STORE_ROOT, skillSourceDirsForRuntime, skillStoreAgentDir } from "./skills/skill-store";
+import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
 
 type LinggFileNode = {
   name: string;
@@ -170,12 +173,13 @@ async function recordFileAudit(args: {
   else await recordAuditBestEffort(input);
 }
 
-function safeJoin(workspace: string, relPath: string): string | null {
-  if (!relPath) return workspace;
-  if (relPath.startsWith("/") || relPath.includes("\0") || relPath.includes("..")) return null;
-  const abs = path.normalize(path.join(workspace, relPath));
-  if (!abs.startsWith(workspace + path.sep) && abs !== workspace) return null;
-  return abs;
+function approvedSkillRoots(adoptId: string): string[] {
+  return [
+    ...skillSourceDirsForRuntime(),
+    skillStoreAgentDir(adoptId),
+    SKILL_STORE_ROOT,
+    "/usr/lib/node_modules/openclaw/skills",
+  ];
 }
 
 function isProtectedRootFile(relPath: string): boolean {
@@ -188,9 +192,10 @@ function isManagedSkillsPath(relPath: string): boolean {
   return normalized === "skills" || normalized.startsWith("skills/");
 }
 
-function openclawListFiles(workspace: string, subPath: string = ""): LinggFileNode[] {
+function openclawListFiles(workspace: string, subPath: string = "", adoptId = ""): LinggFileNode[] {
   if (!existsSync(workspace)) return [];
-  const startAbs = safeJoin(workspace, subPath);
+  const allowedRoots = isManagedSkillsPath(subPath) ? approvedSkillRoots(adoptId) : [];
+  const startAbs = resolveExistingWorkspacePath(workspace, subPath, allowedRoots);
   if (!startAbs) return [];
   const out: LinggFileNode[] = [];
   function walk(absPath: string, relPath: string, depth: number) {
@@ -200,17 +205,22 @@ function openclawListFiles(workspace: string, subPath: string = ""): LinggFileNo
     for (const name of entries) {
       if (out.length >= MAX_FILES_PER_LIST) break;
       if (name.startsWith(".")) continue;
-      const childAbs = path.join(absPath, name);
       const childRel = relPath ? `${relPath}/${name}` : name;
+      const childReal = resolveExistingWorkspacePath(
+        workspace,
+        childRel,
+        isManagedSkillsPath(childRel) ? approvedSkillRoots(adoptId) : [],
+      );
+      if (!childReal) continue;
       let st;
-      try { st = statSync(childAbs); } catch { continue; }
+      try { st = statSync(childReal); } catch { continue; }
       out.push({
         name, path: childRel,
         type: st.isDirectory() ? "directory" : "file",
         size: st.isDirectory() ? undefined : Number(st.size),
         modifiedAt: st.mtime.toISOString(),
       });
-      if (st.isDirectory()) walk(childAbs, childRel, depth + 1);
+      if (st.isDirectory()) walk(childReal, childRel, depth + 1);
     }
   }
   walk(startAbs, subPath, 0);
@@ -241,7 +251,7 @@ export function registerFilesRoutes(app: express.Express) {
       const subPath = String(req.query.path || "").trim();
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
       const workspace = runtimeWorkspace(claw, adoptId);
-      const files = openclawListFiles(workspace, subPath);
+      const files = openclawListFiles(workspace, subPath, adoptId);
       return res.json({ runtime: runtimeName(adoptId), capabilities: OPENCLAW_FILES_CAPABILITIES, files });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || "list failed") });
@@ -257,7 +267,7 @@ export function registerFilesRoutes(app: express.Express) {
       if (!claw) return;
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
       const workspace = runtimeWorkspace(claw, adoptId);
-      const abs = safeJoin(workspace, relPath);
+      const abs = resolveExistingWorkspacePath(workspace, relPath, isManagedSkillsPath(relPath) ? approvedSkillRoots(adoptId) : []);
       if (!abs || !existsSync(abs)) return res.status(404).json({ error: "file not found" });
       const st = statSync(abs);
       if (!st.isFile() || st.size > MAX_READ_BYTES) return res.status(413).json({ error: "not a file or too large" });
@@ -288,7 +298,7 @@ export function registerFilesRoutes(app: express.Express) {
       let absPath: string | null = null;
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
       const workspace = runtimeWorkspace(claw, adoptId);
-      absPath = safeJoin(workspace, relPath);
+      absPath = resolveExistingWorkspacePath(workspace, relPath, isManagedSkillsPath(relPath) ? approvedSkillRoots(adoptId) : []);
       if (absPath && (!existsSync(absPath) || !statSync(absPath).isFile())) absPath = null;
       if (!absPath) return res.status(404).json({ error: "file not found" });
       const filename = path.basename(absPath);
@@ -322,60 +332,64 @@ export function registerFilesRoutes(app: express.Express) {
       const filenameRaw = String(body.filename || "").trim();
       const contentBase64 = String(body.contentBase64 || "");
       if (!adoptId || !filenameRaw || !contentBase64) return res.status(400).json({ error: "adoptId, filename, contentBase64 required" });
+      const claw = await requireClawOwner(req, res, adoptId);
+      if (!claw) return;
       const filename = safeFilename(filenameRaw);
       if (!filename) return res.status(400).json({ error: "invalid filename" });
       const ext = getExt(filename);
       if (!isAllowedUploadExtension(ext, subPath)) {
-        const claw = await requireClawOwner(req, res, adoptId);
-        if (claw) {
-          await recordFileAudit({
-            req,
-            claw,
-            adoptId,
-            action: "file.upload.denied",
-            result: "denied",
-            severity: "medium",
-            path: subPath ? `${subPath}/${filename}` : filename,
-            filename,
-            ext,
-            runtime: runtimeName(adoptId),
-            errorCode: "FILE_TYPE_NOT_ALLOWED",
-            policyCode: "upload_extension_whitelist",
-            metadata: { allowedExtensions: Array.from(ALLOWED_EXTENSIONS) },
-          });
-        }
+        await recordFileAudit({
+          req,
+          claw,
+          adoptId,
+          action: "file.upload.denied",
+          result: "denied",
+          severity: "medium",
+          path: subPath ? `${subPath}/${filename}` : filename,
+          filename,
+          ext,
+          runtime: runtimeName(adoptId),
+          errorCode: "FILE_TYPE_NOT_ALLOWED",
+          policyCode: "upload_extension_whitelist",
+          metadata: { allowedExtensions: Array.from(ALLOWED_EXTENSIONS) },
+        });
         return res.status(400).json({ error: `file type .${ext} not allowed` });
       }
       let buf: Buffer;
-      try { buf = Buffer.from(contentBase64, "base64"); } catch { return res.status(400).json({ error: "invalid base64" }); }
+      const decoded = decodeBase64Strict(contentBase64);
+      if (!decoded) return res.status(400).json({ error: "invalid base64" });
+      buf = decoded;
       const maxUploadBytes = uploadLimitFor(ext, subPath);
       if (buf.length > maxUploadBytes) {
-        const claw = await requireClawOwner(req, res, adoptId);
-        if (claw) {
-          await recordFileAudit({
-            req,
-            claw,
-            adoptId,
-            action: "file.upload.denied",
-            result: "denied",
-            severity: "medium",
-            path: subPath ? `${subPath}/${filename}` : filename,
-            filename,
-            ext,
-            size: buf.length,
-            runtime: runtimeName(adoptId),
-            errorCode: "FILE_TOO_LARGE",
-            policyCode: "upload_size_limit",
-            metadata: { uploadLimitBytes: maxUploadBytes },
-          });
-        }
+        await recordFileAudit({
+          req,
+          claw,
+          adoptId,
+          action: "file.upload.denied",
+          result: "denied",
+          severity: "medium",
+          path: subPath ? `${subPath}/${filename}` : filename,
+          filename,
+          ext,
+          size: buf.length,
+          runtime: runtimeName(adoptId),
+          errorCode: "FILE_TOO_LARGE",
+          policyCode: "upload_size_limit",
+          metadata: { uploadLimitBytes: maxUploadBytes },
+        });
         return res.status(413).json({ error: `file too large: ${buf.length}` });
       }
-      const claw = await requireClawOwner(req, res, adoptId);
-      if (!claw) return;
+      const contentValidation = validateUploadContent(ext, buf);
+      if (!contentValidation.ok) {
+        return res.status(400).json({ error: "file_content_not_allowed", message: contentValidation.error });
+      }
+      const malwareScan = scanUploadForMalware(buf);
+      if (!malwareScan.ok) {
+        return res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
+      }
       const sha256 = fileSha256(buf);
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
-      const existingFiles: LinggFileNode[] = openclawListFiles(runtimeWorkspace(claw, adoptId));
+      const existingFiles: LinggFileNode[] = openclawListFiles(runtimeWorkspace(claw, adoptId), "", adoptId);
       const fileCount = existingFiles.filter(f => f.type === "file").length;
       if (fileCount >= MAX_FILES_PER_WORKSPACE) {
         await recordFileAudit({
@@ -418,7 +432,7 @@ export function registerFilesRoutes(app: express.Express) {
         return res.status(409).json({ error: "skills_directory_is_managed", message: "技能目录由平台管理，请在“我的技能”页面上传或卸载技能。" });
       }
       const ws = runtimeWorkspace(claw, adoptId);
-      const abs = safeJoin(ws, targetRel);
+      const abs = resolveWorkspaceWritePath(ws, targetRel);
       if (!abs) {
         await recordFileAudit({
           req,
@@ -439,7 +453,6 @@ export function registerFilesRoutes(app: express.Express) {
         return res.status(400).json({ error: "path_not_allowed" });
       }
       try {
-        mkdirSync(path.dirname(abs), { recursive: true });
         writeFileSync(abs, buf);
         await recordFileAudit({
           req,
@@ -464,7 +477,7 @@ export function registerFilesRoutes(app: express.Express) {
   });
 
   // DELETE file or directory — body { adoptId, path }
-  // 目录递归删除；safeJoin + workspace-root 防护避免越界
+  // 目录递归删除；realpath + workspace-root 防护避免符号链接越界
   app.delete("/api/claw/files/delete", async (req, res) => {
     try {
       const body = (req.body || {}) as any;
@@ -515,10 +528,10 @@ export function registerFilesRoutes(app: express.Express) {
       if (!claw) return;
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
       const ws = runtimeWorkspace(claw, adoptId);
-      const abs = safeJoin(ws, relPath);
+      const abs = resolveWorkspaceDeletePath(ws, relPath);
       if (!abs || !existsSync(abs)) return res.status(404).json({ error: "file not found" });
       if (path.resolve(abs) === path.resolve(ws)) return res.status(400).json({ error: "refuse to delete workspace root" });
-      const st = statSync(abs);
+      const st = lstatSync(abs);
       try {
         if (st.isDirectory()) {
           rmSync(abs, { recursive: true, force: true });
@@ -535,7 +548,9 @@ export function registerFilesRoutes(app: express.Express) {
         }
         const size = Number(st.size);
         let sha256: string | null = null;
-        try { sha256 = fileSha256(readFileSync(abs)); } catch {}
+        if (!st.isSymbolicLink()) {
+          try { sha256 = fileSha256(readFileSync(abs)); } catch {}
+        }
         unlinkSync(abs);
         await recordFileAudit({
           req,

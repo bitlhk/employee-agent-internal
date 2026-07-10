@@ -1,13 +1,17 @@
 import express from "express";
 import { lookup } from "dns/promises";
 import { createHash } from "crypto";
+import { request as httpRequest } from "http";
+import { request as httpsRequest } from "https";
 import { isIP } from "net";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "zlib";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { isAuthorizedInternalRequest, isPrivateUrl } from "./helpers";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TEXT_LIMIT = 80_000;
+const MAX_REDIRECTS = 5;
 
 type ManagedBrowserAction = "open" | "extract" | "snapshot" | "screenshot";
 
@@ -52,36 +56,55 @@ function normalizeUrl(raw: unknown) {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("only http/https URLs are supported");
   }
+  if (url.username || url.password) throw new Error("URLs with credentials are not allowed");
   if (isPrivateUrl(url.toString())) {
     throw new Error("private or local URLs are not allowed");
   }
   return url;
 }
 
-function isPrivateIp(host: string) {
-  if (/^127\./.test(host)) return true;
-  if (/^10\./.test(host)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
-  if (/^192\.168\./.test(host)) return true;
-  if (/^169\.254\./.test(host)) return true;
-  if (/^0\./.test(host)) return true;
-  if (host === "::1") return true;
-  if (/^fe80:/i.test(host)) return true;
-  if (/^fc/i.test(host) || /^fd/i.test(host)) return true;
-  return false;
+export function isPrivateManagedBrowserIp(rawHost: string) {
+  const host = rawHost.replace(/^\[|\]$/g, "").toLowerCase();
+  const mappedV4 = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
+  if (mappedV4) return isPrivateManagedBrowserIp(mappedV4);
+
+  if (isIP(host) === 4) {
+    const [a, b, c] = host.split(".").map(Number);
+    return a === 0 || a === 10 || a === 127
+      || (a === 100 && b >= 64 && b <= 127)
+      || (a === 169 && b === 254)
+      || (a === 172 && b >= 16 && b <= 31)
+      || (a === 192 && b === 0 && c === 0)
+      || (a === 192 && b === 0 && c === 2)
+      || (a === 192 && b === 168)
+      || (a === 198 && (b === 18 || b === 19))
+      || (a === 198 && b === 51 && c === 100)
+      || (a === 203 && b === 0 && c === 113)
+      || a >= 224;
+  }
+
+  if (isIP(host) === 6) {
+    return host === "::" || host === "::1"
+      || host.startsWith("fc") || host.startsWith("fd")
+      || /^fe[89ab]/.test(host)
+      || host.startsWith("ff")
+      || host.startsWith("2001:db8:");
+  }
+  return true;
 }
 
-async function assertPublicHostname(url: URL) {
-  const hostname = url.hostname;
+async function resolvePublicHostname(url: URL) {
+  const hostname = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(hostname)) {
-    if (isPrivateIp(hostname)) throw new Error("private IP URLs are not allowed");
-    return;
+    if (isPrivateManagedBrowserIp(hostname)) throw new Error("private IP URLs are not allowed");
+    return { address: hostname, family: isIP(hostname) as 4 | 6 };
   }
   const records = await lookup(hostname, { all: true, verbatim: true });
   if (!records.length) throw new Error("hostname did not resolve");
-  if (records.some((record) => isPrivateIp(record.address))) {
+  if (records.some((record) => isPrivateManagedBrowserIp(record.address))) {
     throw new Error("hostname resolves to a private IP");
   }
+  return records.find((record) => record.family === 4) || records[0];
 }
 
 function stripHtml(value: string) {
@@ -209,39 +232,94 @@ function authRequiredResult(base: Record<string, unknown>, action: ManagedBrowse
   };
 }
 
-async function fetchHtml(url: URL, timeoutMs: number) {
-  await assertPublicHostname(url);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      redirect: "follow",
-      signal: controller.signal,
+function decodeResponseBody(body: Buffer, encoding: string): Buffer {
+  const options = { maxOutputLength: DEFAULT_MAX_BYTES };
+  if (encoding === "gzip") return gunzipSync(body, options);
+  if (encoding === "deflate") return inflateSync(body, options);
+  if (encoding === "br") return brotliDecompressSync(body, options);
+  return body;
+}
+
+async function requestPinned(url: URL, timeoutMs: number) {
+  const resolved = await resolvePublicHostname(url);
+  const request = url.protocol === "https:" ? httpsRequest : httpRequest;
+
+  return new Promise<{
+    status: number;
+    headers: Record<string, string | string[] | undefined>;
+    body: Buffer;
+  }>((resolve, reject) => {
+    const req = request(url, {
+      method: "GET",
       headers: {
         "user-agent": "EmployeeAgentManagedBrowser/0.1",
         "accept": "text/html,application/xhtml+xml,text/plain;q=0.8,*/*;q=0.5",
+        "accept-encoding": "gzip, deflate, br",
       },
+      lookup: (_hostname, _options, callback) => {
+        const options = typeof _options === "object" ? _options : {};
+        if (options.all) {
+          (callback as any)(null, [{ address: resolved.address, family: resolved.family }]);
+        } else {
+          (callback as any)(null, resolved.address, resolved.family);
+        }
+      },
+    }, (response) => {
+      const contentLength = Number(response.headers["content-length"] || 0);
+      if (contentLength > DEFAULT_MAX_BYTES) {
+        response.resume();
+        reject(new Error(`response too large (${contentLength} bytes)`));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      response.on("data", (chunk: Buffer) => {
+        bytes += chunk.length;
+        if (bytes > DEFAULT_MAX_BYTES) {
+          req.destroy(new Error(`response too large (${bytes} bytes)`));
+          return;
+        }
+        chunks.push(Buffer.from(chunk));
+      });
+      response.on("end", () => resolve({
+        status: response.statusCode || 0,
+        headers: response.headers,
+        body: Buffer.concat(chunks),
+      }));
     });
-    const contentLength = Number(response.headers.get("content-length") || 0);
-    if (contentLength > DEFAULT_MAX_BYTES) {
-      throw new Error(`response too large (${contentLength} bytes)`);
+    req.setTimeout(timeoutMs, () => req.destroy(new Error("managed browser request timed out")));
+    req.on("error", reject);
+    req.end();
+  });
+}
+
+export async function fetchManagedBrowserHtml(initialUrl: URL, timeoutMs: number) {
+  const deadline = Date.now() + timeoutMs;
+  let url = initialUrl;
+
+  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error("managed browser request timed out");
+    const response = await requestPinned(url, remaining);
+    const location = response.headers.location;
+    if ([301, 302, 303, 307, 308].includes(response.status) && location) {
+      if (redirects === MAX_REDIRECTS) throw new Error("too many redirects");
+      url = normalizeUrl(new URL(Array.isArray(location) ? location[0] : location, url).toString());
+      continue;
     }
-    const arrayBuffer = await response.arrayBuffer();
-    if (arrayBuffer.byteLength > DEFAULT_MAX_BYTES) {
-      throw new Error(`response too large (${arrayBuffer.byteLength} bytes)`);
-    }
-    const text = Buffer.from(arrayBuffer).toString("utf8");
+
+    const decoded = decodeResponseBody(response.body, String(response.headers["content-encoding"] || "").toLowerCase());
+    if (decoded.byteLength > DEFAULT_MAX_BYTES) throw new Error(`response too large (${decoded.byteLength} bytes)`);
     return {
       status: response.status,
-      ok: response.ok,
-      finalUrl: response.url,
-      contentType: response.headers.get("content-type") || "",
-      bytes: arrayBuffer.byteLength,
-      html: text,
+      ok: response.status >= 200 && response.status < 300,
+      finalUrl: url.toString(),
+      contentType: String(response.headers["content-type"] || ""),
+      bytes: decoded.byteLength,
+      html: decoded.toString("utf8"),
     };
-  } finally {
-    clearTimeout(timer);
   }
+  throw new Error("too many redirects");
 }
 
 async function runManagedBrowserTool(input: ManagedBrowserInput) {
@@ -257,7 +335,7 @@ async function runManagedBrowserTool(input: ManagedBrowserInput) {
 
   const url = normalizeUrl(input.url);
   const maxChars = readMaxChars(input.maxChars);
-  const fetched = await fetchHtml(url, DEFAULT_TIMEOUT_MS);
+  const fetched = await fetchManagedBrowserHtml(url, DEFAULT_TIMEOUT_MS);
   const title = pickTitle(fetched.html);
   const description = pickMetaDescription(fetched.html);
   const text = htmlToText(fetched.html);

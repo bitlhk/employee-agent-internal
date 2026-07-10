@@ -37,7 +37,7 @@ services:
     container_name: linggan-app
     restart: unless-stopped
     ports:
-      - "${PORT:-5180}:5180"
+      - "${APP_BIND_IP:-127.0.0.1}:${PORT:-5180}:5180"
     env_file:
       - .env
     environment:

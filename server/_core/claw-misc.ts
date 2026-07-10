@@ -22,6 +22,7 @@ import {
 } from "./helpers";
 import { createContext } from "./context";
 import { clearSessionCookieVariants, setLogoutLockCookieVariants } from "./cookies";
+import { sessionAuthVersion } from "./sdk";
 import { skillInstaller } from "./skills/skill-installer";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "./skills/skill-source";
 import { skillStoreMarketplaceDir } from "./skills/skill-store";
@@ -1917,6 +1918,7 @@ export function registerMiscRoutes(app: express.Express) {
       const token = await sdk.signSession({
         userId: context.user.id,
         name: context.user.name ?? "",
+        authVersion: sessionAuthVersion(context.user),
       });
 
       // shared cookie for subdomains

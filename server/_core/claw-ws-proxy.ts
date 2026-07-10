@@ -43,6 +43,7 @@ import {
   touchChatRun,
 } from "./chat-inflight";
 import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
+import { isAllowedWebSocketOrigin } from "./ws-origin";
 
 // ── Ed25519 设备身份（进程级复用）──
 const ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -114,6 +115,13 @@ export function registerWSProxy(server: Server) {
 
     try {
       logUpgradeTiming("start");
+      if (!isAllowedWebSocketOrigin(req)) {
+        console.warn("[WS] rejected invalid origin", {
+          host: req.headers.host,
+          origin: req.headers.origin,
+        });
+        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return;
+      }
       const fakeRes = { setHeader: () => {}, getHeader: () => undefined } as any;
       const ctx = await createContext({ req: req as any, res: fakeRes, info: {} as any });
       logUpgradeTiming("context", { userId: ctx.user?.id });

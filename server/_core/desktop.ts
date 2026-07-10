@@ -26,7 +26,7 @@ import {
   incrementSkillDownload,
   listApprovedSkillMarketItems,
 } from "../db";
-import { sdk } from "./sdk";
+import { sdk, sessionAuthVersion } from "./sdk";
 import {
   APP_ROOT,
   bumpSessionEpoch,
@@ -1276,6 +1276,7 @@ export function registerDesktopRoutes(app: express.Express) {
       const accessToken = await sdk.signSession({
         userId: user.id,
         name: user.name || user.email || email,
+        authVersion: sessionAuthVersion(user),
       });
       res.json({
         success: true,

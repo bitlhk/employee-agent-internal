@@ -1,6 +1,7 @@
 import { eq, and, gt, or } from "drizzle-orm";
 import { emailVerificationCodes, InsertEmailVerificationCode, smtpConfig, InsertSmtpConfig, SmtpConfig, passwordResetTokens, InsertPasswordResetToken, PasswordResetToken } from "../../drizzle/schema";
 import { getDb } from "./connection";
+import { decryptSecret, encryptSecret, isEncryptedSecret, keyedDigest } from "../_core/secret-protection";
 
 /**
  * 创建邮箱验证码
@@ -20,7 +21,7 @@ export async function createEmailVerificationCode(
 
   await db.insert(emailVerificationCodes).values({
     email,
-    code,
+    code: keyedDigest("email-code", code),
     expiresAt,
     used: "no",
   });
@@ -46,7 +47,10 @@ export async function verifyEmailCode(
     .where(
       and(
         eq(emailVerificationCodes.email, email),
-        eq(emailVerificationCodes.code, code),
+        or(
+          eq(emailVerificationCodes.code, keyedDigest("email-code", code)),
+          eq(emailVerificationCodes.code, code),
+        ),
         eq(emailVerificationCodes.used, "no"),
         gt(emailVerificationCodes.expiresAt, now) // 只查询未过期的
       )
@@ -103,7 +107,15 @@ export async function getSmtpConfig(): Promise<SmtpConfig | null> {
   }
 
   const configs = await db.select().from(smtpConfig).limit(1);
-  return configs.length > 0 ? configs[0] : null;
+  if (configs.length === 0) return null;
+  const config = configs[0];
+  if (!config.password) return config;
+  const password = decryptSecret(config.password);
+  if (!isEncryptedSecret(config.password)) {
+    const encrypted = encryptSecret(config.password);
+    await db.update(smtpConfig).set({ password: encrypted }).where(eq(smtpConfig.id, config.id));
+  }
+  return { ...config, password };
 }
 
 /**
@@ -119,20 +131,24 @@ export async function upsertSmtpConfig(
   }
 
   const existing = await getSmtpConfig();
+  const protectedConfig = {
+    ...config,
+    password: config.password ? encryptSecret(String(config.password)) : config.password,
+  };
 
   if (existing) {
     // 更新现有配置
     await db
       .update(smtpConfig)
       .set({
-        ...config,
+        ...protectedConfig,
         updatedBy: updatedBy || null,
       })
       .where(eq(smtpConfig.id, existing.id));
   } else {
     // 创建新配置
     await db.insert(smtpConfig).values({
-      ...config,
+      ...protectedConfig,
       updatedBy: updatedBy || null,
     });
   }
@@ -168,7 +184,7 @@ export async function createPasswordResetToken(
   // 创建新token
   await db.insert(passwordResetTokens).values({
     email,
-    token,
+    token: keyedDigest("password-reset", token),
     expiresAt,
     used: "no",
   });
@@ -190,7 +206,10 @@ export async function verifyPasswordResetToken(
     .from(passwordResetTokens)
     .where(
       and(
-        eq(passwordResetTokens.token, token),
+        or(
+          eq(passwordResetTokens.token, keyedDigest("password-reset", token)),
+          eq(passwordResetTokens.token, token),
+        ),
         eq(passwordResetTokens.used, "no"),
         gt(passwordResetTokens.expiresAt, new Date())
       )
@@ -212,5 +231,8 @@ export async function markPasswordResetTokenAsUsed(token: string): Promise<void>
   await db
     .update(passwordResetTokens)
     .set({ used: "yes" })
-    .where(eq(passwordResetTokens.token, token));
+    .where(or(
+      eq(passwordResetTokens.token, keyedDigest("password-reset", token)),
+      eq(passwordResetTokens.token, token),
+    ));
 }
