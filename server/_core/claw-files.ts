@@ -9,7 +9,7 @@ import { existsSync, lstatSync, statSync, readdirSync, readFileSync, createReadS
 import { isJiuwenClawAdoptId, requireClawOwner, resolveRuntimeWorkspace } from "./helpers";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "./audit-events";
 import { resolveExistingWorkspacePath, resolveWorkspaceDeletePath, resolveWorkspaceWritePath } from "./file-path-security";
-import { SKILL_STORE_ROOT, skillSourceDirsForRuntime, skillStoreAgentDir } from "./skills/skill-store";
+import { skillSourceDirsForRuntime, skillStoreAgentDir } from "./skills/skill-store";
 import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
 
 type LinggFileNode = {
@@ -177,7 +177,6 @@ function approvedSkillRoots(adoptId: string): string[] {
   return [
     ...skillSourceDirsForRuntime(),
     skillStoreAgentDir(adoptId),
-    SKILL_STORE_ROOT,
     "/usr/lib/node_modules/openclaw/skills",
   ];
 }

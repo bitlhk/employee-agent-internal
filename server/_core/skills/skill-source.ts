@@ -2,6 +2,12 @@ import { Buffer } from "buffer";
 import { readdirSync, readFileSync, statSync } from "fs";
 import path from "path";
 import { sanitizeRelPath } from "../helpers";
+import {
+  MAX_SKILL_ZIP_UNCOMPRESSED_BYTES,
+  normalizeSkillZipEntryName,
+  validateSkillZipEnvelope,
+  validateSkillZipMetadata,
+} from "./skill-zip-security";
 
 export const MAX_SKILL_PACKAGE_BYTES = 50 * 1024 * 1024;
 
@@ -65,12 +71,38 @@ function textContent(content: string | Buffer, max = 20000): string {
 }
 
 export async function parseSkillPackageBuffer(fileBuf: Buffer, filename: string): Promise<ParsedSkillPackage> {
+  validateSkillZipEnvelope(fileBuf);
   const AdmZip = (await import("adm-zip")).default;
   const zip = new AdmZip(fileBuf);
-  const files = zip
-    .getEntries()
-    .filter((entry: any) => !entry.isDirectory)
-    .map((entry: any) => ({ path: entry.entryName, content: entry.getData() }));
+  const entries = zip.getEntries();
+  validateSkillZipMetadata(entries.map((entry: any) => {
+    const rawName = Buffer.isBuffer(entry.rawEntryName)
+      ? entry.rawEntryName.toString("utf8")
+      : String(entry.entryName || "");
+    const unixMode = (Number(entry.attr || 0) >>> 16) & 0xffff;
+    return {
+      name: rawName,
+      isDirectory: Boolean(entry.isDirectory),
+      uncompressedSize: Number(entry.header?.size || 0),
+      compressedSize: Number(entry.header?.compressedSize || 0),
+      encrypted: Boolean(entry.header?.encrypted || (Number(entry.header?.flags || 0) & 1)),
+      symbolicLink: (unixMode & 0xf000) === 0xa000,
+      method: Number(entry.header?.method ?? 0),
+    };
+  }));
+
+  const files: SkillSourceFile[] = [];
+  let actualBytes = 0;
+  for (const entry of entries) {
+    if (entry.isDirectory) continue;
+    const rawName = Buffer.isBuffer((entry as any).rawEntryName)
+      ? (entry as any).rawEntryName.toString("utf8")
+      : String(entry.entryName || "");
+    const content = entry.getData();
+    actualBytes += content.length;
+    if (actualBytes > MAX_SKILL_ZIP_UNCOMPRESSED_BYTES) throw new Error("技能包实际解压后超过 50MB 限制");
+    files.push({ path: normalizeSkillZipEntryName(rawName), content });
+  }
   return parseSkillSourceFiles(files, filename);
 }
 

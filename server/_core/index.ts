@@ -57,6 +57,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { getClawByAdoptId, getDb } from "../db";
 import { getClientIp } from "./ip-utils";
+import { cookieCsrfProtection } from "./csrf";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -298,6 +299,8 @@ async function startServer() {
   const allowedOrigins = process.env.CORS_ORIGIN 
     ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
     : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'];
+
+  app.use(cookieCsrfProtection(allowedOrigins));
   
   app.use((req, res, next) => {
     const origin = req.headers.origin;

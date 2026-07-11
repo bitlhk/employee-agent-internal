@@ -37,4 +37,22 @@ describe("workspace path boundaries", () => {
     expect(resolveWorkspaceDeletePath(workspace, "escape/secret.txt")).toBeNull();
     expect(resolveWorkspaceDeletePath(workspace, "escape")).toBe(path.join(workspace, "escape"));
   });
+
+  it("does not allow a managed skill link into another agent's private store", () => {
+    const { workspace } = fixture();
+    const store = path.join(path.dirname(workspace), "skill-store", "agents");
+    const currentAgent = path.join(store, "lgc-current");
+    const otherAgent = path.join(store, "lgc-other", "uploaded", "private-skill");
+    mkdirSync(currentAgent, { recursive: true });
+    mkdirSync(otherAgent, { recursive: true });
+    writeFileSync(path.join(otherAgent, "SKILL.md"), "private");
+    mkdirSync(path.join(workspace, "skills"));
+    symlinkSync(otherAgent, path.join(workspace, "skills", "private-skill"), "dir");
+
+    expect(resolveExistingWorkspacePath(
+      workspace,
+      "skills/private-skill/SKILL.md",
+      [currentAgent],
+    )).toBeNull();
+  });
 });

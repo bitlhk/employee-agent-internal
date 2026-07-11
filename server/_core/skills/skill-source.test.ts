@@ -2,9 +2,16 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
-import { parseSkillSourceDirectory, parseSkillSourceFiles } from "./skill-source";
+import { parseSkillPackageBuffer, parseSkillSourceDirectory, parseSkillSourceFiles } from "./skill-source";
 
 describe("parseSkillSourceFiles", () => {
+  it("rejects a highly compressed ZIP before expanding entry data", async () => {
+    const AdmZip = (await import("adm-zip")).default;
+    const zip = new AdmZip();
+    zip.addFile("SKILL.md", Buffer.alloc(2 * 1024 * 1024, 0x41));
+    await expect(parseSkillPackageBuffer(zip.toBuffer(), "bomb.zip")).rejects.toThrow("压缩比异常");
+  });
+
   it("uses fallback name for root-level SKILL.md instead of skill-md", () => {
     const parsed = parseSkillSourceFiles([
       { path: "SKILL.md", content: "# Smoke Skill\n\nReturns SKILL_OK." },
