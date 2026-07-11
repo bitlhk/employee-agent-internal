@@ -26,7 +26,6 @@ import { MainPanel } from "@/components/console/MainPanel";
 import { ChatPage } from "@/components/pages/ChatPage";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
-import { useAgentChat } from "@/hooks/useAgentChat";
 import { formatModelName } from "@/lib/modelDisplay";
 import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -580,30 +579,6 @@ function ChatStartupSkeleton() {
   );
 }
 
-function isLingxiaChatV2Enabled(userId?: number | string | null): boolean {
-  const mode = String(import.meta.env.VITE_AGENT_CHAT_V2 || import.meta.env.VITE_LINGXIA_CHAT_V2 || "off").toLowerCase();
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const queryFlag = params.get("chatv2");
-    if (queryFlag === "1") return true;
-    if (queryFlag === "0") return false;
-    if (mode === "off") return false;
-    if (mode === "on") return true;
-    if (localStorage.getItem("lingxia_chat_v2") === "0") return false;
-    if (localStorage.getItem("lingxia_chat_v2") === "1") return true;
-  } catch {}
-
-  if (mode === "on") return true;
-  if (mode === "allowlist") {
-    const ids = String(import.meta.env.VITE_AGENT_CHAT_V2_USERS || import.meta.env.VITE_LINGXIA_CHAT_V2_USERS || "")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    return !!userId && ids.includes(String(userId));
-  }
-  return false;
-}
-
 const backfillLxMsgIds = (raw: any): LxMsg[] => {
   if (!Array.isArray(raw)) return [];
   return raw.map((m: any) => {
@@ -1039,12 +1014,6 @@ export default function Home() {
   // 2026-04-19 SSE race fix: 每次 send 自增 seq，handler 用闭包抓 myStreamSeq，
   // 只有 streamSeqRef.current === myStreamSeq 时才写 state；否则视为 stale 事件早退。
   const streamSeqRef = useRef(0);
-  const chatV2ReconcileTargetRef = useRef<{
-    conversationId: string;
-    assistantMessageId?: string;
-    streamSeq: number;
-    triggered?: boolean;
-  } | null>(null);
   const wsClientRef = useRef<RuntimeWSClient | null>(null);
   const restoredSessionKeyRef = useRef<string>("");
   const pendingConversationRestoreRef = useRef<{ conversationId: string; messages: any[] } | null>(null);
@@ -1111,19 +1080,8 @@ export default function Home() {
     } catch {}
   }, [DRAFT_KEY]);
 
-  const chatV2Enabled = isLingxiaChatV2Enabled((user as any)?.id);
-  const chatV2 = useAgentChat({
-    adoptId: resolvedAdoptId,
-    channel: webConversationId ? "web" : undefined,
-    conversationId: webConversationId || undefined,
-    skipRuntimeRecovery: isDirectHttpRuntime,
-    memoryEnabled: lingxiaMemoryEnabled === "yes",
-    contextTurns: lingxiaContextTurns,
-    runtimeMode: chatRuntimeMode,
-    historyStorageKey: MSGS_KEY || undefined,
-  });
-  const activeLingxiaMsgs = chatV2Enabled ? chatV2.messages : lingxiaMsgs;
-  const activeLingxiaStreaming = chatV2Enabled ? chatV2.isStreaming : lingxiaStreaming;
+  const activeLingxiaMsgs = lingxiaMsgs;
+  const activeLingxiaStreaming = lingxiaStreaming;
   const activeAgentTaskIds = useMemo(() => {
     const ids = new Set<string>();
     for (const msg of activeLingxiaMsgs as LxMsg[]) {
@@ -1675,12 +1633,8 @@ export default function Home() {
     const hydratedMessages = opts?.preserveCurrentToolCalls
       ? mergeCurrentToolCallsIntoHistory(nextMessages)
       : nextMessages;
-    if (chatV2Enabled) {
-      chatV2.restore(hydratedMessages);
-    } else {
-      setLingxiaToolCalls([]);
-      setLingxiaMsgs(hydratedMessages);
-    }
+    setLingxiaToolCalls([]);
+    setLingxiaMsgs(hydratedMessages);
   };
 
   const activateWebConversation = (conversationId: string, restoredMessages?: any[]) => {
@@ -1800,14 +1754,6 @@ export default function Home() {
       return next;
     };
 
-    if (chatV2Enabled) {
-      const current = activeLingxiaMsgsRef.current || [];
-      const next = merge(current);
-      if (next === current) return false;
-      chatV2.restore(next as any);
-      return true;
-    }
-
     let changed = false;
     setLingxiaMsgs((current) => {
       const next = merge(current);
@@ -1815,7 +1761,7 @@ export default function Home() {
       return next;
     });
     return changed;
-  }, [chatV2, chatV2Enabled]);
+  }, []);
 
   const reconcileStreamedConversation = useCallback(async (args: {
     conversationId: string;
@@ -1861,43 +1807,11 @@ export default function Home() {
   }, [applyCanonicalConversationText, isDirectHttpRuntime, refreshBackendWebSessions, resolvedAdoptId]);
 
   useEffect(() => {
-    if (!chatV2Enabled) return;
-    const target = chatV2ReconcileTargetRef.current;
-    if (!target) return;
-    if (target.conversationId !== webConversationId) {
-      if (!activeLingxiaStreaming) chatV2ReconcileTargetRef.current = null;
-      return;
-    }
-
-    const lastAssistant = [...(activeLingxiaMsgs as LxMsg[])].reverse().find((msg) => msg.role === "assistant");
-    if (activeLingxiaStreaming) {
-      if (!target.assistantMessageId && lastAssistant?.id) {
-        target.assistantMessageId = lastAssistant.id;
-      }
-      return;
-    }
-
-    if (target.triggered) return;
-    const assistantMessageId = target.assistantMessageId || lastAssistant?.id;
-    if (!assistantMessageId) return;
-    target.triggered = true;
-    void reconcileStreamedConversation({
-      conversationId: target.conversationId,
-      assistantMessageId,
-      streamSeq: target.streamSeq,
-    }).finally(() => {
-      if (chatV2ReconcileTargetRef.current === target) {
-        chatV2ReconcileTargetRef.current = null;
-      }
-    });
-  }, [activeLingxiaMsgs, activeLingxiaStreaming, chatV2Enabled, reconcileStreamedConversation, webConversationId]);
-
-  useEffect(() => {
     const pending = pendingConversationRestoreRef.current;
     if (!pending || pending.conversationId !== webConversationId) return;
     pendingConversationRestoreRef.current = null;
     restoreLingxiaMessages(pending.messages);
-  }, [webConversationId, chatV2Enabled, chatV2]);
+  }, [webConversationId]);
 
   useEffect(() => {
     if (!resolvedAdoptId || !webConversationId || activeLingxiaStreaming) return;
@@ -2148,13 +2062,13 @@ export default function Home() {
 
   // 初始化 WSS 连接（后台自动尝试，不阻塞 UI）—— 仅存量 lgc-* 运行时
   useEffect(() => {
-    if (!ENABLE_OPENCLAW_WS_CHAT || !resolvedAdoptId || !webConversationId || isDirectHttpRuntime || chatV2Enabled) return;
+    if (!ENABLE_OPENCLAW_WS_CHAT || !resolvedAdoptId || !webConversationId || isDirectHttpRuntime) return;
     const apiBase = (import.meta as any).env?.VITE_API_URL || "";
     const ws = new RuntimeWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
     wsClientRef.current = ws;
     ws.connect().then((ok) => { if (ok) setWsConnected(true); });
     return () => { ws.disconnect(); wsClientRef.current = null; setWsConnected(false); };
-  }, [resolvedAdoptId, webConversationId, isDirectHttpRuntime, chatV2Enabled]);
+  }, [resolvedAdoptId, webConversationId, isDirectHttpRuntime]);
   const lingxiaMsgViewportRef = useRef<HTMLDivElement | null>(null);
   const [lingxiaNearBottom, setLingxiaNearBottom] = useState(true);
   const lingxiaNearBottomRef = useRef(true);
@@ -2381,7 +2295,6 @@ export default function Home() {
   const sendLingxiaMessage = async (messageOverride?: string, opts?: { selectedSkillId?: string }) => {
     const sourceText = messageOverride ?? lingxiaInput;
     if (!resolvedAdoptId || !sourceText.trim() || lingxiaStreaming) return;
-    if (chatV2Enabled) return;
     const lastAssistantBeforeSend = [...activeLingxiaMsgsRef.current].reverse().find((msg) => msg.role === "assistant");
     const shouldCancelPendingJiuwenPermission =
       isJiuwenRuntime &&
@@ -3165,7 +3078,7 @@ export default function Home() {
     if (!ok) return;
 
     try {
-      if (!chatV2Enabled) setLingxiaStreaming(true);
+      setLingxiaStreaming(true);
       const apiBase = import.meta.env.VITE_API_URL || "";
       const resp = await fetch(`${apiBase}/api/claw/chat-stream`, {
         method: "POST",
@@ -3175,11 +3088,7 @@ export default function Home() {
       });
 
       if (!resp.ok) throw new Error(`重置失败 (${resp.status})`);
-      if (chatV2Enabled) {
-        chatV2.clear();
-      } else {
-        setLingxiaMsgs([]);
-      }
+      setLingxiaMsgs([]);
       localStorage.removeItem("lingxia-chat-history");
       if (MSGS_KEY) localStorage.removeItem(MSGS_KEY);
       if (resolvedAdoptId && userStorageId) {
@@ -3192,7 +3101,7 @@ export default function Home() {
     } catch (error: any) {
       toast.error(error?.message || "重置会话失败");
     } finally {
-      if (!chatV2Enabled) setLingxiaStreaming(false);
+      setLingxiaStreaming(false);
     }
   };
 
@@ -3742,7 +3651,7 @@ export default function Home() {
                     displayName={lingxiaDisplayName || brand.name}
                     modelId={effectiveLingxiaModelId || "default"}
                     timeLabel={m.timeLabel}
-                    toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && !chatV2Enabled && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
+                    toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
                     messageEvents={m.role === "assistant" ? (m as LxMsg).messageEvents : undefined}
                     agentTasks={messageAgentTasks}
                     showToolCalls={lingxiaShowToolCalls}
@@ -3750,7 +3659,7 @@ export default function Home() {
                     contextPercent={m.contextPercent}
                     jiuwenPermission={m.role === "assistant" ? (m as LxMsg).jiuwenPermission : undefined}
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
-                    onDelete={m.role === "assistant" && !chatV2Enabled ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
+                    onDelete={m.role === "assistant" ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
                   />
                   </div>
                 );
@@ -3799,26 +3708,15 @@ export default function Home() {
                     return false;
                   }
                 }
-                if (chatV2Enabled) {
-                  if (!finalText.trim() || chatV2.isStreaming) return false;
-                  setMentionedUsers([]);
-                  updateLingxiaNearBottom(true);
-                  streamSeqRef.current += 1;
-                  chatV2ReconcileTargetRef.current = webConversationId
-                    ? { conversationId: webConversationId, streamSeq: streamSeqRef.current }
-                    : null;
-                  await chatV2.send(finalText);
-                  clearLingxiaDraft();
-                  setLingxiaInput("");
-                  return true;
-                }
+                const selectedSkillId = selectedComposerSkill?.id;
+                setSelectedComposerSkillId("");
                 // 重扫 text 里实际还有的 @userName，过滤掉用户已删除的 mention（防 mentionedUsers 状态 ghost）
                 // 既有限制：textarea 是 plain text，不是 chip，删除标签靠这里 reconcile 兜底
                 const liveMentions = mentionedUsers.filter((u) => text.includes(`@${u.userName}`));
                 if (liveMentions.length === 0) {
                   // 没 @ 任何人 → 普通消息
                   if (mentionedUsers.length > 0) setMentionedUsers([]);
-                  await sendLingxiaMessage(finalText, { selectedSkillId: selectedComposerSkill?.id });
+                  void sendLingxiaMessage(finalText, { selectedSkillId });
                   return true;
                 }
                 if (!text) { toast.error("请先输入任务内容再发起协作"); return; }
@@ -3854,7 +3752,7 @@ export default function Home() {
 	                setLingxiaInput("");
 	                return true;
 	              }}
-              onStop={chatV2Enabled ? () => chatV2.abort("home_stop") : stopLingxiaStreaming}
+              onStop={stopLingxiaStreaming}
               streaming={activeLingxiaStreaming}
               disabled={false}
               placeholder={`Message ${lingxiaDisplayName || brand.name}…`}
