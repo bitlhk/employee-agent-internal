@@ -940,7 +940,9 @@ export async function forwardToJiuwenClaw(
         ...extra,
       });
     };
+    let currentStatus = "已连接，正在处理请求...";
     const writeStatus = (label: string) => {
+      currentStatus = label;
       writeData({
         __status: label,
         kind: "heartbeat",
@@ -948,11 +950,11 @@ export async function forwardToJiuwenClaw(
         elapsedMs: Date.now() - startedAt,
       });
     };
-    writeStatus("JiuwenClaw 已连接，正在处理请求...");
+    writeStatus("已连接，正在处理请求...");
     res.flush?.();
     const keepalive = setInterval(() => {
       if (res.writableEnded) return;
-      writeStatus("JiuwenClaw 仍在处理...");
+      writeStatus(currentStatus);
       res.flush?.();
     }, 10_000);
     const cleanup = () => {
@@ -1065,6 +1067,7 @@ export async function forwardToJiuwenClaw(
         if (body?.delta_kind === "text") {
           const text = pickText(body?.delta);
           if (text) {
+            currentStatus = "正在生成回复...";
             sawText = true;
             writeData({ choices: [{ delta: { content: text }, index: 0 }] });
           }
@@ -1072,18 +1075,23 @@ export async function forwardToJiuwenClaw(
         }
         if (body?.delta_kind === "reasoning") {
           const reasoning = pickText(body?.delta);
-          if (reasoning) writeData({ choices: [{ delta: { reasoning_content: reasoning }, index: 0 }] });
+          if (reasoning) {
+            currentStatus = "正在分析...";
+            writeData({ choices: [{ delta: { reasoning_content: reasoning }, index: 0 }] });
+          }
           return;
         }
         if (body?.delta_kind === "custom") {
           const eventType = String(body?.event_type || body?.delta?.event_type || "jiuwen.event");
           const text = pickText(body?.delta);
           if (eventType === "chat.delta" && text) {
+            currentStatus = "正在生成回复...";
             sawText = true;
             writeData({ choices: [{ delta: { content: text }, index: 0 }] });
             return;
           }
           if (eventType === "chat.reasoning" && text) {
+            currentStatus = "正在分析...";
             writeData({ choices: [{ delta: { reasoning_content: text }, index: 0 }] });
             return;
           }
@@ -1193,6 +1201,7 @@ export async function forwardToJiuwenClaw(
             if (tool) {
               const toolCallId = tool.callId || `jiuwen-${sha256(`${requestId}|${tool.toolName}`).slice(0, 16)}`;
               if (tool.isResult) {
+                writeStatus("工具执行完成，正在整理结果...");
                 writeEvent("tool_result", {
                   tool_call_id: toolCallId,
                   name: tool.toolName,
@@ -1202,6 +1211,7 @@ export async function forwardToJiuwenClaw(
                   adoptId: claw.adoptId,
                 });
               } else {
+                writeStatus(`正在调用工具：${tool.toolName}`);
                 writeEvent("tool_call", {
                   id: toolCallId,
                   name: tool.toolName,

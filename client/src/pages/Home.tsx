@@ -2360,7 +2360,7 @@ export default function Home() {
         };
       }),
       { id: userMessageId, role: "user", text, timeLabel: nowLabel },
-      { id: assistantMessageId, role: "assistant", text: "", timeLabel: assistantTimeLabel },
+      { id: assistantMessageId, role: "assistant", text: "", status: "正在连接...", timeLabel: assistantTimeLabel },
     ]);
     clearLingxiaDraft();
     setLingxiaInput("");
@@ -2500,7 +2500,7 @@ export default function Home() {
                   const next = [...prev]; const lastIdx = next.length - 1;
                   if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
                     const existing = next[lastIdx].toolCalls || [];
-                    next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: [...existing, { id: String(chunk.id || ""), name: toolName, arguments: String(chunk.arguments || "{}"), status: "running" as const, ts: toolTs, _gateway: isGateway, executor: isGateway ? "gateway" : executor }] });
+                    next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: `正在调用工具：${toolName}`, toolCalls: [...existing, { id: String(chunk.id || ""), name: toolName, arguments: String(chunk.arguments || "{}"), status: "running" as const, ts: toolTs, _gateway: isGateway, executor: isGateway ? "gateway" : executor }] });
                   }
                   return next;
                 });
@@ -2524,7 +2524,7 @@ export default function Home() {
                     if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
                       const tcs = next[lastIdx].toolCalls || [];
                       const gwIdx = tcs.findLastIndex((tc: any) => tc._gateway && tc.status === "running");
-                      if (gwIdx >= 0) { const updated = [...tcs]; updated[gwIdx] = { ...updated[gwIdx], status: "done", durationMs: Date.now() - updated[gwIdx].ts }; next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: updated }); }
+                      if (gwIdx >= 0) { const updated = [...tcs]; updated[gwIdx] = { ...updated[gwIdx], status: "done", durationMs: Date.now() - updated[gwIdx].ts }; next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: "正在整理结果...", toolCalls: updated }); }
                     }
                     return next;
                   });
@@ -2533,7 +2533,7 @@ export default function Home() {
                     const next = [...prev]; const lastIdx = next.length - 1;
                     if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
                       const tcs = next[lastIdx].toolCalls || [];
-                      next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: tcs.map((tc: any) => tc.id === toolCallId ? { ...tc, result, status, durationMs: Date.now() - tc.ts, executor: chunk.executor, truncated: Boolean(chunk.truncated), outputFiles: chunk.outputFiles, adoptId: resolvedAdoptId ?? undefined } : tc) });
+                      next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: "正在整理结果...", toolCalls: tcs.map((tc: any) => tc.id === toolCallId ? { ...tc, result, status, durationMs: Date.now() - tc.ts, executor: chunk.executor, truncated: Boolean(chunk.truncated), outputFiles: chunk.outputFiles, adoptId: resolvedAdoptId ?? undefined } : tc) });
                     }
                     return next;
                   });
@@ -2592,6 +2592,13 @@ export default function Home() {
               // reasoning_content delta：不展示原始推理内容，避免伪装成工具调用。
               const reasoningDelta = chunk?.choices?.[0]?.delta?.reasoning_content;
               if (typeof reasoningDelta === "string" && reasoningDelta) {
+                setLingxiaMsgs((prev) => {
+                  const n = [...prev];
+                  const last = n[n.length - 1];
+                  if (last?.role !== "assistant" || last.status === "正在分析...") return prev;
+                  n[n.length - 1] = { ...last, status: "正在分析..." };
+                  return n;
+                });
                 return;
               }
               // 文本 delta
@@ -2691,6 +2698,7 @@ export default function Home() {
           next[next.length - 1] = {
             ...next[next.length - 1],
             text: mergeAssistantStreamText(next[next.length - 1].text, delta),
+            status: undefined,
           };
           return next;
         });
@@ -2776,6 +2784,20 @@ export default function Home() {
               currentEvent = "";
               continue;
             }
+            if (chunk.__status) {
+              const status = String(chunk.__status);
+              setLingxiaMsgs((prev) => {
+                const next = [...prev];
+                const lastIdx = next.length - 1;
+                if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
+                  next[lastIdx] = { ...next[lastIdx], status };
+                }
+                return next;
+              });
+              if (chunk.tool) setActiveToolName(String(chunk.tool));
+              if (chunk.elapsedMs) setActiveToolStartMs(Date.now() - Number(chunk.elapsedMs));
+              continue;
+            }
             if (chunk?.__perf && typeof chunk.__perf === "object") {
               Object.assign(perf, chunk.__perf);
               // 改动3: 不可写回 message（usage/model/context）
@@ -2820,7 +2842,7 @@ export default function Home() {
                   const lastIdx = next.length - 1;
                   if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
                     const existing = next[lastIdx].toolCalls || [];
-                    next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: [...existing, { id: String(chunk.id || ""), name: toolName, arguments: "{}", status: "running" as const, ts: toolTs, _gateway: true, executor: "gateway" }] });
+                    next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: `正在调用工具：${toolName}`, toolCalls: [...existing, { id: String(chunk.id || ""), name: toolName, arguments: "{}", status: "running" as const, ts: toolTs, _gateway: true, executor: "gateway" }] });
                   }
                   return next;
                 });
@@ -2836,7 +2858,7 @@ export default function Home() {
                   const lastIdx = next.length - 1;
                   if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
                     const existing = next[lastIdx].toolCalls || [];
-                    next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: [...existing, { id: String(chunk.id || ""), name: toolName, arguments: String(chunk.arguments || ""), status: "running" as const, ts: toolTs, executor }] });
+                    next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: `正在调用工具：${toolName}`, toolCalls: [...existing, { id: String(chunk.id || ""), name: toolName, arguments: String(chunk.arguments || ""), status: "running" as const, ts: toolTs, executor }] });
                   }
                   return next;
                 });
@@ -2868,7 +2890,7 @@ export default function Home() {
                     if (gwIdx >= 0) {
                       const updated = [...tcs];
                       updated[gwIdx] = { ...updated[gwIdx], status: "done", durationMs: Date.now() - updated[gwIdx].ts };
-                      next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: updated });
+                      next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: "正在整理结果...", toolCalls: updated });
                     }
                   }
                   return next;
@@ -2881,7 +2903,7 @@ export default function Home() {
                 const lastIdx = next.length - 1;
                 if (lastIdx >= 0 && next[lastIdx].role === "assistant") {
                   const tcs = next[lastIdx].toolCalls || [];
-                  next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], toolCalls: tcs.map((tc) => tc.id === toolCallId ? { ...tc, result, status, durationMs: Date.now() - tc.ts, executor, truncated, suppressedOriginalResult, policyDenyReason, auditId, outputFiles, adoptId: resolvedAdoptId ?? undefined } : tc) as import("@/components/ChatMessage").ToolCallEntry[] });
+                  next[lastIdx] = normalizeMessageToolEvents({ ...next[lastIdx], status: "正在整理结果...", toolCalls: tcs.map((tc) => tc.id === toolCallId ? { ...tc, result, status, durationMs: Date.now() - tc.ts, executor, truncated, suppressedOriginalResult, policyDenyReason, auditId, outputFiles, adoptId: resolvedAdoptId ?? undefined } : tc) as import("@/components/ChatMessage").ToolCallEntry[] });
                 }
                 return next;
               });
@@ -2983,6 +3005,13 @@ export default function Home() {
             // reasoning_content delta：不展示原始推理内容，避免伪装成工具调用。
             const httpReasoningDelta = chunk?.choices?.[0]?.delta?.reasoning_content;
             if (typeof httpReasoningDelta === "string" && httpReasoningDelta) {
+              setLingxiaMsgs((prev) => {
+                const next = [...prev];
+                const lastIdx = next.length - 1;
+                if (lastIdx < 0 || next[lastIdx].role !== "assistant" || next[lastIdx].status === "正在分析...") return prev;
+                next[lastIdx] = { ...next[lastIdx], status: "正在分析..." };
+                return next;
+              });
               continue;
             }
             const deltaRaw = chunk?.choices?.[0]?.delta?.content;
@@ -3645,6 +3674,7 @@ export default function Home() {
                   <ChatMessage
                     role={m.role as "user" | "assistant"}
                     text={m.text}
+                    status={m.status}
                     isLast={isLast}
                     isPlaceholder={isPlaceholder}
                     streaming={activeLingxiaStreaming}

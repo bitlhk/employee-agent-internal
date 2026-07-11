@@ -68,6 +68,7 @@ export type JiuwenPermissionRequestCard = {
 type ChatMessageProps = {
   role: "user" | "assistant";
   text: string;
+  status?: string;
   isLast: boolean;
   isPlaceholder: boolean;
   streaming: boolean;
@@ -86,9 +87,9 @@ type ChatMessageProps = {
 };
 
 function streamingMarkdownDelay(chars: number) {
-  if (chars > 12_000) return 450;
-  if (chars > 8_000) return 300;
-  return 160;
+  if (chars > 12_000) return 90;
+  if (chars > 8_000) return 70;
+  return 48;
 }
 
 function useThrottledText(value: string, delayMs: number, enabled: boolean) {
@@ -713,6 +714,7 @@ function agentTasksRenderSignature(tasks?: AgentTask[]): string {
 function ChatMessageInner({
   role,
   text,
+  status,
   isLast,
   isPlaceholder,
   streaming,
@@ -767,10 +769,13 @@ function ChatMessageInner({
               <ToolCallTimeline toolCalls={effectiveToolCalls} />
             </div>
           )}
-          <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm flex items-center gap-1.5 lingxia-bubble-ai lingxia-typing-dots" style={{ color: "var(--oc-text-tertiary)" }}>
-            <span />
-            <span />
-            <span />
+          <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm flex items-center gap-2 lingxia-bubble-ai" style={{ color: "var(--oc-text-tertiary)" }}>
+            <span className="lingxia-typing-dots flex items-center gap-1.5" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+            {status ? <span>{status}</span> : null}
           </div>
         </div>
       </div>
@@ -780,13 +785,15 @@ function ChatMessageInner({
   const [copied, setCopied] = useState(false);
   const [ttsPlaying, setTtsPlaying] = useState(false);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
-  const displayText = useMemo(() => cleanLeakedToolTags(text), [text]);
-  const streamingMarkdownText = useThrottledText(
-    displayText,
-    streamingMarkdownDelay(displayText.length),
-    Boolean(isLast && streaming),
+  const throttleStreamingText = Boolean(isLast && streaming);
+  const throttledSourceText = useThrottledText(
+    text,
+    streamingMarkdownDelay(text.length),
+    throttleStreamingText,
   );
-  const renderedDisplayText = isLast && streaming ? repairStreamingMarkdown(streamingMarkdownText) : displayText;
+  const displayedSourceText = throttleStreamingText ? throttledSourceText : text;
+  const displayText = useMemo(() => cleanLeakedToolTags(displayedSourceText), [displayedSourceText]);
+  const renderedDisplayText = throttleStreamingText ? repairStreamingMarkdown(displayText) : displayText;
   const onCopyMarkdown = async () => {
     try {
       await navigator.clipboard.writeText(displayText);
@@ -804,6 +811,11 @@ function ChatMessageInner({
             <ToolCallTimeline toolCalls={effectiveToolCalls} />
           </div>
         )}
+        {streaming && status ? (
+          <div className="mb-2 text-xs" style={{ color: "var(--oc-text-tertiary)" }} role="status">
+            {status}
+          </div>
+        ) : null}
         <div className="relative group">
           <div
             className={`relative rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed lingxia-bubble-ai ${(isLast && streaming && text) ? "lingxia-token-active" : ""}`}
@@ -987,6 +999,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
   return (
     prev.role === next.role &&
     prev.text === next.text &&
+    prev.status === next.status &&
     prev.isLast === next.isLast &&
     prev.isPlaceholder === next.isPlaceholder &&
     prev.streaming === next.streaming &&
