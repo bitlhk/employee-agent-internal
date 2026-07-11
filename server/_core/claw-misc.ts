@@ -430,9 +430,18 @@ function jiuwenHistoryFileForSession(sessionsDir: string, sessionId: string): st
   const safeSessionId = safeJiuwenSessionId(sessionId);
   if (!safeSessionId) return null;
   const sessionsRoot = path.resolve(sessionsDir);
-  const file = path.resolve(path.join(sessionsDir, safeSessionId, "history.json"));
-  if (!file.startsWith(sessionsRoot + path.sep)) return null;
-  return file;
+  const files = ["history.jsonl", "history.json"]
+    .map((name) => path.resolve(path.join(sessionsDir, safeSessionId, name)))
+    .filter((file) => file.startsWith(sessionsRoot + path.sep) && existsSync(file))
+    .map((file) => {
+      try {
+        return { file, mtimeMs: statSync(file).mtimeMs };
+      } catch {
+        return { file, mtimeMs: 0 };
+      }
+    })
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return files[0]?.file || null;
 }
 
 function readJiuwenSessionMetadata(sessionsDir: string, sessionId: string): any {

@@ -62,7 +62,7 @@ describe("claw misc admin routes", () => {
       process.env.JIUWENCLAW_SERVICE_ID = "linggan_test";
       const { listJiuwenChatHistorySessions, resolveJiuwenHistorySession } = await import("./claw-misc");
 
-      const writeSession = (adoptId: string, conversationId: string, userText: string, assistantText: string) => {
+      const writeSession = (adoptId: string, conversationId: string, userText: string, assistantText: string, historyName: "history.json" | "history.jsonl") => {
         const sessionId = `sess_${adoptId}_web_${conversationId}_e0`;
         const dir = path.join(root, "service_linggan_test", `agent_jiuwen_${adoptId}`, "agent", "sessions", sessionId);
         mkdirSync(dir, { recursive: true });
@@ -73,7 +73,7 @@ describe("claw misc admin routes", () => {
           last_message_at: 1779000001,
           title: userText,
         }), "utf8");
-        writeFileSync(path.join(dir, "history.json"), [
+        writeFileSync(path.join(dir, historyName), [
           JSON.stringify({ id: `${sessionId}:u`, role: "user", request_id: `${sessionId}:r`, timestamp: 1779000000, content: userText }),
           JSON.stringify({ id: `${sessionId}:think`, role: "assistant", request_id: `${sessionId}:r`, timestamp: 1779000000.5, event_type: "chat.reasoning", content: "hidden thinking" }),
           JSON.stringify({ id: `${sessionId}:a`, role: "assistant", request_id: `${sessionId}:r`, timestamp: 1779000001, event_type: "chat.final", content: assistantText }),
@@ -81,8 +81,8 @@ describe("claw misc admin routes", () => {
         return sessionId;
       };
 
-      const alphaSessionId = writeSession("lgj-alpha", "conv_alpha", "你好 alpha", "alpha 回复");
-      const betaSessionId = writeSession("lgj-beta", "conv_beta", "你好 beta", "beta 回复");
+      const alphaSessionId = writeSession("lgj-alpha", "conv_alpha", "你好 alpha", "alpha 回复", "history.jsonl");
+      const betaSessionId = writeSession("lgj-beta", "conv_beta", "你好 beta", "beta 回复", "history.json");
 
       const alphaSessions = listJiuwenChatHistorySessions({ adoptId: "lgj-alpha", dbAgentId: "", limit: 10 });
       expect(alphaSessions).toHaveLength(1);
