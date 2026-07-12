@@ -1,8 +1,8 @@
 # Third-Party Notices
 
 Workforce Agent Platform uses third-party open-source software and integration
-names. Unless otherwise noted, third-party packages are used under their
-respective upstream licenses as published in npm package metadata.
+names. Exact dependency versions are recorded in `pnpm-lock.yaml`; package
+copyright and license metadata remains available in each installed package.
 
 ## Runtime and Framework Libraries
 
@@ -11,14 +11,22 @@ respective upstream licenses as published in npm package metadata.
 - React Markdown, remark-gfm, rehype-highlight, highlight.js
 - Radix UI primitives, lucide-react icons, Tailwind CSS
 - qrcode for local QR code rendering
-- Noto Sans SC font package
+- Noto Sans SC 5.2.8, Copyright Google Inc., SIL Open Font License 1.1.
+  The required license text is distributed at
+  `client/public/licenses/Noto-Sans-SC-OFL-1.1.txt` and is included in the
+  production frontend build.
+- UI components derived from shadcn/ui, Copyright 2023 shadcn, MIT License.
+  The license text is distributed at
+  `client/public/licenses/shadcn-ui-MIT.txt` and is included in the production
+  frontend build.
 
 ## Integration Names and Trademarks
 
 The product can integrate with external runtimes and channels such as
 JiuwenSwarm, A2A-compatible agents, Feishu/Lark, WeChat, WeCom, and DingTalk.
 Those names and marks belong to their respective owners. The open-source
-repository does not grant trademark rights.
+repository does not grant trademark rights. The repository does not distribute
+their channel or runtime logo artwork; see `ASSET_PROVENANCE.md`.
 
 ## Deployment-Specific Assets
 

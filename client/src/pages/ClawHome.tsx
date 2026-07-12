@@ -46,7 +46,7 @@ function getRuntimeCardMeta(adoptId: unknown) {
   if (id.startsWith("lgj-")) {
     return {
       name: "JiuwenSwarm",
-      icon: "/uploads/jiuwenswarm.svg",
+      icon: "/images/workforce-agent.svg",
       badgeClass: "bg-emerald-100 text-emerald-700",
       buttonClass: "bg-emerald-600 hover:bg-emerald-700",
     };
@@ -54,14 +54,14 @@ function getRuntimeCardMeta(adoptId: unknown) {
   if (id.startsWith("lgh-")) {
     return {
       name: "历史实例",
-      icon: "/uploads/jiuwenswarm.svg",
+      icon: "/images/workforce-agent.svg",
       badgeClass: "bg-slate-100 text-slate-600",
       buttonClass: "bg-slate-300",
     };
   }
   return {
     name: "存量实例",
-    icon: "/uploads/jiuwenswarm.svg",
+    icon: "/images/workforce-agent.svg",
     badgeClass: "bg-amber-100 text-amber-700",
     buttonClass: "bg-slate-300",
   };

@@ -1,6 +1,7 @@
 import express from "express";
 import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { safePostWebhookJson, validateWebhookTarget } from "./safe-webhook";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const NOTIFY_CONFIG_PATH = `${APP_ROOT}/data/claw-notify-configs.json`;
@@ -58,13 +59,9 @@ async function sendFeishu(config: any, text: string, title?: string): Promise<{ 
         elements: [{ tag: "markdown", content: text }],
       },
     };
-    const resp = await fetch(webhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await resp.json() as any;
-    if (data.code !== 0 && data.StatusCode !== 0) return { ok: false, error: `发送失败: ${JSON.stringify(data)}` };
+    const resp = await safePostWebhookJson(webhook, "feishu", body);
+    const data = resp.json || {};
+    if (!resp.ok || (data.code !== 0 && data.StatusCode !== 0)) return { ok: false, error: `发送失败: HTTP ${resp.status} ${resp.text.slice(0, 200)}` };
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e.message };
@@ -76,12 +73,8 @@ async function sendWebhook(config: any, text: string, title?: string): Promise<{
   try {
     const url = config.webhook;
     if (!url) return { ok: false, error: "缺少 Webhook URL" };
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: title || "岗位智能体通知", text, timestamp: Date.now() }),
-    });
-    return { ok: resp.ok };
+    const resp = await safePostWebhookJson(url, "generic", { title: title || "岗位智能体通知", text, timestamp: Date.now() });
+    return { ok: resp.ok, ...(resp.ok ? {} : { error: `HTTP ${resp.status}` }) };
   } catch (e: any) {
     return { ok: false, error: e.message };
   }
@@ -134,16 +127,21 @@ export function registerNotifyRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
+      const type = String(req.body.type || "none");
+      const webhook = String(req.body.webhook || "").trim();
+      if ((type === "feishu" || type === "webhook") && webhook) {
+        await validateWebhookTarget(webhook, type === "feishu" ? "feishu" : "generic");
+      }
       const configs = loadConfigs();
       configs[adoptId] = {
-        type: String(req.body.type || "none"),
+        type,
         // 企业微信
         corpId: String(req.body.corpId || "").trim(),
         agentId: String(req.body.agentId || "").trim(),
         secret: String(req.body.secret || "").trim() || configs[adoptId]?.secret || "",
         userId: String(req.body.userId || "@all").trim(),
         // 飞书 / 通用 Webhook
-        webhook: String(req.body.webhook || "").trim(),
+        webhook,
       };
       saveConfigs(configs);
       res.json({ ok: true });

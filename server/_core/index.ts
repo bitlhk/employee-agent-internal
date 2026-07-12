@@ -50,7 +50,7 @@ import { registerMiscRoutes } from "./claw-misc";
 import { registerAuditExportRoutes } from "./audit-export-routes";
 import { registerAuditIngestRoutes } from "./claw-audit-ingest";
 import { registerDesktopRoutes, registerDesktopWSProxy } from "./desktop";
-import { APP_ROOT } from "./helpers";
+import { APP_ROOT, startApplicationLogRetention } from "./helpers";
 import { getRoleSkillMcpBaseline, listAgentRoleTemplates } from "./role-templates";
 import { sdk } from "./sdk";
 import { appRouter } from "../routers";
@@ -70,6 +70,7 @@ let runtimeVersionsCache: {
   expiresAt: number;
 } | null = null;
 const iosLoadDebugEnabled = process.env.IOS_LOAD_DEBUG === "1";
+startApplicationLogRetention();
 
 const roleBaseline = getRoleSkillMcpBaseline();
 console.log("[ROLE-TEMPLATE] baseline loaded", {

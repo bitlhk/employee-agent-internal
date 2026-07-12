@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { CheckCircle2, MessageCircle, ShieldOff, Unlink } from "lucide-react";
+import { BellRing, Building2, CheckCircle2, MessageCircle, MessagesSquare, Send, ShieldOff, Unlink } from "lucide-react";
 import { PageContainer } from "@/components/console/PageContainer";
 
 type ChannelKey = "feishu" | "dingtalk" | "wechat" | "wecom";
@@ -38,13 +38,13 @@ const CHANNELS: Array<{
   key: ChannelKey;
   label: string;
   desc: string;
-  iconSrc?: string;
+  Icon: typeof MessageCircle;
   status: "ready" | "jiuwen-ready" | "unsupported";
 }> = [
-  { key: "feishu", label: "飞书", desc: "通过灵感智能体应用绑定当前岗位智能体", iconSrc: "/channel-icons/feishu.webp", status: "ready" },
-  { key: "dingtalk", label: "钉钉", desc: "JiuwenSwarm 支持，EA 绑定接入中", iconSrc: "/channel-icons/dingtalk.png", status: "jiuwen-ready" },
-  { key: "wechat", label: "微信", desc: "等待 JiuwenSwarm 频道支持后适配", iconSrc: "/channel-icons/wechat.png", status: "unsupported" },
-  { key: "wecom", label: "企业微信", desc: "等待 JiuwenSwarm 频道支持后适配", iconSrc: "/channel-icons/wecom.webp", status: "unsupported" },
+  { key: "feishu", label: "飞书", desc: "通过岗位智能体应用绑定当前岗位智能体", Icon: Send, status: "ready" },
+  { key: "dingtalk", label: "钉钉", desc: "JiuwenSwarm 支持，EA 绑定接入中", Icon: BellRing, status: "jiuwen-ready" },
+  { key: "wechat", label: "微信", desc: "等待 JiuwenSwarm 频道支持后适配", Icon: MessagesSquare, status: "unsupported" },
+  { key: "wecom", label: "企业微信", desc: "等待 JiuwenSwarm 频道支持后适配", Icon: Building2, status: "unsupported" },
 ];
 
 function channelStatusLabel(channel: (typeof CHANNELS)[number], cap?: ChannelCapability): string {
@@ -95,6 +95,7 @@ export function ChannelsPage({ adoptId }: { adoptId?: string }) {
       <div className="channel-layout">
         <aside className="settings-card channel-list" aria-label="频道列表">
           {CHANNELS.map((channel) => {
+            const ChannelIcon = channel.Icon;
             const activeChannel = active === channel.key;
             const cap = channelCaps?.channels?.[channel.key];
             const statusLabel = channelStatusLabel(channel, cap);
@@ -108,7 +109,7 @@ export function ChannelsPage({ adoptId }: { adoptId?: string }) {
                 onClick={() => setActive(channel.key)}
               >
                 <span className="channel-brand" aria-hidden="true">
-                  {channel.iconSrc ? <img src={channel.iconSrc} alt="" /> : <span>{channel.label.slice(0, 1)}</span>}
+                  <ChannelIcon size={17} />
                 </span>
                 <span className="channel-list__copy">
                   <span className="channel-list__title">

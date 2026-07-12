@@ -3,6 +3,7 @@ export const TEST_MODE = process.env.NODE_ENV !== "production" && process.env.TE
 
 import path from "path";
 import { privateMessageLogFields } from "../_core/log-privacy";
+import { appendRetainedJsonLog } from "../_core/retained-json-log";
 
 const processHome = process.env.HOME || process.env.USERPROFILE || "/root";
 
@@ -31,7 +32,7 @@ export const OPENCLAW_HOME = normalizeOpenClawHome();
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { execSync } from "child_process";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import {
   getClawByAdoptId,
   getSystemConfigValue,
@@ -390,17 +391,15 @@ export function writeClawExecAudit(entry: {
   meta?: any;
 }) {
   try {
-    const logDir = `${APP_ROOT}/logs`;
-    mkdirSync(logDir, { recursive: true });
-    const line = JSON.stringify({
+    const payload = {
       ts: new Date().toISOString(),
       event: "claw_exec",
       ...entry,
       message: undefined,
       messageType: String(entry.message || "").startsWith("admin_") ? "operation" : "user_input",
       ...privateMessageLogFields(entry.message),
-    });
-    appendFileSync(`${logDir}/claw-exec.log`, line + "\n", "utf8");
+    };
+    void appendRetainedJsonLog(`${APP_ROOT}/logs/claw-exec.log`, payload).catch(() => {});
   } catch {
     // ignore
   }

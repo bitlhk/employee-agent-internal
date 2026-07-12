@@ -232,13 +232,13 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--banking-radius-md);
-  color: white;
+  color: var(--banking-brand-red);
   font-size: 13px;
   font-weight: 800;
   flex-shrink: 0;
   box-shadow: var(--banking-shadow-sm);
   overflow: hidden;
-  background: var(--banking-card);
+  background: color-mix(in oklab, var(--banking-brand-red) 8%, var(--banking-card));
 }
 
 .channel-brand img {

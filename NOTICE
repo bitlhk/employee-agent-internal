@@ -8,4 +8,6 @@ All project code is distributed under the MIT License unless a file states
 otherwise.
 
 Third-party open-source components and UI assets are documented in
-THIRD_PARTY_NOTICES.md.
+THIRD_PARTY_NOTICES.md. Asset provenance requirements are documented in
+ASSET_PROVENANCE.md. License texts shipped with frontend assets are under
+client/public/licenses/.

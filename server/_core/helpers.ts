@@ -2,9 +2,9 @@ import { execFileSync, execSync } from "child_process";
 import path from "path";
 import { createHash, createHmac } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync, createReadStream } from "fs";
-import { appendFile } from "fs/promises";
 import type { Request, Response } from "express";
 import { createContext } from "./context";
+import { appendRetainedJsonLog, startJsonLogRetention } from "./retained-json-log";
 
 // ── 可配置路径（开源部署时通过 .env 覆盖）──
 const processHome = process.env.HOME || process.env.USERPROFILE || "/root";
@@ -84,8 +84,9 @@ export const internalApiUrl = (pathname: string) => `${INTERNAL_BASE_URL}${Strin
 
 export const LOG_DIR = `${APP_ROOT}/logs`;
 try { mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+export const startApplicationLogRetention = () => startJsonLogRetention(LOG_DIR);
 export const appendLogAsync = (fileName: string, payload: any) => {
-  appendFile(`${LOG_DIR}/${fileName}`, `${JSON.stringify(payload)}\n`, "utf8").catch(() => {});
+  void appendRetainedJsonLog(`${LOG_DIR}/${fileName}`, payload).catch(() => {});
 };
 
 // ── Internal API auth ──
