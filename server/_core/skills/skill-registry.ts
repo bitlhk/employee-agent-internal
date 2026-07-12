@@ -244,7 +244,7 @@ export class FileSkillRegistry implements SkillRegistry {
   private async runtimeRoot(adoptId: string): Promise<string> {
     const runtimeAgentId = await this.runtimeAgentId(adoptId);
     // jiuwenswarm (lgj-*) 用户的技能在 jiuwenswarm workspace，不在 .openclaw 下。
-    // 注意与 skill-market/install、skill-package/install 的落盘路径
+    // Keep reviewed marketplace and personal package installs on the same storage layout.
     // （resolveRuntimeWorkspaceByIds）保持一致，否则卸载/启停/同步会操作孤儿目录。
     if (isJiuwenClawAdoptId(adoptId)) {
       return path.join(jiuwenClawWorkspaceDir(adoptId, runtimeAgentId), "skills");

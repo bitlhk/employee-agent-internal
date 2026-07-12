@@ -8,7 +8,6 @@ import {
   writeFileSync,
   existsSync,
   rmSync,
-  copyFileSync,
   readdirSync,
   statSync,
 } from "fs";
@@ -46,7 +45,7 @@ import {
   skillStoreRuntimeImportedDir,
   skillSourceDirsForRuntime,
 } from "./skills/skill-store";
-import { isRetiredSkillMarketRoute, toPublicSkillMarketItem } from "./skills/skill-market-policy";
+import { toPublicSkillMarketItem } from "./skills/skill-market-policy";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -673,17 +672,6 @@ async function readSkillPackagePayload(req: express.Request): Promise<{
 }
 
 export function registerSkillRoutes(app: express.Express) {
-  app.use((req, res, next) => {
-    if (!isRetiredSkillMarketRoute(req.method, req.path)) {
-      next();
-      return;
-    }
-    res.status(410).json({
-      error: "legacy skill marketplace endpoint retired",
-      code: "LEGACY_SKILL_MARKET_RETIRED",
-    });
-  });
-
   app.get("/api/claw/skill-market/list", async (req, res) => {
     try {
       const adoptId = String(req.query.adoptId || "").trim();
@@ -1384,21 +1372,6 @@ export function registerSkillRoutes(app: express.Express) {
     }
   });
 
-  app.get("/api/claw/shared-packages", async (_req, res) => {
-    try {
-      const regPath = `${APP_ROOT}/data/shared-skill-registry.json`;
-      let rows: any[] = [];
-      if (existsSync(regPath)) {
-        const raw = String(readFileSync(regPath, "utf-8") || "[]").trim();
-        if (raw) rows = JSON.parse(raw);
-      }
-      res.json({ items: Array.isArray(rows) ? rows : [] });
-    } catch (e) {
-      console.error("[shared-packages] list failed", e);
-      res.status(500).json({ error: "list shared packages failed" });
-    }
-  });
-
   app.post("/api/claw/skill-package/install", async (req, res) => {
     try {
       const body = (req.body || {}) as any;
@@ -1559,262 +1532,6 @@ print(json.dumps({'ok':True}))`;
     } catch (e) {
       console.error("[skill-package install] failed", e);
       res.status(500).json({ error: "install package failed" });
-    }
-  });
-
-  app.post("/api/claw/skill-package/publish", async (req, res) => {
-    try {
-      const body = (req.body || {}) as any;
-      const adoptId = String(body.adoptId || "").trim();
-      const filename = String(body.filename || "").trim();
-      const title = String(body.title || filename || "").trim();
-      const desc = String(body.description || "").trim();
-      const homepage = String(body.homepage || "").trim();
-      if (!adoptId || !filename) {
-        res.status(400).json({ error: "adoptId and filename required" });
-        return;
-      }
-      const claw = await requireClawOwner(req, res, adoptId);
-      if (!claw) return;
-
-      const idxPath = `${APP_ROOT}/data/skill-packages/index.json`;
-      let idx: any[] = [];
-      if (existsSync(idxPath)) {
-        const raw = String(readFileSync(idxPath, "utf-8") || "[]");
-        try {
-          idx = JSON.parse(raw);
-        } catch {
-          idx = [];
-        }
-      }
-      const found = idx.find(
-        (x: any) =>
-          String(x?.adoptId || "") === adoptId &&
-          String(x?.filename || "") === filename
-      );
-      if (!found) {
-        res.status(404).json({ error: "package not found" });
-        return;
-      }
-
-      const regPath = `${APP_ROOT}/data/shared-skill-registry.json`;
-      let rows: any[] = [];
-      if (existsSync(regPath)) {
-        const raw = String(readFileSync(regPath, "utf-8") || "[]");
-        try {
-          rows = JSON.parse(raw);
-        } catch {
-          rows = [];
-        }
-      }
-
-      const id = `shared-${found.sha256?.slice(0, 10) || Date.now()}`;
-      const row = {
-        id,
-        title: title || filename,
-        description: desc || found?.manifest?.description || "",
-        homepage,
-        filename,
-        fromAdoptId: adoptId,
-        version: found?.manifest?.version || "0.1.0",
-        manifest: found?.manifest || {},
-        createdAt: new Date().toISOString(),
-      };
-      rows = rows.filter((r: any) => r.id !== id);
-      rows.push(row);
-      mkdirSync(`${APP_ROOT}/data`, { recursive: true });
-      writeFileSync(regPath, JSON.stringify(rows, null, 2), "utf-8");
-
-      res.json({ ok: true, item: row });
-    } catch (e) {
-      console.error("[shared-packages] publish failed", e);
-      res.status(500).json({ error: "publish shared package failed" });
-    }
-  });
-
-  // ── 技能市场：从市场安装技能到个人空间 ──────────────────────────
-  app.post("/api/claw/skill-market/install", async (req, res) => {
-    try {
-      const body = (req.body || {}) as any;
-      const adoptId = String(body.adoptId || "").trim();
-      const marketItemId = String(body.marketItemId || "").trim();
-      if (!adoptId || !marketItemId) {
-        res.status(400).json({ error: "adoptId and marketItemId required" });
-        return;
-      }
-      const claw = await requireClawOwner(req, res, adoptId);
-      if (!claw) return;
-
-      // 1. find market item from registry
-      const regPath = `${APP_ROOT}/data/shared-skill-registry.json`;
-      let registry: any[] = [];
-      if (existsSync(regPath)) {
-        try {
-          registry = JSON.parse(String(readFileSync(regPath, "utf-8") || "[]"));
-        } catch {
-          registry = [];
-        }
-      }
-      const marketItem = registry.find(
-        (r: any) => String(r?.id || "") === marketItemId
-      );
-      if (!marketItem) {
-        res.status(404).json({ error: "market item not found" });
-        return;
-      }
-
-      // 2. find source package zip from publisher
-      const idxPath = `${APP_ROOT}/data/skill-packages/index.json`;
-      let allPkgs: any[] = [];
-      if (existsSync(idxPath)) {
-        try {
-          allPkgs = JSON.parse(String(readFileSync(idxPath, "utf-8") || "[]"));
-        } catch {
-          allPkgs = [];
-        }
-      }
-      const srcPkg = allPkgs.find(
-        (x: any) =>
-          String(x?.adoptId || "") === String(marketItem.fromAdoptId || "") &&
-          String(x?.filename || "") === String(marketItem.filename || "")
-      );
-      if (!srcPkg || !srcPkg.path || !existsSync(srcPkg.path)) {
-        res.status(404).json({ error: "source package file not found" });
-        return;
-      }
-
-      // 3. copy zip to current user's package dir
-      const userPkgDir = `${APP_ROOT}/data/skill-packages/${adoptId}`;
-      mkdirSync(userPkgDir, { recursive: true });
-      const srcFilename = String(marketItem.filename || "market-skill.zip");
-      const newFilename = `${Date.now()}-${srcFilename}`;
-      const dstZipPath = `${userPkgDir}/${newFilename}`;
-      copyFileSync(srcPkg.path, dstZipPath);
-
-      // 4. probe skillId + unzip to workspace (same as install API)
-      const trialAgentId = `trial_${adoptId}`;
-      const trialAgentDir = openClawAgentDir(trialAgentId);
-      const runtimeAgentId = existsSync(trialAgentDir)
-        ? trialAgentId
-        : String(claw.agentId || "");
-
-      const pyProbe = `import zipfile, json, re
-with zipfile.ZipFile(${JSON.stringify(dstZipPath)}, 'r') as z:
- names=[n for n in z.namelist() if n and not n.endswith('/')]
- tops=list({n.split('/')[0] for n in names if '/' in n})
- if len(tops)==1:
-  sid=tops[0].lower().strip()
- else:
-  raw=${JSON.stringify(srcFilename.replace(/\.zip$/i, ""))}
-  sid=re.sub(r'^[0-9]+-','',raw).lower()
- sid=re.sub(r'[^a-z0-9-]+','-',sid).strip('-')[:48] or 'market-skill'
- print(json.dumps({'skillId':sid}))`;
-      const pyProbePath = `/tmp/claw_mkt_probe_${Date.now()}.py`;
-      writeFileSync(pyProbePath, pyProbe, "utf-8");
-      let probeRaw = "";
-      try {
-        probeRaw = execSync(`python3 ${pyProbePath}`, {
-          encoding: "utf-8",
-          timeout: 5000,
-        });
-      } finally {
-        try {
-          rmSync(pyProbePath, { force: true });
-        } catch {}
-      }
-      const skillId: string =
-        JSON.parse(probeRaw.trim())?.skillId || "market-skill";
-
-      const skillDir = `${resolveRuntimeWorkspaceByIds(adoptId, runtimeAgentId)}/skills/${skillId}`;
-      const pyInstall = `import zipfile, os, json
-zip_path=${JSON.stringify(dstZipPath)}
-dst=${JSON.stringify(skillDir)}
-os.makedirs(dst, exist_ok=True)
-with zipfile.ZipFile(zip_path, 'r') as z:
- names=[n for n in z.namelist() if n and not n.endswith('/')]
- for n in names:
-  if n.startswith('/') or '..' in n:
-   raise Exception('path traversal')
- prefix=''
- top={n.split('/')[0] for n in names if '/' in n}
- if len(top)==1:
-  only=list(top)[0]
-  if all(n.startswith(only + '/') for n in names):
-   prefix=only + '/'
- for n in names:
-  m=n[len(prefix):] if prefix and n.startswith(prefix) else n
-  if not m:
-   continue
-  out=os.path.join(dst,m)
-  os.makedirs(os.path.dirname(out), exist_ok=True)
-  with z.open(n) as src, open(out,'wb') as fw:
-   fw.write(src.read())
-print(json.dumps({'ok':True}))`;
-      const pyInstallPath = `/tmp/claw_mkt_install_${Date.now()}.py`;
-      writeFileSync(pyInstallPath, pyInstall, "utf-8");
-      try {
-        execSync(`python3 ${pyInstallPath}`, {
-          encoding: "utf-8",
-          timeout: 12000,
-        });
-      } finally {
-        try {
-          rmSync(pyInstallPath, { force: true });
-        } catch {}
-      }
-
-      // ensure SKILL.md exists
-      const skillMdPath = `${skillDir}/SKILL.md`;
-      if (!existsSync(skillMdPath)) {
-        const title = String(marketItem.title || skillId).trim();
-        const desc = String(marketItem.description || "from skill market")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 180);
-        writeFileSync(
-          skillMdPath,
-          `---\nname: ${skillId}\ndescription: "${desc.replace(/"/g, "'")}"\n---\n\n# ${title}\n\n${desc}\n`,
-          "utf-8"
-        );
-      }
-
-      // 5. register in package index
-      const newEntry = {
-        adoptId,
-        filename: newFilename,
-        path: dstZipPath,
-        sha256: srcPkg.sha256 || "",
-        size: srcPkg.size || 0,
-        manifest: srcPkg.manifest || {},
-        mdMeta: srcPkg.mdMeta || {},
-        displayName: marketItem.title || srcPkg.displayName || srcFilename,
-        displayDescription:
-          marketItem.description || srcPkg.displayDescription || "",
-        createdAt: new Date().toISOString(),
-        installedSkillId: skillId,
-        installedAt: new Date().toISOString(),
-        fromMarket: marketItemId,
-      };
-      allPkgs.push(newEntry);
-      writeFileSync(idxPath, JSON.stringify(allPkgs, null, 2), "utf-8");
-
-      // 6. update market install count
-      const updatedRegistry = registry.map((r: any) => {
-        if (String(r?.id || "") === marketItemId) {
-          return { ...r, installCount: (r.installCount || 0) + 1 };
-        }
-        return r;
-      });
-      writeFileSync(regPath, JSON.stringify(updatedRegistry, null, 2), "utf-8");
-
-      // 7. clear cache + bump epoch
-      clearAgentSessionsCache(runtimeAgentId, OPENCLAW_BASE_HOME);
-      bumpSessionEpoch(adoptId);
-
-      res.json({ ok: true, skillId, marketItemId, path: skillDir });
-    } catch (e) {
-      console.error("[skill-market install] failed", e);
-      res.status(500).json({ error: "install from market failed" });
     }
   });
 }
