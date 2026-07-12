@@ -17,6 +17,7 @@ import {
   recordJiuwenToolAudit,
 } from "./jiuwenclaw-bridge";
 import { appendLogAsync, resolveRuntimeWorkspace } from "./helpers";
+import { privateMessageLogFields } from "./log-privacy";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
@@ -311,7 +312,7 @@ export async function forwardToJiuwenGateway(
     userId: claw.userId,
     clientRunId: opts.clientRunId || "",
     wsUrl,
-    message: String(message || "").slice(0, 500),
+    ...privateMessageLogFields(message),
   });
 
   await new Promise<void>((resolve) => {

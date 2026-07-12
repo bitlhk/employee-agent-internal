@@ -4,7 +4,7 @@ import { getClawByAdoptId } from "../db";
 import { findJiuwenCronRouteMeta, findJiuwenCronRunRouteMeta, recordJiuwenCronRun } from "./cron/jiuwenclaw-cron-provider";
 import { isAuthorizedInternalRequest } from "./helpers";
 
-type LingganCallbackBody = {
+type JiuwenCallbackBody = {
   content?: unknown;
   session_id?: unknown;
   message_id?: unknown;
@@ -15,14 +15,20 @@ type LingganCallbackBody = {
 };
 
 function expectedToken(): string {
-  return String(process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN || process.env.INTERNAL_API_KEY || "").trim();
+  return String(
+    process.env.WORKFORCE_AGENT_JIUWEN_WEBHOOK_TOKEN
+      || process.env.JIUWEN_WEBHOOK_TOKEN
+      || process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN
+      || process.env.INTERNAL_API_KEY
+      || "",
+  ).trim();
 }
 
-function isPlaceholder(body: LingganCallbackBody): boolean {
+function isPlaceholder(body: JiuwenCallbackBody): boolean {
   return Boolean((body.cron || {}).is_placeholder);
 }
 
-function textContent(body: LingganCallbackBody): string {
+function textContent(body: JiuwenCallbackBody): string {
   return String(body.content || "").trim();
 }
 
@@ -46,9 +52,9 @@ function normalizeCronCallbackContent(content: string): {
   };
 }
 
-function lingganMeta(body: LingganCallbackBody): Record<string, unknown> {
+function callbackMeta(body: JiuwenCallbackBody): Record<string, unknown> {
   const metadata = body.metadata || {};
-  const value = metadata.linggan;
+  const value = metadata.workforceAgent || metadata.agent || metadata.linggan;
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
@@ -56,16 +62,16 @@ function cronTaskId(cron: Record<string, unknown>): string {
   return String(cron.task_id || cron.job_id || cron.id || cron.schedule_id || "").trim();
 }
 
-export function registerJiuwenLingganWebhookRoutes(app: express.Express) {
-  app.post("/api/internal/jiuwen/linggan/callback", async (req, res) => {
+export function registerJiuwenWebhookRoutes(app: express.Express) {
+  const callback = async (req: express.Request, res: express.Response) => {
     try {
       if (!isAuthorizedInternalRequest(req, expectedToken())) {
         return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
       }
 
-      const body = (req.body || {}) as LingganCallbackBody;
+      const body = (req.body || {}) as JiuwenCallbackBody;
       const content = textContent(body);
-      const meta = lingganMeta(body);
+      const meta = callbackMeta(body);
       const cron = body.cron || {};
       const taskId = cronTaskId(cron);
       const runId = String(cron.run_id || body.message_id || randomUUID()).trim();
@@ -108,8 +114,11 @@ export function registerJiuwenLingganWebhookRoutes(app: express.Express) {
         runId,
       });
     } catch (error: any) {
-      console.error("[JIUWEN-LINGGAN-WEBHOOK] callback failed", error?.message || error);
+      console.error("[JIUWEN-WEBHOOK] callback failed", error?.message || error);
       return res.status(500).json({ ok: false, error: error?.message || "callback failed" });
     }
-  });
+  };
+
+  app.post("/api/internal/jiuwen/callback", callback);
+  app.post("/api/internal/jiuwen/linggan/callback", callback);
 }

@@ -68,6 +68,9 @@ cp .env.example .env
 docker-compose up -d
 ```
 
+新安装默认使用 `employee_agent` 数据库和用户。旧版 Docker 部署升级时应保留原 `.env` 中的
+`DATABASE_URL`、`MYSQL_DATABASE` 和 `MYSQL_USER`；不要为了匹配新默认值重命名已有数据库。
+
 生产环境仍建议用裸机或自管进程部署，并单独部署 JiuwenSwarm / A2A / HTTP Runtime。
 
 ## Runtime 接入

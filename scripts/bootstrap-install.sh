@@ -187,7 +187,7 @@ ensure_node() {
 ensure_node_tools() {
   log "Preparing pnpm and pm2"
   run sudo_cmd corepack enable
-  run sudo_cmd corepack prepare pnpm@10.4.1 --activate
+  run sudo_cmd corepack prepare pnpm@10.34.4 --activate
   if need_cmd pm2; then
     run sudo_cmd npm install -g pm2
   fi

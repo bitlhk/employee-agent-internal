@@ -21,9 +21,9 @@ FRONTEND_URL_VALUE="${WORKFORCE_AGENT_FRONTEND_URL:-${LINGXIA_FRONTEND_URL:-}}"
 DB_MODE_VALUE="${WORKFORCE_AGENT_DB_MODE:-${LINGXIA_DB_MODE:-}}"
 DB_HOST_VALUE="${WORKFORCE_AGENT_DB_HOST:-${LINGXIA_DB_HOST:-localhost}}"
 DB_PORT_VALUE="${WORKFORCE_AGENT_DB_PORT:-${LINGXIA_DB_PORT:-3306}}"
-DB_USER_VALUE="${WORKFORCE_AGENT_DB_USER:-${LINGXIA_DB_USER:-linggan}}"
+DB_USER_VALUE="${WORKFORCE_AGENT_DB_USER:-${LINGXIA_DB_USER:-employee_agent}}"
 DB_PASS_VALUE="${WORKFORCE_AGENT_DB_PASSWORD:-${LINGXIA_DB_PASSWORD:-}}"
-DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-linggan}}"
+DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-employee_agent}}"
 
 usage() {
   cat <<'EOF'
@@ -88,7 +88,7 @@ pnpm_cmd() {
   elif command -v corepack >/dev/null 2>&1; then
     corepack pnpm "$@"
   else
-    echo "pnpm not found. Install it with: corepack enable && corepack prepare pnpm@10.4.1 --activate" >&2
+    echo "pnpm not found. Install it with: corepack enable && corepack prepare pnpm@10.34.4 --activate" >&2
     return 127
   fi
 }
@@ -265,7 +265,8 @@ SQL
       ;;
     compose)
       MYSQL_ROOT_PASSWORD=$(gen_hex 12)
-      DATABASE_URL="mysql://root:${MYSQL_ROOT_PASSWORD}@db:3306/linggan"
+      DB_PASS_VALUE="${DB_PASS_VALUE:-$(gen_hex 16)}"
+      DATABASE_URL="mysql://${DB_USER_VALUE}:${DB_PASS_VALUE}@db:3306/${DB_NAME_VALUE}"
       echo "  Docker Compose MySQL 密码已自动生成。"
       ;;
     *)
@@ -290,6 +291,11 @@ SQL
     echo "# 数据库"
     echo "DATABASE_URL=$DATABASE_URL"
     [[ -n "$MYSQL_ROOT_PASSWORD" ]] && echo "MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD"
+    if [[ "$DB_MODE_VALUE" == "compose" ]]; then
+      echo "MYSQL_DATABASE=$DB_NAME_VALUE"
+      echo "MYSQL_USER=$DB_USER_VALUE"
+      echo "MYSQL_PASSWORD=$DB_PASS_VALUE"
+    fi
     echo ""
     echo "# 认证与安全"
     echo "JWT_SECRET=$JWT_SECRET"

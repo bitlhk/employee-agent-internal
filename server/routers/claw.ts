@@ -1520,6 +1520,18 @@ export const clawRouter = router({
           const itemSkillId = skillIdSchema.parse(String(item.skillId || ""));
           const oldRaw = item.packagePath || path.join(marketDir, String(item.status || "pending"), itemSkillId);
           const oldDir = remapLegacySkillMarketPath(oldRaw);
+          if (input.status === "approved") {
+            if (!existsSync(oldDir)) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "待审核技能包不存在" });
+            }
+            const scan = parseSkillSourceDirectory(oldDir, itemSkillId);
+            if (scan.warnings.length > 0) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `技能安全扫描未通过: ${scan.warnings.slice(0, 5).join("；")}`,
+              });
+            }
+          }
           const statusDir = safeChildPath(marketDir, input.status);
           const newDir = safeChildPath(statusDir, `${itemSkillId}-${item.id}`);
           if (oldDir !== newDir) {

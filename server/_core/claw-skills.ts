@@ -46,6 +46,7 @@ import {
   skillStoreRuntimeImportedDir,
   skillSourceDirsForRuntime,
 } from "./skills/skill-store";
+import { isRetiredSkillMarketRoute, toPublicSkillMarketItem } from "./skills/skill-market-policy";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -672,6 +673,17 @@ async function readSkillPackagePayload(req: express.Request): Promise<{
 }
 
 export function registerSkillRoutes(app: express.Express) {
+  app.use((req, res, next) => {
+    if (!isRetiredSkillMarketRoute(req.method, req.path)) {
+      next();
+      return;
+    }
+    res.status(410).json({
+      error: "legacy skill marketplace endpoint retired",
+      code: "LEGACY_SKILL_MARKET_RETIRED",
+    });
+  });
+
   app.get("/api/claw/skill-market/list", async (req, res) => {
     try {
       const adoptId = String(req.query.adoptId || "").trim();
@@ -689,7 +701,7 @@ export function registerSkillRoutes(app: express.Express) {
       res.json({
         items: rows.map((item: any) => {
           const skillId = String(item.skillId || "").trim();
-          return { ...item, invocationCount: invocationCounts[skillId] || 0 };
+          return { ...toPublicSkillMarketItem(item), invocationCount: invocationCounts[skillId] || 0 };
         }),
         roleTemplate,
         filtered: false,

@@ -32,6 +32,7 @@ import {
 import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "./core-file-guard";
 import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
 import { skillRegistry } from "./skills/skill-registry";
+import { privateMessageLogFields } from "./log-privacy";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -515,7 +516,7 @@ export function registerChatStreamRoutes(app: express.Express) {
       agentId: String((claw as any).agentId || ""),
       userId: Number((claw as any).userId || 0),
       permissionProfile: String((claw as any).permissionProfile || "starter"),
-      message: String(message || "").slice(0, 500),
+      ...privateMessageLogFields(message),
       runtimeMode: normalizedRuntimeMode,
     });
 

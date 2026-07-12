@@ -2156,6 +2156,7 @@ export function registerMiscRoutes(app: express.Express) {
       const isChatUsageEvent = (d: any) => {
         if (d?.event === "chat_stream_response" || d?.event === "ws_chat_response") return true;
         // 兼容旧 tRPC claw.chat 日志；排除管理操作，例如 admin_delete_claw。
+        if (d?.event === "claw_exec" && d?.messageType === "user_input") return true;
         if (d?.event === "claw_exec" && d?.message && d?.message !== "admin_delete_claw") return true;
         return false;
       };

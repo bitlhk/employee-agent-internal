@@ -298,83 +298,25 @@ function decodePythonSingleQuoted(raw: string): string {
   }
 }
 
-function formatRiskAssessmentJson(value: any): string | null {
-  if (!value || typeof value !== "object") return null;
-  const enterprise = String(value.enterprise || value.company || value.name || "").trim();
-  const hasRisk = typeof value.has_risk === "boolean" ? value.has_risk : undefined;
-  const score = value.final_score ?? value.score ?? null;
-  const fiveLevel = value.five_level ?? value.risk_level ?? null;
-  const alertLevel = value.alert_level ?? value.alert ?? null;
-  if (!enterprise && score == null && !fiveLevel && !alertLevel) return null;
-
-  const lines: string[] = [];
-  lines.push(`# ${enterprise || "企业"}风险评估结论`);
-  lines.push("");
-  lines.push("| 项目 | 结果 |");
-  lines.push("|---|---|");
-  if (enterprise) lines.push(`| 评估对象 | ${enterprise} |`);
-  if (hasRisk !== undefined) lines.push(`| 是否存在风险 | ${hasRisk ? "是" : "否"} |`);
-  if (score != null) lines.push(`| 综合风险评分 | ${score} |`);
-  if (fiveLevel) lines.push(`| 五级分类 | ${fiveLevel} |`);
-  if (alertLevel) lines.push(`| 预警信号 | ${alertLevel} |`);
-  if (value.completeness != null) lines.push(`| 数据完备度 | ${Math.round(Number(value.completeness) * 100)}% |`);
-  if (Array.isArray(value.missing_fields) && value.missing_fields.length > 0) {
-    lines.push(`| 待补充字段 | ${value.missing_fields.join("、")} |`);
-  }
-
-  const dimensions = value.dimension_scores && typeof value.dimension_scores === "object" ? value.dimension_scores : null;
-  if (dimensions) {
-    const labelMap: Record<string, string> = {
-      operation: "经营风险",
-      credit: "信用风险",
-      debt: "债项风险",
-      industry: "行业风险",
-      region: "区域风险",
-    };
-    lines.push("");
-    lines.push("## 维度评分");
-    lines.push("");
-    lines.push("| 维度 | 分数 | 权重 | 红旗指标 |");
-    lines.push("|---|---:|---:|---|");
-    for (const [key, item] of Object.entries(dimensions)) {
-      const row: any = item || {};
-      const redFlags = Array.isArray(row.red_flags) && row.red_flags.length > 0 ? row.red_flags.join("、") : "无";
-      lines.push(`| ${labelMap[key] || key} | ${row.score ?? "-"} | ${row.weight ?? "-"} | ${redFlags} |`);
-    }
-  }
-
-  lines.push("");
-  lines.push("## 结论");
-  lines.push("");
-  if (hasRisk === false) {
-    lines.push(`系统采集数据下，${enterprise || "该企业"}当前未触发显著风险信号，综合评分 ${score ?? "-"}，五级分类为${fiveLevel || "未给出"}，预警信号为${alertLevel || "未给出"}。`);
-  } else if (hasRisk === true) {
-    lines.push(`系统采集数据下，${enterprise || "该企业"}存在风险信号，综合评分 ${score ?? "-"}，五级分类为${fiveLevel || "未给出"}，预警信号为${alertLevel || "未给出"}。`);
-  } else {
-    lines.push(`系统采集数据下，${enterprise || "该企业"}综合评分为 ${score ?? "-"}，五级分类为${fiveLevel || "未给出"}，预警信号为${alertLevel || "未给出"}。`);
-  }
-  if (value.suggestion) lines.push(String(value.suggestion));
-  lines.push("");
-  lines.push("> 以上结论由模型基于当前可用数据生成，建议人工确认，不应直接作为审批或处置依据。");
-  return lines.join("\n");
+function formatStructuredToolContent(value: unknown): string {
+  return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 }
 
-function cleanA2AText(text: string): string {
+export function cleanA2AText(text: string): string {
   const trimmed = String(text || "").trim();
   if (!trimmed) return trimmed;
 
   // JiuwenSwarm A2A may include tool traces inside the final response artifact.
-  // Prefer the last structured tool content when it is a business JSON result.
+  // Prefer the last structured tool result without interpreting business fields.
   const contentRegex = /data=\{'content': '([\s\S]*?)'\}\s+error=None/g;
   let match: RegExpExecArray | null;
   let best: string | null = null;
   while ((match = contentRegex.exec(trimmed))) {
     const decoded = decodePythonSingleQuoted(match[1] || "").trim();
-    if (!decoded.startsWith("{")) continue;
+    if (!decoded.startsWith("{") && !decoded.startsWith("[")) continue;
     try {
       const parsed = JSON.parse(decoded);
-      const formatted = formatRiskAssessmentJson(parsed);
-      if (formatted) best = formatted;
+      best = formatStructuredToolContent(parsed);
     } catch {}
   }
   if (best) return best;

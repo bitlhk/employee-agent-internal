@@ -2,6 +2,7 @@
 export const TEST_MODE = process.env.NODE_ENV !== "production" && process.env.TEST_MODE === "true";
 
 import path from "path";
+import { privateMessageLogFields } from "../_core/log-privacy";
 
 const processHome = process.env.HOME || process.env.USERPROFILE || "/root";
 
@@ -395,7 +396,9 @@ export function writeClawExecAudit(entry: {
       ts: new Date().toISOString(),
       event: "claw_exec",
       ...entry,
-      message: String(entry.message || "").slice(0, 500),
+      message: undefined,
+      messageType: String(entry.message || "").startsWith("admin_") ? "operation" : "user_input",
+      ...privateMessageLogFields(entry.message),
     });
     appendFileSync(`${logDir}/claw-exec.log`, line + "\n", "utf8");
   } catch {

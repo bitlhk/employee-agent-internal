@@ -17,10 +17,10 @@ DATABASE_URL=mysql://用户名:密码@主机:端口/数据库名
 **示例**：
 ```env
 # 本地 MySQL
-DATABASE_URL=mysql://root:password@localhost:3306/finance_ai
+DATABASE_URL=mysql://root:password@localhost:3306/employee_agent
 
 # 远程 MySQL
-DATABASE_URL=mysql://user:pass@example.com:3306/finance_ai
+DATABASE_URL=mysql://user:pass@example.com:3306/employee_agent
 ```
 
 ### 2. 创建数据库
@@ -28,7 +28,7 @@ DATABASE_URL=mysql://user:pass@example.com:3306/finance_ai
 如果数据库不存在，需要先创建：
 
 ```sql
-CREATE DATABASE finance_ai CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE DATABASE employee_agent CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
 ### 3. 运行数据库迁移
@@ -79,7 +79,7 @@ npx drizzle-kit migrate
 
 1. **Docker MySQL**：
 ```bash
-docker run --name mysql-dev -e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=finance_ai -p 3306:3306 -d mysql:8.0
+docker run --name employee-agent-mysql -e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=employee_agent -p 3306:3306 -d mysql:8.0
 ```
 
 2. **本地 MySQL**：
@@ -106,4 +106,3 @@ docker run --name mysql-dev -e MYSQL_ROOT_PASSWORD=password -e MYSQL_DATABASE=fi
 
 - 确保数据库已创建
 - 检查数据库名称是否正确
-

@@ -24,7 +24,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { registerVoiceRoutes } from "./voice";
 import { startRecycler } from "./recycler";
 import { registerCronRoutes } from "./claw-cron";
-import { registerJiuwenLingganWebhookRoutes } from "./jiuwen-linggan-webhook";
+import { registerJiuwenWebhookRoutes } from "./jiuwen-webhook";
 import { registerNotifyRoutes } from "./claw-notify";
 import { registerWeixinRoutes } from "./claw-weixin";
 import { registerFeishuRoutes } from "./claw-feishu";
@@ -330,7 +330,7 @@ async function startServer() {
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   registerVoiceRoutes(app);
-  registerJiuwenLingganWebhookRoutes(app);
+  registerJiuwenWebhookRoutes(app);
   registerCronRoutes(app);
   registerNotifyRoutes(app);
   registerWeixinRoutes(app);

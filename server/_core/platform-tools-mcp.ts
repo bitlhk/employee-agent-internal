@@ -3,11 +3,13 @@ import path from "path";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { isAuthorizedInternalRequest, resolveRuntimeAgentId, resolveRuntimeWorkspaceByIds } from "./helpers";
 import type { SkillSource } from "../../shared/types/skill";
-import { getClawByAdoptId } from "../db";
+import { getClawByAdoptId, getClawByAgentId } from "../db";
+import { resolveEffectiveRoleAssets } from "../db/role-assets";
 import { parseSkillSourceDirectory, sanitizeSkillId } from "./skills/skill-source";
 import { skillInstaller } from "./skills/skill-installer";
 import { skillRegistry } from "./skills/skill-registry";
 import { skillStoreRuntimeImportedDir } from "./skills/skill-store";
+import { auditRequest, recordAuditBestEffort } from "./audit-events";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -99,21 +101,51 @@ function pickHeader(req: Request, names: string[]): string {
   return "";
 }
 
+export class PlatformIdentityError extends Error {
+  constructor(
+    message: string,
+    readonly trustedAdoptId: string,
+    readonly requestedAdoptId: string,
+  ) {
+    super(message);
+    this.name = "PlatformIdentityError";
+  }
+}
+
+export function resolvePlatformAdoptId(
+  trustedAdoptIdRaw: unknown,
+  args: Record<string, unknown>,
+): string {
+  const trustedAdoptId = String(trustedAdoptIdRaw || "").trim();
+  const requestedAdoptId = String(args.adoptId || args.adopt_id || "").trim();
+  if (!trustedAdoptId) {
+    if (requestedAdoptId) {
+      throw new PlatformIdentityError(
+        "trusted Agent identity is missing; adoptId arguments cannot establish identity",
+        "",
+        requestedAdoptId,
+      );
+    }
+    return "";
+  }
+  if (requestedAdoptId && requestedAdoptId !== trustedAdoptId) {
+    throw new PlatformIdentityError(
+      "adoptId argument does not match the trusted runtime identity",
+      trustedAdoptId,
+      requestedAdoptId,
+    );
+  }
+  return trustedAdoptId;
+}
+
 function resolveAdoptId(req: Request, args: Record<string, unknown>): string {
-  return String(
-    args.adoptId
-      || args.adopt_id
-      || pickHeader(req, [
-        "x-agent-adopt-id",
-        "x-workforce-agent-adopt-id",
-        "x-lingxia-adopt-id",
-        "x-linggan-adopt-id",
-        "x-jiuwen-channel-id",
-        "x-openclaw-channel-id",
-        "x-linggan-channel-id",
-      ])
-      || "",
-  ).trim();
+  const trustedAdoptId = pickHeader(req, [
+    "x-agent-adopt-id",
+    "x-workforce-agent-adopt-id",
+    "x-jiuwen-channel-id",
+    "x-openclaw-channel-id",
+  ]);
+  return resolvePlatformAdoptId(trustedAdoptId, args);
 }
 
 async function internalJson(path: string, init: RequestInit = {}) {
@@ -146,7 +178,30 @@ function summarizeAgents(data: any): string {
 }
 
 async function callTool(req: Request, name: string, args: Record<string, unknown>) {
-  const adoptId = resolveAdoptId(req, args);
+  let adoptId = "";
+  try {
+    adoptId = resolveAdoptId(req, args);
+  } catch (error) {
+    if (error instanceof PlatformIdentityError) {
+      await recordAuditBestEffort({
+        action: "platform.mcp.identity_mismatch",
+        result: "denied",
+        severity: "high",
+        actorType: "agent",
+        targetType: "claw_adoption",
+        targetId: error.trustedAdoptId || null,
+        toolName: name,
+        source: "platform_tools_mcp",
+        policyCode: "TRUSTED_AGENT_IDENTITY_REQUIRED",
+        ...auditRequest(req),
+        metadata: {
+          trustedAdoptId: error.trustedAdoptId || null,
+          requestedAdoptId: error.requestedAdoptId || null,
+        },
+      });
+    }
+    throw error;
+  }
   if (!adoptId) return textResult("Error: adoptId is missing from JiuwenSwarm user context.", { isError: true });
 
   if (name === "get_user_channels") {
@@ -256,6 +311,42 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
       return;
     }
     res.json({ status: "ok", name: SERVICE_NAME, version: SERVICE_VERSION });
+  });
+
+  app.get("/api/internal/mcp/agent-authorization", async (req, res) => {
+    if (!isAuthorized(req)) {
+      return res.status(401).json({ ok: false, error: "unauthorized" });
+    }
+
+    const agentId = String(req.query.agentId || "").trim();
+    const mcpServerId = String(req.query.mcpServerId || "").trim();
+    if (!agentId || !mcpServerId) {
+      return res.status(400).json({ ok: false, error: "agentId and mcpServerId are required" });
+    }
+
+    const claw = await getClawByAgentId(agentId);
+    if (!claw || !["active", "expiring"].includes(claw.status)) {
+      return res.status(403).json({ ok: false, authorized: false, reason: "agent_not_active" });
+    }
+
+    const roleId = String(claw.roleTemplate || "general-assistant").trim();
+    const assets = await resolveEffectiveRoleAssets(roleId);
+    const allowedMcpServers = new Set([
+      ...assets.mcpServers.default,
+      ...assets.mcpServers.optional,
+    ]);
+    const authorized = roleId === "wealth-manager" && allowedMcpServers.has(mcpServerId);
+
+    return res.status(authorized ? 200 : 403).json({
+      ok: authorized,
+      authorized,
+      reason: authorized ? "authorized" : "role_or_asset_not_authorized",
+      agentId: claw.agentId,
+      adoptId: claw.adoptId,
+      roleId,
+      mcpServerId,
+      userCode: claw.adoptId.replace(/^[^-]+-/, ""),
+    });
   });
 
   app.post("/api/internal/platform-tools/skills/register-runtime", async (req, res) => {

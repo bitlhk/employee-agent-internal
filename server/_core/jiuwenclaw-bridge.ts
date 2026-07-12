@@ -6,6 +6,7 @@ import os from "os";
 import path from "path";
 import { WebSocket, type RawData } from "ws";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
+import { privateMessageLogFields } from "./log-privacy";
 import {
   appendLogAsync,
   buildSessionRegistryScope,
@@ -909,7 +910,7 @@ export async function forwardToJiuwenClaw(
     mode: requestPayload.params?.mode || "",
     selectedSkillIds: (opts.selectedSkills || []).map((skill) => skill.id).filter(Boolean),
     attempt,
-    message: String(message || "").slice(0, 500),
+    ...privateMessageLogFields(message),
   });
 
   return new Promise<"done" | "silent">((resolve) => {

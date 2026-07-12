@@ -108,7 +108,9 @@ fi
 cd "$OUT_DIR"
 git init
 git add -A
-git commit -m "feat: initial open-source release of Workforce Agent Platform"
+git -c user.name="Employee Agent Release Bot" \
+    -c user.email="employee-agent-release@users.noreply.github.com" \
+    commit -m "feat: initial open-source release of Workforce Agent Platform"
 
 echo ""
 echo "✅ 开源版已生成: $OUT_DIR"

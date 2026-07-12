@@ -334,7 +334,13 @@ function hashRouteId(value: unknown): string {
 }
 
 function expectedBridgeToken(): string {
-  return String(process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN || process.env.INTERNAL_API_KEY || "").trim();
+  return String(
+    process.env.WORKFORCE_AGENT_JIUWEN_WEBHOOK_TOKEN
+      || process.env.JIUWEN_WEBHOOK_TOKEN
+      || process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN
+      || process.env.INTERNAL_API_KEY
+      || "",
+  ).trim();
 }
 
 function accountsBaseUrl(domain: FeishuDomain) {

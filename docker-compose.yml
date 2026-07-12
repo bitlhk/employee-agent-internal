@@ -4,16 +4,16 @@ services:
   # ── MySQL 数据库 ──
   db:
     image: mysql:8.0
-    container_name: linggan-db
+    container_name: employee-agent-db
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请在 .env 中设置 MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: linggan
-      MYSQL_USER: ${MYSQL_USER:-linggan}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-employee_agent}
+      MYSQL_USER: ${MYSQL_USER:-employee_agent}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请在 .env 中设置 MYSQL_PASSWORD}
       MYSQL_CHARSET: utf8mb4
       MYSQL_COLLATION: utf8mb4_unicode_ci
-    # 不暴露 3306 到宿主机，容器间通过 linggan-net 内网通信
+    # 不暴露 3306 到宿主机，容器间通过 employee-agent-net 内网通信
     # 如需本地调试，取消注释下面两行：
     # ports:
     #   - "127.0.0.1:3306:3306"
@@ -27,14 +27,14 @@ services:
       retries: 10
       start_period: 30s
     networks:
-      - linggan-net
+      - employee-agent-net
 
   # ── 岗位智能体平台 ──
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: linggan-app
+    container_name: employee-agent-app
     restart: unless-stopped
     ports:
       - "${APP_BIND_IP:-127.0.0.1}:${PORT:-5180}:5180"
@@ -43,7 +43,7 @@ services:
     environment:
       - PORT=5180
       - NODE_ENV=production
-      - DATABASE_URL=mysql://${MYSQL_USER:-linggan}:${MYSQL_PASSWORD}@db:3306/linggan
+      - DATABASE_URL=${DATABASE_URL:?请在 .env 中设置 DATABASE_URL}
     depends_on:
       db:
         condition: service_healthy
@@ -51,11 +51,11 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
     networks:
-      - linggan-net
+      - employee-agent-net
 
 volumes:
   mysql_data:
 
 networks:
-  linggan-net:
+  employee-agent-net:
     driver: bridge

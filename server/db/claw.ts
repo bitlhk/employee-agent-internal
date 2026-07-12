@@ -84,6 +84,25 @@ export async function getClawByAdoptId(adoptId: string): Promise<ClawAdoption | 
 }
 
 /**
+ * Look up an adoption by its runtime agent identity.
+ *
+ * Runtime-facing services receive agentId rather than a user-controlled adoptId,
+ * so authorization checks should resolve the adoption from this value directly.
+ */
+export async function getClawByAgentId(agentId: string): Promise<ClawAdoption | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  try {
+    const rows = await db.select().from(clawAdoptions).where(eq(clawAdoptions.agentId, agentId)).limit(1);
+    return rows[0] || null;
+  } catch (error) {
+    console.error("[Database] Failed to get claw by agentId:", error);
+    return null;
+  }
+}
+
+/**
  * 创建领养记录
  */
 export async function createClawAdoption(

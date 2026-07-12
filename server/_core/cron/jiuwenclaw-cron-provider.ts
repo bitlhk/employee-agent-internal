@@ -427,35 +427,49 @@ function channelLabel(channelId: ChannelId) {
   return "企业微信";
 }
 
-function jiuwenLingganCallbackUrl(): string {
-  const explicit = String(process.env.LINGGAN_JIUWEN_CALLBACK_URL || "").trim();
+function jiuwenCallbackUrl(): string {
+  const explicit = String(
+    process.env.WORKFORCE_AGENT_JIUWEN_CALLBACK_URL
+      || process.env.JIUWEN_CALLBACK_URL
+      || process.env.LINGGAN_JIUWEN_CALLBACK_URL
+      || "",
+  ).trim();
   if (explicit) return explicit;
   const base = String(process.env.EA_INTERNAL_BASE_URL || process.env.APP_BASE_URL || "").trim();
-  if (base) return `${base.replace(/\/+$/, "")}/api/internal/jiuwen/linggan/callback`;
+  if (base) return `${base.replace(/\/+$/, "")}/api/internal/jiuwen/callback`;
   const port = String(process.env.PORT || process.env.EA_PORT || "5180").trim() || "5180";
-  return `http://127.0.0.1:${port}/api/internal/jiuwen/linggan/callback`;
+  return `http://127.0.0.1:${port}/api/internal/jiuwen/callback`;
 }
 
-function jiuwenLingganToken(): string {
-  return String(process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN || process.env.INTERNAL_API_KEY || "").trim();
+function jiuwenWebhookToken(): string {
+  return String(
+    process.env.WORKFORCE_AGENT_JIUWEN_WEBHOOK_TOKEN
+      || process.env.JIUWEN_WEBHOOK_TOKEN
+      || process.env.LINGGAN_JIUWEN_WEBHOOK_TOKEN
+      || process.env.INTERNAL_API_KEY
+      || "",
+  ).trim();
 }
 
-function buildLingganCronMetadata(handle: CronProviderHandle, input: CronJobInput) {
+function buildCronCallbackMetadata(handle: CronProviderHandle, input: CronJobInput) {
   const target = input.delivery.targets[0];
   const channelId = normalizeChannelId(String(target?.channelId || "")) || "web";
-  return {
-    linggan: {
-      callback_url: jiuwenLingganCallbackUrl(),
-      token: jiuwenLingganToken(),
-      adoptId: handle.adoptId,
-      agentId: handle.agentId,
-      userId: handle.userId,
-      delivery: {
-        channelId,
-        targetId: target?.targetId,
-        targetLabel: target?.targetLabel,
-      },
+  const callback = {
+    callback_url: jiuwenCallbackUrl(),
+    token: jiuwenWebhookToken(),
+    adoptId: handle.adoptId,
+    agentId: handle.agentId,
+    userId: handle.userId,
+    delivery: {
+      channelId,
+      targetId: target?.targetId,
+      targetLabel: target?.targetLabel,
     },
+  };
+  return {
+    workforceAgent: callback,
+    // Older JiuwenSwarm deployments only recognize this metadata key.
+    linggan: callback,
   };
 }
 
@@ -684,7 +698,7 @@ export class JiuwenClawCronProvider implements CronProvider {
         description: input.prompt.trim(),
         timezone: String(input.meta?.timezone || "Asia/Shanghai"),
         targets: "linggan",
-        metadata: buildLingganCronMetadata(handle, input),
+        metadata: buildCronCallbackMetadata(handle, input),
         enabled: input.enabled !== false,
         wake_offset_seconds: Number(input.wakeOffsetSeconds ?? 300),
         mode: String(input.meta?.mode || "agent"),
@@ -726,7 +740,7 @@ export class JiuwenClawCronProvider implements CronProvider {
       const target = patch.delivery.targets[0];
       if (!target) return validationFailed("delivery target is required");
       rawPatch.targets = "linggan";
-      rawPatch.metadata = buildLingganCronMetadata(handle, {
+      rawPatch.metadata = buildCronCallbackMetadata(handle, {
         name: patch.name || found.name,
         description: patch.description ?? found.description,
         enabled: patch.enabled ?? found.enabled,

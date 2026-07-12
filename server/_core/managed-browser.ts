@@ -3,7 +3,7 @@ import { lookup } from "dns/promises";
 import { createHash } from "crypto";
 import { request as httpRequest } from "http";
 import { request as httpsRequest } from "https";
-import { isIP } from "net";
+import { BlockList, isIP } from "net";
 import { brotliDecompressSync, gunzipSync, inflateSync } from "zlib";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { isAuthorizedInternalRequest, isPrivateUrl } from "./helpers";
@@ -12,6 +12,25 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
 const DEFAULT_TEXT_LIMIT = 80_000;
 const MAX_REDIRECTS = 5;
+
+const PRIVATE_IPV4_BLOCK_LIST = new BlockList();
+for (const [network, prefix] of [
+  ["0.0.0.0", 8],
+  ["10.0.0.0", 8],
+  ["100.64.0.0", 10],
+  ["127.0.0.0", 8],
+  ["169.254.0.0", 16],
+  ["172.16.0.0", 12],
+  ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
+  ["192.168.0.0", 16],
+  ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
+  ["224.0.0.0", 3],
+] as const) {
+  PRIVATE_IPV4_BLOCK_LIST.addSubnet(network, prefix, "ipv4");
+}
 
 type ManagedBrowserAction = "open" | "extract" | "snapshot" | "screenshot";
 
@@ -67,6 +86,10 @@ export function isPrivateManagedBrowserIp(rawHost: string) {
   const host = rawHost.replace(/^\[|\]$/g, "").toLowerCase();
   const mappedV4 = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
   if (mappedV4) return isPrivateManagedBrowserIp(mappedV4);
+
+  // BlockList normalizes all IPv4-mapped IPv6 forms, including hexadecimal
+  // tails such as ::ffff:7f00:1, before checking the IPv4 private ranges.
+  if (isIP(host) === 6 && PRIVATE_IPV4_BLOCK_LIST.check(host, "ipv6")) return true;
 
   if (isIP(host) === 4) {
     const [a, b, c] = host.split(".").map(Number);
