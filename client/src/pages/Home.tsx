@@ -18,7 +18,7 @@ import { ChatInput } from "@/components/ChatInput";
 import { ChatMessage, type JiuwenPermissionRequestCard, type MessageEventEntry, type ToolCallEntry } from "@/components/ChatMessage";
 import type { AgentTask } from "@/components/AgentTaskCard";
 import { BrandIcon } from "@/components/BrandIcon";
-import { Sidebar, type PageKey } from "@/components/console/Sidebar";
+import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
 import { SessionList } from "@/components/console/SessionList";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import { TopBar } from "@/components/console/TopBar";
@@ -29,7 +29,15 @@ import { applySettings as applyUiSettings, getSettings, subscribeSettings } from
 import { formatModelName } from "@/lib/modelDisplay";
 import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import { History, Wand2, X } from "lucide-react";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { History, Home as HomeIcon, LogOut, Menu, Settings, Wand2, X } from "lucide-react";
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
@@ -777,7 +785,9 @@ export default function Home() {
   const [lingxiaContextTurns, setLingxiaContextTurns] = useState(20);
   const [lingxiaModelId, setLingxiaModelId] = useState("");
   const [sidebarWidth, setSidebarWidth] = useState(248);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth < 768);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(() => window.innerWidth <= 768);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [openclawVersion, setOpenclawVersion] = useState("OpenClaw 2026.5.7");
   const [jiuwenswarmVersion, setJiuwenswarmVersion] = useState("JiuwenSwarm");
   const [runtimeAgentId, setRuntimeAgentId] = useState("");
@@ -797,7 +807,7 @@ export default function Home() {
         if (v === "weixin") return "channels";
         if (v === "meeting") return "chat";
         if (v === "office") return "chat";
-        return v as PageKey;
+        if (isPageKey(v)) return v;
       }
     } catch {}
     return "chat";
@@ -839,8 +849,28 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!mobileSidebarOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileSidebarOpen]);
+
+  useEffect(() => {
     applyUiSettings({ navCollapsed: sidebarCollapsed, navWidth: sidebarWidth });
   }, [sidebarCollapsed, sidebarWidth]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 768px)");
+    const syncViewport = () => {
+      setIsMobileViewport(media.matches);
+      if (!media.matches) setMobileSidebarOpen(false);
+    };
+    syncViewport();
+    media.addEventListener("change", syncViewport);
+    return () => media.removeEventListener("change", syncViewport);
+  }, []);
 
   useEffect(() => {
     if (!sessionMenuOpen) return;
@@ -861,7 +891,21 @@ export default function Home() {
   const [lingxiaOpenSections, setLingxiaOpenSections] = useState<Set<string>>(new Set(["soul"]));
   const toggleLingxiaSection = (s: string) => setLingxiaOpenSections(prev => { const n = new Set(prev); n.has(s) ? n.delete(s) : n.add(s); return n; });
 
-  const { user, loading: authLoading, error: authError } = useAuth({ redirectOnUnauthenticated: false });
+  const { user, loading: authLoading, error: authError, logout } = useAuth({ redirectOnUnauthenticated: false });
+  const effectiveSidebarCollapsed = !isMobileViewport && sidebarCollapsed;
+  const showClientDiagnostics = import.meta.env.DEV || (user as any)?.role === "admin";
+  const selectWorkbenchPage = (page: PageKey) => {
+    setActivePage(page);
+    setMobileSidebarOpen(false);
+  };
+  const handleWorkbenchLogout = async () => {
+    try {
+      await logout();
+      window.location.href = "/login";
+    } catch (error: any) {
+      toast.error(error?.message || "退出失败，请稍后重试");
+    }
+  };
 
   // ── adoptId 提取：/claw/:adoptId 路径模式 ──
   const [isClawRoute, clawRouteParams] = useRoute("/claw/:adoptId");
@@ -3435,25 +3479,36 @@ export default function Home() {
           className="flex-1 min-h-0 flex overflow-hidden"
           style={
             {
-              "--lingxia-sidebar-width": `${sidebarCollapsed ? 72 : sidebarWidth}px`,
+              "--lingxia-sidebar-width": `${effectiveSidebarCollapsed ? 72 : sidebarWidth}px`,
               "--lingxia-topbar-height": "52px",
             } as CSSProperties
           }
         >
 
+          {isMobileViewport && mobileSidebarOpen ? (
+            <button
+              type="button"
+              className="workbench-mobile-sidebar-backdrop"
+              aria-label="关闭导航"
+              onClick={() => setMobileSidebarOpen(false)}
+            />
+          ) : null}
+
           {/* ── 左侧：折叠面板 ── */}
           <aside
-            className="lingxia-sidebar-panel relative flex-none flex flex-col overflow-hidden shrink-0 hide-all-scrollbars"
-            style={{ width: sidebarCollapsed ? 72 : sidebarWidth, transition: "width 0.2s ease" }}
+            id="workbench-navigation"
+            aria-hidden={isMobileViewport && !mobileSidebarOpen ? true : undefined}
+            className={`lingxia-sidebar-panel relative flex-none flex flex-col overflow-hidden shrink-0 hide-all-scrollbars ${mobileSidebarOpen ? "is-mobile-open" : ""}`}
+            style={{ width: effectiveSidebarCollapsed ? 72 : sidebarWidth, transition: "width 0.2s ease, transform 0.2s ease" }}
           >
             <button
               type="button"
-              title={sidebarCollapsed ? "展开侧栏" : "折叠侧栏"}
+              title={effectiveSidebarCollapsed ? "展开侧栏" : "折叠侧栏"}
               onClick={() => setSidebarCollapsed(v => !v)}
-              className="absolute right-2 top-[20px] z-40 flex items-center justify-center rounded-md"
+              className="workbench-sidebar-collapse absolute right-2 top-[20px] z-40 flex items-center justify-center rounded-md"
               style={{ width: 22, height: 22, background: "transparent", border: "none", color: "var(--oc-text-tertiary)", fontSize: 16 }}
             >
-              {sidebarCollapsed ? "»" : "«"}
+              {effectiveSidebarCollapsed ? "»" : "«"}
             </button>
 
             {/* 实例信息头 */}
@@ -3478,7 +3533,7 @@ export default function Home() {
                   />
                 ) : null}
               </div>
-              <div className="min-w-0 flex-1 pr-5" style={{ display: sidebarCollapsed ? "none" : "block" }}>
+              <div className="min-w-0 flex-1 pr-5" style={{ display: effectiveSidebarCollapsed ? "none" : "block" }}>
                 <p className="truncate" style={{ color: "var(--oc-sidebar-text)", fontSize: 14, fontWeight: 600, lineHeight: "20px" }}>岗位智能体</p>
                 <p className="truncate" style={{ color: "var(--oc-sidebar-subtle)", fontSize: 12, fontWeight: 400, lineHeight: "17px" }} title={lingxiaDisplayName || brand.name}>
                   {lingxiaDisplayName || brand.name}
@@ -3489,14 +3544,17 @@ export default function Home() {
             {/* 工作台导航（Phase A） */}
               <Sidebar
                 activePage={activePage}
-                setActivePage={setActivePage}
-                collapsed={sidebarCollapsed}
+                setActivePage={selectWorkbenchPage}
+                collapsed={effectiveSidebarCollapsed}
                 coopBadge={coopBadgeCount}
                 sessions={webSessions}
               currentConversationId={webConversationId}
               sessionSwitchingId={sessionSwitchingId}
               messageSearchProvider={findCachedConversationSnippet}
-              onSwitchConversation={(conversationId) => void switchLingxiaConversation(conversationId)}
+              onSwitchConversation={(conversationId) => {
+                setMobileSidebarOpen(false);
+                void switchLingxiaConversation(conversationId);
+              }}
               onDeleteConversation={(conversationId) => void deleteLingxiaConversation(conversationId)}
               onRenameConversation={renameLingxiaConversation}
               onTogglePinConversation={togglePinLingxiaConversation}
@@ -3507,7 +3565,7 @@ export default function Home() {
                   version={isJiuwenRuntime ? jiuwenswarmVersion : isLegacyArchivedRuntime ? "Legacy runtime" : openclawVersion}
                   expiryText={lingxiaExpiryInfo.text}
                   expiryColor={lingxiaExpiryInfo.color}
-                  collapsed={sidebarCollapsed}
+                  collapsed={effectiveSidebarCollapsed}
                 />
               )}
             />
@@ -3531,7 +3589,7 @@ export default function Home() {
                 document.body.style.userSelect = "none";
               }}
               className="absolute top-0 right-0 w-2 h-full cursor-col-resize z-30 border-l border-dashed border-transparent hover:border-primary/30 hover:bg-white/5 transition-colors"
-              style={{ display: sidebarCollapsed ? "none" : "block" }}
+              style={{ display: effectiveSidebarCollapsed || isMobileViewport ? "none" : "block" }}
             />
           </aside>
 
@@ -3541,8 +3599,21 @@ export default function Home() {
           {/* 全局顶部栏 */}
           <TopBar
             activePage={activePage}
+            leading={isMobileViewport ? (
+              <button
+                type="button"
+                className="workbench-mobile-menu-trigger"
+                aria-label="打开导航"
+                aria-controls="workbench-navigation"
+                aria-expanded={mobileSidebarOpen}
+                onClick={() => setMobileSidebarOpen(true)}
+              >
+                <Menu size={18} />
+              </button>
+            ) : undefined}
             right={isLingxiaSubdomain ? (
-              <div className="client-load-diagnostics">
+              <div className="workbench-topbar-actions">
+              {showClientDiagnostics ? <div className="client-load-diagnostics">
                 <button
                   type="button"
                   className="client-load-diagnostics__trigger"
@@ -3573,6 +3644,34 @@ export default function Home() {
                     </div>
                   </div>
                 ) : null}
+              </div> : null}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="workbench-account-trigger" aria-label="打开账号菜单">
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
+                        {String((user as any)?.name || (user as any)?.email || "U").slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="workbench-account-name">{(user as any)?.name || (user as any)?.email || "账号"}</span>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="min-w-44">
+                  <DropdownMenuItem onClick={() => setLocationCoop("/")}>
+                    <HomeIcon />
+                    返回首页
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => selectWorkbenchPage("settings")}>
+                    <Settings />
+                    外观设置
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onClick={() => void handleWorkbenchLogout()}>
+                    <LogOut />
+                    退出登录
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               </div>
             ) : undefined}
           />

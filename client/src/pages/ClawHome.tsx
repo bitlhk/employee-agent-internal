@@ -151,8 +151,8 @@ const features = [
   },
   {
     icon: Shield,
-    title: "安全沙箱",
-    desc: "代码执行在隔离容器中运行，确保安全可控",
+    title: "权限控制",
+    desc: "按工作空间和工具策略约束智能体能力，降低误操作风险",
   },
   {
     icon: Cpu,
@@ -383,7 +383,7 @@ export default function ClawHome() {
             </motion.h1>
 
             <motion.p variants={fadeInUp} className="text-base text-muted-foreground mb-2 max-w-lg">
-              具备对话、技能、记忆、安全沙箱的 AI Agent 助手
+              具备对话、技能、记忆与权限控制的 AI Agent 助手
             </motion.p>
             <motion.p variants={fadeInUp} className="text-sm text-muted-foreground/70 mb-8">
               Open-source &middot; Self-hosted &middot; Enterprise-ready

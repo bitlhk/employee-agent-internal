@@ -6405,6 +6405,50 @@ html:has(:root[data-theme-mode="light"]) body {
   min-width: 0;
 }
 
+.workbench-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.workbench-account-trigger,
+.workbench-mobile-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--oc-border-subtle);
+  background: var(--oc-bg-surface);
+  color: var(--oc-text-primary);
+}
+
+.workbench-account-trigger {
+  height: 34px;
+  max-width: 190px;
+  gap: 8px;
+  padding: 0 8px 0 4px;
+  border-radius: 7px;
+}
+
+.workbench-account-trigger:hover,
+.workbench-mobile-menu-trigger:hover {
+  background: var(--oc-bg-hover);
+  border-color: var(--oc-border-strong);
+}
+
+.workbench-account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.workbench-mobile-menu-trigger,
+.workbench-mobile-sidebar-backdrop {
+  display: none;
+}
+
 /* 浅色主题 */
 :root[data-theme-mode="light"] .lingxia-topbar {
   background: transparent !important;
@@ -7046,7 +7090,67 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 
 /* ═══ 移动端适配 ═══ */
 @media (max-width: 768px) {
-  /* sidebar 在手机上默认隐藏，只显示图标列 */
+  .lingxia-sidebar-panel {
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    z-index: 90;
+    width: min(84vw, 300px) !important;
+    height: 100dvh;
+    transform: translateX(-100%);
+    visibility: hidden;
+    pointer-events: none;
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.24);
+  }
+  .lingxia-sidebar-panel.is-mobile-open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+  }
+  .workbench-sidebar-collapse {
+    display: none !important;
+  }
+  .workbench-mobile-sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: block;
+    border: 0;
+    background: rgba(15, 23, 42, 0.42);
+    cursor: pointer;
+  }
+  .workbench-mobile-menu-trigger {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    border-radius: 7px;
+  }
+  .lingxia-topbar {
+    padding: 0 12px;
+  }
+  .lingxia-topbar__left {
+    min-width: 0;
+  }
+  .lingxia-topbar__brand,
+  .lingxia-topbar__sep {
+    display: none;
+  }
+  .lingxia-topbar__page {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .workbench-account-name,
+  .client-load-diagnostics {
+    display: none;
+  }
+  .workbench-account-trigger {
+    width: 34px;
+    padding: 0 3px;
+    border: 0;
+    background: transparent;
+  }
+  /* Legacy selectors retained for old embedded console shells. */
   .sidebar-container {
     width: 0 !important;
     min-width: 0 !important;

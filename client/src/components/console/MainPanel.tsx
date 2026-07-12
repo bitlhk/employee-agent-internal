@@ -75,7 +75,7 @@ export function MainPanel({
     if (page === "agent") return <AgentPage adoptId={adoptId || ""} skills={safeSkills.data as any} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;
     if (page === "schedule") return <SchedulePageV2 adoptId={adoptId || ""} />;
-    if (page === "collab") return <CollabPage adoptId={adoptId || ""} />;
+    if (page === "collab") return <CollabPage adoptId={adoptId || ""} active={activePage === "collab"} />;
     return <SettingsPage />;
   };
 

@@ -1,5 +1,6 @@
 ﻿import { useEffect, useMemo, useState, type ComponentType } from "react";
 import {
+  AlertTriangle,
   BarChart3,
   BriefcaseBusiness,
   Check,
@@ -9,6 +10,7 @@ import {
   FileText,
   Layers,
   Loader2,
+  RefreshCw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -147,6 +149,8 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
   const { confirm, dialog } = useConfirmDialog();
   const [items, setItems] = useState<MarketSkill[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [reloadVersion, setReloadVersion] = useState(0);
   const [installing, setInstalling] = useState<number | null>(null);
   const [q, setQ] = useState("");
   const [activeOrigin, setActiveOrigin] = useState<OriginKey>("opensource");
@@ -195,12 +199,20 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
       }
     } catch {}
 
-    if (!hasCachedItems) setLoading(true);
+    setLoadError("");
+    if (!hasCachedItems) {
+      setItems([]);
+      setLoading(true);
+    }
     fetch(`/api/claw/skill-market/list?adoptId=${encodeURIComponent(adoptId || "")}`, {
       credentials: "include",
       signal: controller.signal,
     })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+        return data;
+      })
       .then((d) => {
         if (cancelled) return;
         const list = d?.items || d?.result?.data?.json || d?.result?.data || [];
@@ -208,8 +220,10 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
         setItems(normalized);
         try { window.localStorage.setItem(marketCacheKey(adoptId), JSON.stringify(normalized)); } catch {}
       })
-      .catch(() => {
-        if (!cancelled) setItems((prev) => prev);
+      .catch((error) => {
+        if (!cancelled) {
+          setLoadError(error?.name === "AbortError" ? "请求超时，请重试" : error?.message || "技能广场加载失败");
+        }
       })
       .finally(() => {
         window.clearTimeout(timer);
@@ -221,7 +235,7 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [adoptId]);
+  }, [adoptId, reloadVersion]);
 
   useEffect(() => {
     if (!adoptId) {
@@ -238,7 +252,11 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 5000);
     fetch(`/api/claw/skills/registry?adoptId=${encodeURIComponent(adoptId)}`, { signal: controller.signal })
-      .then((r) => r.json())
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(String(data?.error || `HTTP ${r.status}`));
+        return data;
+      })
       .then((d) => {
         const rows = Array.isArray(d?.items) ? d.items : [];
         const next: Record<string, { skillId: string; version?: string }> = {};
@@ -418,7 +436,18 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
         </div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && loadError && (
+        <div className="settings-card skills-market-empty" role="alert">
+          <AlertTriangle size={22} />
+          <div>{items.length > 0 ? "技能列表刷新失败，当前展示上次缓存" : "技能广场加载失败"}</div>
+          <div className="skills-muted-text text-xs">{loadError}</div>
+          <button className="skills-btn" type="button" onClick={() => setReloadVersion((value) => value + 1)}>
+            <RefreshCw size={14} /> 重试
+          </button>
+        </div>
+      )}
+
+      {!loading && !loadError && filtered.length === 0 && (
         <div className="settings-card skills-market-empty">
           <Store size={22} />
           <div>{items.length === 0 ? "技能广场暂无技能" : "没有匹配的技能"}</div>

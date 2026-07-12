@@ -1138,7 +1138,7 @@ export default function ClawAdmin() {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm text-gray-700">默认角色</Label>
-                    <p className="text-xs mt-0.5 text-muted-foreground">角色用于智能体层管理，底层 OpenClaw 统一使用 coding profile 并叠加限制</p>
+                    <p className="text-xs mt-0.5 text-muted-foreground">角色用于智能体层管理，底层运行时按岗位模板同步技能、MCP 与权限配置</p>
                   </div>
                   <Select
                     value={configData?.defaultProfile === "internal" ? "internal" : "plus"}

@@ -191,7 +191,7 @@ function sortSessions(list: CoopSessionRow[]) {
   });
 }
 
-export function CollabPage({ adoptId: _adoptId }: { adoptId: string }) {
+export function CollabPage({ adoptId: _adoptId, active }: { adoptId: string; active: boolean }) {
   const [, setLocationCoop] = useLocation();
   const [mode, setMode] = useState<PageMode>("list");
   const coopSessionPath = (sessionId: string) =>
@@ -224,6 +224,7 @@ export function CollabPage({ adoptId: _adoptId }: { adoptId: string }) {
       <div className="coop-workbench">
         <CoopWorkbenchDashboard
           adoptId={_adoptId}
+          active={active}
           onCreate={() => setMode("create")}
         />
       </div>
@@ -231,7 +232,7 @@ export function CollabPage({ adoptId: _adoptId }: { adoptId: string }) {
   );
 }
 
-function CoopWorkbenchDashboard({ adoptId, onCreate }: { adoptId?: string; onCreate?: () => void }) {
+function CoopWorkbenchDashboard({ adoptId, active, onCreate }: { adoptId?: string; active: boolean; onCreate?: () => void }) {
   const [, setLocationCoop] = useLocation();
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const wlQ = trpc.coop.isWhitelisted.useQuery();
@@ -286,7 +287,7 @@ function CoopWorkbenchDashboard({ adoptId, onCreate }: { adoptId?: string; onCre
   return (
     <div className="coop-dashboard-layout">
       <div className="coop-dashboard-main">
-        <CoopSessionsWorkbench adoptId={sourceAdoptId} />
+        <CoopSessionsWorkbench adoptId={sourceAdoptId} active={active} />
       </div>
       <div className="coop-dashboard-side">
         <div className="coop-side-tab" aria-label="可协作智能体数量">
@@ -411,7 +412,7 @@ function CoopAgentsPanel({
   );
 }
 
-function CoopSessionsWorkbench({ adoptId }: { adoptId?: string }) {
+function CoopSessionsWorkbench({ adoptId, active }: { adoptId?: string; active: boolean }) {
   const [, setLoc] = useLocation();
   const coopSessionPath = (sessionId: string) =>
     adoptId ? `/coop/${sessionId}?fromAdoptId=${encodeURIComponent(adoptId)}` : `/coop/${sessionId}`;
@@ -447,6 +448,7 @@ function CoopSessionsWorkbench({ adoptId }: { adoptId?: string }) {
   }, [loadSessions]);
 
   useEffect(() => {
+    if (!active) return;
     let cancelled = false;
     const run = async (silent = false) => {
       if (cancelled) return;
@@ -458,7 +460,7 @@ function CoopSessionsWorkbench({ adoptId }: { adoptId?: string }) {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [loadSessions]);
+  }, [active, loadSessions]);
 
   const list = useMemo(() => {
     const viewById = new Map<string, CoopSessionViewRow>();

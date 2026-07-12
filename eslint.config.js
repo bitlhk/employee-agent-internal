@@ -30,7 +30,6 @@ export default tseslint.config(
       "tmp-*.cjs",
       "*.tsbuildinfo",
       "client/src/index.css",
-      "client/src/components/pages/index.css",
     ],
   },
   {

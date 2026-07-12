@@ -15,16 +15,18 @@ const PAGE_LABELS: Record<string, string> = {
 
 type TopBarProps = {
   activePage: string;
+  leading?: ReactNode;
   afterPage?: ReactNode;
   center?: ReactNode;
   right?: ReactNode;
 };
 
-export function TopBar({ activePage, afterPage, center, right }: TopBarProps) {
+export function TopBar({ activePage, leading, afterPage, center, right }: TopBarProps) {
   const brand = useBrand();
   return (
     <div className="lingxia-topbar">
       <div className="lingxia-topbar__left">
+        {leading}
         <span className="lingxia-topbar__brand">{brand.nameEn}</span>
         <span className="lingxia-topbar__sep">›</span>
         <span className="lingxia-topbar__page">{PAGE_LABELS[activePage] || activePage}</span>
