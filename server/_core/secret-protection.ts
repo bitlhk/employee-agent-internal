@@ -21,14 +21,17 @@ export function isEncryptedSecret(value: string): boolean {
   return value.startsWith(`${ENCRYPTED_PREFIX}:`);
 }
 
-export function encryptSecret(plaintext: string): string {
+export function encryptSecret(plaintext: string, options: { maxStoredLength?: number | null } = {}): string {
   if (!plaintext || isEncryptedSecret(plaintext)) return plaintext;
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", derivedKey("encryption:credentials:v1"), iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   const stored = [ENCRYPTED_PREFIX, iv.toString("base64url"), tag.toString("base64url"), encrypted.toString("base64url")].join(":");
-  if (stored.length > 255) throw new Error("encrypted credential exceeds database storage limit");
+  const maxStoredLength = options.maxStoredLength === undefined ? 255 : options.maxStoredLength;
+  if (maxStoredLength !== null && stored.length > maxStoredLength) {
+    throw new Error("encrypted credential exceeds storage limit");
+  }
   return stored;
 }
 

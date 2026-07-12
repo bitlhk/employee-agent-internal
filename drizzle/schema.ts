@@ -730,7 +730,7 @@ export const businessAgents = mysqlTable("business_agents", {
   description:   text("description"),
   kind:          mysqlEnum("kind", ["local", "remote"]).notNull().default("remote"),
   apiUrl:        varchar("api_url", { length: 512 }),
-  apiToken:      varchar("api_token", { length: 256 }),
+  apiToken:      text("api_token"),
   remoteAgentId: varchar("remote_agent_id", { length: 128 }).default("main"),
   localAgentId:  varchar("local_agent_id", { length: 128 }),
   skills:        text("skills"),

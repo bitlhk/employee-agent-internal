@@ -1,20 +1,64 @@
 import express from "express";
 import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "fs";
 import { safePostWebhookJson, validateWebhookTarget } from "./safe-webhook";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-protection";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const NOTIFY_CONFIG_PATH = `${APP_ROOT}/data/claw-notify-configs.json`;
 
+const NOTIFY_SECRET_FIELDS = ["secret", "webhook"] as const;
+
+export function protectNotifyConfigs(data: Record<string, any>): Record<string, any> {
+  return Object.fromEntries(Object.entries(data).map(([adoptId, config]) => {
+    if (!config || typeof config !== "object" || Array.isArray(config)) return [adoptId, config];
+    const protectedConfig = { ...config };
+    for (const field of NOTIFY_SECRET_FIELDS) {
+      if (protectedConfig[field]) {
+        protectedConfig[field] = encryptSecret(String(protectedConfig[field]), { maxStoredLength: null });
+      }
+    }
+    return [adoptId, protectedConfig];
+  }));
+}
+
+export function revealNotifyConfigs(data: Record<string, any>): Record<string, any> {
+  return Object.fromEntries(Object.entries(data).map(([adoptId, config]) => {
+    if (!config || typeof config !== "object" || Array.isArray(config)) return [adoptId, config];
+    const revealedConfig = { ...config };
+    for (const field of NOTIFY_SECRET_FIELDS) {
+      if (revealedConfig[field]) revealedConfig[field] = decryptSecret(String(revealedConfig[field]));
+    }
+    return [adoptId, revealedConfig];
+  }));
+}
+
+function writeStoredConfigs(data: Record<string, any>) {
+  mkdirSync(`${APP_ROOT}/data`, { recursive: true });
+  const tempPath = `${NOTIFY_CONFIG_PATH}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(data, null, 2), { encoding: "utf-8", mode: 0o600 });
+  chmodSync(tempPath, 0o600);
+  renameSync(tempPath, NOTIFY_CONFIG_PATH);
+}
+
 function loadConfigs(): Record<string, any> {
+  let stored: Record<string, any>;
   try {
-    if (existsSync(NOTIFY_CONFIG_PATH)) return JSON.parse(readFileSync(NOTIFY_CONFIG_PATH, "utf-8"));
-  } catch {}
-  return {};
+    if (!existsSync(NOTIFY_CONFIG_PATH)) return {};
+    stored = JSON.parse(readFileSync(NOTIFY_CONFIG_PATH, "utf-8"));
+  } catch {
+    return {};
+  }
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+  const hasLegacyPlaintext = Object.values(stored).some((config: any) =>
+    NOTIFY_SECRET_FIELDS.some((field) => config?.[field] && !isEncryptedSecret(String(config[field])))
+  );
+  const revealed = revealNotifyConfigs(stored);
+  if (hasLegacyPlaintext) writeStoredConfigs(protectNotifyConfigs(revealed));
+  return revealed;
 }
 function saveConfigs(data: Record<string, any>) {
-  try { mkdirSync(`${APP_ROOT}/data`, { recursive: true }); } catch {}
-  writeFileSync(NOTIFY_CONFIG_PATH, JSON.stringify(data, null, 2), "utf-8");
+  writeStoredConfigs(protectNotifyConfigs(data));
 }
 
 // 企业微信发消息

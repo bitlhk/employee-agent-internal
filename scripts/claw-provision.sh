@@ -234,8 +234,7 @@ fi
 # trial 用户实际跑在无 deny 的全权限下。
 OPENCLAW_JSON="${_OC_DOTDIR}/openclaw.json"
 if [[ -f "$OPENCLAW_JSON" ]]; then
-  # || echo: 写失败只警告不中断 provision（openclaw.json 被并发改动的极端情况）
-  python3 - "$OPENCLAW_JSON" "$AGENT_ID" "$PROFILE" "$DEFAULT_OPENCLAW_MODEL" <<'PY' || echo "[WARN] tools profile write failed for $AGENT_ID" >&2
+  python3 - "$OPENCLAW_JSON" "$AGENT_ID" "$PROFILE" "$DEFAULT_OPENCLAW_MODEL" <<'PY'
 import json, sys
 path, agent_id, profile, default_model = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 
@@ -251,7 +250,7 @@ enterprise_tools = {
         "managed_browser_screenshot"
     ],
     "fs": {"workspaceOnly": True},
-    "exec": {"ask": "off", "security": "full"}
+    "exec": {"ask": "off", "security": "allowlist"}
 }
 
 profile_map = {

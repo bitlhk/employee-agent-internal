@@ -1,39 +1,67 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { auditEvents, businessAgents, skillMarketplace, agentCallLogs, agentTasks, BusinessAgent, InsertBusinessAgent, InsertAgentTask } from "../../drizzle/schema";
 import { getDb } from "./connection";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "../_core/secret-protection";
+
+function revealBusinessAgentToken(agent: BusinessAgent): BusinessAgent {
+  if (!agent.apiToken) return agent;
+  return { ...agent, apiToken: decryptSecret(agent.apiToken) };
+}
+
+async function protectLegacyBusinessAgentTokens(db: Awaited<ReturnType<typeof getDb>>, agents: BusinessAgent[]): Promise<void> {
+  if (!db) return;
+  for (const agent of agents) {
+    if (!agent.apiToken || isEncryptedSecret(agent.apiToken)) continue;
+    await db
+      .update(businessAgents)
+      .set({ apiToken: encryptSecret(agent.apiToken, { maxStoredLength: null }) })
+      .where(eq(businessAgents.id, agent.id));
+  }
+}
 
 // ── Business Agents CRUD ────────────────────────────────────────────────
 export async function listBusinessAgents(): Promise<BusinessAgent[]> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.select().from(businessAgents).orderBy(businessAgents.sortOrder);
+  const rows = await db.select().from(businessAgents).orderBy(businessAgents.sortOrder);
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows.map(revealBusinessAgentToken);
 }
 
 export async function listEnabledBusinessAgents(): Promise<BusinessAgent[]> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.select().from(businessAgents)
+  const rows = await db.select().from(businessAgents)
     .where(eq(businessAgents.enabled, 1))
     .orderBy(businessAgents.sortOrder);
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows.map(revealBusinessAgentToken);
 }
 
 export async function getBusinessAgent(id: string): Promise<BusinessAgent | undefined> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const rows = await db.select().from(businessAgents).where(eq(businessAgents.id, id)).limit(1);
-  return rows[0];
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows[0] ? revealBusinessAgentToken(rows[0]) : undefined;
 }
 
 export async function upsertBusinessAgent(data: InsertBusinessAgent): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.insert(businessAgents).values(data)
+  const protectedData = {
+    ...data,
+    apiToken: data.apiToken
+      ? encryptSecret(String(data.apiToken), { maxStoredLength: null })
+      : data.apiToken,
+  };
+  await db.insert(businessAgents).values(protectedData)
     .onDuplicateKeyUpdate({ set: {
       name: data.name,
       description: data.description,
       kind: data.kind,
       apiUrl: data.apiUrl,
-      apiToken: data.apiToken,
+      apiToken: protectedData.apiToken,
       remoteAgentId: data.remoteAgentId,
       localAgentId: data.localAgentId,
       skills: data.skills,
@@ -205,7 +233,13 @@ export async function updateAgentHealth(id: string, healthStatus: string): Promi
 export async function updateAgentFields(id: string, fields: Record<string, any>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.update(businessAgents).set(fields).where(eq(businessAgents.id, id));
+  const protectedFields = {
+    ...fields,
+    ...(fields.apiToken
+      ? { apiToken: encryptSecret(String(fields.apiToken), { maxStoredLength: null }) }
+      : {}),
+  };
+  await db.update(businessAgents).set(protectedFields).where(eq(businessAgents.id, id));
 }
 
 export async function createAgentTask(data: InsertAgentTask): Promise<void> {

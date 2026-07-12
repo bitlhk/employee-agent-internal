@@ -61,6 +61,7 @@ import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, re
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
 import { skillRegistry } from "../_core/skills/skill-registry";
 import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
+import { toPublicSkillMarketItem } from "../_core/skills/skill-market-policy";
 import {
   remapLegacySkillMarketPath,
   skillStoreMarketplaceDir,
@@ -1742,10 +1743,11 @@ export const clawRouter = router({
       .query(async ({ input, ctx }) => {
         await syncGlobalOpenSourceSkillGrants({ actor: "market-list" });
         const rows = await listApprovedSkillMarketItems();
+        const items = rows.map((row) => toPublicSkillMarketItem(row));
         const adoptId = String(input?.adoptId || "").trim();
-        if (!adoptId) return rows;
+        if (!adoptId) return items;
         await assertClawOwnerOrThrow(ctx, adoptId);
-        return rows;
+        return items;
       }),
 
     // 用户安装（复制到 workspace/skills/）
