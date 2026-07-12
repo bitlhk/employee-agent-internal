@@ -44,7 +44,7 @@ function baseline(overrides: Record<string, unknown> = {}) {
     },
     runtimePolicy: {
       defaultRuntime: "openclaw",
-      fallbackRuntime: "openclaw",
+      fallbackRuntime: "jiuwenswarm",
       selection: "role-driven",
     },
     industries: {

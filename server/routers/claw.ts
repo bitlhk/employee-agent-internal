@@ -1991,6 +1991,9 @@ export const clawRouter = router({
         const provisionPlan = resolveRoleRuntimeProvisionPlan(role, {
           jiuwenswarmProvisionEnabled: isJiuwenSwarmProvisionEnabled(),
         });
+        if (provisionPlan.runtime === "jiuwenswarm" && !isJiuwenSwarmProvisionEnabled()) {
+          throw new Error("JiuwenSwarm 当前未配置。请先安装并启用 JiuwenSwarm runtime，再创建岗位智能体。");
+        }
         if (preferRuntime && provisionPlan.runtime !== preferRuntime) {
           throw new Error(
             preferRuntime === "jiuwenswarm"

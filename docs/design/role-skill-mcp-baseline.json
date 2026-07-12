@@ -39,8 +39,8 @@
   },
   "runtimePolicy": {
     "defaultRuntime": "jiuwenswarm",
-    "fallbackRuntime": "openclaw",
-    "selection": "Users choose a role; administrators decide runtime, model, MCP grants, and visible zones. Open-source defaults are runtime-neutral and contain no business MCP grants."
+    "fallbackRuntime": "jiuwenswarm",
+    "selection": "JiuwenSwarm is the default role runtime. If it is unavailable, provisioning fails closed until an administrator configures a supported runtime; no OpenClaw fallback is applied."
   },
   "uiPolicy": {
     "applyFlow": "New users start with the general assistant. Add industry roles in an external baseline for production deployments.",

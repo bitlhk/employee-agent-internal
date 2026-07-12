@@ -52,6 +52,16 @@ export function validateUploadContent(ext: string, buffer: Buffer): UploadValida
   if (lower === "xls") return startsWith(buffer, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]) ? { ok: true } : { ok: false, error: "invalid XLS signature" };
   if (lower === "gz") return startsWith(buffer, [0x1f, 0x8b]) ? { ok: true } : { ok: false, error: "invalid gzip signature" };
   if (lower === "tar") return buffer.length > 262 && buffer.subarray(257, 262).toString("ascii") === "ustar" ? { ok: true } : { ok: false, error: "invalid tar signature" };
+  if (lower === "mp3") {
+    const id3 = buffer.subarray(0, 3).toString("ascii") === "ID3";
+    const frame = buffer[0] === 0xff && (buffer[1] & 0xe0) === 0xe0;
+    return id3 || frame ? { ok: true } : { ok: false, error: "invalid MP3 signature" };
+  }
+  if (lower === "wav") return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WAVE" ? { ok: true } : { ok: false, error: "invalid WAV signature" };
+  if (lower === "m4a" || lower === "mp4") return buffer.subarray(4, 8).toString("ascii") === "ftyp" ? { ok: true } : { ok: false, error: `invalid ${lower.toUpperCase()} signature` };
+  if (lower === "aac") return buffer[0] === 0xff && (buffer[1] & 0xf6) === 0xf0 ? { ok: true } : { ok: false, error: "invalid AAC signature" };
+  if (lower === "webm") return startsWith(buffer, [0x1a, 0x45, 0xdf, 0xa3]) ? { ok: true } : { ok: false, error: "invalid WebM signature" };
+  if (lower === "ogg") return buffer.subarray(0, 4).toString("ascii") === "OggS" ? { ok: true } : { ok: false, error: "invalid Ogg signature" };
   return { ok: false, error: `content validation is not configured for .${lower}` };
 }
 

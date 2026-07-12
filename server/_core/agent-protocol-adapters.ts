@@ -1,7 +1,7 @@
 import type express from "express";
 import { createHash, randomUUID } from "crypto";
 import { auditErrorMetadata, auditRequest, recordAuditBestEffort } from "./audit-events";
-import { isPrivateUrl } from "./helpers";
+import { readSafeAgentResponseText, safeAgentRequest } from "./safe-agent-http";
 
 type ProtocolAdapterInput = {
   providerType: "mcp" | "a2a";
@@ -56,36 +56,6 @@ function endpoint(baseUrl: string, pathValue?: string) {
   return new URL(path, base).toString();
 }
 
-function splitCsv(value: string) {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
-}
-
-function isAgentEndpointAllowlisted(url: URL) {
-  const allowlist = splitCsv(process.env.EA_AGENT_ENDPOINT_ALLOWLIST || "");
-  return allowlist.some((entry) => {
-    const normalized = entry.toLowerCase();
-    return normalized === url.hostname.toLowerCase() || normalized === url.host.toLowerCase();
-  });
-}
-
-function assertAllowedAgentEndpoint(rawUrl: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error("Agent endpoint URL is invalid");
-  }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Agent endpoint must use http or https");
-  }
-  if (isPrivateUrl(parsed.toString())) {
-    const allowPrivate = String(process.env.EA_ALLOW_PRIVATE_AGENT_ENDPOINTS || "").toLowerCase() === "true";
-    if (!allowPrivate && !isAgentEndpointAllowlisted(parsed)) {
-      throw new Error("Agent endpoint points to a private network address; configure EA_AGENT_ENDPOINT_ALLOWLIST or EA_ALLOW_PRIVATE_AGENT_ENDPOINTS to allow it");
-    }
-  }
-}
-
 function formatToolText(text: string) {
   try {
     const obj = JSON.parse(text);
@@ -125,8 +95,13 @@ function parseSseJson(text: string): any[] {
   return out;
 }
 
-async function postJsonRpc(url: string, body: Record<string, any>, headers: Record<string, string> = {}) {
-  const r = await fetch(url, {
+async function postJsonRpc(
+  url: string,
+  body: Record<string, any>,
+  headers: Record<string, string> = {},
+  timeoutMs = 120_000,
+) {
+  const r = await safeAgentRequest(url, {
     method: "POST",
     headers: {
       Accept: "application/json, text/event-stream",
@@ -134,11 +109,13 @@ async function postJsonRpc(url: string, body: Record<string, any>, headers: Reco
       ...headers,
     },
     body: JSON.stringify(body),
+    timeoutMs,
   });
-  const sessionId = r.headers.get("mcp-session-id") || r.headers.get("Mcp-Session-Id") || undefined;
-  const raw = await r.text();
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${raw.slice(0, 300)}`);
-  const contentType = r.headers.get("content-type") || "";
+  const sessionHeader = r.headers["mcp-session-id"];
+  const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+  const raw = await readSafeAgentResponseText(r);
+  if (r.status < 200 || r.status >= 300) throw new Error(`HTTP ${r.status}: ${raw.slice(0, 300)}`);
+  const contentType = String(r.headers["content-type"] || "");
   const parsed = contentType.includes("text/event-stream")
     ? parseSseJson(raw).pop()
     : JSON.parse(raw || "{}");
@@ -263,7 +240,7 @@ async function recordMcpAudit(input: ProtocolAdapterInput, args: {
 
 async function runMcpToolsV1(input: ProtocolAdapterInput) {
   const rpcUrl = endpoint(input.apiUrl, input.endpointConfig.rpcPath ?? input.endpointConfig.path ?? "/mcp");
-  assertAllowedAgentEndpoint(rpcUrl);
+  const timeoutMs = Math.max(5_000, Math.min(30 * 60_000, Number(input.endpointConfig.timeoutMs || 120_000)));
   const baseHeaders: Record<string, string> = {
     ...authHeaders(input.apiToken),
   };
@@ -277,14 +254,14 @@ async function runMcpToolsV1(input: ProtocolAdapterInput) {
       capabilities: {},
       clientInfo: { name: "lingxia-agent-plaza", version: "1.0.0" },
     },
-  }, baseHeaders);
+  }, baseHeaders, timeoutMs);
 
   const headers = init.sessionId ? { ...baseHeaders, "mcp-session-id": init.sessionId } : baseHeaders;
-  await postJsonRpc(rpcUrl, { jsonrpc: "2.0", method: "notifications/initialized", params: {} }, headers)
+  await postJsonRpc(rpcUrl, { jsonrpc: "2.0", method: "notifications/initialized", params: {} }, headers, timeoutMs)
     .catch(() => null);
 
   status(input.res, "MCP: 发现工具...");
-  const toolsResp = await postJsonRpc(rpcUrl, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, headers);
+  const toolsResp = await postJsonRpc(rpcUrl, { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }, headers, timeoutMs);
   const tools = Array.isArray(toolsResp.resp.result?.tools) ? toolsResp.resp.result.tools : [];
   const toolName = String(input.endpointConfig.toolName || input.remoteAgentId || tools[0]?.name || "").trim();
   if (!toolName) throw new Error("MCP endpoint has no callable tool; configure endpointConfig.toolName");
@@ -304,7 +281,7 @@ async function runMcpToolsV1(input: ProtocolAdapterInput) {
       id: 3,
       method: "tools/call",
       params: { name: toolName, arguments: args },
-    }, headers);
+    }, headers, timeoutMs);
     const text = extractMcpText(callResp.resp.result);
     await recordMcpAudit(input, {
       action: "mcp.tool.completed",
@@ -332,7 +309,7 @@ async function runMcpToolsV1(input: ProtocolAdapterInput) {
 
 async function runA2ATaskV1(input: ProtocolAdapterInput) {
   const rpcUrl = endpoint(input.apiUrl, input.endpointConfig.rpcPath ?? input.endpointConfig.path ?? "");
-  assertAllowedAgentEndpoint(rpcUrl);
+  const timeoutMs = Math.max(5_000, Math.min(30 * 60_000, Number(input.endpointConfig.timeoutMs || 120_000)));
   const method = input.endpointConfig.stream === true ? "message/stream" : "message/send";
   status(input.res, `A2A: ${method}...`);
   const message = {
@@ -345,7 +322,7 @@ async function runA2ATaskV1(input: ProtocolAdapterInput) {
     id: randomUUID(),
     method,
     params: { message },
-  }, authHeaders(input.apiToken));
+  }, authHeaders(input.apiToken), timeoutMs);
   const text = extractA2AText(rpc.resp.result) || JSON.stringify(rpc.resp.result || {}, null, 2);
   delta(input.res, text, input.appendDelta);
 }

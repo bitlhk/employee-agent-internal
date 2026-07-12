@@ -3479,7 +3479,7 @@ export default function Home() {
                 ) : null}
               </div>
               <div className="min-w-0 flex-1 pr-5" style={{ display: sidebarCollapsed ? "none" : "block" }}>
-                <p className="truncate" style={{ color: "var(--oc-sidebar-text)", fontSize: 14, fontWeight: 600, lineHeight: "20px" }}>灵感智能体</p>
+                <p className="truncate" style={{ color: "var(--oc-sidebar-text)", fontSize: 14, fontWeight: 600, lineHeight: "20px" }}>岗位智能体</p>
                 <p className="truncate" style={{ color: "var(--oc-sidebar-subtle)", fontSize: 12, fontWeight: 400, lineHeight: "17px" }} title={lingxiaDisplayName || brand.name}>
                   {lingxiaDisplayName || brand.name}
                 </p>

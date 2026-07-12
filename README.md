@@ -81,7 +81,7 @@
 
 推荐系统：Ubuntu 22.04+ / 24.04。
 
-先准备至少一个 Agent Runtime。推荐准备 JiuwenSwarm；外部专业 Agent 可通过 A2A/HTTP 接入。然后执行：
+先准备至少一个 Agent Runtime。默认岗位运行时是 JiuwenSwarm；外部专业 Agent 可通过 A2A/HTTP 接入。未检测到 JiuwenSwarm 时，安装脚本会保持平台模式，不会回退到 OpenClaw。然后执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh | bash
@@ -107,11 +107,13 @@ corepack pnpm tsx scripts/init-admin.ts \
   --name='Admin'
 ```
 
-然后打开：
+服务默认只监听 `127.0.0.1:5180`。生产环境应通过 Nginx/WAF 提供 HTTPS；本机检查可打开：
 
 ```text
-http://服务器IP:5180
+http://127.0.0.1:5180
 ```
+
+确需临时直连时可显式设置 `APP_BIND_IP=0.0.0.0`，但不要在公网生产环境绕过 HTTPS 反向代理。
 
 ## 可审计安装
 

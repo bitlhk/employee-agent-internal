@@ -1,7 +1,8 @@
 import express from "express";
 import { randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
-import { isAuthorizedInternalRequest, isPrivateUrl, requireClawOwner } from "./helpers";
+import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
+import { readSafeAgentResponseText, safeAgentRequest } from "./safe-agent-http";
 import {
   createAgentTask,
   getBusinessAgent,
@@ -151,36 +152,6 @@ function endpoint(baseUrl: string, pathValue?: string) {
   const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
   const path = String(pathValue || "").replace(/^\//, "");
   return new URL(path, base).toString();
-}
-
-function splitCsv(value: string) {
-  return value.split(",").map((item) => item.trim()).filter(Boolean);
-}
-
-function isAgentEndpointAllowlisted(url: URL) {
-  const allowlist = splitCsv(process.env.EA_AGENT_ENDPOINT_ALLOWLIST || "");
-  return allowlist.some((entry) => {
-    const normalized = entry.toLowerCase();
-    return normalized === url.hostname.toLowerCase() || normalized === url.host.toLowerCase();
-  });
-}
-
-function assertAllowedAgentEndpoint(rawUrl: string) {
-  let parsed: URL;
-  try {
-    parsed = new URL(rawUrl);
-  } catch {
-    throw new Error("Agent endpoint URL is invalid");
-  }
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Agent endpoint must use http or https");
-  }
-  if (isPrivateUrl(parsed.toString())) {
-    const allowPrivate = String(process.env.EA_ALLOW_PRIVATE_AGENT_ENDPOINTS || "").toLowerCase() === "true";
-    if (!allowPrivate && !isAgentEndpointAllowlisted(parsed)) {
-      throw new Error("Agent endpoint points to a private network address; configure EA_AGENT_ENDPOINT_ALLOWLIST or EA_ALLOW_PRIVATE_AGENT_ENDPOINTS to allow it");
-    }
-  }
 }
 
 function authHeaders(token?: string | null) {
@@ -383,7 +354,6 @@ function isA2ACompleteEvent(event: any): boolean {
 async function runA2ATask(agent: any, input: string): Promise<{ text: string; remoteTaskId?: string; rawEvents: any[] }> {
   const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as AgentEndpointConfig;
   const rpcUrl = endpoint(String(agent.apiUrl || ""), endpointConfig.rpcPath ?? endpointConfig.path ?? "");
-  assertAllowedAgentEndpoint(rpcUrl);
   const method = String(endpointConfig.method || (endpointConfig.stream === true ? "message/stream" : "message/send"));
   const taskText = [
     String(endpointConfig.taskPrefix || "").trim(),
@@ -405,7 +375,7 @@ async function runA2ATask(agent: any, input: string): Promise<{ text: string; re
         },
       },
     };
-    const response = await fetch(rpcUrl, {
+    const response = await safeAgentRequest(rpcUrl, {
       method: "POST",
       headers: {
         Accept: "application/json, text/event-stream",
@@ -414,36 +384,33 @@ async function runA2ATask(agent: any, input: string): Promise<{ text: string; re
       },
       body: JSON.stringify(body),
       signal: controller.signal,
+      timeoutMs: Math.max(5000, Math.min(30 * 60_000, Number(endpointConfig.timeoutMs || 10 * 60_000))),
     });
-    if (!response.ok) {
-      const raw = await response.text().catch(() => "");
+    if (response.status < 200 || response.status >= 300) {
+      const raw = await readSafeAgentResponseText(response).catch(() => "");
       throw new Error(`A2A HTTP ${response.status}: ${raw.slice(0, 300)}`);
     }
-
-    if (!response.body) {
-      const raw = await response.text();
-      const events = parseA2AEvents(raw);
-      const result = extractA2AResult(events);
-      return { text: result.text, remoteTaskId: result.remoteTaskId, rawEvents: events.slice(-20) };
-    }
-
-    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    const contentType = String(response.headers["content-type"] || "").toLowerCase();
     if (!contentType.includes("text/event-stream")) {
-      const raw = await response.text();
+      const raw = await readSafeAgentResponseText(response);
       const events = parseA2AEvents(raw);
       const result = extractA2AResult(events);
       return { text: result.text, remoteTaskId: result.remoteTaskId, rawEvents: events.slice(-20) };
     }
 
-    const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const events: any[] = [];
     let buffer = "";
     let lastText = "";
     let lastRemoteTaskId = "";
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
+    let responseBytes = 0;
+    for await (const chunk of response.body) {
+      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      responseBytes += value.length;
+      if (responseBytes > 16 * 1024 * 1024) {
+        response.body.destroy(new Error("Agent endpoint response is too large"));
+        throw new Error("Agent endpoint response is too large");
+      }
       buffer += decoder.decode(value, { stream: true });
       const blocks = buffer.split(/\r?\n\r?\n/);
       buffer = blocks.pop() || "";
@@ -455,7 +422,7 @@ async function runA2ATask(agent: any, input: string): Promise<{ text: string; re
           if (partial.text) lastText = partial.text;
           if (partial.remoteTaskId) lastRemoteTaskId = partial.remoteTaskId;
           if (isA2ACompleteEvent(event) && lastText) {
-            await reader.cancel().catch(() => {});
+            response.body.destroy();
             return { text: lastText, remoteTaskId: lastRemoteTaskId || partial.remoteTaskId, rawEvents: events.slice(-20) };
           }
         }

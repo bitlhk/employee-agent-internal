@@ -22,15 +22,14 @@ const baseRole: AgentRoleTemplate = {
 };
 
 describe("resolveRoleRuntimeProvisionPlan", () => {
-  it("falls back to OpenClaw when jiuwenswarm provisioning is disabled", () => {
+  it("does not silently fall back to OpenClaw when JiuwenSwarm is disabled", () => {
     const plan = resolveRoleRuntimeProvisionPlan(baseRole, { jiuwenswarmProvisionEnabled: false });
 
-    expect(plan).toMatchObject({
+    expect(plan).toEqual({
       requestedRuntime: "jiuwenswarm",
-      runtime: "openclaw",
-      fallbackApplied: true,
+      runtime: "jiuwenswarm",
+      fallbackApplied: false,
     });
-    expect(plan.fallbackReason).toContain("jiuwenswarm");
   });
 
   it("uses jiuwenswarm when provisioning is enabled", () => {

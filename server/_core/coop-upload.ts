@@ -21,10 +21,16 @@ import {
   getCoopFileForDownload,
   safeCoopFilename,
 } from "../db/coop-files";
+import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const COOP_UPLOAD_DIR = `${APP_ROOT}/data/coop-uploads`;
 const MAX_BYTES = 50 * 1024 * 1024; // 50MB
+const ALLOWED_EXTENSIONS = new Set([
+  "md", "txt", "csv", "json", "yaml", "yml", "xml", "toml", "ini", "conf", "log",
+  "pdf", "docx", "xls", "xlsx", "pptx", "png", "jpg", "jpeg", "gif", "svg", "webp",
+  "html", "htm", "css", "zip", "tar", "gz", "mp3", "wav", "m4a", "aac", "webm", "ogg", "mp4",
+]);
 
 // 校验当前 user 是否可查看该协作 session，且 requestId 属于该 session。
 async function userCanAccessCoop(userId: number, sessionId: string, requestId: number): Promise<boolean> {
@@ -70,9 +76,29 @@ export function registerCoopUploadRoutes(app: express.Express) {
       if (!ok) { res.status(403).json({ error: "无权访问该协作 session" }); return; }
 
       // base64 解码 + size check
-      const buf = Buffer.from(String(contentBase64), "base64");
+      const buf = decodeBase64Strict(String(contentBase64));
+      if (!buf) {
+        res.status(400).json({ error: "invalid base64" });
+        return;
+      }
       if (buf.length <= 0 || buf.length > MAX_BYTES) {
         res.status(400).json({ error: `文件大小必须在 1B - ${MAX_BYTES / 1024 / 1024}MB 之间，当前 ${buf.length}B` });
+        return;
+      }
+      const safeName = safeCoopFilename(String(filename));
+      const ext = path.extname(safeName).slice(1).toLowerCase();
+      if (!ALLOWED_EXTENSIONS.has(ext)) {
+        res.status(400).json({ error: `file type .${ext || "unknown"} not allowed` });
+        return;
+      }
+      const contentValidation = validateUploadContent(ext, buf);
+      if (!contentValidation.ok) {
+        res.status(400).json({ error: "file_content_not_allowed", message: contentValidation.error });
+        return;
+      }
+      const malwareScan = scanUploadForMalware(buf);
+      if (!malwareScan.ok) {
+        res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
         return;
       }
 
@@ -80,7 +106,7 @@ export function registerCoopUploadRoutes(app: express.Express) {
         sessionId: sid,
         requestId: rid,
         ownerUserId: userId,
-        name: String(filename),
+        name: safeName,
         content: buf,
         mime: String(req.body?.mime || "") || null,
         sourceType: "upload",

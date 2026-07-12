@@ -61,14 +61,6 @@ export function resolveRoleRuntimeProvisionPlan(
   } = {},
 ): RoleRuntimeProvisionPlan {
   const requestedRuntime = options.forceRuntime || role.runtime;
-  if (requestedRuntime === "jiuwenswarm" && !options.jiuwenswarmProvisionEnabled) {
-    return {
-      requestedRuntime,
-      runtime: "openclaw",
-      fallbackApplied: true,
-      fallbackReason: "jiuwenswarm provision adapter is not enabled",
-    };
-  }
   return {
     requestedRuntime,
     runtime: requestedRuntime,

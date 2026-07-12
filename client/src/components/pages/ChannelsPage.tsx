@@ -232,8 +232,8 @@ function FeishuBridgePanel({
         将飞书账号绑定到当前岗位智能体后，可以在飞书里直接对话，后续也可复用到定时任务和协作提醒。
       </p>
       <div className="channel-bullets">
-        <span><CheckCircle2 size={14} /> 联系灵感大王加入企业组织</span>
-        <span><CheckCircle2 size={14} /> 在飞书中添加灵感智能体应用</span>
+        <span><CheckCircle2 size={14} /> 联系管理员加入企业组织</span>
+        <span><CheckCircle2 size={14} /> 在飞书中添加岗位智能体应用</span>
         <span><CheckCircle2 size={14} /> 点击按钮获取绑定码，并在智能体私聊中输入完成绑定</span>
       </div>
       {routeReady ? (

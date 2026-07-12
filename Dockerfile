@@ -31,7 +31,7 @@ COPY --chown=app:app server ./server
 COPY --chown=app:app shared ./shared
 COPY --chown=app:app drizzle ./drizzle
 COPY --chown=app:app drizzle.config.ts tsconfig.json tsconfig.node.json ./
-COPY --chown=app:app LICENSE NOTICE THIRD_PARTY_NOTICES.md ./
+COPY --chown=app:app LICENSE NOTICE THIRD_PARTY_NOTICES.md ASSET_PROVENANCE.md ./
 
 # 前端构建产物
 COPY --from=builder --chown=app:app /app/dist/client ./dist/client
@@ -40,6 +40,7 @@ RUN chown -R app:app /app
 
 ENV NODE_ENV=production
 ENV PORT=5180
+ENV APP_BIND_IP=0.0.0.0
 EXPOSE 5180
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

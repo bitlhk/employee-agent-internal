@@ -1,4 +1,5 @@
 import express from "express";
+import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
 import QRCode from "qrcode";
 import http from "http";
 import type { IncomingMessage, Server } from "http";
@@ -1933,9 +1934,13 @@ export function registerDesktopRoutes(app: express.Express) {
       if (!subPath && DESKTOP_FILES_PROTECTED.has(filename)) return res.status(403).json({ error: "protected_file" });
       const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".") + 1).toLowerCase() : "";
       if (!DESKTOP_FILES_ALLOWED_EXT.has(ext)) return res.status(400).json({ error: `file type .${ext} not allowed` });
-      let buf: Buffer;
-      try { buf = Buffer.from(contentBase64, "base64"); } catch { return res.status(400).json({ error: "invalid base64" }); }
+      const buf = decodeBase64Strict(contentBase64);
+      if (!buf) return res.status(400).json({ error: "invalid base64" });
       if (buf.length > DESKTOP_FILES_MAX_UPLOAD_BYTES) return res.status(413).json({ error: "file too large" });
+      const contentValidation = validateUploadContent(ext, buf);
+      if (!contentValidation.ok) return res.status(400).json({ error: "file_content_not_allowed", message: contentValidation.error });
+      const malwareScan = scanUploadForMalware(buf);
+      if (!malwareScan.ok) return res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
       const claw = await getDesktopUserClaw(user);
       if (!claw) return res.status(404).json({ error: "no agent assigned" });
       const workspace = resolveClawWorkspace(claw);

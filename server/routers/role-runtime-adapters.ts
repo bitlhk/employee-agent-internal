@@ -75,7 +75,7 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
 
   provision(input: RoleRuntimeProvisionInput): RoleRuntimeProvisionResult {
     if (!isJiuwenClawRuntimeEnabled()) {
-      throw new Error("jiuwenswarm runtime is not enabled; keep OpenClaw fallback until P2 runtime install is ready");
+      throw new Error("jiuwenswarm runtime is not enabled; configure JiuwenSwarm before provisioning an agent");
     }
     const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
     mkdirSync(path.join(workspaceDir, "skills"), { recursive: true });

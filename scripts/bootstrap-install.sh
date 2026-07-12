@@ -4,18 +4,11 @@ set -euo pipefail
 # Bootstrap installer for Workforce Agent Platform.
 # Intended usage:
 #   curl -fsSL https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh | bash
-# During the transition, the legacy linggan-claw URL remains accepted as a fallback.
-
 DEFAULT_REPO_URL="https://github.com/bitlhk/employee-agent.git"
-LEGACY_REPO_URL="${EMPLOYEE_AGENT_LEGACY_REPO_URL:-https://github.com/bitlhk/linggan-claw.git}"
 REPO_URL="${EMPLOYEE_AGENT_REPO_URL:-${LINGXIA_REPO_URL:-$DEFAULT_REPO_URL}}"
 BRANCH="${EMPLOYEE_AGENT_BRANCH:-${LINGXIA_BRANCH:-main}}"
 DEFAULT_INSTALL_DIR="$HOME/employee-agent"
-if [[ -z "${EMPLOYEE_AGENT_INSTALL_DIR:-}" && -z "${LINGXIA_INSTALL_DIR:-}" && -d "$HOME/linggan-claw/.git" && ! -e "$DEFAULT_INSTALL_DIR" ]]; then
-  DEFAULT_INSTALL_DIR="$HOME/linggan-claw"
-fi
 INSTALL_DIR="${EMPLOYEE_AGENT_INSTALL_DIR:-${LINGXIA_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
-REPO_EXPLICIT=false
 PORT="${WORKFORCE_AGENT_PORT:-${LINGXIA_PORT:-5180}}"
 HOST="${WORKFORCE_AGENT_HOST:-${LINGXIA_HOST:-}}"
 DB_MODE="${WORKFORCE_AGENT_DB_MODE:-${LINGXIA_DB_MODE:-mysql-auto}}"
@@ -25,7 +18,7 @@ INSTALL_DOCKER=true
 DRY_RUN=false
 OVERWRITE_ENV=false
 CREATE_ADMIN=true
-ADMIN_EMAIL="${ADMIN_EMAIL:-admin@linggan.local}"
+ADMIN_EMAIL="${ADMIN_EMAIL:-admin@employee-agent.local}"
 ADMIN_NAME="${ADMIN_NAME:-Admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_DISPLAY=""
@@ -40,7 +33,7 @@ Options:
   --branch <name>          Git branch, default main.
   --dir <path>             Install directory, default $HOME/employee-agent for new installs.
   --port <port>            App port, default 5180.
-  --host <ip-or-host>      Public host/IP for FRONTEND_URL. Auto-detected by default.
+  --host <ip-or-host>      Public host/IP for FRONTEND_URL. The app still binds to loopback by default.
   --db-mode <mode>         mysql-auto | existing | compose. Default mysql-auto.
   --skip-mysql             Do not install mysql-server.
   --skip-docker            Do not install docker.io for the optional sandbox.
@@ -59,7 +52,7 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --repo) REPO_URL="${2:?missing --repo value}"; REPO_EXPLICIT=true; shift 2 ;;
+    --repo) REPO_URL="${2:?missing --repo value}"; shift 2 ;;
     --branch) BRANCH="${2:?missing --branch value}"; shift 2 ;;
     --dir) INSTALL_DIR="${2:?missing --dir value}"; shift 2 ;;
     --port) PORT="${2:?missing --port value}"; shift 2 ;;
@@ -195,15 +188,7 @@ ensure_node_tools() {
 
 clone_repo() {
   local target="$1"
-  if git clone --branch "$BRANCH" "$REPO_URL" "$target"; then
-    return 0
-  fi
-  if [[ "$REPO_EXPLICIT" != "true" && "$REPO_URL" != "$LEGACY_REPO_URL" ]]; then
-    echo "Primary repository unavailable; falling back to legacy repository: $LEGACY_REPO_URL" >&2
-    git clone --branch "$BRANCH" "$LEGACY_REPO_URL" "$target"
-    return 0
-  fi
-  return 1
+  git clone --branch "$BRANCH" "$REPO_URL" "$target"
 }
 
 checkout_repo() {
@@ -261,12 +246,6 @@ start_app() {
     return
   fi
   log "Building and starting Workforce Agent Platform"
-  if [[ -z "${PM2_APP_NAME:-}" ]] && command -v pm2 >/dev/null 2>&1; then
-    if pm2 describe linggan-claw >/dev/null 2>&1 && ! pm2 describe employee-agent >/dev/null 2>&1; then
-      export PM2_APP_NAME="linggan-claw"
-      log "Existing PM2 app linggan-claw detected; reusing it for this upgrade"
-    fi
-  fi
   run_with_log "Type check" "/tmp/employee-agent-check.log" bash -lc "cd '$INSTALL_DIR' && corepack pnpm check"
   run_with_log "Build" "/tmp/employee-agent-build.log" bash -lc "cd '$INSTALL_DIR' && corepack pnpm build"
   if [[ "$DRY_RUN" == "true" ]]; then
@@ -336,7 +315,10 @@ Workforce Agent Platform bootstrap completed.
 Install dir:
   $INSTALL_DIR
 
-Open:
+Reverse proxy target:
+  http://127.0.0.1:${PORT}
+
+Configured public URL (requires HTTPS reverse proxy):
   $url
 
 Default admin:

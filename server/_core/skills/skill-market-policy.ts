@@ -5,7 +5,8 @@ const RETIRED_SKILL_MARKET_ROUTES = new Set([
 ]);
 
 export function isRetiredSkillMarketRoute(method: string, requestPath: string): boolean {
-  return RETIRED_SKILL_MARKET_ROUTES.has(`${String(method || "").toUpperCase()} ${requestPath}`);
+  const normalizedPath = `/${String(requestPath || "").split("/").filter(Boolean).join("/")}`;
+  return RETIRED_SKILL_MARKET_ROUTES.has(`${String(method || "").toUpperCase()} ${normalizedPath}`);
 }
 
 export function toPublicSkillMarketItem(item: Record<string, unknown>) {

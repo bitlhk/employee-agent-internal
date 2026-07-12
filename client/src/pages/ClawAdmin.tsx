@@ -375,8 +375,8 @@ function BrandSettingsPanel() {
         <div className="grid grid-cols-2 gap-4">
           {field("name", "产品名称（中文）", { placeholder: "岗位智能体" })}
           {field("nameEn", "产品名称（英文）", { placeholder: "Enterprise Agent" })}
-          {field("platform", "平台名称（中文）", { placeholder: "灵感" })}
-          {field("platformEn", "平台名称（英文）", { placeholder: "Linggan" })}
+          {field("platform", "平台名称（中文）", { placeholder: "岗位智能体" })}
+          {field("platformEn", "平台名称（英文）", { placeholder: "Workforce Agent" })}
         </div>
         {field("slogan", "标语")}
         {field("pageTitle", "页面标题")}

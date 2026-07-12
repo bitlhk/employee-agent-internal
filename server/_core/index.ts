@@ -53,6 +53,7 @@ import { registerDesktopRoutes, registerDesktopWSProxy } from "./desktop";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
 import { getRoleSkillMcpBaseline, listAgentRoleTemplates } from "./role-templates";
 import { sdk } from "./sdk";
+import { resolveAppBindIp } from "./network-bind";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { getClawByAdoptId, getDb } from "../db";
@@ -210,10 +211,10 @@ import { buildChatRequestBody, type PermissionProfile } from "./tool_schema";
 
 
 // 检查端口是否可用，如果被占用则抛出错误（不自动切换端口）
-async function checkPortAvailable(port: number): Promise<void> {
+async function checkPortAvailable(port: number, bindIp: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
-    server.listen(port, () => {
+    server.listen(port, bindIp, () => {
       server.close(() => resolve());
     });
     server.on("error", (err: NodeJS.ErrnoException) => {
@@ -701,19 +702,21 @@ async function startServer() {
   });
 
   const port = parseInt(process.env.PORT || "5174");
+  const bindIp = resolveAppBindIp();
   
   // 检查端口是否可用，如果被占用则直接报错，不自动切换
   try {
-    await checkPortAvailable(port);
+    await checkPortAvailable(port, bindIp);
   } catch (error) {
     console.error(`\n❌ 端口 ${port} 已被占用！`);
     console.error(`请停止占用该端口的进程，或修改 .env 文件中的 PORT 环境变量。\n`);
     throw error;
   }
 
-  server.listen(port, () => {
-    console.log(`✅ Backend API server running on http://localhost:${port}/`);
-    console.log(`   API endpoint: http://localhost:${port}/api/trpc`);
+  server.listen(port, bindIp, () => {
+    const displayHost = bindIp.includes(":") ? `[${bindIp}]` : bindIp;
+    console.log(`✅ Backend API server running on http://${displayHost}:${port}/`);
+    console.log(`   API endpoint: http://${displayHost}:${port}/api/trpc`);
     console.log(`   CORS allowed origins: ${allowedOrigins.join(', ')}`);
     const dbWarmupStartedAt = Date.now();
     getDb()

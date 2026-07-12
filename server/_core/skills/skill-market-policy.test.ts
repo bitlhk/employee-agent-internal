@@ -4,8 +4,12 @@ import { isRetiredSkillMarketRoute, toPublicSkillMarketItem } from "./skill-mark
 describe("legacy skill marketplace routes", () => {
   it("retires cross-user legacy publishing and installation routes", () => {
     expect(isRetiredSkillMarketRoute("GET", "/api/claw/shared-packages")).toBe(true);
+    expect(isRetiredSkillMarketRoute("GET", "/api/claw/shared-packages/")).toBe(true);
+    expect(isRetiredSkillMarketRoute("GET", "//api//claw//shared-packages//")).toBe(true);
     expect(isRetiredSkillMarketRoute("POST", "/api/claw/skill-package/publish")).toBe(true);
+    expect(isRetiredSkillMarketRoute("POST", "/api/claw/skill-package/publish/")).toBe(true);
     expect(isRetiredSkillMarketRoute("POST", "/api/claw/skill-market/install")).toBe(true);
+    expect(isRetiredSkillMarketRoute("POST", "/api/claw/skill-market/install/")).toBe(true);
   });
 
   it("keeps personal upload and the reviewed marketplace flow available", () => {

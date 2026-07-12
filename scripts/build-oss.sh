@@ -6,7 +6,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-OUT_DIR="${1:-$(cd "$SRC_DIR/.." && pwd)/linggan-platform-oss}"
+OUT_DIR="${1:-$(cd "$SRC_DIR/.." && pwd)/employee-agent-oss}"
 
 echo "📦 源目录: $SRC_DIR"
 echo "📤 输出到: $OUT_DIR"
@@ -29,6 +29,8 @@ dist
 backups
 /data
 logs
+/tmp
+*.log
 reports
 __pycache__
 *.pyc
@@ -106,7 +108,7 @@ fi
 
 # ── 4. 初始化干净的 git 仓库 ──
 cd "$OUT_DIR"
-git init
+git init -b main
 git add -A
 git -c user.name="Employee Agent Release Bot" \
     -c user.email="employee-agent-release@users.noreply.github.com" \

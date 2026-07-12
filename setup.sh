@@ -24,6 +24,7 @@ DB_PORT_VALUE="${WORKFORCE_AGENT_DB_PORT:-${LINGXIA_DB_PORT:-3306}}"
 DB_USER_VALUE="${WORKFORCE_AGENT_DB_USER:-${LINGXIA_DB_USER:-employee_agent}}"
 DB_PASS_VALUE="${WORKFORCE_AGENT_DB_PASSWORD:-${LINGXIA_DB_PASSWORD:-}}"
 DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-employee_agent}}"
+JIUWEN_RUNTIME_ENABLED_VALUE="${JIUWENSWARM_PROVISION_ENABLED:-${JIUWENCLAW_PROVISION_ENABLED:-}}"
 
 usage() {
   cat <<'EOF'
@@ -278,10 +279,18 @@ SQL
   JWT_SECRET=$(gen_secret)
   TENANT_SECRET=$(gen_hex 32)
   INTERNAL_API_KEY=$(gen_hex 32)
+  if [[ -z "$JIUWEN_RUNTIME_ENABLED_VALUE" ]]; then
+    if [[ -f "$HOME/.jiuwenswarm/config/config.yaml" || -f "$HOME/.jiuwenclaw/config/config.yaml" ]]; then
+      JIUWEN_RUNTIME_ENABLED_VALUE=true
+    else
+      JIUWEN_RUNTIME_ENABLED_VALUE=false
+    fi
+  fi
 
   {
     echo "# ── 岗位智能体平台配置（由 setup.sh 生成）──"
     echo "PORT=$PORT_VALUE"
+    echo "APP_BIND_IP=127.0.0.1"
     echo ""
     echo "# 访问"
     echo "FRONTEND_URL=$FRONTEND_URL"
@@ -303,8 +312,10 @@ SQL
     echo "INTERNAL_API_KEY=$INTERNAL_API_KEY"
     echo "EMAIL_VERIFICATION_REQUIRED=false"
     echo ""
-    echo "# Agent Runtime"
-    echo "# New installs start in platform-only mode. Configure JiuwenSwarm, A2A, or HTTP runtime after setup."
+    echo "# Agent Runtime: JiuwenSwarm first; no implicit OpenClaw fallback"
+    echo "JIUWENSWARM_PROVISION_ENABLED=$JIUWEN_RUNTIME_ENABLED_VALUE"
+    echo "JIUWENCLAW_RUNTIME_ENABLED=$JIUWEN_RUNTIME_ENABLED_VALUE"
+    echo "JIUWENCLAW_CHAT_TRANSPORT=gateway"
     echo "CLAW_PROVISION_MODE=mock"
     echo "CLAW_CHAT_MODE=mock"
     echo "WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
