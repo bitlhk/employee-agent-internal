@@ -117,6 +117,7 @@ backups/
 .env.deploy*
 .env.backend
 .env.bak
+.bootstrap-admin-password
 
 # 数据目录（含用户数据）
 data/
