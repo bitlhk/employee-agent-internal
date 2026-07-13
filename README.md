@@ -84,7 +84,7 @@
 默认岗位运行时是 JiuwenSwarm；一键脚本会自动安装 EA 维护版运行时、MySQL 和 PM2，不会回退到 OpenClaw：
 
 ```bash
-curl -fsSL https://work.linggan.top/install.sh | bash
+curl -fsSL https://linggan.top/install.sh | bash
 ```
 
 脚本会自动完成：
@@ -113,7 +113,7 @@ http://127.0.0.1:5180
 如果希望先检查脚本：
 
 ```bash
-curl -fsSL -o /tmp/employee-agent-install.sh https://work.linggan.top/install.sh
+curl -fsSL -o /tmp/employee-agent-install.sh https://linggan.top/install.sh
 less /tmp/employee-agent-install.sh
 bash /tmp/employee-agent-install.sh --host 你的服务器IP
 ```

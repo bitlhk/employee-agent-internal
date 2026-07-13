@@ -16,7 +16,7 @@
 推荐系统：Ubuntu 22.04+ / 24.04。
 
 ```bash
-curl -fsSL https://work.linggan.top/install.sh | bash
+curl -fsSL https://linggan.top/install.sh | bash
 ```
 
 默认安装目录是当前用户的 `~/employee-agent`。
