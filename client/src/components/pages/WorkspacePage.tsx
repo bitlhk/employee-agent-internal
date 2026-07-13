@@ -376,8 +376,8 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
       {/* Preview modal */}
       {previewing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPreviewing(null)}>
-          <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="bg-card text-card-foreground border border-border rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
               <div className="flex items-center gap-2">
                 <FileText className="w-4 h-4" />
                 <span className="font-mono text-sm">{previewing.path}</span>
@@ -390,7 +390,7 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
                 <Button size="sm" variant="ghost" onClick={() => setPreviewing(null)}>关闭</Button>
               </div>
             </div>
-            <pre className="flex-1 overflow-auto p-4 text-xs font-mono whitespace-pre-wrap" style={{ background: "#fafafa" }}>{previewing.content || "(空文件)"}</pre>
+            <pre className="flex-1 overflow-auto bg-muted/40 p-4 text-xs font-mono text-foreground whitespace-pre-wrap">{previewing.content || "(空文件)"}</pre>
           </div>
         </div>
       )}

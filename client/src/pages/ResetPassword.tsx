@@ -21,12 +21,23 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   useEffect(() => {
+    const previous = document.body.getAttribute("data-auth-light");
+    document.body.setAttribute("data-auth-light", "true");
+
     // 从URL参数获取token
     const urlParams = new URLSearchParams(window.location.search);
     const tokenParam = urlParams.get("token");
     if (tokenParam) {
       setToken(tokenParam);
     }
+
+    return () => {
+      if (previous === null) {
+        document.body.removeAttribute("data-auth-light");
+      } else {
+        document.body.setAttribute("data-auth-light", previous);
+      }
+    };
   }, []);
 
   const resetPasswordMutation = trpc.auth.resetPassword.useMutation({
@@ -68,7 +79,7 @@ export default function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 p-4">
+      <div className="login-shell min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -96,7 +107,7 @@ export default function ResetPassword() {
 
   if (resetPasswordMutation.isSuccess) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 p-4">
+      <div className="login-shell min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 p-4">
         <Card className="w-full max-w-md">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -121,7 +132,7 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 p-4">
+    <div className="login-shell min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 via-white to-gray-50 p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>重置密码</CardTitle>
@@ -181,4 +192,3 @@ export default function ResetPassword() {
     </div>
   );
 }
-

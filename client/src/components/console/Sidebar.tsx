@@ -1,5 +1,4 @@
 import {
-  Brain,
   LayoutGrid,
   MessageCircle,
   Radio,
@@ -23,7 +22,6 @@ const primaryItems: NavItem[] = [
   { key: "channels", label: "频道", icon: Radio },
   { key: "schedule", label: "定时任务", icon: Timer },
   { key: "workspace", label: "工作空间", icon: LayoutGrid },
-  { key: "agent", label: "记忆", icon: Brain },
 ];
 
 const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "channels", "weixin", "agent", "workspace", "schedule", "collab", "settings"]);

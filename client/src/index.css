@@ -1141,16 +1141,17 @@
 .workspace-file-list .ea-data-header,
 .workspace-file-list .ea-data-row {
   min-width: 700px;
+  padding-inline: 20px;
 }
 
 .workspace-file-list .ea-data-row {
-  min-height: 52px;
-  padding-top: 9px;
-  padding-bottom: 9px;
+  min-height: 44px;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 
 .workspace-file-list .ea-data-row .ea-data-title {
-  gap: 10px;
+  gap: 8px;
 }
 
 .workspace-file-name {
@@ -1180,6 +1181,11 @@
 .workspace-file-row .ea-data-actions {
   opacity: 0;
   transition: opacity 120ms ease;
+}
+
+.workspace-file-row .ea-data-icon-btn {
+  height: 28px;
+  padding-inline: 8px;
 }
 
 .workspace-file-row:hover .ea-data-actions,
@@ -1246,6 +1252,12 @@
 
   .workspace-file-list .ea-data-row {
     min-width: 0;
+    min-height: 0;
+    padding: 12px 14px;
+  }
+
+  .workspace-file-list .ea-data-header {
+    padding-inline: 14px;
   }
 }
 
@@ -6714,6 +6726,8 @@ body[data-auth-light="true"] {
   --popover-foreground: 222.2 47.4% 11.2%;
   --muted: 210 40% 96.1%;
   --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: oklch(0.96 0.001 286);
+  --accent-foreground: oklch(0.2 0.005 286);
   --border: 214.3 31.8% 91.4%;
   --input: 214.3 31.8% 91.4%;
   --ring: 0 72% 51%;
