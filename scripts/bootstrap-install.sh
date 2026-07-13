@@ -150,10 +150,14 @@ gen_admin_password() {
 ensure_base_packages() {
   if [[ -f /etc/debian_version ]]; then
     log "Installing base packages"
-    run sudo_cmd apt-get update
-    run sudo_cmd apt-get install -y git curl ca-certificates openssl python3 python3-venv python3-pip build-essential
+    run_with_log "Refresh APT package index" "/tmp/employee-agent-apt-update.log" \
+      sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 update
+    run_with_log "Install base packages" "/tmp/employee-agent-apt-base.log" \
+      sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y \
+      git curl ca-certificates openssl python3 python3-venv python3-pip build-essential
     if [[ "$INSTALL_MYSQL" == "true" && "$DB_MODE" == "mysql-auto" ]]; then
-      run sudo_cmd apt-get install -y mysql-server
+      run_with_log "Install MySQL" "/tmp/employee-agent-apt-mysql.log" \
+        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y mysql-server
       if [[ "$DRY_RUN" == "true" ]]; then
         echo "[dry-run] sudo_cmd systemctl enable --now mysql"
       else
@@ -161,7 +165,8 @@ ensure_base_packages() {
       fi
     fi
     if [[ "$INSTALL_DOCKER" == "true" ]]; then
-      run sudo_cmd apt-get install -y docker.io
+      run_with_log "Install Docker" "/tmp/employee-agent-apt-docker.log" \
+        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y docker.io
       if [[ "$DRY_RUN" == "true" ]]; then
         echo "[dry-run] sudo_cmd systemctl enable --now docker"
       else
@@ -231,12 +236,14 @@ ensure_node() {
     exit 1
   fi
   log "Installing Node.js 22"
-  if [[ "$DRY_RUN" == "true" ]]; then
-    echo "[dry-run] curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
-  else
-    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+  local nodesource_command="curl -fsSL https://deb.nodesource.com/setup_22.x | bash -"
+  if [[ "$(id -u)" -ne 0 ]]; then
+    nodesource_command="curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -"
   fi
-  run sudo_cmd apt-get install -y nodejs
+  run_with_log "Configure NodeSource repository" "/tmp/employee-agent-nodesource.log" \
+    bash -o pipefail -c "$nodesource_command"
+  run_with_log "Install Node.js 22" "/tmp/employee-agent-apt-node.log" \
+    sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y nodejs
 }
 
 ensure_node_tools() {
@@ -244,7 +251,7 @@ ensure_node_tools() {
   run sudo_cmd corepack enable
   run sudo_cmd corepack prepare pnpm@10.34.4 --activate
   if need_cmd pm2; then
-    run sudo_cmd npm install -g pm2
+    run_with_log "Install PM2" "/tmp/employee-agent-npm-pm2.log" sudo_cmd npm install -g pm2
   fi
 }
 

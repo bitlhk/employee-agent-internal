@@ -17,7 +17,8 @@ export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/start", (req: Request, res: Response) => {
     const portal = String(process.env.OAUTH_PORTAL_URL || process.env.VITE_OAUTH_PORTAL_URL || "").trim();
     const appId = String(process.env.VITE_APP_ID || "").trim();
-    if (!portal || !appId) return res.redirect(302, "/login");
+    const server = String(process.env.OAUTH_SERVER_URL || "").trim();
+    if (!portal || !appId || !server) return res.redirect(302, "/login");
 
     try {
       const configuredBase = String(
