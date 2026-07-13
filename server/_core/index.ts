@@ -429,6 +429,19 @@ async function startServer() {
     }
   });
 
+  // Public bootstrap entrypoint. Keep the implementation in one audited script.
+  app.get("/install.sh", (_req, res) => {
+    const installerPath = path.join(APP_ROOT, "scripts", "bootstrap-install.sh");
+    if (!existsSync(installerPath)) {
+      res.status(404).type("text/plain").send("installer unavailable\n");
+      return;
+    }
+    res.setHeader("Cache-Control", "no-store, max-age=0");
+    res.setHeader("Content-Disposition", "inline; filename=employee-agent-install.sh");
+    res.type("text/x-shellscript; charset=utf-8");
+    res.send(readFileSync(installerPath, "utf8"));
+  });
+
   app.get("/api/meta/openclaw-version", async (_req, res) => {
     const now = Date.now();
     if (openClawVersionCache && openClawVersionCache.expiresAt > now) {

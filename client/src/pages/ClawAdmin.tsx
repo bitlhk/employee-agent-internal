@@ -41,6 +41,7 @@ import { toast } from "sonner";
 import { useBrand, invalidateBrandClientCache } from "@/lib/useBrand";
 import { DEFAULT_BRAND } from "@shared/brand";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
@@ -1155,6 +1156,7 @@ export default function ClawAdmin() {
                 </div>
               </div>
             </Card>
+            <ModelSettingsPanel enabled={activeTab === "settings"} />
           </TabsContent>
 
           {/* ── 品牌设置 ── */}

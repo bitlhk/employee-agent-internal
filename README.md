@@ -84,8 +84,7 @@
 默认岗位运行时是 JiuwenSwarm；一键脚本会自动安装 EA 维护版运行时、MySQL 和 PM2，不会回退到 OpenClaw：
 
 ```bash
-git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
-bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host 你的服务器IP
+curl -fsSL https://work.linggan.top/install.sh | bash
 ```
 
 脚本会自动完成：
@@ -98,12 +97,8 @@ bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host 你的服
 - 执行 `pnpm check` 和 `pnpm build`
 - 用 PM2 启动 EA、AgentServer 和 Gateway，并配置开机启动
 
-管理员随机密码保存在安装目录的 `.bootstrap-admin-password`，权限为 `600`。首次对话前，在
-`~/.jiuwenswarm/config/.env` 中配置自己的 `API_BASE`、`API_KEY`、`MODEL_NAME` 和 `MODEL_PROVIDER`，然后执行：
-
-```bash
-pm2 restart jiuwenswarm-agentserver jiuwenswarm-gateway --update-env
-```
+管理员随机密码保存在安装目录的 `.bootstrap-admin-password`，权限为 `600`。首次对话前，登录管理后台的
+“系统设置”，分别测试并保存 Agent 模型和 EA 平台模型。
 
 服务默认只监听 `127.0.0.1:5180`。生产环境应通过 Nginx/WAF 提供 HTTPS；本机检查可打开：
 
@@ -118,15 +113,15 @@ http://127.0.0.1:5180
 如果希望先检查脚本：
 
 ```bash
-git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
-less /tmp/employee-agent-installer/scripts/bootstrap-install.sh
-bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host 你的服务器IP
+curl -fsSL -o /tmp/employee-agent-install.sh https://work.linggan.top/install.sh
+less /tmp/employee-agent-install.sh
+bash /tmp/employee-agent-install.sh --host 你的服务器IP
 ```
 
 常用参数：
 
 ```bash
-bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh \
+bash /tmp/employee-agent-install.sh \
   --repo https://atomgit.com/linggan_ai/employee-agent.git \
   --branch main \
   --dir "$HOME/employee-agent" \

@@ -16,8 +16,7 @@
 推荐系统：Ubuntu 22.04+ / 24.04。
 
 ```bash
-git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
-bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host <服务器IP或域名>
+curl -fsSL https://work.linggan.top/install.sh | bash
 ```
 
 默认安装目录是当前用户的 `~/employee-agent`。
@@ -25,19 +24,15 @@ bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host <服务�
 常用参数：
 
 ```bash
-bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh \
+bash /tmp/employee-agent-install.sh \
   --dir "$HOME/employee-agent" \
   --port 5180 \
   --host 203.0.113.10 \
   --db-mode mysql-auto
 ```
 
-脚本会自动创建管理员，随机密码保存在安装目录的 `.bootstrap-admin-password`。首次对话前配置模型：
-
-```bash
-editor ~/.jiuwenswarm/config/.env
-pm2 restart jiuwenswarm-agentserver jiuwenswarm-gateway --update-env
-```
+脚本会自动创建管理员，随机密码保存在安装目录的 `.bootstrap-admin-password`。首次对话前，登录管理后台的
+“系统设置”，分别测试并保存 Agent 模型和 EA 平台模型。
 
 ## 手动部署
 

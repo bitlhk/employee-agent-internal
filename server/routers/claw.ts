@@ -81,10 +81,44 @@ import type { AgentRoleTemplate, AgentRuntime } from "../_core/role-templates";
 import { resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
+import {
+  getEaAssistantModelAdminConfig,
+  saveEaAssistantModelConfig,
+  validateEaAssistantModel,
+} from "../_core/ea-assistant-model";
+import {
+  JIUWEN_MODEL_PROVIDERS,
+  JIUWEN_REASONING_LEVELS,
+  listJiuwenModelsWithSecrets,
+  modelIdentity,
+  replaceJiuwenModels,
+  sanitizeModelAdminError,
+  toPublicJiuwenModels,
+  validateJiuwenModel,
+} from "../_core/jiuwenswarm-model-admin";
 
 type ResolvedClawRuntime = "openclaw" | "jiuwenclaw" | "legacy_archived";
 
 const skillIdSchema = z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "技能ID只能包含小写字母、数字和连字符");
+const jiuwenModelDraftSchema = z.object({
+  modelName: z.string().trim().min(1).max(200),
+  alias: z.string().trim().max(200).default(""),
+  apiBase: z.string().trim().url().max(2048),
+  apiKey: z.string().max(8192).optional(),
+  provider: z.enum(JIUWEN_MODEL_PROVIDERS),
+  reasoningLevel: z.enum(JIUWEN_REASONING_LEVELS).default(""),
+  temperature: z.number().min(0).max(2).default(0.95),
+  isDefault: z.boolean().default(true),
+  originIndex: z.number().int().nonnegative().optional(),
+});
+const eaAssistantModelDraftSchema = z.object({
+  apiBase: z.string().trim().url().max(2048),
+  modelName: z.string().trim().min(1).max(200),
+  apiKey: z.string().max(8192).optional(),
+  provider: z.enum(JIUWEN_MODEL_PROVIDERS).default("OpenAI"),
+  timeoutMs: z.number().int().min(1000).max(120000).default(8000),
+  disableThinking: z.boolean().default(true),
+});
 
 function safeChildPath(parentDir: string, childName: string): string {
   const parent = path.resolve(parentDir);
@@ -1866,6 +1900,136 @@ export const clawRouter = router({
           );
         }
         return { ok: true };
+      }),
+
+    adminGetModelSettings: adminProcedure.query(async () => {
+      const [models, eaModel] = await Promise.all([
+        listJiuwenModelsWithSecrets(),
+        getEaAssistantModelAdminConfig(),
+      ]);
+      const publicModels = toPublicJiuwenModels(models);
+      return {
+        models: publicModels,
+        eaModel,
+        providers: [...JIUWEN_MODEL_PROVIDERS],
+        reasoningLevels: [...JIUWEN_REASONING_LEVELS],
+      };
+    }),
+
+    adminValidateAgentModel: adminProcedure
+      .input(jiuwenModelDraftSchema)
+      .mutation(async ({ input, ctx }) => {
+        const started = Date.now();
+        try {
+          await validateJiuwenModel(input);
+          await recordAuditBestEffort({
+            action: "runtime.model.validate",
+            result: "success",
+            severity: "low",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "runtime_model",
+            targetId: modelIdentity(input),
+            runtimeType: "jiuwenswarm",
+            metadata: { provider: input.provider, elapsedMs: Date.now() - started },
+          });
+          return { ok: true, elapsedMs: Date.now() - started };
+        } catch (error: any) {
+          await recordAuditBestEffort({
+            action: "runtime.model.validate",
+            result: "failed",
+            severity: "medium",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "runtime_model",
+            targetId: modelIdentity(input),
+            runtimeType: "jiuwenswarm",
+            errorCode: "MODEL_VALIDATION_FAILED",
+            metadata: { provider: input.provider, elapsedMs: Date.now() - started },
+          });
+          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "模型连接测试失败" });
+        }
+      }),
+
+    adminSaveModelSettings: adminProcedure
+      .input(z.object({
+        models: z.array(jiuwenModelDraftSchema).min(1).max(30),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        try {
+          const saved = await replaceJiuwenModels(input.models);
+          await recordAuditBestEffort({
+            action: "runtime.model.settings_updated",
+            result: "success",
+            severity: "medium",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "runtime_model",
+            targetId: "jiuwenswarm",
+            runtimeType: "jiuwenswarm",
+            metadata: {
+              modelCount: saved.length,
+              primaryModel: saved[0]?.modelName || null,
+            },
+          });
+          return { ok: true, count: saved.length };
+        } catch (error: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "模型配置保存失败" });
+        }
+      }),
+
+    adminValidateEaAssistantModel: adminProcedure
+      .input(eaAssistantModelDraftSchema)
+      .mutation(async ({ input, ctx }) => {
+        const started = Date.now();
+        try {
+          const elapsedMs = await validateEaAssistantModel(input);
+          await recordAuditBestEffort({
+            action: "platform.model.validate",
+            result: "success",
+            severity: "low",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "platform_model",
+            targetId: input.modelName,
+            metadata: { provider: input.provider, elapsedMs },
+          });
+          return { ok: true, elapsedMs };
+        } catch (error: any) {
+          await recordAuditBestEffort({
+            action: "platform.model.validate",
+            result: "failed",
+            severity: "medium",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "platform_model",
+            targetId: input.modelName,
+            errorCode: "EA_MODEL_VALIDATION_FAILED",
+            metadata: { provider: input.provider, elapsedMs: Date.now() - started },
+          });
+          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "EA 模型连接测试失败" });
+        }
+      }),
+
+    adminSaveEaAssistantModel: adminProcedure
+      .input(eaAssistantModelDraftSchema)
+      .mutation(async ({ input, ctx }) => {
+        try {
+          await saveEaAssistantModelConfig(input, Number(ctx.user!.id));
+          await recordAuditBestEffort({
+            action: "platform.model.settings_updated",
+            result: "success",
+            severity: "medium",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "platform_model",
+            targetId: input.modelName,
+            metadata: { provider: input.provider, timeoutMs: input.timeoutMs, disableThinking: input.disableThinking },
+          });
+          return { ok: true };
+        } catch (error: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "EA 模型配置保存失败" });
+        }
       }),
 
     // ── 品牌配置 ──

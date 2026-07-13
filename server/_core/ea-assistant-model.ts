@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from "fs";
 import os from "os";
 import path from "path";
+import { getSystemConfig, upsertSystemConfig } from "../db";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-protection";
+
+const EA_MODEL_CONFIG_KEY = "ea_assistant_model_config_v1";
 
 type EaAssistantMessage = {
   role: "system" | "user" | "assistant";
@@ -11,9 +15,19 @@ export type EaAssistantModelConfig = {
   baseUrl: string;
   model: string;
   apiKey: string;
+  provider: string;
   timeoutMs: number;
   disableThinking: boolean;
   tokenParam: "max_completion_tokens" | "max_tokens";
+};
+
+export type EaAssistantModelDraft = {
+  apiBase: string;
+  modelName: string;
+  apiKey?: string;
+  provider: string;
+  timeoutMs: number;
+  disableThinking: boolean;
 };
 
 export type EaAssistantCallOptions = {
@@ -51,6 +65,10 @@ function normalizeBaseUrl(value: string) {
   return `${trimmed}/chat/completions`;
 }
 
+function tokenParamFor(model: string): "max_completion_tokens" | "max_tokens" {
+  return /^openpangu-/i.test(model) ? "max_tokens" : "max_completion_tokens";
+}
+
 export function getEaAssistantModelConfig(): EaAssistantModelConfig {
   const fallbackEnvPath =
     process.env.EA_ASSISTANT_MODEL_ENV_PATH
@@ -72,6 +90,7 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
     || fallbackEnv.HUAWEI_MAAS_API_KEY
     || fallbackEnv.API_KEY
     || "";
+  const provider = process.env.EA_ASSISTANT_MODEL_PROVIDER || fallbackEnv.EA_ASSISTANT_MODEL_PROVIDER || "OpenAI";
   const timeoutMs = Number(process.env.EA_ASSISTANT_MODEL_TIMEOUT_MS || fallbackEnv.EA_ASSISTANT_MODEL_TIMEOUT_MS || 8000) || 8000;
   const disableThinking = String(
     process.env.EA_ASSISTANT_MODEL_DISABLE_THINKING
@@ -94,10 +113,95 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
     baseUrl: normalizeBaseUrl(baseUrl),
     model,
     apiKey,
+    provider,
     timeoutMs,
     disableThinking,
     tokenParam,
   };
+}
+
+function parseStoredEaModel(value: string): EaAssistantModelConfig | null {
+  try {
+    const plaintext = isEncryptedSecret(value) ? decryptSecret(value) : value;
+    const parsed = JSON.parse(plaintext) as Partial<EaAssistantModelDraft>;
+    const apiBase = String(parsed.apiBase || "").trim();
+    const modelName = String(parsed.modelName || "").trim();
+    const apiKey = String(parsed.apiKey || "");
+    if (!apiBase || !modelName || !apiKey) return null;
+    return {
+      baseUrl: normalizeBaseUrl(apiBase),
+      model: modelName,
+      apiKey,
+      provider: String(parsed.provider || "OpenAI").trim() || "OpenAI",
+      timeoutMs: Math.max(1000, Number(parsed.timeoutMs || 8000) || 8000),
+      disableThinking: parsed.disableThinking !== false,
+      tokenParam: tokenParamFor(modelName),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveEaAssistantModelConfig(): Promise<EaAssistantModelConfig> {
+  const fallback = getEaAssistantModelConfig();
+  const stored = await getSystemConfig(EA_MODEL_CONFIG_KEY);
+  return stored ? parseStoredEaModel(stored.value) || fallback : fallback;
+}
+
+export async function getEaAssistantModelAdminConfig() {
+  const config = await resolveEaAssistantModelConfig();
+  return {
+    apiBase: config.baseUrl.replace(/\/chat\/completions\/?$/i, ""),
+    modelName: config.model,
+    provider: config.provider,
+    timeoutMs: config.timeoutMs,
+    disableThinking: config.disableThinking,
+    apiKeyConfigured: Boolean(config.apiKey),
+  };
+}
+
+async function mergeEaModelDraft(draft: EaAssistantModelDraft): Promise<EaAssistantModelConfig> {
+  const existing = await resolveEaAssistantModelConfig();
+  const apiKey = String(draft.apiKey || existing.apiKey || "");
+  if (!apiKey) throw new Error("EA 平台模型缺少 API Key");
+  return {
+    baseUrl: normalizeBaseUrl(draft.apiBase),
+    model: draft.modelName.trim(),
+    apiKey,
+    provider: draft.provider.trim() || "OpenAI",
+    timeoutMs: draft.timeoutMs,
+    disableThinking: draft.disableThinking,
+    tokenParam: tokenParamFor(draft.modelName),
+  };
+}
+
+export async function saveEaAssistantModelConfig(draft: EaAssistantModelDraft, updatedBy: number): Promise<void> {
+  const config = await mergeEaModelDraft(draft);
+  const stored: EaAssistantModelDraft = {
+    apiBase: config.baseUrl.replace(/\/chat\/completions\/?$/i, ""),
+    modelName: config.model,
+    apiKey: config.apiKey,
+    provider: config.provider,
+    timeoutMs: config.timeoutMs,
+    disableThinking: config.disableThinking,
+  };
+  await upsertSystemConfig({
+    key: EA_MODEL_CONFIG_KEY,
+    value: encryptSecret(JSON.stringify(stored), { maxStoredLength: null }),
+    description: "EA 平台轻量模型配置（AES-GCM 加密）",
+  }, updatedBy);
+}
+
+export async function validateEaAssistantModel(draft: EaAssistantModelDraft): Promise<number> {
+  const config = await mergeEaModelDraft(draft);
+  const result = await callEaAssistantModelWithConfig(config, {
+    messages: [{ role: "user", content: "只回复 OK" }],
+    maxTokens: 8,
+    temperature: 0,
+    timeoutMs: Math.min(config.timeoutMs, 60_000),
+  });
+  if (!result.content) throw new Error("EA 平台模型返回空响应");
+  return result.elapsedMs;
 }
 
 export async function callEaAssistantModel(opts: EaAssistantCallOptions): Promise<{
@@ -107,7 +211,17 @@ export async function callEaAssistantModel(opts: EaAssistantCallOptions): Promis
   usage?: unknown;
   raw?: unknown;
 }> {
-  const config = getEaAssistantModelConfig();
+  const config = await resolveEaAssistantModelConfig();
+  return callEaAssistantModelWithConfig(config, opts);
+}
+
+async function callEaAssistantModelWithConfig(config: EaAssistantModelConfig, opts: EaAssistantCallOptions): Promise<{
+  content: string;
+  model: string;
+  elapsedMs: number;
+  usage?: unknown;
+  raw?: unknown;
+}> {
   if (!config.apiKey) {
     throw new Error("[EA assistant model] API key is not configured");
   }

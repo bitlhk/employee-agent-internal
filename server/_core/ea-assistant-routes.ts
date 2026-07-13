@@ -1,6 +1,6 @@
 import type express from "express";
 import { z } from "zod";
-import { generateEaSessionTitle, getEaAssistantModelConfig } from "./ea-assistant-model";
+import { generateEaSessionTitle, resolveEaAssistantModelConfig } from "./ea-assistant-model";
 import { clawChatLimiter } from "./security";
 import { resolveRequesterUserId } from "./helpers";
 
@@ -24,8 +24,8 @@ function compactTitleInput(messages: Array<{ role?: string; text?: string }>) {
 }
 
 export function registerEaAssistantRoutes(app: express.Express) {
-  app.get("/api/ea/assistant/model", (_req, res) => {
-    const config = getEaAssistantModelConfig();
+  app.get("/api/ea/assistant/model", async (_req, res) => {
+    const config = await resolveEaAssistantModelConfig();
     res.json({
       model: config.model,
       configured: Boolean(config.apiKey),
