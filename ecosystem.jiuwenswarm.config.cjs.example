@@ -1,0 +1,46 @@
+const path = require("path");
+
+const home = process.env.HOME || "/root";
+const runtimeHome = process.env.JIUWENCLAW_HOME || path.join(home, ".jiuwenswarm");
+const python = process.env.JIUWENSWARM_PYTHON || path.join(home, ".venvs", "employee-agent-jiuwenswarm", "bin", "python");
+const baseEnv = {
+  HOME: home,
+  JIUWENCLAW_HOME: runtimeHome,
+  JIUWENSWARM_DATA_DIR: runtimeHome,
+  PATH: `${path.dirname(python)}:${process.env.PATH || ""}`,
+};
+
+module.exports = {
+  apps: [
+    {
+      name: "jiuwenswarm-agentserver",
+      cwd: runtimeHome,
+      script: python,
+      args: "-m jiuwenswarm.server.app_agentserver",
+      interpreter: "none",
+      env: baseEnv,
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 3000,
+      max_memory_restart: "1800M",
+      error_file: path.join(runtimeHome, "logs", "pm2-agentserver-error.log"),
+      out_file: path.join(runtimeHome, "logs", "pm2-agentserver-out.log"),
+      merge_logs: true,
+    },
+    {
+      name: "jiuwenswarm-gateway",
+      cwd: runtimeHome,
+      script: python,
+      args: "-m jiuwenswarm.gateway.app_gateway --agent-server-url ws://127.0.0.1:18092",
+      interpreter: "none",
+      env: baseEnv,
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 3000,
+      max_memory_restart: "1200M",
+      error_file: path.join(runtimeHome, "logs", "pm2-gateway-error.log"),
+      out_file: path.join(runtimeHome, "logs", "pm2-gateway-out.log"),
+      merge_logs: true,
+    },
+  ],
+};

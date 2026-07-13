@@ -25,6 +25,8 @@ DB_USER_VALUE="${WORKFORCE_AGENT_DB_USER:-${LINGXIA_DB_USER:-employee_agent}}"
 DB_PASS_VALUE="${WORKFORCE_AGENT_DB_PASSWORD:-${LINGXIA_DB_PASSWORD:-}}"
 DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-employee_agent}}"
 JIUWEN_RUNTIME_ENABLED_VALUE="${JIUWENSWARM_PROVISION_ENABLED:-${JIUWENCLAW_PROVISION_ENABLED:-}}"
+JIUWENSWARM_HOME_VALUE="${JIUWENCLAW_HOME:-$HOME/.jiuwenswarm}"
+JIUWENSWARM_PYTHON_VALUE="${JIUWENSWARM_PYTHON:-$HOME/.venvs/employee-agent-jiuwenswarm/bin/python}"
 
 usage() {
   cat <<'EOF'
@@ -260,8 +262,12 @@ SQL
         then
           echo "  MySQL 数据库已准备。"
         else
-          echo "  MySQL 自动创建失败。请确认 mysql-server 已安装，并手工创建 DATABASE_URL 对应账号。"
+          echo "  MySQL 自动创建失败。请确认 mysql-server 已安装，并手工创建 DATABASE_URL 对应账号。" >&2
+          exit 1
         fi
+      else
+        echo "  mysql 命令不存在，无法使用 mysql-auto 模式。" >&2
+        exit 1
       fi
       ;;
     compose)
@@ -279,6 +285,7 @@ SQL
   JWT_SECRET=$(gen_secret)
   TENANT_SECRET=$(gen_hex 32)
   INTERNAL_API_KEY=$(gen_hex 32)
+  CREDENTIAL_ENCRYPTION_KEY=$(gen_hex 32)
   if [[ -z "$JIUWEN_RUNTIME_ENABLED_VALUE" ]]; then
     if [[ -f "$HOME/.jiuwenswarm/config/config.yaml" || -f "$HOME/.jiuwenclaw/config/config.yaml" ]]; then
       JIUWEN_RUNTIME_ENABLED_VALUE=true
@@ -310,12 +317,19 @@ SQL
     echo "JWT_SECRET=$JWT_SECRET"
     echo "TENANT_SECRET=$TENANT_SECRET"
     echo "INTERNAL_API_KEY=$INTERNAL_API_KEY"
+    echo "CREDENTIAL_ENCRYPTION_KEY=$CREDENTIAL_ENCRYPTION_KEY"
     echo "EMAIL_VERIFICATION_REQUIRED=false"
     echo ""
     echo "# Agent Runtime: JiuwenSwarm first; no implicit OpenClaw fallback"
     echo "JIUWENSWARM_PROVISION_ENABLED=$JIUWEN_RUNTIME_ENABLED_VALUE"
     echo "JIUWENCLAW_RUNTIME_ENABLED=$JIUWEN_RUNTIME_ENABLED_VALUE"
     echo "JIUWENCLAW_CHAT_TRANSPORT=gateway"
+    echo "JIUWENCLAW_HOME=$JIUWENSWARM_HOME_VALUE"
+    echo "JIUWENSWARM_DATA_DIR=$JIUWENSWARM_HOME_VALUE"
+    echo "JIUWENSWARM_CONFIG_PATH=$JIUWENSWARM_HOME_VALUE/config/config.yaml"
+    echo "JIUWENSWARM_PYTHON=$JIUWENSWARM_PYTHON_VALUE"
+    echo "JIUWENCLAW_AGENTSERVER_WS_URL=ws://127.0.0.1:18092"
+    echo "JIUWENCLAW_GATEWAY_WS_URL=ws://127.0.0.1:19000/ws"
     echo "CLAW_PROVISION_MODE=mock"
     echo "CLAW_CHAT_MODE=mock"
     echo "WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:$PORT_VALUE"
@@ -372,6 +386,10 @@ if [[ ! -f "ecosystem.config.cjs" && -f "ecosystem.config.cjs.example" ]]; then
   cp ecosystem.config.cjs.example ecosystem.config.cjs
   echo "  已生成 PM2 配置 ecosystem.config.cjs"
 fi
+if [[ ! -f "ecosystem.jiuwenswarm.config.cjs" && -f "ecosystem.jiuwenswarm.config.cjs.example" ]]; then
+  cp ecosystem.jiuwenswarm.config.cjs.example ecosystem.jiuwenswarm.config.cjs
+  echo "  已生成 JiuwenSwarm PM2 配置 ecosystem.jiuwenswarm.config.cjs"
+fi
 
 echo ""
 echo "Step 3/3: 数据库迁移"
@@ -385,7 +403,8 @@ else
   if pnpm_cmd exec drizzle-kit push --force; then
     echo "  数据库迁移完成。"
   else
-    echo "  迁移失败，请检查 DATABASE_URL。"
+    echo "  迁移失败，请检查 DATABASE_URL。" >&2
+    exit 1
   fi
 fi
 

@@ -3,8 +3,9 @@ set -euo pipefail
 
 # Bootstrap installer for Workforce Agent Platform.
 # Intended usage:
-#   curl -fsSL https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh | bash
-DEFAULT_REPO_URL="https://github.com/bitlhk/employee-agent.git"
+#   git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
+#   bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh
+DEFAULT_REPO_URL="https://atomgit.com/linggan_ai/employee-agent.git"
 REPO_URL="${EMPLOYEE_AGENT_REPO_URL:-${LINGXIA_REPO_URL:-$DEFAULT_REPO_URL}}"
 BRANCH="${EMPLOYEE_AGENT_BRANCH:-${LINGXIA_BRANCH:-main}}"
 DEFAULT_INSTALL_DIR="$HOME/employee-agent"
@@ -15,6 +16,7 @@ DB_MODE="${WORKFORCE_AGENT_DB_MODE:-${LINGXIA_DB_MODE:-mysql-auto}}"
 START_SERVICE=true
 INSTALL_MYSQL=true
 INSTALL_DOCKER=true
+INSTALL_JIUWENSWARM=true
 DRY_RUN=false
 OVERWRITE_ENV=false
 CREATE_ADMIN=true
@@ -23,6 +25,13 @@ ADMIN_NAME="${ADMIN_NAME:-Admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_DISPLAY=""
 ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$INSTALL_DIR/.bootstrap-admin-password}"
+JIUWENSWARM_REPO="${JIUWENSWARM_REPO:-https://atomgit.com/linggan_ai/jiuwenswarm.git}"
+JIUWENSWARM_REF="${JIUWENSWARM_REF:-ea-runtime-0.2.3-beta1.1}"
+JIUWENSWARM_VERSION="${JIUWENSWARM_VERSION:-0.2.3b1+ea.1}"
+JIUWENSWARM_HOME="${JIUWENCLAW_HOME:-$HOME/.jiuwenswarm}"
+JIUWENSWARM_VENV="${JIUWENSWARM_VENV:-$HOME/.venvs/employee-agent-jiuwenswarm}"
+JIUWENSWARM_WHEEL_URL="${JIUWENSWARM_WHEEL_URL:-}"
+JIUWENSWARM_WHEEL_SHA256="${JIUWENSWARM_WHEEL_SHA256:-}"
 
 usage() {
   cat <<'EOF'
@@ -37,6 +46,8 @@ Options:
   --db-mode <mode>         mysql-auto | existing | compose. Default mysql-auto.
   --skip-mysql             Do not install mysql-server.
   --skip-docker            Do not install docker.io for the optional sandbox.
+  --skip-jiuwenswarm       Install EA without the bundled JiuwenSwarm runtime.
+  --jiuwenswarm-ref <ref>  JiuwenSwarm EA runtime tag or commit.
   --skip-start             Do not build/start PM2 service.
   --skip-admin             Do not create the default admin account.
   --overwrite-env          Regenerate .env if it already exists.
@@ -60,6 +71,8 @@ while [[ $# -gt 0 ]]; do
     --db-mode) DB_MODE="${2:?missing --db-mode value}"; shift 2 ;;
     --skip-mysql) INSTALL_MYSQL=false; shift ;;
     --skip-docker) INSTALL_DOCKER=false; shift ;;
+    --skip-jiuwenswarm) INSTALL_JIUWENSWARM=false; shift ;;
+    --jiuwenswarm-ref) JIUWENSWARM_REF="${2:?missing --jiuwenswarm-ref value}"; shift 2 ;;
     --skip-start) START_SERVICE=false; shift ;;
     --skip-admin) CREATE_ADMIN=false; shift ;;
     --overwrite-env) OVERWRITE_ENV=true; shift ;;
@@ -138,9 +151,14 @@ ensure_base_packages() {
   if [[ -f /etc/debian_version ]]; then
     log "Installing base packages"
     run sudo_cmd apt-get update
-    run sudo_cmd apt-get install -y git curl ca-certificates openssl python3 build-essential
+    run sudo_cmd apt-get install -y git curl ca-certificates openssl python3 python3-venv python3-pip build-essential
     if [[ "$INSTALL_MYSQL" == "true" && "$DB_MODE" == "mysql-auto" ]]; then
       run sudo_cmd apt-get install -y mysql-server
+      if [[ "$DRY_RUN" == "true" ]]; then
+        echo "[dry-run] sudo_cmd systemctl enable --now mysql"
+      else
+        sudo_cmd systemctl enable --now mysql
+      fi
     fi
     if [[ "$INSTALL_DOCKER" == "true" ]]; then
       run sudo_cmd apt-get install -y docker.io
@@ -148,10 +166,54 @@ ensure_base_packages() {
         echo "[dry-run] sudo_cmd systemctl enable --now docker"
       else
         sudo_cmd systemctl enable --now docker || true
+        if [[ "$(id -u)" -ne 0 ]]; then
+          sudo_cmd usermod -aG docker "${USER:-$(id -un)}"
+        fi
       fi
     fi
   else
     log "Non-Debian system detected; please ensure git/curl/openssl/python3 are installed"
+  fi
+}
+
+install_jiuwenswarm() {
+  if [[ "$INSTALL_JIUWENSWARM" != "true" ]]; then
+    log "Skipping JiuwenSwarm runtime installation"
+    return
+  fi
+
+  log "Installing JiuwenSwarm runtime $JIUWENSWARM_VERSION"
+  run python3 -m venv "$JIUWENSWARM_VENV"
+  run_with_log "Upgrade Python packaging tools" "/tmp/jiuwenswarm-pip-bootstrap.log" \
+    "$JIUWENSWARM_VENV/bin/python" -m pip install --upgrade pip setuptools wheel
+
+  if [[ -n "$JIUWENSWARM_WHEEL_URL" ]]; then
+    local wheel_path="/tmp/jiuwenswarm-${JIUWENSWARM_VERSION}.whl"
+    run curl -fL --retry 3 -o "$wheel_path" "$JIUWENSWARM_WHEEL_URL"
+    if [[ -z "$JIUWENSWARM_WHEEL_SHA256" ]]; then
+      echo "JIUWENSWARM_WHEEL_SHA256 is required when installing from a wheel URL." >&2
+      exit 1
+    fi
+    if [[ "$DRY_RUN" == "true" ]]; then
+      echo "[dry-run] verify JiuwenSwarm wheel SHA-256"
+    else
+      printf "%s  %s\n" "$JIUWENSWARM_WHEEL_SHA256" "$wheel_path" | sha256sum -c -
+    fi
+    run_with_log "Install JiuwenSwarm wheel" "/tmp/jiuwenswarm-install.log" \
+      "$JIUWENSWARM_VENV/bin/python" -m pip install --upgrade --force-reinstall "$wheel_path"
+  else
+    run_with_log "Install JiuwenSwarm from AtomGit" "/tmp/jiuwenswarm-install.log" \
+      "$JIUWENSWARM_VENV/bin/python" -m pip install --upgrade --force-reinstall \
+      "git+${JIUWENSWARM_REPO}@${JIUWENSWARM_REF}"
+  fi
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] initialize JiuwenSwarm workspace at $JIUWENSWARM_HOME"
+  else
+    mkdir -p "$JIUWENSWARM_HOME"
+    HOME="$HOME" "$JIUWENSWARM_VENV/bin/jiuwenswarm-init" </dev/null
+    chmod 700 "$JIUWENSWARM_HOME" "$JIUWENSWARM_HOME/config"
+    chmod 600 "$JIUWENSWARM_HOME/config/config.yaml" "$JIUWENSWARM_HOME/config/.env"
   fi
 }
 
@@ -240,6 +302,20 @@ run_setup() {
   fi
 }
 
+configure_jiuwenswarm() {
+  if [[ "$INSTALL_JIUWENSWARM" != "true" ]]; then return; fi
+  log "Configuring JiuwenSwarm for Workforce Agent Platform"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] configure JiuwenSwarm workspace, Platform MCP, callback and isolation"
+    return
+  fi
+  "$JIUWENSWARM_VENV/bin/python" "$INSTALL_DIR/scripts/configure-jiuwenswarm.py" \
+    --config "$JIUWENSWARM_HOME/config/config.yaml" \
+    --runtime-env "$JIUWENSWARM_HOME/config/.env" \
+    --ea-env "$INSTALL_DIR/.env" \
+    --port "$PORT"
+}
+
 start_app() {
   if [[ "$START_SERVICE" != "true" ]]; then
     log "Skipping build and PM2 start"
@@ -252,10 +328,52 @@ start_app() {
     echo "[dry-run] would start PM2 with ecosystem.config.cjs after setup generates it"
   elif [[ -f "$INSTALL_DIR/ecosystem.config.cjs" ]]; then
     run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.config.cjs --update-env || pm2 restart ecosystem.config.cjs --update-env"
+    if [[ "$INSTALL_JIUWENSWARM" == "true" ]]; then
+      run bash -lc "cd '$INSTALL_DIR' && HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' pm2 start ecosystem.jiuwenswarm.config.cjs --update-env || HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' pm2 restart ecosystem.jiuwenswarm.config.cjs --update-env"
+    fi
     run pm2 save
   else
     echo "ecosystem.config.cjs was not generated." >&2
     exit 1
+  fi
+}
+
+enable_pm2_startup() {
+  if [[ "$START_SERVICE" != "true" || "$DRY_RUN" == "true" ]]; then return; fi
+  local owner home_dir
+  owner="${SUDO_USER:-${USER:-$(id -un)}}"
+  home_dir=$(getent passwd "$owner" | cut -d: -f6)
+  [[ -n "$home_dir" ]] || home_dir="$HOME"
+  log "Enabling PM2 startup service"
+  sudo_cmd env "PATH=$PATH" pm2 startup systemd -u "$owner" --hp "$home_dir"
+  pm2 save
+}
+
+wait_for_runtime() {
+  if [[ "$START_SERVICE" != "true" || "$DRY_RUN" == "true" ]]; then return; fi
+  log "Verifying services"
+  local attempt
+  for attempt in $(seq 1 60); do
+    if curl -fsS --max-time 2 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
+  curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health" >/dev/null
+  if [[ "$INSTALL_JIUWENSWARM" == "true" ]]; then
+    "$JIUWENSWARM_VENV/bin/python" - <<'PY'
+import socket
+import time
+
+for port in (18092, 19000):
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=2):
+                break
+        except OSError:
+            time.sleep(2)
+    else:
+        raise SystemExit(f"JiuwenSwarm port {port} did not become ready")
+PY
   fi
 }
 
@@ -331,6 +449,11 @@ Health checks:
   curl http://127.0.0.1:${PORT}/health
   curl http://127.0.0.1:${PORT}/api/brand
 
+JiuwenSwarm runtime:
+  Version:  ${JIUWENSWARM_VERSION}
+  Home:     ${JIUWENSWARM_HOME}
+  Python:   ${JIUWENSWARM_VENV}/bin/python
+
 EOF
 }
 
@@ -340,9 +463,13 @@ main() {
   ensure_node
   ensure_node_tools
   checkout_repo
+  install_jiuwenswarm
   run_setup
+  configure_jiuwenswarm
   create_default_admin
   start_app
+  enable_pm2_startup
+  wait_for_runtime
   print_summary
 }
 

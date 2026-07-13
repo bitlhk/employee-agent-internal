@@ -16,9 +16,8 @@
 推荐系统：Ubuntu 22.04+ / 24.04。
 
 ```bash
-curl -fsSL -o /tmp/install-employee-agent.sh \
-  https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh
-bash /tmp/install-employee-agent.sh --host <服务器IP或域名>
+git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
+bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host <服务器IP或域名>
 ```
 
 默认安装目录是当前用户的 `~/employee-agent`。
@@ -26,21 +25,18 @@ bash /tmp/install-employee-agent.sh --host <服务器IP或域名>
 常用参数：
 
 ```bash
-bash /tmp/install-employee-agent.sh \
+bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh \
   --dir "$HOME/employee-agent" \
   --port 5180 \
   --host 203.0.113.10 \
   --db-mode mysql-auto
 ```
 
-安装完成后创建管理员：
+脚本会自动创建管理员，随机密码保存在安装目录的 `.bootstrap-admin-password`。首次对话前配置模型：
 
 ```bash
-cd ~/employee-agent
-corepack pnpm tsx scripts/init-admin.ts \
-  --email=admin@example.com \
-  --password='换成强密码' \
-  --name='Admin'
+editor ~/.jiuwenswarm/config/.env
+pm2 restart jiuwenswarm-agentserver jiuwenswarm-gateway --update-env
 ```
 
 ## 手动部署
@@ -71,7 +67,7 @@ docker-compose up -d
 新安装默认使用 `employee_agent` 数据库和用户。旧版 Docker 部署升级时应保留原 `.env` 中的
 `DATABASE_URL`、`MYSQL_DATABASE` 和 `MYSQL_USER`；不要为了匹配新默认值重命名已有数据库。
 
-生产环境仍建议用裸机或自管进程部署，并单独部署 JiuwenSwarm / A2A / HTTP Runtime。
+一键脚本默认使用宿主机进程部署 EA JiuwenSwarm Runtime；外部 A2A / HTTP Runtime 仍需按业务需要单独部署。
 
 ## Runtime 接入
 

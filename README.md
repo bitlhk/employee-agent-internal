@@ -81,30 +81,28 @@
 
 推荐系统：Ubuntu 22.04+ / 24.04。
 
-先准备至少一个 Agent Runtime。默认岗位运行时是 JiuwenSwarm；外部专业 Agent 可通过 A2A/HTTP 接入。未检测到 JiuwenSwarm 时，安装脚本会保持平台模式，不会回退到 OpenClaw。然后执行：
+默认岗位运行时是 JiuwenSwarm；一键脚本会自动安装 EA 维护版运行时、MySQL 和 PM2，不会回退到 OpenClaw：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh | bash
+git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
+bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host 你的服务器IP
 ```
 
 脚本会自动完成：
 
-- 安装 Node.js 22、pnpm、PM2、MySQL 依赖
-- 拉取 `bitlhk/employee-agent`
+- 安装 Node.js 22、Python、pnpm、PM2、MySQL 和 Docker
+- 从 AtomGit 拉取 `linggan_ai/employee-agent`
+- 安装固定版本的 EA JiuwenSwarm Runtime
 - 生成 `.env`
-- 初始化数据库配置
-- 执行 `setup.sh --auto --yes`
+- 创建数据库、执行迁移并生成管理员
 - 执行 `pnpm check` 和 `pnpm build`
-- 用 PM2 启动 `employee-agent`
+- 用 PM2 启动 EA、AgentServer 和 Gateway，并配置开机启动
 
-安装完成后，初始化管理员：
+管理员随机密码保存在安装目录的 `.bootstrap-admin-password`，权限为 `600`。首次对话前，在
+`~/.jiuwenswarm/config/.env` 中配置自己的 `API_BASE`、`API_KEY`、`MODEL_NAME` 和 `MODEL_PROVIDER`，然后执行：
 
 ```bash
-cd ~/employee-agent
-corepack pnpm tsx scripts/init-admin.ts \
-  --email=admin@example.com \
-  --password='换成强密码' \
-  --name='Admin'
+pm2 restart jiuwenswarm-agentserver jiuwenswarm-gateway --update-env
 ```
 
 服务默认只监听 `127.0.0.1:5180`。生产环境应通过 Nginx/WAF 提供 HTTPS；本机检查可打开：
@@ -117,20 +115,19 @@ http://127.0.0.1:5180
 
 ## 可审计安装
 
-如果希望先下载脚本再检查：
+如果希望先检查脚本：
 
 ```bash
-curl -fsSL -o /tmp/bootstrap-install.sh \
-  https://raw.githubusercontent.com/bitlhk/employee-agent/main/scripts/bootstrap-install.sh
-
-bash /tmp/bootstrap-install.sh --host 你的服务器IP
+git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
+less /tmp/employee-agent-installer/scripts/bootstrap-install.sh
+bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh --host 你的服务器IP
 ```
 
 常用参数：
 
 ```bash
-bash /tmp/bootstrap-install.sh \
-  --repo https://github.com/bitlhk/employee-agent.git \
+bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh \
+  --repo https://atomgit.com/linggan_ai/employee-agent.git \
   --branch main \
   --dir "$HOME/employee-agent" \
   --host your-server-ip \
@@ -139,7 +136,7 @@ bash /tmp/bootstrap-install.sh \
 
 | 参数 | 说明 |
 |---|---|
-| `--repo <url>` | Git 仓库地址，默认 GitHub main 仓库 |
+| `--repo <url>` | Git 仓库地址，默认 AtomGit 国内镜像 |
 | `--branch <name>` | 分支，默认 `main` |
 | `--dir <path>` | 安装目录，默认 `$HOME/employee-agent` |
 | `--port <port>` | 服务端口，默认 `5180` |
