@@ -13,6 +13,10 @@ INSTALL_DIR="${EMPLOYEE_AGENT_INSTALL_DIR:-${LINGXIA_INSTALL_DIR:-$DEFAULT_INSTA
 PORT="${WORKFORCE_AGENT_PORT:-${LINGXIA_PORT:-5180}}"
 HOST="${WORKFORCE_AGENT_HOST:-${LINGXIA_HOST:-}}"
 DB_MODE="${WORKFORCE_AGENT_DB_MODE:-${LINGXIA_DB_MODE:-mysql-auto}}"
+MIRROR_MODE="${EMPLOYEE_AGENT_MIRROR:-auto}"
+ACTIVE_MIRROR="official"
+APT_SOURCE_ARGS=()
+APT_SOURCE_FILE=""
 START_SERVICE=true
 INSTALL_MYSQL=true
 INSTALL_DOCKER=true
@@ -44,6 +48,7 @@ Options:
   --port <port>            App port, default 5180.
   --host <ip-or-host>      Public host/IP for FRONTEND_URL. The app still binds to loopback by default.
   --db-mode <mode>         mysql-auto | existing | compose. Default mysql-auto.
+  --mirror <mode>          auto | cn | official. Default auto; official disables installer mirrors.
   --skip-mysql             Do not install mysql-server.
   --skip-docker            Do not install docker.io for the optional sandbox.
   --skip-jiuwenswarm       Install EA without the bundled JiuwenSwarm runtime.
@@ -69,6 +74,7 @@ while [[ $# -gt 0 ]]; do
     --port) PORT="${2:?missing --port value}"; shift 2 ;;
     --host) HOST="${2:?missing --host value}"; shift 2 ;;
     --db-mode) DB_MODE="${2:?missing --db-mode value}"; shift 2 ;;
+    --mirror) MIRROR_MODE="${2:?missing --mirror value}"; shift 2 ;;
     --skip-mysql) INSTALL_MYSQL=false; shift ;;
     --skip-docker) INSTALL_DOCKER=false; shift ;;
     --skip-jiuwenswarm) INSTALL_JIUWENSWARM=false; shift ;;
@@ -143,6 +149,92 @@ need_cmd() {
   ! command -v "$1" >/dev/null 2>&1
 }
 
+has_cn_apt_source() {
+  grep -RqsE "(huaweicloud|mirrors\.(aliyun|tuna|ustc)|mirrors\.cloud\.tencent|mirrors\.163\.com|mirror\.sjtu)" \
+    /etc/apt/sources.list /etc/apt/sources.list.d 2>/dev/null
+}
+
+probe_download_time() {
+  curl -fsS -o /dev/null --connect-timeout 3 --max-time 5 -w "%{time_total}" "$1" 2>/dev/null
+}
+
+prepare_cn_apt_source() {
+  [[ -r /etc/os-release ]] || return
+  local distro_id="" codename="" arch="" mirror_url="https://repo.huaweicloud.com/ubuntu"
+  distro_id=$(source /etc/os-release && printf "%s" "${ID:-}")
+  codename=$(source /etc/os-release && printf "%s" "${VERSION_CODENAME:-}")
+  [[ "$distro_id" == "ubuntu" && -n "$codename" ]] || return
+  [[ -r /usr/share/keyrings/ubuntu-archive-keyring.gpg ]] || return
+  arch=$(dpkg --print-architecture 2>/dev/null || true)
+  if [[ "$arch" != "amd64" && "$arch" != "i386" ]]; then
+    mirror_url="https://repo.huaweicloud.com/ubuntu-ports"
+  fi
+
+  APT_SOURCE_FILE=$(mktemp --suffix=.sources /tmp/employee-agent-ubuntu-mirror.XXXXXX)
+  cat >"$APT_SOURCE_FILE" <<EOF
+Types: deb
+URIs: $mirror_url
+Suites: $codename ${codename}-updates ${codename}-backports ${codename}-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+EOF
+  APT_SOURCE_ARGS=(
+    -o "Dir::Etc::sourcelist=$APT_SOURCE_FILE"
+    -o "Dir::Etc::sourceparts=-"
+    -o APT::Get::List-Cleanup=0
+  )
+}
+
+cleanup_installer_temp_files() {
+  [[ -z "$APT_SOURCE_FILE" ]] || rm -f -- "$APT_SOURCE_FILE"
+}
+
+configure_download_mirrors() {
+  case "$MIRROR_MODE" in
+    cn|official) ACTIVE_MIRROR="$MIRROR_MODE" ;;
+    auto)
+      if has_cn_apt_source; then
+        ACTIVE_MIRROR="cn"
+      else
+        local official_time="" mirror_time=""
+        official_time=$(probe_download_time "https://registry.npmjs.org/pnpm/latest" || true)
+        mirror_time=$(probe_download_time "https://registry.npmmirror.com/pnpm/latest" || true)
+        if [[ -n "$mirror_time" ]] && {
+          [[ -z "$official_time" ]] ||
+          awk -v official="$official_time" -v mirror="$mirror_time" \
+            'BEGIN { exit !(official >= 0.8 && mirror * 1.8 < official) }'
+        }; then
+          ACTIVE_MIRROR="cn"
+        fi
+      fi
+      ;;
+    *)
+      echo "Invalid --mirror value: $MIRROR_MODE (expected auto, cn, or official)" >&2
+      exit 2
+      ;;
+  esac
+
+  if [[ "$ACTIVE_MIRROR" == "cn" ]]; then
+    case "${npm_config_registry:-}" in
+      ""|https://registry.npmjs.org|https://registry.npmjs.org/)
+        export npm_config_registry="https://registry.npmmirror.com"
+        ;;
+    esac
+    case "${COREPACK_NPM_REGISTRY:-}" in
+      ""|https://registry.npmjs.org|https://registry.npmjs.org/)
+        export COREPACK_NPM_REGISTRY="https://registry.npmmirror.com"
+        ;;
+    esac
+    case "${PIP_INDEX_URL:-}" in
+      ""|https://pypi.org/simple|https://pypi.org/simple/)
+        export PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+        ;;
+    esac
+    prepare_cn_apt_source
+  fi
+  log "Download mirror profile: $ACTIVE_MIRROR"
+}
+
 gen_admin_password() {
   openssl rand -base64 18 2>/dev/null | tr -d '/+=' | cut -c1-18
 }
@@ -151,13 +243,13 @@ ensure_base_packages() {
   if [[ -f /etc/debian_version ]]; then
     log "Installing base packages"
     run_with_log "Refresh APT package index" "/tmp/employee-agent-apt-update.log" \
-      sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 update
+      sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 update
     run_with_log "Install base packages" "/tmp/employee-agent-apt-base.log" \
-      sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y \
+      sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 install -y \
       git curl ca-certificates openssl python3 python3-venv python3-pip build-essential
     if [[ "$INSTALL_MYSQL" == "true" && "$DB_MODE" == "mysql-auto" ]]; then
       run_with_log "Install MySQL" "/tmp/employee-agent-apt-mysql.log" \
-        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y mysql-server
+        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 install -y mysql-server
       if [[ "$DRY_RUN" == "true" ]]; then
         echo "[dry-run] sudo_cmd systemctl enable --now mysql"
       else
@@ -166,7 +258,7 @@ ensure_base_packages() {
     fi
     if [[ "$INSTALL_DOCKER" == "true" ]]; then
       run_with_log "Install Docker" "/tmp/employee-agent-apt-docker.log" \
-        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Use-Pty=0 install -y docker.io
+        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 install -y docker.io
       if [[ "$DRY_RUN" == "true" ]]; then
         echo "[dry-run] sudo_cmd systemctl enable --now docker"
       else
@@ -466,6 +558,8 @@ EOF
 
 main() {
   log "Workforce Agent Platform bootstrap installer"
+  trap cleanup_installer_temp_files EXIT
+  configure_download_mirrors
   ensure_base_packages
   ensure_node
   ensure_node_tools

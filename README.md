@@ -124,6 +124,7 @@ bash /tmp/employee-agent-install.sh --host 你的服务器IP
 bash /tmp/employee-agent-install.sh \
   --repo https://atomgit.com/linggan_ai/employee-agent.git \
   --branch main \
+  --mirror auto \
   --dir "$HOME/employee-agent" \
   --host your-server-ip \
   --port 5180

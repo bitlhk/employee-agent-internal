@@ -28,8 +28,12 @@ bash /tmp/employee-agent-install.sh \
   --dir "$HOME/employee-agent" \
   --port 5180 \
   --host 203.0.113.10 \
+  --mirror auto \
   --db-mode mysql-auto
 ```
+
+`--mirror auto` 会按网络情况在本次安装进程中选择下载源；可用 `cn` 强制启用国内镜像，或用
+`official` 禁用脚本注入的镜像。镜像选择不会改写系统现有的 npm、pip 或 APT 配置文件，也不会覆盖企业自定义私有源。
 
 脚本会自动创建管理员，随机密码保存在安装目录的 `.bootstrap-admin-password`。首次对话前，登录管理后台的
 “系统设置”，分别测试并保存 Agent 模型和 EA 平台模型。
