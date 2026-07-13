@@ -9,6 +9,25 @@ const NOTIFY_CONFIG_PATH = `${APP_ROOT}/data/claw-notify-configs.json`;
 
 const NOTIFY_SECRET_FIELDS = ["secret", "webhook"] as const;
 
+export function toPublicNotifyConfig(config: Record<string, any> | null | undefined) {
+  const cfg = config && typeof config === "object" && !Array.isArray(config) ? config : {};
+  return {
+    type: String(cfg.type || "none"),
+    corpId: String(cfg.corpId || ""),
+    agentId: String(cfg.agentId || ""),
+    userId: String(cfg.userId || ""),
+    secretConfigured: Boolean(cfg.secret),
+    webhookConfigured: Boolean(cfg.webhook),
+  };
+}
+
+function resolveCredentialUpdate(body: Record<string, any>, field: "secret" | "webhook", currentValue: unknown): string {
+  if (!Object.prototype.hasOwnProperty.call(body, field)) return String(currentValue || "");
+  const nextValue = String(body[field] || "").trim();
+  if (field === "secret" && /^•{4}/.test(nextValue)) return String(currentValue || "");
+  return nextValue;
+}
+
 export function protectNotifyConfigs(data: Record<string, any>): Record<string, any> {
   return Object.fromEntries(Object.entries(data).map(([adoptId, config]) => {
     if (!config || typeof config !== "object" || Array.isArray(config)) return [adoptId, config];
@@ -155,10 +174,7 @@ export function registerNotifyRoutes(app: express.Express) {
       }
       const configs = loadConfigs();
       const cfg = configs[adoptId] || { type: "none" };
-      // 不返回 secret 明文
-      const safe = { ...cfg };
-      if (safe.secret) safe.secret = "••••" + safe.secret.slice(-4);
-      res.json({ config: safe });
+      res.json({ config: toPublicNotifyConfig(cfg) });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -172,17 +188,19 @@ export function registerNotifyRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
       const type = String(req.body.type || "none");
-      const webhook = String(req.body.webhook || "").trim();
+      const configs = loadConfigs();
+      const current = configs[adoptId] || {};
+      const webhook = resolveCredentialUpdate(req.body || {}, "webhook", current.webhook);
+      const secret = resolveCredentialUpdate(req.body || {}, "secret", current.secret);
       if ((type === "feishu" || type === "webhook") && webhook) {
         await validateWebhookTarget(webhook, type === "feishu" ? "feishu" : "generic");
       }
-      const configs = loadConfigs();
       configs[adoptId] = {
         type,
         // 企业微信
         corpId: String(req.body.corpId || "").trim(),
         agentId: String(req.body.agentId || "").trim(),
-        secret: String(req.body.secret || "").trim() || configs[adoptId]?.secret || "",
+        secret,
         userId: String(req.body.userId || "@all").trim(),
         // 飞书 / 通用 Webhook
         webhook,

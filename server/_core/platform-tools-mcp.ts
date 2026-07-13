@@ -213,9 +213,9 @@ async function callTool(req: Request, name: string, args: Record<string, unknown
     try {
       const notifyData: any = await internalJson(`/api/claw/notify/config?adoptId=${encodeURIComponent(adoptId)}`);
       const cfg = notifyData?.config || {};
-      if (cfg.wecom?.enabled) channels.push("wecom");
-      if (cfg.feishu?.enabled) channels.push("feishu");
-      if (cfg.webhook?.enabled) channels.push("webhook");
+      if (cfg.type === "wechat_work" && cfg.secretConfigured) channels.push("wecom");
+      if (cfg.type === "feishu" && cfg.webhookConfigured) channels.push("feishu");
+      if (cfg.type === "webhook" && cfg.webhookConfigured) channels.push("webhook");
     } catch {}
     return textResult(`Available channels: ${channels.join(", ")}`);
   }

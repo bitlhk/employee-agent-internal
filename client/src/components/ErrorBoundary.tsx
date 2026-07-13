@@ -11,6 +11,12 @@ interface State {
   error: Error | null;
 }
 
+export function isDynamicImportError(error: Error | null): boolean {
+  if (!error) return false;
+  const detail = `${error.name || ""} ${error.message || ""}`;
+  return /ChunkLoadError|Loading chunk .* failed|Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/i.test(detail);
+}
+
 class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -23,6 +29,7 @@ class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const dynamicImportFailed = isDynamicImportError(this.state.error);
       return (
         <div className="flex items-center justify-center min-h-screen p-8 bg-background">
           <div className="flex flex-col items-center w-full max-w-2xl p-8">
@@ -31,27 +38,33 @@ class ErrorBoundary extends Component<Props, State> {
               className="text-destructive mb-6 flex-shrink-0"
             />
 
-            <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
+            <h2 className="text-xl mb-2">{dynamicImportFailed ? "页面资源加载失败" : "页面暂时无法显示"}</h2>
+            <p className="mb-6 text-sm text-muted-foreground">
+              {dynamicImportFailed ? "网络中断或版本更新可能导致资源加载失败，刷新后即可重新获取。" : "请重试；如果问题持续存在，请刷新页面。"}
+            </p>
 
-            <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
+            {import.meta.env.DEV ? <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
               <pre className="text-sm text-muted-foreground whitespace-break-spaces">
                 {this.state.error?.stack}
               </pre>
-            </div>
+            </div> : null}
 
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
-                onClick={() => this.setState({ hasError: false, error: null })}
+                onClick={() => {
+                  if (dynamicImportFailed) window.location.reload();
+                  else this.setState({ hasError: false, error: null });
+                }}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-lg",
                   "bg-primary text-primary-foreground",
                   "hover:opacity-90 cursor-pointer"
                 )}
               >
-                <RotateCcw size={16} />
-                Try Again
+                {dynamicImportFailed ? <RefreshCw size={16} /> : <RotateCcw size={16} />}
+                {dynamicImportFailed ? "刷新页面" : "重试"}
               </button>
-              <button
+              {!dynamicImportFailed ? <button
                 onClick={() => window.location.reload()}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-lg",
@@ -60,8 +73,8 @@ class ErrorBoundary extends Component<Props, State> {
                 )}
               >
                 <RefreshCw size={16} />
-                Reload Page
-              </button>
+                刷新页面
+              </button> : null}
             </div>
           </div>
         </div>

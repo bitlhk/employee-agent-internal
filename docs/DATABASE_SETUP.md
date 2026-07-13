@@ -39,15 +39,7 @@ CREATE DATABASE employee_agent CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 pnpm db:push
 ```
 
-或者使用 drizzle-kit：
-
-```bash
-# 生成迁移文件
-npx drizzle-kit generate
-
-# 执行迁移
-npx drizzle-kit migrate
-```
+项目以 `drizzle/schema.ts` 为数据库结构的唯一来源，`pnpm db:push` 会比较目标数据库并应用所需变更。请勿直接运行 `drizzle-kit migrate`；仓库中的历史 SQL 文件不构成完整的 Drizzle journal。
 
 ### 4. 验证数据库连接
 

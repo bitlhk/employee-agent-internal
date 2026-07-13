@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { isEncryptedSecret } from "./secret-protection";
-import { protectNotifyConfigs, revealNotifyConfigs } from "./claw-notify";
+import { protectNotifyConfigs, revealNotifyConfigs, toPublicNotifyConfig } from "./claw-notify";
 
 describe("notification credential storage", () => {
   beforeEach(() => {
@@ -22,5 +22,27 @@ describe("notification credential storage", () => {
     expect(isEncryptedSecret(protectedConfigs["lgj-test"].webhook)).toBe(true);
     expect(JSON.stringify(protectedConfigs)).not.toContain("wechat-secret");
     expect(revealNotifyConfigs(protectedConfigs)).toEqual(configs);
+  });
+
+  it("returns credential state without exposing notification credentials", () => {
+    const config = toPublicNotifyConfig({
+      type: "feishu",
+      corpId: "corp-id",
+      agentId: "agent-id",
+      userId: "user-id",
+      secret: "wechat-secret",
+      webhook: "https://hooks.example.com/token-value",
+    });
+
+    expect(config).toEqual({
+      type: "feishu",
+      corpId: "corp-id",
+      agentId: "agent-id",
+      userId: "user-id",
+      secretConfigured: true,
+      webhookConfigured: true,
+    });
+    expect(JSON.stringify(config)).not.toContain("wechat-secret");
+    expect(JSON.stringify(config)).not.toContain("token-value");
   });
 });

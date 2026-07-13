@@ -17,7 +17,7 @@
     "lint:report": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
-    "db:push": "drizzle-kit generate && drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
     "db:reset": "tsx scripts/reset-db.ts && pnpm exec drizzle-kit push",
     "db:add-blocked-enum": "tsx scripts/add-blocked-to-ip-management-enum.ts",
     "db:backup-users": "tsx scripts/backup-user-data.ts",
