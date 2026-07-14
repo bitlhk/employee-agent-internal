@@ -44,7 +44,6 @@ nohup.out
 .DS_Store
 scripts/sync-github.sh
 scripts/sync-skills.sh
-scripts/uninstall.sh
 # 2026-04-19 内部文档不公开（仅在主版本保留）
 docs/TODO.md
 docs/双周报-*.md
