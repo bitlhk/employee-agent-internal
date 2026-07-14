@@ -4,6 +4,24 @@ import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { formatModelName } from "@/lib/modelDisplay";
+import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  Bot,
+  ChevronDown,
+  Code2,
+  Database,
+  FileText,
+  Globe2,
+  Image as ImageIcon,
+  Loader2,
+  Plug,
+  Puzzle,
+  Search,
+  Terminal,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 
 export type ToolCallEntry = {
   id: string;
@@ -64,6 +82,25 @@ export type JiuwenPermissionRequestCard = {
   state?: "pending" | "submitting" | "approved" | "rejected" | "error";
   error?: string;
 };
+
+const TOOL_VISUAL_ICONS: Record<ToolVisualKind, LucideIcon> = {
+  agent: Bot,
+  browser: Globe2,
+  code: Code2,
+  database: Database,
+  file: FileText,
+  image: ImageIcon,
+  mcp: Plug,
+  skill: Puzzle,
+  terminal: Terminal,
+  web: Search,
+  generic: Wrench,
+};
+
+function ToolTypeIcon({ name, className = "" }: { name: string; className?: string }) {
+  const Icon = TOOL_VISUAL_ICONS[classifyToolName(name)];
+  return <Icon className={className} size={13} strokeWidth={1.9} aria-hidden="true" />;
+}
 
 type ChatMessageProps = {
   role: "user" | "assistant";
@@ -149,11 +186,15 @@ const GATEWAY_TOOL_META: Record<string, { icon: string; label: string }> = {
   web_fetch:     { icon: "🌐", label: "获取网页" },
   memory_search: { icon: "🧠", label: "查找记忆" },
   read:          { icon: "📄", label: "读取文件" },
+  read_file:     { icon: "📄", label: "读取文件" },
   thinking:      { icon: "💭", label: "深度思考" },
   bash:          { icon: "⌘", label: "执行命令" },
   shell:         { icon: "⌘", label: "执行命令" },
   write:         { icon: "✎", label: "写入文件" },
+  write_file:    { icon: "✎", label: "写入文件" },
   edit:          { icon: "✎", label: "编辑文件" },
+  edit_file:     { icon: "✎", label: "编辑文件" },
+  list_files:    { icon: "📂", label: "列出文件" },
   grep:          { icon: "⌕", label: "搜索文件" },
   glob:          { icon: "⌕", label: "查找路径" },
 };
@@ -523,12 +564,20 @@ function toolCallStatusLabel(status: ToolCallEntry["status"]): string {
   return status === "running" ? "执行中" : status === "error" ? "失败" : "完成";
 }
 
-function toolCallSummaryLabel(calls: ToolCallEntry[]): string {
+function toolTimelineActivityLabel(status: string | undefined, calls: ToolCallEntry[]): string {
+  const clean = String(status || "").trim();
+  if (!clean || calls.some((tc) => tc.status === "running")) return "";
+  if (/^正在调用工具\s*[:：]/.test(clean)) return "";
+  return clean;
+}
+
+function toolCallSummaryLabel(calls: ToolCallEntry[], activityLabel = ""): string {
   if (calls.length === 1) {
     const call = calls[0];
     const duration = toolCallDurationLabel(call);
     return [
       toolCallLabel(call),
+      activityLabel,
       toolCallStatusLabel(call.status),
       duration,
       call.outputFiles?.length ? `${call.outputFiles.length} 个文件` : "",
@@ -541,6 +590,7 @@ function toolCallSummaryLabel(calls: ToolCallEntry[]): string {
   const files = calls.reduce((total, tc) => total + (tc.outputFiles?.length || 0), 0);
   return [
     `调用 ${calls.length} 个工具`,
+    activityLabel,
     running ? `${running} 执行中` : "",
     done ? `${done} 完成` : "",
     errors ? `${errors} 失败` : "",
@@ -548,78 +598,133 @@ function toolCallSummaryLabel(calls: ToolCallEntry[]): string {
   ].filter(Boolean).join(" · ");
 }
 
-function ToolCallTimeline({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
+function ToolTimelineStep({ tc, index, total }: { tc: ToolCallEntry; index: number; total: number }) {
   const [expanded, setExpanded] = useState(false);
+  const reduceMotion = Boolean(useReducedMotion());
+  const duration = toolCallDurationLabel(tc);
+  const snippet = toolResultSnippet(tc);
+  const meta = [
+    toolCallStatusLabel(tc.status),
+    duration,
+    tc.outputFiles?.length ? `${tc.outputFiles.length} 个文件` : "",
+    snippet,
+  ].filter(Boolean).join(" · ");
+  const rowContent = (
+    <>
+      <span className="lingxia-tool-step__rail" aria-hidden="true">
+        <span className="lingxia-tool-step__dot" />
+        {index < total - 1 ? <span className="lingxia-tool-step__line" /> : null}
+      </span>
+      <span className="lingxia-tool-step__body">
+        <span className="lingxia-tool-step__title-row">
+          <ToolTypeIcon name={tc.name} className="lingxia-tool-step__icon" />
+          <span className="lingxia-tool-step__title">{toolCallLabel(tc)}</span>
+        </span>
+        <span className="lingxia-tool-step__meta">{meta}</span>
+      </span>
+    </>
+  );
+
+  if (tc._gateway) {
+    return (
+      <div className={`lingxia-tool-step is-${tc.status}`}>
+        {rowContent}
+      </div>
+    );
+  }
+
+  const transition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.2, ease: [0.22, 1, 0.36, 1] as const };
+
+  return (
+    <div
+      className={`lingxia-tool-step-detail is-${tc.status}`}
+      data-expanded={expanded ? "true" : "false"}
+    >
+      <button
+        type="button"
+        className="lingxia-tool-step-summary"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        {rowContent}
+        <ChevronDown className="lingxia-tool-step__chevron" size={12} strokeWidth={2} aria-hidden="true" />
+      </button>
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <motion.div
+            key="tool-step-detail"
+            className="lingxia-tool-step-detail__collapse"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={transition}
+          >
+            <div className="lingxia-tool-step-detail__body">
+              <ToolCallDetailBody tc={tc} />
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ToolCallTimeline({ toolCalls, status }: { toolCalls: ToolCallEntry[]; status?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const reduceMotion = Boolean(useReducedMotion());
   const visibleCalls = toolCalls.filter((tc) => tc?.id && tc?.name);
   if (visibleCalls.length === 0) return null;
   const hasError = visibleCalls.some((tc) => tc.status === "error");
   const hasRunning = visibleCalls.some((tc) => tc.status === "running");
+  const activityLabel = toolTimelineActivityLabel(status, visibleCalls);
+  const isActive = hasRunning || Boolean(activityLabel);
+  const transition = reduceMotion
+    ? { duration: 0 }
+    : { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 
   return (
     <div className="lingxia-tool-timeline-wrap" data-expanded={expanded ? "true" : "false"}>
       <button
         type="button"
-        className={`lingxia-tool-summary ${hasError ? "is-error" : hasRunning ? "is-running" : "is-done"}`}
+        className={`lingxia-tool-summary ${isActive ? "is-running" : hasError ? "is-error" : "is-done"}`}
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
       >
-        <span className="lingxia-tool-summary__dot" aria-hidden="true" />
-        <span className="lingxia-tool-summary__text">{toolCallSummaryLabel(visibleCalls)}</span>
+        <span className="lingxia-tool-summary__icon" aria-hidden="true">
+          {isActive ? (
+            <Loader2 className="lingxia-tool-summary__loader" size={13} strokeWidth={2} />
+          ) : visibleCalls.length === 1 ? (
+            <ToolTypeIcon name={visibleCalls[0].name} />
+          ) : (
+            <Wrench size={13} strokeWidth={1.9} />
+          )}
+        </span>
+        <span className="lingxia-tool-summary__text" aria-live="polite">
+          {toolCallSummaryLabel(visibleCalls, activityLabel)}
+        </span>
         <span className="lingxia-tool-summary__action">{expanded ? "收起" : "详情"}</span>
-        <svg className="lingxia-tool-summary__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <polyline points="6 9 12 15 18 9"/>
-        </svg>
+        <ChevronDown className="lingxia-tool-summary__chevron" size={12} strokeWidth={2} aria-hidden="true" />
       </button>
-      {expanded ? (
-        <div className="lingxia-tool-timeline-panel">
-          <div className="lingxia-tool-timeline" aria-label="工具调用记录">
-            {visibleCalls.map((tc, index) => {
-              const duration = toolCallDurationLabel(tc);
-              const snippet = toolResultSnippet(tc);
-              const meta = [
-                toolCallStatusLabel(tc.status),
-                duration,
-                tc.outputFiles?.length ? `${tc.outputFiles.length} 个文件` : "",
-                snippet,
-              ].filter(Boolean).join(" · ");
-              const body = (
-                <>
-                  <span className="lingxia-tool-step__rail" aria-hidden="true">
-                    <span className="lingxia-tool-step__dot" />
-                    {index < visibleCalls.length - 1 ? <span className="lingxia-tool-step__line" /> : null}
-                  </span>
-                  <span className="lingxia-tool-step__body">
-                    <span className="lingxia-tool-step__title">{toolCallLabel(tc)}</span>
-                    <span className="lingxia-tool-step__meta">{meta}</span>
-                  </span>
-                </>
-              );
-
-              if (tc._gateway) {
-                return (
-                  <div key={tc.id} className={`lingxia-tool-step is-${tc.status}`}>
-                    {body}
-                  </div>
-                );
-              }
-
-              return (
-                <details key={tc.id} className={`lingxia-tool-step-detail is-${tc.status}`}>
-                  <summary className="lingxia-tool-step-summary">
-                    {body}
-                    <svg className="lingxia-tool-step__chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="6 9 12 15 18 9"/>
-                    </svg>
-                  </summary>
-                  <div className="lingxia-tool-step-detail__body">
-                    <ToolCallDetailBody tc={tc} />
-                  </div>
-                </details>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {expanded ? (
+          <motion.div
+            key="tool-timeline-panel"
+            className="lingxia-tool-timeline-panel"
+            initial={{ height: 0, opacity: 0, y: -2 }}
+            animate={{ height: "auto", opacity: 1, y: 0 }}
+            exit={{ height: 0, opacity: 0, y: -2 }}
+            transition={transition}
+          >
+            <div className="lingxia-tool-timeline" aria-label="工具调用记录">
+              {visibleCalls.map((tc, index) => (
+                <ToolTimelineStep key={tc.id} tc={tc} index={index} total={visibleCalls.length} />
+              ))}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -733,6 +838,7 @@ function ChatMessageInner({
 }: ChatMessageProps) {
   const eventToolCalls = toolCallsFromMessageEvents(messageEvents);
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
+  const showToolTimeline = showToolCalls && effectiveToolCalls.length > 0;
 
   if (role === "user") {
     return (
@@ -764,19 +870,21 @@ function ChatMessageInner({
       <div className="flex items-start gap-3 lingxia-ai-bubble-wrap lingxia-msg-fade">
         <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center lingxia-avatar-ai" style={{ marginTop: 2 }}><BrandIcon size={22} /></div>
         <div>
-          {showToolCalls && effectiveToolCalls.length > 0 && (
+          {showToolTimeline && (
             <div className="mb-2">
-              <ToolCallTimeline toolCalls={effectiveToolCalls} />
+              <ToolCallTimeline toolCalls={effectiveToolCalls} status={streaming ? status : undefined} />
             </div>
           )}
-          <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm flex items-center gap-2 lingxia-bubble-ai" style={{ color: "var(--oc-text-tertiary)" }}>
-            <span className="lingxia-typing-dots flex items-center gap-1.5" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-            {status ? <span>{status}</span> : null}
-          </div>
+          {!showToolTimeline ? (
+            <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm flex items-center gap-2 lingxia-bubble-ai" style={{ color: "var(--oc-text-tertiary)" }}>
+              <span className="lingxia-typing-dots flex items-center gap-1.5" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+              {status ? <span>{status}</span> : null}
+            </div>
+          ) : null}
         </div>
       </div>
     );
@@ -806,12 +914,12 @@ function ChatMessageInner({
     <div className="flex items-start gap-3 lingxia-ai-bubble-wrap lingxia-msg-fade">
       <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center lingxia-avatar-ai" style={{ marginTop: 2 }}><BrandIcon size={22} /></div>
       <div className="min-w-0 flex-1">
-        {showToolCalls && effectiveToolCalls.length > 0 && (
+        {showToolTimeline && (
           <div className="mb-2">
-            <ToolCallTimeline toolCalls={effectiveToolCalls} />
+            <ToolCallTimeline toolCalls={effectiveToolCalls} status={streaming ? status : undefined} />
           </div>
         )}
-        {streaming && status ? (
+        {streaming && status && !showToolTimeline ? (
           <div className="mb-2 text-xs" style={{ color: "var(--oc-text-tertiary)" }} role="status">
             {status}
           </div>

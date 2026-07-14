@@ -4791,29 +4791,36 @@ input.session-searchbar__input:focus-visible,
   background: color-mix(in oklab, var(--oc-card) 28%, transparent);
 }
 
-.lingxia-tool-summary__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--oc-text-tertiary);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--oc-text-tertiary) 9%, transparent);
+.lingxia-tool-summary__icon {
+  width: 19px;
+  height: 19px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--oc-text-tertiary);
+  background: color-mix(in oklab, var(--oc-text-tertiary) 9%, transparent);
   flex: 0 0 auto;
+  transition: color .16s ease, background-color .16s ease;
 }
 
-.lingxia-tool-summary.is-running .lingxia-tool-summary__dot {
-  background: var(--oc-accent);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--oc-accent) 14%, transparent);
-  animation: lingxia-tool-pulse 1.2s ease-in-out infinite;
+.lingxia-tool-summary.is-running .lingxia-tool-summary__icon {
+  color: var(--oc-accent);
+  background: color-mix(in oklab, var(--oc-accent) 13%, transparent);
 }
 
-.lingxia-tool-summary.is-done .lingxia-tool-summary__dot {
-  background: #22c55e;
-  box-shadow: 0 0 0 3px rgba(34,197,94,0.11);
+.lingxia-tool-summary.is-done .lingxia-tool-summary__icon {
+  color: #22c55e;
+  background: rgba(34,197,94,0.11);
 }
 
-.lingxia-tool-summary.is-error .lingxia-tool-summary__dot {
-  background: var(--oc-danger, #ef4444);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--oc-danger, #ef4444) 13%, transparent);
+.lingxia-tool-summary.is-error .lingxia-tool-summary__icon {
+  color: var(--oc-danger, #ef4444);
+  background: color-mix(in oklab, var(--oc-danger, #ef4444) 11%, transparent);
+}
+
+.lingxia-tool-summary__loader {
+  animation: lingxia-tool-spin .85s linear infinite;
 }
 
 .lingxia-tool-summary__text {
@@ -4842,6 +4849,7 @@ input.session-searchbar__input:focus-visible,
 
 .lingxia-tool-timeline-panel {
   margin-top: 6px;
+  overflow: hidden;
 }
 
 .lingxia-tool-timeline {
@@ -4869,20 +4877,26 @@ input.session-searchbar__input:focus-visible,
 .lingxia-tool-step-summary {
   align-items: start;
   padding: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
   list-style: none;
   cursor: pointer;
+  text-align: left;
+  font: inherit;
 }
 
 .lingxia-tool-step-summary::-webkit-details-marker { display: none; }
 .lingxia-tool-step-summary::marker { display: none; content: ""; }
 
-.lingxia-tool-step-detail[open] {
+.lingxia-tool-step-detail[data-expanded="true"] {
   margin: 2px 0 4px;
   border: 1px solid var(--oc-border-subtle);
   background: color-mix(in oklab, var(--oc-card) 34%, transparent);
 }
 
-.lingxia-tool-step-detail[open] > .lingxia-tool-step-summary {
+.lingxia-tool-step-detail[data-expanded="true"] > .lingxia-tool-step-summary {
   padding: 6px 8px 4px;
 }
 
@@ -4935,6 +4949,18 @@ input.session-searchbar__input:focus-visible,
   padding-bottom: 8px;
 }
 
+.lingxia-tool-step__title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lingxia-tool-step__icon {
+  flex: 0 0 auto;
+  color: var(--oc-text-tertiary);
+}
+
 .lingxia-tool-step:last-child .lingxia-tool-step__body,
 .lingxia-tool-step-detail:last-child .lingxia-tool-step__body {
   padding-bottom: 0;
@@ -4971,8 +4997,12 @@ input.session-searchbar__input:focus-visible,
   opacity: .9;
 }
 
-.lingxia-tool-step-detail[open] .lingxia-tool-step__chevron {
+.lingxia-tool-step-detail[data-expanded="true"] .lingxia-tool-step__chevron {
   transform: rotate(180deg);
+}
+
+.lingxia-tool-step-detail__collapse {
+  overflow: hidden;
 }
 
 .lingxia-tool-step-detail__body {
@@ -4990,6 +5020,25 @@ input.session-searchbar__input:focus-visible,
 @keyframes lingxia-tool-pulse {
   0%, 100% { transform: scale(1); opacity: .72; }
   50% { transform: scale(1.22); opacity: 1; }
+}
+
+@keyframes lingxia-tool-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lingxia-tool-summary,
+  .lingxia-tool-summary__icon,
+  .lingxia-tool-summary__chevron,
+  .lingxia-tool-step__chevron {
+    transition: none;
+  }
+
+  .lingxia-tool-summary__loader,
+  .lingxia-tool-step.is-running .lingxia-tool-step__dot,
+  .lingxia-tool-step-detail.is-running .lingxia-tool-step__dot {
+    animation: none;
+  }
 }
 
 .lingxia-toolcard {

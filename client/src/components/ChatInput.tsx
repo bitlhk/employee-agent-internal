@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useRef, useState, useCallback, useEffect, useLayoutEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { FileText, Upload } from "lucide-react";
 import { prepareChatAttachments } from "@/lib/image-compress";
 
@@ -77,12 +77,10 @@ function AttachmentChip({ file, index, onRemove }: AttachmentChipProps) {
   );
 }
 
-function resizeTextareaNextFrame(el: HTMLTextAreaElement | null) {
+function resizeTextarea(el: HTMLTextAreaElement | null) {
   if (!el) return;
-  requestAnimationFrame(() => {
-    el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 144) + "px";
-  });
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 144) + "px";
 }
 
 function normalizeInputHistory(raw: unknown): string[] {
@@ -122,6 +120,7 @@ export function ChatInput({
   const historyCursorRef = useRef<number | null>(null);
   const draftBeforeHistoryRef = useRef("");
   const previousStreamingRef = useRef(streaming);
+  const composingRef = useRef(false);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [submittingAttachments, setSubmittingAttachments] = useState(false);
   const [inputFocused, setInputFocused] = useState(false);
@@ -253,7 +252,6 @@ export function ChatInput({
       const el = textareaRef.current;
       if (!el) return;
       el.focus();
-      resizeTextareaNextFrame(el);
       el.setSelectionRange(text.length, text.length);
     });
   }, [onChange]);
@@ -280,7 +278,7 @@ export function ChatInput({
   }, [attachments, disabled, onSend, onStop, pushInputHistory, streaming, submittingAttachments, value]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+    if (composingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
 
     if (mentionOpen && filteredUsers.length > 0) {
       if (e.key === "ArrowDown") {
@@ -524,10 +522,10 @@ export function ChatInput({
     }
   }, [historyStorageKey]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el || recording || transcribing) return;
-    resizeTextareaNextFrame(el);
+    resizeTextarea(el);
   }, [recording, transcribing, value]);
 
   return (
@@ -678,10 +676,15 @@ export function ChatInput({
               onChange={(e) => {
                 const v = e.target.value;
                 onChange(v);
-                resizeTextareaNextFrame(e.target);
                 // 检测 @
                 const cursor = e.target.selectionStart ?? v.length;
-                detectMention(v, cursor);
+                if (!composingRef.current) detectMention(v, cursor);
+              }}
+              onCompositionStart={() => { composingRef.current = true; }}
+              onCompositionEnd={(e) => {
+                composingRef.current = false;
+                const ta = e.currentTarget;
+                detectMention(ta.value, ta.selectionStart ?? ta.value.length);
               }}
               onKeyUp={(e) => {
                 // 导航键不触发重检测，避免重置高亮
