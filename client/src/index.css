@@ -5162,6 +5162,245 @@ input.session-searchbar__input:focus-visible,
   border-color: rgba(99,102,241,0.34);
 }
 
+/* ── Assistant generated-file attachments ── */
+.lingxia-message-attachments {
+  width: min(760px, 100%);
+  margin-top: 10px;
+}
+.lingxia-message-attachments__label {
+  margin: 0 0 6px 2px;
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.lingxia-message-attachments__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 8px;
+}
+.lingxia-message-attachment {
+  display: flex;
+  min-width: 0;
+  min-height: 58px;
+  align-items: center;
+  border: 1px solid var(--oc-border);
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--oc-bg-surface) 76%, transparent);
+  overflow: hidden;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.lingxia-message-attachment:hover {
+  border-color: var(--oc-border-strong);
+  background: color-mix(in oklab, var(--oc-bg-surface) 92%, transparent);
+  box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+}
+.lingxia-message-attachment__main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  padding: 9px 8px 9px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lingxia-message-attachment__main:disabled {
+  cursor: default;
+}
+.lingxia-message-attachment__icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--oc-accent) 15%, transparent);
+  color: var(--oc-accent);
+}
+.lingxia-message-attachment__info {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+.lingxia-message-attachment__name {
+  overflow: hidden;
+  color: var(--oc-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingxia-message-attachment__meta {
+  color: var(--oc-text-tertiary);
+  font-size: 10px;
+  line-height: 1.2;
+}
+.lingxia-message-attachment__actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding-right: 8px;
+}
+.lingxia-message-attachment__action {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--oc-text-secondary);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
+}
+.lingxia-message-attachment__action:hover:not(:disabled) {
+  border-color: var(--oc-border);
+  background: var(--oc-bg-secondary);
+  color: var(--oc-text-primary);
+}
+.lingxia-message-attachment__action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.lingxia-message-attachments__error {
+  margin: 6px 2px 0;
+  color: var(--oc-danger);
+  font-size: 11px;
+}
+.lingxia-attachment-preview {
+  display: flex !important;
+  width: min(1040px, calc(100vw - 32px)) !important;
+  height: min(84vh, 860px);
+  max-width: none !important;
+  grid-template-rows: none !important;
+  flex-direction: column;
+  gap: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  border-color: var(--oc-border) !important;
+  background: var(--oc-bg-surface) !important;
+  color: var(--oc-text-primary) !important;
+}
+.lingxia-attachment-preview__header {
+  display: flex;
+  min-height: 58px;
+  flex: 0 0 auto;
+  justify-content: center;
+  gap: 3px;
+  padding: 12px 56px 11px 18px;
+  border-bottom: 1px solid var(--oc-border);
+  text-align: left;
+}
+.lingxia-attachment-preview__title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingxia-attachment-preview__meta {
+  color: var(--oc-text-tertiary);
+  font-size: 10px;
+}
+.lingxia-attachment-preview__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+  justify-content: center;
+  overflow: auto;
+  background: var(--oc-bg);
+}
+.lingxia-attachment-preview__state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--oc-text-secondary);
+  font-size: 12px;
+}
+.lingxia-attachment-preview__state.is-error {
+  color: var(--oc-danger);
+}
+.lingxia-attachment-preview__image {
+  max-width: 100%;
+  max-height: 100%;
+  align-self: center;
+  object-fit: contain;
+  padding: 18px;
+}
+.lingxia-attachment-preview__frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+.lingxia-attachment-preview__text {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 18px 20px;
+  overflow: auto;
+  color: var(--oc-text-primary);
+  background: var(--oc-bg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.lingxia-attachment-preview__markdown {
+  width: min(860px, 100%);
+  min-height: 100%;
+  padding: 22px 24px 40px;
+  color: var(--oc-text-primary);
+}
+.lingxia-attachment-preview__footer {
+  display: flex;
+  min-height: 50px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 14px;
+  border-top: 1px solid var(--oc-border);
+}
+.lingxia-attachment-preview__download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 11px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: 6px;
+  background: var(--oc-bg-secondary);
+  color: var(--oc-text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lingxia-attachment-preview__download:hover {
+  border-color: var(--oc-accent);
+}
+@media (max-width: 600px) {
+  .lingxia-message-attachments__list { grid-template-columns: 1fr; }
+  .lingxia-attachment-preview {
+    width: calc(100vw - 16px) !important;
+    height: calc(100dvh - 24px);
+  }
+  .lingxia-attachment-preview__markdown,
+  .lingxia-attachment-preview__text { padding: 14px; }
+}
+
 /* ── Assistant typing indicator ── */
 .lingxia-typing-dots span {
   width: 5px;
@@ -6492,9 +6731,11 @@ html:has(:root[data-theme-mode="light"]) body {
 }
 
 .workbench-account-trigger:hover,
+.workbench-account-trigger[data-state="open"],
 .workbench-mobile-menu-trigger:hover {
   background: var(--oc-bg-hover);
   border-color: var(--oc-border-strong);
+  color: var(--oc-text-primary);
 }
 
 .workbench-account-name {
@@ -6503,6 +6744,50 @@ html:has(:root[data-theme-mode="light"]) body {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
+}
+
+.workbench-account-menu[data-slot="dropdown-menu-content"] {
+  border-color: var(--oc-border) !important;
+  background: var(--oc-bg-surface) !important;
+  color: var(--oc-text-primary) !important;
+  box-shadow: var(--oc-shadow-lg);
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"] {
+  color: var(--oc-text-primary) !important;
+  cursor: pointer;
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"] > svg {
+  color: var(--oc-text-secondary) !important;
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"]:hover,
+.workbench-account-menu [data-slot="dropdown-menu-item"]:focus,
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-highlighted] {
+  background: var(--oc-bg-hover) !important;
+  color: var(--oc-text-primary) !important;
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"]:hover > svg,
+.workbench-account-menu [data-slot="dropdown-menu-item"]:focus > svg,
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-highlighted] > svg {
+  color: var(--oc-text-primary) !important;
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-variant="destructive"] {
+  color: var(--oc-danger, #ef4444) !important;
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-variant="destructive"] > svg {
+  color: var(--oc-danger, #ef4444) !important;
+}
+
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-variant="destructive"]:hover,
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-variant="destructive"]:focus,
+.workbench-account-menu [data-slot="dropdown-menu-item"][data-variant="destructive"][data-highlighted] {
+  background: color-mix(in oklab, var(--oc-danger, #ef4444) 10%, transparent) !important;
+  color: var(--oc-danger, #ef4444) !important;
 }
 
 .workbench-mobile-menu-trigger,

@@ -3,6 +3,7 @@ import type { AgentRoleTemplate } from "./role-templates";
 import {
   buildSeedRoleAssetGrants,
   planRoleAssetSeedSync,
+  resolveEffectiveRoleAssetsFromBaseline,
   resolveEffectiveRoleAssetsFromGrants,
   type RoleAssetGrantRecord,
 } from "./role-asset-grants";
@@ -149,6 +150,44 @@ describe("role asset grants", () => {
       },
       mcpServers: {
         default: ["customer_context_tool"],
+        optional: [],
+      },
+    });
+  });
+
+  it("uses the current baseline for new roles without waiting for seed-table synchronization", () => {
+    const currentRole = role({
+      id: "new-role",
+      defaultSkills: ["new-default"],
+      optionalSkills: [],
+      mcpServers: ["new-mcp"],
+    });
+    const persisted: RoleAssetGrantRecord[] = [
+      {
+        roleKey: "*",
+        assetType: "skill",
+        assetId: "market-optional",
+        grantMode: "optional",
+        source: "market",
+        enabled: true,
+      },
+      {
+        roleKey: "new-role",
+        assetType: "skill",
+        assetId: "stale-seed",
+        grantMode: "default",
+        source: "seed",
+        enabled: true,
+      },
+    ];
+
+    expect(resolveEffectiveRoleAssetsFromBaseline("new-role", [currentRole], persisted)).toEqual({
+      skills: {
+        default: ["new-default"],
+        optional: ["market-optional"],
+      },
+      mcpServers: {
+        default: ["new-mcp"],
         optional: [],
       },
     });

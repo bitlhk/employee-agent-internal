@@ -5,7 +5,7 @@ import {
   type RoleRuntimeReconcileInput,
   type RoleRuntimeReconcileResult,
 } from "../_core/role-runtime-adapter";
-import { mkdirSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import { writeJiuwenSwarmRoleScopeManifest } from "../_core/jiuwenswarm-role-scope";
 import { ensureJiuwenSwarmWorkspacePermission } from "../_core/jiuwenswarm-permissions";
@@ -19,10 +19,27 @@ function noOpReconcile(reason: string): RoleRuntimeReconcileResult {
   return { ok: true, applied: false, changed: 0, skipped: 0, reason };
 }
 
+export function missingDefaultRoleSkills(defaultSkillIds: string[], sourceDirs: string[]): string[] {
+  return Array.from(new Set(defaultSkillIds.map((id) => String(id || "").trim()).filter(Boolean)))
+    .filter((skillId) => !sourceDirs.some((dir) => existsSync(path.join(dir, skillId, "SKILL.md"))))
+    .sort();
+}
+
+function assertDefaultRoleSkillsAvailable(input: RoleRuntimeReconcileInput | RoleRuntimeProvisionInput): void {
+  const missing = missingDefaultRoleSkills(
+    input.effectiveAssets.skills.default,
+    skillSourceDirsForRuntime(),
+  );
+  if (missing.length > 0) {
+    throw new Error(`岗位 ${input.role.name} 的默认技能尚未部署: ${missing.join(", ")}`);
+  }
+}
+
 class OpenClawRoleRuntimeAdapter implements RoleRuntimeAdapter {
   readonly runtime = "openclaw" as const;
 
   provision(input: RoleRuntimeProvisionInput): RoleRuntimeProvisionResult {
+    assertDefaultRoleSkillsAvailable(input);
     const result = provisionEmployeeAgentInstance({
       adoptId: input.adoptId,
       agentId: input.agentId,
@@ -34,6 +51,7 @@ class OpenClawRoleRuntimeAdapter implements RoleRuntimeAdapter {
   }
 
   reconcileSkills(input: RoleRuntimeReconcileInput): RoleRuntimeReconcileResult {
+    assertDefaultRoleSkillsAvailable(input);
     const result = applyOpenClawRoleScope({
       configPath: OPENCLAW_JSON_PATH,
       agentId: input.agentId,
@@ -77,6 +95,7 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
     if (!isJiuwenClawRuntimeEnabled()) {
       throw new Error("jiuwenswarm runtime is not enabled; configure JiuwenSwarm before provisioning an agent");
     }
+    assertDefaultRoleSkillsAvailable(input);
     const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
     mkdirSync(path.join(workspaceDir, "skills"), { recursive: true });
     const workspacePermission = ensureJiuwenSwarmWorkspacePermission(workspaceDir);
@@ -97,6 +116,7 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
   }
 
   reconcileSkills(input: RoleRuntimeReconcileInput): RoleRuntimeReconcileResult {
+    assertDefaultRoleSkillsAvailable(input);
     const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
     const workspacePermission = ensureJiuwenSwarmWorkspacePermission(workspaceDir);
     const result = writeJiuwenSwarmRoleScopeManifest({

@@ -60,6 +60,7 @@ import { getAuditBaselineHealth } from "../_core/audit-health";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
 import { skillRegistry } from "../_core/skills/skill-registry";
+import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
 import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
 import { toPublicSkillMarketItem } from "../_core/skills/skill-market-policy";
 import {
@@ -2555,7 +2556,11 @@ export const clawRouter = router({
         const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
 
         if (isJiuwenClawAdoptId(input.adoptId)) {
-          const listed = await skillRegistry.listSkills(input.adoptId);
+          const listed = await listSkillsWithRoleDefaults({
+            adoptId: input.adoptId,
+            agentId: resolveRuntimeAgentId(input.adoptId, String(claw.agentId || "")),
+            roleTemplate: String(claw.roleTemplate || "general-assistant"),
+          });
           if (!listed.ok) {
             return { shared: [], system: [], private: [], privateNotInstalled: [] };
           }

@@ -142,3 +142,13 @@ export function resolveEffectiveRoleAssetsFromGrants(
   result.mcpServers.optional = Array.from(seen.mcp_server.optional).sort();
   return result;
 }
+
+export function resolveEffectiveRoleAssetsFromBaseline(
+  roleKey: string,
+  roles: AgentRoleTemplate[],
+  persistedGrants: RoleAssetGrantRecord[],
+): EffectiveRoleAssets {
+  const baselineGrants = buildSeedRoleAssetGrants(roles).filter((grant) => grant.roleKey === roleKey);
+  const dynamicGrants = persistedGrants.filter((grant) => grant.source !== "seed");
+  return resolveEffectiveRoleAssetsFromGrants(roleKey, [...baselineGrants, ...dynamicGrants]);
+}

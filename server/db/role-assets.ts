@@ -3,7 +3,7 @@ import { roleAssetGrants, skillMarketplace, type InsertRoleAssetGrant, type Role
 import {
   buildSeedRoleAssetGrants,
   planRoleAssetSeedSync,
-  resolveEffectiveRoleAssetsFromGrants,
+  resolveEffectiveRoleAssetsFromBaseline,
   type EffectiveRoleAssets,
   type RoleAssetGrantRecord,
   type RoleAssetGrantSeed,
@@ -170,32 +170,24 @@ export async function syncGlobalOpenSourceSkillGrants(input: {
 export async function resolveEffectiveRoleAssets(roleKey: string): Promise<EffectiveRoleAssets> {
   const db = await getDb();
   if (!db) {
-    // Database-free fallback keeps local/dev adoption paths usable before the
-    // migration is applied. Production should seed DB grants and use them.
-    const seed = buildSeedRoleAssetGrants(listAgentRoleTemplates());
-    return resolveEffectiveRoleAssetsFromGrants(roleKey, seed);
+    return resolveEffectiveRoleAssetsFromBaseline(roleKey, listAgentRoleTemplates(), []);
   }
   try {
     const rows = await db
       .select()
       .from(roleAssetGrants)
-      .where(and(inArray(roleAssetGrants.roleKey, [roleKey, "*"]), eq(roleAssetGrants.enabled, true)));
-    if (rows.length === 0) {
-      const anyGrantRows = await db.select({ id: roleAssetGrants.id }).from(roleAssetGrants).limit(1);
-      if (anyGrantRows.length === 0) {
-        console.warn("[ROLE-ASSETS] grant table is empty; falling back to JSON seed until seed sync runs", { roleKey });
-        const seed = buildSeedRoleAssetGrants(listAgentRoleTemplates());
-        return resolveEffectiveRoleAssetsFromGrants(roleKey, seed);
-      }
-    }
-    return resolveEffectiveRoleAssetsFromGrants(roleKey, rows.map(toCoreGrant));
+      .where(inArray(roleAssetGrants.roleKey, [roleKey, "*"]));
+    return resolveEffectiveRoleAssetsFromBaseline(
+      roleKey,
+      listAgentRoleTemplates(),
+      rows.map(toCoreGrant),
+    );
   } catch (error) {
     console.warn("[ROLE-ASSETS] grant table unavailable; falling back to JSON seed", {
       roleKey,
       error: error instanceof Error ? error.message : String(error),
     });
-    const seed = buildSeedRoleAssetGrants(listAgentRoleTemplates());
-    return resolveEffectiveRoleAssetsFromGrants(roleKey, seed);
+    return resolveEffectiveRoleAssetsFromBaseline(roleKey, listAgentRoleTemplates(), []);
   }
 }
 

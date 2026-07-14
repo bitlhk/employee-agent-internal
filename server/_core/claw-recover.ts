@@ -15,6 +15,7 @@
  */
 import express from "express";
 import { existsSync } from "fs";
+import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { clawChatLimiter } from "./security";
 import {
   appendLogAsync, openClawAgentDir, requireClawOwner, readSessionEpoch,
@@ -95,7 +96,7 @@ export function registerRecoverRoutes(app: express.Express) {
       const texts = Array.isArray(data.assistantTexts)
         ? data.assistantTexts.filter((t: any) => typeof t === "string")
         : [];
-      let recoveredText = texts.join("");
+      let recoveredText = sanitizePublicRuntimePaths(texts.join(""));
       let truncatedFlag = false;
       if (recoveredText.length > MAX_TEXT_RESPONSE) {
         recoveredText = recoveredText.slice(0, MAX_TEXT_RESPONSE);

@@ -96,4 +96,36 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain("lingxia-bubble-ai");
     expect(html).toContain("正在连接...");
   });
+
+  it("renders generated files as direct message attachments", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "报告已经生成。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:00",
+        toolCalls: [{
+          id: "files-1",
+          name: "[产出文件]",
+          arguments: "{}",
+          result: "report.pdf",
+          status: "done",
+          ts: Date.now(),
+          adoptId: "lgj-test",
+          outputFiles: [{ name: "report.pdf", size: 2048, wsPath: "output/report.pdf" }],
+        }],
+      }),
+    );
+
+    expect(html).toContain("lingxia-message-attachments");
+    expect(html).toContain("report.pdf");
+    expect(html).toContain("2.0 KB");
+    expect(html).toContain('title="预览"');
+    expect(html).toContain('title="下载"');
+    expect(html).not.toContain("lingxia-tool-summary");
+  });
 });

@@ -3656,7 +3656,7 @@ export default function Home() {
                     <span className="workbench-account-name">{(user as any)?.name || (user as any)?.email || "账号"}</span>
                   </button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-44">
+                <DropdownMenuContent align="end" className="workbench-account-menu min-w-44">
                   <DropdownMenuItem onClick={() => setLocationCoop("/")}>
                     <HomeIcon />
                     返回首页

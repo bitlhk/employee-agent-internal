@@ -27,6 +27,7 @@ import {
 } from "./helpers";
 import { listApprovedSkillMarketItems, listMcpInvocationCounts, listSkillInvocationCounts, resolveEffectiveRoleAssets } from "../db";
 import { skillRegistry } from "./skills/skill-registry";
+import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { skillInstaller } from "./skills/skill-installer";
 import {
   MAX_SKILL_PACKAGE_BYTES,
@@ -771,7 +772,11 @@ export function registerSkillRoutes(app: express.Express) {
         String((claw as any).agentId || "")
       );
       await discoverGeneratedRuntimeSkills(adoptId, runtimeAgentId);
-      const result = await skillRegistry.listSkills(adoptId);
+      const result = await listSkillsWithRoleDefaults({
+        adoptId,
+        agentId: runtimeAgentId,
+        roleTemplate,
+      });
       if (!result.ok) {
         res
           .status(registryErrorStatus(result.error.kind))
@@ -799,7 +804,17 @@ export function registerSkillRoutes(app: express.Express) {
       }
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const listed = await skillRegistry.listSkills(adoptId);
+      const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
+      const runtimeAgentId = await resolveRuntimeAgentId(
+        adoptId,
+        String((claw as any).agentId || "")
+      );
+      await discoverGeneratedRuntimeSkills(adoptId, runtimeAgentId);
+      const listed = await listSkillsWithRoleDefaults({
+        adoptId,
+        agentId: runtimeAgentId,
+        roleTemplate,
+      });
       if (!listed.ok) {
         res
           .status(registryErrorStatus(listed.error.kind))

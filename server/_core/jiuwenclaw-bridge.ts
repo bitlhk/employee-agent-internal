@@ -5,13 +5,16 @@ import { existsSync, readdirSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import { WebSocket, type RawData } from "ws";
+import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { privateMessageLogFields } from "./log-privacy";
 import {
   appendLogAsync,
+  JIUWENCLAW_HOME,
   buildSessionRegistryScope,
   bumpSessionEpoch,
   lookupSessionRegistry,
+  jiuwenClawSessionsDir,
   normalizeConversationId,
   normalizeSessionChannel,
   normalizeSessionPart,
@@ -19,6 +22,7 @@ import {
   resolveRuntimeWorkspace,
   upsertSessionRegistry,
 } from "./helpers";
+import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 
 export { bumpSessionEpoch } from "./helpers";
 
@@ -538,7 +542,7 @@ function pickErrorMessage(frame: any): string {
   ).slice(0, 1000);
 }
 
-function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: number): Array<{ name: string; size: number; path: string }> {
+export function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: number): Array<{ name: string; size: number; path: string }> {
   if (!workspaceDir || !existsSync(workspaceDir)) return [];
   const skipDirs = new Set(["skills", "memory", "prompt_attachment", "node_modules", ".git", ".dreams", "dist", "build", ".openclaw", ".agent_history"]);
   const files: Array<{ name: string; size: number; path: string }> = [];
@@ -554,7 +558,7 @@ function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: number): Arr
         try {
           const st = statSync(full);
           if (st.isFile()) {
-            if (st.mtimeMs >= sinceMs - 1000) files.push({ name: entry, size: st.size, path: rel });
+            if (st.mtimeMs >= sinceMs) files.push({ name: entry, size: st.size, path: rel });
           } else if (st.isDirectory()) {
             scanDir(full, rel, depth + 1);
           }
@@ -921,7 +925,7 @@ export async function forwardToJiuwenClaw(
     let ackFallbackTimer: NodeJS.Timeout | null = null;
     let timeoutTimer: NodeJS.Timeout | null = null;
     let finalGraceTimer: NodeJS.Timeout | null = null;
-    const emittedWorkspaceFilePaths = new Set<string>();
+    const emittedWorkspaceFiles = new Map<string, JiuwenSessionArtifactFile>();
 
     const logEnd = (event: string, extra: Record<string, unknown> = {}) => {
       appendLogAsync("jiuwenclaw-exec.log", {
@@ -985,9 +989,28 @@ export async function forwardToJiuwenClaw(
         return;
       }
       const recentFiles = collectRecentWorkspaceFiles(workspaceDir, startedAt)
-        .filter((file) => !emittedWorkspaceFilePaths.has(file.path));
+        .filter((file) => !emittedWorkspaceFiles.has(file.path))
+        .slice(0, 20);
+      for (const file of recentFiles) emittedWorkspaceFiles.set(file.path, file);
       if (recentFiles.length > 0) {
         writeEvent("workspace_files", { adoptId: claw.adoptId, files: recentFiles });
+      }
+      if (emittedWorkspaceFiles.size > 0) {
+        try {
+          const globalSessionDir = path.join(JIUWENCLAW_HOME, "agent", "sessions", sessionId);
+          const scopedSessionDir = path.join(jiuwenClawSessionsDir(claw.adoptId, agentId), sessionId);
+          const sessionDirs = existsSync(globalSessionDir) ? [globalSessionDir] : [scopedSessionDir];
+          for (const sessionDir of sessionDirs) {
+            writeJiuwenSessionArtifacts({
+              sessionDir,
+              adoptId: claw.adoptId,
+              requestId,
+              files: Array.from(emittedWorkspaceFiles.values()),
+            });
+          }
+        } catch (error: any) {
+          logEnd("chat_stream_artifact_manifest_failed", { error: String(error?.message || error).slice(0, 500) });
+        }
       }
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
       emitDone();
@@ -1070,7 +1093,7 @@ export async function forwardToJiuwenClaw(
           if (text) {
             currentStatus = "正在生成回复...";
             sawText = true;
-            writeData({ choices: [{ delta: { content: text }, index: 0 }] });
+            writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
           }
           return;
         }
@@ -1078,7 +1101,7 @@ export async function forwardToJiuwenClaw(
           const reasoning = pickText(body?.delta);
           if (reasoning) {
             currentStatus = "正在分析...";
-            writeData({ choices: [{ delta: { reasoning_content: reasoning }, index: 0 }] });
+            writeData({ choices: [{ delta: { reasoning_content: sanitizePublicRuntimePaths(reasoning, workspaceDir) }, index: 0 }] });
           }
           return;
         }
@@ -1088,18 +1111,18 @@ export async function forwardToJiuwenClaw(
           if (eventType === "chat.delta" && text) {
             currentStatus = "正在生成回复...";
             sawText = true;
-            writeData({ choices: [{ delta: { content: text }, index: 0 }] });
+            writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
             return;
           }
           if (eventType === "chat.reasoning" && text) {
             currentStatus = "正在分析...";
-            writeData({ choices: [{ delta: { reasoning_content: text }, index: 0 }] });
+            writeData({ choices: [{ delta: { reasoning_content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
             return;
           }
           if (eventType === "chat.final") {
             if (text && !sawText) {
               sawText = true;
-              writeData({ choices: [{ delta: { content: text }, index: 0 }] });
+              writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
             }
             completeSoon(ws);
             return;
@@ -1175,7 +1198,7 @@ export async function forwardToJiuwenClaw(
           if (eventType === "chat.file" || eventType === "chat.media") {
             const files = normalizeJiuwenFileEvent(body?.delta, workspaceDir);
             if (files.length > 0) {
-              for (const file of files) emittedWorkspaceFilePaths.add(file.path);
+              for (const file of files.slice(0, 20)) emittedWorkspaceFiles.set(file.path, file);
               writeEvent("workspace_files", { adoptId: claw.adoptId, files });
             }
             return;
@@ -1206,7 +1229,7 @@ export async function forwardToJiuwenClaw(
                 writeEvent("tool_result", {
                   tool_call_id: toolCallId,
                   name: tool.toolName,
-                  result: stringifyJiuwenToolPayload(tool.resultPayload),
+                  result: sanitizePublicRuntimePaths(stringifyJiuwenToolPayload(tool.resultPayload), workspaceDir),
                   is_error: tool.isError,
                   executor: "jiuwenswarm",
                   adoptId: claw.adoptId,
@@ -1216,7 +1239,7 @@ export async function forwardToJiuwenClaw(
                 writeEvent("tool_call", {
                   id: toolCallId,
                   name: tool.toolName,
-                  arguments: stringifyJiuwenToolPayload(tool.argumentsPayload) || "{}",
+                  arguments: sanitizePublicRuntimePaths(stringifyJiuwenToolPayload(tool.argumentsPayload) || "{}", workspaceDir),
                   executor: "jiuwenswarm",
                   adoptId: claw.adoptId,
                 });
@@ -1236,7 +1259,7 @@ export async function forwardToJiuwenClaw(
         const finalText = pickText(body?.result || body);
         if (finalText && !sawText) {
           sawText = true;
-          writeData({ choices: [{ delta: { content: finalText }, index: 0 }] });
+          writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(finalText, workspaceDir) }, index: 0 }] });
         }
         complete();
         try { ws.close(1000, "complete"); } catch {}
@@ -1415,14 +1438,14 @@ export async function answerJiuwenPermission(
       if (kind === "e2a.chunk") {
         if (body?.delta_kind === "text") {
           const delta = pickText(body?.delta);
-          if (delta) text += delta;
+          if (delta) text += sanitizePublicRuntimePaths(delta, workspaceDir);
           return;
         }
         if (body?.delta_kind === "custom") {
           const eventType = String(body?.event_type || body?.delta?.event_type || "jiuwen.event");
           if (eventType === "chat.delta" || eventType === "chat.final") {
             const delta = pickText(body?.delta);
-            if (delta) text += delta;
+            if (delta) text += sanitizePublicRuntimePaths(delta, workspaceDir);
             if (eventType === "chat.final") settle({ ok: true, text });
             return;
           }
@@ -1434,7 +1457,7 @@ export async function answerJiuwenPermission(
       }
       if (frame?.is_final || kind === "e2a.complete") {
         const finalText = pickText(body?.result || body);
-        if (finalText && !text) text = finalText;
+        if (finalText && !text) text = sanitizePublicRuntimePaths(finalText, workspaceDir);
         settle({ ok: true, text });
       }
     });

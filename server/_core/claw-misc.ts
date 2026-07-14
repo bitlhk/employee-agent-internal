@@ -1,5 +1,6 @@
 import express from "express";
 import { COOKIE_NAME } from "@shared/const";
+import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, statSync } from "fs";
 import { execSync } from "child_process";
 import path from "path";
@@ -13,10 +14,12 @@ import {
   isJiuwenClawAdoptId,
   jiuwenClawAgentId,
   jiuwenClawSessionsDir,
+  jiuwenClawWorkspaceDir,
   openClawAgentDir,
   openClawWorkspaceDir,
   readSessionEpoch,
   resolveRuntimeAgentId,
+  resolveRuntimeWorkspace,
   requireClawOwner,
   upsertSessionRegistry,
 } from "./helpers";
@@ -26,6 +29,7 @@ import { sessionAuthVersion } from "./sdk";
 import { skillInstaller } from "./skills/skill-installer";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "./skills/skill-source";
 import { skillStoreMarketplaceDir } from "./skills/skill-store";
+import { readJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 
 type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -37,6 +41,8 @@ type ChatHistoryToolCall = {
   ts: number;
   executor?: "gateway" | "jiuwenswarm";
   _gateway?: boolean;
+  outputFiles?: Array<{ name: string; size: number; wsPath: string }>;
+  adoptId?: string;
 };
 type ChatHistoryMessage = {
   id: string;
@@ -612,7 +618,46 @@ function applyJiuwenToolResultToCalls(calls: ChatHistoryToolCall[], event: any, 
   ];
 }
 
-export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200): ChatHistoryMessage[] {
+const GENERATED_FILE_TOOL_NAMES = new Set(["write", "write_file", "edit", "edit_file"]);
+const GENERATED_FILE_SKIP_ROOTS = new Set(["skills", "memory", "prompt_attachment", "node_modules", ".git"]);
+
+function jiuwenWorkspaceFromHistoryFile(historyFile: string): string {
+  return path.join(path.resolve(path.dirname(historyFile), "../.."), "jiuwenclaw_workspace");
+}
+
+function generatedFilesFromToolCalls(calls: ChatHistoryToolCall[], workspaceDir: string): JiuwenSessionArtifactFile[] {
+  const candidates: string[] = [];
+  for (const call of calls) {
+    if (!GENERATED_FILE_TOOL_NAMES.has(String(call.name || "").toLowerCase())) continue;
+    try {
+      const parsed = JSON.parse(call.arguments || "{}");
+      const direct = parsed?.file_path ?? parsed?.filePath ?? parsed?.path;
+      if (typeof direct === "string") candidates.push(direct);
+    } catch {}
+    for (const text of [call.arguments, call.result || ""]) {
+      for (const match of String(text || "").matchAll(/(?:file_path|filePath|fullPath|path)["']?\s*[:=]\s*["']([^"']+)["']/g)) {
+        candidates.push(match[1]);
+      }
+    }
+  }
+
+  const workspaceRoot = path.resolve(workspaceDir);
+  const files = new Map<string, JiuwenSessionArtifactFile>();
+  for (const candidate of candidates) {
+    const absolute = path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(workspaceRoot, candidate);
+    const relative = path.relative(workspaceRoot, absolute).split(path.sep).join("/");
+    if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) continue;
+    if (GENERATED_FILE_SKIP_ROOTS.has(relative.split("/")[0])) continue;
+    try {
+      const stats = statSync(absolute);
+      if (!stats.isFile()) continue;
+      files.set(relative, { name: path.basename(relative), size: Number(stats.size), path: relative });
+    } catch {}
+  }
+  return Array.from(files.values()).slice(0, 20);
+}
+
+export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200, adoptId = "", workspaceDirRaw = ""): ChatHistoryMessage[] {
   if (!historyFile || !existsSync(historyFile)) return [];
   const messages: ChatHistoryMessage[] = [];
   const assistantByRequest = new Map<string, {
@@ -623,6 +668,8 @@ export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200
     toolCalls: ChatHistoryToolCall[];
   }>();
   const rawHistory = readFileSync(historyFile, "utf8");
+  const artifactRuns = readJiuwenSessionArtifacts(historyFile);
+  const workspaceDir = workspaceDirRaw || jiuwenWorkspaceFromHistoryFile(historyFile);
   const trimmedHistory = rawHistory.trim();
   let events: any[] | null = null;
   if (trimmedHistory.startsWith("[")) {
@@ -700,9 +747,32 @@ export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200
     }
   }
 
-  for (const entry of assistantByRequest.values()) {
-    const text = entry.finalText || entry.fallbackText;
-    const toolCalls = entry.toolCalls.map((call) => call.status === "running" ? { ...call, status: "done" as const } : call);
+  for (const [requestId, entry] of assistantByRequest.entries()) {
+    const persistedRun = artifactRuns.get(requestId);
+    const generatedFiles = new Map<string, JiuwenSessionArtifactFile>();
+    for (const file of persistedRun?.files || []) generatedFiles.set(file.path, file);
+    for (const file of generatedFilesFromToolCalls(entry.toolCalls, workspaceDir)) generatedFiles.set(file.path, file);
+    if (generatedFiles.size > 0) {
+      const files = Array.from(generatedFiles.values()).slice(0, 20);
+      entry.toolCalls.push({
+        id: `jiuwen-artifacts-${requestId}`,
+        name: "[产出文件]",
+        arguments: "{}",
+        result: files.map((file) => file.name).join(", "),
+        status: "done",
+        ts: entry.timestamp || Date.now(),
+        executor: "jiuwenswarm",
+        outputFiles: files.map((file) => ({ name: file.name, size: file.size, wsPath: file.path })),
+        adoptId: persistedRun?.adoptId || adoptId || undefined,
+      });
+    }
+    const text = sanitizePublicRuntimePaths(entry.finalText || entry.fallbackText);
+    const toolCalls = entry.toolCalls.map((call) => ({
+      ...call,
+      arguments: sanitizePublicRuntimePaths(call.arguments),
+      ...(call.result != null ? { result: sanitizePublicRuntimePaths(call.result) } : {}),
+      status: call.status === "running" ? "done" as const : call.status,
+    }));
     if (!text.trim() && toolCalls.length === 0) continue;
     messages.push({
       id: entry.id,
@@ -778,7 +848,12 @@ export function listJiuwenChatHistorySessions(args: {
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, args.limit)
     .map((entry) => {
-      const messages = extractJiuwenChatMessages(entry.historyFile, 80);
+      const messages = extractJiuwenChatMessages(
+        entry.historyFile,
+        80,
+        args.adoptId,
+        jiuwenClawWorkspaceDir(args.adoptId, args.dbAgentId),
+      );
       const firstUser = messages.find((m) => m.role === "user");
       const last = [...messages].reverse().find((m) => normalizeHistoryText(m.text));
       return {
@@ -1625,7 +1700,12 @@ export function registerMiscRoutes(app: express.Express) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
-        const messages = extractJiuwenChatMessages(resolved.historyFile, 200);
+        const messages = extractJiuwenChatMessages(
+          resolved.historyFile,
+          200,
+          adoptId,
+          resolveRuntimeWorkspace(claw, adoptId),
+        );
         logIosLoadDebug("chat_history_messages_done_jiuwen", {
           adoptId,
           runtimeAgentId: jiuwenClawAgentId(adoptId, dbAgentId),

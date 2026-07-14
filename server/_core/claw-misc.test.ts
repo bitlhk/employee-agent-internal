@@ -160,4 +160,117 @@ describe("claw misc admin routes", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("does not expose runtime workspace paths from JiuwenSwarm history", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-public-path-"));
+    try {
+      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const historyFile = path.join(root, "history.jsonl");
+      const privatePath = "/home/ubuntu/.jiuwenswarm/service_linggan/agent_jiuwen_lgj-test/agent/jiuwenclaw_workspace/output/report.html";
+      writeFileSync(historyFile, [
+        JSON.stringify({ id: "u1", role: "user", request_id: "r1", timestamp: 1779000000, content: "生成报告" }),
+        JSON.stringify({
+          id: "tool1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000001,
+          event_type: "chat.tool_call",
+          tool_call: { name: "write_file", arguments: JSON.stringify({ file_path: privatePath }), tool_call_id: "call-write" },
+        }),
+        JSON.stringify({
+          id: "result1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000002,
+          event_type: "chat.tool_result",
+          tool_call_id: "call-write",
+          result: `created ${privatePath}`,
+        }),
+        JSON.stringify({ id: "a1", role: "assistant", request_id: "r1", timestamp: 1779000003, event_type: "chat.final", content: `已生成 ${privatePath}` }),
+      ].join("\n"), "utf8");
+
+      const assistant = extractJiuwenChatMessages(historyFile, 20).find((message) => message.role === "assistant");
+      expect(assistant?.text).toBe("已生成 workspace/output/report.html");
+      expect(assistant?.toolCalls?.[0]?.arguments).toContain("workspace/output/report.html");
+      expect(assistant?.toolCalls?.[0]?.result).toBe("created workspace/output/report.html");
+      expect(JSON.stringify(assistant)).not.toContain("/home/ubuntu");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("restores persisted generated files as downloadable history attachments", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-history-artifacts-"));
+    try {
+      const sessionDir = path.join(root, "service_linggan", "agent_jiuwen_lgj-test", "agent", "sessions", "sess_lgj-test_web_conv_e0");
+      mkdirSync(sessionDir, { recursive: true });
+      const historyFile = path.join(sessionDir, "history.jsonl");
+      writeFileSync(historyFile, [
+        JSON.stringify({ id: "u1", role: "user", request_id: "request-files", timestamp: 1779000000, content: "生成报告" }),
+        JSON.stringify({ id: "a1", role: "assistant", request_id: "request-files", timestamp: 1779000001, event_type: "chat.final", content: "报告已生成" }),
+      ].join("\n"), "utf8");
+      writeFileSync(path.join(sessionDir, ".ea-generated-files.json"), JSON.stringify({
+        version: 1,
+        runs: {
+          "request-files": {
+            adoptId: "lgj-test",
+            requestId: "request-files",
+            updatedAt: "2026-07-14T00:00:00.000Z",
+            files: [{ name: "report.pdf", size: 2048, path: "output/report.pdf" }],
+          },
+        },
+      }), "utf8");
+
+      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const assistant = extractJiuwenChatMessages(historyFile, 20, "lgj-test").find((message) => message.role === "assistant");
+      const artifactCall = assistant?.toolCalls?.find((tool) => tool.name === "[产出文件]");
+      expect(artifactCall).toMatchObject({
+        adoptId: "lgj-test",
+        outputFiles: [{ name: "report.pdf", size: 2048, wsPath: "output/report.pdf" }],
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("restores generated files when history and workspace use separate runtime roots", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-split-runtime-"));
+    try {
+      const sessionDir = path.join(root, "agent", "sessions", "sess_lgj-test_web_conv_e0");
+      const workspaceDir = path.join(root, "service_linggan", "agent_jiuwen_lgj-test", "agent", "jiuwenclaw_workspace");
+      const outputFile = path.join(workspaceDir, "output", "report.html");
+      mkdirSync(sessionDir, { recursive: true });
+      mkdirSync(path.dirname(outputFile), { recursive: true });
+      writeFileSync(outputFile, "<h1>Report</h1>", "utf8");
+      const historyFile = path.join(sessionDir, "history.jsonl");
+      writeFileSync(historyFile, [
+        JSON.stringify({ id: "u1", role: "user", request_id: "request-files", timestamp: 1779000000, content: "生成报告" }),
+        JSON.stringify({
+          id: "tool1",
+          role: "assistant",
+          request_id: "request-files",
+          timestamp: 1779000001,
+          event_type: "chat.tool_call",
+          tool_call: {
+            name: "write_file",
+            arguments: JSON.stringify({ file_path: outputFile }),
+            tool_call_id: "call-write",
+          },
+        }),
+        JSON.stringify({ id: "a1", role: "assistant", request_id: "request-files", timestamp: 1779000002, event_type: "chat.final", content: "报告已生成" }),
+      ].join("\n"), "utf8");
+
+      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const assistant = extractJiuwenChatMessages(historyFile, 20, "lgj-test", workspaceDir)
+        .find((message) => message.role === "assistant");
+      const artifactCall = assistant?.toolCalls?.find((tool) => tool.name === "[产出文件]");
+      expect(artifactCall).toMatchObject({
+        adoptId: "lgj-test",
+        outputFiles: [{ name: "report.html", size: 15, wsPath: "output/report.html" }],
+      });
+      expect(JSON.stringify(artifactCall)).not.toContain(root);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

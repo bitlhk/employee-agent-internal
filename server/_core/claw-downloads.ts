@@ -2,6 +2,7 @@ import express from "express";
 import { parseAdoptId, parseFileName, parseRelPath, parseTtl, sendError, handleRouteError } from "./schemas";
 import { existsSync, statSync, readdirSync, createReadStream } from "fs";
 import { spawnSync } from "child_process";
+import path from "path";
 import {
   requireClawOwner, resolveRuntimeAgentId,
   openClawWorkspaceDir,
@@ -11,14 +12,15 @@ import {
   streamFileDownload,
   sanitizeRelPath,
 } from "./helpers";
+import { resolveExistingWorkspacePath } from "./file-path-security";
 
 const HTML_PREVIEW_CSP = [
   "default-src 'none'",
   "script-src 'none'",
   "connect-src 'none'",
-  "img-src 'self' data: blob: http: https:",
+  "img-src 'self' data: blob:",
   "style-src 'unsafe-inline'",
-  "font-src data: http: https:",
+  "font-src data:",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
@@ -29,6 +31,34 @@ function setHtmlPreviewHeaders(res: express.Response) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.removeHeader("X-Frame-Options");
   res.setHeader("Content-Security-Policy", HTML_PREVIEW_CSP);
+}
+
+const INLINE_PREVIEW_TYPES: Record<string, string> = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+function streamInlinePreview(res: express.Response, filePath: string, fileName: string): boolean {
+  const ext = path.extname(fileName).slice(1).toLowerCase();
+  if (ext === "html" || ext === "htm") {
+    setHtmlPreviewHeaders(res);
+  } else {
+    const contentType = INLINE_PREVIEW_TYPES[ext];
+    if (!contentType) return false;
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+  }
+  const stream = createReadStream(filePath);
+  stream.on("error", () => {
+    if (!res.headersSent) res.status(500).json({ error: "file read error" });
+  });
+  stream.pipe(res);
+  return true;
 }
 
 export function registerDownloadRoutes(app: express.Express) {
@@ -90,24 +120,15 @@ export function registerDownloadRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      const filePath = `${resolveRuntimeWorkspace(claw, adoptId)}/${relPath}`;
+      const filePath = resolveExistingWorkspacePath(resolveRuntimeWorkspace(claw, adoptId), relPath);
 
-      if (!existsSync(filePath)) return res.status(404).json({ error: "file not found: " + filePath });
+      if (!filePath || !existsSync(filePath)) return res.status(404).json({ error: "file not found" });
 
       const fileName = relPath.split("/").pop() || "download";
 
       // preview 模式：HTML 文件直接以 text/html 返回（用于预览渲染）
       const isPreview = req.query.preview === "1";
-      const isHtml = /\.html?$/i.test(fileName);
-      if (isPreview && isHtml) {
-        setHtmlPreviewHeaders(res);
-        const stream = createReadStream(filePath);
-        stream.on("error", (_err: any) => {
-          if (!res.headersSent) res.status(500).json({ error: "file read error" });
-        });
-        stream.pipe(res);
-        return;
-      }
+      if (isPreview && streamInlinePreview(res, filePath, fileName)) return;
 
       streamFileDownload(res, filePath, fileName);
     } catch (e: any) {
@@ -133,9 +154,9 @@ export function registerDownloadRoutes(app: express.Express) {
       const canonicalAdoptId = String((claw as any).adoptId || adoptId);
       const runtimeAgentId = resolveRuntimeAgentId(canonicalAdoptId, String((claw as any).agentId || ""));
       const relPath = filePath;
-      const absPath = `${resolveRuntimeWorkspaceByIds(canonicalAdoptId, runtimeAgentId)}/${relPath}`;
+      const absPath = resolveExistingWorkspacePath(resolveRuntimeWorkspaceByIds(canonicalAdoptId, runtimeAgentId), relPath);
 
-      if (!existsSync(absPath)) return res.status(404).json({ error: "file not found: " + absPath });
+      if (!absPath || !existsSync(absPath)) return res.status(404).json({ error: "file not found" });
 
       const tokenTtl = parseTtl(body.ttl, parseInt(process.env.FILE_DOWNLOAD_TOKEN_TTL_SECONDS || "1800", 10));
       const token = generateFileToken(String(adoptId), runtimeAgentId, relPath, tokenTtl);
@@ -179,24 +200,18 @@ export function registerDownloadRoutes(app: express.Express) {
 
       const relPath = sanitizeRelPath(String(parsed.path || "")) || "";
       const adoptId = String(parsed.adoptId || "");
-      const filePath = `${resolveRuntimeWorkspaceByIds(adoptId, String(parsed.runtimeAgentId || ""))}/${relPath}`;
+      const filePath = resolveExistingWorkspacePath(
+        resolveRuntimeWorkspaceByIds(adoptId, String(parsed.runtimeAgentId || "")),
+        relPath,
+      );
 
-      if (!existsSync(filePath)) return sendError(res, "NOT_FOUND", "file not found");
+      if (!filePath || !existsSync(filePath)) return sendError(res, "NOT_FOUND", "file not found");
 
       const fileName = relPath.split("/").pop() || "download";
 
       // preview 模式：HTML 文件直接以 text/html 返回（用于预览渲染）
       const isPreview = req.query.preview === "1";
-      const isHtml = /\.html?$/i.test(fileName);
-      if (isPreview && isHtml) {
-        setHtmlPreviewHeaders(res);
-        const stream = createReadStream(filePath);
-        stream.on("error", (_err: any) => {
-          if (!res.headersSent) res.status(500).json({ error: "file read error" });
-        });
-        stream.pipe(res);
-        return;
-      }
+      if (isPreview && streamInlinePreview(res, filePath, fileName)) return;
 
       streamFileDownload(res, filePath, fileName);
     } catch (e: any) {

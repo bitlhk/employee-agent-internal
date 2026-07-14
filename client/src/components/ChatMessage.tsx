@@ -5,16 +5,25 @@ import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { formatModelName } from "@/lib/modelDisplay";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
+import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bot,
   ChevronDown,
   Code2,
   Database,
+  Download,
+  Eye,
+  FileArchive,
+  FileCode2,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   Globe2,
   Image as ImageIcon,
   Loader2,
+  Presentation,
   Plug,
   Puzzle,
   Search,
@@ -321,9 +330,9 @@ function RunFileButton({ adoptId, filePath, fileName }: { adoptId: string; fileP
 }
 
 function formatToolArguments(rawArguments: string) {
-  let argsDisplay = rawArguments;
+  let argsDisplay = sanitizePublicRuntimePaths(rawArguments);
   try {
-    const parsed = JSON.parse(rawArguments);
+    const parsed = JSON.parse(argsDisplay);
     argsDisplay = JSON.stringify(parsed, null, 2);
   } catch {}
   return argsDisplay;
@@ -331,7 +340,7 @@ function formatToolArguments(rawArguments: string) {
 
 function toolResultSnippet(tc: ToolCallEntry): string {
   if (!tc.result || tc.status === "running") return "";
-  const text = String(tc.result)
+  const text = sanitizePublicRuntimePaths(tc.result)
     .replace(/\s+/g, " ")
     .replace(/[{}"]/g, "")
     .trim();
@@ -387,115 +396,223 @@ function ToolCallDetailBody({ tc }: { tc: ToolCallEntry }) {
       )}
 
       {!isRunning && (
-        <CopyableToolBlock label={isError ? "错误" : "结果"} value={tc.result || "(无输出)"} danger={isError} />
+        <CopyableToolBlock label={isError ? "错误" : "结果"} value={sanitizePublicRuntimePaths(tc.result || "(无输出)")} danger={isError} />
       )}
 
-      {tc.outputFiles && tc.outputFiles.length > 0 && (
-        <div className="lingxia-toolcard__section">
-          <div className="lingxia-toolcard__label">产出文件</div>
-          <div className="lingxia-toolcard__files">
-            {tc.outputFiles.map((f) => {
-              const sizeStr =
-                f.size > 1024 * 1024
-                  ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
-                  : f.size > 1024
-                  ? `${(f.size / 1024).toFixed(1)} KB`
-                  : `${f.size} B`;
-
-              const wsPath = (f as any).wsPath as string | undefined;
-              const adoptId = tc.adoptId || "";
-
-              const handleDownload = async (e: React.MouseEvent) => {
-                e.preventDefault();
-                try {
-                  const path = wsPath ? wsPath : `sandbox-files/${f.name}`;
-                  const resp = await fetch("/api/claw/files/token", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ adoptId, path }),
-                  });
-                  if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    alert(`下载失败：${err.error || resp.status}`);
-                    return;
-                  }
-                  const { url } = await resp.json();
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = f.name;
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                } catch (err) {
-                  alert(`下载异常：${String(err)}`);
-                }
-              };
-
-              const isHtmlFile = /\.html?$/i.test(f.name);
-              const isRunnable = /\.(py|js|ts|sh|bash)$/i.test(f.name);
-
-              const handlePreview = async (e: React.MouseEvent) => {
-                e.preventDefault();
-                e.stopPropagation();
-                try {
-                  const path = wsPath ? wsPath : `sandbox-files/${f.name}`;
-                  const resp = await fetch("/api/claw/files/token", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    credentials: "include",
-                    body: JSON.stringify({ adoptId, path }),
-                  });
-                  if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    alert(`预览失败：${err.error || resp.status}`);
-                    return;
-                  }
-                  const { url } = await resp.json();
-                  window.open(url + "&preview=1", "_blank", "noopener");
-                } catch (err) {
-                  alert(`预览异常：${String(err)}`);
-                }
-              };
-
-              return (
-                <div key={f.name} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  <a href="#" onClick={handleDownload} className="lingxia-toolcard__file" style={{ flex: 1 }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                      <polyline points="7 10 12 15 17 10"/>
-                      <line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    <span>{f.name}</span>
-                    <span style={{ opacity: 0.6 }}>({sizeStr})</span>
-                  </a>
-                  {isHtmlFile && (
-                    <button
-                      onClick={handlePreview}
-                      type="button"
-                      title="在新标签页预览"
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 3,
-                        padding: "2px 8px", borderRadius: "var(--oc-radius-sm)", fontSize: "var(--oc-text-xs)", fontWeight: "var(--oc-weight-medium)",
-                        color: "#a78bfa", background: "rgba(124,58,237,0.10)",
-                        border: "1px solid rgba(124,58,237,0.25)", cursor: "pointer",
-                        whiteSpace: "nowrap", flexShrink: 0,
-                      }}
-                    >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-                      预览
-                    </button>
-                  )}
-                  {isRunnable && (
-                    <RunFileButton adoptId={adoptId} filePath={wsPath || `sandbox-files/${f.name}`} fileName={f.name} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
+  );
+}
+
+type MessageAttachment = {
+  name: string;
+  size: number;
+  path: string;
+  adoptId: string;
+};
+
+type AttachmentPreviewKind = "html" | "pdf" | "image" | "markdown" | "text" | "none";
+
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  "txt", "csv", "json", "xml", "yaml", "yml", "toml", "ini", "conf", "log",
+  "js", "jsx", "ts", "tsx", "py", "java", "go", "rs", "sh", "bash", "sql", "css",
+]);
+
+function attachmentExtension(name: string): string {
+  return name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+}
+
+function attachmentPreviewKind(file: MessageAttachment): AttachmentPreviewKind {
+  const ext = attachmentExtension(file.name);
+  if (ext === "html" || ext === "htm") return "html";
+  if (ext === "pdf") return "pdf";
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "image";
+  if (ext === "md" || ext === "markdown") return file.size <= 2 * 1024 * 1024 ? "markdown" : "none";
+  if (TEXT_PREVIEW_EXTENSIONS.has(ext)) return file.size <= 2 * 1024 * 1024 ? "text" : "none";
+  return "none";
+}
+
+function attachmentIcon(name: string) {
+  const ext = attachmentExtension(name);
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return FileImage;
+  if (["xls", "xlsx", "csv"].includes(ext)) return FileSpreadsheet;
+  if (["ppt", "pptx"].includes(ext)) return Presentation;
+  if (["zip", "tar", "gz", "rar", "7z"].includes(ext)) return FileArchive;
+  if (["html", "htm", "json", "xml", "js", "jsx", "ts", "tsx", "py", "java", "go", "rs", "sh", "sql", "css"].includes(ext)) return FileCode2;
+  return FileText;
+}
+
+function formatAttachmentSize(size: number): string {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function collectMessageAttachments(toolCalls: ToolCallEntry[]): MessageAttachment[] {
+  const files = new Map<string, MessageAttachment>();
+  for (const tool of toolCalls) {
+    for (const file of tool.outputFiles || []) {
+      const path = String(file.wsPath || `sandbox-files/${file.name}`).replace(/^workspace\//, "");
+      const adoptId = String(tool.adoptId || "");
+      if (!path || !adoptId) continue;
+      const key = `${adoptId}:${path}`;
+      files.set(key, { name: file.name, size: Number(file.size || 0), path, adoptId });
+    }
+  }
+  return Array.from(files.values()).slice(0, 20);
+}
+
+function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
+  const files = useMemo(() => collectMessageAttachments(toolCalls), [toolCalls]);
+  const [downloading, setDownloading] = useState("");
+  const [downloadError, setDownloadError] = useState("");
+  const [preview, setPreview] = useState<{
+    file: MessageAttachment;
+    kind: AttachmentPreviewKind;
+    loading: boolean;
+    url?: string;
+    content?: string;
+    error?: string;
+  } | null>(null);
+
+  if (!files.length) return null;
+
+  const requestDownloadUrl = async (file: MessageAttachment) => {
+    const response = await fetch("/api/claw/files/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ adoptId: file.adoptId, path: file.path }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.url) throw new Error(payload?.error || `HTTP ${response.status}`);
+    return String(payload.url);
+  };
+
+  const downloadFile = async (file: MessageAttachment) => {
+    const key = `${file.adoptId}:${file.path}`;
+    setDownloading(key);
+    setDownloadError("");
+    try {
+      const url = await requestDownloadUrl(file);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.name;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+    } catch (error: any) {
+      setDownloadError(String(error?.message || "下载失败"));
+    } finally {
+      setDownloading("");
+    }
+  };
+
+  const previewFile = async (file: MessageAttachment) => {
+    const kind = attachmentPreviewKind(file);
+    if (kind === "none") return;
+    setPreview({ file, kind, loading: true });
+    try {
+      if (kind === "text" || kind === "markdown") {
+        const params = new URLSearchParams({ adoptId: file.adoptId, path: file.path });
+        const response = await fetch(`/api/claw/files/read?${params.toString()}`, { credentials: "include" });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload?.error || `HTTP ${response.status}`);
+        let content = String(payload?.content || "");
+        if (attachmentExtension(file.name) === "json") {
+          try { content = JSON.stringify(JSON.parse(content), null, 2); } catch {}
+        }
+        setPreview({ file, kind, loading: false, content });
+      } else {
+        const url = await requestDownloadUrl(file);
+        setPreview({ file, kind, loading: false, url: `${url}&preview=1` });
+      }
+    } catch (error: any) {
+      setPreview({ file, kind, loading: false, error: String(error?.message || "预览失败") });
+    }
+  };
+
+  return (
+    <>
+      <div className="lingxia-message-attachments" aria-label="生成的附件">
+        <div className="lingxia-message-attachments__label">附件 · {files.length}</div>
+        <div className="lingxia-message-attachments__list">
+          {files.map((file) => {
+            const key = `${file.adoptId}:${file.path}`;
+            const kind = attachmentPreviewKind(file);
+            const Icon = attachmentIcon(file.name);
+            const runnable = ["py", "js", "sh", "bash"].includes(attachmentExtension(file.name));
+            return (
+              <div className="lingxia-message-attachment" key={key}>
+                <button
+                  type="button"
+                  className="lingxia-message-attachment__main"
+                  onClick={() => kind !== "none" && void previewFile(file)}
+                  disabled={kind === "none"}
+                  title={kind === "none" ? "该格式请下载后查看" : `预览 ${file.name}`}
+                >
+                  <span className="lingxia-message-attachment__icon"><Icon size={18} strokeWidth={1.8} /></span>
+                  <span className="lingxia-message-attachment__info">
+                    <span className="lingxia-message-attachment__name">{file.name}</span>
+                    <span className="lingxia-message-attachment__meta">{formatAttachmentSize(file.size)}</span>
+                  </span>
+                </button>
+                <div className="lingxia-message-attachment__actions">
+                  {kind !== "none" ? (
+                    <button type="button" className="lingxia-message-attachment__action" onClick={() => void previewFile(file)} title="预览">
+                      <Eye size={15} strokeWidth={1.9} />
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="lingxia-message-attachment__action"
+                    onClick={() => void downloadFile(file)}
+                    disabled={downloading === key}
+                    title="下载"
+                  >
+                    {downloading === key ? <Loader2 className="animate-spin" size={15} /> : <Download size={15} strokeWidth={1.9} />}
+                  </button>
+                  {runnable ? <RunFileButton adoptId={file.adoptId} filePath={file.path} fileName={file.name} /> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {downloadError ? <div className="lingxia-message-attachments__error">{downloadError}</div> : null}
+      </div>
+
+      <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}>
+        <DialogContent className="lingxia-attachment-preview" showCloseButton>
+          {preview ? (
+            <>
+              <DialogHeader className="lingxia-attachment-preview__header">
+                <DialogTitle className="lingxia-attachment-preview__title">{preview.file.name}</DialogTitle>
+                <span className="lingxia-attachment-preview__meta">{formatAttachmentSize(preview.file.size)}</span>
+              </DialogHeader>
+              <div className="lingxia-attachment-preview__body">
+                {preview.loading ? (
+                  <div className="lingxia-attachment-preview__state"><Loader2 className="animate-spin" size={20} /> 正在加载预览...</div>
+                ) : preview.error ? (
+                  <div className="lingxia-attachment-preview__state is-error">{preview.error}</div>
+                ) : preview.kind === "image" && preview.url ? (
+                  <img className="lingxia-attachment-preview__image" src={preview.url} alt={preview.file.name} />
+                ) : (preview.kind === "html" || preview.kind === "pdf") && preview.url ? (
+                  <iframe className="lingxia-attachment-preview__frame" src={preview.url} title={preview.file.name} sandbox={preview.kind === "html" ? "" : undefined} />
+                ) : preview.kind === "markdown" ? (
+                  <div className="lingxia-attachment-preview__markdown"><ChatMarkdown content={preview.content || "(空文件)"} phase="final" /></div>
+                ) : (
+                  <pre className="lingxia-attachment-preview__text">{preview.content || "(空文件)"}</pre>
+                )}
+              </div>
+              <div className="lingxia-attachment-preview__footer">
+                <button type="button" className="lingxia-attachment-preview__download" onClick={() => void downloadFile(preview.file)}>
+                  <Download size={14} strokeWidth={1.9} /> 下载
+                </button>
+              </div>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -838,7 +955,8 @@ function ChatMessageInner({
 }: ChatMessageProps) {
   const eventToolCalls = toolCallsFromMessageEvents(messageEvents);
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
-  const showToolTimeline = showToolCalls && effectiveToolCalls.length > 0;
+  const timelineToolCalls = effectiveToolCalls.filter((tool) => tool.name !== "[产出文件]");
+  const showToolTimeline = showToolCalls && timelineToolCalls.length > 0;
 
   if (role === "user") {
     return (
@@ -872,7 +990,7 @@ function ChatMessageInner({
         <div>
           {showToolTimeline && (
             <div className="mb-2">
-              <ToolCallTimeline toolCalls={effectiveToolCalls} status={streaming ? status : undefined} />
+              <ToolCallTimeline toolCalls={timelineToolCalls} status={streaming ? status : undefined} />
             </div>
           )}
           {!showToolTimeline ? (
@@ -900,7 +1018,10 @@ function ChatMessageInner({
     throttleStreamingText,
   );
   const displayedSourceText = throttleStreamingText ? throttledSourceText : text;
-  const displayText = useMemo(() => cleanLeakedToolTags(displayedSourceText), [displayedSourceText]);
+  const displayText = useMemo(
+    () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
+    [displayedSourceText],
+  );
   const renderedDisplayText = throttleStreamingText ? repairStreamingMarkdown(displayText) : displayText;
   const onCopyMarkdown = async () => {
     try {
@@ -916,7 +1037,7 @@ function ChatMessageInner({
       <div className="min-w-0 flex-1">
         {showToolTimeline && (
           <div className="mb-2">
-            <ToolCallTimeline toolCalls={effectiveToolCalls} status={streaming ? status : undefined} />
+            <ToolCallTimeline toolCalls={timelineToolCalls} status={streaming ? status : undefined} />
           </div>
         )}
         {streaming && status && !showToolTimeline ? (
@@ -950,6 +1071,7 @@ function ChatMessageInner({
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}
           </div>
         </div>
+        <MessageAttachments toolCalls={effectiveToolCalls} />
         {jiuwenPermission && (
           <div
             className="mt-2 rounded-xl px-3 py-3 text-xs"
@@ -990,7 +1112,7 @@ function ChatMessageInner({
                   wordBreak: "break-word",
                 }}
               >
-                {jiuwenPermission.command}
+                {sanitizePublicRuntimePaths(jiuwenPermission.command)}
               </pre>
             ) : null}
             {jiuwenPermission.error ? (

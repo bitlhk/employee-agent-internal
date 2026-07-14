@@ -1,5 +1,8 @@
 import type { Request, Response } from "express";
+import { existsSync } from "fs";
 import { WebSocket, type RawData } from "ws";
+import path from "path";
+import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import {
   buildJiuwenAgentId,
   buildJiuwenSessionId,
@@ -15,9 +18,11 @@ import {
   normalizeJiuwenMode,
   stringifyJiuwenToolPayload,
   recordJiuwenToolAudit,
+  collectRecentWorkspaceFiles,
 } from "./jiuwenclaw-bridge";
-import { appendLogAsync, resolveRuntimeWorkspace } from "./helpers";
+import { appendLogAsync, JIUWENCLAW_HOME, jiuwenClawSessionsDir, resolveRuntimeWorkspace } from "./helpers";
 import { privateMessageLogFields } from "./log-privacy";
+import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
@@ -173,12 +178,14 @@ async function handleGatewayEvent(args: {
   channelId: string;
   workspaceDir: string;
   collectText?: (text: string) => void;
+  collectFiles?: (files: JiuwenSessionArtifactFile[]) => void;
 }): Promise<"permission" | "done" | "continue"> {
   const { eventType, payload } = args;
   const text = gatewayEventToText(eventType, payload);
   if (text) {
-    args.collectText?.(text);
-    if (args.res) writeSseData(args.res, { choices: [{ delta: { content: text }, index: 0 }] });
+    const publicText = sanitizePublicRuntimePaths(text, args.workspaceDir);
+    args.collectText?.(publicText);
+    if (args.res) writeSseData(args.res, { choices: [{ delta: { content: publicText }, index: 0 }] });
   }
 
   if (eventType === "chat.usage_summary" || eventType === "chat.usage_metadata" || eventType === "context.usage") {
@@ -219,6 +226,7 @@ async function handleGatewayEvent(args: {
   }
 
   const files = normalizeJiuwenFileEvent(payload, args.workspaceDir);
+  if (files.length > 0) args.collectFiles?.(files);
   for (const file of files) {
     if (args.res) writeSseEvent(args.res, "workspace_files", { adoptId: args.claw.adoptId, files: [file] });
   }
@@ -236,6 +244,7 @@ async function handleGatewayEvent(args: {
       delta: payload,
     });
     const resultText = stringifyJiuwenToolPayload(tool.resultPayload);
+    const publicResultText = sanitizePublicRuntimePaths(resultText, args.workspaceDir);
     const shouldEmitToolResult = !tool.isResult || tool.isError || resultText.trim().length > 0;
     if (args.res) {
       if (tool.isResult) {
@@ -243,7 +252,7 @@ async function handleGatewayEvent(args: {
           writeSseEvent(args.res, "tool_result", {
             tool_call_id: tool.callId,
             name: tool.toolName,
-            result: resultText,
+            result: publicResultText,
             is_error: tool.isError,
             executor: "jiuwenswarm",
             adoptId: args.claw.adoptId,
@@ -253,7 +262,7 @@ async function handleGatewayEvent(args: {
         writeSseEvent(args.res, "tool_call", {
           id: tool.callId,
           name: tool.toolName,
-          arguments: stringifyJiuwenToolPayload(tool.argumentsPayload) || "{}",
+          arguments: sanitizePublicRuntimePaths(stringifyJiuwenToolPayload(tool.argumentsPayload) || "{}", args.workspaceDir),
           executor: "jiuwenswarm",
           adoptId: args.claw.adoptId,
         });
@@ -316,6 +325,9 @@ export async function forwardToJiuwenGateway(
   });
 
   await new Promise<void>((resolve) => {
+    const startedAt = Date.now();
+    const generatedFiles = new Map<string, JiuwenSessionArtifactFile>();
+    const emittedFilePaths = new Set<string>();
     let settled = false;
     let clientClosed = false;
     let requestSent = false;
@@ -325,6 +337,28 @@ export async function forwardToJiuwenGateway(
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
+        generatedFiles.set(file.path, file);
+        if (!emittedFilePaths.has(file.path) && !clientClosed) {
+          writeSseEvent(res, "workspace_files", { adoptId: claw.adoptId, files: [file] });
+          emittedFilePaths.add(file.path);
+        }
+      }
+      if (generatedFiles.size > 0) {
+        try {
+          const globalSessionDir = path.join(JIUWENCLAW_HOME, "agent", "sessions", sessionId);
+          const scopedSessionDir = path.join(jiuwenClawSessionsDir(claw.adoptId, agentId), sessionId);
+          const sessionDirs = existsSync(globalSessionDir) ? [globalSessionDir] : [scopedSessionDir];
+          for (const sessionDir of sessionDirs) {
+            writeJiuwenSessionArtifacts({
+              sessionDir,
+              adoptId: claw.adoptId,
+              requestId,
+              files: Array.from(generatedFiles.values()),
+            });
+          }
+        } catch {}
+      }
       appendLogAsync("jiuwenclaw-exec.log", {
         ts: new Date().toISOString(),
         event: "gateway_chat_complete",
@@ -381,6 +415,12 @@ export async function forwardToJiuwenGateway(
         sessionId,
         channelId,
         workspaceDir,
+        collectFiles: (files) => {
+          for (const file of files.slice(0, 20)) {
+            generatedFiles.set(file.path, file);
+            emittedFilePaths.add(file.path);
+          }
+        },
       });
       if (action === "permission") {
         settle("permission-required");
