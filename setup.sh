@@ -121,15 +121,51 @@ ask_secret() {
   echo "${answer:-$default}"
 }
 
+is_public_ipv4() {
+  printf '%s\n' "$1" | awk -F. '
+    NF != 4 { exit 1 }
+    {
+      for (i = 1; i <= 4; i++) {
+        if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1
+      }
+      if ($1 == 0 || $1 == 10 || $1 == 127 || $1 >= 224) exit 1
+      if ($1 == 100 && $2 >= 64 && $2 <= 127) exit 1
+      if ($1 == 169 && $2 == 254) exit 1
+      if ($1 == 172 && $2 >= 16 && $2 <= 31) exit 1
+      if ($1 == 192 && $2 == 168) exit 1
+      if ($1 == 198 && ($2 == 18 || $2 == 19)) exit 1
+      if ($1 == 192 && $2 == 0 && ($3 == 0 || $3 == 2)) exit 1
+      if ($1 == 198 && $2 == 51 && $3 == 100) exit 1
+      if ($1 == 203 && $2 == 0 && $3 == 113) exit 1
+    }
+  '
+}
+
+detect_public_ipv4() {
+  local endpoint="" detected=""
+  for endpoint in \
+    "http://169.254.169.254/latest/meta-data/public-ipv4" \
+    "http://100.100.100.200/latest/meta-data/eipv4" \
+    "https://ip.3322.net" \
+    "https://api.ipify.org" \
+    "https://4.ipw.cn"; do
+    detected=$(curl -4 -fsS --noproxy '*' --connect-timeout 2 --max-time 4 "$endpoint" 2>/dev/null | tr -d '[:space:]' || true)
+    if [[ -n "$detected" ]] && is_public_ipv4 "$detected"; then
+      echo "$detected"
+      return
+    fi
+  done
+}
+
 detect_ip() {
   if [[ -n "$HOST_VALUE" ]]; then
     echo "$HOST_VALUE"
     return
   fi
   local detected=""
-  detected=$(curl -fsS --max-time 4 https://api.ipify.org 2>/dev/null || true)
+  detected=$(detect_public_ipv4)
   if [[ -z "$detected" ]]; then
-    detected=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+    echo "Warning: public IPv4 detection failed; using localhost. Pass --host to configure an external URL." >&2
   fi
   echo "${detected:-localhost}"
 }
@@ -417,7 +453,8 @@ echo "  启动方式："
 echo "    pnpm build && pnpm start"
 echo "    pm2 start ecosystem.config.cjs"
 echo ""
-echo "  访问: $(grep '^FRONTEND_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo 'http://localhost:5180')"
+echo "  配置的前端 URL: $(grep '^FRONTEND_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo 'http://localhost:5180')"
+echo "  本机监听: http://127.0.0.1:${PORT_VALUE}（对外访问请配置 HTTPS 反向代理）"
 echo "  创建首个管理员:"
 echo "    pnpm tsx scripts/init-admin.ts --email=admin@example.com --password='请换成强密码' --name='Admin'"
 echo ""

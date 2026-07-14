@@ -12,6 +12,7 @@ DEFAULT_INSTALL_DIR="$HOME/employee-agent"
 INSTALL_DIR="${EMPLOYEE_AGENT_INSTALL_DIR:-${LINGXIA_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
 PORT="${WORKFORCE_AGENT_PORT:-${LINGXIA_PORT:-5180}}"
 HOST="${WORKFORCE_AGENT_HOST:-${LINGXIA_HOST:-}}"
+RESOLVED_HOST=""
 DB_MODE="${WORKFORCE_AGENT_DB_MODE:-${LINGXIA_DB_MODE:-mysql-auto}}"
 MIRROR_MODE="${EMPLOYEE_AGENT_MIRROR:-auto}"
 ACTIVE_MIRROR="official"
@@ -132,15 +133,51 @@ sudo_cmd() {
   fi
 }
 
+is_public_ipv4() {
+  printf '%s\n' "$1" | awk -F. '
+    NF != 4 { exit 1 }
+    {
+      for (i = 1; i <= 4; i++) {
+        if ($i !~ /^[0-9]+$/ || $i < 0 || $i > 255) exit 1
+      }
+      if ($1 == 0 || $1 == 10 || $1 == 127 || $1 >= 224) exit 1
+      if ($1 == 100 && $2 >= 64 && $2 <= 127) exit 1
+      if ($1 == 169 && $2 == 254) exit 1
+      if ($1 == 172 && $2 >= 16 && $2 <= 31) exit 1
+      if ($1 == 192 && $2 == 168) exit 1
+      if ($1 == 198 && ($2 == 18 || $2 == 19)) exit 1
+      if ($1 == 192 && $2 == 0 && ($3 == 0 || $3 == 2)) exit 1
+      if ($1 == 198 && $2 == 51 && $3 == 100) exit 1
+      if ($1 == 203 && $2 == 0 && $3 == 113) exit 1
+    }
+  '
+}
+
+detect_public_ipv4() {
+  local endpoint="" detected=""
+  for endpoint in \
+    "http://169.254.169.254/latest/meta-data/public-ipv4" \
+    "http://100.100.100.200/latest/meta-data/eipv4" \
+    "https://ip.3322.net" \
+    "https://api.ipify.org" \
+    "https://4.ipw.cn"; do
+    detected=$(curl -4 -fsS --noproxy '*' --connect-timeout 2 --max-time 4 "$endpoint" 2>/dev/null | tr -d '[:space:]' || true)
+    if [[ -n "$detected" ]] && is_public_ipv4 "$detected"; then
+      echo "$detected"
+      return
+    fi
+  done
+}
+
 detect_host() {
   if [[ -n "$HOST" ]]; then
     echo "$HOST"
     return
   fi
   local detected=""
-  detected=$(curl -fsS --max-time 4 https://api.ipify.org 2>/dev/null || true)
+  detected=$(detect_public_ipv4)
   if [[ -z "$detected" ]]; then
-    detected=$(hostname -I 2>/dev/null | awk '{print $1}' || true)
+    echo "Warning: public IPv4 detection failed; using localhost. Pass --host to configure an external URL." >&2
   fi
   echo "${detected:-localhost}"
 }
@@ -190,6 +227,13 @@ cleanup_installer_temp_files() {
 }
 
 configure_download_mirrors() {
+  export NO_UPDATE_NOTIFIER="${NO_UPDATE_NOTIFIER:-1}"
+  export npm_config_fetch_retries="${npm_config_fetch_retries:-5}"
+  export npm_config_fetch_retry_factor="${npm_config_fetch_retry_factor:-2}"
+  export npm_config_fetch_retry_mintimeout="${npm_config_fetch_retry_mintimeout:-10000}"
+  export npm_config_fetch_retry_maxtimeout="${npm_config_fetch_retry_maxtimeout:-60000}"
+  export npm_config_fetch_timeout="${npm_config_fetch_timeout:-120000}"
+
   case "$MIRROR_MODE" in
     cn|official) ACTIVE_MIRROR="$MIRROR_MODE" ;;
     auto)
@@ -230,6 +274,7 @@ configure_download_mirrors() {
         export PIP_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
         ;;
     esac
+    export npm_config_network_concurrency="${npm_config_network_concurrency:-8}"
     prepare_cn_apt_source
   fi
   log "Download mirror profile: $ACTIVE_MIRROR"
@@ -349,7 +394,7 @@ ensure_node_tools() {
 
 clone_repo() {
   local target="$1"
-  git clone --branch "$BRANCH" "$REPO_URL" "$target"
+  git clone --depth 1 --single-branch --branch "$BRANCH" "$REPO_URL" "$target"
 }
 
 checkout_repo() {
@@ -381,7 +426,7 @@ checkout_repo() {
 run_setup() {
   log "Running Workforce Agent Platform setup"
   local host_arg
-  host_arg=$(detect_host)
+  host_arg="${RESOLVED_HOST:-$(detect_host)}"
   local setup_args=(
     "--auto"
     "--yes"
@@ -519,7 +564,7 @@ create_default_admin() {
 }
 
 print_summary() {
-  local url="http://$(detect_host):${PORT}"
+  local url="http://${RESOLVED_HOST:-localhost}:${PORT}"
   if [[ -f "$INSTALL_DIR/.env" ]]; then
     url=$(grep '^FRONTEND_URL=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2- || echo "$url")
   fi
@@ -537,6 +582,9 @@ Reverse proxy target:
 
 Configured public URL (requires HTTPS reverse proxy):
   $url
+
+The application remains bound to 127.0.0.1. Expose it through an HTTPS reverse
+proxy, or use an SSH tunnel for local testing.
 
 Default admin:
   Email:    ${ADMIN_EMAIL}
@@ -563,6 +611,7 @@ main() {
   ensure_base_packages
   ensure_node
   ensure_node_tools
+  RESOLVED_HOST=$(detect_host)
   checkout_repo
   install_jiuwenswarm
   run_setup
