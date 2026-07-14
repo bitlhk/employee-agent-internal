@@ -59,6 +59,7 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
     disableThinking: true,
   });
   const [initializedAt, setInitializedAt] = useState(0);
+  const [validatingAgentModels, setValidatingAgentModels] = useState(false);
 
   useEffect(() => {
     if (!modelSettings.data || modelSettings.dataUpdatedAt === initializedAt) return;
@@ -87,27 +88,24 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
     setInitializedAt(modelSettings.dataUpdatedAt);
   }, [initializedAt, modelSettings.data, modelSettings.dataUpdatedAt]);
 
-  const validateMutation = trpc.claw.adminValidateAgentModel.useMutation({
-    onSuccess: (result) => toast.success(`模型连接正常（${result.elapsedMs} ms）`),
-    onError: (error) => toast.error(error.message || "模型连接测试失败"),
-  });
+  const validateMutation = trpc.claw.adminValidateAgentModel.useMutation();
   const saveMutation = trpc.claw.adminSaveModelSettings.useMutation({
     onSuccess: async () => {
-      toast.success("模型配置已保存并热加载");
+      toast.success("Agent 内核模型已保存并热加载");
       await modelSettings.refetch();
     },
-    onError: (error) => toast.error(error.message || "模型配置保存失败"),
+    onError: (error) => toast.error(error.message || "内核模型配置保存失败"),
   });
   const validateEaMutation = trpc.claw.adminValidateEaAssistantModel.useMutation({
-    onSuccess: (result) => toast.success(`EA 模型连接正常（${result.elapsedMs} ms）`),
-    onError: (error) => toast.error(error.message || "EA 模型连接测试失败"),
+    onSuccess: (result) => toast.success(`平台模型连接正常（${result.elapsedMs} ms）`),
+    onError: (error) => toast.error(error.message || "平台模型连接测试失败"),
   });
   const saveEaMutation = trpc.claw.adminSaveEaAssistantModel.useMutation({
     onSuccess: async () => {
-      toast.success("EA 平台模型已保存");
+      toast.success("Agent 平台模型已保存");
       await modelSettings.refetch();
     },
-    onError: (error) => toast.error(error.message || "EA 模型配置保存失败"),
+    onError: (error) => toast.error(error.message || "平台模型配置保存失败"),
   });
 
   const providers = modelSettings.data?.providers || ["OpenAI"];
@@ -165,7 +163,7 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
 
   const removeModel = (index: number) => {
     if (models.length <= 1) {
-      toast.error("至少保留一个 Agent 模型");
+      toast.error("至少保留一个 Agent 内核模型");
       return;
     }
     setModels((current) => current.filter((_, itemIndex) => itemIndex !== index));
@@ -184,7 +182,7 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
   });
 
   const validateForm = () => {
-    if (models.length === 0) return "至少保留一个 Agent 模型";
+    if (models.length === 0) return "至少保留一个 Agent 内核模型";
     for (const [index, model] of models.entries()) {
       if (!model.modelName.trim()) return `第 ${index + 1} 个模型缺少 model_name`;
       if (!model.apiBase.trim()) return `${modelId(model)} 缺少 api_base`;
@@ -204,6 +202,36 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
     saveMutation.mutate({ models: models.map(mutationInput) });
   };
 
+  const validateAgentModels = async () => {
+    const error = validateForm();
+    if (error) {
+      toast.error(error);
+      return;
+    }
+
+    setValidatingAgentModels(true);
+    try {
+      let totalElapsedMs = 0;
+      for (const model of models) {
+        try {
+          const result = await validateMutation.mutateAsync(mutationInput(model));
+          totalElapsedMs += result.elapsedMs;
+        } catch (error) {
+          const message = error instanceof Error && error.message ? error.message : "连接测试失败";
+          throw new Error(`${modelId(model) || "内核模型"}：${message}`);
+        }
+      }
+      const modelCount = models.length;
+      toast.success(modelCount === 1
+        ? `内核模型连接正常（${totalElapsedMs} ms）`
+        : `${modelCount} 个内核模型连接正常（总计 ${totalElapsedMs} ms）`);
+    } catch (error) {
+      toast.error(error instanceof Error && error.message ? error.message : "内核模型连接测试失败");
+    } finally {
+      setValidatingAgentModels(false);
+    }
+  };
+
   const eaMutationInput = () => ({
     modelName: eaModel.modelName.trim(),
     apiBase: eaModel.apiBase.trim(),
@@ -214,9 +242,9 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
   });
 
   const validateEaForm = () => {
-    if (!eaModel.modelName.trim()) return "EA 平台模型缺少 model_name";
-    if (!eaModel.apiBase.trim()) return "EA 平台模型缺少 api_base";
-    if (!eaModel.apiKey && !eaModel.apiKeyConfigured) return "EA 平台模型缺少 api_key";
+    if (!eaModel.modelName.trim()) return "Agent 平台模型缺少 model_name";
+    if (!eaModel.apiBase.trim()) return "Agent 平台模型缺少 api_base";
+    if (!eaModel.apiKey && !eaModel.apiKeyConfigured) return "Agent 平台模型缺少 api_key";
     return "";
   };
 
@@ -249,8 +277,8 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
       <Card className="p-6 space-y-5 border-border/50 bg-white/80">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Agent 模型</h3>
-            <p className="mt-1 text-xs text-muted-foreground">模型由 JiuwenSwarm 保存并热加载。列表首项是主对话默认模型。</p>
+            <h3 className="text-sm font-semibold text-gray-900">Agent 内核模型</h3>
+            <p className="mt-1 text-xs text-muted-foreground">由 JiuwenSwarm 保存并热加载，列表首项用于 Agent 主对话。</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setModels((current) => [...current, emptyModel()])}>
             <Plus className="h-4 w-4" />添加模型
@@ -260,7 +288,6 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
         <div className="space-y-3">
           {models.map((model, index) => {
             const sameNameCount = models.filter((item) => item.modelName === model.modelName).length;
-            const validationPending = validateMutation.isPending && validateMutation.variables?.originIndex === model.originIndex;
             return (
               <div key={`${model.originIndex ?? "new"}-${index}`} className="overflow-hidden rounded-md border border-gray-200 bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/70 px-4 py-3">
@@ -271,16 +298,13 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
                   </div>
                   <div className="flex items-center gap-1">
                     {index !== 0 && <Button variant="ghost" size="sm" className="h-8" onClick={() => setPrimary(index)}><Star className="h-3.5 w-3.5" />设为主模型</Button>}
-                    <Button variant="ghost" size="sm" className="h-8" disabled={validateMutation.isPending} onClick={() => validateMutation.mutate(mutationInput(model))}>
-                      {validationPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}测试
-                    </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600" title="删除模型" disabled={models.length <= 1} onClick={() => removeModel(index)}><Trash2 className="h-4 w-4" /></Button>
                   </div>
                 </div>
 
                 <div className="grid gap-4 p-4 md:grid-cols-2">
                   <Field label="model_name" required><Input value={model.modelName} onChange={(event) => updateModel(index, "modelName", event.target.value)} /></Field>
-                  <Field label="alias"><Input value={model.alias} onChange={(event) => updateModel(index, "alias", event.target.value)} placeholder="可选，建议为 EA 选择模型时使用" /></Field>
+                  <Field label="alias"><Input value={model.alias} onChange={(event) => updateModel(index, "alias", event.target.value)} placeholder="可选，建议使用易识别的模型名称" /></Field>
                   <Field label="api_base" required><Input value={model.apiBase} onChange={(event) => updateModel(index, "apiBase", event.target.value)} placeholder="https://api.example.com/v1" /></Field>
                   <Field label="api_key" required>
                     <Input type="password" autoComplete="new-password" value={model.apiKey} onChange={(event) => updateModel(index, "apiKey", event.target.value)} placeholder={model.apiKeyConfigured ? "已配置，留空保持不变" : "请输入 API Key"} />
@@ -304,18 +328,22 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
             );
           })}
         </div>
-        <div className="flex justify-end">
-          <Button onClick={save} disabled={saveMutation.isPending || models.length === 0}>
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="outline" onClick={validateAgentModels} disabled={validatingAgentModels || saveMutation.isPending || models.length === 0}>
+            {validatingAgentModels ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
+            测试内核模型
+          </Button>
+          <Button onClick={save} disabled={saveMutation.isPending || validatingAgentModels || models.length === 0}>
             {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            保存并应用 Agent 模型
+            保存内核模型
           </Button>
         </div>
       </Card>
 
       <Card className="p-6 space-y-5 border-border/50 bg-white/80">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">EA 平台模型</h3>
-          <p className="mt-1 text-xs text-muted-foreground">用于会话标题等轻量任务，独立于 Agent 主对话模型。</p>
+          <h3 className="text-sm font-semibold text-gray-900">Agent 平台模型</h3>
+          <p className="mt-1 text-xs text-muted-foreground">用于会话标题等平台轻量任务，独立于 Agent 内核主对话模型。</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="model_name" required>
@@ -346,11 +374,11 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => runEaAction("validate")} disabled={validateEaMutation.isPending || saveEaMutation.isPending}>
             {validateEaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
-            测试 EA 模型
+            测试平台模型
           </Button>
           <Button onClick={() => runEaAction("save")} disabled={saveEaMutation.isPending || validateEaMutation.isPending}>
             {saveEaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            保存 EA 模型
+            保存平台模型
           </Button>
         </div>
       </Card>

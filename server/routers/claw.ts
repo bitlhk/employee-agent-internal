@@ -2007,7 +2007,7 @@ export const clawRouter = router({
             errorCode: "EA_MODEL_VALIDATION_FAILED",
             metadata: { provider: input.provider, elapsedMs: Date.now() - started },
           });
-          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "EA 模型连接测试失败" });
+          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "Agent 平台模型连接测试失败" });
         }
       }),
 
@@ -2028,7 +2028,7 @@ export const clawRouter = router({
           });
           return { ok: true };
         } catch (error: any) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "EA 模型配置保存失败" });
+          throw new TRPCError({ code: "BAD_REQUEST", message: sanitizeModelAdminError(error) || "Agent 平台模型配置保存失败" });
         }
       }),
 
