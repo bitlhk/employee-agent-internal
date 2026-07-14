@@ -331,11 +331,11 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={validateAgentModels} disabled={validatingAgentModels || saveMutation.isPending || models.length === 0}>
             {validatingAgentModels ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
-            测试内核模型
+            测试
           </Button>
           <Button onClick={save} disabled={saveMutation.isPending || validatingAgentModels || models.length === 0}>
             {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            保存内核模型
+            保存
           </Button>
         </div>
       </Card>
@@ -374,11 +374,11 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
         <div className="flex flex-wrap justify-end gap-2">
           <Button variant="outline" onClick={() => runEaAction("validate")} disabled={validateEaMutation.isPending || saveEaMutation.isPending}>
             {validateEaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FlaskConical className="h-4 w-4" />}
-            测试平台模型
+            测试
           </Button>
           <Button onClick={() => runEaAction("save")} disabled={saveEaMutation.isPending || validateEaMutation.isPending}>
             {saveEaMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            保存平台模型
+            保存
           </Button>
         </div>
       </Card>
