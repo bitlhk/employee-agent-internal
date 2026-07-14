@@ -11,7 +11,7 @@ import type {
 import { dingtalkCredentialsSchema, feishuCredentialsSchema, wechatCredentialsSchema, wecomCredentialsSchema } from "@shared/types/cron";
 import {
   pollFeishuBindStatus,
-  sendFeishuMessage,
+  sendFeishuDeliveryMessage,
   startFeishuBindFlow,
   unbindFeishu,
 } from "../claw-feishu";
@@ -99,7 +99,7 @@ export class FeishuChannelProvider implements ScanChannelProvider {
     if (!_ctx.adoptId) {
       return { ok: false, error: { kind: "payload_rejected", detail: "adoptId required for feishu test" } };
     }
-    const result = await sendFeishuMessage(_ctx.adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
+    const result = await sendFeishuDeliveryMessage(_ctx.adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
     if (!result.ok) {
       return { ok: false, error: { kind: "channel_unreachable", detail: result.error || "feishu test failed" } };
     }
@@ -118,7 +118,7 @@ export class FeishuChannelProvider implements ScanChannelProvider {
     if (!_ctx.adoptId) {
       return { ok: false, error: { kind: "payload_rejected", detail: "adoptId required for feishu send" } };
     }
-    const result = await sendFeishuMessage(_ctx.adoptId, formatChannelPayload(_payload));
+    const result = await sendFeishuDeliveryMessage(_ctx.adoptId, formatChannelPayload(_payload));
     if (!result.ok) {
       return { ok: false, error: { kind: "channel_unreachable", detail: result.error || "feishu send failed" } };
     }

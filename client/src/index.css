@@ -8645,7 +8645,7 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 
 .schedule-v2-form-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 0.9fr) minmax(240px, 1.4fr) minmax(150px, 0.7fr) minmax(150px, 0.7fr) minmax(140px, 0.6fr) auto;
+  grid-template-columns: minmax(170px, 0.85fr) minmax(240px, 1.3fr) minmax(140px, 0.65fr) minmax(140px, 0.65fr) minmax(230px, 1fr) auto;
   gap: 10px;
   align-items: end;
 }
@@ -8676,6 +8676,91 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 .schedule-v2-field select:focus {
   border-color: color-mix(in oklab, var(--banking-brand-red) 48%, var(--banking-border));
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--banking-brand-red) 12%, transparent);
+}
+
+.schedule-v2-field--channels {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.schedule-v2-field--channels legend {
+  margin: 0 0 6px;
+  padding: 0;
+}
+
+.schedule-v2-channel-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.schedule-v2-channel-option {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px;
+  gap: 7px;
+  border: 1px solid var(--banking-border);
+  border-radius: var(--banking-radius-md);
+  background: var(--banking-panel);
+  color: var(--banking-text);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.schedule-v2-channel-option:hover {
+  border-color: var(--banking-border-strong);
+  background: var(--banking-card);
+}
+
+.schedule-v2-channel-option--active {
+  border-color: color-mix(in oklab, var(--banking-brand-red) 50%, var(--banking-border));
+  background: var(--banking-brand-red-subtle);
+  color: var(--banking-brand-red);
+}
+
+.schedule-v2-channel-option:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--banking-brand-red) 16%, transparent);
+}
+
+.schedule-v2-channel-option-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.schedule-v2-channel-option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  text-align: left;
+  line-height: 1.1;
+}
+
+.schedule-v2-channel-option-copy > span,
+.schedule-v2-channel-option-copy > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-v2-channel-option-copy > span {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.schedule-v2-channel-option-copy > small {
+  color: var(--banking-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.schedule-v2-channel-option-check {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .schedule-v2-create-submit {

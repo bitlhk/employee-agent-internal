@@ -434,16 +434,26 @@ export async function getFeishuStatus(adoptId: string): Promise<{
   targetLabel?: string;
   domain?: string;
   bidirectionalBound?: boolean;
+  bidirectionalConfigured?: boolean;
   bidirectionalTargetLabel?: string;
+  deliveryReady?: boolean;
+  deliveryMode?: "account" | "bridge";
 }> {
   const account = loadAccount(adoptId);
   const bridge = await loadBridgeBinding(adoptId);
+  const bridgeSender = loadBridgeSenderAccount();
+  const accountReady = !!(account?.appId && account?.appSecret && account?.openId);
+  const bridgeConfigured = !!(bridgeSender?.appId && bridgeSender?.appSecret);
+  const bridgeReady = bridgeConfigured && !!bridge?.openId;
   return {
     bound: !!(account?.appId && account?.appSecret),
     targetLabel: bridge?.openId || account?.openId || "",
     domain: account?.domain,
     bidirectionalBound: !!bridge?.openId,
+    bidirectionalConfigured: bridgeConfigured,
     bidirectionalTargetLabel: bridge?.openId || "",
+    deliveryReady: accountReady || bridgeReady,
+    deliveryMode: bridgeReady ? "bridge" : accountReady ? "account" : undefined,
   };
 }
 
@@ -630,6 +640,13 @@ export async function sendFeishuBridgeMessage(adoptId: string, text: string): Pr
   }
 }
 
+export async function sendFeishuDeliveryMessage(adoptId: string, text: string): Promise<{ ok: boolean; error?: string }> {
+  const status = await getFeishuStatus(adoptId);
+  if (status.deliveryMode === "bridge") return sendFeishuBridgeMessage(adoptId, text);
+  if (status.deliveryMode === "account") return sendFeishuMessage(adoptId, text);
+  return { ok: false, error: "feishu delivery channel not bound" };
+}
+
 function maskRouteTarget(value?: string): string {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -720,7 +737,7 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const result = await sendFeishuMessage(adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
+      const result = await sendFeishuDeliveryMessage(adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
       res.json(result.ok ? { ok: true } : { ok: false, error: result.error });
     } catch (error: any) {
       res.status(500).json({ ok: false, error: error?.message || "feishu test failed" });

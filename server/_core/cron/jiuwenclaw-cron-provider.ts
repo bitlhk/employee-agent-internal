@@ -134,7 +134,7 @@ export function getJiuwenCronRouteMeta(adoptId: string, taskId: string): { chann
   };
 }
 
-export function findJiuwenCronRouteMeta(taskId: string): { adoptId: string; channelId?: ChannelId } | null {
+export function findJiuwenCronRouteMeta(taskId: string): { adoptId: string; channelId?: ChannelId; name?: string } | null {
   const id = String(taskId || "").trim();
   if (!id) return null;
   const meta = (readMeta().jobs || []).find((job) => job.taskId === id);
@@ -142,6 +142,7 @@ export function findJiuwenCronRouteMeta(taskId: string): { adoptId: string; chan
   return {
     adoptId: meta.adoptId,
     channelId: meta.channelId,
+    name: meta.name,
   };
 }
 
@@ -169,6 +170,7 @@ export function recordJiuwenCronRun(input: {
   triggeredByUser?: number;
   startedAt?: string;
   finishedAt?: string;
+  deliveryStatus?: CronRunRecord["deliveryStatus"];
 }) {
   const adoptId = String(input.adoptId || "").trim();
   const taskId = String(input.taskId || "").trim();
@@ -179,6 +181,7 @@ export function recordJiuwenCronRun(input: {
   const store = readRuns();
   const runs = store.runs || [];
   const existing = runs.find((run) => run.adoptId === adoptId && run.jobId === taskId && run.id === id);
+  const duplicate = Boolean(existing && existing.status === input.status && existing.output === input.output);
   const startedAt = input.startedAt || existing?.startedAt || now;
   const finishedAt = input.finishedAt || (input.status === "running" ? existing?.finishedAt : now);
   const startedMs = Date.parse(startedAt);
@@ -193,7 +196,10 @@ export function recordJiuwenCronRun(input: {
     status: input.status,
     output: input.output ?? existing?.output,
     errorMessage: input.errorMessage ?? existing?.errorMessage,
-    deliveryStatus: input.status === "running" ? "pending" : input.status === "ok" ? "ok" : input.status === "skipped" ? "skipped" : "failed",
+    deliveryStatus: duplicate
+      ? existing?.deliveryStatus || input.deliveryStatus
+      : input.deliveryStatus
+        || (input.status === "running" ? "pending" : input.status === "ok" ? "ok" : input.status === "skipped" ? "skipped" : "failed"),
     triggeredBy: existing?.triggeredBy || input.triggeredBy || "schedule",
     triggeredByUser: input.triggeredByUser ?? existing?.triggeredByUser,
     updatedAt: now,
@@ -202,7 +208,28 @@ export function recordJiuwenCronRun(input: {
   else runs.push(next);
   runs.sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
   writeRuns({ runs: runs.slice(0, 1000) });
-  return { recorded: true, duplicate: Boolean(existing && existing.status === input.status && existing.output === input.output) };
+  return { recorded: true, duplicate };
+}
+
+export function updateJiuwenCronRunDelivery(input: {
+  adoptId: string;
+  taskId: string;
+  runId: string;
+  deliveryStatus: NonNullable<CronRunRecord["deliveryStatus"]>;
+  deliveryTargetMasked?: string;
+}): boolean {
+  const store = readRuns();
+  const run = (store.runs || []).find((item) => (
+    item.adoptId === input.adoptId
+    && item.jobId === input.taskId
+    && item.id === input.runId
+  ));
+  if (!run) return false;
+  run.deliveryStatus = input.deliveryStatus;
+  run.deliveryTargetMasked = input.deliveryTargetMasked;
+  run.updatedAt = new Date().toISOString();
+  writeRuns(store);
+  return true;
 }
 
 function upsertMeta(handle: CronProviderHandle, taskId: string, input: CronJobInput) {

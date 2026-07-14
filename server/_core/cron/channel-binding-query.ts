@@ -22,11 +22,11 @@ export async function getBoundChannelsForAdopt(adoptId: string): Promise<BoundCh
   }
 
   const feishu = await getFeishuStatus(adoptId);
-  if (feishu.bound) {
+  if (feishu.deliveryReady) {
     channels.push({
       channelId: "feishu",
       label: "飞书",
-      targetLabel: feishu.targetLabel || "飞书",
+      targetLabel: "已绑定",
     });
   }
 

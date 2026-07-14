@@ -14,6 +14,7 @@ import {
   Play,
   Plus,
   RefreshCw,
+  Send,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -21,7 +22,7 @@ import { PageContainer } from "@/components/console/PageContainer";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
-type ChannelId = "web" | "wechat" | "feishu" | "wecom";
+type ChannelId = "web" | "wechat" | "feishu" | "dingtalk" | "wecom";
 
 type CronJobV2 = {
   id: string;
@@ -68,10 +69,16 @@ type CronRunV2 = {
 };
 
 type PreviewRun = { runAt: string; wakeAt?: string };
+type AvailableDeliveryChannel = {
+  channelId: ChannelId;
+  label: string;
+  targetLabel?: string;
+};
 type CronCapabilities = {
   scheduleKinds?: Array<"interval" | "once" | "cron">;
   supportsRunNow?: boolean;
   supportedChannels?: ChannelId[];
+  availableDeliveryChannels?: AvailableDeliveryChannel[];
 };
 
 type CreateScheduleKind = "daily" | "interval" | "once" | "cron";
@@ -84,7 +91,7 @@ type CreateForm = {
   intervalMinutes: string;
   runAt: string;
   cronExpr: string;
-  channelId: Exclude<ChannelId, "wecom">;
+  channelId: ChannelId;
 };
 
 const T = {
@@ -160,6 +167,7 @@ const CHANNEL_LABEL: Record<ChannelId, string> = {
   web: "定时任务记录",
   wechat: "\u5fae\u4fe1",
   feishu: "\u98de\u4e66",
+  dingtalk: "\u9489\u9489",
   wecom: "\u4f01\u4e1a\u5fae\u4fe1",
 };
 
@@ -171,12 +179,12 @@ const EMPTY_CREATE_FORM: CreateForm = {
   intervalMinutes: "60",
   runAt: "",
   cronExpr: "0 9 * * *",
-  channelId: "wechat",
+  channelId: "web",
 };
 
 function normalizeChannelId(channelId?: string): ChannelId {
   if (channelId === "web" || channelId === "conversation") return "web";
-  if (channelId === "feishu" || channelId === "wecom") return channelId;
+  if (channelId === "feishu" || channelId === "dingtalk" || channelId === "wecom") return channelId;
   return "wechat";
 }
 
@@ -189,6 +197,7 @@ function channelIcon(channelId?: string) {
   const id = normalizeChannelId(channelId);
   if (id === "web") return <CalendarClock {...props} />;
   if (id === "feishu") return <Zap {...props} />;
+  if (id === "dingtalk") return <Send {...props} />;
   if (id === "wecom") return <Bell {...props} />;
   return <MessageCircle {...props} />;
 }
@@ -231,10 +240,10 @@ function cronExprFromDailyTime(value: string) {
   return `${minute} ${hour} * * *`;
 }
 
-function buildCreateJob(form: CreateForm) {
+function buildCreateJob(form: CreateForm, selectedChannel?: AvailableDeliveryChannel) {
   const name = form.name.trim();
   const prompt = form.prompt.trim();
-  const channelLabelValue = CHANNEL_LABEL[form.channelId];
+  const channelLabelValue = selectedChannel?.label || CHANNEL_LABEL[form.channelId];
   let schedule: CronJobV2["schedule"];
   if (form.scheduleKind === "daily") {
     schedule = {
@@ -260,7 +269,7 @@ function buildCreateJob(form: CreateForm) {
       targets: [{
         channelId: form.channelId,
         channelLabel: channelLabelValue,
-        targetLabel: channelLabelValue,
+        targetLabel: selectedChannel?.targetLabel,
         format: "text",
       }],
     },
@@ -313,6 +322,16 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE_FORM);
   const [capabilities, setCapabilities] = useState<CronCapabilities | null>(null);
 
+  const availableDeliveryChannels = useMemo(() => {
+    if (Array.isArray(capabilities?.availableDeliveryChannels)) {
+      return capabilities.availableDeliveryChannels.filter((channel) => CHANNEL_LABEL[channel.channelId]);
+    }
+    if (capabilities?.supportedChannels?.includes("web")) {
+      return [{ channelId: "web" as const, label: CHANNEL_LABEL.web }];
+    }
+    return [];
+  }, [capabilities]);
+
   const latestRunByJob = useMemo(() => {
     const map = new Map<string, CronRunV2>();
     for (const run of runs) {
@@ -360,6 +379,15 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
         : "cron";
     setCreateForm((form) => ({ ...form, scheduleKind: fallback }));
   }, [capabilities, createForm.scheduleKind]);
+
+  useEffect(() => {
+    if (!capabilities || availableDeliveryChannels.length === 0) return;
+    setCreateForm((form) => (
+      availableDeliveryChannels.some((channel) => channel.channelId === form.channelId)
+        ? form
+        : { ...form, channelId: availableDeliveryChannels[0].channelId }
+    ));
+  }, [capabilities, availableDeliveryChannels]);
 
   async function runNow(job: CronJobV2) {
     if (!aid || runningJobId) return;
@@ -506,9 +534,14 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
 
   async function createJob() {
     if (!aid || createBusy) return;
-    const job = buildCreateJob(createForm);
+    const selectedChannel = availableDeliveryChannels.find((channel) => channel.channelId === createForm.channelId);
+    const job = buildCreateJob(createForm, selectedChannel);
     if (!job.name || !job.prompt) {
       toast.error(T.requiredHint);
+      return;
+    }
+    if (!selectedChannel) {
+      toast.error("当前岗位没有可用的投递通道");
       return;
     }
     if (job.schedule.kind === "once" && !job.schedule.runAt) {
@@ -630,19 +663,32 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
                   />
                 </label>
               )}
-              <label className="schedule-v2-field">
-                <span>{T.deliveryChannel}</span>
-                <select
-                  value={createForm.channelId}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, channelId: e.target.value as CreateForm["channelId"] }))}
-                >
-                  <option value="web">{CHANNEL_LABEL.web}</option>
-                  <option value="wechat">{CHANNEL_LABEL.wechat}</option>
-                  <option value="feishu">{CHANNEL_LABEL.feishu}</option>
-                  <option value="wecom" disabled>{CHANNEL_LABEL.wecom}\uff08\u5373\u5c06\u4e0a\u7ebf\uff09</option>
-                </select>
-              </label>
-              <button className="schedule-v2-btn schedule-v2-btn--primary schedule-v2-create-submit ea-data-btn ea-data-btn--primary" onClick={createJob} disabled={createBusy}>
+              <fieldset className="schedule-v2-field schedule-v2-field--channels">
+                <legend>{T.deliveryChannel}</legend>
+                <div className="schedule-v2-channel-picker" role="radiogroup" aria-label={T.deliveryChannel}>
+                  {availableDeliveryChannels.map((channel) => {
+                    const active = createForm.channelId === channel.channelId;
+                    return (
+                      <button
+                        key={channel.channelId}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={`schedule-v2-channel-option${active ? " schedule-v2-channel-option--active" : ""}`}
+                        onClick={() => setCreateForm((form) => ({ ...form, channelId: channel.channelId }))}
+                      >
+                        <span className="schedule-v2-channel-option-icon">{channelIcon(channel.channelId)}</span>
+                        <span className="schedule-v2-channel-option-copy">
+                          <span>{channel.label || CHANNEL_LABEL[channel.channelId]}</span>
+                          {channel.targetLabel && <small>{channel.targetLabel}</small>}
+                        </span>
+                        {active && <Check className="schedule-v2-channel-option-check" size={13} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </fieldset>
+              <button className="schedule-v2-btn schedule-v2-btn--primary schedule-v2-create-submit ea-data-btn ea-data-btn--primary" onClick={createJob} disabled={createBusy || availableDeliveryChannels.length === 0}>
                 <Plus size={14} /> {createBusy ? T.saving : T.saveTask}
               </button>
             </div>
