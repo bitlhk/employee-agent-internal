@@ -51,6 +51,14 @@ function isErrorTrackingExemptPath(req: Request): boolean {
   return false;
 }
 
+function isRoutinePlatformValidationError(req: Request, statusCode: number): boolean {
+  if (statusCode !== 400) return false;
+  const path = (req.path || "").toLowerCase();
+  return path.startsWith("/api/claw/")
+    || path.startsWith("/api/ea/")
+    || path.startsWith("/api/trpc/");
+}
+
 /**
  * 记录 4xx 错误
  */
@@ -65,7 +73,7 @@ export async function track4xxError(
 
   // Do not count the limiter's own 429 responses; otherwise one temporary block
   // keeps feeding itself and quickly escalates into a persistent blacklist row.
-  if (statusCode === 429 || isErrorTrackingExemptPath(req)) {
+  if (statusCode === 429 || isErrorTrackingExemptPath(req) || isRoutinePlatformValidationError(req, statusCode)) {
     return;
   }
 
@@ -290,41 +298,27 @@ export function trackResponseErrors(
   res: Response,
   next: NextFunction
 ) {
-  // 开发模式下只记录日志，不进行限制
   const isDevelopment = process.env.NODE_ENV === "development";
-  
-  const originalSend = res.send.bind(res);
-  const originalJson = res.json.bind(res);
-
-  res.send = function (body: any) {
+  res.once("finish", () => {
     if (res.statusCode >= 400 && res.statusCode < 500) {
-      // 开发模式下只记录，不追踪错误计数
       if (!isDevelopment) {
         track4xxError(req, res, res.statusCode).catch(console.error);
       } else {
         console.log(`[Dev] 4xx Error: ${res.statusCode} ${req.path}`);
       }
     }
-    return originalSend(body);
-  };
-
-  res.json = function (body: any) {
-    if (res.statusCode >= 400 && res.statusCode < 500) {
-      // 开发模式下只记录，不追踪错误计数
-      if (!isDevelopment) {
-        track4xxError(req, res, res.statusCode).catch(console.error);
-      } else {
-        console.log(`[Dev] 4xx Error: ${res.statusCode} ${req.path}`);
-      }
-    }
-    return originalJson(body);
-  };
+  });
 
   next();
 }
 
+export function resetErrorTrackingStateForTests(): void {
+  ipErrorMap.clear();
+  autoBlockedIps.clear();
+}
+
 // 定期清理过期记录
-setInterval(() => {
+const cleanupTimer = setInterval(() => {
   const now = Date.now();
   const ipsToDelete: string[] = [];
   
@@ -341,3 +335,4 @@ setInterval(() => {
     autoBlockedIps.delete(ip);
   });
 }, CLEANUP_INTERVAL);
+cleanupTimer.unref();

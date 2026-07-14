@@ -29,6 +29,21 @@ export function normalizeIp(ip: string): string {
   return ip;
 }
 
+export type TrustProxySetting = boolean | number | string[];
+
+export function resolveTrustProxySetting(rawValue: string | undefined, nodeEnv: string | undefined): TrustProxySetting {
+  if (nodeEnv !== "production") return true;
+  const value = String(rawValue || "").trim();
+  if (!value || value === "false") return false;
+  if (value === "true") return true;
+  if (/^\d+$/.test(value)) {
+    const hops = Number.parseInt(value, 10);
+    return hops > 0 ? hops : false;
+  }
+  const addresses = value.split(",").map((item) => item.trim()).filter(Boolean);
+  return addresses.length > 0 ? addresses : false;
+}
+
 /**
  * 获取客户端IP地址
  * 不直接信任可伪造的代理头；生产部署如在反向代理后，需要显式配置 TRUST_PROXY。

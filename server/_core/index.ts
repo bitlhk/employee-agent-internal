@@ -201,6 +201,7 @@ import {
   requestSizeLimiter,
   ipBlacklistMiddleware,
 } from "./security";
+import { resolveTrustProxySetting } from "./ip-utils";
 import {
   block4xxAbuse,
   trackResponseErrors,
@@ -237,16 +238,12 @@ async function startServer() {
   // 如果应用部署在代理服务器（如 nginx）后面，需要信任代理以正确获取客户端IP
   // 开发环境：信任所有代理（localhost 场景）
   // 生产环境：根据实际情况配置信任的代理IP
-  if (process.env.TRUST_PROXY === "true" || process.env.NODE_ENV !== "production") {
-    app.set("trust proxy", true);
-    console.log("[Server] Trust proxy enabled");
-  } else if (process.env.TRUST_PROXY) {
-    // 可以设置为具体的代理IP列表，用逗号分隔
-    app.set("trust proxy", process.env.TRUST_PROXY.split(",").map(ip => ip.trim()));
-    console.log(`[Server] Trust proxy enabled for: ${process.env.TRUST_PROXY}`);
-  } else {
-    app.set("trust proxy", false);
+  const trustProxy = resolveTrustProxySetting(process.env.TRUST_PROXY, process.env.NODE_ENV);
+  app.set("trust proxy", trustProxy);
+  if (trustProxy === false) {
     console.log("[Server] Trust proxy disabled; set TRUST_PROXY explicitly when running behind a trusted reverse proxy");
+  } else {
+    console.log(`[Server] Trust proxy enabled for: ${Array.isArray(trustProxy) ? trustProxy.join(",") : String(trustProxy)}`);
   }
   
   // ========== 性能优化 ==========

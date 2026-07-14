@@ -44,30 +44,13 @@ export function setupSecurityHeaders(app: Express) {
 import { getClientIp } from "./ip-utils";
 
 /**
- * 通用 API 速率限制
- * 注意：已禁用通用速率限制，改为只限制 4xx 错误请求（在 error-tracking.ts 中实现）
- * 只保留登录/注册和敏感操作的速率限制
+ * 通用 API 不做统一限流。页面初始化和轮询会产生突发请求，统一按 IP
+ * 限流会误伤反向代理或办公 NAT 后的正常用户。认证、聊天和敏感操作仍
+ * 使用各自的专用 limiter。
  */
-export const generalLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  message: { error: "请求过于频繁，请稍后再试" },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req: Request) => {
-    // 静态资源和健康检查不限流
-    if (req.path.startsWith("/assets/") || req.path === "/health") return true;
-    // Jiuwen/EA internal callbacks use their own bearer token and can be called
-    // by gateway fan-out; do not let browser-facing API quota block them.
-    if (req.path.startsWith("/api/internal/jiuwen/")) return true;
-    const trusted = (process.env.CLAW_CHAT_RATELIMIT_TRUSTED_IPS || "").split(",").map(s => s.trim()).filter(Boolean);
-    if (trusted.length > 0) {
-      const ip = getClientIp(req);
-      if (trusted.includes(ip)) return true;
-    }
-    return false;
-  },
-});
+export function generalLimiter(_req: Request, _res: Response, next: NextFunction) {
+  next();
+}
 
 /**
  * 登录/注册速率限制
