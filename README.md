@@ -87,12 +87,6 @@
 curl -fsSL https://linggan.top/install.sh | bash
 ```
 
-脚本默认启用匿名安装质量统计，可通过以下方式关闭：
-
-```bash
-curl -fsSL https://linggan.top/install.sh | EMPLOYEE_AGENT_TELEMETRY=0 bash
-```
-
 脚本会自动完成：
 
 - 安装 Node.js 22、Python、pnpm、PM2、MySQL 和 Docker
