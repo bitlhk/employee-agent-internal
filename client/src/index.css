@@ -7209,6 +7209,634 @@ body[data-home-light="true"] .claw-home-shell .bg-primary\/10 {
   background: rgba(220, 38, 38, 0.08) !important;
   color: #dc2626 !important;
 }
+
+/* Public homepage product showcase. */
+.claw-home-v2,
+.claw-home-v2 * {
+  letter-spacing: 0;
+}
+.claw-home-v2 {
+  --home-ink: #1a1a1a;
+  --home-copy: #5d5b54;
+  --home-muted: #8d8981;
+  --home-border: #e7e3dd;
+  --home-soft: #f7f6f4;
+  background: #ffffff !important;
+  color: var(--home-ink) !important;
+  font-family: var(--oc-font-ui, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif);
+}
+.claw-home-v2__header {
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-color: var(--home-border) !important;
+  backdrop-filter: blur(14px);
+}
+.claw-home-v2__header nav button,
+.claw-home-v2 footer button,
+.claw-home-v2 footer a {
+  transition: color 160ms ease;
+}
+.claw-home-v2__header nav button:hover {
+  color: var(--home-ink);
+}
+.claw-home-v2__hero {
+  position: relative;
+  overflow: hidden;
+  background: #ffffff;
+}
+.claw-home-v2__hero-inner {
+  display: grid;
+  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(32px, 5vw, 64px);
+  width: min(100%, 1264px);
+  min-height: 600px;
+  margin: 0 auto;
+  padding: 64px 32px 16px;
+}
+.claw-home-v2__copy {
+  min-width: 0;
+  text-align: left;
+}
+.claw-home-v2__showcase {
+  width: 100%;
+  min-width: 0;
+}
+.claw-home-v2__primary-cta {
+  box-shadow: 0 8px 22px rgba(220, 38, 38, 0.18);
+}
+.claw-home-v2__state-card {
+  width: 100%;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid var(--home-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(28, 28, 30, 0.06);
+}
+.claw-home-install {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  width: min(100%, 460px);
+  min-height: 46px;
+  padding: 5px 6px 5px 15px;
+  color: #3f3d39;
+  background: #f8f7f5;
+  border: 1px solid var(--home-border);
+  border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(28, 28, 30, 0.04);
+}
+.claw-home-install__prompt {
+  margin-right: 10px;
+  color: var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 800;
+}
+.claw-home-install code {
+  min-width: 0;
+  overflow-x: auto;
+  color: #45423d;
+  font-size: 12px;
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.claw-home-install code::-webkit-scrollbar {
+  display: none;
+}
+.claw-home-install button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  margin-left: 8px;
+  padding: 0;
+  color: var(--primary);
+  background: #ffffff;
+  border: 1px solid #efd5d3;
+  border-radius: 50%;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.claw-home-install button:hover {
+  background: #fff7f6;
+  border-color: #e7aaa5;
+}
+.claw-home-install button svg {
+  width: 14px;
+  height: 14px;
+}
+.claw-home-demo {
+  overflow: hidden;
+  color: var(--home-ink);
+  text-align: left;
+  background: #ffffff;
+  border: 1px solid #dedad4;
+  border-radius: 8px;
+  box-shadow: 0 28px 70px rgba(28, 28, 30, 0.11), 0 4px 14px rgba(28, 28, 30, 0.05);
+}
+.claw-home-demo__windowbar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 15px;
+  color: #706d66;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f7f6f4;
+  border-bottom: 1px solid var(--home-border);
+}
+.claw-home-demo__dots {
+  display: flex;
+  gap: 6px;
+}
+.claw-home-demo__dots i {
+  width: 8px;
+  height: 8px;
+  background: #d6d2cb;
+  border-radius: 50%;
+}
+.claw-home-demo__dots i:first-child {
+  background: #ef7b70;
+}
+.claw-home-demo__dots i:nth-child(2) {
+  background: #e4b45c;
+}
+.claw-home-demo__dots i:nth-child(3) {
+  background: #70b987;
+}
+.claw-home-demo__online {
+  display: inline-flex;
+  align-items: center;
+  justify-self: end;
+  gap: 6px;
+  color: #3a8a54;
+}
+.claw-home-demo__online i {
+  width: 6px;
+  height: 6px;
+  background: #45a864;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(69, 168, 100, 0.1);
+}
+.claw-home-demo__workspace {
+  display: grid;
+  grid-template-columns: 172px minmax(0, 1fr);
+  min-height: 438px;
+}
+.claw-home-demo__sidebar {
+  padding: 18px 12px;
+  background: #faf9f8;
+  border-right: 1px solid var(--home-border);
+}
+.claw-home-demo__agent {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  margin: 0 4px 16px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--home-border);
+}
+.claw-home-demo__agent > span {
+  display: grid;
+  min-width: 0;
+}
+.claw-home-demo__agent strong {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claw-home-demo__agent small {
+  margin-top: 2px;
+  color: var(--home-muted);
+  font-size: 9px;
+}
+.claw-home-demo__nav {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  margin-bottom: 3px;
+  padding: 0 10px;
+  color: #77736c;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+}
+.claw-home-demo__nav svg {
+  width: 14px;
+  height: 14px;
+}
+.claw-home-demo__nav.is-active {
+  color: var(--primary);
+  background: rgba(220, 38, 38, 0.07);
+}
+.claw-home-demo__chat {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  background: #ffffff;
+}
+.claw-home-demo__chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--home-border);
+}
+.claw-home-demo__chat-head > span:first-child {
+  display: grid;
+  min-width: 0;
+}
+.claw-home-demo__chat-head strong {
+  font-size: 12px;
+}
+.claw-home-demo__chat-head small {
+  margin-top: 3px;
+  color: var(--home-muted);
+  font-size: 9px;
+}
+.claw-home-demo__model {
+  flex: none;
+  padding: 5px 8px;
+  color: #716d65;
+  font-size: 9px;
+  font-weight: 600;
+  background: #f5f4f2;
+  border: 1px solid var(--home-border);
+  border-radius: 5px;
+}
+.claw-home-demo__messages {
+  display: flex;
+  min-height: 318px;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 22px 14px;
+}
+.claw-home-demo__user-message {
+  align-self: flex-end;
+  max-width: 68%;
+  padding: 10px 13px;
+  color: #433f39;
+  font-size: 11px;
+  line-height: 1.65;
+  background: #f1f0ed;
+  border-radius: 8px 8px 2px 8px;
+}
+.claw-home-demo__tool-stack {
+  display: grid;
+  gap: 7px;
+  width: min(100%, 570px);
+}
+.claw-home-demo__tool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 1px;
+  color: #8d8981;
+  font-size: 9px;
+  font-weight: 700;
+}
+.claw-home-demo__tool-label svg {
+  width: 12px;
+  height: 12px;
+  color: var(--primary);
+}
+.claw-home-demo-tool {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 59px;
+  padding: 9px 11px;
+  background: #fbfaf9;
+  border: 1px solid var(--home-border);
+  border-radius: 7px;
+  box-shadow: 0 2px 6px rgba(28, 28, 30, 0.025);
+}
+.claw-home-demo-tool[data-state="running"] {
+  border-color: #edc6c2;
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+.claw-home-demo-tool__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--primary);
+  background: rgba(220, 38, 38, 0.07);
+  border-radius: 7px;
+}
+.claw-home-demo-tool__icon svg {
+  width: 16px;
+  height: 16px;
+}
+.claw-home-demo-tool__body {
+  display: grid;
+  min-width: 0;
+}
+.claw-home-demo-tool__body strong {
+  color: #34312d;
+  font-size: 11px;
+}
+.claw-home-demo-tool__body small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #8d8981;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.claw-home-demo-tool__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8b8780;
+  font-size: 9px;
+  font-weight: 700;
+}
+.claw-home-demo-tool[data-state="done"] .claw-home-demo-tool__state {
+  color: #3d9359;
+}
+.claw-home-demo-tool__state svg {
+  width: 13px;
+  height: 13px;
+}
+.claw-home-demo__assistant-message {
+  align-self: flex-start;
+  max-width: 82%;
+  min-height: 42px;
+  padding: 11px 13px;
+  color: #4d4943;
+  font-size: 11px;
+  line-height: 1.7;
+  background: #fffafa;
+  border-left: 2px solid var(--primary);
+  border-radius: 2px 7px 7px 2px;
+}
+.claw-home-demo__cursor {
+  color: var(--primary);
+  animation: claw-home-cursor 760ms steps(1) infinite;
+}
+.claw-home-demo__result-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  color: #4d8c60;
+  font-size: 9px;
+  font-weight: 600;
+}
+.claw-home-demo__result-note svg {
+  width: 12px;
+  height: 12px;
+}
+.claw-home-demo__composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 46px;
+  margin: 0 18px 14px;
+  padding: 0 8px 0 14px;
+  color: #aaa69f;
+  font-size: 10px;
+  background: #ffffff;
+  border: 1px solid #dcd8d1;
+  border-radius: 8px;
+  box-shadow: 0 2px 7px rgba(28, 28, 30, 0.035);
+}
+.claw-home-demo__composer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.claw-home-demo__composer-actions > svg {
+  width: 14px;
+  height: 14px;
+  color: #98948c;
+}
+.claw-home-demo__composer-actions i {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  color: #ffffff;
+  background: var(--primary);
+  border-radius: 6px;
+}
+.claw-home-demo__composer-actions i svg {
+  width: 14px;
+  height: 14px;
+}
+.claw-home-feature {
+  min-height: 190px;
+  padding: 24px;
+  background: #faf9f8;
+  border: 1px solid var(--home-border);
+  border-radius: 8px;
+  transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+.claw-home-feature:hover {
+  background: #ffffff;
+  border-color: #d4cfc7;
+  box-shadow: 0 10px 24px rgba(28, 28, 30, 0.055);
+  transform: translateY(-2px);
+}
+.claw-home-feature__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  color: var(--primary);
+  background: rgba(220, 38, 38, 0.07);
+  border-radius: 7px;
+}
+.claw-home-feature__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.claw-home-feature h3 {
+  margin-top: 18px;
+  color: var(--home-ink);
+  font-size: 15px;
+  font-weight: 700;
+}
+.claw-home-feature p {
+  margin-top: 8px;
+  color: #77736c;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.claw-home-step {
+  position: relative;
+  min-height: 176px;
+  padding: 24px;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid var(--home-border);
+  border-radius: 8px;
+}
+.claw-home-step > span {
+  color: var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 800;
+}
+.claw-home-step h3 {
+  margin-top: 34px;
+  color: var(--home-ink);
+  font-size: 17px;
+  font-weight: 700;
+}
+.claw-home-step p {
+  margin-top: 8px;
+  color: #77736c;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.claw-home-v2__cta {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+@keyframes claw-home-cursor {
+  50% {
+    opacity: 0;
+  }
+}
+@media (max-width: 1023px) {
+  .claw-home-v2__hero-inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 42px;
+    min-height: 0;
+    padding: 56px 32px 0;
+  }
+  .claw-home-v2__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .claw-home-v2__showcase {
+    width: min(100%, 860px);
+    margin: 0 auto;
+  }
+}
+@media (max-width: 720px) {
+  .claw-home-v2__hero-inner {
+    gap: 34px;
+    padding: 48px 20px 0;
+  }
+  .claw-home-demo__windowbar {
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+  }
+  .claw-home-demo__windowbar > span:nth-child(2) {
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .claw-home-demo__workspace {
+    display: block;
+    min-height: 446px;
+  }
+  .claw-home-demo__sidebar {
+    display: none;
+  }
+  .claw-home-demo__messages {
+    min-height: 328px;
+    padding: 18px 18px 14px;
+  }
+  .claw-home-demo__user-message {
+    max-width: 86%;
+  }
+  .claw-home-demo__assistant-message {
+    max-width: 92%;
+  }
+  .claw-home-feature {
+    min-height: 176px;
+  }
+}
+@media (max-width: 480px) {
+  .claw-home-install {
+    width: 100%;
+    padding-left: 10px;
+  }
+  .claw-home-install__prompt {
+    margin-right: 7px;
+  }
+  .claw-home-install button {
+    width: 34px;
+    min-width: 34px;
+    margin-left: 6px;
+    padding: 0;
+  }
+  .claw-home-install button svg {
+    width: 15px;
+    height: 15px;
+  }
+  .claw-home-demo__windowbar {
+    padding: 0 10px;
+  }
+  .claw-home-demo__online {
+    font-size: 0;
+  }
+  .claw-home-demo__chat-head {
+    padding: 0 14px;
+  }
+  .claw-home-demo__messages {
+    min-height: 342px;
+    padding: 18px 12px 14px;
+  }
+  .claw-home-demo-tool {
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: 8px;
+  }
+  .claw-home-demo-tool__icon {
+    width: 32px;
+    height: 32px;
+  }
+  .claw-home-demo-tool__body small {
+    white-space: normal;
+  }
+  .claw-home-demo-tool__state {
+    align-self: start;
+    padding-top: 3px;
+    font-size: 0;
+  }
+  .claw-home-demo-tool__state svg {
+    width: 14px;
+    height: 14px;
+  }
+  .claw-home-demo__composer {
+    margin: 0 12px 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .claw-home-v2 *,
+  .claw-home-v2 *::before,
+  .claw-home-v2 *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .claw-home-feature:hover {
+    transform: none;
+  }
+}
 /* Login/register keeps the public product palette even when the app theme is dark. */
 body[data-auth-light="true"] {
   color-scheme: light;
