@@ -81,13 +81,13 @@
 
 推荐系统：Ubuntu 22.04+ / 24.04。
 
-默认岗位运行时是 JiuwenSwarm；一键脚本会自动安装 EA 维护版运行时、MySQL 和 PM2，不会回退到 OpenClaw：
+默认岗位运行时采用 JiuwenSwarm，一键脚本会自动安装平台及所需组件：
 
 ```bash
 curl -fsSL https://linggan.top/install.sh | bash
 ```
 
-官方脚本会匿名统计“脚本下载、开始、成功、失败阶段”，用于判断安装稳定性；统计事件不包含服务器 IP、主机名、路径、账号或密钥。上报失败不会影响安装。需要关闭时可执行：
+脚本默认启用匿名安装质量统计，可通过以下方式关闭：
 
 ```bash
 curl -fsSL https://linggan.top/install.sh | EMPLOYEE_AGENT_TELEMETRY=0 bash
