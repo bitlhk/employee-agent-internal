@@ -46,6 +46,7 @@ scripts/sync-github.sh
 scripts/sync-skills.sh
 # 2026-04-19 内部文档不公开（仅在主版本保留）
 docs/TODO.md
+docs/code_review_report.md
 docs/双周报-*.md
 docs/legacy-enterprise-*.md
 docs/legacy-multitenant-*.md

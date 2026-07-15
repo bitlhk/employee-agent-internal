@@ -6480,6 +6480,35 @@ html:has(:root[data-theme-mode="light"]) body {
   padding: 7px 10px;
   cursor: pointer;
 }
+.lingxia-skill-select-item > span:last-child {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+}
+.lingxia-skill-select-item__icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in oklab, var(--oc-border) 84%, transparent);
+  border-radius: 50%;
+  background: color-mix(in oklab, var(--oc-text-primary) 8%, transparent);
+  color: var(--oc-text-primary);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+:root[data-theme-mode="light"] .lingxia-skill-select-item__icon {
+  border-color: #e1e1de;
+  background: #f1f1ef;
+  color: #4f4e4a;
+}
 .lingxia-skill-select-item__main {
   display: flex;
   min-width: 0;
@@ -6653,6 +6682,132 @@ html:has(:root[data-theme-mode="light"]) body {
 :root[data-theme-mode="light"] .lingxia-shell [data-slot="select-trigger"] {
   background: #ffffff !important;
   border-color: #E5E7EB !important;
+  color: #111827 !important;
+}
+
+/* 主对话模型选择器：与技能选择器保持同一套紧凑视觉 */
+.lingxia-composer-model-select {
+  height: 28px;
+  min-width: 0;
+  max-width: 190px;
+  gap: 5px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--oc-text-secondary);
+  font-size: var(--oc-text-sm);
+  font-weight: var(--oc-weight-normal);
+  letter-spacing: 0;
+}
+.lingxia-composer-model-select:hover {
+  background: rgba(128,128,128,0.12);
+  color: var(--oc-text-primary);
+}
+.lingxia-composer-model-select__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingxia-composer-model-select__loading {
+  width: 13px !important;
+  height: 13px !important;
+  color: var(--oc-text-tertiary);
+}
+
+.model-provider-logo {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  align-items: center;
+  justify-content: center;
+  color: var(--oc-text-secondary);
+}
+.model-provider-logo img {
+  display: block;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+.lingxia-composer-model-select .model-provider-logo {
+  width: 18px;
+  height: 18px;
+  flex-basis: 18px;
+}
+.lingxia-composer-model-select .model-provider-logo img {
+  width: 16px;
+  height: 16px;
+}
+
+.lingxia-model-menu {
+  min-width: 260px;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 0 !important;
+  overflow: hidden;
+  border: 1px solid var(--oc-border) !important;
+  border-radius: 10px !important;
+  background: var(--oc-bg) !important;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.28) !important;
+}
+.lingxia-model-menu [data-slot="select-viewport"] {
+  width: 100%;
+  height: auto !important;
+  max-height: 280px;
+  padding: 4px;
+}
+.lingxia-model-menu .lingxia-model-item {
+  min-height: 34px;
+  padding: 7px 30px 7px 10px;
+  border: none !important;
+  border-radius: 6px;
+  outline: none !important;
+  box-shadow: none !important;
+  color: var(--oc-text-primary) !important;
+  cursor: pointer;
+  letter-spacing: 0;
+}
+.lingxia-model-menu .lingxia-model-item > span:last-child {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+}
+.lingxia-model-menu .lingxia-model-item[data-state="checked"] {
+  border: none !important;
+  background: transparent !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+.lingxia-model-menu .lingxia-model-item[data-highlighted],
+.lingxia-model-menu .lingxia-model-item:hover {
+  background: rgba(255,255,255,0.07) !important;
+  color: var(--oc-text-primary) !important;
+}
+.lingxia-model-menu .lingxia-model-item[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.lingxia-model-item__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--oc-text-primary);
+  font-size: var(--oc-text-sm);
+  font-weight: var(--oc-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-theme-mode="light"] .lingxia-model-menu {
+  background: #ffffff !important;
+  border-color: #E5E7EB !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+}
+:root[data-theme-mode="light"] .lingxia-model-menu .lingxia-model-item[data-highlighted],
+:root[data-theme-mode="light"] .lingxia-model-menu .lingxia-model-item:hover {
+  background: rgba(0,0,0,0.05) !important;
   color: #111827 !important;
 }
 

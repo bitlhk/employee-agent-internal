@@ -88,11 +88,15 @@ import {
   validateEaAssistantModel,
 } from "../_core/ea-assistant-model";
 import {
+  JIUWEN_AUTO_MODEL_ID,
   JIUWEN_MODEL_PROVIDERS,
   JIUWEN_REASONING_LEVELS,
+  listSelectableJiuwenModels,
   listJiuwenModelsWithSecrets,
   modelIdentity,
   replaceJiuwenModels,
+  resolveAutomaticSelectableJiuwenModel,
+  resolveSelectableJiuwenModel,
   sanitizeModelAdminError,
   toPublicJiuwenModels,
   validateJiuwenModel,
@@ -374,27 +378,44 @@ function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}):
   console.log(`[IOS-LOAD] ${message}`, fields);
 }
 
-const parseEnvValue = (raw: string, key: string): string => {
-  const line = raw.split(/\r?\n/).find((entry) => entry.trim().startsWith(`${key}=`));
-  if (!line) return "";
-  return line.slice(line.indexOf("=") + 1).trim().replace(/^["']|["']$/g, "");
-};
-
-const getAvailableJiuwenModels = (): RuntimeModelOption[] => {
-  const envPath = process.env.JIUWENCLAW_ENV_PATH || "/root/.jiuwenswarm/config/.env";
-  let modelName = "";
+const getAvailableJiuwenModels = async (): Promise<RuntimeModelOption[]> => {
   try {
-    if (existsSync(envPath)) modelName = parseEnvValue(readFileSync(envPath, "utf8"), "MODEL_NAME");
-  } catch {}
-  const rawId = modelName || process.env.JIUWENCLAW_DEFAULT_MODEL || "glm-5.2";
-  // Normalize to provider-prefixed format so MODEL_DISPLAY_NAMES in the frontend resolves correctly
-  const id = rawId.includes("/") ? rawId : `modelarts-maas/${rawId}`;
-  return [{ id, name: id, desc: "JiuwenSwarm", isDefault: true }];
+    const models = await listSelectableJiuwenModels();
+    if (models.length > 0) {
+      const automaticModel = resolveAutomaticSelectableJiuwenModel(models);
+      const orderedModels = automaticModel
+        ? [automaticModel, ...models.filter((model) => model.id !== automaticModel.id)]
+        : models;
+      return [
+        {
+          id: JIUWEN_AUTO_MODEL_ID,
+          name: "自动",
+          desc: automaticModel?.name || "由系统选择",
+          isDefault: true,
+        },
+        ...orderedModels.map((model) => ({
+          id: model.id,
+          name: model.name,
+          desc: model.description,
+          isDefault: false,
+        })),
+      ];
+    }
+  } catch (error) {
+    console.warn("[models] failed to read JiuwenSwarm model catalog; using configured fallback", {
+      error: sanitizeModelAdminError(error),
+    });
+  }
+  const id = String(process.env.JIUWENCLAW_DEFAULT_MODEL || "glm-5.2").trim() || "glm-5.2";
+  return [
+    { id: JIUWEN_AUTO_MODEL_ID, name: "自动", desc: "由系统选择", isDefault: true },
+    { id, name: id, desc: "JiuwenSwarm", isDefault: false },
+  ];
 };
 
-const getAvailableModelsForRuntime = (adoptId?: unknown): RuntimeModelOption[] => {
+const getAvailableModelsForRuntime = async (adoptId?: unknown): Promise<RuntimeModelOption[]> => {
   const runtime = resolveClawRuntime(adoptId);
-  if (runtime === "jiuwenclaw") return getAvailableJiuwenModels();
+  if (runtime === "jiuwenclaw") return await getAvailableJiuwenModels();
   if (runtime === "legacy_archived") return [];
   return getAvailableClawModelsFromConfig();
 };
@@ -605,11 +626,11 @@ export const clawRouter = router({
       };
     }),
 
-    getAvailableModels: publicProcedure
+    getAvailableModels: protectedProcedure
       .input(z.object({ adoptId: z.string().min(1).max(64).optional() }).optional())
-      .query(({ input }) => {
+      .query(async ({ input }) => {
         const startedAt = Date.now();
-        const models = getAvailableModelsForRuntime(input?.adoptId);
+        const models = await getAvailableModelsForRuntime(input?.adoptId);
         logIosLoadDebug("trpc_claw_getAvailableModels", {
           adoptId: input?.adoptId || "",
           count: models.length,
@@ -629,17 +650,31 @@ export const clawRouter = router({
             message: "Legacy runtime has been archived. Provision a JiuwenClaw agent instead.",
           });
         }
-        const allowed = new Set(getAvailableModelsForRuntime(input.adoptId).map((m) => m.id));
-        if (!allowed.has(input.modelId)) {
-          throw new Error("不支持的模型");
-        }
-
         const claw = await getClawByAdoptId(input.adoptId);
         if (!claw) throw new Error("智能体实例不存在");
         if (Number(claw.userId) !== Number(ctx.user!.id)) {
           throw new Error("无权修改该智能体设置");
         }
-        const previousModel = String((claw as any).model || "");
+        let jiuwenSelection: Awaited<ReturnType<typeof resolveSelectableJiuwenModel>> = null;
+        if (runtimeType === "jiuwenclaw") {
+          try {
+            jiuwenSelection = input.modelId === JIUWEN_AUTO_MODEL_ID
+              ? resolveAutomaticSelectableJiuwenModel(await listSelectableJiuwenModels())
+              : await resolveSelectableJiuwenModel(input.modelId);
+          } catch (error) {
+            throw new TRPCError({
+              code: "SERVICE_UNAVAILABLE",
+              message: sanitizeModelAdminError(error) || "模型目录暂时不可用",
+            });
+          }
+          if (!jiuwenSelection) throw new Error("不支持的模型");
+        } else {
+          const allowed = new Set((await getAvailableModelsForRuntime(input.adoptId)).map((m) => m.id));
+          if (!allowed.has(input.modelId)) throw new Error("不支持的模型");
+        }
+
+        const previousSettings = await getClawProfileSettings(Number(claw.id));
+        const previousModel = String((previousSettings as any)?.model || "");
 
         // 1) 保存到业务设置（用于页面回显）
         await upsertClawProfileSettings(Number(claw.id), {
@@ -661,17 +696,20 @@ export const clawRouter = router({
             metadata: {
               previousModel: previousModel || null,
               model: input.modelId,
-              applied: true,
+              runtimeModel: jiuwenSelection?.runtimeModelId || input.modelId,
+              applied: false,
+              effectiveFrom: "next_request",
               runtimeManaged: true,
             },
           });
           return {
             ok: true,
             model: input.modelId,
-            applied: true,
+            applied: false,
             statusCode: null,
             applyError: null,
             runtimeManaged: true,
+            effectiveFrom: "next_request" as const,
           };
         }
 
@@ -2084,6 +2122,7 @@ export const clawRouter = router({
           const overrides = JSON.parse(readFileSync(`${APP_ROOT}/data/claw-model-overrides.json`, "utf8") || "{}");
           modelOverride = overrides[input.adoptId] || "";
         } catch {}
+        const modelPreference = String((settings as any)?.model || modelOverride || "");
         const base = settings || {
           adoptionId: Number(claw.id),
           displayName: "岗位智能体",
@@ -2098,10 +2137,10 @@ export const clawRouter = router({
           adoptId: input.adoptId,
           clawId: (claw as any).id,
           hasSettings: Boolean(settings),
-          modelOverride: modelOverride || "",
+          modelOverride: modelPreference,
           ms: Date.now() - startedAt,
         });
-        return { ...base, model: modelOverride };
+        return { ...base, model: modelPreference };
       }),
 
     updateSettings: protectedProcedure

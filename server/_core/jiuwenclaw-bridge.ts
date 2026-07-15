@@ -858,6 +858,8 @@ export async function forwardToJiuwenClaw(
     return;
   }
 
+  if (opts.model) writeData({ __model_selected: opts.model });
+
   const wsUrl = String(process.env.JIUWENCLAW_AGENTSERVER_WS_URL || DEFAULT_AGENTSERVER_WS_URL);
   const serviceId = buildJiuwenServiceId();
   const agentId = buildJiuwenAgentId(claw);
@@ -912,6 +914,7 @@ export async function forwardToJiuwenClaw(
     userId: claw.userId,
     clientRunId: opts.clientRunId || "",
     mode: requestPayload.params?.mode || "",
+    model: opts.model || "",
     selectedSkillIds: (opts.selectedSkills || []).map((skill) => skill.id).filter(Boolean),
     attempt,
     ...privateMessageLogFields(message),

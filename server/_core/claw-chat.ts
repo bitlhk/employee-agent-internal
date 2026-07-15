@@ -245,6 +245,42 @@ export function registerChatStreamRoutes(app: express.Express) {
         res.status(selectedSkill.status).json({ error: selectedSkill.error });
         return;
       }
+      const requestedModelId = String(model || "").trim();
+      const {
+        JIUWEN_AUTO_MODEL_ID,
+        listSelectableJiuwenModels,
+        resolveAutomaticSelectableJiuwenModel,
+      } = await import("./jiuwenswarm-model-admin");
+      let selectableModels;
+      try {
+        selectableModels = await listSelectableJiuwenModels();
+      } catch {
+        res.status(503).json({ error: "模型目录暂时不可用，请稍后重试" });
+        return;
+      }
+      let selectedModel = requestedModelId === JIUWEN_AUTO_MODEL_ID
+        ? resolveAutomaticSelectableJiuwenModel(selectableModels)
+        : requestedModelId
+          ? selectableModels.find((item) => item.id === requestedModelId)
+          : undefined;
+      if (requestedModelId && !selectedModel) {
+        res.status(400).json({ error: "所选模型已不可用，请刷新模型列表后重试" });
+        return;
+      }
+      if (!selectedModel) {
+        const { getClawProfileSettings } = await import("../db");
+        const settings = await getClawProfileSettings(Number(claw.id));
+        const preferredModelId = String((settings as any)?.model || "").trim();
+        selectedModel = preferredModelId === JIUWEN_AUTO_MODEL_ID
+          ? resolveAutomaticSelectableJiuwenModel(selectableModels)
+          : selectableModels.find((item) => item.id === preferredModelId);
+        selectedModel ||= resolveAutomaticSelectableJiuwenModel(selectableModels);
+      }
+      if (!selectedModel) {
+        res.status(503).json({ error: "尚未配置可用的 Agent 模型" });
+        return;
+      }
+      const effectiveJiuwenModel = selectedModel.runtimeModelId;
       const { forwardToJiuwenClaw, buildJiuwenAgentId, buildJiuwenSessionId } = await import("./jiuwenclaw-bridge");
       const jiuwenClaw = {
         adoptId: String(claw.adoptId),
@@ -271,6 +307,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           selectedSkillId: selectedSkill.skillId,
           selectedSkillName: selectedSkill.label,
           selectedSkillFile: selectedSkill.skillFile,
+          model: effectiveJiuwenModel,
           injectionMode: "manifest",
         });
       }
@@ -279,7 +316,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         runtimeMessage,
         res,
         {
-          model,
+          model: effectiveJiuwenModel,
           req,
           channel,
           conversationId,

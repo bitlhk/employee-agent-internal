@@ -42,6 +42,35 @@ export type PublicJiuwenModel = Omit<JiuwenModelSecret, "apiKey" | "timeout" | "
   contextWindowTokens: number;
 };
 
+export type SelectableJiuwenModel = {
+  id: string;
+  name: string;
+  description: string;
+  modelName: string;
+  alias: string;
+  provider: string;
+  isDefault: boolean;
+  runtimeModelId: string;
+};
+
+export const JIUWEN_AUTO_MODEL_ID = "__auto";
+
+export function resolveAutomaticSelectableJiuwenModel(
+  models: SelectableJiuwenModel[],
+): SelectableJiuwenModel | null {
+  const openPangu = models.find((model) =>
+    [model.id, model.name, model.description, model.modelName, model.alias]
+      .join(" ")
+      .toLowerCase()
+      .includes("pangu"),
+  );
+  return openPangu || models.find((model) => model.isDefault) || models[0] || null;
+}
+
+const MODEL_CATALOG_TTL_MS = 5_000;
+let selectableModelCache: { expiresAt: number; models: SelectableJiuwenModel[] } | null = null;
+let selectableModelRequest: Promise<SelectableJiuwenModel[]> | null = null;
+
 type GatewayModelEntry = {
   model_name?: unknown;
   alias?: unknown;
@@ -170,6 +199,56 @@ export function toPublicJiuwenModels(models: JiuwenModelSecret[]): PublicJiuwenM
   }));
 }
 
+export function toSelectableJiuwenModels(models: JiuwenModelSecret[]): SelectableJiuwenModel[] {
+  return models.map((model, index) => {
+    const id = modelIdentity(model);
+    return {
+      id,
+      name: model.alias || model.modelName,
+      description: model.alias ? model.modelName : model.provider,
+      modelName: model.modelName,
+      alias: model.alias,
+      provider: model.provider,
+      isDefault: index === 0,
+      runtimeModelId: id,
+    };
+  });
+}
+
+export function invalidateSelectableJiuwenModelCache(): void {
+  selectableModelCache = null;
+}
+
+export async function listSelectableJiuwenModels(options: { force?: boolean } = {}): Promise<SelectableJiuwenModel[]> {
+  const now = Date.now();
+  if (!options.force && selectableModelCache && selectableModelCache.expiresAt > now) {
+    return selectableModelCache.models;
+  }
+  if (selectableModelRequest) return selectableModelRequest;
+
+  selectableModelRequest = listJiuwenModelsWithSecrets()
+    .then((models) => {
+      const selectable = toSelectableJiuwenModels(models);
+      selectableModelCache = { expiresAt: Date.now() + MODEL_CATALOG_TTL_MS, models: selectable };
+      return selectable;
+    })
+    .catch((error) => {
+      if (selectableModelCache?.models.length) return selectableModelCache.models;
+      throw error;
+    })
+    .finally(() => {
+      selectableModelRequest = null;
+    });
+  return selectableModelRequest;
+}
+
+export async function resolveSelectableJiuwenModel(id: string): Promise<SelectableJiuwenModel | null> {
+  const selected = text(id);
+  if (!selected) return null;
+  const models = await listSelectableJiuwenModels();
+  return models.find((model) => model.id === selected) || null;
+}
+
 function assertUniqueModelIds(models: Array<Pick<JiuwenModelDraft, "alias" | "modelName">>): void {
   const seen = new Set<string>();
   for (const model of models) {
@@ -222,6 +301,7 @@ export async function replaceJiuwenModels(drafts: JiuwenModelDraft[]): Promise<J
   const existing = await listJiuwenModelsWithSecrets();
   const merged = mergeJiuwenModelDrafts(drafts, existing);
   await callJiuwenGatewayAdmin("models.replace_all", { models: merged.map(toGatewayModel) });
+  invalidateSelectableJiuwenModelCache();
   return merged;
 }
 

@@ -19,6 +19,17 @@ identify compatible integrations. Their logos are not redistributed by this
 repository. Channel UI uses neutral Lucide icons, and runtime UI uses the
 project-owned Workforce Agent asset.
 
+## Model provider logos
+
+The model picker uses the following assets supplied by the project owner on
+2026-07-15 solely to identify the configured model providers:
+
+- `client/public/images/model-providers/glm.png`
+- `client/public/images/model-providers/pangu.png`
+
+GLM, openPangu, and their associated marks remain the property of their
+respective owners. Their inclusion does not grant trademark rights.
+
 ## Adding assets
 
 Every externally sourced asset must record its source URL, copyright owner,

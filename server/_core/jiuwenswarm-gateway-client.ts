@@ -290,6 +290,9 @@ export async function forwardToJiuwenGateway(
     return;
   }
 
+
+  if (opts.model) writeSseData(res, { __model_selected: opts.model });
+
   const wsUrl = gatewayWsUrl();
   const serviceId = buildJiuwenServiceId();
   const agentId = buildJiuwenAgentId(claw);
@@ -320,6 +323,7 @@ export async function forwardToJiuwenGateway(
     channelId,
     userId: claw.userId,
     clientRunId: opts.clientRunId || "",
+    model: opts.model || "",
     wsUrl,
     ...privateMessageLogFields(message),
   });

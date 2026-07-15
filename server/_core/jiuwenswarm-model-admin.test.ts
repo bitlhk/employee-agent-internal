@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   mergeJiuwenModelDrafts,
+  resolveAutomaticSelectableJiuwenModel,
   sanitizeModelAdminError,
+  toSelectableJiuwenModels,
   toPublicJiuwenModels,
   type JiuwenModelDraft,
   type JiuwenModelSecret,
@@ -45,6 +47,48 @@ describe("JiuwenSwarm model admin safety", () => {
     });
     expect(JSON.stringify(publicModels)).not.toContain("sk-existing-secret");
     expect(publicModels[0]).not.toHaveProperty("apiKey");
+  });
+
+  it("builds a safe selectable catalog with one primary model", () => {
+    const selectable = toSelectableJiuwenModels([
+      existingModel(),
+      existingModel({
+        modelName: "openpangu-2.0-flash",
+        alias: "fast-model",
+        apiKey: "sk-second-secret",
+        originIndex: 1,
+      }),
+    ]);
+
+    expect(selectable).toEqual([
+      expect.objectContaining({
+        id: "agent-main",
+        runtimeModelId: "agent-main",
+        isDefault: true,
+      }),
+      expect.objectContaining({
+        id: "fast-model",
+        name: "fast-model",
+        description: "openpangu-2.0-flash",
+        runtimeModelId: "fast-model",
+        isDefault: false,
+      }),
+    ]);
+    expect(JSON.stringify(selectable)).not.toContain("sk-existing-secret");
+    expect(JSON.stringify(selectable)).not.toContain("sk-second-secret");
+  });
+
+  it("routes automatic selection to openPangu even when another model is primary", () => {
+    const selectable = toSelectableJiuwenModels([
+      existingModel(),
+      existingModel({
+        modelName: "openpangu-2.0-flash",
+        alias: "pangu-flash",
+        originIndex: 1,
+      }),
+    ]);
+
+    expect(resolveAutomaticSelectableJiuwenModel(selectable)?.id).toBe("pangu-flash");
   });
 
   it("preserves the existing key when an admin leaves the key field blank", () => {
