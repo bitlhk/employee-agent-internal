@@ -57,14 +57,16 @@ export const JIUWEN_AUTO_MODEL_ID = "__auto";
 
 export function resolveAutomaticSelectableJiuwenModel(
   models: SelectableJiuwenModel[],
+  configuredTarget = String(process.env.JIUWEN_AUTO_TARGET_MODEL || "").trim(),
 ): SelectableJiuwenModel | null {
-  const openPangu = models.find((model) =>
-    [model.id, model.name, model.description, model.modelName, model.alias]
-      .join(" ")
-      .toLowerCase()
-      .includes("pangu"),
-  );
-  return openPangu || models.find((model) => model.isDefault) || models[0] || null;
+  const normalizedTarget = configuredTarget.toLowerCase();
+  const configuredModel = normalizedTarget
+    ? models.find((model) =>
+        [model.id, model.name, model.modelName, model.alias]
+          .some((value) => String(value || "").trim().toLowerCase() === normalizedTarget),
+      )
+    : null;
+  return configuredModel || models.find((model) => model.isDefault) || models[0] || null;
 }
 
 const MODEL_CATALOG_TTL_MS = 5_000;

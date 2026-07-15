@@ -45,11 +45,13 @@ function formatKnownModelName(token: string, brand: ModelBrand) {
   if (brand === "auto") return "自动";
 
   if (brand === "glm") {
-    return "GLM";
+    const name = normalized.replace(/^glm-?/i, "");
+    return name ? `GLM-${name}` : "GLM";
   }
 
   if (brand === "pangu") {
-    return "openPangu";
+    const name = normalized.replace(/^openpangu-?/i, "").replace(/^pangu-?/i, "");
+    return name ? `openPangu-${name}` : "openPangu";
   }
 
   if (brand === "deepseek") {

@@ -4,7 +4,7 @@ import { presentModel } from "./modelPresentation";
 describe("presentModel", () => {
   it("presents GLM with a product name instead of its API id", () => {
     expect(presentModel({ id: "glm-5.2", isDefault: true })).toMatchObject({
-      displayName: "GLM",
+      displayName: "GLM-5.2",
       brand: "glm",
       iconSrc: "/images/model-providers/glm.png",
     });
@@ -12,7 +12,7 @@ describe("presentModel", () => {
 
   it("recognizes openPangu flash as a fast model", () => {
     expect(presentModel({ id: "openpangu-2.0-flash" })).toMatchObject({
-      displayName: "openPangu",
+      displayName: "openPangu-2.0-flash",
       brand: "pangu",
       iconSrc: "/images/model-providers/pangu.png",
     });

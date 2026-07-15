@@ -78,7 +78,7 @@ describe("JiuwenSwarm model admin safety", () => {
     expect(JSON.stringify(selectable)).not.toContain("sk-second-secret");
   });
 
-  it("routes automatic selection to openPangu even when another model is primary", () => {
+  it("routes automatic selection to the configured model instead of a hard-coded brand", () => {
     const selectable = toSelectableJiuwenModels([
       existingModel(),
       existingModel({
@@ -88,7 +88,9 @@ describe("JiuwenSwarm model admin safety", () => {
       }),
     ]);
 
-    expect(resolveAutomaticSelectableJiuwenModel(selectable)?.id).toBe("pangu-flash");
+    expect(resolveAutomaticSelectableJiuwenModel(selectable, "pangu-flash")?.id).toBe("pangu-flash");
+    expect(resolveAutomaticSelectableJiuwenModel(selectable, "openpangu-2.0-flash")?.id).toBe("pangu-flash");
+    expect(resolveAutomaticSelectableJiuwenModel(selectable, "missing-model")?.id).toBe("agent-main");
   });
 
   it("preserves the existing key when an admin leaves the key field blank", () => {
