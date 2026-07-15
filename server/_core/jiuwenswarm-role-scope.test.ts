@@ -165,4 +165,33 @@ describe("jiuwenswarm role scope manifest", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("removes a default skill link after the user disables it", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-disabled-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const shared = path.join(root, "skills-shared");
+      mkdirSync(path.join(workspace, "skills"), { recursive: true });
+      mkdirSync(path.join(shared, "wealth-manager-assistant"), { recursive: true });
+      const linkPath = path.join(workspace, "skills", "wealth-manager-assistant");
+      symlinkSync(
+        path.relative(path.dirname(linkPath), path.join(shared, "wealth-manager-assistant")),
+        linkPath,
+        "dir",
+      );
+
+      const result = writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: workspace,
+        role,
+        effectiveAssets,
+        sharedSkillsDir: shared,
+        disabledDefaultSkillIds: ["wealth-manager-assistant"],
+      });
+
+      expect(result.removedSharedSkills).toEqual(["wealth-manager-assistant"]);
+      expect(existsSync(linkPath)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

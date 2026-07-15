@@ -39,6 +39,10 @@ import {
   listRoleAssetGrants,
   replaceAdminRoleAssetGrantsForAsset,
   syncGlobalOpenSourceSkillGrants,
+  deleteMessageFeedback,
+  getMessageFeedbackAdminSummary,
+  listMessageFeedbackForConversation,
+  upsertMessageFeedback,
   getDb,
 } from "../db";
 import {
@@ -61,6 +65,7 @@ import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, re
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
 import { skillRegistry } from "../_core/skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
+import { roleSkillPreferences } from "../_core/skills/role-skill-preferences";
 import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
 import { toPublicSkillMarketItem } from "../_core/skills/skill-market-policy";
 import {
@@ -82,6 +87,7 @@ import type { AgentRoleTemplate, AgentRuntime } from "../_core/role-templates";
 import { resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
+import { MESSAGE_FEEDBACK_REASON_CODES } from "../../shared/message-feedback";
 import {
   getEaAssistantModelAdminConfig,
   saveEaAssistantModelConfig,
@@ -105,6 +111,12 @@ import {
 type ResolvedClawRuntime = "openclaw" | "jiuwenclaw" | "legacy_archived";
 
 const skillIdSchema = z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "技能ID只能包含小写字母、数字和连字符");
+const feedbackIdentitySchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/, "消息标识格式不正确");
+const feedbackToolSchema = z.object({
+  name: z.string().trim().min(1).max(128),
+  status: z.enum(["running", "done", "error"]),
+  durationMs: z.number().int().nonnegative().max(3_600_000).optional(),
+});
 const jiuwenModelDraftSchema = z.object({
   modelName: z.string().trim().min(1).max(200),
   alias: z.string().trim().max(200).default(""),
@@ -273,6 +285,7 @@ const applyAdminRoleReset = async (input: {
     role: input.role,
     effectiveAssets,
   });
+  roleSkillPreferences.clear(adoptId);
   const sessionEpoch = await runtimeAdapter.bumpSessionEpoch(adoptId, agentId);
 
   await appendClawAdoptionEvent({
@@ -580,6 +593,76 @@ export const clawRouter = router({
       const visibility = (await getSystemConfigValue("claw_visibility", "internal")).trim() || "internal";
       return { visibility: visibility === "internal" ? "internal" : "public" };
     }),
+
+    listMessageFeedback: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        conversationId: feedbackIdentitySchema,
+      }))
+      .query(async ({ input, ctx }) => {
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const rows = await listMessageFeedbackForConversation(
+          Number(ctx.user!.id),
+          input.adoptId,
+          input.conversationId,
+        );
+        return { rows };
+      }),
+
+    setMessageFeedback: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        conversationId: feedbackIdentitySchema,
+        messageId: feedbackIdentitySchema,
+        rating: z.enum(["positive", "negative"]).nullable(),
+        reasonCodes: z.array(z.enum(MESSAGE_FEEDBACK_REASON_CODES)).max(8).default([]),
+        comment: z.string().trim().max(500).optional(),
+        selectedModelId: z.string().trim().max(200).optional(),
+        actualModelId: z.string().trim().max(200).optional(),
+        skillIds: z.array(z.string().trim().min(1).max(64)).max(20).default([]),
+        tools: z.array(feedbackToolSchema).max(30).default([]),
+        inputTokens: z.number().int().nonnegative().max(2_000_000_000).optional(),
+        outputTokens: z.number().int().nonnegative().max(2_000_000_000).optional(),
+        durationMs: z.number().int().nonnegative().max(86_400_000).optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const userId = Number(ctx.user!.id);
+        if (input.rating === null) {
+          await deleteMessageFeedback(userId, input.adoptId, input.conversationId, input.messageId);
+          return { ok: true, deleted: true };
+        }
+        const isNegative = input.rating === "negative";
+        await upsertMessageFeedback({
+          userId,
+          adoptId: input.adoptId,
+          conversationId: input.conversationId,
+          messageId: input.messageId,
+          rating: input.rating,
+          reasonCodes: isNegative ? input.reasonCodes : [],
+          comment: isNegative ? input.comment?.trim() || undefined : undefined,
+          roleTemplate: String((claw as any).roleTemplate || "general-assistant"),
+          runtimeType: resolveClawRuntime(input.adoptId),
+          selectedModelId: input.selectedModelId?.trim() || undefined,
+          actualModelId: input.actualModelId?.trim() || undefined,
+          skillIds: Array.from(new Set(input.skillIds)),
+          tools: input.tools,
+          inputTokens: input.inputTokens,
+          outputTokens: input.outputTokens,
+          durationMs: input.durationMs,
+        });
+        return { ok: true, deleted: false };
+      }),
+
+    adminMessageFeedbackSummary: adminProcedure
+      .input(z.object({
+        days: z.number().int().min(1).max(365).default(30),
+        limit: z.number().int().min(1).max(100).default(30),
+      }).optional())
+      .query(async ({ input }) => getMessageFeedbackAdminSummary({
+        days: input?.days ?? 30,
+        limit: input?.limit ?? 30,
+      })),
 
     roleTemplates: publicProcedure.query(() => {
       const baseline = getRoleSkillMcpBaseline();

@@ -1,4 +1,5 @@
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  "__auto": "自动",
   "modelarts-maas/glm-5": "GLM-5",
   "glm5/glm-5": "GLM-5",
   "modelarts-maas/glm-5.1": "GLM-5.1",

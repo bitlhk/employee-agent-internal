@@ -187,7 +187,7 @@ type ExternalAgentTasksResponse = {
 
 const SOURCE_LABEL: Record<SourceKind, string> = {
   builtin: "平台内置",
-  role_default: "岗位默认",
+  role_default: "岗位预置",
   marketplace: "广场安装",
   uploaded: "我的上传",
   generated: "对话生成",
@@ -291,7 +291,7 @@ function sourceCanDestroy(skill: RegistrySkill) {
 }
 
 function sourceCanToggle(skill: RegistrySkill) {
-  return skill.source.kind !== "role_default";
+  return Boolean(skill.id);
 }
 
 function sourceCanUninstall(skill: RegistrySkill) {
@@ -846,7 +846,7 @@ function SkillsToolbar({
   const sourceFilters: { key: SourceFilter; label: string }[] = [
     { key: "all", label: "全部" },
     { key: "builtin", label: "平台内置" },
-    { key: "role_default", label: "岗位默认" },
+    { key: "role_default", label: "岗位预置" },
     { key: "marketplace", label: "广场安装" },
     { key: "uploaded", label: "我的上传" },
     { key: "generated", label: "对话生成" },
@@ -920,8 +920,8 @@ function SkillRow({
           className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`}
           disabled={busy || !canToggle}
           onClick={() => canToggle && onToggle(!skill.enabled)}
-          aria-label={canToggle ? (skill.enabled ? "停用技能" : "启用技能") : "岗位默认技能不可停用"}
-          title={canToggle ? undefined : "岗位默认技能由岗位配置控制"}
+          aria-label={canToggle ? (skill.enabled ? "停用技能" : "启用技能") : "技能当前不可切换"}
+          title={canToggle ? undefined : "技能当前不可切换"}
         >
           <span className={`skills-switch-dot ${skill.enabled ? "on" : ""}`} />
         </button>
@@ -1039,7 +1039,7 @@ function SkillDetailModal({
                 className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`}
                 disabled={busy || !canToggle}
                 onClick={() => canToggle && onToggle(skill, !skill.enabled)}
-                title={canToggle ? undefined : "岗位默认技能由岗位配置控制"}
+                title={canToggle ? undefined : "技能当前不可切换"}
               >
                 <span className={`skills-switch-dot ${skill.enabled ? "on" : ""}`} />
               </button>

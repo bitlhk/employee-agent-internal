@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText } from "lucide-react";
 import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
 import { TenantAuditTab } from "@/components/pages/TenantAuditTab";
 import { CollaborationTab } from "@/components/pages/CollaborationTab";
@@ -42,6 +42,7 @@ import { useBrand, invalidateBrandClientCache } from "@/lib/useBrand";
 import { DEFAULT_BRAND } from "@shared/brand";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
+import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
@@ -839,6 +840,7 @@ export default function ClawAdmin() {
     { value: "collaboration", label: "组织协作", description: "空间、成员与准入", icon: Building2 },
     { value: "skills", label: "技能广场", description: "上架、审核与共享", icon: Sparkles },
     { value: "usage", label: "使用统计", description: "访问与使用趋势", icon: BarChart3 },
+    { value: "feedback", label: "质量反馈", description: "满意度与问题归因", icon: MessageSquareText },
     { value: "accounts", label: "账号管理", description: "管理员与登录密码", icon: UserCog },
     { value: "health", label: "系统健康", description: "平台、Runtime 与连接状态", icon: Activity },
     { value: "security-audit", label: "安全审计", description: "Ledger 查询与导出", icon: ShieldCheck },
@@ -1440,6 +1442,9 @@ export default function ClawAdmin() {
             <CollaborationTab />
           </TabsContent>
           <TabsContent value="usage" className="space-y-4">            <UsageStatsTab />          </TabsContent>
+          <TabsContent value="feedback" className="space-y-4">
+            <MessageFeedbackPanel enabled={activeTab === "feedback"} />
+          </TabsContent>
           <TabsContent value="accounts" className="space-y-4">
             <Card className="admin-panel-card p-6">
               <div className="mb-5 flex items-center justify-between gap-3">

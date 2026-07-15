@@ -3,7 +3,7 @@
 面向企业岗位的智能体平台，为不同岗位配置模型、工具、频道、协作和外部 Agent 能力。
 
 <p align="center">
-  <img src="client/public/images/workforce-agent.svg" width="120" alt="岗位智能体平台 Logo" />
+  <img src="docs/images/workforce-agent-demo.gif" width="860" alt="岗位智能体调用客户与产品 MCP 工具的动态演示" />
 </p>
 
 ## 适合做什么

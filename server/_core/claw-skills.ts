@@ -22,12 +22,14 @@ import {
   OPENCLAW_BASE_HOME,
   OPENCLAW_HOME,
   OPENCLAW_JSON_PATH,
+  isJiuwenClawAdoptId,
   openClawAgentDir,
   resolveRuntimeWorkspaceByIds,
 } from "./helpers";
 import { listApprovedSkillMarketItems, listMcpInvocationCounts, listSkillInvocationCounts, resolveEffectiveRoleAssets } from "../db";
 import { skillRegistry } from "./skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
+import { roleSkillPreferences } from "./skills/role-skill-preferences";
 import { skillInstaller } from "./skills/skill-installer";
 import {
   MAX_SKILL_PACKAGE_BYTES,
@@ -47,6 +49,8 @@ import {
   skillSourceDirsForRuntime,
 } from "./skills/skill-store";
 import { toPublicSkillMarketItem } from "./skills/skill-market-policy";
+import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
+import { resolveAgentRoleTemplate } from "./role-templates";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -921,6 +925,66 @@ export function registerSkillRoutes(app: express.Express) {
       }
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
+      const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
+      const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+      const isRoleDefault = effectiveAssets.skills.default.includes(skillId);
+      if (isRoleDefault) {
+        const role = resolveAgentRoleTemplate(roleTemplate);
+        const runtimeAgentId = resolveRuntimeAgentId(adoptId, String((claw as any).agentId || ""));
+        const runtimeAdapter = getRoleRuntimeAdapter(isJiuwenClawAdoptId(adoptId) ? "jiuwenswarm" : "openclaw");
+        const registered = await skillRegistry.listSkills(adoptId);
+        if (!registered.ok) {
+          res
+            .status(registryErrorStatus(registered.error.kind))
+            .json({ error: registered.error.detail, kind: registered.error.kind });
+          return;
+        }
+        const activeSkillIds = registered.value
+          .filter((skill) => skill.source.kind !== "role_default" && skill.enabled && skill.state === "ready")
+          .map((skill) => skill.id);
+        const previousDisabled = roleSkillPreferences.getDisabledDefaultSkillIds(adoptId);
+        const wasDisabled = previousDisabled.includes(skillId);
+        const applyRoleScope = async (disabledDefaultSkillIds: string[]) => {
+          const result = await runtimeAdapter.reconcileSkills({
+            adoptId,
+            agentId: runtimeAgentId,
+            role,
+            effectiveAssets,
+            activeSkillIds,
+            disabledDefaultSkillIds,
+          });
+          if (!result.ok) throw new Error(result.reason || "岗位技能同步失败");
+        };
+
+        const disabledDefaultSkillIds = roleSkillPreferences.setDefaultSkillEnabled(adoptId, skillId, enabled);
+        try {
+          await applyRoleScope(disabledDefaultSkillIds);
+          await runtimeAdapter.bumpSessionEpoch(adoptId, runtimeAgentId);
+        } catch (error) {
+          roleSkillPreferences.setDefaultSkillEnabled(adoptId, skillId, wasDisabled ? false : true);
+          await applyRoleScope(previousDisabled).catch(() => undefined);
+          throw error;
+        }
+
+        const projected = await listSkillsWithRoleDefaults({
+          adoptId,
+          agentId: runtimeAgentId,
+          roleTemplate,
+        });
+        if (!projected.ok) {
+          res
+            .status(registryErrorStatus(projected.error.kind))
+            .json({ error: projected.error.detail, kind: projected.error.kind });
+          return;
+        }
+        const item = projected.value.find((skill) => skill.id === skillId);
+        if (!item) {
+          res.status(404).json({ error: "skill not found" });
+          return;
+        }
+        res.json({ item });
+        return;
+      }
       const result = await skillRegistry.setEnabled(adoptId, skillId, enabled);
       if (!result.ok) {
         res

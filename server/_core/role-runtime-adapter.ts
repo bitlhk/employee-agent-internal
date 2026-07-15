@@ -34,6 +34,7 @@ export type RoleRuntimeReconcileInput = {
   role: AgentRoleTemplate;
   effectiveAssets: EffectiveRoleAssets;
   activeSkillIds?: string[];
+  disabledDefaultSkillIds?: string[];
 };
 
 export type RoleRuntimeReconcileResult = {

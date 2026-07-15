@@ -13,3 +13,4 @@ export * from "./collab";
 export * from "./coop-files";
 export * from "./agents";
 export * from "./install-telemetry";
+export * from "./message-feedback";

@@ -3,15 +3,22 @@ import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
-import { formatModelName } from "@/lib/modelDisplay";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  MESSAGE_FEEDBACK_REASON_CODES,
+  MESSAGE_FEEDBACK_REASON_LABELS,
+  type MessageFeedbackRating,
+  type MessageFeedbackReasonCode,
+} from "@shared/message-feedback";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Bot,
+  Check,
   ChevronDown,
   Code2,
+  Copy,
   Database,
   Download,
   Eye,
@@ -27,7 +34,12 @@ import {
   Plug,
   Puzzle,
   Search,
+  Square,
   Terminal,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  Volume2,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -128,8 +140,17 @@ type ChatMessageProps = {
   usage?: { input: number; output: number };
   contextPercent?: number | null;
   onDelete?: () => void;
+  feedback?: MessageFeedbackValue | null;
+  feedbackPending?: boolean;
+  onFeedback?: (feedback: MessageFeedbackValue | null) => void | Promise<void>;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "reject") => void;
+};
+
+export type MessageFeedbackValue = {
+  rating: MessageFeedbackRating;
+  reasonCodes: MessageFeedbackReasonCode[];
+  comment?: string;
 };
 
 function streamingMarkdownDelay(chars: number) {
@@ -940,16 +961,15 @@ function ChatMessageInner({
   isLast,
   isPlaceholder,
   streaming,
-  displayName,
-  modelId,
   timeLabel,
   toolCalls,
   messageEvents,
   agentTasks,
   showToolCalls = true,
-  usage,
-  contextPercent,
   onDelete,
+  feedback,
+  feedbackPending = false,
+  onFeedback,
   jiuwenPermission,
   onJiuwenPermissionAnswer,
 }: ChatMessageProps) {
@@ -957,6 +977,63 @@ function ChatMessageInner({
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
   const timelineToolCalls = effectiveToolCalls.filter((tool) => tool.name !== "[产出文件]");
   const showToolTimeline = showToolCalls && timelineToolCalls.length > 0;
+  const [copied, setCopied] = useState(false);
+  const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackReasonDraft, setFeedbackReasonDraft] = useState<MessageFeedbackReasonCode[]>([]);
+  const [feedbackCommentDraft, setFeedbackCommentDraft] = useState("");
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const throttleStreamingText = Boolean(isLast && streaming);
+  const throttledSourceText = useThrottledText(
+    text,
+    streamingMarkdownDelay(text.length),
+    throttleStreamingText,
+  );
+  const displayedSourceText = throttleStreamingText ? throttledSourceText : text;
+  const displayText = useMemo(
+    () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
+    [displayedSourceText],
+  );
+  const renderedDisplayText = throttleStreamingText ? repairStreamingMarkdown(displayText) : displayText;
+  const onCopyMarkdown = async () => {
+    try {
+      await navigator.clipboard.writeText(displayText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {}
+  };
+  const submitPositiveFeedback = () => {
+    if (!onFeedback || feedbackPending) return;
+    void onFeedback(feedback?.rating === "positive" ? null : {
+      rating: "positive",
+      reasonCodes: [],
+    });
+  };
+  const openNegativeFeedback = () => {
+    if (!onFeedback || feedbackPending) return;
+    const existingReasons = feedback?.rating === "negative" ? feedback.reasonCodes : [];
+    const existingComment = feedback?.rating === "negative" ? feedback.comment || "" : "";
+    setFeedbackReasonDraft(existingReasons);
+    setFeedbackCommentDraft(existingComment);
+    if (feedback?.rating !== "negative") {
+      void onFeedback({ rating: "negative", reasonCodes: [] });
+    }
+    setFeedbackDialogOpen(true);
+  };
+  const toggleFeedbackReason = (reason: MessageFeedbackReasonCode) => {
+    setFeedbackReasonDraft((current) => current.includes(reason)
+      ? current.filter((item) => item !== reason)
+      : [...current, reason]);
+  };
+  const saveNegativeFeedbackDetails = () => {
+    if (!onFeedback || feedbackPending) return;
+    void onFeedback({
+      rating: "negative",
+      reasonCodes: feedbackReasonDraft,
+      comment: feedbackCommentDraft.trim() || undefined,
+    });
+    setFeedbackDialogOpen(false);
+  };
 
   if (role === "user") {
     return (
@@ -1008,29 +1085,6 @@ function ChatMessageInner({
     );
   }
 
-  const [copied, setCopied] = useState(false);
-  const [ttsPlaying, setTtsPlaying] = useState(false);
-  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
-  const throttleStreamingText = Boolean(isLast && streaming);
-  const throttledSourceText = useThrottledText(
-    text,
-    streamingMarkdownDelay(text.length),
-    throttleStreamingText,
-  );
-  const displayedSourceText = throttleStreamingText ? throttledSourceText : text;
-  const displayText = useMemo(
-    () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
-    [displayedSourceText],
-  );
-  const renderedDisplayText = throttleStreamingText ? repairStreamingMarkdown(displayText) : displayText;
-  const onCopyMarkdown = async () => {
-    try {
-      await navigator.clipboard.writeText(displayText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {}
-  };
-
   return (
     <div className="flex items-start gap-3 lingxia-ai-bubble-wrap lingxia-msg-fade">
       <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center lingxia-avatar-ai" style={{ marginTop: 2 }}><BrandIcon size={22} /></div>
@@ -1049,24 +1103,6 @@ function ChatMessageInner({
           <div
             className={`relative rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed lingxia-bubble-ai ${(isLast && streaming && text) ? "lingxia-token-active" : ""}`}
           >
-            {/* 复制按钮 — 气泡右上角 */}
-            {!streaming && text && (
-              <div className="lingxia-msg-copy absolute top-2 right-2 z-10 flex items-center gap-0.5">
-                <button
-                  onClick={onCopyMarkdown}
-                  type="button"
-                  title="复制"
-                  className="lingxia-msg-action-btn"
-                  style={{ color: copied ? "#4ade80" : undefined }}
-                >
-                  {copied ? (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  ) : (
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                  )}
-                </button>
-              </div>
-            )}
             <ChatMarkdown content={renderedDisplayText} phase={isLast && streaming ? "streaming" : "final"} />
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}
           </div>
@@ -1159,19 +1195,17 @@ function ChatMessageInner({
             {agentTasks.map((task) => <AgentTaskCard key={task.id} task={task} />)}
           </div>
         ) : null}
-        {/* 时间戳行 + 朗读/删除 */}
-        <p className="text-[10px] mt-1 px-1 font-mono flex items-center gap-1.5 flex-wrap" style={{ color: "var(--oc-text-tertiary)" }}>
-          <span>
-            {displayName} · {formatModelName(modelId)} · {timeLabel}
-            {usage && usage.input + usage.output > 0 && (
-              <> · ↑{usage.input} ↓{usage.output}</>
-            )}
-            {contextPercent != null && (
-              <> · {contextPercent}% ctx</>
-            )}
-          </span>
-          {!streaming && text && (
-            <>
+        {!streaming && text && (
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 px-1" aria-label="回复操作">
+              <button
+                onClick={onCopyMarkdown}
+                type="button"
+                title={copied ? "已复制" : "复制"}
+                className="lingxia-msg-footer-action"
+                data-state={copied ? "copied" : "idle"}
+              >
+                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+              </button>
               <button
                 onClick={() => {
                   if (ttsPlaying) { ttsAudioRef.current?.pause(); setTtsPlaying(false); return; }
@@ -1194,33 +1228,107 @@ function ChatMessageInner({
                 }}
                 type="button"
                 title={ttsPlaying ? "停止朗读" : "朗读"}
-                style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px", color: ttsPlaying ? "var(--oc-accent)" : "#5f667b", lineHeight: 1 }}
+                className="lingxia-msg-footer-action"
+                data-state={ttsPlaying ? "active" : "idle"}
               >
                 {ttsPlaying ? (
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                  <Square aria-hidden="true" />
                 ) : (
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                  <Volume2 aria-hidden="true" />
                 )}
               </button>
+              {onFeedback ? (
+                <>
+                  <button
+                    onClick={submitPositiveFeedback}
+                    type="button"
+                    title={feedback?.rating === "positive" ? "撤销有帮助反馈" : "有帮助"}
+                    aria-pressed={feedback?.rating === "positive"}
+                    disabled={feedbackPending}
+                    className="lingxia-msg-footer-action"
+                    data-feedback="positive"
+                    data-state={feedback?.rating === "positive" ? "selected" : "idle"}
+                  >
+                    <ThumbsUp aria-hidden="true" />
+                  </button>
+                  <button
+                    onClick={openNegativeFeedback}
+                    type="button"
+                    title={feedback?.rating === "negative" ? "补充反馈" : "没有帮助"}
+                    aria-pressed={feedback?.rating === "negative"}
+                    disabled={feedbackPending}
+                    className="lingxia-msg-footer-action"
+                    data-feedback="negative"
+                    data-state={feedback?.rating === "negative" ? "selected" : "idle"}
+                  >
+                    <ThumbsDown aria-hidden="true" />
+                  </button>
+                </>
+              ) : null}
               {onDelete && (
                 <button
                   onClick={onDelete}
                   type="button"
                   title="删除此消息"
-                  style={{ background: "none", border: "none", cursor: "pointer", padding: "0 2px", color: "var(--oc-text-tertiary)", lineHeight: 1 }}
+                  className="lingxia-msg-footer-action"
                 >
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="3 6 5 6 21 6"/>
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                    <path d="M10 11v6M14 11v6"/>
-                    <path d="M9 6V4h6v2"/>
-                  </svg>
+                  <Trash2 aria-hidden="true" />
                 </button>
               )}
-            </>
-          )}
-        </p>
+          </div>
+        )}
       </div>
+      <Dialog open={feedbackDialogOpen} onOpenChange={setFeedbackDialogOpen}>
+        <DialogContent className="lingxia-feedback-dialog sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>这条回复哪里可以改进？</DialogTitle>
+            <DialogDescription>可多选，也可以直接关闭。不会提交对话原文。</DialogDescription>
+          </DialogHeader>
+          <div className="lingxia-feedback-reasons" aria-label="反馈原因">
+            {MESSAGE_FEEDBACK_REASON_CODES.map((reason) => (
+              <button
+                key={reason}
+                type="button"
+                aria-pressed={feedbackReasonDraft.includes(reason)}
+                className="lingxia-feedback-reason"
+                data-selected={feedbackReasonDraft.includes(reason) ? "true" : "false"}
+                onClick={() => toggleFeedbackReason(reason)}
+              >
+                {MESSAGE_FEEDBACK_REASON_LABELS[reason]}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={feedbackCommentDraft}
+            onChange={(event) => setFeedbackCommentDraft(event.target.value.slice(0, 500))}
+            maxLength={500}
+            rows={3}
+            className="lingxia-feedback-comment"
+            placeholder="补充说明（可选）"
+            aria-label="补充说明"
+          />
+          <div className="lingxia-feedback-comment-count">{feedbackCommentDraft.length}/500</div>
+          <DialogFooter className="sm:justify-between">
+            {feedback?.rating === "negative" ? (
+              <button
+                type="button"
+                className="lingxia-feedback-clear"
+                disabled={feedbackPending}
+                onClick={() => {
+                  void onFeedback?.(null);
+                  setFeedbackDialogOpen(false);
+                }}
+              >
+                撤销反馈
+              </button>
+            ) : <span />}
+            <div className="flex items-center gap-2">
+              <button type="button" className="lingxia-feedback-later" onClick={() => setFeedbackDialogOpen(false)}>暂不补充</button>
+              <button type="button" className="lingxia-feedback-submit" disabled={feedbackPending} onClick={saveNegativeFeedbackDetails}>提交反馈</button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1244,5 +1352,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.usage?.input === next.usage?.input &&
     prev.usage?.output === next.usage?.output &&
     prev.contextPercent === next.contextPercent
+    && JSON.stringify(prev.feedback || null) === JSON.stringify(next.feedback || null)
+    && prev.feedbackPending === next.feedbackPending
   );
 });

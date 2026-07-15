@@ -942,3 +942,39 @@ export const userMemories = mysqlTable("user_memories", {
 
 export type UserMemory = typeof userMemories.$inferSelect;
 export type InsertUserMemory = typeof userMemories.$inferInsert;
+
+// ── 消息质量反馈（不保存对话正文） ──
+export const messageFeedback = mysqlTable("message_feedback", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  conversationId:     varchar("conversation_id", { length: 128 }).notNull(),
+  messageId:          varchar("message_id", { length: 128 }).notNull(),
+  rating:             mysqlEnum("rating", ["positive", "negative"]).notNull(),
+  reasonCodesJson:    text("reason_codes_json"),
+  comment:            varchar("comment", { length: 500 }),
+  roleTemplate:       varchar("role_template", { length: 64 }),
+  runtimeType:        varchar("runtime_type", { length: 32 }),
+  selectedModelId:    varchar("selected_model_id", { length: 200 }),
+  actualModelId:      varchar("actual_model_id", { length: 200 }),
+  skillIdsJson:       text("skill_ids_json"),
+  toolSummaryJson:    text("tool_summary_json"),
+  inputTokens:        int("input_tokens"),
+  outputTokens:       int("output_tokens"),
+  durationMs:         int("duration_ms"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqMessageFeedback: uniqueIndex("uk_message_feedback_message").on(
+    table.userId,
+    table.adoptId,
+    table.conversationId,
+    table.messageId,
+  ),
+  ratingCreatedIdx: index("idx_message_feedback_rating_created").on(table.rating, table.createdAt),
+  adoptCreatedIdx: index("idx_message_feedback_adopt_created").on(table.adoptId, table.createdAt),
+  modelRatingIdx: index("idx_message_feedback_model_rating").on(table.actualModelId, table.rating),
+}));
+
+export type MessageFeedback = typeof messageFeedback.$inferSelect;
+export type InsertMessageFeedback = typeof messageFeedback.$inferInsert;

@@ -39,9 +39,14 @@ function defaultRoleSkillIds(effectiveAssets: EffectiveRoleAssets): string[] {
   return uniqueSorted(effectiveAssets.skills.default);
 }
 
-function activeRoleSkillIds(effectiveAssets: EffectiveRoleAssets, activeSkillIds: string[] = []): string[] {
+function activeRoleSkillIds(
+  effectiveAssets: EffectiveRoleAssets,
+  activeSkillIds: string[] = [],
+  disabledDefaultSkillIds: string[] = [],
+): string[] {
+  const disabled = new Set(uniqueSorted(disabledDefaultSkillIds));
   return uniqueSorted([
-    ...effectiveAssets.skills.default,
+    ...effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId)),
     ...activeSkillIds,
   ]);
 }
@@ -88,6 +93,7 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
   sharedSkillsDir?: string | null;
   skillSourceDirs?: string[];
   activeSkillIds?: string[];
+  disabledDefaultSkillIds?: string[];
 }): JiuwenSwarmRoleScopeWriteResult {
   const workspaceDir = path.resolve(args.workspaceDir);
   const manifestPath = path.join(workspaceDir, JIUWENSWARM_ROLE_SCOPE_MANIFEST);
@@ -109,7 +115,11 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
     ? reconcileJiuwenSwarmSharedSkillLinks({
       workspaceDir,
       sharedSkillsDirs: skillSourceDirs,
-      allowedSkillIds: activeRoleSkillIds(args.effectiveAssets, args.activeSkillIds || []),
+      allowedSkillIds: activeRoleSkillIds(
+        args.effectiveAssets,
+        args.activeSkillIds || [],
+        args.disabledDefaultSkillIds || [],
+      ),
     })
     : { linkedSharedSkills: [], removedSharedSkills: [] };
 

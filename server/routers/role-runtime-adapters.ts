@@ -57,6 +57,7 @@ class OpenClawRoleRuntimeAdapter implements RoleRuntimeAdapter {
       agentId: input.agentId,
       effectiveAssets: input.effectiveAssets,
       activeSkillIds: input.activeSkillIds,
+      disabledDefaultSkillIds: input.disabledDefaultSkillIds,
       workspaceDir: openClawWorkspaceDir(input.agentId),
       skillSourceDirs: skillSourceDirsForRuntime(),
     });
@@ -124,6 +125,7 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
       role: input.role,
       effectiveAssets: input.effectiveAssets,
       activeSkillIds: input.activeSkillIds,
+      disabledDefaultSkillIds: input.disabledDefaultSkillIds,
       skillSourceDirs: skillSourceDirsForRuntime(),
     });
     const changed =

@@ -25,6 +25,7 @@ import { APP_ROOT, OPENCLAW_HOME, bumpSessionEpoch, clearAgentSessionsCache, res
 import { skillInstaller, type SkillInstaller } from "./skill-installer";
 import { parseSkillSourceDirectory } from "./skill-source";
 import { skillSourceDirsForRuntime, skillStoreAgentDir, skillStoreMarketplaceInstallDir } from "./skill-store";
+import { roleSkillPreferences } from "./role-skill-preferences";
 
 type RegistryOptions = {
   appRoot?: string;
@@ -580,10 +581,19 @@ export class FileSkillRegistry implements SkillRegistry {
       return;
     }
 
-    const skills = await Promise.all(this.loadRegistry()
+    const registeredSkills = await Promise.all(this.loadRegistry()
       .filter((skill) => skill.adoptId === adoptId && skill.enabled && skill.state === "ready")
       .map(async (skill) => readSkillRuntimeName(skill.sync.runtimePath || await this.runtimePath(adoptId, skill.id), skill.id)));
-    const desired = Array.from(new Set(skills.filter(Boolean))).sort();
+    let enabledRoleDefaults: string[] = [];
+    try {
+      const { getClawByAdoptId, resolveEffectiveRoleAssets } = await import("../../db");
+      const claw = await getClawByAdoptId(adoptId);
+      const roleTemplate = String((claw as any)?.roleTemplate || "general-assistant");
+      const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+      const disabled = new Set(roleSkillPreferences.getDisabledDefaultSkillIds(adoptId));
+      enabledRoleDefaults = effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId));
+    } catch {}
+    const desired = Array.from(new Set([...enabledRoleDefaults, ...registeredSkills].filter(Boolean))).sort();
     const current = Array.isArray(agentEntry.skills)
       ? Array.from(new Set(agentEntry.skills.map((x) => String(x || "").trim()).filter(Boolean))).sort()
       : undefined;
@@ -613,12 +623,14 @@ export class FileSkillRegistry implements SkillRegistry {
     const activeSkillIds = this.loadRegistry()
       .filter((skill) => skill.adoptId === adoptId && skill.enabled && skill.state === "ready")
       .map((skill) => skill.id);
+    const disabledDefaultSkillIds = roleSkillPreferences.getDisabledDefaultSkillIds(adoptId);
 
     const result = writeJiuwenSwarmRoleScopeManifest({
       workspaceDir: jiuwenClawWorkspaceDir(adoptId, runtimeAgentId),
       role,
       effectiveAssets,
       activeSkillIds,
+      disabledDefaultSkillIds,
       skillSourceDirs: skillSourceDirsForRuntime(),
     });
 

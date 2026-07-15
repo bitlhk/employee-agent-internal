@@ -26,9 +26,14 @@ export function defaultRoleSkillIds(effectiveAssets: EffectiveRoleAssets): strin
   return uniqueSorted(effectiveAssets.skills.default);
 }
 
-export function activeRoleSkillIds(effectiveAssets: EffectiveRoleAssets, activeSkillIds: string[] = []): string[] {
+export function activeRoleSkillIds(
+  effectiveAssets: EffectiveRoleAssets,
+  activeSkillIds: string[] = [],
+  disabledDefaultSkillIds: string[] = [],
+): string[] {
+  const disabled = new Set(uniqueSorted(disabledDefaultSkillIds));
   return uniqueSorted([
-    ...effectiveAssets.skills.default,
+    ...effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId)),
     ...activeSkillIds,
   ]);
 }
@@ -42,8 +47,9 @@ export function applyOpenClawRoleScopeToConfig(
   agentId: string,
   effectiveAssets: EffectiveRoleAssets,
   activeSkillIds: string[] = [],
+  disabledDefaultSkillIds: string[] = [],
 ): Pick<OpenClawRoleScopeResult, "agentFound" | "skillAllowlistChanged" | "mcpProjectionChanged"> {
-  const desiredSkills = activeRoleSkillIds(effectiveAssets, activeSkillIds);
+  const desiredSkills = activeRoleSkillIds(effectiveAssets, activeSkillIds, disabledDefaultSkillIds);
   const desiredMcpServers = new Set(defaultRoleMcpServerIds(effectiveAssets));
 
   const agents = ensureObject(config.agents);
@@ -156,12 +162,23 @@ export function applyOpenClawRoleScope(params: {
   sharedSkillsDir?: string | null;
   skillSourceDirs?: string[] | null;
   activeSkillIds?: string[] | null;
+  disabledDefaultSkillIds?: string[] | null;
 }): OpenClawRoleScopeResult {
   const config = existsSync(params.configPath)
     ? JSON.parse(String(readFileSync(params.configPath, "utf8") || "{}"))
     : {};
-  const activeSkillIds = activeRoleSkillIds(params.effectiveAssets, params.activeSkillIds || []);
-  const configResult = applyOpenClawRoleScopeToConfig(config, params.agentId, params.effectiveAssets, activeSkillIds);
+  const activeSkillIds = activeRoleSkillIds(
+    params.effectiveAssets,
+    params.activeSkillIds || [],
+    params.disabledDefaultSkillIds || [],
+  );
+  const configResult = applyOpenClawRoleScopeToConfig(
+    config,
+    params.agentId,
+    params.effectiveAssets,
+    params.activeSkillIds || [],
+    params.disabledDefaultSkillIds || [],
+  );
   const workspaceDir = findOpenClawAgentWorkspace(config, params.agentId) || params.workspaceDir;
   if (configResult.agentFound && (configResult.skillAllowlistChanged || configResult.mcpProjectionChanged)) {
     writeFileSync(params.configPath, JSON.stringify(config, null, 2), "utf8");

@@ -46,7 +46,7 @@ describe("role default skill projection", () => {
     }
   });
 
-  it("projects current defaults as read-only and hides stale role defaults", () => {
+  it("projects current defaults and hides stale role defaults", () => {
     const workspace = mkdtempSync(path.join(os.tmpdir(), "ea-role-default-switch-"));
     const timestamp = "2026-07-14T00:00:00.000Z";
     const makeSkill = (id: string, kind: Skill["source"]["kind"]): Skill => ({
@@ -83,6 +83,47 @@ describe("role default skill projection", () => {
       ]);
     } finally {
       rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a disabled role default visible without treating it as runnable", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-role-default-disabled-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const shared = path.join(root, "shared");
+      const sourceDir = path.join(shared, "default-skill");
+      mkdirSync(sourceDir, { recursive: true });
+      writeFileSync(path.join(sourceDir, "SKILL.md"), [
+        "---",
+        "name: Default Skill",
+        "description: Default role capability.",
+        "---",
+        "# Default Skill",
+        "",
+        "Default role capability.",
+      ].join("\n"), "utf8");
+
+      const skills = mergeRoleDefaultSkills({
+        adoptId: "lgj-test",
+        defaultSkillIds: ["default-skill"],
+        disabledDefaultSkillIds: ["default-skill"],
+        registeredSkills: [],
+        runtimeWorkspaceDir: workspace,
+        skillSourceDirs: [shared],
+      });
+
+      expect(skills[0]).toMatchObject({
+        id: "default-skill",
+        enabled: false,
+        state: "disabled",
+        source: {
+          kind: "role_default",
+          displayName: "Default Skill",
+          sourcePath: sourceDir,
+        },
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

@@ -128,4 +128,29 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain('title="下载"');
     expect(html).not.toContain("lingxia-tool-summary");
   });
+
+  it("renders feedback actions only for a completed assistant reply", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "这是完整回复。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:00",
+        feedback: { rating: "positive", reasonCodes: [] },
+        onFeedback: () => undefined,
+      }),
+    );
+
+    expect(html).toContain('title="撤销有帮助反馈"');
+    expect(html).toContain('title="没有帮助"');
+    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('data-feedback="positive"');
+    expect(html).not.toContain("测试助手 · test-model");
+    expect(html).not.toContain("↑");
+    expect(html).not.toContain("ctx");
+  });
 });

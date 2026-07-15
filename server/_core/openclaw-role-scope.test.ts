@@ -70,6 +70,27 @@ describe("openclaw role scope", () => {
     ]);
   });
 
+  it("removes a user-disabled default while keeping active personal skills", () => {
+    const config: any = {
+      agents: {
+        list: [
+          { id: "trial_lgc-test", skills: ["wealth-manager-assistant"] },
+        ],
+      },
+      mcp: { servers: {} },
+    };
+
+    applyOpenClawRoleScopeToConfig(
+      config,
+      "trial_lgc-test",
+      effectiveAssets,
+      ["uploaded-personal-skill"],
+      ["wealth-manager-assistant"],
+    );
+
+    expect(config.agents.list[0].skills).toEqual(["uploaded-personal-skill"]);
+  });
+
   it("links caller-provided active marketplace skills without auto-linking all optional grants", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "openclaw-role-scope-active-"));
     try {

@@ -7,7 +7,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties } from "react";
 import { RuntimeWSClient } from "@/lib/runtime-ws";
-import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { toast } from "sonner";
 import { useBrand } from "@/lib/useBrand";
 import { trpc } from "@/lib/trpc";
@@ -15,7 +14,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useRoute, useLocation } from "wouter";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
-import { ChatMessage, type JiuwenPermissionRequestCard, type MessageEventEntry, type ToolCallEntry } from "@/components/ChatMessage";
+import { ChatMessage, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ModelPicker } from "@/components/ModelPicker";
 import { presentModel } from "@/lib/modelPresentation";
 import type { AgentTask } from "@/components/AgentTaskCard";
@@ -38,7 +37,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { History, Home as HomeIcon, LogOut, Menu, Settings, Wand2, X } from "lucide-react";
+import { ChevronDown, History, Home as HomeIcon, LogOut, Menu, Search, Settings, Wand2, X } from "lucide-react";
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
@@ -474,6 +473,7 @@ type LxMsg = {
   model?: string;
   contextWindow?: number;
   contextPercent?: number;
+  selectedSkillId?: string;
   toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   jiuwenPermission?: JiuwenPermissionRequestCard;
@@ -577,8 +577,21 @@ function clientMetricDisplayMs(metric: ClientLoadMetric): number {
 }
 
 function formatClientMetricDuration(metric: ClientLoadMetric): string {
-  if (metric.status === "skip") return "跳过";
+  if (metric.status === "skip") return "不适用";
   return `${clientMetricDisplayMs(metric)}ms`;
+}
+
+function formatClientMetricDetail(metric: ClientLoadMetric): string {
+  const detail = String(metric.detail || "").trim();
+  const count = Number.parseInt(detail, 10);
+  if (metric.key === "auth" && detail === "authenticated") return "已登录";
+  if (metric.key === "agent" && detail === "active") return "实例在线";
+  if (metric.key === "settings" && detail === "loaded") return "已加载";
+  if (metric.key === "health" && metric.status === "skip") return detail || "直连模式";
+  if (metric.key === "sessions" && Number.isFinite(count)) return `${count} 个会话`;
+  if (metric.key === "models" && Number.isFinite(count)) return `${count} 个模型`;
+  if (metric.key === "skills" && Number.isFinite(count)) return `${count} 个技能`;
+  return detail || metric.status;
 }
 
 function ChatStartupSkeleton() {
@@ -1022,6 +1035,80 @@ export default function Home() {
     return ids[0] || "";
   }, [availableModels, cachedLingxiaModelId, clawSettings]);
   const effectiveLingxiaModelId = lingxiaModelId || defaultLingxiaModelId || cachedLingxiaModelId;
+  const [messageFeedbackById, setMessageFeedbackById] = useState<Record<string, MessageFeedbackValue>>({});
+  const [messageFeedbackPendingIds, setMessageFeedbackPendingIds] = useState<Set<string>>(new Set());
+  const messageFeedbackQuery = trpc.claw.listMessageFeedback.useQuery(
+    { adoptId: resolvedAdoptId || "", conversationId: webConversationId || "" },
+    { enabled: !!resolvedAdoptId && !!webConversationId && !!user, retry: false },
+  );
+  const setMessageFeedbackMutation = trpc.claw.setMessageFeedback.useMutation();
+  useEffect(() => {
+    const rows = Array.isArray((messageFeedbackQuery.data as any)?.rows)
+      ? (messageFeedbackQuery.data as any).rows
+      : [];
+    const next: Record<string, MessageFeedbackValue> = {};
+    for (const row of rows) {
+      const messageId = String(row?.messageId || "");
+      if (!messageId || (row?.rating !== "positive" && row?.rating !== "negative")) continue;
+      next[messageId] = {
+        rating: row.rating,
+        reasonCodes: Array.isArray(row.reasonCodes) ? row.reasonCodes : [],
+        comment: String(row.comment || "") || undefined,
+      };
+    }
+    setMessageFeedbackById(next);
+  }, [messageFeedbackQuery.data, resolvedAdoptId, webConversationId]);
+
+  const updateMessageFeedback = useCallback(async (message: LxMsg, feedback: MessageFeedbackValue | null) => {
+    if (!resolvedAdoptId || !webConversationId || message.role !== "assistant") return;
+    const previous = messageFeedbackById[message.id];
+    setMessageFeedbackById((current) => {
+      const next = { ...current };
+      if (feedback) next[message.id] = feedback;
+      else delete next[message.id];
+      return next;
+    });
+    setMessageFeedbackPendingIds((current) => new Set(current).add(message.id));
+    try {
+      const tools = (message.toolCalls || [])
+        .filter((tool) => tool?.name && tool.name !== "[产出文件]")
+        .slice(0, 30)
+        .map((tool) => ({
+          name: String(tool.name).slice(0, 128),
+          status: tool.status,
+          ...(typeof tool.durationMs === "number" ? { durationMs: Math.max(0, Math.round(tool.durationMs)) } : {}),
+        }));
+      const actualModelId = String(message.model || "").trim();
+      await setMessageFeedbackMutation.mutateAsync({
+        adoptId: resolvedAdoptId,
+        conversationId: webConversationId,
+        messageId: message.id,
+        rating: feedback?.rating ?? null,
+        reasonCodes: feedback?.rating === "negative" ? feedback.reasonCodes : [],
+        comment: feedback?.rating === "negative" ? feedback.comment : undefined,
+        selectedModelId: effectiveLingxiaModelId || undefined,
+        actualModelId: actualModelId && actualModelId !== "__auto" ? actualModelId : undefined,
+        skillIds: message.selectedSkillId ? [message.selectedSkillId] : [],
+        tools,
+        inputTokens: message.usage?.input,
+        outputTokens: message.usage?.output,
+      });
+    } catch (error: any) {
+      setMessageFeedbackById((current) => {
+        const next = { ...current };
+        if (previous) next[message.id] = previous;
+        else delete next[message.id];
+        return next;
+      });
+      toast.error(error?.message || "反馈提交失败");
+    } finally {
+      setMessageFeedbackPendingIds((current) => {
+        const next = new Set(current);
+        next.delete(message.id);
+        return next;
+      });
+    }
+  }, [effectiveLingxiaModelId, messageFeedbackById, resolvedAdoptId, setMessageFeedbackMutation, webConversationId]);
   // 模型兜底：优先用户在前端选过的偏好（claw-model-overrides.json），其次 isDefault，最后第一个
   // 修复刷新后下拉强制回 GLM5.1 但运行时实际跑用户上次选的 model 的前后端不一致 bug
   useEffect(() => {
@@ -2161,10 +2248,20 @@ export default function Home() {
   );
   const composerSkills = useMemo(() => flattenComposerSkills(lingxiaSkills), [lingxiaSkills]);
   const [selectedComposerSkillId, setSelectedComposerSkillId] = useState<string>("");
+  const [composerSkillMenuOpen, setComposerSkillMenuOpen] = useState(false);
+  const [composerSkillSearch, setComposerSkillSearch] = useState("");
+  const composerSkillSearchRef = useRef<HTMLInputElement | null>(null);
   const selectedComposerSkill = useMemo(
     () => composerSkills.find((skill) => skill.id === selectedComposerSkillId) || null,
     [composerSkills, selectedComposerSkillId],
   );
+  const filteredComposerSkills = useMemo(() => {
+    const query = composerSkillSearch.trim().toLocaleLowerCase();
+    if (!query) return composerSkills;
+    return composerSkills.filter((skill) => (
+      `${skill.label} ${skill.id} ${skill.desc}`.toLocaleLowerCase().includes(query)
+    ));
+  }, [composerSkillSearch, composerSkills]);
   useEffect(() => {
     if (selectedComposerSkillId && !composerSkills.some((skill) => skill.id === selectedComposerSkillId)) {
       setSelectedComposerSkillId("");
@@ -2179,9 +2276,9 @@ export default function Home() {
   }, [lingxiaSkills, lingxiaSkillsError, lingxiaSkillsLoading, markClientLoadMetric, resolvedAdoptId]);
   useEffect(() => {
     if (!resolvedAdoptId || !isDirectHttpRuntime) return;
-    markClientLoadMetric("health", "skip", "direct runtime");
-    markClientLoadMetric("sessions", "skip", "direct runtime local cache");
-  }, [isDirectHttpRuntime, markClientLoadMetric, resolvedAdoptId]);
+    markClientLoadMetric("health", "skip", isJiuwenRuntime ? "JiuwenSwarm 直连模式" : "历史实例直连模式");
+    markClientLoadMetric("sessions", "skip", isJiuwenRuntime ? "JiuwenSwarm 本地会话缓存" : "历史实例本地会话缓存");
+  }, [isDirectHttpRuntime, isJiuwenRuntime, markClientLoadMetric, resolvedAdoptId]);
   const toggleSkillMutation = trpc.claw.toggleSkill.useMutation({
     onSuccess: () => { refetchSkills(); toast.success("技能已更新"); },
     onError: (e) => toast.error(e.message),
@@ -2433,7 +2530,15 @@ export default function Home() {
         };
       }),
       { id: userMessageId, role: "user", text, timeLabel: nowLabel },
-      { id: assistantMessageId, role: "assistant", text: "", status: "正在连接...", timeLabel: assistantTimeLabel, model: effectiveLingxiaModelId },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        text: "",
+        status: "正在连接...",
+        timeLabel: assistantTimeLabel,
+        model: effectiveLingxiaModelId,
+        ...(opts?.selectedSkillId ? { selectedSkillId: opts.selectedSkillId } : {}),
+      },
     ]);
     clearLingxiaDraft();
     setLingxiaInput("");
@@ -3339,10 +3444,23 @@ export default function Home() {
     // 首屏之后就退化成"页面开了多久"，表现为忽高忽低（刚打开~200ms，开一会儿跳到几千ms）。
     return primaryClientLoadMetricList.reduce((max, metric) => Math.max(max, clientMetricDisplayMs(metric)), 0);
   }, [primaryClientLoadMetricList]);
-  const slowestClientMetric = useMemo(() => (
-    primaryClientLoadMetricList.slice().sort((a, b) => clientMetricDisplayMs(b) - clientMetricDisplayMs(a))[0]
-      || clientLoadMetricList.slice().sort((a, b) => clientMetricDisplayMs(b) - clientMetricDisplayMs(a))[0]
-  ), [clientLoadMetricList, primaryClientLoadMetricList]);
+  const clientLoadIssueList = useMemo(
+    () => clientLoadMetricList.filter((metric) => metric.status === "error"),
+    [clientLoadMetricList],
+  );
+  const clientLoadPending = primaryClientLoadMetricList.length < CLIENT_LOAD_PRIMARY_KEYS.size
+    || primaryClientLoadMetricList.some((metric) => metric.status === "pending");
+  const clientLoadOverallStatus: ClientLoadMetric["status"] = clientLoadIssueList.length > 0
+    ? "error"
+    : clientLoadPending
+      ? "pending"
+      : "ok";
+  const clientLoadResourceSummary = useMemo(() => (
+    ["sessions", "models", "skills"]
+      .map((key) => clientLoadMetrics[key])
+      .filter((metric): metric is ClientLoadMetric => Boolean(metric && metric.status === "ok"))
+      .map(formatClientMetricDetail)
+  ), [clientLoadMetrics]);
   const reportClientLoadMetrics = useCallback(async (reason: string) => {
     if (!resolvedAdoptId || !user || clientLoadReportedRef.current || clientLoadMetricList.length === 0) return;
     clientLoadReportedRef.current = true;
@@ -3658,28 +3776,67 @@ export default function Home() {
                   onClick={() => setClientDiagnosticsOpen((value) => !value)}
                   title="查看首屏请求耗时"
                 >
-                  <span className="client-load-diagnostics__dot" data-status={slowestClientMetric?.status || "pending"} />
+                  <span className="client-load-diagnostics__dot" data-status={clientLoadOverallStatus} />
                   <span>{primaryClientLoadMetricList.length > 0 ? `${clientLoadTotalMs}ms` : "诊断"}</span>
                 </button>
                 {clientDiagnosticsOpen ? (
                   <div className="client-load-diagnostics__panel">
                     <div className="client-load-diagnostics__head">
                       <span>首屏诊断</span>
-                      <span>{clientLoadMetricList.length} 项</span>
+                      <span>{clientLoadIssueList.length > 0 ? `${clientLoadIssueList.length} 项异常` : `${clientLoadTotalMs}ms`}</span>
                     </div>
-                    <div className="client-load-diagnostics__rows">
-                      {clientLoadMetricList.length === 0 ? (
-                        <div className="client-load-diagnostics__empty">正在收集首屏请求耗时</div>
-                      ) : clientLoadMetricList.map((metric) => (
-                        <div key={metric.key} className="client-load-diagnostics__row">
-                          <span className="client-load-diagnostics__name">{metric.label}</span>
-                          <span className="client-load-diagnostics__meta" data-status={metric.status}>
-                            {formatClientMetricDuration(metric)}
+                    {clientLoadMetricList.length === 0 ? (
+                      <div className="client-load-diagnostics__empty">正在收集首屏请求耗时</div>
+                    ) : (
+                      <>
+                        <div className="client-load-diagnostics__overview" data-status={clientLoadOverallStatus}>
+                          <span className="client-load-diagnostics__dot" data-status={clientLoadOverallStatus} />
+                          <span className="client-load-diagnostics__overview-copy">
+                            <strong>{clientLoadIssueList.length > 0 ? "部分请求异常" : clientLoadPending ? "正在加载工作台" : "工作台已就绪"}</strong>
+                            <small>{isJiuwenRuntime ? "JiuwenSwarm 直连" : isLegacyArchivedRuntime ? "历史实例直连" : "OpenClaw 运行时"}</small>
                           </span>
-                          <span className="client-load-diagnostics__detail">{metric.detail || metric.status}</span>
+                          <strong className="client-load-diagnostics__duration">{clientLoadTotalMs}ms</strong>
                         </div>
-                      ))}
-                    </div>
+
+                        {clientLoadResourceSummary.length > 0 ? (
+                          <div className="client-load-diagnostics__resources">
+                            {clientLoadResourceSummary.map((item) => <span key={item}>{item}</span>)}
+                          </div>
+                        ) : null}
+
+                        {clientLoadIssueList.length > 0 ? (
+                          <div className="client-load-diagnostics__issues">
+                            {clientLoadIssueList.map((metric) => (
+                              <div key={metric.key} className="client-load-diagnostics__row">
+                                <span className="client-load-diagnostics__name">{metric.label}</span>
+                                <span className="client-load-diagnostics__meta" data-status={metric.status}>
+                                  {formatClientMetricDuration(metric)}
+                                </span>
+                                <span className="client-load-diagnostics__detail">{formatClientMetricDetail(metric)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        <details className="client-load-diagnostics__details">
+                          <summary>
+                            <span>请求明细</span>
+                            <span>{clientLoadMetricList.length} 项 <ChevronDown aria-hidden="true" /></span>
+                          </summary>
+                          <div className="client-load-diagnostics__rows">
+                            {clientLoadMetricList.map((metric) => (
+                              <div key={metric.key} className="client-load-diagnostics__row">
+                                <span className="client-load-diagnostics__name">{metric.label}</span>
+                                <span className="client-load-diagnostics__meta" data-status={metric.status}>
+                                  {formatClientMetricDuration(metric)}
+                                </span>
+                                <span className="client-load-diagnostics__detail">{formatClientMetricDetail(metric)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </>
+                    )}
                   </div>
                 ) : null}
               </div> : null}
@@ -3814,9 +3971,9 @@ export default function Home() {
                     status={m.status}
                     isLast={isLast}
                     isPlaceholder={isPlaceholder}
-                    streaming={activeLingxiaStreaming}
+                    streaming={isLast && activeLingxiaStreaming}
                     displayName={lingxiaDisplayName || brand.name}
-                    modelId={effectiveLingxiaModelId || "default"}
+                    modelId={m.model || effectiveLingxiaModelId || "default"}
                     timeLabel={m.timeLabel}
                     toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
                     messageEvents={m.role === "assistant" ? (m as LxMsg).messageEvents : undefined}
@@ -3824,6 +3981,9 @@ export default function Home() {
                     showToolCalls={lingxiaShowToolCalls}
                     usage={m.usage}
                     contextPercent={m.contextPercent}
+                    feedback={m.role === "assistant" ? messageFeedbackById[m.id] || null : null}
+                    feedbackPending={messageFeedbackPendingIds.has(m.id)}
+                    onFeedback={m.role === "assistant" ? (feedback) => updateMessageFeedback(m, feedback) : undefined}
                     jiuwenPermission={m.role === "assistant" ? (m as LxMsg).jiuwenPermission : undefined}
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
                     onDelete={m.role === "assistant" ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
@@ -3950,52 +4110,72 @@ export default function Home() {
               ))}
               rightControls={(
                 <>
-                  <Select
-                    value={selectedComposerSkillId || "__none"}
-                    onValueChange={(v) => setSelectedComposerSkillId(v === "__none" ? "" : v)}
+                  <DropdownMenu
+                    open={composerSkillMenuOpen}
+                    onOpenChange={(open) => {
+                      setComposerSkillMenuOpen(open);
+                      if (open) window.setTimeout(() => composerSkillSearchRef.current?.focus(), 0);
+                      else setComposerSkillSearch("");
+                    }}
                   >
-                    <SelectTrigger
-                      size="sm"
-                      aria-label="选择技能"
-                      className="lingxia-composer-skill-select focus:ring-0 focus:ring-offset-0"
-                      disabled={composerSkills.length === 0 || activeLingxiaStreaming}
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        aria-label="选择技能"
+                        className="lingxia-composer-skill-select"
+                        disabled={composerSkills.length === 0 || activeLingxiaStreaming}
+                      >
+                        <span className="lingxia-composer-skill-select__label">
+                          <Wand2 size={13} strokeWidth={1.8} />
+                          <span>技能</span>
+                        </span>
+                        <ChevronDown className="lingxia-composer-skill-select__chevron" aria-hidden="true" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      className="lingxia-skill-menu"
+                      align="start"
+                      sideOffset={5}
                     >
-                      <span className="lingxia-composer-skill-select__label">
-                        <Wand2 size={13} strokeWidth={1.8} />
-                        <span>技能</span>
-                      </span>
-                    </SelectTrigger>
-                    <SelectContent
-                      style={{
-                        background: "var(--oc-bg)",
-                        border: "1px solid var(--oc-border)",
-                        borderRadius: 10,
-                        minWidth: 260,
-                        maxWidth: 360,
-                        boxShadow: "0 8px 32px rgba(0,0,0,0.28)",
-                        padding: "4px",
-                      }}
-                    >
-                      <SelectItem value="__none" className="lingxia-skill-select-item">
-                        <span style={{ color: "var(--oc-text-secondary)" }}>不指定技能</span>
-                      </SelectItem>
-                      {composerSkills.map((skill) => (
-                        <SelectItem
-                          key={skill.id}
-                          value={skill.id}
-                          className="lingxia-skill-select-item"
-                        >
-                          <span className="lingxia-skill-select-item__icon" aria-hidden="true">
-                            {skill.initial}
-                          </span>
-                          <span className="lingxia-skill-select-item__main">
-                            <span className="lingxia-skill-select-item__name">{skill.label}</span>
-                            {skill.desc ? <span className="lingxia-skill-select-item__desc">{skill.desc}</span> : null}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      <div
+                        className="lingxia-skill-menu__search"
+                        onKeyDown={(event) => {
+                          if (event.key !== "Escape") event.stopPropagation();
+                        }}
+                      >
+                        <Search aria-hidden="true" />
+                        <input
+                          ref={composerSkillSearchRef}
+                          value={composerSkillSearch}
+                          onChange={(event) => setComposerSkillSearch(event.target.value)}
+                          placeholder="搜索技能"
+                          aria-label="搜索技能"
+                        />
+                      </div>
+                      <div className="lingxia-skill-menu__results">
+                        {filteredComposerSkills.length === 0 ? (
+                          <div className="lingxia-skill-menu__empty">没有匹配的技能</div>
+                        ) : filteredComposerSkills.map((skill) => (
+                          <DropdownMenuItem
+                            key={skill.id}
+                            className="lingxia-skill-select-item"
+                            data-selected={skill.id === selectedComposerSkillId ? "true" : "false"}
+                            onSelect={() => setSelectedComposerSkillId(skill.id)}
+                          >
+                            <span className="lingxia-skill-select-item__content">
+                              <span className="lingxia-skill-select-item__icon" aria-hidden="true">
+                                {skill.initial}
+                              </span>
+                              <span className="lingxia-skill-select-item__main">
+                                <span className="lingxia-skill-select-item__name">{skill.label}</span>
+                                {skill.desc ? <span className="lingxia-skill-select-item__desc">{skill.desc}</span> : null}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <ModelPicker
                     models={availableModels || []}
                     value={effectiveLingxiaModelId}
