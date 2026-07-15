@@ -97,7 +97,7 @@ curl -fsSL https://linggan.top/install.sh | EMPLOYEE_AGENT_TELEMETRY=0 bash
 
 - 安装 Node.js 22、Python、pnpm、PM2、MySQL 和 Docker
 - 从 AtomGit 拉取 `linggan_ai/employee-agent`
-- 安装固定版本的 EA JiuwenSwarm Runtime
+- 安装基于官方 0.2.3 的固定版 EA JiuwenSwarm Runtime
 - 生成 `.env`
 - 创建数据库、执行迁移并生成管理员
 - 执行 `pnpm check` 和 `pnpm build`

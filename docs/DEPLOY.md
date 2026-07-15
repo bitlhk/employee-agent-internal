@@ -66,7 +66,7 @@ docker-compose up -d
 新安装默认使用 `employee_agent` 数据库和用户。旧版 Docker 部署升级时应保留原 `.env` 中的
 `DATABASE_URL`、`MYSQL_DATABASE` 和 `MYSQL_USER`；不要为了匹配新默认值重命名已有数据库。
 
-一键脚本默认使用宿主机进程部署 EA JiuwenSwarm Runtime；外部 A2A / HTTP Runtime 仍需按业务需要单独部署。
+一键脚本默认使用宿主机进程部署基于官方 0.2.3 的 EA JiuwenSwarm Runtime；外部 A2A / HTTP Runtime 仍需按业务需要单独部署。
 
 ## Runtime 接入
 

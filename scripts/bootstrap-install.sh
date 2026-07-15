@@ -5,7 +5,7 @@ set -euo pipefail
 # Intended usage:
 #   git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
 #   bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh
-INSTALLER_VERSION="2026.07.14.1"
+INSTALLER_VERSION="2026.07.15.1"
 INSTALL_ID="${EMPLOYEE_AGENT_INSTALL_ID:-}"
 TELEMETRY_ENDPOINT="${EMPLOYEE_AGENT_INSTALL_TELEMETRY_ENDPOINT:-}"
 TELEMETRY_SOURCE="${EMPLOYEE_AGENT_INSTALL_SOURCE:-bootstrap}"
@@ -38,8 +38,8 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_DISPLAY=""
 ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$INSTALL_DIR/.bootstrap-admin-password}"
 JIUWENSWARM_REPO="${JIUWENSWARM_REPO:-https://atomgit.com/linggan_ai/jiuwenswarm.git}"
-JIUWENSWARM_REF="${JIUWENSWARM_REF:-ea-runtime-0.2.3-beta1.1}"
-JIUWENSWARM_VERSION="${JIUWENSWARM_VERSION:-0.2.3b1+ea.1}"
+JIUWENSWARM_REF="${JIUWENSWARM_REF:-ea-runtime-0.2.3.1}"
+JIUWENSWARM_VERSION="${JIUWENSWARM_VERSION:-0.2.3+ea.1}"
 JIUWENSWARM_HOME="${JIUWENCLAW_HOME:-$HOME/.jiuwenswarm}"
 JIUWENSWARM_VENV="${JIUWENSWARM_VENV:-$HOME/.venvs/employee-agent-jiuwenswarm}"
 JIUWENSWARM_WHEEL_URL="${JIUWENSWARM_WHEEL_URL:-}"
@@ -420,6 +420,25 @@ install_jiuwenswarm() {
     run_with_log "Install JiuwenSwarm from AtomGit" "/tmp/jiuwenswarm-install.log" \
       "$JIUWENSWARM_VENV/bin/python" -m pip install --upgrade --force-reinstall \
       "git+${JIUWENSWARM_REPO}@${JIUWENSWARM_REF}"
+  fi
+
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] verify installed JiuwenSwarm version: $JIUWENSWARM_VERSION"
+  else
+    JIUWENSWARM_EXPECTED_VERSION="$JIUWENSWARM_VERSION" \
+      "$JIUWENSWARM_VENV/bin/python" - <<'PY'
+import os
+
+import jiuwenswarm
+
+expected = os.environ["JIUWENSWARM_EXPECTED_VERSION"]
+actual = jiuwenswarm.__version__
+if actual != expected:
+    raise SystemExit(
+        f"JiuwenSwarm version mismatch: expected {expected}, installed {actual}"
+    )
+print(f"  JiuwenSwarm version verified: {actual}")
+PY
   fi
 
   if [[ "$DRY_RUN" == "true" ]]; then
