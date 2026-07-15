@@ -4,19 +4,18 @@
  * 功能：Hero + 功能介绍 + 创建/进入
  */
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { BrandIcon } from "@/components/BrandIcon";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import {
   Loader2, LogIn, LogOut, Settings, ArrowRight,
-  MessageCircle, Brain, Cpu, Zap, Shield, Network,
+  MessageCircle, Brain, Cpu, Zap, Shield, Network, Copy, Check,
 } from "lucide-react";
-import { motion, type Variants } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import { useBrand } from "@/lib/useBrand";
 import {
@@ -26,20 +25,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-
-// ── 动画变体（2026-04-18: 加 Variants 类型，避免 framer-motion v11 ease 字符串被推断为 string 而非具体 Easing 枚举）──
-const fadeInUp: Variants = {
-  hidden: { opacity: 0, y: 24 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } },
-};
-const staggerContainer: Variants = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.1 } },
-};
-const scaleIn: Variants = {
-  hidden: { opacity: 0, scale: 0.8 },
-  visible: { opacity: 1, scale: 1, transition: { duration: 0.6, ease: "easeOut" } },
-};
 
 function getRuntimeCardMeta(adoptId: unknown) {
   const id = String(adoptId || "");
@@ -74,13 +59,14 @@ function isArchivedRuntimeAdoption(adoption: any) {
 
 // ── 岗位智能体 SVG Logo 动画组件 ──
 function AnimatedLogo({ size = 120 }: { size?: number }) {
+  const reduceMotion = useReducedMotion();
   return (
     <motion.svg
       width={size}
       height={size}
       viewBox="0 0 128 128"
       xmlns="http://www.w3.org/2000/svg"
-      initial="hidden"
+      initial={reduceMotion ? false : "hidden"}
       animate="visible"
     >
       <defs>
@@ -173,6 +159,24 @@ const industryLabel: Record<string, string> = {
   securities: "证券",
 };
 
+const INSTALL_COMMAND = "curl -fsSL https://linggan.top/install.sh | bash";
+
+function reportInstallCommandCopied(): void {
+  const installId = window.crypto.randomUUID();
+  void fetch("/api/public/install-events", {
+    method: "POST",
+    credentials: "omit",
+    keepalive: true,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      installId,
+      eventType: "command_copied",
+      stage: "homepage",
+      source: "homepage",
+    }),
+  }).catch(() => undefined);
+}
+
 export default function ClawHome() {
   const brand = useBrand();
   const [, setLocation] = useLocation();
@@ -180,6 +184,8 @@ export default function ClawHome() {
   const [provisioning, setProvisioning] = useState(false);
   const [provisionStep, setProvisionStep] = useState("");
   const [selectedRoleId, setSelectedRoleId] = useState("general-assistant");
+  const [installCopied, setInstallCopied] = useState(false);
+  const installCopyTimer = useRef<number | null>(null);
 
   useEffect(() => {
     const previous = document.body.getAttribute("data-home-light");
@@ -188,6 +194,10 @@ export default function ClawHome() {
       if (previous === null) document.body.removeAttribute("data-home-light");
       else document.body.setAttribute("data-home-light", previous);
     };
+  }, []);
+
+  useEffect(() => () => {
+    if (installCopyTimer.current !== null) window.clearTimeout(installCopyTimer.current);
   }, []);
 
   const { data: clawMe, refetch: refetchClawMe, isLoading } = trpc.claw.me.useQuery(undefined, {
@@ -269,17 +279,52 @@ export default function ClawHome() {
     window.location.reload();
   };
 
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  const handlePrimaryCta = () => {
+    if (!user) {
+      setLocation("/login?redirect=/");
+      return;
+    }
+    scrollToSection("agent-panel");
+  };
+
+  const handleCopyInstall = async () => {
+    try {
+      await navigator.clipboard.writeText(INSTALL_COMMAND);
+      reportInstallCommandCopied();
+      setInstallCopied(true);
+      if (installCopyTimer.current !== null) window.clearTimeout(installCopyTimer.current);
+      installCopyTimer.current = window.setTimeout(() => setInstallCopied(false), 1600);
+    } catch {
+      toast.error("复制失败，请手动复制安装命令");
+    }
+  };
+
   // 向后兼容：若服务端尚未升级，回退到单张 adoption
   const adoptions: any[] = Array.isArray((clawMe as any)?.adoptions)
     ? (clawMe as any).adoptions
     : (clawMe as any)?.adoption
       ? [(clawMe as any).adoption]
       : [];
-  const hasAnyClaw = adoptions.length > 0;
-  const hasOnlyArchivedAdoptions = hasAnyClaw && adoptions.every(isArchivedRuntimeAdoption);
+  const visibleAdoptions = adoptions.filter((adoption) => !isArchivedRuntimeAdoption(adoption));
+  const hasAnyClaw = visibleAdoptions.length > 0;
+  const hasActiveAdoption = visibleAdoptions.some((adoption) => adoption?.status === "active");
+  const primaryCtaLabel = !user
+    ? "登录开始"
+    : hasActiveAdoption
+      ? "查看我的智能体"
+      : "选择岗位";
+
+  const roleName = (roleTemplate: unknown) => {
+    const id = String(roleTemplate || "");
+    return selectableRoles.find((role: any) => role.id === id)?.name || "岗位智能体";
+  };
 
   const rolePicker = (
-    <div className="rounded-xl border border-border/60 bg-white/85 p-3 text-left shadow-sm">
+    <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left">
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-xs font-medium text-muted-foreground">岗位身份</span>
         <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
@@ -305,7 +350,7 @@ export default function ClawHome() {
   );
 
   return (
-    <div className="claw-home-shell min-h-screen bg-gradient-to-b from-white to-gray-50/80">
+    <div className="claw-home-shell min-h-screen bg-[#fafaf9]">
       {/* ── Header ── */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-border/50">
         <div className="container flex items-center justify-between h-14 px-6">
@@ -350,228 +395,205 @@ export default function ClawHome() {
         </div>
       </header>
 
-      {/* ── Hero Section ── */}
-      <section className="relative pt-16 pb-12 overflow-hidden">
-        {/* 装饰背景 */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute top-20 left-1/4 w-72 h-72 bg-primary/5 rounded-full blur-3xl" />
-          <div className="absolute top-40 right-1/4 w-96 h-96 bg-rose-500/5 rounded-full blur-3xl" />
-        </div>
-
-        <div className="container px-6 relative">
-          <motion.div
-            initial="hidden"
-            animate="visible"
-            variants={staggerContainer}
-            className="flex flex-col items-center text-center"
-          >
-            {/* Logo 动画 */}
-            <motion.div variants={scaleIn} className="mb-6">
-              <AnimatedLogo size={120} />
-            </motion.div>
-
-            <motion.div variants={fadeInUp} className="mb-3">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full">
-                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-                <span className="text-xs font-medium text-primary">你的专属 AI Agent</span>
+      <main>
+        {/* ── Hero Section ── */}
+        <section className="claw-home-hero relative overflow-hidden py-14 lg:py-20">
+          <div className="relative mx-auto grid max-w-[1120px] grid-cols-1 items-center gap-10 px-6 lg:grid-cols-[1fr_420px] lg:gap-16">
+            <div className="max-w-[620px] text-left">
+              <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse motion-reduce:animate-none" />
+                <span className="text-xs font-semibold text-gray-700">你的专属 AI Agent</span>
               </div>
-            </motion.div>
 
-            <motion.h1 variants={fadeInUp} className="text-3xl md:text-5xl font-bold leading-tight mb-4">
-              <span className="text-gray-900">申请一个</span>
-              <span className="text-primary">岗位智能体</span>
-            </motion.h1>
+              <h1 className="mb-5 text-4xl font-black leading-tight text-gray-900 sm:text-5xl">
+                <span className="block">申请一个</span>
+                <span className="block text-primary">岗位智能体</span>
+              </h1>
 
-            <motion.p variants={fadeInUp} className="text-base text-muted-foreground mb-2 max-w-lg">
-              具备对话、技能、记忆与权限控制的 AI Agent 助手
-            </motion.p>
-            <motion.p variants={fadeInUp} className="text-sm text-muted-foreground/70 mb-8">
-              Open-source &middot; Self-hosted &middot; Enterprise-ready
-            </motion.p>
+              <p className="mb-3 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
+                具备对话、技能、记忆与权限控制的 AI Agent 助手，让专业能力沉淀为可持续工作的数字同事。
+              </p>
+              <p className="mb-8 text-sm font-medium text-gray-400">
+                Open-source &middot; Self-hosted &middot; Enterprise-ready
+              </p>
 
-            {/* CTA 区域 */}
-            <motion.div variants={fadeInUp} className="w-full max-w-sm space-y-3">
-              {user && isLoading && (
-                <div className="flex items-center justify-center py-6">
-                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                </div>
-              )}
-
-              {/* 已有岗位智能体：JiuwenSwarm 可进入，历史实例仅保留归档提示 */}
-              {user && !isLoading && hasAnyClaw && (
-                <div className="space-y-3">
-                  {adoptions.map((a: any) => {
-                    const runtime = getRuntimeCardMeta(a.adoptId);
-                    const adoptId = String(a.adoptId || "");
-                    const isArchivedRuntime = isArchivedRuntimeAdoption(a);
-                    return (
-                      <Card key={a.adoptId} className="border-border/50 bg-white/80 backdrop-blur-sm overflow-hidden">
-                        <div className="p-5">
-                          <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-xl bg-white border border-border/60 shadow-sm flex items-center justify-center overflow-hidden shrink-0">
-                              <img src={runtime.icon} alt={runtime.name} className="w-8 h-8 object-contain" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 mb-0.5">
-                                <p className="text-sm font-semibold text-gray-900">岗位智能体</p>
-                                <span
-                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${runtime.badgeClass}`}
-                                >
-                                  {runtime.name}
-                                </span>
-                              </div>
-                              <p className="text-xs font-mono text-muted-foreground truncate">{a.adoptId}</p>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className={`w-2 h-2 rounded-full ${a.status === "active" ? "bg-green-500 animate-pulse" : "bg-yellow-500"}`} />
-                              <span className={`text-xs font-medium ${a.status === "active" ? "text-green-600" : "text-yellow-600"}`}>
-                                {a.status === "active" ? "在线" : a.status}
-                              </span>
-                            </div>
-                          </div>
-                          {isArchivedRuntime ? (
-                            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-left">
-                              <p className="text-sm font-medium text-amber-900">存量实例已归档</p>
-                              <p className="mt-1 text-xs leading-5 text-amber-800">
-                                该实例保留历史记录，不再进入工作台，也不再提供迁移入口。请按当前岗位重新申请岗位智能体。
-                              </p>
-                            </div>
-                          ) : null}
-                          <Button
-                            className={`w-full text-white ${runtime.buttonClass}`}
-                            disabled={isArchivedRuntime}
-                            onClick={() => {
-                              if (isArchivedRuntime) return;
-                              setLocation(`/claw/${adoptId}`);
-                            }}
-                          >
-                            {isArchivedRuntime ? "已归档，请重新申请" : "进入工作台"}
-                            {!isArchivedRuntime ? <ArrowRight className="w-4 h-4 ml-2" /> : null}
-                          </Button>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                  {hasOnlyArchivedAdoptions ? (
-                    <div className="space-y-3">
-                      {rolePicker}
-                      <Button
-                        className="w-full bg-primary text-white hover:bg-primary/90"
-                        onClick={() => handleAdopt()}
-                        disabled={provisioning}
-                      >
-                        {provisioning ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            {provisionStep}
-                          </>
-                        ) : (
-                          <>
-                            申请新的岗位智能体
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-              )}
-
-              {/* 没有智能体 → 按岗位创建 */}
-              {user && !isLoading && !hasAnyClaw && (
-                <div className="space-y-3">
-                  {rolePicker}
-                  <Button
-                    size="lg"
-                    className="w-full bg-primary hover:bg-primary/90 text-white h-12 text-base"
-                    onClick={() => handleAdopt()}
-                    disabled={provisioning}
-                  >
-                    {provisioning ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        {provisionStep}
-                      </>
-                    ) : (
-                      <>
-                        申请岗位智能体
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </>
-                    )}
-                  </Button>
-                </div>
-              )}
-
-              {/* 未登录 */}
-              {!user && (
+              <div className="flex flex-col gap-3 sm:flex-row">
                 <Button
                   size="lg"
-                  className="w-full bg-primary hover:bg-primary/90 text-white h-12 text-base"
-                  onClick={() => setLocation("/login?redirect=/")}
+                  className="h-11 w-full bg-primary px-6 text-white hover:bg-primary/90 sm:w-auto"
+                  onClick={handlePrimaryCta}
                 >
-                  <LogIn className="w-4 h-4 mr-2" />
-                  登录开始
+                  {primaryCtaLabel}
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-              )}
-            </motion.div>
-
-            {/* 装饰分隔 */}
-            <motion.div variants={fadeInUp} className="flex items-center gap-3 mt-10">
-              <div className="h-px w-16 bg-gradient-to-r from-transparent to-primary/30" />
-              <div className="flex items-center gap-1.5">
-                <Brain className="w-4 h-4 text-primary/50" />
-                <Cpu className="w-4 h-4 text-primary/40" />
-                <Network className="w-4 h-4 text-primary/30" />
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-11 w-full border-gray-200 bg-white px-6 text-gray-700 hover:border-gray-300 hover:bg-gray-50 sm:w-auto"
+                  onClick={() => scrollToSection("install")}
+                >
+                  一键安装
+                </Button>
               </div>
-              <div className="h-px w-16 bg-gradient-to-l from-transparent to-primary/30" />
-            </motion.div>
-          </motion.div>
-        </div>
-      </section>
+            </div>
 
-      {/* ── Features ── */}
-      <section className="py-16">
-        <div className="container px-6">
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-50px" }}
-            variants={staggerContainer}
-            className="text-center mb-10"
-          >
-            <motion.h2 variants={fadeInUp} className="text-2xl font-bold text-gray-900 mb-2">
-              能力一览
-            </motion.h2>
-            <motion.p variants={fadeInUp} className="text-sm text-muted-foreground">
-              每个岗位智能体都是一个独立的 AI Agent 实例
-            </motion.p>
-          </motion.div>
+            <div id="agent-panel" className="scroll-mt-24">
+              <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-[0_20px_50px_rgba(28,28,30,0.07)] sm:p-7">
+                <div className="mb-6 flex items-center justify-between gap-4">
+                  <span className="text-xs font-bold uppercase text-gray-500">岗位智能体</span>
+                  <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${hasActiveAdoption ? "text-emerald-600" : "text-gray-400"}`}>
+                    <span className={`h-2 w-2 rounded-full ${hasActiveAdoption ? "bg-emerald-500 animate-pulse motion-reduce:animate-none" : "bg-gray-300"}`} />
+                    {isLoading ? "读取中" : hasActiveAdoption ? "在线" : "待申请"}
+                  </span>
+                </div>
 
-          <motion.div
-            initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, margin: "-50px" }}
-            variants={staggerContainer}
-            className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl mx-auto"
-          >
-            {features.map((f) => (
-              <motion.div key={f.title} variants={fadeInUp}>
-                <Card className="h-full border-border/50 bg-white/80 backdrop-blur-sm p-5 hover:shadow-md hover:border-primary/20 transition-all duration-200">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/10 to-rose-500/10 border border-primary/20 flex items-center justify-center shrink-0">
-                      <f.icon className="w-4.5 h-4.5 text-primary" />
+                {user && isLoading ? (
+                  <div className="flex min-h-52 items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-gray-400" />
+                  </div>
+                ) : null}
+
+                {!user ? (
+                  <div>
+                    <div className="mb-5 flex items-center gap-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-red-100 bg-red-50">
+                        <AnimatedLogo size={56} />
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="text-lg font-bold text-gray-900">你的岗位智能体</h2>
+                        <p className="mt-1 truncate font-mono text-xs text-gray-400">登录后创建专属实例</p>
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 mb-1">{f.title}</h3>
-                      <p className="text-xs text-muted-foreground leading-relaxed">{f.desc}</p>
+                    <div className="mb-6 flex flex-wrap gap-2">
+                      {["对话", "技能", "记忆", "沙箱"].map((capability) => (
+                        <span key={capability} className="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">{capability}</span>
+                      ))}
+                    </div>
+                    <Button className="h-11 w-full bg-primary text-white hover:bg-primary/90" onClick={() => setLocation("/login?redirect=/")}>
+                      登录后申请
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null}
+
+                {user && !isLoading && hasAnyClaw ? (
+                  <div>
+                    <div className="divide-y divide-gray-100">
+                      {visibleAdoptions.map((adoption: any, index) => {
+                        const runtime = getRuntimeCardMeta(adoption.adoptId);
+                        const adoptId = String(adoption.adoptId || "");
+                        return (
+                          <div key={adoption.adoptId} className={index === 0 ? "pb-6" : "py-6 last:pb-0"}>
+                            <div className="mb-5 flex items-center gap-4">
+                              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-red-100 bg-red-50">
+                                {index === 0 ? <AnimatedLogo size={56} /> : <img src={runtime.icon} alt="" className="h-10 w-10 object-contain" />}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="mb-1 flex min-w-0 items-center gap-2">
+                                  <h2 className="truncate text-lg font-bold text-gray-900">{roleName(adoption.roleTemplate)}</h2>
+                                  <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${runtime.badgeClass}`}>{runtime.name}</span>
+                                </div>
+                                <p className="truncate font-mono text-xs text-gray-400">{adoptId}</p>
+                              </div>
+                            </div>
+
+                            <div className="mb-6 flex flex-wrap gap-2">
+                              {["对话", "技能", "记忆", "沙箱"].map((capability) => (
+                                <span key={capability} className="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">{capability}</span>
+                              ))}
+                            </div>
+
+                            <Button
+                              className="h-11 w-full bg-emerald-600 text-white hover:bg-emerald-700"
+                              onClick={() => setLocation(`/claw/${adoptId}`)}
+                            >
+                              进入工作台
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                  </div>
+                ) : null}
+
+                {user && !isLoading && !hasAnyClaw ? (
+                  <div>
+                    <div className="mb-5 flex items-center gap-4">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-red-100 bg-red-50">
+                        <AnimatedLogo size={56} />
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="truncate text-lg font-bold text-gray-900">{selectedRole?.name || "岗位智能体"}</h2>
+                        <p className="mt-1 truncate font-mono text-xs text-gray-400">等待创建专属实例</p>
+                      </div>
+                    </div>
+                    <div className="mb-5 flex flex-wrap gap-2">
+                      {["对话", "技能", "记忆", "沙箱"].map((capability) => (
+                        <span key={capability} className="rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">{capability}</span>
+                      ))}
+                    </div>
+                    <div className="space-y-3">
+                      {rolePicker}
+                      <Button size="lg" className="h-11 w-full bg-primary text-white hover:bg-primary/90" onClick={() => handleAdopt()} disabled={provisioning}>
+                        {provisioning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                        {provisioning ? provisionStep : "申请岗位智能体"}
+                        {!provisioning ? <ArrowRight className="ml-2 h-4 w-4" /> : null}
+                      </Button>
                     </div>
                   </div>
-                </Card>
-              </motion.div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Install ── */}
+        <section id="install" className="scroll-mt-20 px-6 pb-16">
+          <div className="mx-auto flex max-w-[1120px] flex-col gap-6 rounded-2xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-md">
+              <h2 className="text-2xl font-black text-gray-900">一键安装</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">一行命令，在你的服务器上私有化部署</p>
+            </div>
+            <div className="flex min-w-0 flex-1 items-center gap-3 rounded-lg border border-red-100 bg-red-50 px-4 py-3 lg:max-w-[600px]">
+              <span className="shrink-0 font-mono text-sm font-bold text-primary">$</span>
+              <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-gray-700">{INSTALL_COMMAND}</code>
+              <button
+                type="button"
+                onClick={handleCopyInstall}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-red-200 bg-white px-2.5 text-xs font-semibold text-primary transition-colors hover:border-red-300 hover:bg-red-50"
+                aria-label="复制安装命令"
+              >
+                {installCopied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {installCopied ? "已复制" : "复制"}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Features ── */}
+        <section className="py-16">
+          <div className="mx-auto max-w-[1120px] px-6">
+            <div className="mb-10 text-center">
+              <h2 className="text-3xl font-black text-gray-900">能力一览</h2>
+              <p className="mt-3 text-base text-muted-foreground">每个岗位智能体都是一个独立的 AI Agent 实例</p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {features.map((feature) => (
+                <article key={feature.title} className="rounded-xl border border-gray-200 bg-white p-6 transition-[border-color,box-shadow] duration-200 hover:border-gray-300 hover:shadow-sm">
+                  <div className="mb-4 flex h-9 w-9 items-center justify-center rounded-lg bg-red-50">
+                    <feature.icon className="h-4 w-4 text-primary" />
+                  </div>
+                  <h3 className="text-base font-bold text-gray-900">{feature.title}</h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{feature.desc}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
 
       {/* ── Footer ── */}
       <footer className="py-6 border-t border-border/50">

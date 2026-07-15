@@ -16,6 +16,7 @@ import { createServer } from "http";
 import net from "net";
 import path from "path";
 import { execSync } from "child_process";
+import { randomUUID } from "crypto";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import compression from "compression";
@@ -59,6 +60,13 @@ import { createContext } from "./context";
 import { getClawByAdoptId, getDb } from "../db";
 import { getClientIp } from "./ip-utils";
 import { cookieCsrfProtection } from "./csrf";
+import {
+  injectInstallerTelemetry,
+  INSTALLER_VERSION,
+  registerInstallTelemetryRoutes,
+  resolveInstallTelemetryEndpoint,
+} from "./install-telemetry";
+import { recordInstallEvent } from "../db/install-telemetry";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -322,6 +330,9 @@ async function startServer() {
     next();
   });
 
+  // Anonymous installer events have a deliberately small request envelope.
+  registerInstallTelemetryRoutes(app);
+
   // Configure body parser with larger size limit for 50MB base64 file uploads.
   app.use(express.json({ limit: "80mb" }));
   app.use(express.urlencoded({ limit: "80mb", extended: true }));
@@ -436,7 +447,20 @@ async function startServer() {
     res.setHeader("Cache-Control", "no-store, max-age=0");
     res.setHeader("Content-Disposition", "inline; filename=employee-agent-install.sh");
     res.type("text/x-shellscript; charset=utf-8");
-    res.send(readFileSync(installerPath, "utf8"));
+    const installId = randomUUID();
+    const endpoint = resolveInstallTelemetryEndpoint();
+    const source = endpoint ? "official" : "self-hosted";
+    let script = readFileSync(installerPath, "utf8");
+    if (endpoint) {
+      script = injectInstallerTelemetry(script, { installId, endpoint, source });
+    }
+    void recordInstallEvent({
+      installId,
+      eventType: "downloaded",
+      source,
+      installerVersion: INSTALLER_VERSION,
+    }).catch((error) => console.error("[install-telemetry] failed to record installer download", error));
+    res.send(script);
   });
 
   app.get("/api/meta/openclaw-version", async (_req, res) => {

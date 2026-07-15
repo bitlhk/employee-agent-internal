@@ -1,5 +1,18 @@
 import { useState, useEffect } from "react";
-import { BarChart3, Users, MessageSquare, TrendingUp, Loader2, RefreshCw } from "lucide-react";
+import {
+  BarChart3,
+  CheckCircle2,
+  Copy,
+  Download,
+  Gauge,
+  Loader2,
+  MessageSquare,
+  Play,
+  RefreshCw,
+  TrendingUp,
+  Users,
+  XCircle,
+} from "lucide-react";
 
 interface AdoptionStat {
   adoptId: string;
@@ -16,6 +29,19 @@ interface UsageData {
   adoptions: AdoptionStat[];
   daily: Array<{ date: string; count: number }>;
   summary: { totalClaws: number; totalChats: number; activeToday: number };
+  installations?: {
+    summary: {
+      commandCopied: number;
+      downloaded: number;
+      started: number;
+      succeeded: number;
+      failed: number;
+      succeeded30d: number;
+      successRate: number;
+    };
+    daily: Array<{ date: string; downloaded: number; started: number; succeeded: number; failed: number }>;
+    failureStages: Array<{ stage: string; count: number }>;
+  };
 }
 
 function getRecentDailySeries(raw: Array<{ date: string; count: number }>, days = 14) {
@@ -62,6 +88,23 @@ export function UsageStatsTab() {
     { label: "总对话数", value: data.summary.totalChats, icon: MessageSquare, tone: "blue", hint: "累计会话调用" },
     { label: "今日活跃", value: data.summary.activeToday, icon: TrendingUp, tone: "green", hint: "今日有交互" },
   ];
+  const installSummary = data.installations?.summary || {
+    commandCopied: 0,
+    downloaded: 0,
+    started: 0,
+    succeeded: 0,
+    failed: 0,
+    succeeded30d: 0,
+    successRate: 0,
+  };
+  const installationCards = [
+    { label: "命令复制", value: installSummary.commandCopied, icon: Copy },
+    { label: "脚本下载", value: installSummary.downloaded, icon: Download },
+    { label: "开始安装", value: installSummary.started, icon: Play },
+    { label: "安装成功", value: installSummary.succeeded, icon: CheckCircle2 },
+    { label: "安装失败", value: installSummary.failed, icon: XCircle },
+    { label: "安装成功率", value: `${installSummary.successRate}%`, icon: Gauge },
+  ];
 
   return (
     <div className="admin-usage-tab space-y-6">
@@ -84,6 +127,43 @@ export function UsageStatsTab() {
             </div>
           );
         })}
+      </div>
+
+      {/* 一键安装漏斗 */}
+      <div className="admin-panel-card rounded-xl border border-gray-200 bg-white p-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">一键安装统计</h3>
+            <p className="mt-1 text-[11px] text-gray-400">匿名事件，统计字段不含服务器 IP、主机名或账号信息</p>
+          </div>
+          <span className="shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-700">
+            近 30 天成功 {installSummary.succeeded30d}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          {installationCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div key={card.label} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-3">
+                <div className="flex items-center justify-between gap-2 text-gray-400">
+                  <span className="text-[11px] font-medium">{card.label}</span>
+                  <Icon className="h-3.5 w-3.5" />
+                </div>
+                <div className="mt-2 text-xl font-semibold text-gray-900">{card.value}</div>
+              </div>
+            );
+          })}
+        </div>
+        {(data.installations?.failureStages?.length || 0) > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3">
+            <span className="text-[11px] text-gray-400">失败阶段</span>
+            {data.installations!.failureStages.map((item) => (
+              <span key={item.stage} className="rounded-md bg-red-50 px-2 py-1 font-mono text-[10px] text-red-600">
+                {item.stage} · {item.count}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 每日趋势 */}

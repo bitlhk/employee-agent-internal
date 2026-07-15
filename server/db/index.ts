@@ -12,3 +12,4 @@ export * from "./role-assets";
 export * from "./collab";
 export * from "./coop-files";
 export * from "./agents";
+export * from "./install-telemetry";

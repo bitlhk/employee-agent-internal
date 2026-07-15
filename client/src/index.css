@@ -6991,18 +6991,23 @@ body[data-home-light="true"] {
   --oc-text-tertiary: #9ca3af;
 }
 .claw-home-shell {
-  background: linear-gradient(180deg, #ffffff 0%, rgba(248,248,247,0.90) 100%) !important;
+  background: #fafaf9 !important;
   color: #111827 !important;
+}
+.claw-home-hero::before {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 78% 64% at 50% 0%, oklch(0.96 0.02 27), transparent 72%);
+  content: "";
+  pointer-events: none;
 }
 .claw-home-shell header,
 .claw-home-shell footer {
   background: rgba(255, 255, 255, 0.88) !important;
   border-color: rgba(17, 24, 39, 0.10) !important;
 }
-.claw-home-shell [data-slot="card"],
-.claw-home-shell .bg-white,
-.claw-home-shell .bg-white\/80 {
-  background: rgba(255, 255, 255, 0.88) !important;
+.claw-home-shell [data-slot="card"] {
+  background: #ffffff !important;
   border-color: rgba(17, 24, 39, 0.10) !important;
   color: #111827 !important;
 }

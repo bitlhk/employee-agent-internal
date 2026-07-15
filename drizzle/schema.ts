@@ -804,6 +804,28 @@ export const agentCallLogs = mysqlTable("agent_call_logs", {
 
 export type AgentCallLog = typeof agentCallLogs.$inferSelect;
 
+// ── Anonymous installer telemetry ──
+export const installEvents = mysqlTable("install_events", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  installId: varchar("install_id", { length: 64 }).notNull(),
+  eventType: mysqlEnum("event_type", ["command_copied", "downloaded", "started", "succeeded", "failed"]).notNull(),
+  stage: varchar("stage", { length: 64 }),
+  source: varchar("source", { length: 32 }).notNull().default("bootstrap"),
+  installerVersion: varchar("installer_version", { length: 32 }),
+  osType: varchar("os_type", { length: 32 }),
+  arch: varchar("arch", { length: 32 }),
+  mirror: varchar("mirror", { length: 16 }),
+  durationMs: int("duration_ms"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueInstallEvent: uniqueIndex("uk_install_events_install_event").on(table.installId, table.eventType),
+  eventCreatedIdx: index("idx_install_events_event_created").on(table.eventType, table.createdAt),
+  installCreatedIdx: index("idx_install_events_install_created").on(table.installId, table.createdAt),
+}));
+
+export type InstallEvent = typeof installEvents.$inferSelect;
+export type InsertInstallEvent = typeof installEvents.$inferInsert;
+
 export const agentTasks = mysqlTable("agent_tasks", {
   id: varchar("id", { length: 64 }).primaryKey(),
   adoptId: varchar("adopt_id", { length: 64 }).notNull(),

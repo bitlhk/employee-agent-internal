@@ -2404,9 +2404,30 @@ export function registerMiscRoutes(app: express.Express) {
         .map(([date, count]) => ({ date, count }))
         .reverse();
 
+      let installations = {
+        summary: {
+          commandCopied: 0,
+          downloaded: 0,
+          started: 0,
+          succeeded: 0,
+          failed: 0,
+          succeeded30d: 0,
+          successRate: 0,
+        },
+        daily: [] as Array<{ date: string; downloaded: number; started: number; succeeded: number; failed: number }>,
+        failureStages: [] as Array<{ stage: string; count: number }>,
+      };
+      try {
+        const { getInstallTelemetrySummary } = await import("../db/install-telemetry");
+        installations = await getInstallTelemetrySummary();
+      } catch (error) {
+        console.error("[usage-stats] failed to load installer telemetry", error);
+      }
+
       return res.json({
         adoptions,
         daily,
+        installations,
         summary: {
           totalClaws: adoptions.length,
           totalChats: seen.size,

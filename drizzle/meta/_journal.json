@@ -36,6 +36,13 @@
       "when": 1778592000000,
       "tag": "0016_enterprise_audit_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1784040000000,
+      "tag": "0026_add_install_events",
+      "breakpoints": true
     }
   ]
 }

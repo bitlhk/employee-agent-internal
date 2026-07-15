@@ -5,6 +5,13 @@ set -euo pipefail
 # Intended usage:
 #   git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
 #   bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh
+INSTALLER_VERSION="2026.07.14.1"
+INSTALL_ID="${EMPLOYEE_AGENT_INSTALL_ID:-}"
+TELEMETRY_ENDPOINT="${EMPLOYEE_AGENT_INSTALL_TELEMETRY_ENDPOINT:-}"
+TELEMETRY_SOURCE="${EMPLOYEE_AGENT_INSTALL_SOURCE:-bootstrap}"
+TELEMETRY_ENABLED="${EMPLOYEE_AGENT_TELEMETRY:-1}"
+INSTALL_STAGE="preflight"
+INSTALL_STARTED_AT=0
 DEFAULT_REPO_URL="https://atomgit.com/linggan_ai/employee-agent.git"
 REPO_URL="${EMPLOYEE_AGENT_REPO_URL:-${LINGXIA_REPO_URL:-$DEFAULT_REPO_URL}}"
 BRANCH="${EMPLOYEE_AGENT_BRANCH:-${LINGXIA_BRANCH:-main}}"
@@ -224,6 +231,72 @@ EOF
 
 cleanup_installer_temp_files() {
   [[ -z "$APT_SOURCE_FILE" ]] || rm -f -- "$APT_SOURCE_FILE"
+}
+
+telemetry_token() {
+  local value="$1" fallback="$2"
+  value=$(printf "%s" "$value" | tr -cd 'A-Za-z0-9._:-' | cut -c1-64)
+  printf "%s" "${value:-$fallback}"
+}
+
+ensure_install_id() {
+  if [[ "$INSTALL_ID" =~ ^[A-Za-z0-9_-]{16,64}$ ]]; then return; fi
+  if [[ -r /proc/sys/kernel/random/uuid ]]; then
+    INSTALL_ID=$(tr -d '[:space:]' </proc/sys/kernel/random/uuid)
+  elif command -v openssl >/dev/null 2>&1; then
+    INSTALL_ID=$(openssl rand -hex 16)
+  else
+    INSTALL_ID="install-$(date +%s)-$$-${RANDOM:-0}"
+  fi
+}
+
+telemetry_event() {
+  local event_type="$1" duration_ms=0 os_type="unknown" arch="unknown" mirror="unknown" payload=""
+  [[ "$DRY_RUN" != "true" && "$TELEMETRY_ENABLED" != "0" ]] || return 0
+  [[ -n "$TELEMETRY_ENDPOINT" && -n "$INSTALL_ID" ]] || return 0
+  case "$TELEMETRY_ENDPOINT" in
+    https://*|http://127.0.0.1:*|http://localhost:*) ;;
+    *) return 0 ;;
+  esac
+  command -v curl >/dev/null 2>&1 || return 0
+
+  if [[ -r /etc/os-release ]]; then
+    os_type=$(source /etc/os-release && printf "%s" "${ID:-unknown}")
+  fi
+  arch=$(uname -m 2>/dev/null || printf "unknown")
+  if [[ "$INSTALL_STARTED_AT" -gt 0 ]]; then
+    duration_ms=$(( ($(date +%s) - INSTALL_STARTED_AT) * 1000 ))
+    [[ "$duration_ms" -le 86400000 ]] || duration_ms=86400000
+  fi
+  if [[ "$event_type" == "started" ]]; then mirror="$MIRROR_MODE"; else mirror="$ACTIVE_MIRROR"; fi
+
+  payload=$(printf '{"installId":"%s","eventType":"%s","stage":"%s","source":"%s","installerVersion":"%s","osType":"%s","arch":"%s","mirror":"%s","durationMs":%d}' \
+    "$(telemetry_token "$INSTALL_ID" unknown-install-id)" \
+    "$(telemetry_token "$event_type" unknown)" \
+    "$(telemetry_token "$INSTALL_STAGE" unknown)" \
+    "$(telemetry_token "$TELEMETRY_SOURCE" bootstrap)" \
+    "$(telemetry_token "$INSTALLER_VERSION" unknown)" \
+    "$(telemetry_token "$os_type" unknown)" \
+    "$(telemetry_token "$arch" unknown)" \
+    "$(telemetry_token "$mirror" unknown)" \
+    "$duration_ms")
+  curl -fsS --connect-timeout 1 --max-time 2 \
+    -H "Content-Type: application/json" \
+    --data-binary "$payload" \
+    "$TELEMETRY_ENDPOINT" >/dev/null 2>&1 || true
+}
+
+finish_install() {
+  local rc="$1"
+  trap - EXIT
+  cleanup_installer_temp_files
+  if [[ "$rc" -eq 0 ]]; then
+    INSTALL_STAGE="complete"
+    telemetry_event "succeeded"
+  else
+    telemetry_event "failed"
+  fi
+  exit "$rc"
 }
 
 configure_download_mirrors() {
@@ -606,20 +679,37 @@ EOF
 
 main() {
   log "Workforce Agent Platform bootstrap installer"
-  trap cleanup_installer_temp_files EXIT
+  INSTALL_STARTED_AT=$(date +%s)
+  ensure_install_id
+  trap 'finish_install "$?"' EXIT
+  telemetry_event "started"
+  INSTALL_STAGE="mirror-selection"
   configure_download_mirrors
+  INSTALL_STAGE="base-packages"
   ensure_base_packages
+  INSTALL_STAGE="node-runtime"
   ensure_node
+  INSTALL_STAGE="node-tools"
   ensure_node_tools
+  INSTALL_STAGE="public-host"
   RESOLVED_HOST=$(detect_host)
+  INSTALL_STAGE="source-checkout"
   checkout_repo
+  INSTALL_STAGE="jiuwenswarm"
   install_jiuwenswarm
+  INSTALL_STAGE="application-setup"
   run_setup
+  INSTALL_STAGE="jiuwenswarm-config"
   configure_jiuwenswarm
+  INSTALL_STAGE="admin-account"
   create_default_admin
+  INSTALL_STAGE="application-build"
   start_app
+  INSTALL_STAGE="startup-service"
   enable_pm2_startup
+  INSTALL_STAGE="health-check"
   wait_for_runtime
+  INSTALL_STAGE="summary"
   print_summary
 }
 

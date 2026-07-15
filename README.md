@@ -87,6 +87,12 @@
 curl -fsSL https://linggan.top/install.sh | bash
 ```
 
+官方脚本会匿名统计“脚本下载、开始、成功、失败阶段”，用于判断安装稳定性；统计事件不包含服务器 IP、主机名、路径、账号或密钥。上报失败不会影响安装。需要关闭时可执行：
+
+```bash
+curl -fsSL https://linggan.top/install.sh | EMPLOYEE_AGENT_TELEMETRY=0 bash
+```
+
 脚本会自动完成：
 
 - 安装 Node.js 22、Python、pnpm、PM2、MySQL 和 Docker
