@@ -428,11 +428,10 @@ install_jiuwenswarm() {
     JIUWENSWARM_EXPECTED_VERSION="$JIUWENSWARM_VERSION" \
       "$JIUWENSWARM_VENV/bin/python" - <<'PY'
 import os
-
-import jiuwenswarm
+from importlib.metadata import version
 
 expected = os.environ["JIUWENSWARM_EXPECTED_VERSION"]
-actual = jiuwenswarm.__version__
+actual = version("jiuwenswarm")
 if actual != expected:
     raise SystemExit(
         f"JiuwenSwarm version mismatch: expected {expected}, installed {actual}"
