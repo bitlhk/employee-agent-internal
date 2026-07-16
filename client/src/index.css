@@ -5162,10 +5162,20 @@ input.session-searchbar__input:focus-visible,
   border-color: rgba(99,102,241,0.34);
 }
 
-/* ── Assistant generated-file attachments ── */
+/* ── Message file attachments ── */
 .lingxia-message-attachments {
   width: min(760px, 100%);
   margin-top: 10px;
+}
+.lingxia-message-attachments.is-user {
+  width: min(520px, 100%);
+  margin: 0 0 8px auto;
+}
+.lingxia-message-attachments.is-user .lingxia-message-attachments__label {
+  text-align: right;
+}
+.lingxia-message-attachments.is-user .lingxia-message-attachment {
+  background: color-mix(in oklab, var(--oc-user-bubble-bg) 62%, var(--oc-bg-surface));
 }
 .lingxia-message-attachments__label {
   margin: 0 0 6px 2px;
@@ -6115,6 +6125,15 @@ html:has(:root[data-theme-mode="light"]) body {
   margin-bottom: 8px;
 }
 
+.lingxia-attachment-list--composer {
+  margin: 0;
+  padding: 10px 12px 0;
+}
+
+.lingxia-attachment-list--composer + .lingxia-composer-editor {
+  padding-top: 8px !important;
+}
+
 .lingxia-attachment-chip {
   display: inline-flex;
   align-items: center;
@@ -6891,6 +6910,27 @@ html:has(:root[data-theme-mode="light"]) body {
 :root[data-theme-mode="light"] .lingxia-model-menu .lingxia-model-item:hover {
   background: rgba(0,0,0,0.05) !important;
   color: #111827 !important;
+}
+
+/* Composer text controls share one visual hierarchy in both themes. */
+.lingxia-composer-skill-select,
+.lingxia-composer-model-select {
+  color: var(--oc-text-secondary);
+  font-size: var(--oc-text-sm);
+  font-weight: var(--oc-weight-normal);
+}
+
+:root[data-theme-mode="light"] .lingxia-shell .lingxia-composer-skill-select,
+:root[data-theme-mode="light"] .lingxia-shell .lingxia-composer-model-select[data-slot="select-trigger"] {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--oc-text-secondary) !important;
+}
+
+:root[data-theme-mode="light"] .lingxia-shell .lingxia-composer-skill-select:hover,
+:root[data-theme-mode="light"] .lingxia-shell .lingxia-composer-model-select[data-slot="select-trigger"]:hover {
+  background: rgba(0,0,0,0.06) !important;
+  color: var(--oc-text-primary) !important;
 }
 
 /* ============================================================
@@ -8012,6 +8052,814 @@ body[data-home-light="true"] .claw-home-shell .bg-primary\/10 {
   }
   .claw-home-feature:hover {
     transform: none;
+  }
+}
+
+/* Job role adoption dialog. */
+.role-adoption-dialog {
+  display: flex !important;
+  flex-direction: column;
+  width: min(1120px, calc(100vw - 32px)) !important;
+  height: min(720px, calc(100dvh - 48px));
+  max-width: none !important;
+  max-height: none !important;
+  padding: 0 !important;
+  gap: 0 !important;
+  overflow: hidden;
+  border: 1px solid #dedbd5 !important;
+  border-radius: 12px !important;
+  background: #ffffff !important;
+  color: #1a1a1a !important;
+  font-family: var(--oc-font-ui, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif);
+  box-shadow: 0 28px 80px rgba(28, 28, 30, 0.2) !important;
+  letter-spacing: 0;
+}
+.role-adoption-dialog__header {
+  display: flex;
+  min-height: 84px;
+  flex: 0 0 auto;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px 56px 18px 24px;
+  border-bottom: 1px solid #ebe8e3;
+  text-align: left !important;
+}
+.role-adoption-dialog__title {
+  color: #1a1a1a;
+  font-size: 20px !important;
+  font-weight: 750 !important;
+  line-height: 1.3 !important;
+}
+.role-adoption-dialog__description {
+  margin-top: 6px;
+  color: #77736c !important;
+  font-size: 13px !important;
+  line-height: 1.5;
+}
+.role-adoption-dialog__count {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border: 1px solid #e4e1db;
+  border-radius: 999px;
+  background: #faf9f7;
+  color: #77736c;
+  font-size: 11px;
+  font-weight: 650;
+}
+.role-adoption-dialog__layout {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  overflow: hidden;
+}
+.role-adoption-grid {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+  padding: 20px;
+  overflow-y: auto;
+  background: #ffffff;
+}
+.role-adoption-card {
+  --role-accent: #3b82c4;
+  --role-soft: #eef6fc;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 260px;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 10px 11px;
+  overflow: hidden;
+  border: 1px solid #e8e5df;
+  border-radius: 8px;
+  background: #f8f9fa;
+  color: #22211f;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(28, 28, 30, 0.02);
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+.role-adoption-card:hover,
+.role-adoption-card:focus-visible,
+.role-adoption-card.is-selected {
+  border-color: color-mix(in oklab, var(--role-accent) 52%, #ddd8d1);
+  background: color-mix(in oklab, var(--role-soft) 68%, #ffffff);
+  box-shadow: 0 12px 28px color-mix(in oklab, var(--role-accent) 13%, transparent);
+}
+.role-adoption-card:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--role-accent) 38%, transparent);
+  outline-offset: 2px;
+}
+.role-adoption-card:disabled {
+  cursor: wait;
+}
+.role-adoption-card__check {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  z-index: 8;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: var(--role-accent);
+  color: #ffffff;
+  box-shadow: 0 4px 10px color-mix(in oklab, var(--role-accent) 26%, transparent);
+}
+.role-adoption-card__check svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.6;
+}
+.role-adoption-portrait {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 174px;
+  flex: 0 0 174px;
+  overflow: hidden;
+  isolation: isolate;
+}
+.role-adoption-portrait img {
+  position: relative;
+  z-index: 3;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform-origin: 50% 84%;
+  user-select: none;
+  filter: saturate(0.96) contrast(1.01);
+}
+.role-adoption-card:hover .role-adoption-portrait img,
+.role-adoption-card.is-selected .role-adoption-portrait img,
+.role-adoption-portrait.is-active img {
+  filter: saturate(1.05) contrast(1.02) drop-shadow(0 8px 10px rgba(28, 28, 30, 0.08));
+}
+.role-adoption-portrait__pulse {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: 14px;
+  width: 58%;
+  height: 16%;
+  border: 1px solid color-mix(in oklab, var(--role-accent) 52%, transparent);
+  border-radius: 50%;
+  transform: translateX(-50%);
+  animation: role-adoption-pulse 1.8s ease-out infinite;
+}
+.role-adoption-card__identity {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: center;
+  gap: 7px;
+  padding: 1px 4px 0;
+}
+.role-adoption-card__identity strong {
+  overflow: hidden;
+  color: #1f1e1b;
+  font-size: 15px;
+  font-weight: 750;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-card__identity small {
+  overflow: hidden;
+  color: #77736c;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-card__tags {
+  display: flex;
+  width: 100%;
+  min-height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 5px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.role-adoption-card:hover .role-adoption-card__tags,
+.role-adoption-card:focus-visible .role-adoption-card__tags,
+.role-adoption-card.is-selected .role-adoption-card__tags {
+  opacity: 1;
+  transform: translateY(0);
+}
+.role-adoption-card__tags i {
+  overflow: hidden;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--role-accent) 10%, #ffffff);
+  color: color-mix(in oklab, var(--role-accent) 78%, #2f2d29);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-particles,
+.role-adoption-effect {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  pointer-events: none;
+}
+.role-adoption-particles {
+  opacity: 0.28;
+  transition: opacity 180ms ease;
+}
+.role-adoption-particles.is-active {
+  opacity: 0.8;
+}
+.role-adoption-particles i {
+  position: absolute;
+  bottom: 20%;
+  width: 2px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--role-accent);
+  opacity: 0;
+  animation: role-data-rise 4.2s linear infinite;
+}
+.role-adoption-particles i:nth-child(1) { left: 17%; animation-delay: -0.6s; }
+.role-adoption-particles i:nth-child(2) { left: 34%; animation-delay: -2.4s; }
+.role-adoption-particles i:nth-child(3) { left: 68%; animation-delay: -1.4s; }
+.role-adoption-particles i:nth-child(4) { left: 84%; animation-delay: -3.2s; }
+.role-adoption-effect {
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.role-adoption-effect.is-active {
+  opacity: 1;
+}
+.role-adoption-effect i {
+  position: absolute;
+  display: block;
+}
+.role-adoption-effect.is-data i {
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--role-accent);
+  border-radius: 2px;
+  animation: role-data-panel 2.4s ease-in-out infinite;
+}
+.role-adoption-effect.is-data i:nth-child(1) { top: 28%; left: 15%; }
+.role-adoption-effect.is-data i:nth-child(2) { top: 40%; right: 13%; animation-delay: -0.8s; }
+.role-adoption-effect.is-data i:nth-child(3) { top: 18%; right: 25%; animation-delay: -1.6s; }
+.role-adoption-effect.is-wealth i:first-child {
+  top: 27%;
+  left: 9%;
+  width: 30%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in oklab, var(--role-accent) 62%, transparent);
+  border-radius: 50%;
+  animation: role-ring-turn 5s linear infinite;
+}
+.role-adoption-effect.is-risk i:first-child,
+.role-adoption-effect.is-protect i:first-child {
+  top: 30%;
+  left: 12%;
+  width: 29%;
+  aspect-ratio: 1;
+  border: 1px solid color-mix(in oklab, var(--role-accent) 70%, transparent);
+  border-radius: 50%;
+  animation: role-shield-wave 2s ease-out infinite;
+}
+.role-adoption-effect.is-audit i:first-child {
+  top: 25%;
+  right: 8%;
+  width: 29%;
+  height: 2px;
+  background: var(--role-accent);
+  box-shadow: 0 0 10px color-mix(in oklab, var(--role-accent) 55%, transparent);
+  animation: role-scan-y 2.1s ease-in-out infinite;
+}
+.role-adoption-effect.is-market i:first-child {
+  top: 28%;
+  left: 7%;
+  width: 35%;
+  height: 34%;
+  border-left: 1px solid color-mix(in oklab, var(--role-accent) 55%, transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--role-accent) 55%, transparent);
+  animation: role-market-glow 2.6s ease-in-out infinite;
+}
+.role-adoption-activation {
+  display: grid;
+  min-height: 52px;
+  grid-template-columns: 34px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  color: #2c2925;
+}
+.role-adoption-activation__icon {
+  display: inline-flex;
+  width: 34px;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--role-accent) 12%, #ffffff);
+  color: var(--role-accent);
+  animation: role-chip-activate 1.25s ease-in-out infinite;
+}
+.role-adoption-activation__icon svg,
+.role-adoption-activation > svg {
+  width: 17px;
+  height: 17px;
+}
+.role-adoption-activation > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.role-adoption-activation strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-activation small {
+  overflow: hidden;
+  color: #77736c;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-launch {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 2px 0 4px;
+}
+.role-adoption-launch__icon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #fff1f0;
+  color: var(--primary);
+}
+.role-adoption-launch__icon svg {
+  width: 24px;
+  height: 24px;
+}
+.role-adoption-launch__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+.role-adoption-launch__copy strong {
+  color: #23211f;
+  font-size: 14px;
+  font-weight: 750;
+}
+.role-adoption-launch__copy small {
+  color: #77736c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+@keyframes role-data-rise {
+  0% { opacity: 0; transform: translateY(8px); }
+  20% { opacity: 0.55; }
+  75% { opacity: 0.3; }
+  100% { opacity: 0; transform: translateY(-76px); }
+}
+@keyframes role-adoption-pulse {
+  0% { opacity: 0.6; transform: translateX(-50%) scale(0.72); }
+  100% { opacity: 0; transform: translateX(-50%) scale(1.28); }
+}
+@keyframes role-data-panel {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 0.9; transform: scale(1.1); box-shadow: 0 0 8px color-mix(in oklab, var(--role-accent) 40%, transparent); }
+}
+@keyframes role-ring-turn {
+  to { transform: rotate(360deg); }
+}
+@keyframes role-shield-wave {
+  0% { opacity: 0.7; transform: scale(0.72); }
+  100% { opacity: 0; transform: scale(1.28); }
+}
+@keyframes role-scan-y {
+  0%, 100% { opacity: 0.15; transform: translateY(0); }
+  50% { opacity: 0.85; transform: translateY(62px); }
+}
+@keyframes role-market-glow {
+  0%, 100% { opacity: 0.22; }
+  50% { opacity: 0.8; box-shadow: -3px 3px 8px color-mix(in oklab, var(--role-accent) 28%, transparent); }
+}
+@keyframes role-chip-activate {
+  0%, 100% { transform: scale(0.96); box-shadow: 0 0 0 0 color-mix(in oklab, var(--role-accent) 20%, transparent); }
+  50% { transform: scale(1.03); box-shadow: 0 0 0 7px transparent; }
+}
+@media (max-width: 920px) {
+  .role-adoption-dialog {
+    height: min(900px, calc(100dvh - 32px));
+  }
+  .role-adoption-dialog__layout {
+    display: block;
+    overflow-y: auto;
+  }
+  .role-adoption-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: visible;
+  }
+}
+@media (max-width: 640px) {
+  .role-adoption-dialog {
+    top: 8px !important;
+    left: 8px !important;
+    width: calc(100vw - 16px) !important;
+    height: calc(100dvh - 16px);
+    max-width: none !important;
+    transform: none !important;
+    border-radius: 10px !important;
+  }
+  .role-adoption-dialog__header {
+    min-height: 76px;
+    padding: 16px 48px 14px 16px;
+  }
+  .role-adoption-dialog__title {
+    font-size: 17px !important;
+  }
+  .role-adoption-dialog__description {
+    max-width: 260px;
+    font-size: 11px !important;
+  }
+  .role-adoption-dialog__count {
+    display: none;
+  }
+  .role-adoption-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+  }
+  .role-adoption-card {
+    min-height: 216px;
+    padding: 7px 6px 8px;
+  }
+  .role-adoption-portrait {
+    height: 140px;
+    flex-basis: 140px;
+  }
+  .role-adoption-card__identity {
+    gap: 5px;
+  }
+  .role-adoption-card__identity strong {
+    font-size: 13px;
+  }
+  .role-adoption-card__identity small {
+    font-size: 9px;
+  }
+  .role-adoption-card__tags {
+    min-height: 24px;
+    gap: 3px;
+  }
+  .role-adoption-card__tags i {
+    max-width: 48%;
+    padding: 3px 4px;
+    font-size: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .role-adoption-dialog *,
+  .role-adoption-dialog *::before,
+  .role-adoption-dialog *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Role adoption dialog v2: direct role picker with one shared action bar. */
+.role-adoption-dialog {
+  width: min(1280px, calc(100vw - 32px)) !important;
+  height: min(530px, calc(100dvh - 32px));
+  animation-duration: 260ms !important;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+.role-adoption-dialog__header {
+  min-height: 58px;
+  justify-content: center;
+  padding: 13px 56px 12px 20px;
+}
+.role-adoption-dialog__title {
+  font-size: 18px !important;
+}
+.role-adoption-dialog__layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+.role-adoption-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  align-content: center;
+  padding: 14px 18px;
+  overflow-y: auto;
+}
+.role-adoption-card {
+  min-height: 320px;
+  padding: 8px 10px 10px;
+}
+.role-adoption-card:hover .role-adoption-particles,
+.role-adoption-card:focus-visible .role-adoption-particles,
+.role-adoption-card:hover .role-adoption-effect,
+.role-adoption-card:focus-visible .role-adoption-effect {
+  opacity: 0.82;
+}
+.role-adoption-portrait {
+  height: 205px;
+  flex-basis: 205px;
+}
+.role-adoption-card__identity {
+  padding-top: 0;
+}
+.role-adoption-card__info {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin-top: 4px;
+  overflow: hidden;
+}
+.role-adoption-card__tagline,
+.role-adoption-card__tags {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+.role-adoption-card__tagline {
+  padding: 0 4px;
+  color: #77736c;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.55;
+  opacity: 1;
+  transform: translateY(0);
+}
+.role-adoption-card__tags {
+  min-height: 0;
+  gap: 4px;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(5px);
+}
+.role-adoption-card:hover .role-adoption-card__tagline,
+.role-adoption-card:focus-visible .role-adoption-card__tagline,
+.role-adoption-card.is-selected .role-adoption-card__tagline {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.role-adoption-card:hover .role-adoption-card__tags,
+.role-adoption-card:focus-visible .role-adoption-card__tags,
+.role-adoption-card.is-selected .role-adoption-card__tags {
+  opacity: 1;
+  transform: translateY(0);
+}
+.role-adoption-card__tags i {
+  max-width: 32%;
+  padding: 4px 6px;
+  font-size: 8px;
+}
+.role-adoption-effect.is-wealth i:nth-child(2),
+.role-adoption-effect.is-wealth i:nth-child(3) {
+  top: 37%;
+  left: 18%;
+  width: 4px;
+  height: 4px;
+  border: 1px solid var(--role-accent);
+  border-radius: 1px;
+  background: #fff8e8;
+  box-shadow: 0 0 7px color-mix(in oklab, var(--role-accent) 42%, transparent);
+  animation: role-data-panel 2.2s ease-in-out infinite;
+}
+.role-adoption-effect.is-wealth i:nth-child(3) {
+  top: 49%;
+  left: 31%;
+  animation-delay: -1.1s;
+}
+.role-adoption-effect.is-market i:nth-child(2),
+.role-adoption-effect.is-market i:nth-child(3) {
+  top: 46%;
+  left: 14%;
+  width: 4px;
+  height: 18px;
+  border: 0;
+  border-radius: 1px 1px 0 0;
+  background: var(--role-accent);
+  box-shadow: none;
+  transform-origin: bottom;
+  animation: role-market-bar 1.8s ease-in-out infinite;
+}
+.role-adoption-effect.is-market i:nth-child(3) {
+  top: 42%;
+  left: 25%;
+  height: 24px;
+  animation-delay: -0.9s;
+}
+.role-adoption-footer {
+  --role-accent: #3b82c4;
+  --role-soft: #eef6fc;
+  position: relative;
+  z-index: 10;
+  display: flex;
+  min-height: 88px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 18px;
+  border-top: 1px solid #e8e5df;
+  background: color-mix(in oklab, var(--role-soft) 30%, #ffffff);
+  box-shadow: 0 -8px 24px rgba(28, 28, 30, 0.035);
+}
+.role-adoption-footer__selection {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+.role-adoption-footer__icon {
+  display: inline-flex;
+  width: 54px;
+  height: 54px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklab, var(--role-accent) 16%, #dedbd5);
+  border-radius: 9px;
+  background: color-mix(in oklab, var(--role-accent) 11%, #ffffff);
+  color: var(--role-accent);
+}
+.role-adoption-footer__icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transform: scale(1.52);
+  transform-origin: 50% 24%;
+  transition: transform 180ms ease;
+}
+.role-adoption-footer__icon svg {
+  width: 18px;
+  height: 18px;
+}
+.role-adoption-footer__greeting {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.role-adoption-footer__greeting strong {
+  overflow: hidden;
+  color: #26231f;
+  font-size: 14px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-footer__greeting small {
+  min-height: 17px;
+  overflow: hidden;
+  color: #68645d;
+  font-size: 11px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.role-adoption-footer__cursor {
+  display: inline-block;
+  margin-left: 1px;
+  color: #e11d48;
+  font-style: normal;
+  font-weight: 800;
+  animation: role-greeting-cursor 0.8s step-end infinite;
+}
+.role-adoption-footer__button {
+  min-width: 196px;
+  min-height: 42px;
+  flex: 0 0 auto;
+  box-shadow: 0 8px 20px rgba(220, 38, 38, 0.14);
+}
+.role-adoption-footer__mode {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid #dedbd5;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #77736c;
+  font-size: 10px;
+  font-weight: 650;
+}
+.role-adoption-footer .role-adoption-activation {
+  min-width: 280px;
+  grid-template-columns: minmax(0, 1fr) 18px;
+}
+@keyframes role-market-bar {
+  0%, 100% { opacity: 0.28; transform: scaleY(0.45); }
+  50% { opacity: 0.85; transform: scaleY(1); }
+}
+@keyframes role-greeting-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@media (max-width: 1100px) {
+  .role-adoption-dialog {
+    width: min(900px, calc(100vw - 24px)) !important;
+    height: min(760px, calc(100dvh - 24px));
+  }
+  .role-adoption-dialog__layout {
+    display: flex;
+    overflow: hidden;
+  }
+  .role-adoption-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-content: start;
+    overflow-y: auto;
+  }
+  .role-adoption-card {
+    min-height: 270px;
+  }
+  .role-adoption-portrait {
+    height: 180px;
+    flex-basis: 180px;
+  }
+}
+@media (max-width: 680px) {
+  .role-adoption-dialog__header {
+    min-height: 56px;
+    padding: 12px 48px 11px 14px;
+  }
+  .role-adoption-dialog__layout {
+    overflow-y: auto;
+  }
+  .role-adoption-grid {
+    flex: 0 0 auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 12px;
+    overflow: visible;
+  }
+  .role-adoption-card {
+    min-height: 224px;
+  }
+  .role-adoption-portrait {
+    height: 142px;
+    flex-basis: 142px;
+  }
+  .role-adoption-footer {
+    position: sticky;
+    bottom: 0;
+    min-height: 74px;
+    padding: 10px 12px;
+  }
+  .role-adoption-footer__selection {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+  .role-adoption-footer__icon {
+    width: 42px;
+    height: 42px;
+  }
+  .role-adoption-footer__greeting small {
+    display: none;
+  }
+  .role-adoption-footer__button {
+    min-width: 132px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+  .role-adoption-footer .role-adoption-activation {
+    min-width: 0;
   }
 }
 /* Login/register keeps the public product palette even when the app theme is dark. */

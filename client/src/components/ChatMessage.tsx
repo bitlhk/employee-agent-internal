@@ -62,6 +62,13 @@ export type ToolCallEntry = {
   _gateway?: boolean;
 };
 
+export type ChatMessageAttachment = {
+  name: string;
+  size: number;
+  path: string;
+  adoptId: string;
+};
+
 export type MessageEventEntry =
   | {
       type: "text";
@@ -133,6 +140,7 @@ type ChatMessageProps = {
   displayName: string;
   modelId: string;
   timeLabel: string;
+  attachments?: ChatMessageAttachment[];
   toolCalls?: ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   agentTasks?: AgentTask[];
@@ -424,13 +432,6 @@ function ToolCallDetailBody({ tc }: { tc: ToolCallEntry }) {
   );
 }
 
-type MessageAttachment = {
-  name: string;
-  size: number;
-  path: string;
-  adoptId: string;
-};
-
 type AttachmentPreviewKind = "html" | "pdf" | "image" | "markdown" | "text" | "none";
 
 const TEXT_PREVIEW_EXTENSIONS = new Set([
@@ -442,7 +443,7 @@ function attachmentExtension(name: string): string {
   return name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
 }
 
-function attachmentPreviewKind(file: MessageAttachment): AttachmentPreviewKind {
+function attachmentPreviewKind(file: ChatMessageAttachment): AttachmentPreviewKind {
   const ext = attachmentExtension(file.name);
   if (ext === "html" || ext === "htm") return "html";
   if (ext === "pdf") return "pdf";
@@ -468,8 +469,15 @@ function formatAttachmentSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function collectMessageAttachments(toolCalls: ToolCallEntry[]): MessageAttachment[] {
-  const files = new Map<string, MessageAttachment>();
+function collectMessageAttachments(
+  toolCalls: ToolCallEntry[],
+  attachments: ChatMessageAttachment[],
+): ChatMessageAttachment[] {
+  const files = new Map<string, ChatMessageAttachment>();
+  for (const file of attachments) {
+    if (!file.path || !file.adoptId) continue;
+    files.set(`${file.adoptId}:${file.path}`, file);
+  }
   for (const tool of toolCalls) {
     for (const file of tool.outputFiles || []) {
       const path = String(file.wsPath || `sandbox-files/${file.name}`).replace(/^workspace\//, "");
@@ -482,12 +490,23 @@ function collectMessageAttachments(toolCalls: ToolCallEntry[]): MessageAttachmen
   return Array.from(files.values()).slice(0, 20);
 }
 
-function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
-  const files = useMemo(() => collectMessageAttachments(toolCalls), [toolCalls]);
+function MessageAttachments({
+  toolCalls = [],
+  attachments = [],
+  variant = "assistant",
+}: {
+  toolCalls?: ToolCallEntry[];
+  attachments?: ChatMessageAttachment[];
+  variant?: "user" | "assistant";
+}) {
+  const files = useMemo(
+    () => collectMessageAttachments(toolCalls, attachments),
+    [attachments, toolCalls],
+  );
   const [downloading, setDownloading] = useState("");
   const [downloadError, setDownloadError] = useState("");
   const [preview, setPreview] = useState<{
-    file: MessageAttachment;
+    file: ChatMessageAttachment;
     kind: AttachmentPreviewKind;
     loading: boolean;
     url?: string;
@@ -497,7 +516,7 @@ function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
 
   if (!files.length) return null;
 
-  const requestDownloadUrl = async (file: MessageAttachment) => {
+  const requestDownloadUrl = async (file: ChatMessageAttachment) => {
     const response = await fetch("/api/claw/files/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -509,7 +528,7 @@ function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
     return String(payload.url);
   };
 
-  const downloadFile = async (file: MessageAttachment) => {
+  const downloadFile = async (file: ChatMessageAttachment) => {
     const key = `${file.adoptId}:${file.path}`;
     setDownloading(key);
     setDownloadError("");
@@ -528,7 +547,7 @@ function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
     }
   };
 
-  const previewFile = async (file: MessageAttachment) => {
+  const previewFile = async (file: ChatMessageAttachment) => {
     const kind = attachmentPreviewKind(file);
     if (kind === "none") return;
     setPreview({ file, kind, loading: true });
@@ -554,7 +573,7 @@ function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
 
   return (
     <>
-      <div className="lingxia-message-attachments" aria-label="生成的附件">
+      <div className={`lingxia-message-attachments is-${variant}`} aria-label={variant === "user" ? "上传的附件" : "生成的附件"}>
         <div className="lingxia-message-attachments__label">附件 · {files.length}</div>
         <div className="lingxia-message-attachments__list">
           {files.map((file) => {
@@ -592,7 +611,7 @@ function MessageAttachments({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
                   >
                     {downloading === key ? <Loader2 className="animate-spin" size={15} /> : <Download size={15} strokeWidth={1.9} />}
                   </button>
-                  {runnable ? <RunFileButton adoptId={file.adoptId} filePath={file.path} fileName={file.name} /> : null}
+                  {variant === "assistant" && runnable ? <RunFileButton adoptId={file.adoptId} filePath={file.path} fileName={file.name} /> : null}
                 </div>
               </div>
             );
@@ -962,6 +981,7 @@ function ChatMessageInner({
   isPlaceholder,
   streaming,
   timeLabel,
+  attachments,
   toolCalls,
   messageEvents,
   agentTasks,
@@ -1039,9 +1059,12 @@ function ChatMessageInner({
     return (
       <div className="flex items-start gap-3 justify-end lingxia-msg-fade">
         <div className="lingxia-user-bubble">
-          <div className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm whitespace-pre-wrap lingxia-user-msg-text lingxia-bubble-user">
-            {text}
-          </div>
+          <MessageAttachments attachments={attachments} variant="user" />
+          {text ? (
+            <div className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm whitespace-pre-wrap lingxia-user-msg-text lingxia-bubble-user">
+              {text}
+            </div>
+          ) : null}
           <p className="text-[10px] mt-1 px-1 text-right" style={{ color: "var(--oc-text-tertiary)" }}>You · {timeLabel}</p>
         </div>
         <div
@@ -1107,7 +1130,7 @@ function ChatMessageInner({
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}
           </div>
         </div>
-        <MessageAttachments toolCalls={effectiveToolCalls} />
+        <MessageAttachments toolCalls={effectiveToolCalls} attachments={attachments} />
         {jiuwenPermission && (
           <div
             className="mt-2 rounded-xl px-3 py-3 text-xs"
@@ -1344,6 +1367,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.displayName === next.displayName &&
     prev.modelId === next.modelId &&
     prev.timeLabel === next.timeLabel &&
+    JSON.stringify(prev.attachments || []) === JSON.stringify(next.attachments || []) &&
     prev.showToolCalls === next.showToolCalls &&
     toolCallsRenderSignature(prev.toolCalls) === toolCallsRenderSignature(next.toolCalls) &&
     messageEventsRenderSignature(prev.messageEvents) === messageEventsRenderSignature(next.messageEvents) &&

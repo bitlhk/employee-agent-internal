@@ -145,7 +145,13 @@ function normalizeMarketSkills(list: any[]): MarketSkill[] {
   }));
 }
 
-export function MarketplacePage({ adoptId }: { adoptId?: string }) {
+export function MarketplacePage({
+  adoptId,
+  onChanged,
+}: {
+  adoptId?: string;
+  onChanged?: () => void | Promise<void>;
+}) {
   const { confirm, dialog } = useConfirmDialog();
   const [items, setItems] = useState<MarketSkill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -311,6 +317,7 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
         return next;
       });
       setItems((prev) => prev.map((x) => (x.id === item.id ? { ...x, installCount: (x.installCount || 0) + 1 } : x)));
+      await onChanged?.();
     } catch (e: any) {
       toast.error(`安装失败${e?.message ? `：${e.message}` : ""}`);
     } finally {
@@ -346,6 +353,7 @@ export function MarketplacePage({ adoptId }: { adoptId?: string }) {
         try { window.localStorage.setItem(marketInstalledCacheKey(adoptId), JSON.stringify(next)); } catch {}
         return next;
       });
+      await onChanged?.();
     } catch (e: any) {
       toast.error(`卸载失败${e?.message ? `：${e.message}` : ""}`);
     } finally {

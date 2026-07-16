@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { BrandIcon } from "@/components/BrandIcon";
+import { RoleAdoptionDialog } from "@/components/RoleAdoptionDialog";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -40,13 +41,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { useBrand } from "@/lib/useBrand";
@@ -130,13 +124,6 @@ const steps = [
     desc: "直接对话、调用技能和连接业务系统，让智能体开始处理工作。",
   },
 ];
-
-const industryLabel: Record<string, string> = {
-  general: "通用",
-  banking: "银行",
-  insurance: "保险",
-  securities: "证券",
-};
 
 const INSTALL_COMMAND = "curl -fsSL https://linggan.top/install.sh | bash";
 const WEALTH_DEMO_RESPONSE =
@@ -386,7 +373,8 @@ export default function ClawHome() {
   const { user, logout } = useAuth();
   const [provisioning, setProvisioning] = useState(false);
   const [provisionStep, setProvisionStep] = useState("");
-  const [selectedRoleId, setSelectedRoleId] = useState("general-assistant");
+  const [selectedRoleId, setSelectedRoleId] = useState("");
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [installCopied, setInstallCopied] = useState(false);
   const installCopyTimer = useRef<number | null>(null);
 
@@ -434,9 +422,7 @@ export default function ClawHome() {
   }, [roleTemplates]);
 
   const selectedRole = useMemo(
-    () =>
-      selectableRoles.find((role: any) => role.id === selectedRoleId) ||
-      selectableRoles[0],
+    () => selectableRoles.find((role: any) => role.id === selectedRoleId) || null,
     [selectableRoles, selectedRoleId]
   );
 
@@ -454,11 +440,16 @@ export default function ClawHome() {
       setLocation("/login?redirect=/");
       return;
     }
+    if (!selectedRole) {
+      toast.info("请先选择岗位");
+      setRolePickerOpen(true);
+      return;
+    }
     try {
       setProvisioning(true);
       setProvisionStep("正在初始化专属实例...");
       const result = await adoptMutation.mutateAsync({
-        roleTemplate: selectedRole?.id || selectedRoleId,
+        roleTemplate: selectedRole.id,
         preferRuntime: options.preferRuntime,
       });
       const adoptId = result?.adoption?.adoptId;
@@ -556,6 +547,11 @@ export default function ClawHome() {
     scrollToSection("agent-panel");
   };
 
+  const openRolePicker = (roleId = "") => {
+    setSelectedRoleId(roleId);
+    setRolePickerOpen(true);
+  };
+
   return (
     <div className="claw-home-shell claw-home-v2 min-h-screen bg-white">
       <header className="claw-home-v2__header sticky top-0 z-50 border-b">
@@ -645,6 +641,20 @@ export default function ClawHome() {
         </div>
       </header>
 
+      {user ? (
+        <RoleAdoptionDialog
+          open={rolePickerOpen}
+          onOpenChange={setRolePickerOpen}
+          roles={selectableRoles}
+          selectedRoleId={selectedRoleId}
+          onSelectRole={setSelectedRoleId}
+          onAdopt={() => void handleAdopt()}
+          canAdopt={!hasAnyClaw}
+          provisioning={provisioning}
+          provisionStep={provisionStep}
+        />
+      ) : null}
+
       <main>
         <section className="claw-home-v2__hero">
           <div className="claw-home-v2__hero-inner">
@@ -696,13 +706,22 @@ export default function ClawHome() {
 
                 {user && !isLoading && hasAnyClaw ? (
                   <div className="claw-home-v2__state-card text-left">
-                    <div className="mb-3 flex items-center justify-between">
+                    <div className="mb-3 flex items-center justify-between gap-3">
                       <span className="text-xs font-semibold text-[#787671]">
                         我的岗位智能体
                       </span>
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
-                        <i className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none" />
-                        {hasActiveAdoption ? "在线" : "初始化中"}
+                      <span className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#77736c] hover:text-[#1a1a1a]"
+                          onClick={() => openRolePicker(String(activeAdoption?.roleTemplate || visibleAdoptions[0]?.roleTemplate || ""))}
+                        >
+                          <UsersRound className="h-3.5 w-3.5" /> 岗位一览
+                        </button>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
+                          <i className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none" />
+                          {hasActiveAdoption ? "在线" : "初始化中"}
+                        </span>
                       </span>
                     </div>
                     <div className="max-h-[280px] divide-y divide-[#ede9e4] overflow-y-auto">
@@ -755,48 +774,22 @@ export default function ClawHome() {
 
                 {user && !isLoading && !hasAnyClaw ? (
                   <div className="claw-home-v2__state-card text-left">
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold text-[#787671]">
-                        岗位身份
+                    <div className="role-adoption-launch">
+                      <span className="role-adoption-launch__icon">
+                        <UsersRound aria-hidden="true" />
                       </span>
-                      <span className="rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-primary">
-                        {industryLabel[
-                          String(selectedRole?.industry || "general")
-                        ] || "通用"}
+                      <span className="role-adoption-launch__copy">
+                        <strong>选择你的数字员工</strong>
+                        <small>从 {selectableRoles.length || 6} 个岗位中选择，自动配置专业技能与业务工具。</small>
                       </span>
                     </div>
-                    <Select
-                      value={selectedRole?.id || selectedRoleId}
-                      onValueChange={setSelectedRoleId}
-                      disabled={provisioning || selectableRoles.length === 0}
-                    >
-                      <SelectTrigger className="h-10 w-full border-[#c8c4be] bg-white text-sm">
-                        <SelectValue placeholder="选择岗位" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {selectableRoles.map((role: any) => (
-                          <SelectItem key={role.id} value={role.id}>
-                            {role.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {selectedRole?.description ? (
-                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#787671]">
-                        {selectedRole.description}
-                      </p>
-                    ) : null}
                     <Button
                       size="lg"
                       className="mt-4 h-11 w-full"
-                      onClick={() => handleAdopt()}
+                      onClick={() => openRolePicker()}
                       disabled={provisioning || selectableRoles.length === 0}
                     >
-                      {provisioning ? (
-                        <Loader2 className="animate-spin" />
-                      ) : null}
-                      {provisioning ? provisionStep : "申请岗位智能体"}
-                      {!provisioning ? <ArrowRight /> : null}
+                      选择岗位智能体 <ArrowRight />
                     </Button>
                   </div>
                 ) : null}

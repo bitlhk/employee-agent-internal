@@ -64,7 +64,12 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 function safeFilename(name: string): string {
   // Strip path separators / dangerous chars / leading dots / collapse '..'
-  return name.replace(/[\\/:*?"<>|]/g, "_").replace(/\.\.+/g, "_").replace(/^\.+/, "_").slice(0, 200);
+  return name
+    .replace(/[\u0000-\u001f\u007f]/g, "_")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/\.\.+/g, "_")
+    .replace(/^\.+/, "_")
+    .slice(0, 200);
 }
 
 function getExt(filename: string): string {
@@ -466,7 +471,7 @@ export function registerFilesRoutes(app: express.Express) {
           runtime: runtimeName(adoptId),
           metadata: { uploadLimitBytes: maxUploadBytes, sourcePath: subPath || null },
         });
-        return res.json({ runtime: runtimeName(adoptId), ok: true, path: targetRel, size: buf.length });
+        return res.json({ runtime: runtimeName(adoptId), ok: true, filename, path: targetRel, size: buf.length });
       } catch (e: any) {
         return res.status(500).json({ error: `write failed: ${e?.message || e}` });
       }

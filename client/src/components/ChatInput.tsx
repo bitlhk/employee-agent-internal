@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useEffect, useLayoutEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { FileText, Upload } from "lucide-react";
+import { FileText, Upload, X } from "lucide-react";
 import { prepareChatAttachments } from "@/lib/image-compress";
 
 type MentionUser = {
@@ -71,7 +71,7 @@ function AttachmentChip({ file, index, onRemove }: AttachmentChipProps) {
         onClick={() => onRemove(index)}
         aria-label={`移除 ${file.name}`}
       >
-        ×
+        <X size={12} strokeWidth={2} aria-hidden="true" />
       </button>
     </div>
   );
@@ -614,20 +614,6 @@ export function ChatInput({
         </div>
       )}
 
-      {/* 附件预览 */}
-      {attachments.length > 0 && (
-        <div className="lingxia-attachment-list">
-          {attachments.map((file, i) => (
-            <AttachmentChip
-              key={`${file.name}-${file.size}-${file.lastModified}-${i}`}
-              file={file}
-              index={i}
-              onRemove={removeAttachment}
-            />
-          ))}
-        </div>
-      )}
-
       {/* 主输入卡片 */}
       <div
         className={`lingxia-input-wrap main-chat-composer ${streaming ? "is-streaming" : ""}`}
@@ -658,7 +644,20 @@ export function ChatInput({
           transition: "border-color 0.18s, box-shadow 0.18s, outline-color 0.18s",
         }}
       >
-        <div className="px-4 pt-3 pb-1">
+        {attachments.length > 0 && (
+          <div className="lingxia-attachment-list lingxia-attachment-list--composer">
+            {attachments.map((file, i) => (
+              <AttachmentChip
+                key={`${file.name}-${file.size}-${file.lastModified}-${i}`}
+                file={file}
+                index={i}
+                onRemove={removeAttachment}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="lingxia-composer-editor px-4 pt-3 pb-1">
           {recording ? (
             <div className="flex items-center gap-2" style={{ minHeight: 22, color: "var(--oc-accent)" }}>
               <span className="animate-pulse" style={{ fontSize: 14 }}>●</span>

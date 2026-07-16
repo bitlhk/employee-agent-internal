@@ -62,41 +62,53 @@ describe("claw misc admin routes", () => {
       process.env.JIUWENCLAW_SERVICE_ID = "linggan_test";
       const { listJiuwenChatHistorySessions, resolveJiuwenHistorySession } = await import("./claw-misc");
 
-      const writeSession = (adoptId: string, conversationId: string, userText: string, assistantText: string, historyName: "history.json" | "history.jsonl") => {
-        const sessionId = `sess_${adoptId}_web_${conversationId}_e0`;
+      const writeSession = (
+        adoptId: string,
+        conversationId: string,
+        userText: string,
+        assistantText: string,
+        historyName: "history.json" | "history.jsonl",
+        epoch = 0,
+      ) => {
+        const sessionId = `sess_${adoptId}_web_${conversationId}_e${epoch}`;
+        const timestamp = 1779000000 + epoch * 10;
         const dir = path.join(root, "service_linggan_test", `agent_jiuwen_${adoptId}`, "agent", "sessions", sessionId);
         mkdirSync(dir, { recursive: true });
         writeFileSync(path.join(dir, "metadata.json"), JSON.stringify({
           session_id: sessionId,
           channel_id: "web",
-          created_at: 1779000000,
-          last_message_at: 1779000001,
+          created_at: timestamp,
+          last_message_at: timestamp + 1,
           title: userText,
         }), "utf8");
         writeFileSync(path.join(dir, historyName), [
-          JSON.stringify({ id: `${sessionId}:u`, role: "user", request_id: `${sessionId}:r`, timestamp: 1779000000, content: userText }),
-          JSON.stringify({ id: `${sessionId}:think`, role: "assistant", request_id: `${sessionId}:r`, timestamp: 1779000000.5, event_type: "chat.reasoning", content: "hidden thinking" }),
-          JSON.stringify({ id: `${sessionId}:a`, role: "assistant", request_id: `${sessionId}:r`, timestamp: 1779000001, event_type: "chat.final", content: assistantText }),
+          JSON.stringify({ id: `${sessionId}:u`, role: "user", request_id: `${sessionId}:r`, timestamp, content: userText }),
+          JSON.stringify({ id: `${sessionId}:think`, role: "assistant", request_id: `${sessionId}:r`, timestamp: timestamp + 0.5, event_type: "chat.reasoning", content: "hidden thinking" }),
+          JSON.stringify({ id: `${sessionId}:a`, role: "assistant", request_id: `${sessionId}:r`, timestamp: timestamp + 1, event_type: "chat.final", content: assistantText }),
         ].join("\n"), "utf8");
         return sessionId;
       };
 
       const alphaSessionId = writeSession("lgj-alpha", "conv_alpha", "你好 alpha", "alpha 回复", "history.jsonl");
+      const alphaLatestSessionId = writeSession("lgj-alpha", "conv_alpha", "继续 alpha", "alpha 新回复", "history.jsonl", 1);
       const betaSessionId = writeSession("lgj-beta", "conv_beta", "你好 beta", "beta 回复", "history.json");
 
       const alphaSessions = listJiuwenChatHistorySessions({ adoptId: "lgj-alpha", dbAgentId: "", limit: 10 });
       expect(alphaSessions).toHaveLength(1);
       expect(alphaSessions[0]).toMatchObject({
         conversationId: "conv_alpha",
-        sessionKey: alphaSessionId,
+        sessionKey: alphaLatestSessionId,
         title: "你好 alpha",
-        messageCount: 2,
+        messageCount: 4,
       });
       expect(alphaSessions[0].searchText).toContain("alpha 回复");
+      expect(alphaSessions[0].searchText).toContain("alpha 新回复");
       expect(alphaSessions[0].searchText).not.toContain("hidden thinking");
       expect(alphaSessions[0].searchText).not.toContain("beta 回复");
 
-      expect(resolveJiuwenHistorySession({ adoptId: "lgj-alpha", dbAgentId: "", sessionKey: alphaSessionId })?.sessionId).toBe(alphaSessionId);
+      const resolvedAlpha = resolveJiuwenHistorySession({ adoptId: "lgj-alpha", dbAgentId: "", sessionKey: alphaLatestSessionId });
+      expect(resolvedAlpha?.sessionId).toBe(alphaLatestSessionId);
+      expect(resolvedAlpha?.segments.map((segment) => segment.sessionId).sort()).toEqual([alphaSessionId, alphaLatestSessionId].sort());
       expect(resolveJiuwenHistorySession({ adoptId: "lgj-alpha", dbAgentId: "", sessionKey: betaSessionId })).toBeNull();
     } finally {
       if (previousHome === undefined) delete process.env.JIUWENCLAW_HOME;
@@ -194,6 +206,40 @@ describe("claw misc admin routes", () => {
       expect(assistant?.toolCalls?.[0]?.arguments).toContain("workspace/output/report.html");
       expect(assistant?.toolCalls?.[0]?.result).toBe("created workspace/output/report.html");
       expect(JSON.stringify(assistant)).not.toContain("/home/ubuntu");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("restores uploaded attachment cards while keeping runtime paths out of user text", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-upload-history-"));
+    try {
+      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const historyFile = path.join(root, "history.jsonl");
+      writeFileSync(historyFile, JSON.stringify({
+        id: "u-upload",
+        role: "user",
+        request_id: "request-upload",
+        timestamp: 1779000000,
+        content: [
+          "这篇论文你看得懂吗",
+          "",
+          "[已上传附件]",
+          "- 量子线路.pdf (328.0 KB) -> workspace path: prompt_attachment/quantum.pdf",
+          "",
+          "需要读取附件内容时，请使用上面的 workspace path。",
+        ].join("\n"),
+      }), "utf8");
+
+      const user = extractJiuwenChatMessages(historyFile, 20, "lgj-test").find((message) => message.role === "user");
+      expect(user?.text).toBe("这篇论文你看得懂吗");
+      expect(user?.attachments).toEqual([{
+        name: "量子线路.pdf",
+        size: 328 * 1024,
+        path: "prompt_attachment/quantum.pdf",
+        adoptId: "lgj-test",
+      }]);
+      expect(JSON.stringify(user)).not.toContain("workspace path");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

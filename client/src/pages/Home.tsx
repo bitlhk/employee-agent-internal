@@ -14,7 +14,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useRoute, useLocation } from "wouter";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
-import { ChatMessage, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
+import { ChatMessage, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ModelPicker } from "@/components/ModelPicker";
 import { presentModel } from "@/lib/modelPresentation";
 import type { AgentTask } from "@/components/AgentTaskCard";
@@ -38,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, History, Home as HomeIcon, LogOut, Menu, Search, Settings, Wand2, X } from "lucide-react";
+import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
@@ -415,12 +416,6 @@ type UploadedLingxiaAttachment = {
   size: number;
   runtime?: string;
 };
-function formatFileSize(size: number) {
-  if (!Number.isFinite(size) || size < 0) return "unknown size";
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
-  return `${(size / 1024 / 1024).toFixed(1)} MB`;
-}
 
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
@@ -442,22 +437,6 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
   }
 }
 
-function buildMessageWithUploadedAttachments(text: string, uploads: UploadedLingxiaAttachment[]) {
-  if (uploads.length === 0) return text;
-  const intro = text.trim() || "请查看我上传的附件。";
-  const lines = uploads.map((file) =>
-    `- ${file.name} (${formatFileSize(file.size)}) -> workspace path: ${file.path}`
-  );
-  return [
-    intro,
-    "",
-    "[已上传附件]",
-    ...lines,
-    "",
-    "需要读取附件内容时，请使用上面的 workspace path。",
-  ].join("\n");
-}
-
 function extractAgentTaskIds(text: unknown): string[] {
   const value = String(text || "");
   return Array.from(value.matchAll(/\bagt_[A-Za-z0-9]{8,64}\b/g), (match) => match[0]);
@@ -474,6 +453,7 @@ type LxMsg = {
   contextWindow?: number;
   contextPercent?: number;
   selectedSkillId?: string;
+  attachments?: ChatMessageAttachment[];
   toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   jiuwenPermission?: JiuwenPermissionRequestCard;
@@ -614,6 +594,22 @@ const backfillLxMsgIds = (raw: any): LxMsg[] => {
   if (!Array.isArray(raw)) return [];
   return raw.map((m: any) => {
     const parsed = extractJiuwenPermissionMarker(String(m?.text ?? ""));
+    const parsedAttachmentContext = parseUploadedAttachmentRuntimeMessage(parsed.text);
+    const rawAttachments = Array.isArray(m?.attachments) && m.attachments.length > 0
+      ? m.attachments
+      : parsedAttachmentContext.attachments;
+    const attachments: ChatMessageAttachment[] = rawAttachments
+      .map((file: any) => ({
+        name: String(file?.name || "").trim().slice(0, 255),
+        size: Math.max(0, Number(file?.size || 0)),
+        path: String(file?.path || "").replace(/\\/g, "/").replace(/^workspace\//, "").trim(),
+        adoptId: String(file?.adoptId || "").trim(),
+      }))
+      .filter((file: ChatMessageAttachment) => (
+        Boolean(file.name && file.path) &&
+        !file.path.startsWith("/") &&
+        !file.path.split("/").includes("..")
+      ));
     const toolCalls = Array.isArray(m?.toolCalls) ? m.toolCalls : [];
     const existingEvents = Array.isArray(m?.messageEvents) ? m.messageEvents : Array.isArray(m?.events) ? m.events : [];
     const toolEvents: MessageEventEntry[] = toolCalls
@@ -640,8 +636,9 @@ const backfillLxMsgIds = (raw: any): LxMsg[] => {
       ...m,
       id: typeof m?.id === "string" && m.id ? m.id : makeLxMsgId(),
       role: m?.role === "assistant" ? "assistant" : "user",
-      text: parsed.text,
+      text: parsedAttachmentContext.text,
       timeLabel: String(m?.timeLabel ?? new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })),
+      ...(attachments.length > 0 ? { attachments } : {}),
       ...(toolCalls.length > 0 ? { toolCalls } : {}),
       messageEvents: existingEvents.length > 0 ? existingEvents : toolEvents,
       jiuwenPermission: m?.jiuwenPermission || parsed.permission,
@@ -2197,6 +2194,7 @@ export default function Home() {
         credentials: "include",
         body: JSON.stringify({
           adoptId: resolvedAdoptId,
+          path: "prompt_attachment",
           filename: file.name,
           contentBase64,
         }),
@@ -2206,7 +2204,7 @@ export default function Home() {
         throw new Error(payload?.error || `${file.name} 上传失败 (${response.status})`);
       }
       uploads.push({
-        name: file.name,
+        name: String(payload.filename || file.name),
         path: String(payload.path || file.name),
         size: Number(payload.size || file.size),
         runtime: payload.runtime ? String(payload.runtime) : undefined,
@@ -2246,6 +2244,10 @@ export default function Home() {
     { adoptId: resolvedAdoptId || "" },
     { enabled: !!resolvedAdoptId, retry: false }
   );
+  useEffect(() => {
+    if (activePage !== "chat" || !resolvedAdoptId) return;
+    void refetchSkills();
+  }, [activePage, refetchSkills, resolvedAdoptId]);
   const composerSkills = useMemo(() => flattenComposerSkills(lingxiaSkills), [lingxiaSkills]);
   const [selectedComposerSkillId, setSelectedComposerSkillId] = useState<string>("");
   const [composerSkillMenuOpen, setComposerSkillMenuOpen] = useState(false);
@@ -2458,7 +2460,14 @@ export default function Home() {
     }
   };
 
-  const sendLingxiaMessage = async (messageOverride?: string, opts?: { selectedSkillId?: string }) => {
+  const sendLingxiaMessage = async (
+    messageOverride?: string,
+    opts?: {
+      selectedSkillId?: string;
+      displayText?: string;
+      attachments?: ChatMessageAttachment[];
+    },
+  ) => {
     const sourceText = messageOverride ?? lingxiaInput;
     if (!resolvedAdoptId || !sourceText.trim() || lingxiaStreaming) return;
     if (switchModelMutation.isPending) {
@@ -2481,6 +2490,7 @@ export default function Home() {
     const myStreamSeq = streamSeqRef.current;
     const isStale = () => streamSeqRef.current !== myStreamSeq;
     const text = sourceText.trim();
+    const userDisplayText = opts?.displayText !== undefined ? opts.displayText.trim() : text;
     const nowLabel = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
     const assistantTimeLabel = nowLabel;
 
@@ -2529,7 +2539,13 @@ export default function Home() {
           jiuwenPermission: nextPermission,
         };
       }),
-      { id: userMessageId, role: "user", text, timeLabel: nowLabel },
+      {
+        id: userMessageId,
+        role: "user",
+        text: userDisplayText,
+        timeLabel: nowLabel,
+        ...(opts?.attachments?.length ? { attachments: opts.attachments } : {}),
+      },
       {
         id: assistantMessageId,
         role: "assistant",
@@ -3975,6 +3991,10 @@ export default function Home() {
                     displayName={lingxiaDisplayName || brand.name}
                     modelId={m.model || effectiveLingxiaModelId || "default"}
                     timeLabel={m.timeLabel}
+                    attachments={m.attachments?.map((file) => ({
+                      ...file,
+                      adoptId: file.adoptId || resolvedAdoptId,
+                    }))}
                     toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
                     messageEvents={m.role === "assistant" ? (m as LxMsg).messageEvents : undefined}
                     agentTasks={messageAgentTasks}
@@ -4025,10 +4045,17 @@ export default function Home() {
                 const text = (lingxiaInput || "").trim();
                 if (!text && files.length === 0) return false;
                 let finalText = text;
+                let messageAttachments: ChatMessageAttachment[] = [];
                 if (files.length > 0) {
                   try {
                     const uploaded = await uploadLingxiaAttachments(files);
-                    finalText = buildMessageWithUploadedAttachments(text, uploaded);
+                    finalText = buildUploadedAttachmentRuntimeMessage(text, uploaded);
+                    messageAttachments = uploaded.map((file) => ({
+                      name: file.name,
+                      size: file.size,
+                      path: file.path,
+                      adoptId: resolvedAdoptId,
+                    }));
                     toast.success(`已上传 ${uploaded.length} 个附件`);
                   } catch (error: any) {
                     toast.error(error?.message || "附件上传失败");
@@ -4043,7 +4070,11 @@ export default function Home() {
                 if (liveMentions.length === 0) {
                   // 没 @ 任何人 → 普通消息
                   if (mentionedUsers.length > 0) setMentionedUsers([]);
-                  void sendLingxiaMessage(finalText, { selectedSkillId });
+                  void sendLingxiaMessage(finalText, {
+                    selectedSkillId,
+                    displayText: text || (messageAttachments.length > 0 ? "请查看我上传的附件。" : ""),
+                    attachments: messageAttachments,
+                  });
                   return true;
                 }
                 if (!text) { toast.error("请先输入任务内容再发起协作"); return; }
@@ -4201,6 +4232,9 @@ export default function Home() {
                 data: lingxiaSkills as any,
                 canEdit: !!user,
                 pending: toggleSkillMutation.isPending,
+                onChanged: async () => {
+                  await refetchSkills();
+                },
                 onToggle: (skillId, enable, source) => {
                   if (!user) { toast.error("请先登录"); return; }
                   toggleSkillMutation.mutate({ adoptId: resolvedAdoptId!, skillId, enable, source });

@@ -43,6 +43,7 @@ export function MainPanel({
     canEdit?: boolean;
     pending?: boolean;
     onToggle?: (skillId: string, enable: boolean, source: "shared" | "system") => void;
+    onChanged?: () => void | Promise<void>;
   };
 }) {
   const safeSkills = {
@@ -50,6 +51,7 @@ export function MainPanel({
     canEdit: !!skills?.canEdit,
     pending: !!skills?.pending,
     onToggle: skills?.onToggle ?? (() => {}),
+    onChanged: skills?.onChanged,
     adoptId: adoptId || "",
   };
   const [visitedPages, setVisitedPages] = useState<Set<PanelPageKey>>(() => new Set([activePage]));
@@ -70,7 +72,7 @@ export function MainPanel({
   const renderPage = (page: PanelPageKey): ReactNode => {
     if (page === "channels" || page === "weixin") return <ChannelsPage adoptId={adoptId || ""} />;
     if (page === "skills") {
-      return <SkillsPage skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} />;
+      return <SkillsPage skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} />;
     }
     if (page === "agent") return <AgentPage adoptId={adoptId || ""} skills={safeSkills.data as any} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;

@@ -129,6 +129,34 @@ describe("ChatMessage tool timeline", () => {
     expect(html).not.toContain("lingxia-tool-summary");
   });
 
+  it("renders uploaded files as user attachment cards without exposing workspace paths", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "user",
+        text: "请帮我看看这篇论文",
+        isLast: false,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:00",
+        attachments: [{
+          name: "量子线路.pdf",
+          size: 328 * 1024,
+          path: "prompt_attachment/quantum.pdf",
+          adoptId: "lgj-test",
+        }],
+      }),
+    );
+
+    expect(html).toContain("请帮我看看这篇论文");
+    expect(html).toContain("量子线路.pdf");
+    expect(html).toContain("328.0 KB");
+    expect(html).toContain('aria-label="上传的附件"');
+    expect(html).not.toContain("prompt_attachment/quantum.pdf");
+    expect(html).not.toContain("workspace path");
+  });
+
   it("renders feedback actions only for a completed assistant reply", () => {
     const html = renderToStaticMarkup(
       React.createElement(ChatMessage, {

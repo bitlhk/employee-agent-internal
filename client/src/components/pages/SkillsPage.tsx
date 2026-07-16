@@ -1099,12 +1099,13 @@ function SkillDetailModal({
   );
 }
 
-export function SkillsPage({ adoptId }: {
+export function SkillsPage({ adoptId, onChanged }: {
   skills?: { shared: any[]; system: any[]; private: any[] } | null | undefined;
   canEdit?: boolean;
   pending?: boolean;
   onToggle?: (skillId: string, enable: boolean, source: "shared" | "system") => void;
   adoptId?: string;
+  onChanged?: () => void | Promise<void>;
 }) {
   const { confirm, dialog } = useConfirmDialog();
   const [skillTab, setSkillTab] = useState<SkillTab>(() => cachedSkillTab());
@@ -1178,6 +1179,7 @@ export function SkillsPage({ adoptId }: {
       const next = Array.isArray(data.items) ? data.items : [];
       setItems(next);
       reloadDetail(next);
+      await onChanged?.();
       toast.success(label);
     } catch (e: any) {
       toast.error(`${label}失败${e?.message ? `: ${e.message}` : ""}`);
@@ -1296,6 +1298,7 @@ export function SkillsPage({ adoptId }: {
       }
       setSourceFilter("uploaded");
       await load();
+      await onChanged?.();
     } catch (e: any) {
       toast.error(e?.message || "上传失败");
     } finally {
@@ -1329,7 +1332,7 @@ export function SkillsPage({ adoptId }: {
 
         {skillTab === "market" && (
           <div id="skills-panel-market" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-tab-market" tabIndex={0}>
-            <MarketplacePage adoptId={adoptId} />
+            <MarketplacePage adoptId={adoptId} onChanged={onChanged} />
           </div>
         )}
 
