@@ -9,6 +9,10 @@ copyright and license metadata remains available in each installed package.
 - React, React DOM, Vite, TypeScript, ESLint, Vitest
 - Express, tRPC, Drizzle ORM, mysql2, ws
 - React Markdown, remark-gfm, rehype-highlight, highlight.js
+- remend 1.3.0, Copyright 2023 Vercel, Inc., Apache License 2.0.
+  The distributed notice is available at
+  `client/public/licenses/remend-Apache-2.0.txt` and is included in the
+  production frontend build.
 - Radix UI primitives, lucide-react icons, Tailwind CSS
 - qrcode for local QR code rendering
 - Noto Sans SC 5.2.8, Copyright Google Inc., SIL Open Font License 1.1.

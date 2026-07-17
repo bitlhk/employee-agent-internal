@@ -24,6 +24,7 @@ import {
 import { appendLogAsync, JIUWENCLAW_HOME, jiuwenClawSessionsDir, resolveRuntimeWorkspace } from "./helpers";
 import { privateMessageLogFields } from "./log-privacy";
 import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
+import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
@@ -188,7 +189,12 @@ async function handleGatewayEvent(args: {
   if (text) {
     const publicText = sanitizePublicRuntimePaths(text, args.workspaceDir);
     args.collectText?.(publicText);
-    if (args.res) writeSseData(args.res, { choices: [{ delta: { content: publicText }, index: 0 }] });
+    if (args.res) writeSseData(args.res, buildJiuwenTextDelta(publicText));
+  }
+
+  if (eventType === "chat.final") {
+    const finalSnapshot = buildJiuwenFinalSnapshot(String(payload.content || ""), args.workspaceDir);
+    if (finalSnapshot && args.res) writeSseData(args.res, finalSnapshot);
   }
 
   if (eventType === "chat.usage_summary" || eventType === "chat.usage_metadata" || eventType === "context.usage") {

@@ -1,3 +1,5 @@
+import remend from "remend";
+
 function isCompleteTableRow(line: string): boolean {
   const trimmed = line.trim();
   return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.length > 2;
@@ -23,6 +25,10 @@ function closeOpenCodeFence(content: string): string {
   return fenceCount % 2 === 1 ? `${content}\n\`\`\`` : content;
 }
 
+function completeStreamingSyntax(content: string): string {
+  return closeOpenCodeFence(remend(content, { inlineKatex: false }));
+}
+
 /**
  * Keeps an unfinished GFM table out of the parsed Markdown tree. Completed
  * rows appear atomically, avoiding repeated paragraph/table DOM replacement.
@@ -30,15 +36,15 @@ function closeOpenCodeFence(content: string): string {
 export function stabilizeStreamingMarkdown(content: string): string {
   const text = String(content || "");
   if (!text) return text;
-  if ((text.match(/```/g) || []).length % 2 === 1) return closeOpenCodeFence(text);
+  if ((text.match(/```/g) || []).length % 2 === 1) return completeStreamingSyntax(text);
 
   const lines = text.split("\n");
   if (lines.at(-1) === "") lines.pop();
-  if (lines.length === 0) return closeOpenCodeFence(text);
+  if (lines.length === 0) return completeStreamingSyntax(text);
 
   const lastIndex = lines.length - 1;
   const lastLine = lines[lastIndex];
-  if (!lastLine.trim().startsWith("|")) return closeOpenCodeFence(text);
+  if (!lastLine.trim().startsWith("|")) return completeStreamingSyntax(text);
 
   let blockStart = lastIndex;
   while (blockStart > 0 && lines[blockStart - 1].trim().startsWith("|")) {
@@ -53,15 +59,15 @@ export function stabilizeStreamingMarkdown(content: string): string {
     const isPendingTable =
       tableBlock.length === 1 ||
       (isCompleteTableRow(firstLine) && looksLikePartialTableSeparator(secondLine));
-    if (!isPendingTable) return closeOpenCodeFence(text);
-    return closeOpenCodeFence(lines.slice(0, blockStart).join("\n") + (blockStart > 0 ? "\n" : ""));
+    if (!isPendingTable) return completeStreamingSyntax(text);
+    return completeStreamingSyntax(lines.slice(0, blockStart).join("\n") + (blockStart > 0 ? "\n" : ""));
   }
 
   if (!isCompleteTableRow(lastLine)) {
-    return closeOpenCodeFence(lines.slice(0, lastIndex).join("\n") + (lastIndex > 0 ? "\n" : ""));
+    return completeStreamingSyntax(lines.slice(0, lastIndex).join("\n") + (lastIndex > 0 ? "\n" : ""));
   }
 
-  return closeOpenCodeFence(text);
+  return completeStreamingSyntax(text);
 }
 
 export function streamingMarkdownRenderDelay(content: string): number {

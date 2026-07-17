@@ -28,8 +28,10 @@ import {
   writeJiuwenSessionArtifacts,
   type JiuwenSessionArtifactFile,
 } from "./jiuwen-session-artifacts";
+import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 
 export { bumpSessionEpoch } from "./helpers";
+export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 
 export type JiuwenClawRuntimeClaw = {
   adoptId: string;
@@ -1035,7 +1037,7 @@ export async function forwardToJiuwenClaw(
       if (!publicText) return;
       const formattedText = formatJiuwenTextSectionDelta(publicText, sawText && needsTextSectionBreak);
       currentStatus = "正在生成回复...";
-      writeData({ choices: [{ delta: { content: formattedText }, index: 0 }] });
+      writeData(buildJiuwenTextDelta(formattedText));
       sawText = true;
       needsTextSectionBreak = false;
     };
@@ -1203,6 +1205,8 @@ export async function forwardToJiuwenClaw(
             if (text && !sawText) {
               writeTextDelta(text);
             }
+            const finalSnapshot = buildJiuwenFinalSnapshot(text, workspaceDir);
+            if (finalSnapshot) writeData(finalSnapshot);
             completeSoon(ws);
             return;
           }

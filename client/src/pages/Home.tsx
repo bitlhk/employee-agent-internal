@@ -7,6 +7,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { RuntimeWSClient } from "@/lib/runtime-ws";
+import { applyAssistantFinalSnapshot, mergeAssistantStreamText } from "@/lib/assistant-stream";
 import { toast } from "sonner";
 import { useBrand } from "@/lib/useBrand";
 import { trpc } from "@/lib/trpc";
@@ -198,34 +199,6 @@ type WebChatSessionRecord = {
 
 function normalizeSessionText(text: string) {
   return String(text || "").replace(/\s+/g, " ").trim();
-}
-
-function mergeAssistantStreamText(currentText: string, incomingText: string) {
-  const current = String(currentText || "");
-  const incoming = String(incomingText || "");
-  if (!incoming) return current;
-  if (!current) return incoming;
-
-  // Some gateway/provider paths occasionally send the cumulative assistant
-  // snapshot in delta.content. Treat that as replacement instead of append.
-  if (incoming === current) return current;
-  if (incoming.startsWith(current)) return incoming;
-
-  const joined = current + incoming;
-  if (joined.length % 2 === 0) {
-    const half = joined.length / 2;
-    if (joined.slice(0, half) === joined.slice(half)) return joined.slice(0, half);
-  }
-
-  const maxOverlap = Math.min(current.length, incoming.length);
-  for (let len = maxOverlap; len >= 16; len -= 1) {
-    if (current.endsWith(incoming.slice(0, len))) {
-      return current + incoming.slice(len);
-    }
-  }
-
-  if (incoming.length >= 16 && current.endsWith(incoming)) return current;
-  return joined;
 }
 
 function normalizeSessionSearchText(text: string) {
@@ -2667,6 +2640,11 @@ export default function Home() {
               if (chunk.type === "connected") return;
               lastEventAtRef.current = Date.now();
 
+              if (typeof chunk.__final_text === "string") {
+                setLingxiaMsgs((prev) => applyAssistantFinalSnapshot(prev, assistantMessageId, chunk.__final_text));
+                return;
+              }
+
               // ── 统一语义：流结束 ──
               if (chunk.__stream_end) {
                 console.log("[DIAG] ✅ WSS 收到 __stream_end，流结束");
@@ -2869,7 +2847,8 @@ export default function Home() {
               if (delta) {
                 // 收到 content delta → reasoning 阶段结束，mark thinking done
                 setLingxiaMsgs((prev) => markThinkingDone(prev));
-                setLingxiaMsgs((prev) => { const n = [...prev]; const last = n[n.length-1]; if (last?.role === "assistant") n[n.length-1] = { ...last, text: mergeAssistantStreamText(last.text, delta), status: undefined }; return n; });
+                const textMode = chunk.__text_mode === "snapshot" ? "snapshot" : "delta";
+                setLingxiaMsgs((prev) => { const n = [...prev]; const last = n[n.length-1]; if (last?.role === "assistant") n[n.length-1] = { ...last, text: mergeAssistantStreamText(last.text, delta, textMode), status: undefined }; return n; });
               }
               // 完成
               if (chunk?.choices?.[0]?.finish_reason === "stop") {
@@ -2947,10 +2926,12 @@ export default function Home() {
       let pendingDelta = "";
       let flushTimer: number | null = null;
       let firstChunkFlushed = false;
+      let finalSnapshotReceived = false;
 
       const flushDelta = () => {
         // SSE race fix: 老流的累积 delta 扔掉，不污染新 placeholder
         if (isStale()) { pendingDelta = ""; return; }
+        if (finalSnapshotReceived) { pendingDelta = ""; return; }
         if (!pendingDelta) return;
         if (!perf.firstPaintMs) perf.firstPaintMs = Date.now();
         const delta = pendingDelta;
@@ -3019,6 +3000,12 @@ export default function Home() {
                 const last = prev[prev.length - 1];
                 return [...prev.slice(0, -1), { ...last, model: selectedModel }];
               });
+              continue;
+            }
+            if (typeof chunk.__final_text === "string") {
+              flushDelta();
+              finalSnapshotReceived = true;
+              setLingxiaMsgs((prev) => applyAssistantFinalSnapshot(prev, assistantMessageId, chunk.__final_text));
               continue;
             }
             if (currentEvent === "jiuwen_permission_request") {
@@ -3291,11 +3278,27 @@ export default function Home() {
             const delta = Array.isArray(deltaRaw)
               ? deltaRaw.map((c: any) => (typeof c === "string" ? c : (c?.text ?? ""))).join("")
               : (typeof deltaRaw === "string" ? deltaRaw : (deltaRaw != null ? String(deltaRaw) : ""));
-            if (delta) {
+            if (delta && !finalSnapshotReceived) {
               // 收到 content delta → reasoning 阶段结束，mark thinking done
               setLingxiaMsgs((prev) => markThinkingDone(prev));
-              pendingDelta += delta;
-              scheduleFlush();
+              if (chunk.__text_mode === "snapshot") {
+                flushDelta();
+                setLingxiaMsgs((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === "assistant") {
+                    next[next.length - 1] = {
+                      ...last,
+                      text: mergeAssistantStreamText(last.text, delta, "snapshot"),
+                      status: undefined,
+                    };
+                  }
+                  return next;
+                });
+              } else {
+                pendingDelta += delta;
+                scheduleFlush();
+              }
             }
             // HTTP 路径 finish_reason=stop 兜底 mark thinking done
             if (chunk?.choices?.[0]?.finish_reason === "stop") {

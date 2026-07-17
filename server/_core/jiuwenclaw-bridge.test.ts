@@ -4,6 +4,8 @@ import os from "os";
 import path from "path";
 import {
   buildJiuwenAgentServerChatRequest,
+  buildJiuwenFinalSnapshot,
+  buildJiuwenTextDelta,
   collectRecentWorkspaceFiles,
   formatJiuwenTextSectionDelta,
   inferMcpServerForJiuwenTool,
@@ -37,6 +39,20 @@ describe("jiuwenclaw bridge audit helpers", () => {
     expect(pickJiuwenText({ payload: { event_type: "chat.final", content: "模型不支持图片理解" } })).toBe(
       "模型不支持图片理解",
     );
+  });
+
+  it("publishes chat.final as an authoritative Markdown snapshot", () => {
+    const markdown = "## 结果\n\n| # | 名称 |\n|---|---|\n| 1 | 示例 |";
+    expect(buildJiuwenFinalSnapshot(markdown, "/tmp/workspace")).toEqual({
+      __final_text: markdown,
+    });
+  });
+
+  it("labels streamed text as a delta instead of guessing from its prefix", () => {
+    expect(buildJiuwenTextDelta("#")).toEqual({
+      __text_mode: "delta",
+      choices: [{ delta: { content: "#" }, index: 0 }],
+    });
   });
 
   it("does not report a file uploaded before the agent run as generated output", () => {

@@ -31,4 +31,19 @@ describe("streaming Markdown stabilization", () => {
     expect(stabilizeStreamingMarkdown("```ts\nconst value = 1;")).toBe("```ts\nconst value = 1;\n```");
     expect(stabilizeStreamingMarkdown("```text\n| not | a partial table")).toBe("```text\n| not | a partial table\n```");
   });
+
+  it("completes inline syntax only in the streaming render copy", () => {
+    expect(stabilizeStreamingMarkdown("正在输出 **重点")).toBe("正在输出 **重点**");
+  });
+
+  it("leaves a complete heading and numbered GFM table byte-for-byte unchanged", () => {
+    const complete = [
+      "## 已读完的 12 本书",
+      "",
+      "| # | 书名 | 作者 |",
+      "|---|------|------|",
+      "| 1 | 大明王朝1566（全集） | 刘和平 |",
+    ].join("\n");
+    expect(stabilizeStreamingMarkdown(complete)).toBe(complete);
+  });
 });

@@ -5,7 +5,7 @@ import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
-import { stabilizeStreamingMarkdown, streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
+import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
   MESSAGE_FEEDBACK_REASON_LABELS,
@@ -1032,7 +1032,6 @@ function ChatMessageInner({
     () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
     [displayedSourceText],
   );
-  const renderedDisplayText = throttleStreamingText ? stabilizeStreamingMarkdown(displayText) : displayText;
   const onCopyMarkdown = async () => {
     try {
       await navigator.clipboard.writeText(displayText);
@@ -1144,7 +1143,7 @@ function ChatMessageInner({
           <div
             className={`relative rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed lingxia-bubble-ai ${(isLast && streaming && text) ? "lingxia-token-active" : ""}`}
           >
-            <ChatMarkdown content={renderedDisplayText} phase={isLast && streaming ? "streaming" : "final"} />
+            <ChatMarkdown content={displayText} phase={isLast && streaming ? "streaming" : "final"} />
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}
           </div>
         </div>

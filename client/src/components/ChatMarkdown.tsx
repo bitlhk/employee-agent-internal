@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useRef, useState, isValidElement } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
+import { stabilizeStreamingMarkdown } from "@/lib/streaming-markdown";
 
 function childrenToString(children: any): string {
   if (children == null) return "";
@@ -25,128 +26,6 @@ function extractLang(className?: string): string {
   if (!className) return "";
   const m = className.match(/language-(\w+)/);
   return m ? m[1] : "";
-}
-
-function normalizeMarkdownContent(content: string): string {
-  const text = String(content || "").trim();
-  const match = text.match(/^```([a-zA-Z0-9_-]*)[ \t]*\n([\s\S]*?)\n```$/);
-  if (!match) return repairMarkdownSpacing(content);
-  const lang = match[1].toLowerCase();
-  const body = match[2].trim();
-  if (!body) return repairMarkdownSpacing(content);
-  const markdownLike =
-    /(^|\n)\s{0,3}#{1,6}\s+\S/.test(body) ||
-    /(^|\n)\s{0,3}(?:[-*+]|\d+[.)])\s+\S/.test(body) ||
-    /(^|\n)\s{0,3}>\s+\S/.test(body) ||
-    /(^|\n)\|.+\|\s*\n\|[-:|\s]+\|/.test(body);
-  if (lang === "markdown" || lang === "md") return repairMarkdownSpacing(body);
-  if ((lang === "" || lang === "text" || lang === "plain" || lang === "txt") && markdownLike) return repairMarkdownSpacing(body);
-  return repairMarkdownSpacing(content);
-}
-
-function tableCellCount(line: string): number {
-  const trimmed = line.trim();
-  if (!trimmed.startsWith("|") || !trimmed.endsWith("|")) return 0;
-  return trimmed.slice(1, -1).split("|").length;
-}
-
-function isMarkdownTableRow(line: string): boolean {
-  const trimmed = line.trim();
-  return trimmed.startsWith("|") && trimmed.endsWith("|") && tableCellCount(trimmed) >= 2;
-}
-
-function isMarkdownTableSeparator(line: string): boolean {
-  const trimmed = line.trim();
-  if (!isMarkdownTableRow(trimmed)) return false;
-  return trimmed
-    .slice(1, -1)
-    .split("|")
-    .every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
-}
-
-function prependTableHeaderCell(line: string, label: string): string {
-  const trimmed = line.trim();
-  return `| ${label} | ${trimmed.slice(1).trimStart()}`;
-}
-
-function repairMarkdownTables(content: string): string {
-  const lines = content
-    .split("\n")
-    .filter((line) => line.trim() !== "|");
-
-  for (let i = 0; i < lines.length - 2; i += 1) {
-    if (isMarkdownTableSeparator(lines[i]) && !lines[i + 1].trim() && isMarkdownTableRow(lines[i + 2])) {
-      lines.splice(i + 1, 1);
-      i -= 1;
-    }
-  }
-
-  for (let i = 0; i < lines.length - 1; i += 1) {
-    if (!isMarkdownTableRow(lines[i]) || !isMarkdownTableSeparator(lines[i + 1])) continue;
-    const headerCount = tableCellCount(lines[i]);
-    const separatorCount = tableCellCount(lines[i + 1]);
-    const bodyCount = tableCellCount(lines[i + 2] || "");
-    if (separatorCount === headerCount + 1 && bodyCount === separatorCount) {
-      lines[i] = prependTableHeaderCell(lines[i], "序号");
-    }
-  }
-
-  return lines.join("\n");
-}
-
-function repairMarkdownSpacing(content: string): string {
-  const text = String(content || "");
-  if (!text) return text;
-
-  const spaced = text
-    .split("\n")
-    .flatMap((rawLine) => {
-      let line = rawLine;
-      const out: string[] = [];
-
-      line = line.replace(/^(\s{0,3}#{1,6})(?=\S)/, "$1 ");
-
-      // Some streaming runtimes concatenate adjacent headings, e.g.
-      // "# Title## Section| A | B |". Split only heading markers that
-      // appear after non-whitespace content on the same line.
-      line = line.replace(/([^\s#])(\s*#{1,6}\s+)/g, "$1\n\n$2");
-      line = line.replace(/(\|\s*(?::?-{3,}:?\s*\|){1,})\s+(?=\|)/g, "$1\n");
-      line = line.replace(/(\|\s*)\|\s+(?=\d+\s*\|)/g, "$1\n| ");
-
-      for (const part of line.split("\n")) {
-        const listItem = part.replace(/^(\s*[-*+])(?=\S)/, "$1 ");
-
-        const headingTable = listItem.match(/^(#{1,6}\s+[^|]+?)\s*(\|.+\|\s*)$/);
-        if (headingTable) {
-          out.push(headingTable[1].trimEnd(), "", headingTable[2].trim());
-          continue;
-        }
-
-        const headingBody = listItem.match(
-          /^(#{1,6}\s+(?:[一二三四五六七八九十]+[、.．]\s*)?(?:风险与下一步|结论摘要|明细分析|客户分析|客户画像|持仓结构|持仓明细|持仓回顾|临到期清单|可审计思考打印|可审计打印|产品推荐|综合推荐|下一步|结论|摘要|分析|画像|回顾|明细|清单|推荐|打印))([^\s#|].{2,})$/
-        );
-        if (headingBody) {
-          out.push(headingBody[1].trimEnd(), "", headingBody[2].trimStart());
-          continue;
-        }
-
-        out.push(listItem);
-      }
-
-      return out;
-    })
-    .join("\n");
-
-  return repairMarkdownTables(spaced);
-}
-
-function hasUnclosedFence(content: string): boolean {
-  return ((content.match(/```/g) || []).length % 2) === 1;
-}
-
-function stabilizeStreamingMarkdown(content: string): string {
-  const text = String(content || "");
-  return hasUnclosedFence(text) ? `${text}\n\`\`\`` : text;
 }
 
 function normalizeSafeHref(href?: string): string | undefined {
@@ -231,7 +110,6 @@ function ChatMarkdownInner({ content, phase = "final" }: Props) {
   const renderStartRef = useRef(0);
   if (typeof performance !== "undefined") renderStartRef.current = performance.now();
   const markdownSource = phase === "streaming" ? stabilizeStreamingMarkdown(content) : content;
-  const normalizedContent = normalizeMarkdownContent(markdownSource);
   useLayoutEffect(() => {
     try {
       if (localStorage.getItem("ea_markdown_perf") !== "1") return;
@@ -346,7 +224,7 @@ function ChatMarkdownInner({ content, phase = "final" }: Props) {
           em:     ({ children }) => <em className="lingxia-md-em">{children}</em>,
         }}
       >
-        {normalizedContent}
+        {markdownSource}
       </ReactMarkdown>
     </div>
   );
