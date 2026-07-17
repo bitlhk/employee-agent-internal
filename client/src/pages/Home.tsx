@@ -31,15 +31,13 @@ import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
 import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, FolderOpen, History, Home as HomeIcon, LogOut, Menu, Search, Settings, Wand2, X } from "lucide-react";
+import { ChevronDown, FolderOpen, History, Menu, Search, Wand2, X } from "lucide-react";
 import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
 
 
@@ -544,24 +542,6 @@ function clientMetricDisplayMs(metric: ClientLoadMetric): number {
   return metric.requestMs ?? metric.elapsedMs;
 }
 
-function formatClientMetricDuration(metric: ClientLoadMetric): string {
-  if (metric.status === "skip") return "不适用";
-  return `${clientMetricDisplayMs(metric)}ms`;
-}
-
-function formatClientMetricDetail(metric: ClientLoadMetric): string {
-  const detail = String(metric.detail || "").trim();
-  const count = Number.parseInt(detail, 10);
-  if (metric.key === "auth" && detail === "authenticated") return "已登录";
-  if (metric.key === "agent" && detail === "active") return "实例在线";
-  if (metric.key === "settings" && detail === "loaded") return "已加载";
-  if (metric.key === "health" && metric.status === "skip") return detail || "直连模式";
-  if (metric.key === "sessions" && Number.isFinite(count)) return `${count} 个会话`;
-  if (metric.key === "models" && Number.isFinite(count)) return `${count} 个模型`;
-  if (metric.key === "skills" && Number.isFinite(count)) return `${count} 个技能`;
-  return detail || metric.status;
-}
-
 function ChatStartupSkeleton() {
   return (
     <div className="chat-startup-skeleton max-w-4xl" aria-label="正在加载对话">
@@ -751,7 +731,6 @@ export default function Home() {
   const clientLoadStartedAtRef = useRef(typeof performance !== "undefined" ? performance.now() : Date.now());
   const clientLoadReportedRef = useRef(false);
   const [clientLoadMetrics, setClientLoadMetrics] = useState<Record<string, ClientLoadMetric>>({});
-  const [clientDiagnosticsOpen, setClientDiagnosticsOpen] = useState(false);
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState(initialWorkspacePanelWidth);
   const [workspacePanelResizing, setWorkspacePanelResizing] = useState(false);
@@ -920,7 +899,6 @@ export default function Home() {
 
   const { user, loading: authLoading, error: authError, logout } = useAuth({ redirectOnUnauthenticated: false });
   const effectiveSidebarCollapsed = !isMobileViewport && sidebarCollapsed;
-  const showClientDiagnostics = import.meta.env.DEV || (user as any)?.role === "admin";
   const constrainWorkspacePanelWidth = useCallback((value: number) => {
     const availableWidth = workbenchContentRef.current?.clientWidth || window.innerWidth;
     const responsiveMax = Math.max(
@@ -3515,7 +3493,6 @@ export default function Home() {
     </div>
   );
 
-  const lingxiaExpiryInfo = useMemo(() => ({ text: "长期持有", color: "var(--oc-success)" }), []);
   const sidebarClawStatus = String((clawByAdoptId as any)?.status || cachedClawStatus || "");
   const sidebarClawOnline = sidebarClawStatus === "active";
   const clientLoadMetricList = useMemo(() => (
@@ -3532,23 +3509,6 @@ export default function Home() {
     // 首屏之后就退化成"页面开了多久"，表现为忽高忽低（刚打开~200ms，开一会儿跳到几千ms）。
     return primaryClientLoadMetricList.reduce((max, metric) => Math.max(max, clientMetricDisplayMs(metric)), 0);
   }, [primaryClientLoadMetricList]);
-  const clientLoadIssueList = useMemo(
-    () => clientLoadMetricList.filter((metric) => metric.status === "error"),
-    [clientLoadMetricList],
-  );
-  const clientLoadPending = primaryClientLoadMetricList.length < CLIENT_LOAD_PRIMARY_KEYS.size
-    || primaryClientLoadMetricList.some((metric) => metric.status === "pending");
-  const clientLoadOverallStatus: ClientLoadMetric["status"] = clientLoadIssueList.length > 0
-    ? "error"
-    : clientLoadPending
-      ? "pending"
-      : "ok";
-  const clientLoadResourceSummary = useMemo(() => (
-    ["sessions", "models", "skills"]
-      .map((key) => clientLoadMetrics[key])
-      .filter((metric): metric is ClientLoadMetric => Boolean(metric && metric.status === "ok"))
-      .map(formatClientMetricDetail)
-  ), [clientLoadMetrics]);
   const reportClientLoadMetrics = useCallback(async (reason: string) => {
     if (!resolvedAdoptId || !user || clientLoadReportedRef.current || clientLoadMetricList.length === 0) return;
     clientLoadReportedRef.current = true;
@@ -3807,9 +3767,12 @@ export default function Home() {
               footer={(
                 <SidebarFooter
                   version={isJiuwenRuntime ? jiuwenswarmVersion : isLegacyArchivedRuntime ? "Legacy runtime" : openclawVersion}
-                  expiryText={lingxiaExpiryInfo.text}
-                  expiryColor={lingxiaExpiryInfo.color}
+                  userName={String((user as any)?.name || "")}
+                  userEmail={String((user as any)?.email || "")}
                   collapsed={effectiveSidebarCollapsed}
+                  onReturnHome={() => setLocationCoop("/")}
+                  onOpenAppearance={() => selectWorkbenchPage("settings")}
+                  onLogout={() => void handleWorkbenchLogout()}
                 />
               )}
             />
@@ -3869,104 +3832,6 @@ export default function Home() {
                   <FolderOpen size={16} />
                 </button>
               ) : null}
-              {showClientDiagnostics ? <div className="client-load-diagnostics">
-                <button
-                  type="button"
-                  className="client-load-diagnostics__trigger"
-                  onClick={() => setClientDiagnosticsOpen((value) => !value)}
-                  title="查看首屏请求耗时"
-                >
-                  <span className="client-load-diagnostics__dot" data-status={clientLoadOverallStatus} />
-                  <span>{primaryClientLoadMetricList.length > 0 ? `${clientLoadTotalMs}ms` : "诊断"}</span>
-                </button>
-                {clientDiagnosticsOpen ? (
-                  <div className="client-load-diagnostics__panel">
-                    <div className="client-load-diagnostics__head">
-                      <span>首屏诊断</span>
-                      <span>{clientLoadIssueList.length > 0 ? `${clientLoadIssueList.length} 项异常` : `${clientLoadTotalMs}ms`}</span>
-                    </div>
-                    {clientLoadMetricList.length === 0 ? (
-                      <div className="client-load-diagnostics__empty">正在收集首屏请求耗时</div>
-                    ) : (
-                      <>
-                        <div className="client-load-diagnostics__overview" data-status={clientLoadOverallStatus}>
-                          <span className="client-load-diagnostics__dot" data-status={clientLoadOverallStatus} />
-                          <span className="client-load-diagnostics__overview-copy">
-                            <strong>{clientLoadIssueList.length > 0 ? "部分请求异常" : clientLoadPending ? "正在加载工作台" : "工作台已就绪"}</strong>
-                            <small>{isJiuwenRuntime ? "JiuwenSwarm 直连" : isLegacyArchivedRuntime ? "历史实例直连" : "OpenClaw 运行时"}</small>
-                          </span>
-                          <strong className="client-load-diagnostics__duration">{clientLoadTotalMs}ms</strong>
-                        </div>
-
-                        {clientLoadResourceSummary.length > 0 ? (
-                          <div className="client-load-diagnostics__resources">
-                            {clientLoadResourceSummary.map((item) => <span key={item}>{item}</span>)}
-                          </div>
-                        ) : null}
-
-                        {clientLoadIssueList.length > 0 ? (
-                          <div className="client-load-diagnostics__issues">
-                            {clientLoadIssueList.map((metric) => (
-                              <div key={metric.key} className="client-load-diagnostics__row">
-                                <span className="client-load-diagnostics__name">{metric.label}</span>
-                                <span className="client-load-diagnostics__meta" data-status={metric.status}>
-                                  {formatClientMetricDuration(metric)}
-                                </span>
-                                <span className="client-load-diagnostics__detail">{formatClientMetricDetail(metric)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        <details className="client-load-diagnostics__details">
-                          <summary>
-                            <span>请求明细</span>
-                            <span>{clientLoadMetricList.length} 项 <ChevronDown aria-hidden="true" /></span>
-                          </summary>
-                          <div className="client-load-diagnostics__rows">
-                            {clientLoadMetricList.map((metric) => (
-                              <div key={metric.key} className="client-load-diagnostics__row">
-                                <span className="client-load-diagnostics__name">{metric.label}</span>
-                                <span className="client-load-diagnostics__meta" data-status={metric.status}>
-                                  {formatClientMetricDuration(metric)}
-                                </span>
-                                <span className="client-load-diagnostics__detail">{formatClientMetricDetail(metric)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </details>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </div> : null}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className="workbench-account-trigger" aria-label="打开账号菜单">
-                    <Avatar className="h-7 w-7">
-                      <AvatarFallback className="bg-primary/10 text-xs text-primary">
-                        {String((user as any)?.name || (user as any)?.email || "U").slice(0, 1).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <span className="workbench-account-name">{(user as any)?.name || (user as any)?.email || "账号"}</span>
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="workbench-account-menu min-w-44">
-                  <DropdownMenuItem onClick={() => setLocationCoop("/")}>
-                    <HomeIcon />
-                    返回首页
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => selectWorkbenchPage("settings")}>
-                    <Settings />
-                    外观设置
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem variant="destructive" onClick={() => void handleWorkbenchLogout()}>
-                    <LogOut />
-                    退出登录
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
               </div>
             ) : undefined}
           />
@@ -4365,7 +4230,6 @@ export default function Home() {
               adoptId={resolvedAdoptId || ""}
               variant="panel"
               active={workspacePanelOpen && activePage === "chat"}
-              onClose={() => setWorkspacePanelOpen(false)}
             />
           </aside>
           </div>

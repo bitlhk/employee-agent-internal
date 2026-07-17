@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWorkspaceTreeRows, workspacePreviewKind, type FileNode } from "./WorkspacePage";
+import { buildWorkspaceTreeRows, workspaceFileIconKind, workspacePreviewKind, type FileNode } from "./WorkspacePage";
 
 const files: FileNode[] = [
   { name: "readme.md", path: "docs/readme.md", type: "file" },
@@ -64,5 +64,18 @@ describe("workspacePreviewKind", () => {
     expect(workspacePreviewKind("report.docx")).toBe("none");
     expect(workspacePreviewKind("report.xlsx")).toBe("none");
     expect(workspacePreviewKind("bundle.zip")).toBe("none");
+  });
+});
+
+describe("workspaceFileIconKind", () => {
+  it("groups common workspace files into stable visual categories", () => {
+    expect(workspaceFileIconKind({ name: "docs", path: "docs", type: "directory" })).toBe("directory");
+    expect(workspaceFileIconKind({ name: "README.md", path: "README.md", type: "file" })).toBe("markdown");
+    expect(workspaceFileIconKind({ name: "config.json", path: "config.json", type: "file" })).toBe("json");
+    expect(workspaceFileIconKind({ name: "report.pdf", path: "report.pdf", type: "file" })).toBe("pdf");
+    expect(workspaceFileIconKind({ name: "chart.png", path: "chart.png", type: "file" })).toBe("image");
+    expect(workspaceFileIconKind({ name: "worker.ts", path: "worker.ts", type: "file" })).toBe("code");
+    expect(workspaceFileIconKind({ name: "bundle.7z", path: "bundle.7z", type: "file" })).toBe("archive");
+    expect(workspaceFileIconKind({ name: "notes.txt", path: "notes.txt", type: "file" })).toBe("file");
   });
 });

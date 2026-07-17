@@ -204,8 +204,9 @@ export function registerVoiceRoutes(app: express.Express) {
       }
 
       const crypto = await import("crypto");
-      const host = "cbm01.cn-huabei-1.xf-yun.com";
-      const wsPath = "/v1/private/mcd9m97e6";
+      const host = "tts-api.xfyun.cn";
+      const wsPath = "/v2/tts";
+      const voice = String(process.env.XFYUN_TTS_VOICE || "xiaoyan").trim() || "xiaoyan";
       const date = new Date().toUTCString();
       const signOrigin = `host: ${host}\ndate: ${date}\nGET ${wsPath} HTTP/1.1`;
       const hmac = crypto.createHmac("sha256", apiSecret);
@@ -220,40 +221,35 @@ export function registerVoiceRoutes(app: express.Express) {
 
       await new Promise<void>((resolve, reject) => {
         const ws = new WS(wsUrl);
+        let settled = false;
+        let timeout: ReturnType<typeof setTimeout>;
+        const finish = (error?: Error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          try {
+            ws.close();
+          } catch {}
+          if (error) reject(error);
+          else resolve();
+        };
 
         ws.on("open", () => {
           ws.send(
             JSON.stringify({
-              header: { app_id: appId, status: 2 },
-              parameter: {
-                oral: { oral_level: "mid" },
-                tts: {
-                  vcn: "x6_lingxiaoxuan_pro",
-                  speed: 50,
-                  volume: 50,
-                  pitch: 50,
-                  bgs: 0,
-                  reg: 0,
-                  rdn: 0,
-                  rhy: 0,
-                  audio: {
-                    encoding: "lame",
-                    sample_rate: 24000,
-                    channels: 1,
-                    bit_depth: 16,
-                    frame_size: 0,
-                  },
-                },
+              common: { app_id: appId },
+              business: {
+                aue: "lame",
+                auf: "audio/L16;rate=16000",
+                vcn: voice,
+                speed: 50,
+                volume: 50,
+                pitch: 50,
+                tte: "UTF8",
               },
-              payload: {
-                text: {
-                  encoding: "utf8",
-                  compress: "raw",
-                  format: "plain",
-                  status: 2,
-                  seq: 0,
-                  text: Buffer.from(text, "utf8").toString("base64"),
-                },
+              data: {
+                status: 2,
+                text: Buffer.from(text, "utf8").toString("base64"),
               },
             })
           );
@@ -262,46 +258,35 @@ export function registerVoiceRoutes(app: express.Express) {
         ws.on("message", (raw: unknown) => {
           try {
             const msg = JSON.parse(String(raw));
-            const code = msg.header?.code ?? msg.code;
+            const code = msg.code ?? msg.header?.code;
             if (code !== undefined && code !== 0) {
-              console.error(
-                "[tts] xfyun error:",
-                code,
-                msg.header?.message || msg.message
-              );
-              ws.close();
-              reject(
-                new Error(
-                  msg.header?.message || msg.message || "TTS error " + code
-                )
-              );
+              const message = msg.message || msg.header?.message || "TTS error " + code;
+              console.error("[tts] xfyun error:", code, message);
+              finish(new Error(message));
               return;
             }
-            const audioData = msg.payload?.audio?.audio || msg.data?.audio;
+            const audioData = msg.data?.audio || msg.payload?.audio?.audio;
             if (audioData) {
               audioParts.push(Buffer.from(audioData, "base64"));
             }
-            const status =
-              msg.header?.status ??
-              msg.payload?.audio?.status ??
-              msg.data?.status;
+            const status = msg.data?.status ?? msg.header?.status ?? msg.payload?.audio?.status;
             if (status === 2) {
-              ws.close();
-              resolve();
+              finish(audioParts.length > 0 ? undefined : new Error("讯飞未返回音频数据"));
             }
-          } catch {}
+          } catch (error: any) {
+            finish(new Error(error?.message || "讯飞响应解析失败"));
+          }
         });
 
-        ws.on("error", (err: Error) => reject(err));
-        setTimeout(() => {
-          try {
-            ws.close();
-          } catch {}
-          resolve();
-        }, 30000);
+        ws.on("error", (err: Error) => finish(err));
+        timeout = setTimeout(() => finish(new Error("讯飞语音合成超时")), 30000);
       });
 
       const audioBuffer = Buffer.concat(audioParts);
+      if (audioBuffer.length === 0) {
+        res.status(502).json({ error: "讯飞未返回音频数据" });
+        return;
+      }
       res.setHeader("Content-Type", "audio/mpeg");
       res.setHeader("Content-Length", audioBuffer.length);
       res.send(audioBuffer);

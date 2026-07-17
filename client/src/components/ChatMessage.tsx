@@ -14,6 +14,7 @@ import {
 } from "@shared/message-feedback";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { toast } from "sonner";
 import {
   Bot,
   Check,
@@ -1017,10 +1018,16 @@ function ChatMessageInner({
   const showToolTimeline = showToolCalls && timelineToolCalls.length > 0;
   const [copied, setCopied] = useState(false);
   const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [ttsLoading, setTtsLoading] = useState(false);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackReasonDraft, setFeedbackReasonDraft] = useState<MessageFeedbackReasonCode[]>([]);
   const [feedbackCommentDraft, setFeedbackCommentDraft] = useState("");
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const ttsUrlRef = useRef<string | null>(null);
+  useEffect(() => () => {
+    ttsAudioRef.current?.pause();
+    if (ttsUrlRef.current) URL.revokeObjectURL(ttsUrlRef.current);
+  }, []);
   const throttleStreamingText = Boolean(isLast && streaming);
   const throttledSourceText = useThrottledText(
     text,
@@ -1247,31 +1254,63 @@ function ChatMessageInner({
                 {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   if (ttsPlaying) { ttsAudioRef.current?.pause(); setTtsPlaying(false); return; }
-                  setTtsPlaying(true);
-                  fetch("/api/claw/voice/tts", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ text: text.slice(0, 2000) }),
-                  })
-                    .then(r => { if (!r.ok) throw new Error("TTS failed"); return r.blob(); })
-                    .then(blob => {
-                      const url = URL.createObjectURL(blob);
-                      const audio = new Audio(url);
-                      ttsAudioRef.current = audio;
-                      audio.onended = () => { setTtsPlaying(false); URL.revokeObjectURL(url); };
-                      audio.onerror = () => { setTtsPlaying(false); URL.revokeObjectURL(url); };
-                      audio.play();
-                    })
-                    .catch(() => setTtsPlaying(false));
+                  if (ttsLoading) return;
+                  setTtsLoading(true);
+                  try {
+                    const response = await fetch("/api/claw/voice/tts", {
+                      method: "POST",
+                      credentials: "include",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ text: text.slice(0, 2000) }),
+                    });
+                    if (!response.ok) {
+                      const payload = await response.json().catch(() => null);
+                      throw new Error(String(payload?.error || `语音生成失败 (${response.status})`));
+                    }
+                    const blob = await response.blob();
+                    if (blob.size === 0) throw new Error("语音服务未返回音频");
+                    if (ttsUrlRef.current) URL.revokeObjectURL(ttsUrlRef.current);
+                    const url = URL.createObjectURL(blob);
+                    ttsUrlRef.current = url;
+                    const audio = new Audio(url);
+                    ttsAudioRef.current = audio;
+                    audio.onended = () => {
+                      setTtsPlaying(false);
+                      URL.revokeObjectURL(url);
+                      if (ttsUrlRef.current === url) ttsUrlRef.current = null;
+                    };
+                    audio.onerror = () => {
+                      setTtsPlaying(false);
+                      toast.error("音频播放失败");
+                      URL.revokeObjectURL(url);
+                      if (ttsUrlRef.current === url) ttsUrlRef.current = null;
+                    };
+                    await audio.play();
+                    setTtsPlaying(true);
+                  } catch (error: any) {
+                    ttsAudioRef.current?.pause();
+                    ttsAudioRef.current = null;
+                    if (ttsUrlRef.current) {
+                      URL.revokeObjectURL(ttsUrlRef.current);
+                      ttsUrlRef.current = null;
+                    }
+                    setTtsPlaying(false);
+                    toast.error(error?.message || "语音播放失败");
+                  } finally {
+                    setTtsLoading(false);
+                  }
                 }}
                 type="button"
-                title={ttsPlaying ? "停止朗读" : "朗读"}
+                title={ttsLoading ? "正在生成语音" : ttsPlaying ? "停止朗读" : "朗读"}
                 className="lingxia-msg-footer-action"
-                data-state={ttsPlaying ? "active" : "idle"}
+                data-state={ttsLoading ? "loading" : ttsPlaying ? "active" : "idle"}
+                disabled={ttsLoading}
               >
-                {ttsPlaying ? (
+                {ttsLoading ? (
+                  <Loader2 className="animate-spin" aria-hidden="true" />
+                ) : ttsPlaying ? (
                   <Square aria-hidden="true" />
                 ) : (
                   <Volume2 aria-hidden="true" />

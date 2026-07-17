@@ -106,8 +106,8 @@ export function Sidebar({
         <div className="flex-1" />
       )}
 
-      <div className="shrink-0 pt-2 flex items-center justify-center" style={{ borderTop: "1px solid var(--oc-border-subtle)" }}>
-        {!collapsed && footer ? <div className="min-w-0">{footer}</div> : null}
+      <div className="shrink-0 pt-2" style={{ borderTop: "1px solid var(--oc-border-subtle)" }}>
+        {footer ? <div className="min-w-0">{footer}</div> : null}
       </div>
     </div>
   );

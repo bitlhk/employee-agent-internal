@@ -6,9 +6,9 @@
  *
  * MVP scope: list / preview / download. Upload + delete coming next.
  */
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PageContainer } from "@/components/console/PageContainer";
-import { Archive, Folder, FileText, Download, Eye, RefreshCw, ChevronRight, Loader2, Search, Upload, Trash2, X } from "lucide-react";
+import { Archive, Folder, FileCode2, FileImage, FileText, Download, Eye, ChevronRight, Loader2, Search, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -164,12 +164,29 @@ export function buildWorkspaceTreeRows(
   return rows;
 }
 
-function WorkspaceFileTypeIcon({ file }: { file: FileNode }) {
-  if (file.type === "directory") return <Folder className="workspace-tree-folder-icon" />;
+export type WorkspaceFileIconKind = "directory" | "markdown" | "json" | "pdf" | "image" | "code" | "archive" | "file";
+
+export function workspaceFileIconKind(file: FileNode): WorkspaceFileIconKind {
+  if (file.type === "directory") return "directory";
   const extension = file.name.toLowerCase().split(".").pop();
-  if (extension === "md") return <span className="workspace-tree-type workspace-tree-type--md">M↓</span>;
-  if (extension === "json") return <span className="workspace-tree-type workspace-tree-type--json">{"{ }"}</span>;
-  if (extension === "zip") return <Archive className="workspace-tree-file-icon" />;
+  if (extension === "md" || extension === "markdown") return "markdown";
+  if (extension === "json") return "json";
+  if (extension === "pdf") return "pdf";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension || "")) return "image";
+  if (["py", "js", "jsx", "ts", "tsx", "css", "scss", "html", "htm", "sh", "bash", "sql", "xml", "yaml", "yml", "toml", "ini", "conf"].includes(extension || "")) return "code";
+  if (["zip", "tar", "gz", "tgz", "rar", "7z"].includes(extension || "")) return "archive";
+  return "file";
+}
+
+function WorkspaceFileTypeIcon({ file }: { file: FileNode }) {
+  const kind = workspaceFileIconKind(file);
+  if (kind === "directory") return <Folder className="workspace-tree-folder-icon" />;
+  if (kind === "markdown") return <span className="workspace-tree-type workspace-tree-type--md">M↓</span>;
+  if (kind === "json") return <span className="workspace-tree-type workspace-tree-type--json">{"{ }"}</span>;
+  if (kind === "pdf") return <span className="workspace-tree-type workspace-tree-type--pdf">PDF</span>;
+  if (kind === "image") return <FileImage className="workspace-tree-file-icon workspace-tree-file-icon--image" />;
+  if (kind === "code") return <FileCode2 className="workspace-tree-file-icon workspace-tree-file-icon--code" />;
+  if (kind === "archive") return <Archive className="workspace-tree-file-icon" />;
   return <FileText className="workspace-tree-file-icon" />;
 }
 
@@ -177,16 +194,13 @@ export function WorkspaceBrowser({
   adoptId,
   variant = "page",
   active = true,
-  onClose,
 }: {
   adoptId: string;
   variant?: "page" | "panel";
   active?: boolean;
-  onClose?: () => void;
 }) {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [runtime, setRuntime] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [previewing, setPreviewing] = useState<{
@@ -198,18 +212,18 @@ export function WorkspaceBrowser({
     modifiedAt?: string;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState("");
   const [currentPath, setCurrentPath] = useState<string>("");  // workspace-relative current dir, "" = root
   const [deleteTarget, setDeleteTarget] = useState<FileNode | null>(null);
   const [fileFilter, setFileFilter] = useState("");
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
   const inManagedSkillsDir = isManagedSkillsPath(currentPath);
   const compact = variant === "panel";
+  const loadSequenceRef = useRef(0);
 
-  const load = async () => {
+  const load = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!adoptId) return;
-    setLoading(true);
+    const sequence = ++loadSequenceRef.current;
+    if (!silent) setLoading(true);
     setError("");
     try {
       // 2026-04-20 review fix: 带 currentPath 给后端, 避免深层目录被 MAX_LIST_DEPTH=4 裁剪
@@ -218,19 +232,35 @@ export function WorkspaceBrowser({
       const r = await fetch("/api/claw/files/list?" + params.toString(), { credentials: "include" });
       if (!r.ok) throw new Error("list " + r.status);
       const d: ListResp = await r.json();
+      if (sequence !== loadSequenceRef.current) return;
       setFiles(d.files || []);
       setCaps(d.capabilities);
-      setRuntime(d.runtime);
     } catch (e: any) {
+      if (sequence !== loadSequenceRef.current) return;
       setError(e?.message || "加载失败");
     } finally {
-      setLoading(false);
+      if (sequence === loadSequenceRef.current) setLoading(false);
     }
-  };
+  }, [adoptId, compact, currentPath]);
 
   useEffect(() => {
     if (active) void load();
-  }, [adoptId, currentPath, active, compact]);
+  }, [active, load]);
+
+  useEffect(() => {
+    if (!active) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load({ silent: true });
+    };
+    const interval = window.setInterval(refresh, 5_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [active, load]);
 
   useEffect(() => {
     setFileFilter("");
@@ -266,45 +296,6 @@ export function WorkspaceBrowser({
 
   const downloadUrl = (file: FileNode) => `/api/claw/files/download?adoptId=${encodeURIComponent(adoptId)}&path=${encodeURIComponent(file.path)}`;
 
-  const uploadFile = async (file: File) => {
-    if (!caps?.supportsUpload) return;
-    if (file.size > caps.maxUploadBytes) {
-      setUploadError(`文件超大 (${(file.size / 1024 / 1024).toFixed(1)}MB > ${caps.maxUploadBytes / 1024 / 1024}MB)`);
-      return;
-    }
-    setUploading(true);
-    setUploadError("");
-    try {
-      const buf = await file.arrayBuffer();
-      // Base64 encode (chunked for large files)
-      const bytes = new Uint8Array(buf);
-      let binary = "";
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      const base64 = btoa(binary);
-      const r = await fetch("/api/claw/files/upload", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adoptId,
-          path: compact ? undefined : currentPath || undefined,
-          filename: file.name,
-          contentBase64: base64,
-        }),
-      });
-      const { data: d, errorText } = await readResponse(r);
-      if (!r.ok) {
-        setUploadError(d?.error || errorText || `upload ${r.status}`);
-        return;
-      }
-      await load();
-    } catch (e: any) {
-      setUploadError(e?.message || "upload failed");
-    } finally {
-      setUploading(false);
-    }
-  };
-
   const requestDeleteFile = (file: FileNode) => {
     if (!caps?.supportsDelete) return;
     if (isProtectedRootFile(file)) return;
@@ -331,12 +322,6 @@ export function WorkspaceBrowser({
     } catch (e: any) {
       setError(e?.message || "delete failed");
     }
-  };
-
-  const handleFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) uploadFile(f);
-    e.target.value = "";  // reset so same file can be re-picked
   };
 
   // 当前目录下的直接子项（不含孙子辈）+ dir 在前 + 文件按修改时间倒序
@@ -410,37 +395,6 @@ export function WorkspaceBrowser({
 
   const drawerContent = (
     <div className="workspace-tree-layout">
-      <div className="workspace-tree-heading">
-        <div className="workspace-tree-heading-copy">
-          <h2>工作空间</h2>
-          <p>上传文件与 Agent 任务产物</p>
-        </div>
-        <div className="workspace-tree-toolbar">
-          {caps?.supportsUpload && (
-            <label className={`workspace-tree-toolbar-button ${uploading ? "is-disabled" : ""}`}>
-              <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
-              {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
-              <span>{uploading ? "上传中" : "上传文件"}</span>
-            </label>
-          )}
-          <button type="button" onClick={load} disabled={loading} className="workspace-tree-toolbar-button">
-            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-            <span>刷新</span>
-          </button>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="workspace-tree-toolbar-button workspace-tree-toolbar-button--icon"
-              title="关闭工作空间"
-              aria-label="关闭工作空间"
-            >
-              <X />
-            </button>
-          )}
-        </div>
-      </div>
-
       <label className="workspace-tree-filter">
         <Search aria-hidden="true" />
         <input
@@ -451,7 +405,6 @@ export function WorkspaceBrowser({
         />
       </label>
 
-      {uploadError && <div className="workspace-tree-notice workspace-tree-notice--error">上传失败: {uploadError}</div>}
       {error && <div className="workspace-tree-notice workspace-tree-notice--error">{error}</div>}
 
       <div className="workspace-tree-card" role="tree" aria-label="工作空间文件">
@@ -514,28 +467,6 @@ export function WorkspaceBrowser({
 
   const pageContent = (
     <div className="ea-data-page workspace-data-page">
-      <div className="ea-data-toolbar workspace-data-toolbar">
-        <div className="ea-data-toolbar__actions">
-          {caps?.supportsUpload && !inManagedSkillsDir && (
-            <label className="inline-flex">
-              <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
-              <span className={`ea-data-btn ea-data-btn--primary ${uploading ? "pointer-events-none opacity-55" : ""}`} aria-disabled={uploading}>
-                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                {uploading ? "上传中" : "上传文件"}
-              </span>
-            </label>
-          )}
-          <button type="button" onClick={load} disabled={loading} className="ea-data-btn ea-data-btn--ghost">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            刷新
-          </button>
-        </div>
-      </div>
-      {uploadError && (
-        <div className="mb-3 px-3 py-2 text-xs rounded-md" style={{ background: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca" }}>
-          上传失败: {uploadError}
-        </div>
-      )}
       {inManagedSkillsDir && (
         <div className="mb-3 px-3 py-2 text-xs rounded-md" style={{ background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0" }}>
           技能目录由平台管理。请在“我的技能”页面上传、卸载或删除技能。
@@ -552,7 +483,7 @@ export function WorkspaceBrowser({
           <div className="ea-data-empty">
             <Folder className="w-12 h-12 mx-auto mb-2 opacity-30" />
             <div>工作空间还是空的</div>
-            <div className="ea-data-muted">让 Agent 帮你生成文件，或稍后启用上传功能</div>
+            <div className="ea-data-muted">让 Agent 帮你生成文件，任务产物会自动出现在这里</div>
           </div>
         </div>
       )}
