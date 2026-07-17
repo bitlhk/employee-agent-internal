@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { PageContainer } from "@/components/console/PageContainer";
-import { Folder, FileText, Download, Eye, RefreshCw, ChevronRight, Loader2, Upload, Trash2 } from "lucide-react";
+import { Archive, Folder, FileText, Download, Eye, RefreshCw, ChevronRight, Loader2, Search, Upload, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -21,7 +21,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type FileNode = { name: string; path: string; type: "file" | "directory"; size?: number; modifiedAt?: string };
+export type FileNode = { name: string; path: string; type: "file" | "directory"; size?: number; modifiedAt?: string };
+export type WorkspaceTreeRow = FileNode & { depth: number };
 type Capabilities = { supportsList: boolean; supportsRead: boolean; supportsDownload: boolean; supportsUpload: boolean; supportsDelete: boolean; maxUploadBytes: number };
 type ListResp = { runtime: string; capabilities: Capabilities; files: FileNode[] };
 const PROTECTED_ROOT_FILES = new Set([
@@ -95,7 +96,83 @@ function fileSourceHint(file: FileNode): string {
   return "工作文件";
 }
 
-export function WorkspacePage({ adoptId }: { adoptId: string }) {
+function parentPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+  const separator = normalized.lastIndexOf("/");
+  return separator === -1 ? "" : normalized.slice(0, separator);
+}
+
+export function buildWorkspaceTreeRows(
+  files: FileNode[],
+  expandedPaths: ReadonlySet<string>,
+  filter: string,
+): WorkspaceTreeRow[] {
+  const sortedFiles = [...files].sort((a, b) => {
+    if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+    return a.name.localeCompare(b.name, "zh-CN", { numeric: true, sensitivity: "base" });
+  });
+  const children = new Map<string, FileNode[]>();
+  for (const file of sortedFiles) {
+    const parent = parentPath(file.path);
+    children.set(parent, [...(children.get(parent) || []), file]);
+  }
+
+  const query = filter.trim().toLocaleLowerCase("zh-CN");
+  let visiblePaths: Set<string> | null = null;
+  if (query) {
+    visiblePaths = new Set<string>();
+    for (const file of sortedFiles) {
+      const matches = file.name.toLocaleLowerCase("zh-CN").includes(query)
+        || file.path.toLocaleLowerCase("zh-CN").includes(query);
+      if (!matches) continue;
+
+      visiblePaths.add(file.path);
+      let ancestor = parentPath(file.path);
+      while (ancestor) {
+        visiblePaths.add(ancestor);
+        ancestor = parentPath(ancestor);
+      }
+      if (file.type === "directory") {
+        const prefix = `${file.path}/`;
+        for (const descendant of sortedFiles) {
+          if (descendant.path.startsWith(prefix)) visiblePaths.add(descendant.path);
+        }
+      }
+    }
+  }
+
+  const rows: WorkspaceTreeRow[] = [];
+  const walk = (path: string, depth: number) => {
+    for (const file of children.get(path) || []) {
+      if (visiblePaths && !visiblePaths.has(file.path)) continue;
+      rows.push({ ...file, depth });
+      if (file.type === "directory" && (query || expandedPaths.has(file.path))) {
+        walk(file.path, depth + 1);
+      }
+    }
+  };
+  walk("", 0);
+  return rows;
+}
+
+function WorkspaceFileTypeIcon({ file }: { file: FileNode }) {
+  if (file.type === "directory") return <Folder className="workspace-tree-folder-icon" />;
+  const extension = file.name.toLowerCase().split(".").pop();
+  if (extension === "md") return <span className="workspace-tree-type workspace-tree-type--md">M↓</span>;
+  if (extension === "json") return <span className="workspace-tree-type workspace-tree-type--json">{"{ }"}</span>;
+  if (extension === "zip") return <Archive className="workspace-tree-file-icon" />;
+  return <FileText className="workspace-tree-file-icon" />;
+}
+
+export function WorkspaceBrowser({
+  adoptId,
+  variant = "page",
+  active = true,
+}: {
+  adoptId: string;
+  variant?: "page" | "drawer";
+  active?: boolean;
+}) {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [runtime, setRuntime] = useState<string>("");
@@ -107,7 +184,10 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
   const [uploadError, setUploadError] = useState("");
   const [currentPath, setCurrentPath] = useState<string>("");  // workspace-relative current dir, "" = root
   const [deleteTarget, setDeleteTarget] = useState<FileNode | null>(null);
+  const [fileFilter, setFileFilter] = useState("");
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
   const inManagedSkillsDir = isManagedSkillsPath(currentPath);
+  const compact = variant === "drawer";
 
   const load = async () => {
     if (!adoptId) return;
@@ -116,7 +196,7 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
     try {
       // 2026-04-20 review fix: 带 currentPath 给后端, 避免深层目录被 MAX_LIST_DEPTH=4 裁剪
       const params = new URLSearchParams({ adoptId });
-      if (currentPath) params.set("path", currentPath);
+      if (!compact && currentPath) params.set("path", currentPath);
       const r = await fetch("/api/claw/files/list?" + params.toString(), { credentials: "include" });
       if (!r.ok) throw new Error("list " + r.status);
       const d: ListResp = await r.json();
@@ -130,7 +210,14 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
     }
   };
 
-  useEffect(() => { load(); }, [adoptId, currentPath]);
+  useEffect(() => {
+    if (active) void load();
+  }, [adoptId, currentPath, active, compact]);
+
+  useEffect(() => {
+    setFileFilter("");
+    setExpandedPaths(new Set());
+  }, [adoptId]);
 
   const previewFile = async (file: FileNode) => {
     if (!isPreviewable(file.name)) return;
@@ -170,7 +257,7 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           adoptId,
-          path: currentPath || undefined,
+          path: compact ? undefined : currentPath || undefined,
           filename: file.name,
           contentBase64: base64,
         }),
@@ -238,6 +325,20 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
     });
   }, [files, currentPath]);
 
+  const treeRows = useMemo(
+    () => buildWorkspaceTreeRows(files, expandedPaths, fileFilter),
+    [files, expandedPaths, fileFilter],
+  );
+
+  const toggleFolder = (path: string) => {
+    setExpandedPaths((previous) => {
+      const next = new Set(previous);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
   // 面包屑路径段
   const crumbs = useMemo(() => {
     if (!currentPath) return [];
@@ -277,24 +378,116 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
     </div>
   );
 
-  return (
-    <PageContainer title="工作空间">
-      <div className="ea-data-page workspace-data-page">
+  const drawerContent = (
+    <div className="workspace-tree-layout">
+      <div className="workspace-tree-heading">
+        <div className="workspace-tree-heading-copy">
+          <h2>工作空间</h2>
+          <p>查看上传文件和 Agent 生成的任务产物</p>
+        </div>
+        <div className="workspace-tree-toolbar">
+          {caps?.supportsUpload && (
+            <label className={`workspace-tree-toolbar-button ${uploading ? "is-disabled" : ""}`}>
+              <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
+              {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+              <span>{uploading ? "上传中" : "上传文件"}</span>
+            </label>
+          )}
+          <button type="button" onClick={load} disabled={loading} className="workspace-tree-toolbar-button">
+            {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+            <span>刷新</span>
+          </button>
+        </div>
+      </div>
+
+      <label className="workspace-tree-filter">
+        <Search aria-hidden="true" />
+        <input
+          value={fileFilter}
+          onChange={(event) => setFileFilter(event.target.value)}
+          placeholder="筛选文件…"
+          aria-label="筛选工作空间文件"
+        />
+      </label>
+
+      {uploadError && <div className="workspace-tree-notice workspace-tree-notice--error">上传失败: {uploadError}</div>}
+      {error && <div className="workspace-tree-notice workspace-tree-notice--error">{error}</div>}
+
+      <div className="workspace-tree-card" role="tree" aria-label="工作空间文件">
+        {loading && files.length === 0 ? (
+          <div className="workspace-tree-empty"><Loader2 className="animate-spin" />正在加载文件…</div>
+        ) : treeRows.length === 0 ? (
+          <div className="workspace-tree-empty">
+            {fileFilter.trim() ? "没有匹配的文件" : "工作空间暂无文件"}
+          </div>
+        ) : (
+          treeRows.map((file) => {
+            const expanded = file.type === "directory" && (fileFilter.trim() !== "" || expandedPaths.has(file.path));
+            return (
+              <div
+                key={file.path}
+                className="workspace-tree-row"
+                style={{ "--workspace-tree-depth": file.depth } as CSSProperties}
+                role="treeitem"
+                aria-expanded={file.type === "directory" ? expanded : undefined}
+              >
+                <button
+                  type="button"
+                  className="workspace-tree-row-main"
+                  onClick={() => {
+                    if (file.type === "directory") toggleFolder(file.path);
+                    else if (isPreviewable(file.name) && caps?.supportsRead) void previewFile(file);
+                  }}
+                  title={file.path}
+                >
+                  <span className={`workspace-tree-chevron ${expanded ? "is-expanded" : ""}`} aria-hidden="true">
+                    {file.type === "directory" && <ChevronRight />}
+                  </span>
+                  <WorkspaceFileTypeIcon file={file} />
+                  <span className="workspace-tree-name">{file.name}</span>
+                </button>
+                <div className="workspace-tree-actions">
+                  {file.type === "file" && isPreviewable(file.name) && caps?.supportsRead && (
+                    <button type="button" onClick={() => void previewFile(file)} title="预览" aria-label={`预览 ${file.name}`}>
+                      <Eye />
+                    </button>
+                  )}
+                  {file.type === "file" && caps?.supportsDownload && (
+                    <a href={downloadUrl(file)} download={file.name} title="下载" aria-label={`下载 ${file.name}`}>
+                      <Download />
+                    </a>
+                  )}
+                  {caps?.supportsDelete && !isProtectedRootFile(file) && !isManagedSkillsPath(file.path) && (
+                    <button type="button" onClick={() => requestDeleteFile(file)} title="删除" aria-label={`删除 ${file.name}`}>
+                      <Trash2 />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+
+  const pageContent = (
+    <div className="ea-data-page workspace-data-page">
       <div className="ea-data-toolbar workspace-data-toolbar">
         <div className="ea-data-toolbar__actions">
-        {caps?.supportsUpload && !inManagedSkillsDir && (
-          <label className="inline-flex">
-            <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
-            <span className={`ea-data-btn ea-data-btn--primary ${uploading ? "pointer-events-none opacity-55" : ""}`} aria-disabled={uploading}>
+          {caps?.supportsUpload && !inManagedSkillsDir && (
+            <label className="inline-flex">
+              <input type="file" className="hidden" onChange={handleFilePick} disabled={uploading} />
+              <span className={`ea-data-btn ea-data-btn--primary ${uploading ? "pointer-events-none opacity-55" : ""}`} aria-disabled={uploading}>
                 {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 {uploading ? "上传中" : "上传文件"}
-            </span>
-          </label>
-        )}
-        <button type="button" onClick={load} disabled={loading} className="ea-data-btn ea-data-btn--ghost">
-          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          刷新
-        </button>
+              </span>
+            </label>
+          )}
+          <button type="button" onClick={load} disabled={loading} className="ea-data-btn ea-data-btn--ghost">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            刷新
+          </button>
         </div>
       </div>
       {uploadError && (
@@ -307,26 +500,26 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
           技能目录由平台管理。请在“我的技能”页面上传、卸载或删除技能。
         </div>
       )}
-
       {error && (
         <div className="mb-3 px-3 py-2 text-xs rounded-md" style={{ background: "#fef2f2", color: "#ef4444", border: "1px solid #fecaca" }}>
           {error}
         </div>
       )}
-
       {sorted.length === 0 && !loading && (
         <div className="ea-data-card workspace-file-list">
-        {crumbBar}
-        <div className="ea-data-empty">
-          <Folder className="w-12 h-12 mx-auto mb-2 opacity-30" />
-          <div>工作空间还是空的</div>
-          <div className="ea-data-muted">让 Agent 帮你生成文件，或稍后启用上传功能</div>
-        </div>
+          {crumbBar}
+          <div className="ea-data-empty">
+            <Folder className="w-12 h-12 mx-auto mb-2 opacity-30" />
+            <div>工作空间还是空的</div>
+            <div className="ea-data-muted">让 Agent 帮你生成文件，或稍后启用上传功能</div>
+          </div>
         </div>
       )}
-
       {sorted.length > 0 && (
-        <div className="ea-data-card workspace-file-list" style={{ "--ea-data-columns": "minmax(240px, 1fr) 140px 120px minmax(200px, 0.5fr)" } as CSSProperties}>
+        <div
+          className="ea-data-card workspace-file-list"
+          style={{ "--ea-data-columns": "minmax(240px, 1fr) 140px 120px minmax(200px, 0.5fr)" } as CSSProperties}
+        >
           {crumbBar}
           <div className="ea-data-header">
             <span>名称</span>
@@ -334,44 +527,49 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
             <span>来源</span>
             <span className="text-right">操作</span>
           </div>
-              {sorted.map((f) => (
-                <div
-                  key={f.path}
-                  className={`ea-data-row ea-data-row--clickable workspace-file-row ${f.type === "directory" ? "workspace-file-row--directory" : ""}`}
-                  onClick={() => f.type === "directory" && setCurrentPath(f.path)}
-                >
-                  <div className="ea-data-title">
-                      {f.type === "directory" ? <Folder className="w-[18px] h-[18px] workspace-folder-icon" /> : <FileText className="w-[18px] h-[18px] text-gray-500" />}
-                      <span className="workspace-file-name">{f.name}</span>
-                  </div>
-                  <div className="ea-data-cell ea-data-muted">{formatTime(f.modifiedAt)}</div>
-                  <div className="ea-data-cell ea-data-muted">
-                    <span className="workspace-source-pill">{fileSourceHint(f)}</span>
-                  </div>
-                  <div className="ea-data-actions">
-                      {f.type === "file" && isPreviewable(f.name) && caps?.supportsRead && (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); previewFile(f); }} className="ea-data-icon-btn">
-                          <Eye className="w-3 h-3" /> 预览
-                        </button>
-                      )}
-                      {f.type === "file" && caps?.supportsDownload && (
-                        <a href={downloadUrl(f)} download={f.name} onClick={(e) => e.stopPropagation()}>
-                          <button type="button" className="ea-data-icon-btn">
-                            <Download className="w-3 h-3" /> 下载
-                          </button>
-                        </a>
-                      )}
-                      {caps?.supportsDelete && !isProtectedRootFile(f) && !isManagedSkillsPath(f.path) && (
-                        <button type="button" onClick={(e) => { e.stopPropagation(); requestDeleteFile(f); }} className="ea-data-icon-btn ea-data-icon-btn--danger" title="删除">
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
-                  </div>
-                </div>
-              ))}
+          {sorted.map((f) => (
+            <div
+              key={f.path}
+              className={`ea-data-row ea-data-row--clickable workspace-file-row ${f.type === "directory" ? "workspace-file-row--directory" : ""}`}
+              onClick={() => f.type === "directory" && setCurrentPath(f.path)}
+            >
+              <div className="ea-data-title">
+                {f.type === "directory" ? <Folder className="w-[18px] h-[18px] workspace-folder-icon" /> : <FileText className="w-[18px] h-[18px] text-gray-500" />}
+                <span className="workspace-file-name">{f.name}</span>
+              </div>
+              <div className="ea-data-cell ea-data-muted">{formatTime(f.modifiedAt)}</div>
+              <div className="ea-data-cell ea-data-muted">
+                <span className="workspace-source-pill">{fileSourceHint(f)}</span>
+              </div>
+              <div className="ea-data-actions">
+                {f.type === "file" && isPreviewable(f.name) && caps?.supportsRead && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); previewFile(f); }} className="ea-data-icon-btn" title="预览" aria-label={`预览 ${f.name}`}>
+                    <Eye className="w-3 h-3" /> 预览
+                  </button>
+                )}
+                {f.type === "file" && caps?.supportsDownload && (
+                  <a href={downloadUrl(f)} download={f.name} onClick={(e) => e.stopPropagation()}>
+                    <button type="button" className="ea-data-icon-btn" title="下载" aria-label={`下载 ${f.name}`}>
+                      <Download className="w-3 h-3" /> 下载
+                    </button>
+                  </a>
+                )}
+                {caps?.supportsDelete && !isProtectedRootFile(f) && !isManagedSkillsPath(f.path) && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); requestDeleteFile(f); }} className="ea-data-icon-btn ea-data-icon-btn--danger" title="删除" aria-label={`删除 ${f.name}`}>
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
       )}
-      </div>
+    </div>
+  );
+
+  const body = (
+    <>
+      {compact ? drawerContent : pageContent}
 
       {/* Preview modal */}
       {previewing && (
@@ -447,6 +645,13 @@ export function WorkspacePage({ adoptId }: { adoptId: string }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </PageContainer>
+    </>
   );
+
+  if (compact) return <div className="workspace-drawer-browser">{body}</div>;
+  return <PageContainer title="工作空间">{body}</PageContainer>;
+}
+
+export function WorkspacePage({ adoptId }: { adoptId: string }) {
+  return <WorkspaceBrowser adoptId={adoptId} />;
 }

@@ -1,5 +1,4 @@
 import {
-  LayoutGrid,
   MessageCircle,
   Radio,
   Sparkle,
@@ -21,7 +20,6 @@ const primaryItems: NavItem[] = [
   { key: "collab", label: "协作", icon: Users },
   { key: "channels", label: "频道", icon: Radio },
   { key: "schedule", label: "定时任务", icon: Timer },
-  { key: "workspace", label: "工作空间", icon: LayoutGrid },
 ];
 
 const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "channels", "weixin", "agent", "workspace", "schedule", "collab", "settings"]);

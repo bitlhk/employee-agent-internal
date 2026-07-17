@@ -53,6 +53,14 @@ const PROTECTED_ROOT_FILES = new Set([
   "HEARTBEAT.md",
   "USER.md",
 ]);
+const WORKSPACE_UI_HIDDEN_ROOTS = new Set([
+  "skills",
+  "memory",
+  "prompt_attachment",
+  "coding_memory",
+  "context",
+  "todo",
+]);
 
 // File type whitelist (defense against agent prompt-injection-via-uploaded-file)
 const ALLOWED_EXTENSIONS = new Set([
@@ -196,6 +204,16 @@ function isManagedSkillsPath(relPath: string): boolean {
   return normalized === "skills" || normalized.startsWith("skills/");
 }
 
+export function isWorkspaceUiVisiblePath(relPath: string): boolean {
+  const normalized = path.posix
+    .normalize(String(relPath || "").replace(/\\/g, "/"))
+    .replace(/^\/+/, "");
+  if (!normalized || normalized === ".") return false;
+  const rootName = normalized.split("/", 1)[0];
+  if (WORKSPACE_UI_HIDDEN_ROOTS.has(rootName)) return false;
+  return !isProtectedRootFile(normalized);
+}
+
 function openclawListFiles(workspace: string, subPath: string = "", adoptId = ""): LinggFileNode[] {
   if (!existsSync(workspace)) return [];
   const allowedRoots = isManagedSkillsPath(subPath) ? approvedSkillRoots(adoptId) : [];
@@ -255,7 +273,8 @@ export function registerFilesRoutes(app: express.Express) {
       const subPath = String(req.query.path || "").trim();
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
       const workspace = runtimeWorkspace(claw, adoptId);
-      const files = openclawListFiles(workspace, subPath, adoptId);
+      const files = openclawListFiles(workspace, subPath, adoptId)
+        .filter((file) => isWorkspaceUiVisiblePath(file.path));
       return res.json({ runtime: runtimeName(adoptId), capabilities: OPENCLAW_FILES_CAPABILITIES, files });
     } catch (e: any) {
       return res.status(500).json({ error: String(e?.message || "list failed") });

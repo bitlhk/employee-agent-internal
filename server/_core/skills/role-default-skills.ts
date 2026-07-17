@@ -85,7 +85,7 @@ export function mergeRoleDefaultSkills(input: MergeRoleDefaultSkillsInput): Skil
         version: metadata.version,
       },
       state: disabledSet.has(skillId) ? "disabled" : runtimeExists ? "ready" : "source_missing",
-      enabled: !disabledSet.has(skillId),
+      enabled: !disabledSet.has(skillId) && runtimeExists,
       review: existing?.review || { state: "none" },
       sync: {
         ...existing?.sync,

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentRoleTemplate } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
 import {
+  JIUWENSWARM_MANAGED_SKILLS_MANIFEST,
   JIUWENSWARM_ROLE_SCOPE_MANIFEST,
   buildJiuwenSwarmRoleScopeManifest,
   writeJiuwenSwarmRoleScopeManifest,
@@ -40,10 +41,10 @@ const effectiveAssets: EffectiveRoleAssets = {
 
 const riskRole: AgentRoleTemplate = {
   ...role,
-  id: "business-review",
-  name: "风险管理专员",
-  defaultSkills: ["business-review-assistant"],
-  mcpServers: ["business_assessment_tool"],
+  id: "post-loan-risk-control",
+  name: "风控经理",
+  defaultSkills: ["post-loan-risk-prediction"],
+  mcpServers: ["post_loan_risk_data"],
 };
 
 describe("jiuwenswarm role scope manifest", () => {
@@ -110,7 +111,7 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
-  it("links allowed shared skills and removes disallowed shared links", () => {
+  it("materializes allowed shared skills and removes disallowed managed links", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-links-"));
     try {
       const workspace = path.join(root, "workspace");
@@ -134,7 +135,13 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(result.linkedSharedSkills).toEqual(["wealth-manager-assistant"]);
       expect(result.removedSharedSkills).toEqual(["old-skill"]);
       expect(existsSync(oldLink)).toBe(false);
-      expect(lstatSync(path.join(workspace, "skills", "wealth-manager-assistant")).isSymbolicLink()).toBe(true);
+      const materializedPath = path.join(workspace, "skills", "wealth-manager-assistant");
+      expect(lstatSync(materializedPath).isSymbolicLink()).toBe(false);
+      expect(readFileSync(path.join(materializedPath, "SKILL.md"), "utf8")).toBe("# Wealth\n");
+      expect(JSON.parse(readFileSync(path.join(workspace, JIUWENSWARM_MANAGED_SKILLS_MANIFEST), "utf8"))).toMatchObject({
+        version: 1,
+        skills: { "wealth-manager-assistant": { digest: expect.any(String) } },
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -161,6 +168,52 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(result.linkedSharedSkills).toEqual(["installed-optional", "wealth-manager-assistant"]);
       expect(existsSync(path.join(workspace, "skills", "installed-optional"))).toBe(true);
       expect(existsSync(path.join(workspace, "skills", "portfolio-doctor"))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("updates a materialized skill only when its source content changes", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-sync-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const shared = path.join(root, "skills-shared");
+      const sourceFile = path.join(shared, "wealth-manager-assistant", "SKILL.md");
+      mkdirSync(path.dirname(sourceFile), { recursive: true });
+      writeFileSync(sourceFile, "# Version 1\n", "utf8");
+
+      const first = writeJiuwenSwarmRoleScopeManifest({ workspaceDir: workspace, role, effectiveAssets, sharedSkillsDir: shared });
+      const second = writeJiuwenSwarmRoleScopeManifest({ workspaceDir: workspace, role, effectiveAssets, sharedSkillsDir: shared });
+      writeFileSync(sourceFile, "# Version 2\n", "utf8");
+      const third = writeJiuwenSwarmRoleScopeManifest({ workspaceDir: workspace, role, effectiveAssets, sharedSkillsDir: shared });
+
+      expect(first.linkedSharedSkills).toEqual(["wealth-manager-assistant"]);
+      expect(second.linkedSharedSkills).toEqual([]);
+      expect(third.linkedSharedSkills).toEqual(["wealth-manager-assistant"]);
+      expect(readFileSync(path.join(workspace, "skills", "wealth-manager-assistant", "SKILL.md"), "utf8")).toBe("# Version 2\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a shared skill whose root is a symbolic link", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-source-link-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const shared = path.join(root, "skills-shared");
+      const realSkill = path.join(root, "real-skill");
+      mkdirSync(realSkill, { recursive: true });
+      mkdirSync(shared, { recursive: true });
+      writeFileSync(path.join(realSkill, "SKILL.md"), "# Linked source\n", "utf8");
+      symlinkSync(realSkill, path.join(shared, "wealth-manager-assistant"), "dir");
+
+      expect(() => writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: workspace,
+        role,
+        effectiveAssets,
+        sharedSkillsDir: shared,
+      })).toThrow("托管技能源必须是实体目录");
+      expect(existsSync(path.join(workspace, "skills", "wealth-manager-assistant"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

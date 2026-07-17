@@ -1,11 +1,12 @@
 import type { Request, Response } from "express";
 import { createHash } from "crypto";
 import { execFile } from "child_process";
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, readdirSync, realpathSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import { WebSocket, type RawData } from "ws";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
+import { parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { privateMessageLogFields } from "./log-privacy";
 import {
@@ -22,7 +23,11 @@ import {
   resolveRuntimeWorkspace,
   upsertSessionRegistry,
 } from "./helpers";
-import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
+import {
+  isUserVisibleJiuwenArtifactPath,
+  writeJiuwenSessionArtifacts,
+  type JiuwenSessionArtifactFile,
+} from "./jiuwen-session-artifacts";
 
 export { bumpSessionEpoch } from "./helpers";
 
@@ -513,12 +518,16 @@ export async function recordJiuwenToolAudit(args: {
   }
 }
 
-function pickText(value: unknown): string {
+export function pickJiuwenText(value: unknown): string {
   if (typeof value === "string") return value;
   if (!value || typeof value !== "object") return "";
   const obj = value as any;
   for (const key of ["content", "text", "message", "delta"]) {
     if (typeof obj[key] === "string") return obj[key];
+  }
+  for (const key of ["payload", "result", "body", "delta"]) {
+    const nested = pickJiuwenText(obj[key]);
+    if (nested) return nested;
   }
   return "";
 }
@@ -544,7 +553,7 @@ function pickErrorMessage(frame: any): string {
 
 export function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: number): Array<{ name: string; size: number; path: string }> {
   if (!workspaceDir || !existsSync(workspaceDir)) return [];
-  const skipDirs = new Set(["skills", "memory", "prompt_attachment", "node_modules", ".git", ".dreams", "dist", "build", ".openclaw", ".agent_history"]);
+  const skipDirs = new Set(["skills", "memory", "prompt_attachment", "node_modules", ".git", ".dreams", "dist", "build", ".openclaw", ".agent_history", "context"]);
   const files: Array<{ name: string; size: number; path: string }> = [];
 
   const scanDir = (dir: string, relBase: string, depth: number) => {
@@ -595,7 +604,7 @@ function normalizeWorkspaceFilePayload(file: any, workspaceDir: string): { name:
     }
   }
 
-  if (!relPath) return null;
+  if (!relPath || !isUserVisibleJiuwenArtifactPath(relPath)) return null;
   const absFile = path.join(workspaceDir, relPath);
   let size = Number(file?.size || 0);
   try {
@@ -633,6 +642,60 @@ export function normalizeJiuwenMode(value: unknown): "agent.fast" | "agent.plan"
   return "agent.fast";
 }
 
+const JIUWEN_IMAGE_MIME_BY_EXTENSION = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+]);
+
+export function buildJiuwenImageMediaItems(message: string, workspaceDir: string): Array<{
+  type: "image";
+  filename: string;
+  path: string;
+  mime_type: string;
+  size_bytes: number;
+}> {
+  if (!workspaceDir || !existsSync(workspaceDir)) return [];
+  const attachments = parseUploadedAttachmentRuntimeMessage(message).attachments;
+  if (!attachments.length) return [];
+
+  let workspaceRoot: string;
+  try {
+    workspaceRoot = realpathSync(workspaceDir);
+  } catch {
+    return [];
+  }
+
+  const mediaItems: Array<{
+    type: "image";
+    filename: string;
+    path: string;
+    mime_type: string;
+    size_bytes: number;
+  }> = [];
+  for (const attachment of attachments) {
+    const mimeType = JIUWEN_IMAGE_MIME_BY_EXTENSION.get(path.extname(attachment.path).toLowerCase());
+    if (!mimeType) continue;
+    try {
+      const resolved = realpathSync(path.resolve(workspaceRoot, attachment.path));
+      const relative = path.relative(workspaceRoot, resolved);
+      if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) continue;
+      const stats = statSync(resolved);
+      if (!stats.isFile()) continue;
+      mediaItems.push({
+        type: "image",
+        filename: path.basename(resolved),
+        path: resolved,
+        mime_type: mimeType,
+        size_bytes: stats.size,
+      });
+    } catch {}
+  }
+  return mediaItems.slice(0, 8);
+}
+
 export function buildJiuwenAgentServerChatRequest(args: {
   requestId: string;
   serviceId: string;
@@ -647,6 +710,7 @@ export function buildJiuwenAgentServerChatRequest(args: {
 }) {
   const mode = normalizeJiuwenMode(args.runtimeMode || process.env.JIUWENCLAW_DEFAULT_MODE);
   const selectedSkills = Array.isArray(args.selectedSkills) ? args.selectedSkills : [];
+  const mediaItems = buildJiuwenImageMediaItems(args.message, args.workspaceDir);
   const requestMetadata = {
     effective_project_dir: args.workspaceDir,
     source_channel: args.channelId,
@@ -679,6 +743,7 @@ export function buildJiuwenAgentServerChatRequest(args: {
       interactive_ask: true,
       request_metadata: requestMetadata,
       mode,
+      ...(mediaItems.length ? { media_items: mediaItems } : {}),
       ...(args.model ? { model_name: args.model } : {}),
     },
   };
@@ -799,6 +864,12 @@ function clearJiuwenSessionCheckpoint(
       },
     );
   });
+}
+
+export function formatJiuwenTextSectionDelta(text: string, shouldSeparate: boolean): string {
+  const value = String(text || "");
+  if (!value || !shouldSeparate || value.startsWith("\n")) return value;
+  return `\n\n${value}`;
 }
 
 export async function forwardToJiuwenClaw(
@@ -924,6 +995,7 @@ export async function forwardToJiuwenClaw(
     let settled = false;
     let requestSent = false;
     let sawText = false;
+    let needsTextSectionBreak = false;
     let clientClosed = false;
     let ackFallbackTimer: NodeJS.Timeout | null = null;
     let timeoutTimer: NodeJS.Timeout | null = null;
@@ -957,6 +1029,15 @@ export async function forwardToJiuwenClaw(
         tool: "jiuwenclaw",
         elapsedMs: Date.now() - startedAt,
       });
+    };
+    const writeTextDelta = (value: string) => {
+      const publicText = sanitizePublicRuntimePaths(value, workspaceDir);
+      if (!publicText) return;
+      const formattedText = formatJiuwenTextSectionDelta(publicText, sawText && needsTextSectionBreak);
+      currentStatus = "正在生成回复...";
+      writeData({ choices: [{ delta: { content: formattedText }, index: 0 }] });
+      sawText = true;
+      needsTextSectionBreak = false;
     };
     writeStatus("已连接，正在处理请求...");
     res.flush?.();
@@ -1092,16 +1173,14 @@ export async function forwardToJiuwenClaw(
 
       if (kind === "e2a.chunk") {
         if (body?.delta_kind === "text") {
-          const text = pickText(body?.delta);
+          const text = pickJiuwenText(body?.delta);
           if (text) {
-            currentStatus = "正在生成回复...";
-            sawText = true;
-            writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
+            writeTextDelta(text);
           }
           return;
         }
         if (body?.delta_kind === "reasoning") {
-          const reasoning = pickText(body?.delta);
+          const reasoning = pickJiuwenText(body?.delta);
           if (reasoning) {
             currentStatus = "正在分析...";
             writeData({ choices: [{ delta: { reasoning_content: sanitizePublicRuntimePaths(reasoning, workspaceDir) }, index: 0 }] });
@@ -1110,11 +1189,9 @@ export async function forwardToJiuwenClaw(
         }
         if (body?.delta_kind === "custom") {
           const eventType = String(body?.event_type || body?.delta?.event_type || "jiuwen.event");
-          const text = pickText(body?.delta);
+          const text = pickJiuwenText(body?.delta);
           if (eventType === "chat.delta" && text) {
-            currentStatus = "正在生成回复...";
-            sawText = true;
-            writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
+            writeTextDelta(text);
             return;
           }
           if (eventType === "chat.reasoning" && text) {
@@ -1124,8 +1201,7 @@ export async function forwardToJiuwenClaw(
           }
           if (eventType === "chat.final") {
             if (text && !sawText) {
-              sawText = true;
-              writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(text, workspaceDir) }, index: 0 }] });
+              writeTextDelta(text);
             }
             completeSoon(ws);
             return;
@@ -1140,6 +1216,10 @@ export async function forwardToJiuwenClaw(
                 },
               });
             }
+            return;
+          }
+          if (eventType === "chat.notice" && text) {
+            writeStatus(sanitizePublicRuntimePaths(text, workspaceDir));
             return;
           }
           if (eventType === "chat.error") {
@@ -1207,6 +1287,7 @@ export async function forwardToJiuwenClaw(
             return;
           }
           if (eventType === "chat.tool_call" || eventType === "chat.tool_result") {
+            if (sawText) needsTextSectionBreak = true;
             recordJiuwenToolAudit({
               claw,
               req: opts.req,
@@ -1259,10 +1340,9 @@ export async function forwardToJiuwenClaw(
       }
 
       if (frame?.is_final || kind === "e2a.complete") {
-        const finalText = pickText(body?.result || body);
+        const finalText = pickJiuwenText(body?.result || body);
         if (finalText && !sawText) {
-          sawText = true;
-          writeData({ choices: [{ delta: { content: sanitizePublicRuntimePaths(finalText, workspaceDir) }, index: 0 }] });
+          writeTextDelta(finalText);
         }
         complete();
         try { ws.close(1000, "complete"); } catch {}
@@ -1440,26 +1520,26 @@ export async function answerJiuwenPermission(
       }
       if (kind === "e2a.chunk") {
         if (body?.delta_kind === "text") {
-          const delta = pickText(body?.delta);
+          const delta = pickJiuwenText(body?.delta);
           if (delta) text += sanitizePublicRuntimePaths(delta, workspaceDir);
           return;
         }
         if (body?.delta_kind === "custom") {
           const eventType = String(body?.event_type || body?.delta?.event_type || "jiuwen.event");
           if (eventType === "chat.delta" || eventType === "chat.final") {
-            const delta = pickText(body?.delta);
+            const delta = pickJiuwenText(body?.delta);
             if (delta) text += sanitizePublicRuntimePaths(delta, workspaceDir);
             if (eventType === "chat.final") settle({ ok: true, text });
             return;
           }
           if (eventType === "chat.error") {
-            settle({ ok: false, error: pickText(body?.delta) || pickErrorMessage(frame), text });
+            settle({ ok: false, error: pickJiuwenText(body?.delta) || pickErrorMessage(frame), text });
             return;
           }
         }
       }
       if (frame?.is_final || kind === "e2a.complete") {
-        const finalText = pickText(body?.result || body);
+        const finalText = pickJiuwenText(body?.result || body);
         if (finalText && !text) text = sanitizePublicRuntimePaths(finalText, workspaceDir);
         settle({ ok: true, text });
       }

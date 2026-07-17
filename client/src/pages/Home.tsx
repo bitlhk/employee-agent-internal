@@ -25,11 +25,16 @@ import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import { TopBar } from "@/components/console/TopBar";
 import { MainPanel } from "@/components/console/MainPanel";
 import { ChatPage } from "@/components/pages/ChatPage";
+import { WorkspaceBrowser } from "@/components/pages/WorkspacePage";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
 import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,7 +42,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ChevronDown, History, Home as HomeIcon, LogOut, Menu, Search, Settings, Wand2, X } from "lucide-react";
+import { ChevronDown, FolderOpen, History, Home as HomeIcon, LogOut, Menu, Search, Settings, Wand2, X } from "lucide-react";
 import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
 
 
@@ -764,6 +769,7 @@ export default function Home() {
   const clientLoadReportedRef = useRef(false);
   const [clientLoadMetrics, setClientLoadMetrics] = useState<Record<string, ClientLoadMetric>>({});
   const [clientDiagnosticsOpen, setClientDiagnosticsOpen] = useState(false);
+  const [workspaceDrawerOpen, setWorkspaceDrawerOpen] = useState(false);
   const markClientLoadMetric = useCallback((
     key: string,
     status: ClientLoadMetric["status"],
@@ -3785,6 +3791,18 @@ export default function Home() {
             ) : undefined}
             right={isLingxiaSubdomain ? (
               <div className="workbench-topbar-actions">
+              {activePage === "chat" && resolvedAdoptId ? (
+                <button
+                  type="button"
+                  className={`workbench-workspace-trigger ${workspaceDrawerOpen ? "is-active" : ""}`}
+                  onClick={() => setWorkspaceDrawerOpen(true)}
+                  title="打开工作空间"
+                  aria-label="打开工作空间"
+                  aria-expanded={workspaceDrawerOpen}
+                >
+                  <FolderOpen size={16} />
+                </button>
+              ) : null}
               {showClientDiagnostics ? <div className="client-load-diagnostics">
                 <button
                   type="button"
@@ -3886,6 +3904,20 @@ export default function Home() {
               </div>
             ) : undefined}
           />
+
+          <Sheet open={workspaceDrawerOpen} onOpenChange={setWorkspaceDrawerOpen}>
+            <SheetContent
+              side="right"
+              className="workspace-drawer-shell w-[min(92vw,560px)] max-w-none p-0 sm:max-w-none"
+              onOpenAutoFocus={(event) => event.preventDefault()}
+            >
+              <WorkspaceBrowser
+                adoptId={resolvedAdoptId || ""}
+                variant="drawer"
+                active={workspaceDrawerOpen}
+              />
+            </SheetContent>
+          </Sheet>
 
 
           {activePage === "chat" ? (

@@ -30,7 +30,11 @@ import { sessionAuthVersion } from "./sdk";
 import { skillInstaller } from "./skills/skill-installer";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "./skills/skill-source";
 import { skillStoreMarketplaceDir } from "./skills/skill-store";
-import { readJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
+import {
+  isUserVisibleJiuwenArtifactPath,
+  readJiuwenSessionArtifacts,
+  type JiuwenSessionArtifactFile,
+} from "./jiuwen-session-artifacts";
 
 type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -513,10 +517,11 @@ function shouldUseJiuwenAssistantHistoryEvent(eventType: string): boolean {
 function mergeJiuwenAssistantText(previous: string, next: string, eventType: string): string {
   const text = String(next || "");
   if (!text) return previous;
-  if (eventType === "chat.final") return text;
   if (!previous) return text;
+  if (text === previous) return previous;
   if (text.includes(previous) && text.length > previous.length) return text;
   if (previous.includes(text)) return previous;
+  if (eventType === "chat.final") return `${previous.trimEnd()}\n\n${text.trimStart()}`;
   return `${previous}${text}`;
 }
 
@@ -640,8 +645,6 @@ function applyJiuwenToolResultToCalls(calls: ChatHistoryToolCall[], event: any, 
 }
 
 const GENERATED_FILE_TOOL_NAMES = new Set(["write", "write_file", "edit", "edit_file"]);
-const GENERATED_FILE_SKIP_ROOTS = new Set(["skills", "memory", "prompt_attachment", "node_modules", ".git"]);
-
 function jiuwenWorkspaceFromHistoryFile(historyFile: string): string {
   return path.join(path.resolve(path.dirname(historyFile), "../.."), "jiuwenclaw_workspace");
 }
@@ -668,7 +671,7 @@ function generatedFilesFromToolCalls(calls: ChatHistoryToolCall[], workspaceDir:
     const absolute = path.isAbsolute(candidate) ? path.resolve(candidate) : path.resolve(workspaceRoot, candidate);
     const relative = path.relative(workspaceRoot, absolute).split(path.sep).join("/");
     if (!relative || relative.startsWith("../") || path.isAbsolute(relative)) continue;
-    if (GENERATED_FILE_SKIP_ROOTS.has(relative.split("/")[0])) continue;
+    if (!isUserVisibleJiuwenArtifactPath(relative)) continue;
     try {
       const stats = statSync(absolute);
       if (!stats.isFile()) continue;
@@ -766,7 +769,7 @@ export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200
     if (!text) continue;
     if (!shouldUseJiuwenAssistantHistoryEvent(eventType)) continue;
     if (eventType === "chat.final") {
-      existing.finalText = text;
+      existing.finalText = mergeJiuwenAssistantText(existing.finalText, text, eventType);
     } else {
       existing.fallbackText = mergeJiuwenAssistantText(existing.fallbackText, text, eventType);
     }

@@ -17,7 +17,9 @@ import {
   Cpu,
   Database,
   FolderOpen,
+  Fingerprint,
   Loader2,
+  LockKeyhole,
   LogIn,
   LogOut,
   MessageCircle,
@@ -25,6 +27,7 @@ import {
   PackageSearch,
   Settings,
   ShieldCheck,
+  ScrollText,
   Sparkles,
   UsersRound,
   Zap,
@@ -298,8 +301,19 @@ function WealthWorkflowDemo() {
 
             {stage >= 2 ? (
               <div className="claw-home-demo__tool-stack">
+                <div className="claw-home-demo__trust-strip" aria-label="可信执行状态">
+                  <span data-active="true">
+                    <Fingerprint aria-hidden="true" /> 岗位身份已验证
+                  </span>
+                  <span data-active={stage >= 3 ? "true" : "false"}>
+                    <LockKeyhole aria-hidden="true" /> 本人客户范围
+                  </span>
+                  <span data-active={stage >= 5 ? "true" : "false"}>
+                    <ScrollText aria-hidden="true" /> 审计留痕
+                  </span>
+                </div>
                 <div className="claw-home-demo__tool-label">
-                  <Sparkles aria-hidden="true" /> MCP 工具调用
+                  <Sparkles aria-hidden="true" /> 受控 MCP 工具调用
                 </div>
                 <ToolDemoCard
                   icon={UsersRound}
@@ -346,8 +360,7 @@ function WealthWorkflowDemo() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
-                <ShieldCheck aria-hidden="true" /> 技能调用已完成 ·
-                执行记录已保存
+                <ShieldCheck aria-hidden="true" /> 受控执行已完成 · 审计记录已保存
               </motion.div>
             ) : null}
           </div>
@@ -667,7 +680,7 @@ export default function ClawHome() {
                 为每个岗位
                 <span className="mt-2 block text-primary">配一个智能体</span>
               </h1>
-              <p className="mt-5 max-w-[520px] text-base leading-7 text-[#5d5b54] sm:text-lg">
+              <p className="mt-5 max-w-[560px] text-base leading-7 text-[#5d5b54] sm:text-lg">
                 连接企业知识、专业技能与业务系统，让每个岗位拥有可落地、可扩展的 AI 工作能力。
               </p>
               <p className="mt-2 text-xs font-medium text-[#a4a097] sm:text-sm">

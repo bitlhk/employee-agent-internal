@@ -22,6 +22,17 @@ type ArtifactRegistry = {
 const ARTIFACTS_FILE = ".ea-generated-files.json";
 const MAX_RUNS = 100;
 const MAX_FILES_PER_RUN = 20;
+const INTERNAL_WORKSPACE_ROOTS = new Set([
+  "context",
+  "skills",
+  "memory",
+  "prompt_attachment",
+  "node_modules",
+  ".git",
+  ".dreams",
+  ".openclaw",
+  ".agent_history",
+]);
 
 function emptyRegistry(): ArtifactRegistry {
   return { version: 1, runs: {} };
@@ -31,10 +42,20 @@ function safeRequestId(value: unknown): string {
   return String(value || "").trim().replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 180);
 }
 
+export function isUserVisibleJiuwenArtifactPath(value: unknown): boolean {
+  const rel = String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  const parts = rel.split("/").filter(Boolean);
+  return Boolean(
+    parts.length
+    && !parts.some((part) => part === "." || part === "..")
+    && !INTERNAL_WORKSPACE_ROOTS.has(parts[0]),
+  );
+}
+
 function normalizeFile(file: JiuwenSessionArtifactFile): JiuwenSessionArtifactFile | null {
   const rel = String(file?.path || "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
   const parts = rel.split("/").filter(Boolean);
-  if (!parts.length || parts.some((part) => part === "." || part === "..")) return null;
+  if (!isUserVisibleJiuwenArtifactPath(rel)) return null;
   const normalizedPath = parts.join("/");
   const name = String(file?.name || path.posix.basename(normalizedPath)).trim() || path.posix.basename(normalizedPath);
   return {
@@ -96,5 +117,13 @@ export function writeJiuwenSessionArtifacts(args: {
 export function readJiuwenSessionArtifacts(historyFile: string): Map<string, ArtifactRun> {
   const registryPath = path.join(path.dirname(historyFile), ARTIFACTS_FILE);
   const registry = readRegistry(registryPath);
-  return new Map(Object.values(registry.runs).map((run) => [run.requestId, run]));
+  return new Map(Object.values(registry.runs).map((run) => [
+    run.requestId,
+    {
+      ...run,
+      files: (Array.isArray(run.files) ? run.files : [])
+        .map(normalizeFile)
+        .filter((file): file is JiuwenSessionArtifactFile => Boolean(file)),
+    },
+  ]));
 }

@@ -31,7 +31,7 @@ import {
 } from "./chat-inflight";
 import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "./core-file-guard";
 import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
-import { skillRegistry } from "./skills/skill-registry";
+import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { privateMessageLogFields } from "./log-privacy";
 
 type ChatRuntimeMode = "fast" | "plan";
@@ -64,11 +64,17 @@ function normalizeSelectedSkillId(value: unknown): string {
   return skillId;
 }
 
-async function buildSelectedSkillContext(adoptId: string, selectedSkillId: unknown, userMessage: string): Promise<SelectedSkillContext | null> {
+async function buildSelectedSkillContext(
+  adoptId: string,
+  agentId: string,
+  roleTemplate: string,
+  selectedSkillId: unknown,
+  userMessage: string,
+): Promise<SelectedSkillContext | null> {
   const skillId = normalizeSelectedSkillId(selectedSkillId);
   if (!skillId) return null;
 
-  const listed = await skillRegistry.listSkills(adoptId);
+  const listed = await listSkillsWithRoleDefaults({ adoptId, agentId, roleTemplate });
   if (!listed.ok) {
     return { ok: false, status: 400, error: `技能读取失败：${listed.error.detail}` };
   }
@@ -240,7 +246,13 @@ export function registerChatStreamRoutes(app: express.Express) {
         res.status(400).json({ error: "message is empty" });
         return;
       }
-      const selectedSkill = await buildSelectedSkillContext(String(claw.adoptId), selectedSkillId, msgStrForRuntime);
+      const selectedSkill = await buildSelectedSkillContext(
+        String(claw.adoptId),
+        String(claw.agentId || `jiuwen_${String(claw.adoptId)}`),
+        String(claw.roleTemplate || "general-assistant"),
+        selectedSkillId,
+        msgStrForRuntime,
+      );
       if (selectedSkill && !selectedSkill.ok) {
         res.status(selectedSkill.status).json({ error: selectedSkill.error });
         return;

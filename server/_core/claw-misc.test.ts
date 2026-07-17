@@ -173,6 +173,34 @@ describe("claw misc admin routes", () => {
     }
   });
 
+  it("keeps distinct JiuwenSwarm final sections around tool execution", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-multi-final-"));
+    try {
+      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const historyFile = path.join(root, "history.jsonl");
+      writeFileSync(historyFile, [
+        JSON.stringify({ id: "u1", role: "user", request_id: "r1", timestamp: 1779000000, content: "查询客户" }),
+        JSON.stringify({ id: "a1", role: "assistant", request_id: "r1", timestamp: 1779000001, event_type: "chat.final", content: "正在查询授权数据源。" }),
+        JSON.stringify({
+          id: "tool1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000002,
+          event_type: "chat.tool_call",
+          tool_call: { name: "lookup_customer", arguments: "{}", tool_call_id: "call-1" },
+        }),
+        JSON.stringify({ id: "result1", role: "assistant", request_id: "r1", timestamp: 1779000003, event_type: "chat.tool_result", tool_call_id: "call-1", result: "ok" }),
+        JSON.stringify({ id: "a2", role: "assistant", request_id: "r1", timestamp: 1779000004, event_type: "chat.final", content: "查询完成，客户状态正常。" }),
+      ].join("\n"), "utf8");
+
+      const assistant = extractJiuwenChatMessages(historyFile, 20).find((message) => message.role === "assistant");
+      expect(assistant?.text).toBe("正在查询授权数据源。\n\n查询完成，客户状态正常。");
+      expect(assistant?.toolCalls?.[0]).toMatchObject({ name: "lookup_customer", status: "done", result: "ok" });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not expose runtime workspace paths from JiuwenSwarm history", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-public-path-"));
     try {

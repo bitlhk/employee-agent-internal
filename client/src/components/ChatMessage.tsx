@@ -5,6 +5,7 @@ import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
+import { stabilizeStreamingMarkdown, streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
   MESSAGE_FEEDBACK_REASON_LABELS,
@@ -34,6 +35,7 @@ import {
   Plug,
   Puzzle,
   Search,
+  ShieldCheck,
   Square,
   Terminal,
   ThumbsDown,
@@ -161,12 +163,6 @@ export type MessageFeedbackValue = {
   comment?: string;
 };
 
-function streamingMarkdownDelay(chars: number) {
-  if (chars > 12_000) return 90;
-  if (chars > 8_000) return 70;
-  return 48;
-}
-
 function useThrottledText(value: string, delayMs: number, enabled: boolean) {
   const [throttled, setThrottled] = useState(value);
   const lastUpdateRef = useRef(0);
@@ -210,12 +206,6 @@ function useThrottledText(value: string, delayMs: number, enabled: boolean) {
   }, [value, delayMs, enabled]);
 
   return enabled ? throttled : value;
-}
-
-function repairStreamingMarkdown(content: string) {
-  const text = String(content || "");
-  const fenceCount = (text.match(/```/g) || []).length;
-  return fenceCount % 2 === 1 ? `${text}\n\`\`\`` : text;
 }
 
 // ── Gateway 内部工具内联状态（web_search / memory_search 等）──
@@ -428,6 +418,30 @@ function ToolCallDetailBody({ tc }: { tc: ToolCallEntry }) {
         <CopyableToolBlock label={isError ? "错误" : "结果"} value={sanitizePublicRuntimePaths(tc.result || "(无输出)")} danger={isError} />
       )}
 
+    </div>
+  );
+}
+
+export function ToolExecutionReceipt({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
+  const identityBound = toolCalls.some((tool) => Boolean(tool.adoptId));
+  const sandboxed = toolCalls.some((tool) => tool.executor === "sandbox");
+  const auditCount = toolCalls.filter((tool) => Boolean(tool.auditId)).length;
+  const policyBlocked = toolCalls.some((tool) => Boolean(tool.policyDenyReason));
+
+  if (!identityBound && !sandboxed && auditCount === 0 && !policyBlocked) return null;
+
+  return (
+    <div className="lingxia-tool-receipt" aria-label="执行凭据">
+      <span className="lingxia-tool-receipt__title">
+        <ShieldCheck size={13} strokeWidth={2} aria-hidden="true" />
+        执行凭据
+      </span>
+      <span className="lingxia-tool-receipt__items">
+        {identityBound ? <span>实例身份已绑定</span> : null}
+        {sandboxed ? <span>沙箱隔离</span> : null}
+        {auditCount > 0 ? <span>审计留痕 {auditCount} 条</span> : null}
+        {policyBlocked ? <span className="is-blocked">安全策略已阻断</span> : null}
+      </span>
     </div>
   );
 }
@@ -879,6 +893,7 @@ function ToolCallTimeline({ toolCalls, status }: { toolCalls: ToolCallEntry[]; s
                 <ToolTimelineStep key={tc.id} tc={tc} index={index} total={visibleCalls.length} />
               ))}
             </div>
+            <ToolExecutionReceipt toolCalls={visibleCalls} />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -896,6 +911,9 @@ function toolCallsRenderSignature(toolCalls?: ToolCallEntry[]): string {
       tc.durationMs ?? "",
       tc.result ? tc.result.length : 0,
       tc.outputFiles?.length ?? 0,
+      tc.executor || "",
+      tc.auditId || "",
+      tc.adoptId || "",
       tc.truncated ? "truncated" : "",
       tc.policyDenyReason || "",
     ].join(":"))
@@ -1006,7 +1024,7 @@ function ChatMessageInner({
   const throttleStreamingText = Boolean(isLast && streaming);
   const throttledSourceText = useThrottledText(
     text,
-    streamingMarkdownDelay(text.length),
+    streamingMarkdownRenderDelay(text),
     throttleStreamingText,
   );
   const displayedSourceText = throttleStreamingText ? throttledSourceText : text;
@@ -1014,7 +1032,7 @@ function ChatMessageInner({
     () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
     [displayedSourceText],
   );
-  const renderedDisplayText = throttleStreamingText ? repairStreamingMarkdown(displayText) : displayText;
+  const renderedDisplayText = throttleStreamingText ? stabilizeStreamingMarkdown(displayText) : displayText;
   const onCopyMarkdown = async () => {
     try {
       await navigator.clipboard.writeText(displayText);

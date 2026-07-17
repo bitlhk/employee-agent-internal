@@ -1,9 +1,23 @@
+import { createHash } from "crypto";
 import path from "path";
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs";
 import type { AgentRoleTemplate } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
+export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
 export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools"];
 
 export type JiuwenSwarmRoleScopeManifest = {
@@ -31,8 +45,71 @@ export type JiuwenSwarmRoleScopeWriteResult = {
   removedSharedSkills: string[];
 };
 
+type JiuwenSwarmManagedSkillsManifest = {
+  version: 1;
+  skills: Record<string, { digest: string }>;
+};
+
 function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort();
+}
+
+function readManagedSkillsManifest(workspaceDir: string): JiuwenSwarmManagedSkillsManifest {
+  const manifestPath = path.join(workspaceDir, JIUWENSWARM_MANAGED_SKILLS_MANIFEST);
+  try {
+    const parsed = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const skills = parsed?.skills && typeof parsed.skills === "object" ? parsed.skills : {};
+    return { version: 1, skills };
+  } catch {
+    return { version: 1, skills: {} };
+  }
+}
+
+function skillDirectoryDigest(rootDir: string): string {
+  const rootStats = lstatSync(rootDir);
+  if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
+    throw new Error(`托管技能源必须是实体目录: ${rootDir}`);
+  }
+  const hash = createHash("sha256");
+  const walk = (dir: string, relativeDir: string) => {
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const absolutePath = path.join(dir, entry.name);
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) {
+        throw new Error(`托管技能不允许包含符号链接: ${relativePath}`);
+      }
+      if (entry.isDirectory()) {
+        hash.update(`D\0${relativePath}\0`);
+        walk(absolutePath, relativePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      hash.update(`F\0${relativePath}\0`);
+      hash.update(readFileSync(absolutePath));
+      hash.update("\0");
+    }
+  };
+  walk(rootDir, "");
+  return hash.digest("hex");
+}
+
+function materializeManagedSkill(sourcePath: string, targetPath: string, sourceDigest: string): boolean {
+  let targetIsSymlink = false;
+  let targetDigest = "";
+  try {
+    const stats = lstatSync(targetPath);
+    targetIsSymlink = stats.isSymbolicLink();
+    if (stats.isDirectory() && !targetIsSymlink) targetDigest = skillDirectoryDigest(targetPath);
+  } catch {}
+  if (!targetIsSymlink && targetDigest === sourceDigest) return false;
+
+  const temporaryPath = `${targetPath}.linggan-sync-${process.pid}-${Date.now()}`;
+  rmSync(temporaryPath, { recursive: true, force: true });
+  cpSync(sourcePath, temporaryPath, { recursive: true, force: false, errorOnExist: true });
+  rmSync(targetPath, { recursive: true, force: true });
+  renameSync(temporaryPath, targetPath);
+  return true;
 }
 
 function defaultRoleSkillIds(effectiveAssets: EffectiveRoleAssets): string[] {
@@ -134,6 +211,7 @@ function roleGuidance(role: AgentRoleTemplate): string {
     case "wealth-manager":
       return "重点支持客户经营、资产配置、产品匹配、客户沟通和财富管理材料整理。涉及投资建议时保持审慎，避免承诺收益。";
     case "business-review":
+    case "post-loan-risk-control":
       return [
         "重点支持风险识别、持续监控、异常线索归因、评估报告和处置建议。输出应区分事实、判断和待核验信息。",
         "工具选择规则：轻量数据查询、字段核验、单项指标解释，优先使用本地已安装的岗位技能和已授权 MCP。",
@@ -221,6 +299,9 @@ export function reconcileJiuwenSwarmSharedSkillLinks(params: {
   const linkedSharedSkills: string[] = [];
   const removedSharedSkills: string[] = [];
   const workspaceSkillsDir = path.join(params.workspaceDir, "skills");
+  const managedManifestPath = path.join(params.workspaceDir, JIUWENSWARM_MANAGED_SKILLS_MANIFEST);
+  const previousManaged = readManagedSkillsManifest(params.workspaceDir);
+  const nextManaged: JiuwenSwarmManagedSkillsManifest = { version: 1, skills: {} };
   const sharedSkillsDirs = uniqueSorted([
     ...(params.sharedSkillsDirs || []),
     ...(params.sharedSkillsDir ? [params.sharedSkillsDir] : []),
@@ -250,37 +331,31 @@ export function reconcileJiuwenSwarmSharedSkillLinks(params: {
     }
   }
 
+  for (const skillId of Object.keys(previousManaged.skills)) {
+    if (allowed.has(skillId)) continue;
+    const managedPath = path.join(workspaceSkillsDir, skillId);
+    rmSync(managedPath, { recursive: true, force: true });
+    removedSharedSkills.push(skillId);
+  }
+
   for (const skillId of allowed) {
     const sharedRoot = sharedSkillsDirs.find((dir) => existsSync(path.join(dir, skillId)));
     if (!sharedRoot) continue;
     const sharedPath = path.join(sharedRoot, skillId);
     const linkPath = path.join(workspaceSkillsDir, skillId);
     if (!existsSync(sharedPath)) continue;
-    let linkExists = existsSync(linkPath);
-    try {
-      linkExists = linkExists || lstatSync(linkPath).isSymbolicLink();
-    } catch {}
-    if (linkExists) {
-      let shouldReplace = false;
-      try {
-        if (lstatSync(linkPath).isSymbolicLink()) {
-          const target = readlinkSync(linkPath);
-          const resolvedTarget = path.resolve(path.dirname(linkPath), target);
-          const isManagedLink = sharedRoots.some((sharedRootPath) =>
-            resolvedTarget.startsWith(sharedRootPath + path.sep) || resolvedTarget === sharedRootPath
-          );
-          shouldReplace = isManagedLink && resolvedTarget !== path.resolve(sharedPath);
-        }
-      } catch {}
-      if (!shouldReplace) continue;
-      unlinkSync(linkPath);
-    }
-    symlinkSync(path.relative(path.dirname(linkPath), sharedPath), linkPath, "dir");
-    linkedSharedSkills.push(skillId);
+    const digest = skillDirectoryDigest(sharedPath);
+    const materialized = materializeManagedSkill(sharedPath, linkPath, digest);
+    nextManaged.skills[skillId] = { digest };
+    if (materialized || previousManaged.skills[skillId]?.digest !== digest) linkedSharedSkills.push(skillId);
   }
 
+  const nextManagedText = `${JSON.stringify(nextManaged, null, 2)}\n`;
+  const previousManagedText = existsSync(managedManifestPath) ? readFileSync(managedManifestPath, "utf8") : "";
+  if (previousManagedText !== nextManagedText) writeFileSync(managedManifestPath, nextManagedText, "utf8");
+
   return {
-    linkedSharedSkills: linkedSharedSkills.sort(),
-    removedSharedSkills: removedSharedSkills.sort(),
+    linkedSharedSkills: uniqueSorted(linkedSharedSkills),
+    removedSharedSkills: uniqueSorted(removedSharedSkills),
   };
 }

@@ -126,4 +126,31 @@ describe("role default skill projection", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("does not advertise a default skill as enabled before runtime sync", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-role-default-missing-runtime-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const shared = path.join(root, "shared");
+      const sourceDir = path.join(shared, "default-skill");
+      mkdirSync(sourceDir, { recursive: true });
+      writeFileSync(path.join(sourceDir, "SKILL.md"), "# Default Skill\n", "utf8");
+
+      const skills = mergeRoleDefaultSkills({
+        adoptId: "lgj-test",
+        defaultSkillIds: ["default-skill"],
+        registeredSkills: [],
+        runtimeWorkspaceDir: workspace,
+        skillSourceDirs: [shared],
+      });
+
+      expect(skills[0]).toMatchObject({
+        id: "default-skill",
+        enabled: false,
+        state: "source_missing",
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

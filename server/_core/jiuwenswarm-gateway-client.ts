@@ -5,6 +5,7 @@ import path from "path";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import {
   buildJiuwenAgentId,
+  buildJiuwenImageMediaItems,
   buildJiuwenSessionId,
   buildJiuwenServiceId,
   bumpSessionEpoch,
@@ -79,6 +80,7 @@ function buildGatewayChatParams(args: {
 }) {
   const mode = normalizeJiuwenMode(args.runtimeMode || process.env.JIUWENCLAW_DEFAULT_MODE);
   const selectedSkills = Array.isArray(args.selectedSkills) ? args.selectedSkills : [];
+  const mediaItems = buildJiuwenImageMediaItems(args.message, args.workspaceDir);
   return {
     service_id: args.serviceId,
     agent_id: args.agentId,
@@ -93,6 +95,7 @@ function buildGatewayChatParams(args: {
       ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
     },
     mode,
+    ...(mediaItems.length ? { media_items: mediaItems } : {}),
     ...(args.model ? { model_name: args.model } : {}),
   };
 }

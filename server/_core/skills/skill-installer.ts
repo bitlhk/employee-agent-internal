@@ -1,5 +1,5 @@
 import { execFileSync } from "child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -45,6 +45,23 @@ function findSkillRoot(dir: string, depth = 0): string | null {
     throw new Error("zip contains multiple skill roots; please upload one skill package at a time");
   }
   return null;
+}
+
+function assertPhysicalDirectoryTree(rootDir: string): void {
+  const rootStats = lstatSync(rootDir);
+  if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
+    throw new Error("skill source must be a physical directory");
+  }
+  const walk = (dir: string, relativeDir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      if (entry.isSymbolicLink()) {
+        throw new Error(`skill source must not contain symbolic links: ${relativePath}`);
+      }
+      if (entry.isDirectory()) walk(path.join(dir, entry.name), relativePath);
+    }
+  };
+  walk(rootDir, "");
 }
 
 function safeExtractZip(zipPath: string, destPath: string): void {
@@ -121,8 +138,8 @@ export class FileSystemSkillInstaller implements SkillInstaller {
   canInstall(sourcePath: string): boolean {
     if (!existsSync(sourcePath)) return false;
     try {
-      const stat = statSync(sourcePath);
-      return stat.isDirectory() || isZipSource(sourcePath);
+      const stat = lstatSync(sourcePath);
+      return !stat.isSymbolicLink() && (stat.isDirectory() || isZipSource(sourcePath));
     } catch {
       return false;
     }
@@ -130,7 +147,9 @@ export class FileSystemSkillInstaller implements SkillInstaller {
 
   installFromSource(sourcePath: string, runtimePath: string): SkillInstallResult {
     if (!existsSync(sourcePath)) throw new Error("skill source is missing");
-    const stat = statSync(sourcePath);
+    const stat = lstatSync(sourcePath);
+    if (stat.isSymbolicLink()) throw new Error("skill source must not be a symbolic link");
+    if (stat.isDirectory()) assertPhysicalDirectoryTree(sourcePath);
     rmSync(runtimePath, { recursive: true, force: true });
     mkdirSync(path.dirname(runtimePath), { recursive: true });
 

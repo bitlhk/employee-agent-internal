@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ToolCallEntry } from "./ChatMessage";
 
 Object.assign(globalThis, { React });
-const { ChatMessage } = await import("./ChatMessage");
+const { ChatMessage, ToolExecutionReceipt } = await import("./ChatMessage");
 
 function renderToolTimeline(
   toolCalls: ToolCallEntry[],
@@ -67,6 +67,39 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain("is-done");
     expect(html).toContain("lucide-search");
     expect(html).toContain("完成");
+  });
+
+  it("shows execution evidence only when the runtime provides it", () => {
+    const withEvidence = renderToStaticMarkup(
+      React.createElement(ToolExecutionReceipt, { toolCalls: [{
+        id: "call-evidence",
+        name: "mcp_customer_query",
+        arguments: "{}",
+        result: "ok",
+        status: "done",
+        durationMs: 300,
+        ts: Date.now() - 300,
+        executor: "sandbox",
+        auditId: "audit-001",
+        adoptId: "lgj-test",
+      }] }),
+    );
+    const withoutEvidence = renderToStaticMarkup(
+      React.createElement(ToolExecutionReceipt, { toolCalls: [{
+        id: "call-plain",
+        name: "web_search",
+        arguments: "{}",
+        result: "ok",
+        status: "done",
+        ts: Date.now(),
+      }] }),
+    );
+
+    expect(withEvidence).toContain("执行凭据");
+    expect(withEvidence).toContain("实例身份已绑定");
+    expect(withEvidence).toContain("沙箱隔离");
+    expect(withEvidence).toContain("审计留痕 1 条");
+    expect(withoutEvidence).not.toContain("执行凭据");
   });
 
   it("moves the post-tool phase into the timeline instead of a duplicate bubble", () => {
