@@ -61,6 +61,7 @@ docs/operations
 docs/design/UI_STABILITY_CONTRACT.md
 docs/design/AGENT_CLUSTER_DISPATCH_LAB_PLAN.md
 docs/design/TRENDRADAR_AWS_EVALUATION_PLAN.md
+docs/design/trusted-execution-roadmap.md
 # 2026-04-19 第二轮：内部过程性报告（性能/优化/Docker/NodeModules/实现分析）
 scripts/pre-oss-scan.sh
 docs/PERFORMANCE_*.md
