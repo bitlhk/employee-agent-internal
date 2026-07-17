@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWorkspaceTreeRows, type FileNode } from "./WorkspacePage";
+import { buildWorkspaceTreeRows, workspacePreviewKind, type FileNode } from "./WorkspacePage";
 
 const files: FileNode[] = [
   { name: "readme.md", path: "docs/readme.md", type: "file" },
@@ -49,5 +49,20 @@ describe("buildWorkspaceTreeRows", () => {
       "docs/examples/config.json",
       "docs/readme.md",
     ]);
+  });
+});
+
+describe("workspacePreviewKind", () => {
+  it("supports browser-safe workspace previews", () => {
+    expect(workspacePreviewKind("report.md")).toBe("text");
+    expect(workspacePreviewKind("report.PDF")).toBe("pdf");
+    expect(workspacePreviewKind("chart.png")).toBe("image");
+    expect(workspacePreviewKind("report.html")).toBe("html");
+  });
+
+  it("keeps office and archive files download-only", () => {
+    expect(workspacePreviewKind("report.docx")).toBe("none");
+    expect(workspacePreviewKind("report.xlsx")).toBe("none");
+    expect(workspacePreviewKind("bundle.zip")).toBe("none");
   });
 });

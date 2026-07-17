@@ -8,8 +8,7 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { PageContainer } from "@/components/console/PageContainer";
-import { Archive, Folder, FileText, Download, Eye, RefreshCw, ChevronRight, Loader2, Search, Upload, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Archive, Folder, FileText, Download, Eye, RefreshCw, ChevronRight, Loader2, Search, Upload, Trash2, X } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,9 +65,19 @@ function formatTime(iso?: string): string {
   } catch { return iso; }
 }
 
-function isPreviewable(name: string): boolean {
+export type WorkspacePreviewKind = "text" | "pdf" | "image" | "html" | "none";
+
+export function workspacePreviewKind(name: string): WorkspacePreviewKind {
   const lower = name.toLowerCase();
-  return /\.(md|txt|json|yaml|yml|csv|log|py|js|ts|tsx|jsx|html|css|sql|sh|xml|toml|ini|conf)$/.test(lower);
+  if (/\.(md|txt|json|yaml|yml|csv|log|py|js|ts|tsx|jsx|css|sql|sh|xml|toml|ini|conf)$/.test(lower)) return "text";
+  if (/\.pdf$/.test(lower)) return "pdf";
+  if (/\.(png|jpe?g|gif|webp)$/.test(lower)) return "image";
+  if (/\.html?$/.test(lower)) return "html";
+  return "none";
+}
+
+function isPreviewable(name: string): boolean {
+  return workspacePreviewKind(name) !== "none";
 }
 
 function isProtectedRootFile(file: FileNode): boolean {
@@ -168,17 +177,26 @@ export function WorkspaceBrowser({
   adoptId,
   variant = "page",
   active = true,
+  onClose,
 }: {
   adoptId: string;
-  variant?: "page" | "drawer";
+  variant?: "page" | "panel";
   active?: boolean;
+  onClose?: () => void;
 }) {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [runtime, setRuntime] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [previewing, setPreviewing] = useState<{ name: string; path: string; content: string; modifiedAt?: string } | null>(null);
+  const [previewing, setPreviewing] = useState<{
+    name: string;
+    path: string;
+    kind: Exclude<WorkspacePreviewKind, "none">;
+    content?: string;
+    url?: string;
+    modifiedAt?: string;
+  } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -187,7 +205,7 @@ export function WorkspaceBrowser({
   const [fileFilter, setFileFilter] = useState("");
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
   const inManagedSkillsDir = isManagedSkillsPath(currentPath);
-  const compact = variant === "drawer";
+  const compact = variant === "panel";
 
   const load = async () => {
     if (!adoptId) return;
@@ -220,13 +238,25 @@ export function WorkspaceBrowser({
   }, [adoptId]);
 
   const previewFile = async (file: FileNode) => {
-    if (!isPreviewable(file.name)) return;
+    const kind = workspacePreviewKind(file.name);
+    if (kind === "none") return;
     setPreviewLoading(true);
     try {
-      const r = await fetch(`/api/claw/files/read?adoptId=${encodeURIComponent(adoptId)}&path=${encodeURIComponent(file.path)}`, { credentials: "include" });
-      if (!r.ok) throw new Error(`read ${r.status}`);
-      const d: any = await r.json();
-      setPreviewing({ name: file.name, path: file.path, content: d.content || "", modifiedAt: d.modifiedAt });
+      if (kind === "text") {
+        const r = await fetch(`/api/claw/files/read?adoptId=${encodeURIComponent(adoptId)}&path=${encodeURIComponent(file.path)}`, { credentials: "include" });
+        if (!r.ok) throw new Error(`read ${r.status}`);
+        const d: any = await r.json();
+        setPreviewing({ name: file.name, path: file.path, kind, content: d.content || "", modifiedAt: d.modifiedAt });
+      } else {
+        const params = new URLSearchParams({ adoptId, path: file.path, preview: "1" });
+        setPreviewing({
+          name: file.name,
+          path: file.path,
+          kind,
+          url: `/api/claw/workspace/files/download?${params.toString()}`,
+          modifiedAt: file.modifiedAt,
+        });
+      }
     } catch (e: any) {
       setError(e?.message || "预览失败");
     } finally {
@@ -383,7 +413,7 @@ export function WorkspaceBrowser({
       <div className="workspace-tree-heading">
         <div className="workspace-tree-heading-copy">
           <h2>工作空间</h2>
-          <p>查看上传文件和 Agent 生成的任务产物</p>
+          <p>上传文件与 Agent 任务产物</p>
         </div>
         <div className="workspace-tree-toolbar">
           {caps?.supportsUpload && (
@@ -397,6 +427,17 @@ export function WorkspaceBrowser({
             {loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
             <span>刷新</span>
           </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="workspace-tree-toolbar-button workspace-tree-toolbar-button--icon"
+              title="关闭工作空间"
+              aria-label="关闭工作空间"
+            >
+              <X />
+            </button>
+          )}
         </div>
       </div>
 
@@ -573,22 +614,42 @@ export function WorkspaceBrowser({
 
       {/* Preview modal */}
       {previewing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setPreviewing(null)}>
-          <div className="bg-card text-card-foreground border border-border rounded-lg shadow-xl max-w-3xl w-full max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                <span className="font-mono text-sm">{previewing.path}</span>
-                {previewing.modifiedAt && <span className="text-xs text-muted-foreground">· {formatTime(previewing.modifiedAt)}</span>}
+        <div className="workspace-preview-overlay" onClick={() => setPreviewing(null)}>
+          <div className="workspace-preview-dialog" role="dialog" aria-modal="true" aria-label={`预览 ${previewing.name}`} onClick={(e) => e.stopPropagation()}>
+            <div className="workspace-preview-header">
+              <div className="workspace-preview-title">
+                <FileText />
+                <span title={previewing.path}>{previewing.path}</span>
+                {previewing.modifiedAt && <small>· {formatTime(previewing.modifiedAt)}</small>}
               </div>
-              <div className="flex gap-2">
-                <a href={downloadUrl({ name: previewing.name, path: previewing.path, type: "file" })} download={previewing.name}>
-                  <Button size="sm" variant="outline" className="gap-1"><Download className="w-3 h-3" /> 下载</Button>
+              <div className="workspace-preview-actions">
+                <a
+                  className="workspace-preview-action"
+                  href={downloadUrl({ name: previewing.name, path: previewing.path, type: "file" })}
+                  download={previewing.name}
+                >
+                  <Download />
+                  下载
                 </a>
-                <Button size="sm" variant="ghost" onClick={() => setPreviewing(null)}>关闭</Button>
+                <button type="button" className="workspace-preview-action" onClick={() => setPreviewing(null)}>
+                  关闭
+                </button>
               </div>
             </div>
-            <pre className="flex-1 overflow-auto bg-muted/40 p-4 text-xs font-mono text-foreground whitespace-pre-wrap">{previewing.content || "(空文件)"}</pre>
+            <div className="workspace-preview-body">
+              {previewing.kind === "image" && previewing.url ? (
+                <img className="workspace-preview-image" src={previewing.url} alt={previewing.name} />
+              ) : (previewing.kind === "pdf" || previewing.kind === "html") && previewing.url ? (
+                <iframe
+                  className="workspace-preview-frame"
+                  src={previewing.url}
+                  title={previewing.name}
+                  sandbox={previewing.kind === "html" ? "" : undefined}
+                />
+              ) : (
+                <pre className="workspace-preview-text">{previewing.content || "(空文件)"}</pre>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -648,7 +709,7 @@ export function WorkspaceBrowser({
     </>
   );
 
-  if (compact) return <div className="workspace-drawer-browser">{body}</div>;
+  if (compact) return <div className="workspace-panel-browser">{body}</div>;
   return <PageContainer title="工作空间">{body}</PageContainer>;
 }
 
