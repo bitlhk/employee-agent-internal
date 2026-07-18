@@ -3771,7 +3771,6 @@ export default function Home() {
                   userEmail={String((user as any)?.email || "")}
                   collapsed={effectiveSidebarCollapsed}
                   onReturnHome={() => setLocationCoop("/")}
-                  onOpenAppearance={() => selectWorkbenchPage("settings")}
                   onLogout={() => void handleWorkbenchLogout()}
                 />
               )}
