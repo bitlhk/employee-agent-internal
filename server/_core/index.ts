@@ -215,6 +215,7 @@ import {
   trackResponseErrors,
 } from "./error-tracking";
 import { sandboxExec, sandboxHealthCheck } from "./sandbox";
+import { startAuditDlqWorker } from "./audit-dlq-worker";
 import { routeTool, type ToolContext } from "./tool_router";
 import { buildChatRequestBody, type PermissionProfile } from "./tool_schema";
 
@@ -768,6 +769,7 @@ async function startServer() {
         });
       });
   });
+  startAuditDlqWorker();
   startRecycler();
 }
 startServer().catch(console.error);

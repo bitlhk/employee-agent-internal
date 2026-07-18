@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import {
   AuditRecordError,
   FAIL_CLOSE_AUDIT_ACTIONS,
   createAuditLedger,
+  drainAuditDlq,
   getAuditDlqStats,
   normalizeAuditEvent,
   redactAuditMetadata,
@@ -135,6 +136,18 @@ describe("recordAuditEvent", () => {
     expect(files).toContain("db down");
   });
 
+  it("bounds identifiers to their audit table column lengths", () => {
+    const event = normalizeAuditEvent({
+      action: "file.read",
+      targetId: "/workspace/" + "a".repeat(200),
+      resourceId: "b".repeat(200),
+      resourceName: "c".repeat(400),
+    });
+    expect(event.targetId).toHaveLength(128);
+    expect(event.resourceId).toHaveLength(128);
+    expect(event.resourceName).toHaveLength(256);
+  });
+
   it("throws for fail-close events only when both persistence and DLQ fail", async () => {
     const ledger = createAuditLedger({
       dlqDir: "\0bad-dir",
@@ -174,5 +187,32 @@ describe("recordAuditEvent", () => {
     expect(result.status).toBe("queued");
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rows).toHaveLength(1);
+  });
+
+  it("replays DLQ records, deduplicates persisted events, and retains failures", async () => {
+    const dlqDir = await makeTempDir();
+    const first = normalizeAuditEvent({ eventId: "01DLQ000000000000000000001", action: "auth.login.success" });
+    const duplicate = normalizeAuditEvent({ eventId: "01DLQ000000000000000000002", action: "auth.logout" });
+    const failed = normalizeAuditEvent({ eventId: "01DLQ000000000000000000003", action: "system.health.failed" });
+    await writeFile(path.join(dlqDir, "2026-05-12.jsonl"), [first, duplicate, failed]
+      .map((event) => JSON.stringify({ type: "audit.event", event }))
+      .join("\n") + "\n");
+
+    const persisted: string[] = [];
+    const result = await drainAuditDlq({
+      dir: dlqDir,
+      insertAuditEvent: async (event) => {
+        if (event.eventId === duplicate.eventId) throw Object.assign(new Error("wrapped duplicate"), {
+          cause: Object.assign(new Error("duplicate"), { code: "ER_DUP_ENTRY" }),
+        });
+        if (event.eventId === failed.eventId) throw new Error("db unavailable");
+        persisted.push(event.eventId);
+      },
+    });
+
+    expect(result).toEqual(expect.objectContaining({ scanned: 3, persisted: 1, duplicates: 1, failed: 1, remaining: 1 }));
+    expect(persisted).toEqual([first.eventId]);
+    expect((await getAuditDlqStats(dlqDir)).eventCount).toBe(1);
+    expect(await readFile(path.join(dlqDir, "2026-05-12.jsonl"), "utf8")).toContain(failed.eventId);
   });
 });

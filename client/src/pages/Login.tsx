@@ -17,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Loader2, LogIn, UserPlus, AlertCircle } from "lucide-react";
+import { Loader2, LogIn, UserPlus, AlertCircle, ArrowLeft, ShieldCheck } from "lucide-react";
 import { motion } from "framer-motion";
 
 // 登录表单验证
@@ -46,6 +46,8 @@ export default function Login() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState<"login" | "register">("login");
   const [error, setError] = useState<string | null>(null);
+  const [mfaRequired, setMfaRequired] = useState(() => new URLSearchParams(window.location.search).get("mfa") === "1");
+  const [mfaCode, setMfaCode] = useState("");
   const { refresh } = useAuth();
 
   useEffect(() => {
@@ -62,7 +64,13 @@ export default function Login() {
 
   const loginMutation = trpc.auth.login.useMutation({
     retry: false, // 登录失败不重试
-    onSuccess: async () => {
+    onSuccess: async (result) => {
+      if ((result as any).mfaRequired) {
+        setMfaRequired(true);
+        setMfaCode("");
+        setError(null);
+        return;
+      }
       // 刷新用户状态并等待完成
       await refresh();
       // 等待一下确保状态已更新
@@ -76,6 +84,16 @@ export default function Login() {
     onError: (error) => {
       setError(error.message || "登录失败，请检查邮箱和密码");
     },
+  });
+
+  const verifyMfaMutation = trpc.auth.verifyAdminMfaLogin.useMutation({
+    retry: false,
+    onSuccess: async () => {
+      await refresh();
+      const params = new URLSearchParams(window.location.search);
+      setLocation(params.get("redirect") || "/admin");
+    },
+    onError: (mutationError) => setError(mutationError.message || "验证码错误或已过期"),
   });
 
   const registerMutation = trpc.auth.register.useMutation({
@@ -124,9 +142,9 @@ export default function Login() {
       >
         <Card className="border-border/50 shadow-lg">
           <CardHeader className="space-y-1 text-center">
-            <CardTitle className="text-2xl font-bold">登录岗位智能体</CardTitle>
+            <CardTitle className="text-2xl font-bold">{mfaRequired ? "管理员二次验证" : "登录岗位智能体"}</CardTitle>
             <CardDescription>
-              请输入您的账号信息
+              {mfaRequired ? "请输入身份验证器中的 6 位验证码，也可使用恢复码" : "请输入您的账号信息"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -137,7 +155,43 @@ export default function Login() {
               </Alert>
             )}
 
-            <Tabs value={activeTab} onValueChange={(v) => {
+            {mfaRequired ? (
+              <form onSubmit={(event) => {
+                event.preventDefault();
+                setError(null);
+                verifyMfaMutation.mutate({ code: mfaCode });
+              }} className="space-y-4">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-mfa-code">验证码或恢复码</Label>
+                  <Input
+                    id="admin-mfa-code"
+                    value={mfaCode}
+                    onChange={(event) => setMfaCode(event.target.value)}
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    autoFocus
+                    placeholder="000000"
+                    className="text-center font-mono text-lg tracking-[0.25em]"
+                    disabled={verifyMfaMutation.isPending}
+                  />
+                </div>
+                <Button type="submit" className="w-full" disabled={mfaCode.trim().length < 6 || verifyMfaMutation.isPending}>
+                  {verifyMfaMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-2 h-4 w-4" />}
+                  验证并登录
+                </Button>
+                <Button type="button" variant="ghost" className="w-full text-muted-foreground" onClick={() => {
+                  setMfaRequired(false);
+                  setMfaCode("");
+                  setError(null);
+                }}>
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  返回账号登录
+                </Button>
+              </form>
+            ) : <Tabs value={activeTab} onValueChange={(v) => {
               setActiveTab(v as "login" | "register");
               setError(null);
               loginForm.reset();
@@ -329,7 +383,7 @@ export default function Login() {
                   </Button>
                 </form>
               </TabsContent>
-            </Tabs>
+            </Tabs>}
 
             <div className="mt-6 text-center">
               <Button

@@ -31,6 +31,19 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export const adminMfaCredentials = mysqlTable("admin_mfa_credentials", {
+  userId: int("user_id").primaryKey(),
+  secretEncrypted: varchar("secret_encrypted", { length: 1024 }).notNull(),
+  recoveryCodeDigests: text("recovery_code_digests"),
+  enabled: boolean("enabled").default(false).notNull(),
+  lastUsedStep: bigint("last_used_step", { mode: "number" }),
+  enabledAt: timestamp("enabled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AdminMfaCredential = typeof adminMfaCredentials.$inferSelect;
+
 /**
  * Workforce Agent Platform collaboration - collaboration space (v1 hard isolation boundary)
  */

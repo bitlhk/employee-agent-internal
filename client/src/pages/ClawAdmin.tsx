@@ -42,6 +42,7 @@ import { DEFAULT_BRAND } from "@shared/brand";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
 import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
+import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
@@ -1471,6 +1472,7 @@ export default function ClawAdmin() {
             <MessageFeedbackPanel enabled={activeTab === "feedback"} />
           </TabsContent>
           <TabsContent value="accounts" className="space-y-4">
+            <AdminMfaCard />
             <Card className="admin-panel-card p-6">
               <div className="mb-5 flex items-center justify-between gap-3">
                 <div>

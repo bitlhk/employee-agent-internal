@@ -11,7 +11,9 @@ import {
   auditExports,
   auditSecurityFindings,
   auditToolEvents,
+  adminMfaCredentials,
   skillMarketplace,
+  users,
 } from "../../drizzle/schema";
 import { APP_ROOT } from "./helpers";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditRequired } from "../_core/audit-events";
@@ -184,7 +186,7 @@ export const auditRouter = router({
     )`;
     const mcpRelevant = sql`(${auditEvents.category} = 'mcp' OR ${auditEvents.action} LIKE 'mcp.%')`;
 
-    const [eventsResult, traceResult, recentResult, findingsResult, toolsResult, skillsResult, baseline] = await Promise.all([
+    const [eventsResult, traceResult, recentResult, findingsResult, toolsResult, skillsResult, mfaResult, baseline] = await Promise.all([
       optionalQuery(async () => {
         const [row] = await db.select({
           total: count(),
@@ -250,6 +252,13 @@ export const auditRouter = router({
         }).from(skillMarketplace);
         return row;
       }),
+      optionalQuery(async () => {
+        const [row] = await db.select({
+          admins: sql<number>`COALESCE(SUM(CASE WHEN ${users.role} = 'admin' THEN 1 ELSE 0 END), 0)`,
+          protectedAdmins: sql<number>`COALESCE(SUM(CASE WHEN ${users.role} = 'admin' AND ${adminMfaCredentials.enabled} = 1 THEN 1 ELSE 0 END), 0)`,
+        }).from(users).leftJoin(adminMfaCredentials, eq(adminMfaCredentials.userId, users.id));
+        return row;
+      }),
       getAuditBaselineHealth({ db: db as any }),
     ]);
 
@@ -258,6 +267,7 @@ export const auditRouter = router({
     const findingRow = findingsResult.value || {};
     const toolRow = toolsResult.value || {};
     const skillRow = skillsResult.value || {};
+    const mfaRow = mfaResult.value || {};
     const traceability = {
       actor: {
         bound: asNumber((traceRow as any).actorBound),
@@ -307,6 +317,11 @@ export const auditRouter = router({
       approved: asNumber((skillRow as any).approved),
       rejected: asNumber((skillRow as any).rejected),
       offline: asNumber((skillRow as any).offline),
+    };
+    const adminMfa = {
+      available: mfaResult.available,
+      admins: asNumber((mfaRow as any).admins),
+      protectedAdmins: asNumber((mfaRow as any).protectedAdmins),
     };
     const ledger = {
       available: baseline.ledger.exists,
@@ -380,6 +395,16 @@ export const auditRouter = router({
         !skillReview.available ? "unverified" : "covered",
         !skillReview.available ? "技能审核数据不可用" : `${skillReview.approved} 个已通过，${skillReview.pending} 个待审核`,
       ),
+      capability(
+        "admin_mfa",
+        "管理员二次验证",
+        !adminMfa.available || adminMfa.admins === 0
+          ? "unverified"
+          : adminMfa.protectedAdmins === adminMfa.admins ? "covered" : adminMfa.protectedAdmins > 0 ? "partial" : "risk",
+        !adminMfa.available
+          ? "管理员二次验证状态不可用"
+          : `${adminMfa.protectedAdmins}/${adminMfa.admins} 个管理员已启用`,
+      ),
       capability("workspace_isolation", "工作区隔离", "unverified", "尚未接入可验证的运行时策略证据"),
     ];
 
@@ -393,6 +418,7 @@ export const auditRouter = router({
       ledger,
       toolAudit7d: toolAudit,
       skillReview,
+      adminMfa,
       capabilities,
       recentRisks: (recentResult.value || []).map((event) => ({
         ...event,

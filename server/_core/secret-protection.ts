@@ -12,7 +12,7 @@ function derivedKey(purpose: string): Buffer {
   return createHash("sha256").update(`${purpose}\0${masterSecret()}`).digest();
 }
 
-export function keyedDigest(purpose: "email-code" | "password-reset", value: string): string {
+export function keyedDigest(purpose: "email-code" | "password-reset" | "mfa-recovery", value: string): string {
   const digest = createHmac("sha256", derivedKey(`digest:${purpose}`)).update(value).digest("base64url");
   return purpose === "email-code" ? digest.slice(0, 10) : `h1:${digest}`;
 }

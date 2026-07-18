@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
 import { createContext } from "./context";
 import { auditActor, auditRequest, recordAuditRequired } from "./audit-events";
 import { getAuditExportFile, getAuditExportRecord } from "../routers/audit";
+import { adminMfaWriteAccess } from "./admin-mfa-policy";
 
 export function registerAuditExportRoutes(app: express.Express) {
   app.get("/api/audit/exports/:exportId/download", async (req, res) => {
@@ -13,6 +14,8 @@ export function registerAuditExportRoutes(app: express.Express) {
       if (!ctx.user || ctx.user.role !== "admin") {
         return res.status(ctx.user ? 403 : 401).json({ error: ctx.user ? "FORBIDDEN" : "UNAUTHORIZED" });
       }
+      const mfa = await adminMfaWriteAccess(ctx.user);
+      if (mfa.required && !mfa.fresh) return res.status(403).json({ error: "ADMIN_MFA_REQUIRED" });
 
       const exportId = String(req.params.exportId || "").trim();
       if (!/^audexp_[a-z0-9]+_[a-f0-9]{12}$/.test(exportId)) {

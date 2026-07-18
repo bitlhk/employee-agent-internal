@@ -5,6 +5,8 @@ import * as db from "../db";
 import { clearSessionCookieVariants, getSessionCookieOptions } from "./cookies";
 import { consumeOAuthState, createOAuthState } from "./oauth-state";
 import { SESSION_MAX_AGE_MS, sdk } from "./sdk";
+import { isAdminMfaEnabled } from "./admin-mfa";
+import { setAdminMfaChallengeCookie } from "./admin-mfa-cookie";
 
 const OAUTH_STATE_COOKIE = "oauth_state";
 
@@ -93,6 +95,22 @@ export function registerOAuthRoutes(app: Express) {
         loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
         lastSignedIn: new Date(),
       });
+
+      const signedInUser = await db.getUserByOpenId(userInfo.openId);
+      if (signedInUser?.role === "admin" && await isAdminMfaEnabled(signedInUser.id)) {
+        const challenge = await sdk.signAdminMfaChallenge({
+          userId: signedInUser.id,
+          name: signedInUser.name || signedInUser.email || "admin",
+          authVersion: (await import("./sdk")).sessionAuthVersion(signedInUser),
+        });
+        clearSessionCookieVariants(req, res);
+        setAdminMfaChallengeCookie(req, res, challenge);
+        const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+        const requestBase = `${forwardedProto === "https" ? "https" : req.protocol}://${req.get("host")}`;
+        const frontendBase = new URL(String(process.env.FRONTEND_URL || "/"), requestBase);
+        res.redirect(302, new URL("/login?mfa=1", frontendBase).toString());
+        return;
+      }
 
       const sessionToken = await sdk.createSessionToken(userInfo.openId, {
         name: userInfo.name || "",

@@ -21,6 +21,7 @@
     "db:reset": "tsx scripts/reset-db.ts && pnpm exec drizzle-kit push",
     "db:add-blocked-enum": "tsx scripts/add-blocked-to-ip-management-enum.ts",
     "db:backup-users": "tsx scripts/backup-user-data.ts",
+    "audit:drain-dlq": "tsx scripts/drain-audit-dlq.ts",
     "stats:backfill": "tsx scripts/visit-stats-backfill.ts",
     "stats:reconcile": "tsx scripts/visit-stats-reconcile.ts",
     "compress:images": "tsx scripts/compress-images.ts",

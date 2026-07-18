@@ -31,49 +31,6 @@ export type UpsertMessageFeedbackInput = {
   durationMs?: number;
 };
 
-let ensurePromise: Promise<void> | null = null;
-
-async function ensureMessageFeedbackTable(): Promise<void> {
-  if (!ensurePromise) {
-    ensurePromise = (async () => {
-      const db = await getDb();
-      if (!db) throw new Error("DB not available");
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS message_feedback (
-          id bigint NOT NULL AUTO_INCREMENT,
-          user_id int NOT NULL,
-          adopt_id varchar(64) NOT NULL,
-          conversation_id varchar(128) NOT NULL,
-          message_id varchar(128) NOT NULL,
-          rating enum('positive','negative') NOT NULL,
-          reason_codes_json text DEFAULT NULL,
-          comment varchar(500) DEFAULT NULL,
-          role_template varchar(64) DEFAULT NULL,
-          runtime_type varchar(32) DEFAULT NULL,
-          selected_model_id varchar(200) DEFAULT NULL,
-          actual_model_id varchar(200) DEFAULT NULL,
-          skill_ids_json text DEFAULT NULL,
-          tool_summary_json text DEFAULT NULL,
-          input_tokens int DEFAULT NULL,
-          output_tokens int DEFAULT NULL,
-          duration_ms int DEFAULT NULL,
-          created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          updated_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-          PRIMARY KEY (id),
-          UNIQUE KEY uk_message_feedback_message (user_id, adopt_id, conversation_id, message_id),
-          KEY idx_message_feedback_rating_created (rating, created_at),
-          KEY idx_message_feedback_adopt_created (adopt_id, created_at),
-          KEY idx_message_feedback_model_rating (actual_model_id, rating)
-        )
-      `);
-    })().catch((error) => {
-      ensurePromise = null;
-      throw error;
-    });
-  }
-  await ensurePromise;
-}
-
 function rowsFromResult(result: unknown): any[] {
   return Array.isArray(result) ? (Array.isArray(result[0]) ? result[0] : result) : [];
 }
@@ -101,7 +58,6 @@ function isoDate(value: unknown): string {
 }
 
 export async function upsertMessageFeedback(input: UpsertMessageFeedbackInput): Promise<void> {
-  await ensureMessageFeedbackTable();
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.execute(sql`
@@ -139,7 +95,6 @@ export async function deleteMessageFeedback(
   conversationId: string,
   messageId: string,
 ): Promise<void> {
-  await ensureMessageFeedbackTable();
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.execute(sql`
@@ -156,7 +111,6 @@ export async function listMessageFeedbackForConversation(
   adoptId: string,
   conversationId: string,
 ) {
-  await ensureMessageFeedbackTable();
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result: any = await db.execute(sql`
@@ -177,7 +131,6 @@ export async function listMessageFeedbackForConversation(
 }
 
 export async function getMessageFeedbackAdminSummary(options: { days: number; limit: number }) {
-  await ensureMessageFeedbackTable();
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const cutoff = new Date(Date.now() - options.days * 24 * 60 * 60 * 1000);

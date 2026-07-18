@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { clearSessionCookieVariants, getSessionCookieOptions, setLogoutLockCookieVariants } from "../_core/cookies";
 import { SESSION_MAX_AGE_MS, sdk, sessionAuthVersion } from "../_core/sdk";
-import { publicProcedure, adminProcedure, router } from "../_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import {
@@ -9,6 +9,7 @@ import {
   getRegistrationByEmail,
   getAllRegistrations,
   getUserByEmail,
+  getUserById,
   createUser,
   updateUser,
   updateUserPasswordAndRevokeSessions,
@@ -24,6 +25,22 @@ import {
 import { generateVerificationCode, sendVerificationCodeEmail, sendPasswordResetEmail } from "../_core/email";
 import { auditActor, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
 import { TEST_MODE, checkAndRecordIpAccess } from "./helpers";
+import QRCode from "qrcode";
+import { TRPCError } from "@trpc/server";
+import {
+  beginAdminMfaSetup,
+  confirmAdminMfaSetup,
+  disableAdminMfa,
+  getAdminMfaStatus,
+  isAdminMfaEnabled,
+  verifyAdminMfaCode,
+} from "../_core/admin-mfa";
+import { isAdminMfaSessionFresh } from "../_core/admin-mfa-policy";
+import {
+  clearAdminMfaChallengeCookie,
+  readAdminMfaChallengeCookie,
+  setAdminMfaChallengeCookie,
+} from "../_core/admin-mfa-cookie";
 
 const isEmailVerificationRequired = () => process.env.EMAIL_VERIFICATION_REQUIRED !== "false";
 const assertVerificationCode = (value: unknown) => {
@@ -32,8 +49,142 @@ const assertVerificationCode = (value: unknown) => {
   return code;
 };
 
+function requireAdmin(user: any) {
+  if (!user || user.role !== "admin") throw new TRPCError({ code: "FORBIDDEN", message: "仅管理员可操作" });
+  return user;
+}
+
+async function issueSession(ctx: any, user: any, mfaVerifiedAt?: number) {
+  const sessionToken = await sdk.signSession({
+    userId: user.id,
+    name: user.name || user.email || "",
+    authVersion: sessionAuthVersion(user),
+    mfaVerifiedAt,
+  });
+  const cookieOptions = getSessionCookieOptions(ctx.req);
+  clearSessionCookieVariants(ctx.req, ctx.res);
+  clearAdminMfaChallengeCookie(ctx.req, ctx.res);
+  ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: SESSION_MAX_AGE_MS });
+}
+
 export const authRouter = router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(({ ctx }) => ctx.user ? {
+      id: ctx.user.id,
+      name: ctx.user.name,
+      email: ctx.user.email,
+      role: ctx.user.role,
+      groupId: ctx.user.groupId,
+      organization: ctx.user.organization,
+      accessLevel: ctx.user.accessLevel,
+      loginMethod: ctx.user.loginMethod,
+      lastSignedIn: ctx.user.lastSignedIn,
+    } : null),
+    adminMfaStatus: protectedProcedure.query(async ({ ctx }) => {
+      const user = requireAdmin(ctx.user);
+      const status = await getAdminMfaStatus(user.id);
+      return { ...status, sessionFresh: !status.enabled || isAdminMfaSessionFresh(user) };
+    }),
+    beginAdminMfaSetup: protectedProcedure.mutation(async ({ ctx }) => {
+      const user = requireAdmin(ctx.user);
+      const setup = await beginAdminMfaSetup(user.id, user.email || user.name || `admin-${user.id}`);
+      await recordAuditRequired({
+        action: "admin.mfa.setup_started",
+        severity: "medium",
+        ...auditActor(user),
+        ...auditRequest(ctx.req),
+        targetType: "user",
+        targetId: String(user.id),
+      });
+      return { ...setup, qrCodeDataUrl: await QRCode.toDataURL(setup.otpauthUri, { width: 240, margin: 1 }) };
+    }),
+    confirmAdminMfaSetup: protectedProcedure
+      .input(z.object({ code: z.string().min(6).max(32), currentPassword: z.string().max(100).optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const user = requireAdmin(ctx.user);
+        if (user.password) {
+          const passwordOk = input.currentPassword ? await bcrypt.compare(input.currentPassword, user.password) : false;
+          if (!passwordOk) throw new TRPCError({ code: "UNAUTHORIZED", message: "当前密码错误" });
+        }
+        const recoveryCodes = await confirmAdminMfaSetup(user.id, input.code);
+        await issueSession(ctx, user, Date.now());
+        await recordAuditRequired({
+          action: "admin.mfa.enabled",
+          severity: "high",
+          ...auditActor(user),
+          ...auditRequest(ctx.req),
+          targetType: "user",
+          targetId: String(user.id),
+        });
+        return { success: true, recoveryCodes };
+      }),
+    verifyAdminMfaLogin: publicProcedure
+      .input(z.object({ code: z.string().min(6).max(32) }))
+      .mutation(async ({ input, ctx }) => {
+        const challengeToken = readAdminMfaChallengeCookie(ctx.req);
+        if (!challengeToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "二次验证已过期，请重新登录" });
+        let challenge;
+        try {
+          challenge = await sdk.verifyAdminMfaChallenge(challengeToken);
+        } catch {
+          clearAdminMfaChallengeCookie(ctx.req, ctx.res);
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "二次验证已过期，请重新登录" });
+        }
+        const resolvedUser = await getUserById(challenge.userId);
+        if (!resolvedUser || resolvedUser.role !== "admin" || sessionAuthVersion(resolvedUser) !== challenge.authVersion) {
+          clearAdminMfaChallengeCookie(ctx.req, ctx.res);
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "管理员会话已失效" });
+        }
+        const method = await verifyAdminMfaCode(resolvedUser.id, input.code);
+        await issueSession(ctx, resolvedUser, Date.now());
+        await recordAuditBestEffort({
+          action: "auth.mfa.success",
+          ...auditActor(resolvedUser),
+          ...auditRequest(ctx.req),
+          targetType: "user",
+          targetId: String(resolvedUser.id),
+          metadata: { method },
+        });
+        return { success: true, user: { id: resolvedUser.id, name: resolvedUser.name, email: resolvedUser.email, role: resolvedUser.role, accessLevel: resolvedUser.accessLevel } };
+      }),
+    refreshAdminMfa: protectedProcedure
+      .input(z.object({ code: z.string().min(6).max(32) }))
+      .mutation(async ({ input, ctx }) => {
+        const user = requireAdmin(ctx.user);
+        const method = await verifyAdminMfaCode(user.id, input.code);
+        await issueSession(ctx, user, Date.now());
+        await recordAuditRequired({
+          action: "admin.mfa.step_up_completed",
+          severity: "medium",
+          ...auditActor(user),
+          ...auditRequest(ctx.req),
+          targetType: "user",
+          targetId: String(user.id),
+          metadata: { method },
+        });
+        return { success: true };
+      }),
+    disableAdminMfa: protectedProcedure
+      .input(z.object({ code: z.string().min(6).max(32), currentPassword: z.string().max(100).optional() }))
+      .mutation(async ({ input, ctx }) => {
+        const user = requireAdmin(ctx.user);
+        if (user.password) {
+          const passwordOk = input.currentPassword ? await bcrypt.compare(input.currentPassword, user.password) : false;
+          if (!passwordOk) throw new TRPCError({ code: "UNAUTHORIZED", message: "当前密码错误" });
+        }
+        await verifyAdminMfaCode(user.id, input.code);
+        await disableAdminMfa(user.id);
+        await issueSession(ctx, user);
+        await recordAuditRequired({
+          action: "admin.mfa.disabled",
+          result: "warning",
+          severity: "high",
+          ...auditActor(user),
+          ...auditRequest(ctx.req),
+          targetType: "user",
+          targetId: String(user.id),
+        });
+        return { success: true };
+      }),
     logout: publicProcedure.mutation(async ({ ctx }) => {
       await sdk.revokeRequestSessions(ctx.req);
       await recordAuditBestEffort({
@@ -351,6 +502,25 @@ export const authRouter = router({
             metadata: { reason: "bad_password" },
           });
           throw new Error("邮箱或密码错误");
+        }
+
+        if (user.role === "admin" && await isAdminMfaEnabled(user.id)) {
+          const challenge = await sdk.signAdminMfaChallenge({
+            userId: user.id,
+            name: user.name || user.email || "admin",
+            authVersion: sessionAuthVersion(user),
+          });
+          clearSessionCookieVariants(ctx.req, ctx.res);
+          setAdminMfaChallengeCookie(ctx.req, ctx.res, challenge);
+          await recordAuditBestEffort({
+            action: "auth.mfa.required",
+            severity: "low",
+            ...auditActor(user),
+            ...auditRequest(ctx.req),
+            targetType: "user",
+            targetId: String(user.id),
+          });
+          return { success: false, mfaRequired: true as const };
         }
 
         // 创建session

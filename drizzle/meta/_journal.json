@@ -50,6 +50,13 @@
       "when": 1784124000000,
       "tag": "0027_add_message_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1784304000000,
+      "tag": "0028_add_admin_mfa_credentials",
+      "breakpoints": true
     }
   ]
 }

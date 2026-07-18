@@ -28,6 +28,7 @@ import {
   listApprovedSkillMarketItems,
 } from "../db";
 import { sdk, sessionAuthVersion } from "./sdk";
+import { isAdminMfaEnabled } from "./admin-mfa";
 import {
   APP_ROOT,
   bumpSessionEpoch,
@@ -1271,6 +1272,10 @@ export function registerDesktopRoutes(app: express.Express) {
       const ok = await bcrypt.compare(password, user.password);
       if (!ok) {
         res.status(401).json({ error: "邮箱或密码错误" });
+        return;
+      }
+      if (user.role === "admin" && await isAdminMfaEnabled(user.id)) {
+        res.status(403).json({ error: "管理员账号需要在网页端完成二次验证" });
         return;
       }
 

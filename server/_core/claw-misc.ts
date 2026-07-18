@@ -25,6 +25,7 @@ import {
   upsertSessionRegistry,
 } from "./helpers";
 import { createContext } from "./context";
+import { adminMfaWriteAccess } from "./admin-mfa-policy";
 import { clearSessionCookieVariants, setLogoutLockCookieVariants } from "./cookies";
 import { sessionAuthVersion } from "./sdk";
 import { skillInstaller } from "./skills/skill-installer";
@@ -2086,6 +2087,7 @@ export function registerMiscRoutes(app: express.Express) {
         userId: context.user.id,
         name: context.user.name ?? "",
         authVersion: sessionAuthVersion(context.user),
+        mfaVerifiedAt: context.user.mfaVerifiedAt,
       });
 
       // shared cookie for subdomains
@@ -2111,6 +2113,8 @@ export function registerMiscRoutes(app: express.Express) {
         res.status(403).json({ error: "admin only" });
         return;
       }
+      const mfa = await adminMfaWriteAccess(context.user);
+      if (mfa.required && !mfa.fresh) { res.status(403).json({ error: "ADMIN_MFA_REQUIRED" }); return; }
 
       const { getSkillMarketItem: getSMI } = await import("../db");
 
@@ -2231,6 +2235,8 @@ export function registerMiscRoutes(app: express.Express) {
         res.status(403).json({ error: "admin only" });
         return;
       }
+      const mfa = await adminMfaWriteAccess(ctx.user);
+      if (mfa.required && !mfa.fresh) { res.status(403).json({ error: "ADMIN_MFA_REQUIRED" }); return; }
 
       const chunks: Buffer[] = [];
       req.on("data", (c: Buffer) => chunks.push(c));

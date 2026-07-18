@@ -4,6 +4,7 @@ import { appendFile } from "fs/promises";
 import { mkdirSync } from "fs";
 import superjson from "superjson";
 import type { TrpcContext } from "./context";
+import { adminMfaWriteAccess } from "./admin-mfa-policy";
 
 const t = initTRPC.context<TrpcContext>().create({
   transformer: superjson,
@@ -61,6 +62,12 @@ export const adminProcedure = t.procedure.use(auditAdmin).use(
 
     if (!ctx.user || ctx.user.role !== 'admin') {
       throw new TRPCError({ code: "FORBIDDEN", message: NOT_ADMIN_ERR_MSG });
+    }
+    if (opts.type === "mutation") {
+      const mfa = await adminMfaWriteAccess(ctx.user);
+      if (mfa.required && !mfa.fresh) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "管理员二次验证已过期，请在账号管理中重新验证" });
+      }
     }
 
     return next({

@@ -26,7 +26,10 @@ export type SessionPayload = {
   appId?: string;
   name: string;
   authVersion?: string;
+  mfaVerifiedAt?: number;
 };
+
+export type AuthenticatedUser = User & { mfaVerifiedAt?: number };
 
 const DEFAULT_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -244,6 +247,9 @@ class SDKServer {
     if (payload.userId) {
       jwtPayload.userId = payload.userId;
     }
+    if (payload.mfaVerifiedAt) {
+      jwtPayload.mfaVerifiedAt = payload.mfaVerifiedAt;
+    }
 
     return new SignJWT(jwtPayload)
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
@@ -255,7 +261,7 @@ class SDKServer {
 
   async verifySession(
     cookieValue: string | undefined | null
-  ): Promise<{ openId?: string; userId?: number; appId?: string; name: string; authVersion: string } | null> {
+  ): Promise<{ openId?: string; userId?: number; appId?: string; name: string; authVersion: string; mfaVerifiedAt?: number } | null> {
     if (!cookieValue) {
       console.warn("[Auth] Missing session cookie");
       return null;
@@ -274,7 +280,7 @@ class SDKServer {
         console.warn("[Auth] Session has been explicitly revoked");
         return null;
       }
-      const { openId, userId, appId, name, authVersion } = payload as Record<string, unknown>;
+      const { openId, userId, appId, name, authVersion, mfaVerifiedAt } = payload as Record<string, unknown>;
 
       if (!isNonEmptyString(name)) {
         console.warn("[Auth] Session payload missing name field");
@@ -297,11 +303,31 @@ class SDKServer {
         appId: isNonEmptyString(appId) ? appId : undefined,
         name,
         authVersion,
+        mfaVerifiedAt: typeof mfaVerifiedAt === "number" ? mfaVerifiedAt : undefined,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
+  }
+
+  async signAdminMfaChallenge(payload: { userId: number; name: string; authVersion: string }): Promise<string> {
+    const secretKey = this.getSessionSecret();
+    return new SignJWT({ ...payload, purpose: "admin-mfa-login" })
+      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+      .setIssuedAt()
+      .setJti(randomUUID())
+      .setExpirationTime(Math.floor((Date.now() + 5 * 60 * 1000) / 1000))
+      .sign(secretKey);
+  }
+
+  async verifyAdminMfaChallenge(token: string): Promise<{ userId: number; name: string; authVersion: string }> {
+    const { payload } = await jwtVerify(token, this.getSessionSecret(), { algorithms: ["HS256"] });
+    if (payload.purpose !== "admin-mfa-login" || typeof payload.userId !== "number"
+      || !isNonEmptyString(payload.name) || !isNonEmptyString(payload.authVersion)) {
+      throw new Error("invalid administrator MFA challenge");
+    }
+    return { userId: payload.userId, name: payload.name, authVersion: payload.authVersion };
   }
 
   async revokeRequestSessions(req: Request): Promise<void> {
@@ -341,7 +367,7 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
-  async authenticateRequest(req: Request): Promise<User> {
+  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
     // Regular authentication flow
     const sessionCookies = this.getCookieValues(req.headers.cookie, COOKIE_NAME);
     const fallbackCookie = this.parseCookies(req.headers.cookie).get(COOKIE_NAME);
@@ -443,7 +469,7 @@ class SDKServer {
       throw ForbiddenError("Session has been revoked");
     }
 
-    return user;
+    return Object.assign(user, { mfaVerifiedAt: session.mfaVerifiedAt });
   }
 }
 
