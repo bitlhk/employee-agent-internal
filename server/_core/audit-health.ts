@@ -233,12 +233,20 @@ async function inspectRuntimePermissions(db: AuditDbExecutor): Promise<AuditRunt
 async function inspectAuditTriggers(db: AuditDbExecutor): Promise<AuditTriggerHealth> {
   try {
     const triggerNames = EXPECTED_WORM_TRIGGERS.map((name) => `'${name}'`).join(", ");
-    const rows = await queryRows(db, `
+    const directRows = await queryRows(db, `
       SELECT TRIGGER_NAME AS name
       FROM INFORMATION_SCHEMA.TRIGGERS
       WHERE TRIGGER_SCHEMA = DATABASE()
         AND TRIGGER_NAME IN (${triggerNames})
     `);
+    let rows = directRows;
+    if (rows.length < EXPECTED_WORM_TRIGGERS.length) {
+      try {
+        const attestedRows = await queryRows(db, "SELECT name FROM audit_worm_trigger_status");
+        const byName = new Map([...directRows, ...attestedRows].map((row) => [stringField(row, ["name", "TRIGGER_NAME"]), row]));
+        rows = Array.from(byName.values());
+      } catch {}
+    }
     const present = rows.map((row) => stringField(row, ["name", "TRIGGER_NAME"])).filter(Boolean).sort();
     const presentSet = new Set(present);
     const missing = EXPECTED_WORM_TRIGGERS.filter((name) => !presentSet.has(name));

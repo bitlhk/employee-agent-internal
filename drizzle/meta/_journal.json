@@ -57,6 +57,13 @@
       "when": 1784304000000,
       "tag": "0028_add_admin_mfa_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1784307600000,
+      "tag": "0029_add_audit_trigger_attestation",
+      "breakpoints": true
     }
   ]
 }
