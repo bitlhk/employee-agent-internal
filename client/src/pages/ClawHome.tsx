@@ -105,8 +105,35 @@ const features = [
   },
   {
     icon: ShieldCheck,
-    title: "企业安全",
-    desc: "支持私有化部署、权限策略和审计记录，适配企业内部安全边界。",
+    title: "安全治理",
+    desc: "围绕身份、技能、工具与审计建立治理链路，关键状态可在管理后台持续核验。",
+  },
+];
+
+const securityCapabilities = [
+  {
+    icon: Fingerprint,
+    label: "身份",
+    title: "身份与管理员保护",
+    desc: "Agent 与 MCP 调用绑定可信身份；管理员支持 TOTP 和敏感操作二次验证。",
+  },
+  {
+    icon: LockKeyhole,
+    label: "输入",
+    title: "输入与外联防护",
+    desc: "上传内容经过类型校验并可接入 ClamAV；浏览器和 Webhook 阻断内网 SSRF。",
+  },
+  {
+    icon: PackageSearch,
+    label: "执行",
+    title: "技能与工具治理",
+    desc: "技能上架先审核，危险包直接阻断；工具策略决策和执行结果全程留痕。",
+  },
+  {
+    icon: ScrollText,
+    label: "审计",
+    title: "审计与凭据保护",
+    desc: "WORM 审计账本支持查询导出，模型、通知等敏感凭据加密保存。",
   },
 ];
 
@@ -585,6 +612,9 @@ export default function ClawHome() {
             <button type="button" onClick={() => scrollToSection("features")}>
               能力
             </button>
+            <button type="button" onClick={() => scrollToSection("security")}>
+              安全
+            </button>
             <button type="button" onClick={() => scrollToSection("steps")}>
               流程
             </button>
@@ -861,6 +891,47 @@ export default function ClawHome() {
                   </span>
                   <h3>{feature.title}</h3>
                   <p>{feature.desc}</p>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section
+          id="security"
+          className="scroll-mt-16 border-b border-[#e7e4df] bg-[#f7f7f5] px-5 py-16 sm:px-8 sm:py-20"
+        >
+          <div className="mx-auto grid max-w-[1120px] gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:gap-16">
+            <div className="self-start lg:sticky lg:top-24">
+              <div className="mb-3 text-xs font-bold text-primary">企业级安全</div>
+              <h2 className="m-0 max-w-[430px] text-3xl font-bold leading-tight text-[#1a1a1a] sm:text-4xl">
+                让 Agent 能工作，也能被治理
+              </h2>
+              <p className="mt-4 max-w-[480px] text-sm leading-7 text-[#68655f] sm:text-base">
+                从身份绑定、输入防护、技能审核到不可篡改审计，把企业关心的边界落实到每一次调用。
+              </p>
+              <div className="mt-6 flex items-center gap-2 text-xs font-medium text-[#68655f]">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+                安全状态可在管理后台持续验证
+              </div>
+            </div>
+
+            <div className="border-y border-[#ddd9d3]">
+              {securityCapabilities.map(capability => (
+                <article
+                  key={capability.title}
+                  className="group grid gap-3 border-b border-[#e3dfd9] py-5 last:border-b-0 sm:grid-cols-[42px_minmax(0,1fr)_48px] sm:items-start sm:gap-4"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#dedad4] bg-white text-[#3f3d38] transition group-hover:border-[#c9c4bd] group-hover:shadow-sm">
+                    <capability.icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong className="block text-sm font-semibold text-[#24231f]">{capability.title}</strong>
+                    <span className="mt-1.5 block text-sm leading-6 text-[#77736c]">{capability.desc}</span>
+                  </span>
+                  <span className="w-fit rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-[#77736c] ring-1 ring-inset ring-[#dedad4] sm:justify-self-end">
+                    {capability.label}
+                  </span>
                 </article>
               ))}
             </div>
