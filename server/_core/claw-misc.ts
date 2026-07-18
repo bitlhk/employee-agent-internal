@@ -30,6 +30,7 @@ import { sessionAuthVersion } from "./sdk";
 import { skillInstaller } from "./skills/skill-installer";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "./skills/skill-source";
 import { skillStoreMarketplaceDir } from "./skills/skill-store";
+import { scanUploadForMalware } from "./upload-security";
 import {
   isUserVisibleJiuwenArtifactPath,
   readJiuwenSessionArtifacts,
@@ -2240,6 +2241,11 @@ export function registerMiscRoutes(app: express.Express) {
           if (buf.length > MAX_SKILL_PACKAGE_BYTES) { res.status(413).json({ error: "File too large (max 50MB)" }); return; }
 
           const filename = decodeURIComponent(String(req.header("x-skill-filename") || "uploaded.zip")).trim() || "uploaded.zip";
+          const malwareScan = await scanUploadForMalware(buf);
+          if (!malwareScan.ok) {
+            res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
+            return;
+          }
           const parsed = await parseSkillPackageBuffer(buf, filename);
           const marketDir = skillStoreMarketplaceDir();
           const uploadId = `upload-${Date.now()}`;

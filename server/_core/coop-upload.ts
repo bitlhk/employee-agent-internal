@@ -96,7 +96,7 @@ export function registerCoopUploadRoutes(app: express.Express) {
         res.status(400).json({ error: "file_content_not_allowed", message: contentValidation.error });
         return;
       }
-      const malwareScan = scanUploadForMalware(buf);
+      const malwareScan = await scanUploadForMalware(buf);
       if (!malwareScan.ok) {
         res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
         return;

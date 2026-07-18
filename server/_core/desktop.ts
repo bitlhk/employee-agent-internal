@@ -1939,7 +1939,7 @@ export function registerDesktopRoutes(app: express.Express) {
       if (buf.length > DESKTOP_FILES_MAX_UPLOAD_BYTES) return res.status(413).json({ error: "file too large" });
       const contentValidation = validateUploadContent(ext, buf);
       if (!contentValidation.ok) return res.status(400).json({ error: "file_content_not_allowed", message: contentValidation.error });
-      const malwareScan = scanUploadForMalware(buf);
+      const malwareScan = await scanUploadForMalware(buf);
       if (!malwareScan.ok) return res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
       const claw = await getDesktopUserClaw(user);
       if (!claw) return res.status(404).json({ error: "no agent assigned" });

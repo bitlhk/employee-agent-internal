@@ -1,5 +1,26 @@
-import { describe, expect, it } from "vitest";
-import { decodeBase64Strict, validateUploadContent } from "./upload-security";
+import { EventEmitter } from "events";
+import { PassThrough } from "stream";
+import { spawn } from "child_process";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
+
+vi.mock("child_process", () => ({ spawn: vi.fn() }));
+
+function scannerProcess(exitCode: number) {
+  const child = new EventEmitter() as any;
+  child.stdin = new PassThrough();
+  child.stderr = new PassThrough();
+  child.kill = vi.fn();
+  queueMicrotask(() => child.emit("close", exitCode));
+  return child;
+}
+
+afterEach(() => {
+  delete process.env.UPLOAD_ANTIVIRUS_MODE;
+  delete process.env.CLAMAV_COMMAND;
+  delete process.env.CLAMAV_TIMEOUT_MS;
+  vi.resetAllMocks();
+});
 
 describe("upload content validation", () => {
   it("rejects malformed base64", () => {
@@ -27,5 +48,27 @@ describe("upload content validation", () => {
   it("rejects active HTML and SVG content", () => {
     expect(validateUploadContent("html", Buffer.from("<script>alert(1)</script>"))).toEqual({ ok: false, error: "active scriptable markup is not allowed" });
     expect(validateUploadContent("svg", Buffer.from("<svg><image href=\"https://evil.example/x\"/></svg>"))).toEqual({ ok: false, error: "SVG external content is not allowed" });
+  });
+
+  it("skips the scanner when antivirus is disabled", async () => {
+    process.env.UPLOAD_ANTIVIRUS_MODE = "disabled";
+    await expect(scanUploadForMalware(Buffer.from("safe"))).resolves.toEqual({ ok: true });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("uses the daemon scanner asynchronously and blocks malware", async () => {
+    process.env.UPLOAD_ANTIVIRUS_MODE = "required";
+    vi.mocked(spawn).mockReturnValueOnce(scannerProcess(0));
+    await expect(scanUploadForMalware(Buffer.from("safe"))).resolves.toEqual({ ok: true });
+    expect(spawn).toHaveBeenCalledWith("clamdscan", ["--no-summary", "-"], { stdio: ["pipe", "ignore", "pipe"] });
+
+    vi.mocked(spawn).mockReturnValueOnce(scannerProcess(1));
+    await expect(scanUploadForMalware(Buffer.from("eicar"))).resolves.toEqual({ ok: false, error: "malware detected" });
+  });
+
+  it("fails closed when the required scanner is unavailable", async () => {
+    process.env.UPLOAD_ANTIVIRUS_MODE = "required";
+    vi.mocked(spawn).mockReturnValueOnce(scannerProcess(2));
+    await expect(scanUploadForMalware(Buffer.from("safe"))).resolves.toEqual({ ok: false, error: "antivirus scan unavailable" });
   });
 });

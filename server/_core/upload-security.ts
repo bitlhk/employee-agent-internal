@@ -1,4 +1,4 @@
-import { spawnSync } from "child_process";
+import { spawn } from "child_process";
 
 export type UploadValidation = { ok: true } | { ok: false; error: string };
 
@@ -65,19 +65,61 @@ export function validateUploadContent(ext: string, buffer: Buffer): UploadValida
   return { ok: false, error: `content validation is not configured for .${lower}` };
 }
 
-export function scanUploadForMalware(buffer: Buffer): UploadValidation {
+function antivirusUnavailable(mode: string, detail: string): UploadValidation {
+  if (mode === "required") return { ok: false, error: "antivirus scan unavailable" };
+  console.warn("[UPLOAD] antivirus scan unavailable", detail);
+  return { ok: true };
+}
+
+export async function scanUploadForMalware(buffer: Buffer): Promise<UploadValidation> {
   const mode = String(process.env.UPLOAD_ANTIVIRUS_MODE || "disabled").toLowerCase();
   if (mode === "disabled") return { ok: true };
-  const command = String(process.env.CLAMAV_COMMAND || "clamscan").trim();
-  const result = spawnSync(command, ["--no-summary", "-"], {
-    input: buffer,
-    timeout: 30_000,
-    maxBuffer: 1024 * 1024,
-    encoding: "utf8",
+  const command = String(process.env.CLAMAV_COMMAND || "clamdscan").trim();
+  const configuredTimeout = Number(process.env.CLAMAV_TIMEOUT_MS || 30_000);
+  const timeoutMs = Number.isFinite(configuredTimeout)
+    ? Math.max(1_000, Math.min(120_000, configuredTimeout))
+    : 30_000;
+
+  return new Promise<UploadValidation>((resolve) => {
+    let settled = false;
+    let stderr = "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: UploadValidation) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+
+    let child;
+    try {
+      child = spawn(command, ["--no-summary", "-"], {
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+    } catch (error) {
+      finish(antivirusUnavailable(mode, error instanceof Error ? error.message : String(error)));
+      return;
+    }
+
+    timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(antivirusUnavailable(mode, `scan timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stderr.on("data", (chunk) => {
+      if (stderr.length < 16_384) stderr += String(chunk).slice(0, 16_384 - stderr.length);
+    });
+    child.once("error", (error) => {
+      finish(antivirusUnavailable(mode, error.message));
+    });
+    child.once("close", (code) => {
+      if (code === 0) finish({ ok: true });
+      else if (code === 1) finish({ ok: false, error: "malware detected" });
+      else finish(antivirusUnavailable(mode, stderr.trim() || `status=${code}`));
+    });
+    child.stdin.on("error", () => {
+      // The child error/close event determines whether this is fail-open or fail-closed.
+    });
+    child.stdin.end(buffer);
   });
-  if (result.status === 0) return { ok: true };
-  if (result.status === 1) return { ok: false, error: "malware detected" };
-  if (mode === "required") return { ok: false, error: "antivirus scan unavailable" };
-  console.warn("[UPLOAD] antivirus scan unavailable", result.error?.message || result.stderr || `status=${result.status}`);
-  return { ok: true };
 }

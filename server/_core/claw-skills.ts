@@ -51,6 +51,7 @@ import {
 import { toPublicSkillMarketItem } from "./skills/skill-market-policy";
 import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
+import { scanUploadForMalware } from "./upload-security";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -1154,6 +1155,11 @@ export function registerSkillRoutes(app: express.Express) {
       }
       if (fileBuf.length > MAX_SKILL_PACKAGE_BYTES) {
         res.status(400).json({ error: "file too large (max 50MB)" });
+        return;
+      }
+      const malwareScan = await scanUploadForMalware(fileBuf);
+      if (!malwareScan.ok) {
+        res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
         return;
       }
       const parsed = await parseSkillPackageBuffer(fileBuf, filename);
