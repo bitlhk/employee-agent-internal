@@ -35,7 +35,6 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText } from "lucide-react";
 import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
-import { TenantAuditTab } from "@/components/pages/TenantAuditTab";
 import { CollaborationTab } from "@/components/pages/CollaborationTab";
 import { toast } from "sonner";
 import { useBrand, invalidateBrandClientCache } from "@/lib/useBrand";
@@ -152,6 +151,25 @@ const HealthBadge = ({ ok, warn, label }: { ok?: boolean; warn?: boolean; label?
     {label || (ok ? "正常" : warn ? "注意" : "异常")}
   </span>
 );
+
+const securityOverviewStatusMeta = (status?: string) => {
+  if (status === "normal") return { label: "正常", className: "border-green-200 bg-green-50 text-green-700", dot: "bg-green-500" };
+  if (status === "attention") return { label: "需关注", className: "border-amber-200 bg-amber-50 text-amber-700", dot: "bg-amber-500" };
+  if (status === "risk") return { label: "存在风险", className: "border-red-200 bg-red-50 text-red-700", dot: "bg-red-500" };
+  return { label: "未检查", className: "border-gray-200 bg-gray-50 text-gray-600", dot: "bg-gray-400" };
+};
+
+const securityCapabilityStatusMeta = (status?: string) => {
+  if (status === "covered") return { label: "已覆盖", className: "border-green-200 bg-green-50 text-green-700" };
+  if (status === "partial") return { label: "部分覆盖", className: "border-amber-200 bg-amber-50 text-amber-700" };
+  if (status === "risk") return { label: "有风险", className: "border-red-200 bg-red-50 text-red-700" };
+  return { label: "未检查", className: "border-gray-200 bg-gray-50 text-gray-600" };
+};
+
+const formatSecurityPercent = (value?: number | null) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "未检查";
+  return `${Number.isInteger(value) ? value : value.toFixed(1)}%`;
+};
 
 const healthStatusLabel = (status: string) => {
   if (status === "ok") return "正常";
@@ -726,6 +744,10 @@ export default function ClawAdmin() {
     enabled: activeTab === "security-audit",
     retry: false,
   });
+  const { data: auditOverviewData, isLoading: auditOverviewLoading, refetch: refetchAuditOverview } = trpc.audit.overview.useQuery(undefined, {
+    enabled: activeTab === "security-audit",
+    retry: false,
+  });
   const { data: auditExportsData, refetch: refetchAuditExports } = trpc.audit.listExports.useQuery(undefined, {
     enabled: activeTab === "security-audit",
     retry: false,
@@ -745,6 +767,10 @@ export default function ClawAdmin() {
   const auditPageRiskCount = auditRows.filter((event: any) => event.result !== "success" || ["high", "critical"].includes(String(event.severity || ""))).length;
   const auditPageModelCount = auditRows.filter((event: any) => event.category === "model" || String(event.action || "").startsWith("model.")).length;
   const auditExports = Array.isArray(auditExportsData) ? auditExportsData : [];
+  const auditOverview = auditOverviewData as any;
+  const auditOverviewStatus = securityOverviewStatusMeta(auditOverview?.status);
+  const auditOverviewCapabilities = Array.isArray(auditOverview?.capabilities) ? auditOverview.capabilities : [];
+  const auditOverviewRecentRisks = Array.isArray(auditOverview?.recentRisks) ? auditOverview.recentRisks : [];
   const requestAuditExport = (format: "csv" | "json") => {
     const { page: _page, pageSize: _pageSize, ...filters } = auditQueryInput;
     createAuditExportMutation.mutate({ ...filters, format });
@@ -846,7 +872,6 @@ export default function ClawAdmin() {
     { value: "security-audit", label: "安全审计", description: "Ledger 查询与导出", icon: ShieldCheck },
     { value: "settings", label: "系统设置", description: "智能体运行配置", icon: Settings },
     { value: "brand", label: "品牌设置", description: "名称、视觉与身份", icon: Sparkles },
-    { value: "tenant-audit", label: "隔离审计", description: "租户隔离检查", icon: ShieldCheck },
   ];
 
   return (
@@ -1642,13 +1667,119 @@ export default function ClawAdmin() {
           </TabsContent>
           <TabsContent value="security-audit" className="space-y-4">
             <Card className="admin-panel-card p-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-gray-700" />
+                    <h2 className="text-base font-semibold text-gray-900">安全概览</h2>
+                  </div>
+                  <p className="mt-1 max-w-3xl text-xs text-muted-foreground">
+                    {auditOverview?.reasons?.[0] || "汇总审计链路、身份追溯与运行时安全证据。"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${auditOverviewStatus.className}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${auditOverviewStatus.dot}`} />
+                    {auditOverviewStatus.label}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {auditOverview?.checkedAt ? new Date(auditOverview.checkedAt).toLocaleString("zh-CN") : "-"}
+                  </span>
+                </div>
+              </div>
+
+              {auditOverviewLoading && !auditOverview ? (
+                <div className="mt-5 flex items-center justify-center gap-2 rounded-xl border border-gray-200 px-4 py-10 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  正在汇总安全状态
+                </div>
+              ) : (
+                <>
+                  <div className="mt-5 grid overflow-hidden rounded-xl border border-gray-200 bg-white md:grid-cols-4 md:divide-x md:divide-gray-200">
+                    <div className="border-b border-gray-200 px-4 py-3 md:border-b-0">
+                      <div className="text-xs text-muted-foreground">近24小时事件</div>
+                      <div className="mt-1 font-mono text-xl font-semibold text-gray-900">{auditOverview?.events24h?.total ?? 0}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">阻断 {auditOverview?.events24h?.denied ?? 0} · 失败 {auditOverview?.events24h?.failed ?? 0} · 高危 {auditOverview?.events24h?.highRisk ?? 0}</div>
+                    </div>
+                    <div className="border-b border-gray-200 px-4 py-3 md:border-b-0">
+                      <div className="text-xs text-muted-foreground">Agent 身份可追溯</div>
+                      <div className="mt-1 font-mono text-xl font-semibold text-gray-900">{formatSecurityPercent(auditOverview?.traceability7d?.agent?.percent)}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">用户 {formatSecurityPercent(auditOverview?.traceability7d?.actor?.percent)} · Runtime {formatSecurityPercent(auditOverview?.traceability7d?.runtime?.percent)}</div>
+                    </div>
+                    <div className="border-b border-gray-200 px-4 py-3 md:border-b-0">
+                      <div className="text-xs text-muted-foreground">待处理风险</div>
+                      <div className="mt-1 font-mono text-xl font-semibold text-gray-900">{auditOverview?.findings?.active ?? 0}</div>
+                      <div className="mt-1 text-[11px] text-muted-foreground">高危 {auditOverview?.findings?.highActive ?? 0} · 累计 {auditOverview?.findings?.total ?? 0}</div>
+                    </div>
+                    <div className="px-4 py-3">
+                      <div className="text-xs text-muted-foreground">审计账本</div>
+                      <div className="mt-1 text-sm font-semibold text-gray-900">{auditOverview?.ledger?.healthy ? "基线正常" : auditOverview?.ledger?.available ? "需要检查" : "未检查"}</div>
+                      <div className="mt-2 text-[11px] text-muted-foreground">事件 {auditOverview?.ledger?.totalEvents ?? 0} · DLQ {auditOverview?.ledger?.dlqEvents ?? 0}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.65fr)]">
+                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                      <div className="border-b border-gray-200 bg-gray-50 px-4 py-2.5 text-xs font-semibold text-gray-800">能力覆盖</div>
+                      <div className="grid md:grid-cols-2">
+                        {auditOverviewCapabilities.map((item: any, index: number) => {
+                          const meta = securityCapabilityStatusMeta(item.status);
+                          const lastRowStart = auditOverviewCapabilities.length - (auditOverviewCapabilities.length % 2 || 2);
+                          return (
+                            <div key={item.key} className={`flex min-w-0 items-start justify-between gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0 ${index < lastRowStart ? "md:border-b" : "md:border-b-0"} ${index % 2 === 0 ? "md:border-r md:border-gray-100" : ""}`}>
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-medium text-gray-900">{item.label}</div>
+                                <div className="mt-1 truncate text-[11px] text-muted-foreground" title={item.detail}>{item.detail}</div>
+                              </div>
+                              <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium ${meta.className}`}>{meta.label}</span>
+                            </div>
+                          );
+                        })}
+                        {auditOverviewCapabilities.length === 0 ? <div className="px-4 py-8 text-center text-xs text-muted-foreground md:col-span-2">暂无能力检查数据</div> : null}
+                      </div>
+                    </div>
+
+                    <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                      <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2.5">
+                        <span className="text-xs font-semibold text-gray-800">近期异常</span>
+                        <span className="text-[11px] text-muted-foreground">近7天</span>
+                      </div>
+                      <div>
+                        {auditOverviewRecentRisks.map((event: any) => (
+                          <button
+                            key={event.eventId}
+                            type="button"
+                            className="block w-full border-b border-gray-100 px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-gray-50"
+                            onClick={() => {
+                              setAuditPage(1);
+                              setAuditFilters((prev) => ({ ...prev, q: event.eventId }));
+                            }}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="truncate font-mono text-[11px] text-gray-800">{event.action}</span>
+                              <span className={`shrink-0 text-[10px] font-medium ${["high", "critical"].includes(String(event.severity)) ? "text-red-600" : "text-amber-600"}`}>{event.result}</span>
+                            </div>
+                            <div className="mt-1 text-[10px] text-muted-foreground">{event.eventTime ? new Date(event.eventTime).toLocaleString("zh-CN") : "-"}</div>
+                          </button>
+                        ))}
+                        {auditOverviewRecentRisks.length === 0 ? (
+                          <div className="flex min-h-28 items-center justify-center px-4 py-8 text-xs text-muted-foreground">近7天无异常审计事件</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </Card>
+
+            <Card className="admin-panel-card p-6">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900">安全审计</h2>
                   <p className="mt-1 text-xs text-muted-foreground">查询 Enterprise Audit Ledger，并生成短期受控导出文件。</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button size="sm" variant="outline" className="admin-secondary-action" onClick={() => { refetchAuditEvents(); refetchAuditExports(); }}>
+                  <Button size="sm" variant="outline" className="admin-secondary-action" onClick={() => { refetchAuditOverview(); refetchAuditEvents(); refetchAuditExports(); }}>
                     <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
                     刷新
                   </Button>
@@ -1867,7 +1998,6 @@ export default function ClawAdmin() {
               </div>
             </Card>
           </TabsContent>
-          <TabsContent value="tenant-audit" className="space-y-4">            <TenantAuditTab />          </TabsContent>
           </section>
         </Tabs>
       </main>

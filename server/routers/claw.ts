@@ -30,9 +30,6 @@ import {
   deleteSkillMarketItem,
   incrementSkillDownload,
   touchClawActivity,
-  listBusinessAgentAudit,
-  reverseTenantToken,
-  getTenantAuditStats,
   resolveEffectiveRoleAssets,
   previewRoleAssetSeedSync,
   syncRoleAssetSeed,
@@ -1351,7 +1348,7 @@ export const clawRouter = router({
         })
         .filter((agent: any) => agent.model && availableModelIds.size > 0 && !availableModelIds.has(agent.model));
 
-      const dbTables = ["users", "business_agent_audit", "business_agent_tenant_map", "skill_marketplace"] as const;
+      const dbTables = ["users", "claw_adoptions", "skill_marketplace"] as const;
       const dbTableSet = new Set<string>(dbTables);
       const dbHealth: any = { ok: false, tables: [] as any[], skillMarketApproved: null, claws: null, error: "" };
       const dbStartedAt = Date.now();
@@ -3010,37 +3007,6 @@ export const clawRouter = router({
         await assertClawOwnerOrThrow(ctx, input.adoptId);
         // 暂时返回空，前端用 localStorage
         return { messages: [] as Array<{ role: string; text: string; ts: number }> };
-      }),
-
-    // ── Day 4: TIL 审计面板 API (管理员) ─────────────────────────────
-    adminTenantAuditList: adminProcedure
-      .input(z.object({
-        userId: z.number().int().positive().optional(),
-        agentId: z.string().max(64).optional(),
-        from: z.string().optional(),
-        to: z.string().optional(),
-        limit: z.number().int().min(1).max(1000).optional().default(100),
-      }).optional())
-      .query(async ({ input }) => {
-        const rows = await listBusinessAgentAudit({
-          userId: input?.userId,
-          agentId: input?.agentId,
-          fromIso: input?.from,
-          toIso: input?.to,
-          limit: input?.limit,
-        });
-        return { rows, count: rows.length };
-      }),
-
-    adminTenantAuditReverse: adminProcedure
-      .input(z.object({ tenantToken: z.string().min(1).max(64) }))
-      .query(async ({ input }) => {
-        return await reverseTenantToken(input.tenantToken);
-      }),
-
-    adminTenantAuditStats: adminProcedure
-      .query(async () => {
-        return await getTenantAuditStats();
       }),
 
 });

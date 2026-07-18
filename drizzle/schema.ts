@@ -756,7 +756,8 @@ export const businessAgents = mysqlTable("business_agents", {
 export type BusinessAgent = typeof businessAgents.$inferSelect;
 export type InsertBusinessAgent = typeof businessAgents.$inferInsert;
 
-// ── Business Agent tenant isolation audit ──
+// Legacy Business Agent isolation records. Retained read-only for historical
+// migrations and data retention; active runtime auditing uses audit_events.
 export const businessAgentAudits = mysqlTable("business_agent_audit", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("user_id").notNull(),

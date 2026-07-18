@@ -1,14 +1,27 @@
 import { createHash, randomBytes } from "crypto";
 import { mkdir, readFile, stat, writeFile } from "fs/promises";
 import path from "path";
-import { and, count, desc, eq, gte, like, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { adminProcedure, router } from "../_core/trpc";
 import { getDb } from "../db";
-import { auditEvents, auditExports } from "../../drizzle/schema";
+import {
+  auditEvents,
+  auditExports,
+  auditSecurityFindings,
+  auditToolEvents,
+  skillMarketplace,
+} from "../../drizzle/schema";
 import { APP_ROOT } from "./helpers";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditRequired } from "../_core/audit-events";
+import { getAuditBaselineHealth } from "../_core/audit-health";
+import {
+  deriveSecurityOverviewStatus,
+  ratioPercent,
+  traceabilityCoverage,
+  type SecurityCapabilityStatus,
+} from "../_core/security-overview";
 
 const EXPORT_DIR = path.join(APP_ROOT, "data", "audit-exports");
 const EXPORT_TTL_MS = Number(process.env.AUDIT_EXPORT_TTL_MS || 24 * 60 * 60 * 1000);
@@ -129,7 +142,265 @@ function fileHash(content: string | Buffer) {
   return createHash("sha256").update(content).digest("hex");
 }
 
+function asNumber(value: unknown): number {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+}
+
+async function optionalQuery<T>(operation: () => Promise<T>): Promise<{ available: true; value: T } | { available: false; value: null }> {
+  try {
+    return { available: true, value: await operation() };
+  } catch {
+    return { available: false, value: null };
+  }
+}
+
+function capability(
+  key: string,
+  label: string,
+  status: SecurityCapabilityStatus,
+  detail: string,
+) {
+  return { key, label, status, detail };
+}
+
 export const auditRouter = router({
+  overview: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+
+    const now = Date.now();
+    const dayAgo = new Date(now - 24 * 60 * 60 * 1000);
+    const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
+    const agentRelevant = sql`(
+      ${auditEvents.category} IN ('agent', 'runtime', 'mcp', 'tool', 'skill', 'file', 'browser', 'model')
+      OR ${auditEvents.agentInstanceId} IS NOT NULL
+      OR ${auditEvents.runtimeAgentId} IS NOT NULL
+    )`;
+    const runtimeRelevant = sql`(
+      ${auditEvents.category} IN ('runtime', 'mcp', 'tool', 'skill', 'file', 'browser', 'model')
+      OR ${auditEvents.runtimeType} IS NOT NULL
+      OR ${auditEvents.runtimeAgentId} IS NOT NULL
+    )`;
+    const mcpRelevant = sql`(${auditEvents.category} = 'mcp' OR ${auditEvents.action} LIKE 'mcp.%')`;
+
+    const [eventsResult, traceResult, recentResult, findingsResult, toolsResult, skillsResult, baseline] = await Promise.all([
+      optionalQuery(async () => {
+        const [row] = await db.select({
+          total: count(),
+          denied: sql<number>`COALESCE(SUM(CASE WHEN ${auditEvents.result} = 'denied' THEN 1 ELSE 0 END), 0)`,
+          failed: sql<number>`COALESCE(SUM(CASE WHEN ${auditEvents.result} = 'failed' THEN 1 ELSE 0 END), 0)`,
+          highRisk: sql<number>`COALESCE(SUM(CASE WHEN ${auditEvents.severity} IN ('high', 'critical') THEN 1 ELSE 0 END), 0)`,
+        }).from(auditEvents).where(gte(auditEvents.eventTime, dayAgo));
+        return row;
+      }),
+      optionalQuery(async () => {
+        const [row] = await db.select({
+          actorExpected: sql<number>`COALESCE(SUM(CASE WHEN ${auditEvents.actorType} = 'user' THEN 1 ELSE 0 END), 0)`,
+          actorBound: sql<number>`COALESCE(SUM(CASE WHEN ${auditEvents.actorType} = 'user' AND ${auditEvents.actorUserId} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+          agentExpected: sql<number>`COALESCE(SUM(CASE WHEN ${agentRelevant} THEN 1 ELSE 0 END), 0)`,
+          agentBound: sql<number>`COALESCE(SUM(CASE WHEN ${agentRelevant} AND ${auditEvents.agentInstanceId} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+          runtimeExpected: sql<number>`COALESCE(SUM(CASE WHEN ${runtimeRelevant} THEN 1 ELSE 0 END), 0)`,
+          runtimeBound: sql<number>`COALESCE(SUM(CASE WHEN ${runtimeRelevant} AND ${auditEvents.runtimeAgentId} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+          mcpExpected: sql<number>`COALESCE(SUM(CASE WHEN ${mcpRelevant} THEN 1 ELSE 0 END), 0)`,
+          mcpBound: sql<number>`COALESCE(SUM(CASE WHEN ${mcpRelevant} AND ${auditEvents.agentInstanceId} IS NOT NULL AND ${auditEvents.runtimeAgentId} IS NOT NULL THEN 1 ELSE 0 END), 0)`,
+        }).from(auditEvents).where(gte(auditEvents.eventTime, weekAgo));
+        return row;
+      }),
+      optionalQuery(() => db.select({
+        eventId: auditEvents.eventId,
+        eventTime: auditEvents.eventTime,
+        action: auditEvents.action,
+        result: auditEvents.result,
+        severity: auditEvents.severity,
+        agentInstanceId: auditEvents.agentInstanceId,
+        toolName: auditEvents.toolName,
+      }).from(auditEvents)
+        .where(and(
+          gte(auditEvents.eventTime, weekAgo),
+          or(ne(auditEvents.result, "success"), inArray(auditEvents.severity, ["high", "critical"])),
+        ))
+        .orderBy(desc(auditEvents.eventTime))
+        .limit(5)),
+      optionalQuery(async () => {
+        const [row] = await db.select({
+          total: count(),
+          active: sql<number>`COALESCE(SUM(CASE WHEN ${auditSecurityFindings.status} IN ('open', 'acknowledged') THEN 1 ELSE 0 END), 0)`,
+          highActive: sql<number>`COALESCE(SUM(CASE WHEN ${auditSecurityFindings.status} IN ('open', 'acknowledged') AND ${auditSecurityFindings.severity} IN ('high', 'critical') THEN 1 ELSE 0 END), 0)`,
+        }).from(auditSecurityFindings);
+        return row;
+      }),
+      optionalQuery(async () => {
+        const [row] = await db.select({
+          total: count(),
+          denied: sql<number>`COALESCE(SUM(CASE WHEN ${auditToolEvents.policyDecision} = 'deny' THEN 1 ELSE 0 END), 0)`,
+          allowed: sql<number>`COALESCE(SUM(CASE WHEN ${auditToolEvents.policyDecision} IN ('allow', 'rewrite') THEN 1 ELSE 0 END), 0)`,
+          sandboxed: sql<number>`COALESCE(SUM(CASE WHEN ${auditToolEvents.policyDecision} IN ('allow', 'rewrite') AND ${auditToolEvents.executor} = 'sandbox' THEN 1 ELSE 0 END), 0)`,
+          native: sql<number>`COALESCE(SUM(CASE WHEN ${auditToolEvents.policyDecision} IN ('allow', 'rewrite') AND ${auditToolEvents.executor} = 'native' THEN 1 ELSE 0 END), 0)`,
+        }).from(auditToolEvents).where(gte(auditToolEvents.createdAt, weekAgo));
+        return row;
+      }),
+      optionalQuery(async () => {
+        const [row] = await db.select({
+          total: count(),
+          pending: sql<number>`COALESCE(SUM(CASE WHEN ${skillMarketplace.status} = 'pending' THEN 1 ELSE 0 END), 0)`,
+          approved: sql<number>`COALESCE(SUM(CASE WHEN ${skillMarketplace.status} = 'approved' THEN 1 ELSE 0 END), 0)`,
+          rejected: sql<number>`COALESCE(SUM(CASE WHEN ${skillMarketplace.status} = 'rejected' THEN 1 ELSE 0 END), 0)`,
+          offline: sql<number>`COALESCE(SUM(CASE WHEN ${skillMarketplace.status} = 'offline' THEN 1 ELSE 0 END), 0)`,
+        }).from(skillMarketplace);
+        return row;
+      }),
+      getAuditBaselineHealth({ db: db as any }),
+    ]);
+
+    const eventRow = eventsResult.value || {};
+    const traceRow = traceResult.value || {};
+    const findingRow = findingsResult.value || {};
+    const toolRow = toolsResult.value || {};
+    const skillRow = skillsResult.value || {};
+    const traceability = {
+      actor: {
+        bound: asNumber((traceRow as any).actorBound),
+        expected: asNumber((traceRow as any).actorExpected),
+        percent: ratioPercent(asNumber((traceRow as any).actorBound), asNumber((traceRow as any).actorExpected)),
+      },
+      agent: {
+        bound: asNumber((traceRow as any).agentBound),
+        expected: asNumber((traceRow as any).agentExpected),
+        percent: ratioPercent(asNumber((traceRow as any).agentBound), asNumber((traceRow as any).agentExpected)),
+      },
+      runtime: {
+        bound: asNumber((traceRow as any).runtimeBound),
+        expected: asNumber((traceRow as any).runtimeExpected),
+        percent: ratioPercent(asNumber((traceRow as any).runtimeBound), asNumber((traceRow as any).runtimeExpected)),
+      },
+      mcp: {
+        bound: asNumber((traceRow as any).mcpBound),
+        expected: asNumber((traceRow as any).mcpExpected),
+        percent: ratioPercent(asNumber((traceRow as any).mcpBound), asNumber((traceRow as any).mcpExpected)),
+      },
+    };
+    const events24h = {
+      total: asNumber((eventRow as any).total),
+      denied: asNumber((eventRow as any).denied),
+      failed: asNumber((eventRow as any).failed),
+      highRisk: asNumber((eventRow as any).highRisk),
+    };
+    const findings = {
+      available: findingsResult.available,
+      total: asNumber((findingRow as any).total),
+      active: asNumber((findingRow as any).active),
+      highActive: asNumber((findingRow as any).highActive),
+    };
+    const toolAudit = {
+      available: toolsResult.available,
+      total: asNumber((toolRow as any).total),
+      denied: asNumber((toolRow as any).denied),
+      allowed: asNumber((toolRow as any).allowed),
+      sandboxed: asNumber((toolRow as any).sandboxed),
+      native: asNumber((toolRow as any).native),
+    };
+    const skillReview = {
+      available: skillsResult.available,
+      total: asNumber((skillRow as any).total),
+      pending: asNumber((skillRow as any).pending),
+      approved: asNumber((skillRow as any).approved),
+      rejected: asNumber((skillRow as any).rejected),
+      offline: asNumber((skillRow as any).offline),
+    };
+    const ledger = {
+      available: baseline.ledger.exists,
+      healthy: baseline.ok,
+      totalEvents: baseline.ledger.rowCount || 0,
+      oldestAt: baseline.ledger.oldestEventTime,
+      newestAt: baseline.ledger.newestEventTime,
+      dlqEvents: baseline.dlq?.eventCount || 0,
+      permissionsOk: baseline.permissions.ok,
+      triggersOk: baseline.triggers.ok,
+      warningCount: baseline.warnings.length,
+    };
+    const overall = deriveSecurityOverviewStatus({
+      ledgerAvailable: eventsResult.available && ledger.available,
+      ledgerHealthy: ledger.healthy,
+      hasLedgerEvents: ledger.totalEvents > 0,
+      failedEvents24h: events24h.failed,
+      deniedEvents24h: events24h.denied,
+      highRiskEvents24h: events24h.highRisk,
+      activeFindings: findings.active,
+      highRiskFindings: findings.highActive,
+      dlqEvents: ledger.dlqEvents,
+      nativeExecutions7d: toolAudit.native,
+      traceabilityPercents: [traceability.actor.percent, traceability.agent.percent, traceability.runtime.percent, traceability.mcp.percent],
+    });
+
+    let sandboxStatus: SecurityCapabilityStatus = "unverified";
+    let sandboxDetail = "近7天没有可用于判断执行隔离的工具记录";
+    if (toolAudit.native > 0) {
+      sandboxStatus = "risk";
+      sandboxDetail = `${toolAudit.native} 次工具调用记录为宿主机执行`;
+    } else if (toolAudit.allowed > 0 && toolAudit.sandboxed === toolAudit.allowed) {
+      sandboxStatus = "covered";
+      sandboxDetail = `${toolAudit.sandboxed} 次允许执行均记录为沙箱`;
+    } else if (toolAudit.sandboxed > 0) {
+      sandboxStatus = "partial";
+      sandboxDetail = `${toolAudit.sandboxed}/${toolAudit.allowed} 次允许执行记录为沙箱`;
+    } else if (toolAudit.allowed > 0) {
+      sandboxDetail = `${toolAudit.allowed} 次允许执行缺少可识别的执行器证据`;
+    }
+
+    const capabilities = [
+      capability(
+        "agent_identity",
+        "Agent 身份绑定",
+        traceabilityCoverage(traceability.agent.bound, traceability.agent.expected),
+        traceability.agent.percent === null ? "近7天没有相关事件" : `${traceability.agent.bound}/${traceability.agent.expected} 个事件可追溯`,
+      ),
+      capability(
+        "mcp_identity",
+        "MCP 身份绑定",
+        traceabilityCoverage(traceability.mcp.bound, traceability.mcp.expected),
+        traceability.mcp.percent === null ? "近7天没有 MCP 事件" : `${traceability.mcp.bound}/${traceability.mcp.expected} 个事件绑定 Agent 与 Runtime`,
+      ),
+      capability(
+        "audit_ledger",
+        "审计账本完整性",
+        !ledger.available ? "unverified" : ledger.healthy ? "covered" : "partial",
+        !ledger.available ? "审计账本不可用" : ledger.healthy ? "权限与防篡改基线正常" : `${ledger.warningCount} 项基线需要检查`,
+      ),
+      capability(
+        "tool_policy",
+        "工具策略审计",
+        !toolAudit.available || toolAudit.total === 0 ? "unverified" : "covered",
+        !toolAudit.available ? "工具审计表不可用" : toolAudit.total === 0 ? "近7天没有工具策略记录" : `${toolAudit.total} 次决策，阻断 ${toolAudit.denied} 次`,
+      ),
+      capability("runtime_sandbox", "运行时沙箱", sandboxStatus, sandboxDetail),
+      capability(
+        "skill_review",
+        "技能上架审核",
+        !skillReview.available ? "unverified" : "covered",
+        !skillReview.available ? "技能审核数据不可用" : `${skillReview.approved} 个已通过，${skillReview.pending} 个待审核`,
+      ),
+      capability("workspace_isolation", "工作区隔离", "unverified", "尚未接入可验证的运行时策略证据"),
+    ];
+
+    return {
+      checkedAt: baseline.checkedAt,
+      status: overall.status,
+      reasons: overall.reasons,
+      events24h,
+      traceability7d: traceability,
+      findings,
+      ledger,
+      toolAudit7d: toolAudit,
+      skillReview,
+      capabilities,
+      recentRisks: (recentResult.value || []).map((event) => ({
+        ...event,
+        eventTime: event.eventTime instanceof Date ? event.eventTime.toISOString() : event.eventTime,
+      })),
+    };
+  }),
+
   listEvents: adminProcedure
     .input(auditListSchema)
     .query(async ({ input }) => {
