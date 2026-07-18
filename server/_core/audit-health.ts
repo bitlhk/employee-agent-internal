@@ -247,6 +247,14 @@ async function inspectAuditTriggers(db: AuditDbExecutor): Promise<AuditTriggerHe
         rows = Array.from(byName.values());
       } catch {}
     }
+    if (rows.length < EXPECTED_WORM_TRIGGERS.length) {
+      try {
+        const functionRows = await queryRows(db, "SELECT audit_worm_trigger_names() AS names");
+        const raw = functionRows[0]?.names;
+        const names = Array.isArray(raw) ? raw : JSON.parse(String(raw || "[]"));
+        if (Array.isArray(names)) rows = names.map((name) => ({ name: String(name) }));
+      } catch {}
+    }
     const present = rows.map((row) => stringField(row, ["name", "TRIGGER_NAME"])).filter(Boolean).sort();
     const presentSet = new Set(present);
     const missing = EXPECTED_WORM_TRIGGERS.filter((name) => !presentSet.has(name));

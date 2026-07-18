@@ -109,7 +109,7 @@ describe("audit baseline health", () => {
     ]);
   });
 
-  it("uses the read-only trigger attestation view for least-privilege runtime users", async () => {
+  it("uses the read-only trigger attestation function for least-privilege runtime users", async () => {
     const health = await getAuditBaselineHealth({
       dlqStats: async () => ({ dir: "/tmp/audit-dlq", exists: true, fileCount: 0, eventCount: 0, bytes: 0 }),
       db: fakeDb((query) => {
@@ -119,16 +119,17 @@ describe("audit baseline health", () => {
         if (query.includes("SHOW GRANTS")) return [[{ grant: "GRANT SELECT, INSERT, UPDATE, DELETE ON `app`.* TO 'app'@'host'" }]];
         if (query.includes("CURRENT_USER()")) return [[{ audit_current_user: "app@host" }]];
         if (query.includes("INFORMATION_SCHEMA.TRIGGERS")) return [[]];
-        if (query.includes("audit_worm_trigger_status")) return [[
-          { name: "audit_events_no_update" },
-          { name: "audit_events_no_delete" },
-          { name: "audit_tool_events_no_update" },
-          { name: "audit_tool_events_no_delete" },
-          { name: "audit_exports_no_update" },
-          { name: "audit_exports_no_delete" },
-          { name: "audit_security_findings_no_delete" },
-          { name: "audit_security_findings_restricted_update" },
-        ]];
+        if (query.includes("audit_worm_trigger_status")) return [[]];
+        if (query.includes("audit_worm_trigger_names")) return [[{ names: JSON.stringify([
+          "audit_events_no_update",
+          "audit_events_no_delete",
+          "audit_tool_events_no_update",
+          "audit_tool_events_no_delete",
+          "audit_exports_no_update",
+          "audit_exports_no_delete",
+          "audit_security_findings_no_delete",
+          "audit_security_findings_restricted_update",
+        ]) }]];
         return [[]];
       }),
     });

@@ -64,6 +64,13 @@
       "when": 1784307600000,
       "tag": "0029_add_audit_trigger_attestation",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1784311200000,
+      "tag": "0030_add_audit_trigger_attestation_function",
+      "breakpoints": true
     }
   ]
 }
