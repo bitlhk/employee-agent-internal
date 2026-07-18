@@ -79,12 +79,16 @@ describe("isPrivateUrl", () => {
   it("detects localhost", () => {
     expect(isPrivateUrl("http://localhost:3000")).toBe(true);
     expect(isPrivateUrl("http://127.0.0.1:8080")).toBe(true);
+    expect(isPrivateUrl("http://[::1]:5180")).toBe(true);
+    expect(isPrivateUrl("http://[::ffff:7f00:1]:5180")).toBe(true);
   });
 
   it("detects private IP ranges", () => {
     expect(isPrivateUrl("http://10.0.0.1")).toBe(true);
     expect(isPrivateUrl("http://172.16.0.1")).toBe(true);
     expect(isPrivateUrl("http://192.168.1.1")).toBe(true);
+    expect(isPrivateUrl("http://[fc00::1]")).toBe(true);
+    expect(isPrivateUrl("http://[fe80::1]")).toBe(true);
   });
 
   it("detects cloud metadata", () => {
@@ -95,6 +99,8 @@ describe("isPrivateUrl", () => {
   it("allows public URLs", () => {
     expect(isPrivateUrl("https://api.example.com")).toBe(false);
     expect(isPrivateUrl("https://github.com")).toBe(false);
+    expect(isPrivateUrl("https://[2606:4700:4700::1111]")).toBe(false);
+    expect(isPrivateUrl("https://[::ffff:808:808]")).toBe(false);
   });
 
   it("handles invalid URLs gracefully", () => {

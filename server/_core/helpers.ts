@@ -2,9 +2,11 @@ import { execFileSync, execSync } from "child_process";
 import path from "path";
 import { createHash, createHmac } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync, createReadStream } from "fs";
+import { isIP } from "net";
 import type { Request, Response } from "express";
 import { createContext } from "./context";
 import { appendRetainedJsonLog, startJsonLogRetention } from "./retained-json-log";
+import { isPrivateIpAddress } from "./ip-address";
 
 // ── 可配置路径（开源部署时通过 .env 覆盖）──
 const processHome = process.env.HOME || process.env.USERPROFILE || "/root";
@@ -119,18 +121,10 @@ export function isAuthorizedInternalRequest(req: Request, expectedToken?: string
 export function isPrivateUrl(url: string): boolean {
   try {
     const u = new URL(url);
-    const h = u.hostname;
-    // 内网 IP 段
-    if (/^127\./.test(h)) return true;
-    if (/^10\./.test(h)) return true;
-    if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-    if (/^192\.168\./.test(h)) return true;
-    if (/^169\.254\./.test(h)) return true;  // cloud metadata
-    if (/^100\.100\.100\./.test(h)) return true;  // cloud provider metadata
-    if (h === 'localhost') return true;
-    if (h === '0.0.0.0') return true;
-    if (/\.internal$/.test(h)) return true;
-    if (/\.local$/.test(h)) return true;
+    const h = u.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+    if (isIP(h) && isPrivateIpAddress(h)) return true;
+    if (h === "localhost" || h.endsWith(".localhost")) return true;
+    if (h.endsWith(".internal") || h.endsWith(".local")) return true;
   } catch { /* invalid URL, skip */ }
   return false;
 }
