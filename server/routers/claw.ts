@@ -85,6 +85,7 @@ import { resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
 import { MESSAGE_FEEDBACK_REASON_CODES } from "../../shared/message-feedback";
+import { resolvePublicBaseUrl } from "../_core/public-base-url";
 import {
   getEaAssistantModelAdminConfig,
   saveEaAssistantModelConfig,
@@ -192,17 +193,8 @@ function execRemoteShellCommand(remoteUser: string, remoteHost: string, command:
   });
 }
 
-function publicAppBaseUrl(): string {
-  const raw =
-    process.env.WORKFORCE_AGENT_PUBLIC_BASE_URL
-    || process.env.FRONTEND_URL
-    || process.env.PUBLIC_BASE_URL
-    || "http://localhost:5180";
-  return String(raw || "").replace(/\/+$/, "");
-}
-
 function buildClawEntryUrl(adoptId: string): string {
-  return `${publicAppBaseUrl()}/claw/${encodeURIComponent(adoptId)}`;
+  return `${resolvePublicBaseUrl()}/claw/${encodeURIComponent(adoptId)}`;
 }
 
 type AdminClawAdoption = NonNullable<Awaited<ReturnType<typeof getClawAdoptionAdminById>>>;
