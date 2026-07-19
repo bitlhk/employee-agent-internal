@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, MessageSquareText, MoreVertical, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronRight, MessageCircle, MoreVertical, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export type SessionListConversation = {
@@ -15,7 +15,7 @@ export type SessionListConversation = {
   pinnedAt?: number;
 };
 
-type SessionGroup = "pinned" | "today" | "yesterday" | "week" | "earlier";
+export type SessionGroup = "pinned" | "today" | "week" | "earlier";
 
 type SessionListProps = {
   sessions?: SessionListConversation[];
@@ -41,36 +41,66 @@ function shortTitle(session: SessionListConversation) {
   return normalizeText(session.customTitle || session.title || "未命名会话");
 }
 
-function formatUpdatedAt(ts: number) {
-  if (!Number.isFinite(ts) || ts <= 0) return "";
-  const d = new Date(ts);
-  const now = new Date();
-  const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function startOfLocalDay(ts: number): number {
+  const date = new Date(ts);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
 }
 
-function groupForTimestamp(ts: number): SessionGroup {
+export function groupForTimestamp(ts: number, nowTs = Date.now()): Exclude<SessionGroup, "pinned"> {
   if (!Number.isFinite(ts) || ts <= 0) return "earlier";
-  const d = new Date(ts);
-  const now = new Date();
-  if (d.toDateString() === now.toDateString()) return "today";
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (d.toDateString() === yesterday.toDateString()) return "yesterday";
-  const weekAgo = new Date(now);
-  weekAgo.setDate(now.getDate() - 7);
-  if (d > weekAgo) return "week";
+  const timestampDay = startOfLocalDay(ts);
+  const today = startOfLocalDay(nowTs);
+  if (timestampDay === today) return "today";
+  const weekStart = new Date(today);
+  weekStart.setDate(weekStart.getDate() - 6);
+  if (timestampDay >= weekStart.getTime() && timestampDay < today) return "week";
   return "earlier";
 }
 
+export function formatSessionTimestamp(ts: number, nowTs = Date.now()) {
+  if (!Number.isFinite(ts) || ts <= 0) return "";
+  const date = new Date(ts);
+  const group = groupForTimestamp(ts, nowTs);
+  if (group === "today") {
+    return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+  if (group === "week") return WEEKDAY_LABELS[date.getDay()];
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
 const GROUP_LABELS: Record<SessionGroup, string> = {
-  pinned: "置顶",
-  today: "",
-  yesterday: "",
-  week: "",
-  earlier: "",
+  pinned: "已置顶",
+  today: "今天",
+  week: "本周",
+  earlier: "更早",
 };
+
+export function groupSessionConversations(
+  sessions: SessionListConversation[],
+  nowTs = Date.now(),
+): Array<{ key: SessionGroup; sessions: SessionListConversation[] }> {
+  const groups = new Map<SessionGroup, SessionListConversation[]>();
+  for (const session of sessions) {
+    const key: SessionGroup = session.pinnedAt
+      ? "pinned"
+      : groupForTimestamp(session.updatedAt || session.createdAt, nowTs);
+    const rows = groups.get(key) || [];
+    rows.push(session);
+    groups.set(key, rows);
+  }
+  return (["pinned", "today", "week", "earlier"] as SessionGroup[])
+    .filter((key) => groups.has(key))
+    .map((key) => ({
+      key,
+      sessions: (groups.get(key) || []).sort((a, b) => {
+        if (key === "pinned") return Number(b.pinnedAt || 0) - Number(a.pinnedAt || 0);
+        return Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0);
+      }),
+    }));
+}
 
 export function SessionList({
   sessions = [],
@@ -126,24 +156,7 @@ export function SessionList({
     } catch {}
   }, [historyCollapsed]);
 
-  const groupedSessions = useMemo(() => {
-    const groups = new Map<SessionGroup, SessionListConversation[]>();
-    for (const session of sessions) {
-      const key = session.pinnedAt ? "pinned" : groupForTimestamp(session.updatedAt || session.createdAt);
-      const rows = groups.get(key) || [];
-      rows.push(session);
-      groups.set(key, rows);
-    }
-    return (["pinned", "today", "yesterday", "week", "earlier"] as SessionGroup[])
-      .filter((key) => groups.has(key))
-      .map((key) => ({
-        key,
-        sessions: (groups.get(key) || []).sort((a, b) => {
-          if (key === "pinned") return Number(b.pinnedAt || 0) - Number(a.pinnedAt || 0);
-          return Number(b.updatedAt || 0) - Number(a.updatedAt || 0);
-        }),
-      }));
-  }, [sessions]);
+  const groupedSessions = useMemo(() => groupSessionConversations(sessions), [sessions]);
 
   const saveRename = (session: SessionListConversation) => {
     const title = normalizeText(draftTitle).slice(0, 60);
@@ -187,50 +200,34 @@ export function SessionList({
   }, [menuId]);
 
   return (
-    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col">
-      <div className={isMobile ? "mb-2 flex items-center justify-between px-1" : "mt-4 mb-2 flex items-center justify-between px-0"}>
+    <div ref={rootRef} className="flex min-h-0 flex-1 flex-col" data-variant={variant}>
+      <div className={`session-list-header ${isMobile ? "is-mobile" : ""}`}>
         <button
           type="button"
           onClick={() => setHistoryCollapsed((value) => !value)}
-          className="flex min-w-0 items-center gap-1 rounded-md"
+          className="session-list-header-toggle"
           title={historyCollapsed ? "显示历史会话" : "隐藏历史会话"}
-          style={{
-            color: isMobile ? "var(--oc-text-primary)" : "var(--oc-sidebar-muted)",
-            fontSize: isMobile ? 14 : 12,
-            fontWeight: 500,
-            padding: isMobile ? "4px 6px" : "2px 0",
-          }}
+          aria-expanded={!historyCollapsed}
         >
-          {historyCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          <ChevronRight
+            className="session-list-collapse-chevron"
+            data-expanded={!historyCollapsed ? "true" : "false"}
+            aria-hidden="true"
+          />
           <span className="truncate">{title}</span>
         </button>
-        <div className="flex items-center gap-1">
-          {!historyCollapsed && sessions.length > 0 ? (
-            <span style={{ color: "var(--oc-text-tertiary)", fontSize: 11 }}>
-              {sessions.length}
-            </span>
-          ) : null}
-          {onNewConversation ? (
-            <button
-              type="button"
-              title="新建会话"
-              onClick={onNewConversation}
-              disabled={!!sessionSwitchingId}
-              className="rounded-md flex items-center justify-center"
-              style={{
-                width: isMobile ? 30 : 16,
-                height: isMobile ? 30 : 16,
-                border: isMobile ? "1px solid var(--oc-border-subtle)" : "none",
-                background: isMobile ? "var(--oc-bg)" : "transparent",
-                color: isMobile ? "var(--oc-text-primary)" : "var(--oc-sidebar-muted)",
-                opacity: sessionSwitchingId ? 0.45 : 1,
-                cursor: sessionSwitchingId ? "not-allowed" : "pointer",
-              }}
-            >
-              <Plus size={isMobile ? 15 : 16} />
-            </button>
-          ) : null}
-        </div>
+        {onNewConversation ? (
+          <button
+            type="button"
+            title="新建会话"
+            aria-label="新建会话"
+            onClick={onNewConversation}
+            disabled={!!sessionSwitchingId}
+            className="session-list-new-button"
+          >
+            <Plus aria-hidden="true" />
+          </button>
+        ) : null}
       </div>
 
       {!historyCollapsed ? (
@@ -248,18 +245,16 @@ export function SessionList({
             ))}
           </div>
         ) : sessions.length === 0 ? (
-          <div className={isMobile ? "px-3 py-4 text-xs text-center" : "px-3 py-4 text-center"} style={{ color: "var(--oc-text-tertiary)", fontSize: 13 }}>
-            暂无历史会话
+          <div className="session-list-empty">
+            <MessageCircle aria-hidden="true" />
+            <strong>还没有会话</strong>
+            <span>点击「＋」开始第一段对话</span>
           </div>
         ) : (
-          <div className={isMobile ? "space-y-2" : "space-y-0.5"}>
+          <div className="session-list-groups">
             {groupedSessions.map((group) => (
-              <div key={group.key} className="space-y-0.5">
-                {isMobile && GROUP_LABELS[group.key] ? (
-                  <div className="px-2 pb-1 text-[11px]" style={{ color: "var(--oc-text-tertiary)" }}>
-                    {GROUP_LABELS[group.key]}
-                  </div>
-                ) : null}
+              <div key={group.key} className="session-list-group">
+                <div className="session-list-group-label">{GROUP_LABELS[group.key]}</div>
                 {group.sessions.map((session) => {
                   const active = session.conversationId === currentConversationId;
                   const switching = sessionSwitchingId === session.conversationId;
@@ -268,6 +263,7 @@ export function SessionList({
                   const menuOpen = menuId === session.conversationId;
                   const pinned = Boolean(session.pinnedAt);
                   const previewText = session.preview || "";
+                  const timestamp = formatSessionTimestamp(session.updatedAt || session.createdAt);
                   return (
                     <div
                       key={session.conversationId}
@@ -293,7 +289,7 @@ export function SessionList({
                       }}
                     >
                       {active && !isMobile ? <span className="sidebar-item-indicator" /> : null}
-                      <MessageSquareText size={18} strokeWidth={1.7} className="sidebar-item-icon" style={{ flexShrink: 0 }} />
+                      {pinned ? <Pin className="session-list-pin" aria-label="已置顶" /> : null}
                       <div className="min-w-0 flex-1">
                         {editing ? (
                           <div className="flex items-center gap-1" onClick={(event) => event.stopPropagation()}>
@@ -330,7 +326,7 @@ export function SessionList({
                             </button>
                           </div>
                         ) : (
-                          <div className="sidebar-item-label truncate" style={{ fontSize: isMobile ? 14 : 13, fontWeight: 400, color: isMobile ? "var(--oc-text-primary)" : undefined }}>
+                          <div className="sidebar-item-label truncate" style={{ fontSize: 14, fontWeight: 400, color: isMobile ? "var(--oc-text-primary)" : undefined }}>
                             {switching ? "正在切换..." : shortTitle(session)}
                           </div>
                         )}
@@ -340,32 +336,23 @@ export function SessionList({
                           </div>
                         ) : null}
                         {isMobile ? (
-                          <div className="mt-1 flex items-center gap-2 text-[11px]" style={{ color: "var(--oc-text-tertiary)" }}>
-                            <span>{formatUpdatedAt(session.updatedAt)}</span>
-                            {session.messageCount > 0 ? <span>{session.messageCount} 条</span> : null}
-                          </div>
+                          <div className="session-list-mobile-time">{timestamp}</div>
                         ) : null}
                       </div>
-                      {!isMobile ? (
-                        <span className="group-hover:hidden" style={{ color: "var(--oc-sidebar-subtle)", fontSize: 11, flexShrink: 0 }}>
-                          {formatUpdatedAt(session.updatedAt)}
-                        </span>
-                      ) : null}
-                      {onRenameConversation || onTogglePinConversation || onDeleteConversation ? (
-                        <div className="relative" onClick={(event) => event.stopPropagation()}>
+                      <div className={`session-list-row-meta ${isMobile ? "is-mobile" : ""} ${menuOpen ? "is-open" : ""}`}>
+                        {!isMobile ? <span className="session-list-timestamp">{timestamp}</span> : null}
+                        {onRenameConversation || onTogglePinConversation || onDeleteConversation ? (
+                        <div
+                          className={`session-list-actions ${menuOpen ? "is-open" : ""}`}
+                          onClick={(event) => event.stopPropagation()}
+                        >
                           <button
                             type="button"
                             title="会话操作"
+                            aria-label="会话操作"
                             disabled={disabled}
                             onClick={(event) => toggleRowMenu(session.conversationId, event)}
-                            className={`${isMobile || menuOpen ? "flex" : "hidden group-hover:flex"} items-center justify-center rounded-md`}
-                            style={{
-                              width: isMobile ? 30 : 22,
-                              height: isMobile ? 30 : 22,
-                              color: isMobile ? "var(--oc-text-tertiary)" : "var(--oc-sidebar-subtle)",
-                              flexShrink: 0,
-                              opacity: disabled ? 0.45 : 1,
-                            }}
+                            className="session-list-menu-trigger"
                           >
                             <MoreVertical size={isMobile ? 15 : 14} />
                           </button>
@@ -413,7 +400,8 @@ export function SessionList({
                             </div>
                           ) : null}
                         </div>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })}

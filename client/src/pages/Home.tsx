@@ -16,6 +16,7 @@ import { useRoute, useLocation } from "wouter";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
 import { ChatMessage, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
+import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
 import { ModelPicker } from "@/components/ModelPicker";
 import { presentModel } from "@/lib/modelPresentation";
 import type { AgentTask } from "@/components/AgentTaskCard";
@@ -803,6 +804,7 @@ export default function Home() {
     } catch {}
     return "chat";
   });
+  const [sidebarSelection, setSidebarSelection] = useState<"navigation" | "session">("navigation");
 
   // Step 6 扩展：主聊天 @ 触发协作的状态
   const [, setLocationCoop] = useLocation();
@@ -934,6 +936,7 @@ export default function Home() {
   }, [constrainWorkspacePanelWidth, workspacePanelWidth]);
 
   const selectWorkbenchPage = (page: PageKey) => {
+    setSidebarSelection("navigation");
     setActivePage(page);
     setMobileSidebarOpen(false);
     if (page !== "chat") setWorkspacePanelOpen(false);
@@ -1192,7 +1195,6 @@ export default function Home() {
   const pendingConversationRestoreRef = useRef<{ conversationId: string; messages: any[] } | null>(null);
   const suppressSessionPersistRef = useRef<string>("");
   const restoredConversationMessageCountsRef = useRef<Record<string, number>>({});
-  const [wsConnected, setWsConnected] = useState(false);
   const MSGS_KEY = resolvedAdoptId && userStorageId && webConversationId ? webMessagesStorageKey(userStorageId, resolvedAdoptId, webConversationId) : null;
   const LEGACY_MSGS_KEY_USER = resolvedAdoptId && userStorageId && webConversationId ? legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, webConversationId)[0] : "";
   const LEGACY_MSGS_KEY_ADOPT = resolvedAdoptId && userStorageId && webConversationId ? legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, webConversationId)[1] : "";
@@ -2070,6 +2072,9 @@ export default function Home() {
       return;
     }
     if (sessionSwitchingId) return;
+    setSidebarSelection("session");
+    setActivePage("chat");
+    setMobileSidebarOpen(false);
     setSessionMenuOpen(false);
     const conversationId = makeConversationId();
     ensureEmptyWebSession(conversationId);
@@ -2240,15 +2245,37 @@ export default function Home() {
     const apiBase = (import.meta as any).env?.VITE_API_URL || "";
     const ws = new RuntimeWSClient(resolvedAdoptId, apiBase, { channel: "web", conversationId: webConversationId });
     wsClientRef.current = ws;
-    ws.connect().then((ok) => { if (ok) setWsConnected(true); });
-    return () => { ws.disconnect(); wsClientRef.current = null; setWsConnected(false); };
+    void ws.connect();
+    return () => { ws.disconnect(); wsClientRef.current = null; };
   }, [resolvedAdoptId, webConversationId, isDirectHttpRuntime]);
   const lingxiaMsgViewportRef = useRef<HTMLDivElement | null>(null);
+  const lingxiaMessageNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const lingxiaMessageRefCallbacks = useRef<Map<string, (node: HTMLDivElement | null) => void>>(new Map());
+  const lingxiaManualNavigationRef = useRef(false);
   const [lingxiaNearBottom, setLingxiaNearBottom] = useState(true);
+  const [activeConversationPromptId, setActiveConversationPromptId] = useState("");
   const lingxiaNearBottomRef = useRef(true);
   const updateLingxiaNearBottom = useCallback((next: boolean) => {
     lingxiaNearBottomRef.current = next;
     setLingxiaNearBottom((prev) => (prev === next ? prev : next));
+  }, []);
+  const conversationNavigatorItems = useMemo(
+    () => buildConversationNavigatorItems(activeLingxiaMsgs),
+    [activeLingxiaMsgs],
+  );
+  const conversationPromptIdsKey = conversationNavigatorItems.map((item) => item.id).join("\n");
+  const getLingxiaMessageRef = useCallback((messageId: string) => {
+    const existing = lingxiaMessageRefCallbacks.current.get(messageId);
+    if (existing) return existing;
+    const callback = (node: HTMLDivElement | null) => {
+      if (node) {
+        lingxiaMessageNodeRefs.current.set(messageId, node);
+        return;
+      }
+      lingxiaMessageNodeRefs.current.delete(messageId);
+    };
+    lingxiaMessageRefCallbacks.current.set(messageId, callback);
+    return callback;
   }, []);
   // 工具执行显性化状态
   const [activeToolName, setActiveToolName] = useState<string | null>(null);
@@ -2513,6 +2540,8 @@ export default function Home() {
     const userDisplayText = opts?.displayText !== undefined ? opts.displayText.trim() : text;
     const nowLabel = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
     const assistantTimeLabel = nowLabel;
+    lingxiaManualNavigationRef.current = false;
+    updateLingxiaNearBottom(true);
 
     if (text.toLowerCase() === "/help" || text.toLowerCase() === "/commands") {
       const helpMd = "## \u53ef\u7528\u547d\u4ee4\n\n" +
@@ -2600,7 +2629,6 @@ export default function Home() {
       if (wsClient && wsClient.state !== "connected") {
         console.log(`[DIAG] runtime=${runtimeName}, wsClient.state = ${wsClient.state}, connecting before send`);
         const connected = await wsClient.connect().catch(() => false);
-        setWsConnected(Boolean(connected));
         if (!connected) {
           wsClient = null;
         }
@@ -3457,10 +3485,73 @@ export default function Home() {
     el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
 
+  const navigateToConversationPrompt = useCallback((messageId: string) => {
+    const viewport = lingxiaMsgViewportRef.current;
+    const target = lingxiaMessageNodeRefs.current.get(messageId);
+    if (!viewport || !target) return;
+
+    lingxiaManualNavigationRef.current = true;
+    updateLingxiaNearBottom(false);
+    setActiveConversationPromptId(messageId);
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const top = viewport.scrollTop + targetRect.top - viewportRect.top - 24;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    viewport.scrollTo({ top: Math.max(0, top), behavior: reducedMotion ? "auto" : "smooth" });
+  }, [updateLingxiaNearBottom]);
+
+  useEffect(() => {
+    lingxiaManualNavigationRef.current = false;
+    setActiveConversationPromptId("");
+  }, [webConversationId]);
+
+  useEffect(() => {
+    const viewport = lingxiaMsgViewportRef.current;
+    const promptIds = conversationPromptIdsKey ? conversationPromptIdsKey.split("\n") : [];
+    const promptIdSet = new Set(promptIds);
+    for (const messageId of lingxiaMessageRefCallbacks.current.keys()) {
+      if (!promptIdSet.has(messageId)) lingxiaMessageRefCallbacks.current.delete(messageId);
+    }
+    if (!viewport || promptIds.length === 0) {
+      setActiveConversationPromptId("");
+      return;
+    }
+
+    const updateActivePrompt = () => {
+      const viewportRect = viewport.getBoundingClientRect();
+      const guideY = viewportRect.top + viewportRect.height * 0.28;
+      let nextActiveId = promptIds[0];
+      for (const promptId of promptIds) {
+        const node = lingxiaMessageNodeRefs.current.get(promptId);
+        if (!node) continue;
+        if (node.getBoundingClientRect().top <= guideY) nextActiveId = promptId;
+        else break;
+      }
+      setActiveConversationPromptId((current) => current === nextActiveId ? current : nextActiveId);
+    };
+
+    updateActivePrompt();
+    const observer = new IntersectionObserver(updateActivePrompt, {
+      root: viewport,
+      rootMargin: "-22% 0px -70% 0px",
+      threshold: [0, 0.01],
+    });
+    for (const promptId of promptIds) {
+      const node = lingxiaMessageNodeRefs.current.get(promptId);
+      if (node) observer.observe(node);
+    }
+    return () => observer.disconnect();
+  }, [conversationPromptIdsKey, webConversationId]);
+
   useEffect(() => {
     const el = lingxiaMsgViewportRef.current;
     if (!el) return;
-    const onScroll = () => updateLingxiaNearBottom(isLingxiaNearBottom());
+    const onScroll = () => {
+      const nearBottom = isLingxiaNearBottom();
+      if (nearBottom) lingxiaManualNavigationRef.current = false;
+      updateLingxiaNearBottom(nearBottom);
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
     onScroll();
     return () => el.removeEventListener("scroll", onScroll);
@@ -3469,8 +3560,11 @@ export default function Home() {
   useEffect(() => {
     const lastMessage = activeLingxiaMsgs[activeLingxiaMsgs.length - 1];
     const userJustSent = lastMessage?.role === "user";
-    if (userJustSent) updateLingxiaNearBottom(true);
-    if (userJustSent || lingxiaNearBottomRef.current) {
+    if (userJustSent) {
+      lingxiaManualNavigationRef.current = false;
+      updateLingxiaNearBottom(true);
+    }
+    if (userJustSent || (!lingxiaManualNavigationRef.current && lingxiaNearBottomRef.current)) {
       scrollLingxiaToBottom(activeLingxiaStreaming ? "auto" : "smooth");
     }
   }, [activeLingxiaMsgs, activeLingxiaStreaming, scrollLingxiaToBottom, updateLingxiaNearBottom]);
@@ -3589,60 +3683,6 @@ export default function Home() {
     showSlowReadinessHint,
   ]);
 
-  const latestContextMessage = useMemo(() => {
-    for (let i = activeLingxiaMsgs.length - 1; i >= 0; i -= 1) {
-      const msg = activeLingxiaMsgs[i] as LxMsg;
-      if (msg?.contextPercent || msg?.usage?.input || msg?.contextWindow) return msg;
-    }
-    return null;
-  }, [activeLingxiaMsgs]);
-
-  const activeToolCount = useMemo(() => {
-    const lastAssistant = [...(activeLingxiaMsgs as LxMsg[])].reverse().find((msg) => msg.role === "assistant");
-    return (lastAssistant?.toolCalls || []).filter((tool) => tool.status === "running").length;
-  }, [activeLingxiaMsgs]);
-
-  const chatComposerStatus = useMemo(() => {
-    const items: Array<{ key: string; label: string; tone?: "ok" | "warning" | "muted" }> = [];
-    if (isJiuwenRuntime) {
-      items.push({ key: "jiuwenswarm", label: "SSE 已连接", tone: "ok" });
-    } else if (isLegacyArchivedRuntime) {
-      items.push({ key: "legacy_archived", label: "SSE 已连接", tone: "ok" });
-    } else {
-      const readiness = clawHealthSummary?.readiness;
-      if (readiness?.status === "ready" || readiness?.ok) {
-        items.push({ key: "ready", label: wsConnected ? "WS 已连接" : "配置正常", tone: "ok" });
-      } else if (clawHealthError || readiness?.status === "degraded") {
-        items.push({ key: "health", label: "配置需检查", tone: "warning" });
-      } else if (clawHealthLoading || clawByAdoptLoading) {
-        items.push({ key: "loading", label: "连接检查中", tone: "muted" });
-      }
-    }
-    if (latestContextMessage?.contextPercent) {
-      items.push({
-        key: "context",
-        label: `上下文 ${Math.round(latestContextMessage.contextPercent)}%`,
-        tone: latestContextMessage.contextPercent >= 80 ? "warning" : "muted",
-      });
-    } else if (latestContextMessage?.usage?.input) {
-      items.push({ key: "tokens", label: `输入 ${latestContextMessage.usage.input}`, tone: "muted" });
-    }
-    if (activeToolCount > 0) {
-      items.push({ key: "tools", label: `工具 ${activeToolCount} 个运行中`, tone: "ok" });
-    }
-    return items.slice(0, 3);
-  }, [
-    activeToolCount,
-    clawByAdoptLoading,
-    clawHealthError,
-    clawHealthLoading,
-    clawHealthSummary,
-    isLegacyArchivedRuntime,
-    isJiuwenRuntime,
-    latestContextMessage,
-    wsConnected,
-  ]);
-
   const accessGateShell = (title: string, desc: string, action?: any) => (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-6">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
@@ -3749,13 +3789,16 @@ export default function Home() {
               <Sidebar
                 activePage={activePage}
                 setActivePage={selectWorkbenchPage}
+                navigationSelectionActive={sidebarSelection === "navigation"}
                 collapsed={effectiveSidebarCollapsed}
                 coopBadge={coopBadgeCount}
                 sessions={webSessions}
-              currentConversationId={webConversationId}
+              currentConversationId={sidebarSelection === "session" ? webConversationId : undefined}
               sessionSwitchingId={sessionSwitchingId}
               messageSearchProvider={findCachedConversationSnippet}
               onSwitchConversation={(conversationId) => {
+                setSidebarSelection("session");
+                setActivePage("chat");
                 setMobileSidebarOpen(false);
                 void switchLingxiaConversation(conversationId);
               }}
@@ -3878,10 +3921,14 @@ export default function Home() {
                   >
                     <SessionList
                       sessions={webSessions}
-                      currentConversationId={webConversationId}
+                      currentConversationId={sidebarSelection === "session" ? webConversationId : undefined}
                       sessionSwitchingId={sessionSwitchingId}
                       messageSearchProvider={findCachedConversationSnippet}
-                      onSwitchConversation={(conversationId) => void switchLingxiaConversation(conversationId)}
+                      onSwitchConversation={(conversationId) => {
+                        setSidebarSelection("session");
+                        setActivePage("chat");
+                        void switchLingxiaConversation(conversationId);
+                      }}
                       onDeleteConversation={(conversationId) => void deleteLingxiaConversation(conversationId)}
                       onRenameConversation={renameLingxiaConversation}
                       onTogglePinConversation={togglePinLingxiaConversation}
@@ -3933,7 +3980,11 @@ export default function Home() {
                       .filter((task): task is AgentTask => Boolean(task))
                   : [];
                 return (
-                  <div key={m.id || `${m.role}-${idx}`}>
+                  <div
+                    key={m.id || `${m.role}-${idx}`}
+                    ref={m.role === "user" ? getLingxiaMessageRef(m.id) : undefined}
+                    data-conversation-prompt={m.role === "user" ? m.id : undefined}
+                  >
                   <ChatMessage
                     role={m.role as "user" | "assistant"}
                     text={m.text}
@@ -3969,12 +4020,22 @@ export default function Home() {
               </div>
             </div>
 
+            <ConversationNavigator
+              items={conversationNavigatorItems}
+              activeId={activeConversationPromptId}
+              onNavigate={navigateToConversationPrompt}
+            />
+
             {!lingxiaNearBottom && (
               <div className="pointer-events-none absolute right-8 bottom-24 z-20">
                 <button
                   className="pointer-events-auto text-xs px-3 py-1.5 rounded-full shadow-md"
                   style={{ background: "var(--oc-bg-surface)", border: "1px solid var(--oc-border-strong)", color: "var(--oc-text-primary)" }}
-                  onClick={() => { updateLingxiaNearBottom(true); scrollLingxiaToBottom("smooth"); }}
+                  onClick={() => {
+                    lingxiaManualNavigationRef.current = false;
+                    updateLingxiaNearBottom(true);
+                    scrollLingxiaToBottom("smooth");
+                  }}
                 >
                   回到底部
                 </button>
@@ -4087,11 +4148,6 @@ export default function Home() {
                   </button>
                 </span>
               ) : null}
-              statusExtras={chatComposerStatus.map((item) => (
-                <span key={item.key} className="lingxia-composer-status-chip" data-tone={item.tone || "muted"}>
-                  {item.label}
-                </span>
-              ))}
               rightControls={(
                 <>
                   <DropdownMenu

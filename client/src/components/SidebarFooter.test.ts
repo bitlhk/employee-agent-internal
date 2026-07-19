@@ -21,7 +21,7 @@ describe("SidebarFooter", () => {
     const html = renderFooter();
 
     expect(html).toContain("测试用户");
-    expect(html).toContain("user@example.com");
+    expect(html).not.toContain("user@example.com");
     expect(html).toContain('aria-label="打开账号菜单"');
     expect(html).toContain('aria-label="查看运行时版本"');
   });

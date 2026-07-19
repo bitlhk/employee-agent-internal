@@ -28,9 +28,18 @@ export function isPageKey(value: unknown): value is PageKey {
   return PAGE_KEYS.has(String(value || "") as PageKey);
 }
 
+export function isSidebarNavItemActive(
+  activePage: PageKey,
+  itemKey: PageKey,
+  navigationSelectionActive: boolean,
+): boolean {
+  return navigationSelectionActive && activePage === itemKey;
+}
+
 export function Sidebar({
   activePage,
   setActivePage,
+  navigationSelectionActive = true,
   collapsed,
   coopBadge,
   sessions = [],
@@ -47,6 +56,7 @@ export function Sidebar({
 }: {
   activePage: PageKey;
   setActivePage: (k: PageKey) => void;
+  navigationSelectionActive?: boolean;
   collapsed?: boolean;
   coopBadge?: number;
   sessions?: SidebarConversation[];
@@ -63,7 +73,7 @@ export function Sidebar({
 }) {
   const renderItem = (it: NavItem) => {
           const Icon = it.icon;
-          const active = activePage === it.key;
+          const active = isSidebarNavItemActive(activePage, it.key, navigationSelectionActive);
           return (
             <div key={it.key} className="flex flex-col">
               <button title={it.label} onClick={() => setActivePage(it.key)} className={`w-full flex items-center text-left sidebar-item relative ${active ? "active" : ""}`}>

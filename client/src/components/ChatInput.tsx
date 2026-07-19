@@ -26,7 +26,6 @@ type ChatInputProps = {
   onUserMention?: (user: MentionUser) => void;
   leftControls?: ReactNode;
   rightControls?: ReactNode;
-  statusExtras?: ReactNode;
   historyStorageKey?: string;
   showUtilityButtons?: boolean;
 };
@@ -109,7 +108,6 @@ export function ChatInput({
   onUserMention,
   leftControls,
   rightControls,
-  statusExtras,
   historyStorageKey,
   showUtilityButtons = true,
 }: ChatInputProps) {
@@ -798,14 +796,10 @@ export function ChatInput({
         </div>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between px-1">
-        <p className="text-[10px]" style={{ color: "var(--oc-text-secondary)", opacity: 0.7 }}>
-          Enter 发送 · Shift+Enter 换行 · ↑↓ 找回输入
+      <div className="mt-1.5 flex items-center justify-center px-1 text-center">
+        <p className="text-[10px]" style={{ color: "var(--oc-text-secondary)", opacity: 0.62 }}>
+          内容由 AI 生成，请核实重要信息
         </p>
-        <div className="flex items-center gap-2 text-[10px] font-mono" style={{ color: "var(--oc-text-secondary)", opacity: 0.55 }}>
-          {statusExtras}
-          <span>{value.length} / {maxLength}</span>
-        </div>
       </div>
     </div>
   );

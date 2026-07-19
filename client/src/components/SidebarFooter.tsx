@@ -43,7 +43,6 @@ export function SidebarFooter({
   const cleanVersion = normalizeVersion(version);
   const accountName = String(userName || userEmail || "账号").trim();
   const accountEmail = String(userEmail || "").trim();
-  const showEmail = Boolean(accountEmail && accountEmail !== accountName);
   const activeThemeMode =
     themeMode === "system"
       ? typeof window !== "undefined" &&
@@ -80,9 +79,6 @@ export function SidebarFooter({
             {!collapsed ? (
               <div className="sidebar-footer-identity">
                 <strong title={accountName}>{accountName}</strong>
-                {showEmail ? (
-                  <span title={accountEmail}>{accountEmail}</span>
-                ) : null}
               </div>
             ) : null}
           </button>
@@ -93,6 +89,11 @@ export function SidebarFooter({
           sideOffset={8}
           className="workbench-account-menu min-w-60"
         >
+          <DropdownMenuLabel className="sidebar-footer-account-details">
+            <strong>{accountName}</strong>
+            {accountEmail ? <span>{accountEmail}</span> : null}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onReturnHome}>
             <Home />
             首页
