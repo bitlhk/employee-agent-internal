@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -40,6 +40,8 @@ export function SidebarFooter({
   const [themeMode, setThemeMode] = useState<ThemeMode>(
     getSettings().themeMode
   );
+  const accountTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const accountPointerDismissRef = useRef(false);
   const cleanVersion = normalizeVersion(version);
   const accountName = String(userName || userEmail || "账号").trim();
   const accountEmail = String(userEmail || "").trim();
@@ -66,6 +68,7 @@ export function SidebarFooter({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            ref={accountTriggerRef}
             type="button"
             className="sidebar-footer-account"
             aria-label="打开账号菜单"
@@ -88,6 +91,18 @@ export function SidebarFooter({
           align="start"
           sideOffset={8}
           className="workbench-account-menu min-w-60"
+          onPointerDownOutside={() => {
+            accountPointerDismissRef.current = true;
+          }}
+          onEscapeKeyDown={() => {
+            accountPointerDismissRef.current = false;
+          }}
+          onCloseAutoFocus={(event) => {
+            if (!accountPointerDismissRef.current) return;
+            event.preventDefault();
+            accountPointerDismissRef.current = false;
+            accountTriggerRef.current?.blur();
+          }}
         >
           <DropdownMenuLabel className="sidebar-footer-account-details">
             <strong>{accountName}</strong>

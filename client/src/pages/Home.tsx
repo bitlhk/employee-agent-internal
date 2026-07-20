@@ -18,7 +18,6 @@ import { ChatInput } from "@/components/ChatInput";
 import { ChatMessage, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
 import { ModelPicker } from "@/components/ModelPicker";
-import { presentModel } from "@/lib/modelPresentation";
 import type { AgentTask } from "@/components/AgentTaskCard";
 import { BrandIcon } from "@/components/BrandIcon";
 import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
@@ -1147,19 +1146,6 @@ export default function Home() {
       if (MODEL_SELECTION_FALLBACK_KEY) localStorage.setItem(MODEL_SELECTION_FALLBACK_KEY, modelId);
     } catch {}
   }, [MODEL_SELECTION_FALLBACK_KEY, MODEL_SELECTION_KEY, defaultLingxiaModelId, lingxiaModelId]);
-
-  const selectedLingxiaModelName = useMemo(() => {
-    const model = (availableModels || []).find((m: any) => m.id === effectiveLingxiaModelId) as any;
-    const fallback = effectiveLingxiaModelId || cachedLingxiaModelId ? "默认模型" : "同步模型...";
-    const modelId = String(model?.id || effectiveLingxiaModelId || cachedLingxiaModelId || "").trim();
-    if (!modelId) return fallback;
-    return presentModel({
-      id: modelId,
-      name: model?.name,
-      desc: model?.desc,
-      isDefault: model?.isDefault,
-    }).displayName;
-  }, [availableModels, cachedLingxiaModelId, effectiveLingxiaModelId]);
 
   const switchModelMutation = trpc.claw.switchModel.useMutation({
     retry: false,
@@ -3959,15 +3945,8 @@ export default function Home() {
               )}
 
               {!clawByAdoptLoading && clawByAdoptId && activeLingxiaMsgs.length === 0 && (
-                /* 欢迎消息：带头像，对齐 OpenClaw AI 消息风格 */
-                <div className="flex items-start gap-3 max-w-4xl lingxia-msg-fade">
-                  <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center lingxia-avatar-ai" style={{ marginTop: 2 }}><BrandIcon size={22} animate={false} /></div>
-                  <div>
-                    <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed" style={{ background: "color-mix(in oklab, var(--oc-card) 65%, transparent)", color: "var(--oc-text-primary)" }}>
-                      你好，我是 <span style={{ color: "var(--oc-accent, #7c3aed)", fontWeight: "var(--oc-weight-semibold)" }}>{lingxiaDisplayName || brand.name}</span>，有什么想聊的？
-                    </div>
-                    <p className="text-[10px] mt-1 px-1 font-mono" style={{ color: "var(--oc-text-tertiary)" }}>{lingxiaDisplayName || brand.name} · {selectedLingxiaModelName}</p>
-                  </div>
+                <div className="max-w-4xl py-2 lingxia-msg-fade lingxia-welcome-message">
+                  你好，我是 <span>{lingxiaDisplayName || brand.name}</span>，有什么想聊的？
                 </div>
               )}
 

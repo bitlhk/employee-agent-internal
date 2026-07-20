@@ -235,7 +235,7 @@ export function SessionList({
         {loading ? (
           <div className="space-y-2 px-2 py-2" aria-label="正在加载会话">
             {Array.from({ length: skeletonRows }).map((_, index) => (
-              <div key={index} className="session-list-skeleton-row" style={{ minHeight: isMobile ? 58 : 44 }}>
+              <div key={index} className="session-list-skeleton-row" style={{ minHeight: isMobile ? 44 : 36 }}>
                 <span className="session-list-skeleton-dot" />
                 <span className="session-list-skeleton-lines">
                   <span style={{ width: `${62 + (index % 3) * 10}%` }} />
@@ -281,8 +281,9 @@ export function SessionList({
                       }}
                       className={`group w-full text-left flex items-center sidebar-item session-list-item relative ${active ? "active" : ""}`}
                       style={{
-                        padding: isMobile ? "10px 10px" : undefined,
-                        minHeight: isMobile ? 58 : undefined,
+                        height: isMobile ? "auto" : undefined,
+                        padding: isMobile ? "8px 10px" : undefined,
+                        minHeight: isMobile ? 44 : undefined,
                         borderRadius: isMobile ? 8 : undefined,
                         opacity: sessionSwitchingId && !switching ? 0.52 : 1,
                         cursor: sessionSwitchingId ? "wait" : "pointer",

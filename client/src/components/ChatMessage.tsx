@@ -1,4 +1,3 @@
-import { BrandIcon } from "@/components/BrandIcon";
 import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
@@ -1081,27 +1080,18 @@ function ChatMessageInner({
 
   if (role === "user") {
     return (
-      <div className="flex items-start gap-3 justify-end lingxia-msg-fade">
-        <div className="lingxia-user-bubble">
+      <div className="flex justify-end lingxia-msg-fade lingxia-message-user">
+        <div
+          className="lingxia-user-bubble"
+          aria-label={timeLabel ? `你的消息，发送于 ${timeLabel}` : "你的消息"}
+        >
           <MessageAttachments attachments={attachments} variant="user" />
           {text ? (
             <div className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm whitespace-pre-wrap lingxia-user-msg-text lingxia-bubble-user">
               {text}
             </div>
           ) : null}
-          <p className="text-[10px] mt-1 px-1 text-right" style={{ color: "var(--oc-text-tertiary)" }}>You · {timeLabel}</p>
-        </div>
-        <div
-          className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center"
-          style={{
-            marginTop: 2,
-            background: "linear-gradient(135deg, #be1e2d, #8b1520)",
-            border: "1px solid rgba(190,30,45,0.5)",
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="white">
-            <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/>
-          </svg>
+          {timeLabel ? <time className="lingxia-user-message-time">{timeLabel}</time> : null}
         </div>
       </div>
     );
@@ -1109,16 +1099,15 @@ function ChatMessageInner({
 
   if (isPlaceholder) {
     return (
-      <div className="flex items-start gap-3 lingxia-ai-bubble-wrap lingxia-msg-fade">
-        <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center lingxia-avatar-ai" style={{ marginTop: 2 }}><BrandIcon size={22} /></div>
-        <div>
+      <div className="lingxia-ai-bubble-wrap lingxia-msg-fade">
+        <div className="min-w-0 w-full">
           {showToolTimeline && (
             <div className="mb-2">
               <ToolCallTimeline toolCalls={timelineToolCalls} status={streaming ? status : undefined} />
             </div>
           )}
           {!showToolTimeline ? (
-            <div className="rounded-2xl rounded-tl-sm px-4 py-3 text-sm flex items-center gap-2 lingxia-bubble-ai" style={{ color: "var(--oc-text-tertiary)" }}>
+            <div className="py-2 text-sm flex items-center gap-2 lingxia-bubble-ai" style={{ color: "var(--oc-text-tertiary)" }}>
               <span className="lingxia-typing-dots flex items-center gap-1.5" aria-hidden="true">
                 <span />
                 <span />
@@ -1133,9 +1122,8 @@ function ChatMessageInner({
   }
 
   return (
-    <div className="flex items-start gap-3 lingxia-ai-bubble-wrap lingxia-msg-fade">
-      <div className="w-8 h-8 rounded-full shrink-0 flex items-center justify-center lingxia-avatar-ai" style={{ marginTop: 2 }}><BrandIcon size={22} /></div>
-      <div className="min-w-0 flex-1">
+    <div className="lingxia-ai-bubble-wrap lingxia-msg-fade">
+      <div className="min-w-0 w-full">
         {showToolTimeline && (
           <div className="mb-2">
             <ToolCallTimeline toolCalls={timelineToolCalls} status={streaming ? status : undefined} />
@@ -1148,7 +1136,7 @@ function ChatMessageInner({
         ) : null}
         <div className="relative group">
           <div
-            className={`relative rounded-2xl rounded-tl-sm px-4 py-3 text-sm leading-relaxed lingxia-bubble-ai ${(isLast && streaming && text) ? "lingxia-token-active" : ""}`}
+            className={`relative py-1.5 text-sm leading-relaxed lingxia-bubble-ai ${(isLast && streaming && text) ? "lingxia-token-active" : ""}`}
           >
             <ChatMarkdown content={displayText} phase={isLast && streaming ? "streaming" : "final"} />
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}

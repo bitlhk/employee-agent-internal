@@ -27,6 +27,40 @@ function renderToolTimeline(
 }
 
 describe("ChatMessage tool timeline", () => {
+  it("distinguishes chat roles without rendering repeated avatars or labels", () => {
+    const userHtml = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "user",
+        text: "请分析这份报告",
+        isLast: false,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:00",
+      }),
+    );
+    const assistantHtml = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "这是分析结果。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:01",
+      }),
+    );
+
+    expect(userHtml).toContain("lingxia-bubble-user");
+    expect(userHtml).toContain("lingxia-user-message-time");
+    expect(userHtml).not.toContain("You ·");
+    expect(userHtml).not.toContain("lingxia-avatar");
+    expect(assistantHtml).toContain("lingxia-bubble-ai");
+    expect(assistantHtml).not.toContain("lingxia-avatar");
+  });
+
   it("renders a collapsed running summary without mounting detail content", () => {
     const html = renderToolTimeline(
       [

@@ -3254,14 +3254,11 @@
     0 1px 4px rgba(0,0,0,0.08);
 }
 
-/* 通用呼吸灯：简洁线条 — 红/灰过渡，无光晕 */
+/* 流式正文保持无框，进度由状态文字和光标表达。 */
 .lingxia-bubble-ai.lingxia-token-active {
   transition: none !important;
-  animation: lingxiaTokenPulse 2s ease-in-out infinite !important;
-}
-@keyframes lingxiaTokenPulse {
-  0%, 100% { box-shadow: inset 0 0 0 1px rgba(150,150,150,0.25); }
-  50%      { box-shadow: inset 0 0 0 1px rgba(239,68,68,0.85); }
+  animation: none !important;
+  box-shadow: none !important;
 }
 
 /* thin dark scrollbar */
@@ -3388,19 +3385,23 @@
 
 .sidebar-item {
   border-radius: 8px;
-  min-height: 38px;
-  height: 38px;
+  min-height: 36px;
+  height: 36px;
   padding: 0 10px;
-  gap: 10px;
+  gap: 8px;
   border: 1px solid transparent;
   background: transparent;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   color: var(--oc-sidebar-muted);
   transition: background-color .16s ease, border-color .16s ease;
 }
-.sidebar-item .sidebar-item-label { font-weight: 500; letter-spacing: 0; font-size: 14px; color: var(--oc-sidebar-text); }
+.sidebar-item .sidebar-item-label { font-weight: 400; letter-spacing: 0; font-size: 14px; color: var(--oc-sidebar-text); }
 .sidebar-item .sidebar-item-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin-inline: 1px;
   color: var(--oc-sidebar-text);
   transition: color .16s ease;
 }
@@ -3411,7 +3412,7 @@
 }
 .sidebar-item.active .sidebar-item-label {
   color: var(--oc-sidebar-text) !important;
-  font-weight: 500;
+  font-weight: 400;
 }
 .sidebar-item.active .sidebar-item-icon {
   color: var(--oc-sidebar-text) !important;
@@ -3446,7 +3447,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 14px 0 7px;
+  margin: 10px 0 5px;
 }
 .session-list-header.is-mobile {
   min-height: 34px;
@@ -3523,13 +3524,13 @@
   margin-top: 9px;
 }
 .session-list-group .session-list-item + .session-list-item {
-  margin-top: 2px;
+  margin-top: 0;
 }
 .session-list-group-label {
   padding: 3px 10px 4px;
   color: var(--oc-sidebar-subtle);
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.3px;
   line-height: 17px;
   user-select: none;
@@ -3778,6 +3779,11 @@ select.settings-input {
   border-color: transparent;
   background: color-mix(in oklab, var(--oc-text-primary) 4%, transparent);
 }
+.sidebar-footer-account:focus-visible,
+.sidebar-footer-help:focus-visible {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--oc-sidebar-text) 16%, transparent);
+}
 .sidebar-footer.is-collapsed .sidebar-footer-account {
   flex: 0 0 auto;
   margin: 0;
@@ -3873,14 +3879,16 @@ select.settings-input {
   line-height: 16px;
 }
 .workbench-appearance-row {
-  min-height: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 4px 6px 4px 8px;
+  padding: 0 6px 0 10px;
   color: var(--oc-text-primary);
   font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
 }
 .workbench-appearance-label {
   display: inline-flex;
@@ -3889,8 +3897,9 @@ select.settings-input {
   white-space: nowrap;
 }
 .workbench-appearance-label > svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
   color: var(--oc-text-secondary);
 }
 .workbench-theme-options {
@@ -3920,9 +3929,13 @@ select.settings-input {
   width: 13px;
   height: 13px;
 }
-.workbench-theme-options button:hover {
+.workbench-theme-options button:hover,
+.workbench-theme-options button:focus-visible {
   color: var(--oc-text-primary);
   background: var(--oc-bg-hover);
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
 }
 .workbench-theme-options button[data-active="true"] {
   color: var(--oc-text-primary);
@@ -5231,6 +5244,7 @@ input.session-searchbar__input:focus-visible,
 .lingxia-user-bubble {
   max-width: min(720px, 72%);
   width: fit-content;
+  position: relative;
 }
 .lingxia-ai-bubble-wrap {
   width: 100%;
@@ -5254,11 +5268,10 @@ input.session-searchbar__input:focus-visible,
   box-shadow: 0 5px 16px rgba(0,0,0,0.14);
 }
 .lingxia-bubble-ai {
-  background: color-mix(in oklab, var(--oc-bg-surface) 72%, transparent);
-  border: 1px solid var(--oc-border);
+  background: transparent;
+  border: 0;
   color: var(--oc-text-primary);
-  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
-  overflow: hidden;
+  padding-inline: 2px;
   max-width: 100%;
   min-width: 0;
 }
@@ -5273,9 +5286,41 @@ input.session-searchbar__input:focus-visible,
   line-height: 1.78;
 }
 .lingxia-bubble-ai:hover {
-  background: color-mix(in oklab, var(--oc-bg-surface) 84%, transparent);
-  border-color: var(--oc-border-strong);
-  box-shadow: 0 5px 16px rgba(0,0,0,0.16);
+  background: transparent;
+}
+
+.lingxia-user-message-time {
+  position: absolute;
+  top: calc(100% + 3px);
+  right: 4px;
+  color: var(--oc-text-tertiary);
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: nowrap;
+}
+.lingxia-user-bubble:hover .lingxia-user-message-time,
+.lingxia-user-bubble:focus-within .lingxia-user-message-time {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lingxia-user-message-time {
+    transition: none;
+  }
+}
+
+.lingxia-welcome-message {
+  color: var(--oc-text-primary);
+  font-size: 15.5px;
+  line-height: 1.78;
+}
+.lingxia-welcome-message > span {
+  color: var(--oc-accent);
+  font-weight: var(--oc-weight-semibold);
 }
 
 /* ── 用户消息正文 ── */
@@ -6564,26 +6609,7 @@ textarea::selection,
   font-size: inherit;
 }
 
-/* ── codeblock 在 AI bubble 里首尾融入容器，消除双圆角感 ── */
-/* 当整条消息只有 codeblock（或 codeblock 紧靠 bubble 边缘）时，
-   让 codeblock 与 bubble 无缝衔接，不要圆角叠圆角 */
-.lingxia-bubble-ai .lingxia-markdown > .lingxia-codeblock:only-child,
-.lingxia-bubble-ai .lingxia-markdown > .lingxia-codeblock:first-child {
-  margin-top: 0;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-  border-top: none;
-}
-.lingxia-bubble-ai .lingxia-markdown > .lingxia-codeblock:only-child,
-.lingxia-bubble-ai .lingxia-markdown > .lingxia-codeblock:last-child {
-  margin-bottom: 0;
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  border-bottom: none;
-}
-
-/* ── codeblock 在 AI bubble 内整体降重：不再是浮卡，而是融入文档流 ── */
-/* 去掉之前只处理 first/last child 的规则，改成在 bubble 内统一降重 */
+/* ── 无框 AI 正文中的代码块保留独立边界 ── */
 .lingxia-bubble-ai .lingxia-codeblock {
   border-color: rgba(255,255,255,0.065);
   margin: 0.5em 0;
@@ -6771,7 +6797,7 @@ textarea::selection,
 }
 :root[data-theme-mode="light"] .sidebar-item.active .sidebar-item-label {
   color: var(--oc-sidebar-text) !important;
-  font-weight: 500 !important;
+  font-weight: 400 !important;
 }
 :root[data-theme-mode="light"] .sidebar-item.active .sidebar-item-icon {
   color: var(--oc-sidebar-text) !important;
@@ -6859,23 +6885,15 @@ textarea::selection,
     0 1px 4px rgba(0, 0, 0, 0.04) !important;
 }
 
-/* ── 浅色主题：token-active 呼吸灯 ──
-   关键：keyframes 内的 !important 被 CSS 规范忽略，所以这里只动 box-shadow
-   父规则用 !important 设静态值；keyframes 用普通值让动画生效
-   动画原理：用多层 box-shadow 模拟红色光环，inset 实色边 + 外发光呼吸
-*/
+/* ── 浅色主题：流式正文保持无框 ── */
 :root[data-theme-mode="light"] .lingxia-bubble-ai.lingxia-token-active {
   background: transparent !important;
   border-color: transparent !important;
   transition: none !important;
   animation: none !important;
 }
-@keyframes lingxiaTokenPulseLight {
-  0%, 100% { box-shadow: inset 0 0 0 1px rgba(180,180,180,0.35); }
-  50%      { box-shadow: inset 0 0 0 1px rgba(190,30,45,0.95); }
-}
 
-/* ── 修复项 3：AI 回复消息框加边框 — 白卡片浮在灰底上 ── */
+/* ── 浅色主题：AI 回复使用无框正文 ── */
 :root[data-theme-mode="light"] .lingxia-bubble-ai {
   background: transparent !important;
   border: none !important;
@@ -6893,11 +6911,6 @@ textarea::selection,
 /* ── 修复项 4：Token 统计 badge 样式 ── */
 /* 消息底部的 usage/meta 信息行 */
 /* token stats badge removed — now transparent */
-/* 用户消息底部元数据 */
-:root[data-theme-mode="light"] .lingxia-user-bubble p[style*="697086"] {
-  color: #6B7280 !important;
-}
-
 /* ── 修复项 5：模型选择器边框加深 ── */
 :root[data-theme-mode="light"] .lingxia-shell [data-slot="select-trigger"],
 :root[data-theme-mode="light"] .lingxia-shell .SelectTrigger,
@@ -6927,7 +6940,7 @@ textarea::selection,
 }
 :root[data-theme-mode="light"] .sidebar-item.active .sidebar-item-label {
   color: var(--oc-sidebar-text) !important;
-  font-weight: 500 !important;
+  font-weight: 400 !important;
 }
 :root[data-theme-mode="light"] .sidebar-item.active .sidebar-item-icon {
   color: var(--oc-sidebar-text) !important;
@@ -7078,12 +7091,6 @@ textarea::selection,
   background: #F3F4F6 !important;
 }
 
-/* 浅色：用户头像圆圈 */
-:root[data-theme-mode="light"] .lingxia-msg-fade .w-8.h-8.rounded-full[style*="rgba(255,255,255,0.08)"] {
-  background: #F3F4F6 !important;
-  border-color: #D1D5DB !important;
-}
-
 /* 浅色：侧边栏实例头信息 */
 :root[data-theme-mode="light"] .lingxia-shell aside .px-4.py-3[style*="rgba(255,255,255,0.06)"] {
   border-bottom-color: #E5E7EB !important;
@@ -7170,19 +7177,6 @@ html:has(:root[data-theme-mode="light"]) body {
 :root[data-theme-mode="light"] [contenteditable="true"]::selection {
   background: rgba(147, 197, 253, 0.55) !important;
   color: inherit !important;
-}
-
-/* 用户头像圆圈 — 暗色/亮色自适应 */
-.lingxia-avatar-user {
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.1);
-}
-:root[data-theme-mode="light"] .lingxia-avatar-user {
-  background: #F3F4F6 !important;
-  border: 1px solid #D1D5DB !important;
-}
-:root[data-theme-mode="light"] .lingxia-avatar-user svg {
-  color: #6B7280 !important;
 }
 
 /* ============================================================
@@ -7441,16 +7435,6 @@ html:has(:root[data-theme-mode="light"]) body {
 .workforce-agent-icon:hover .workforce-agent-icon__eye-r {
   transition: transform 0.25s ease-out;
   transform: scaleY(0.7) !important;
-}
-
-/* AI 头像容器 */
-.lingxia-avatar-ai {
-  background: color-mix(in oklab, var(--oc-accent) 13%, var(--oc-bg-surface));
-  border: 1px solid color-mix(in oklab, var(--oc-accent) 30%, var(--oc-border));
-}
-:root[data-theme-mode="light"] .lingxia-avatar-ai {
-  background: #FFF1F2 !important;
-  border-color: #FECDD3 !important;
 }
 
 /* ============================================================
@@ -8124,21 +8108,42 @@ html:has(:root[data-theme-mode="light"]) body {
   color: var(--oc-text-primary) !important;
   box-shadow: var(--oc-shadow-lg);
 }
+.workbench-account-menu[data-slot="dropdown-menu-content"]:focus-visible {
+  outline: none;
+  border-color: var(--oc-border) !important;
+  box-shadow: var(--oc-shadow-lg);
+}
 
 .workbench-account-menu [data-slot="dropdown-menu-item"] {
+  min-height: 36px;
+  height: 36px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
   color: var(--oc-text-primary) !important;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
   cursor: pointer;
 }
 
 .workbench-account-menu [data-slot="dropdown-menu-item"] > svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.5;
   color: var(--oc-text-secondary) !important;
 }
 
 .workbench-account-menu [data-slot="dropdown-menu-item"]:hover,
 .workbench-account-menu [data-slot="dropdown-menu-item"]:focus,
+.workbench-account-menu [data-slot="dropdown-menu-item"]:focus-visible,
 .workbench-account-menu [data-slot="dropdown-menu-item"][data-highlighted] {
   background: var(--oc-bg-hover) !important;
+  border-color: transparent !important;
   color: var(--oc-text-primary) !important;
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 .workbench-account-menu [data-slot="dropdown-menu-item"]:hover > svg,
