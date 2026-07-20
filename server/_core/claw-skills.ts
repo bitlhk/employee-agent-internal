@@ -31,6 +31,7 @@ import {
   deleteAgentMcpPreference,
   getAgentMcpPreference,
   listApprovedSkillMarketItems,
+  listCustomMcpConnections,
   listMcpInvocationCounts,
   listSkillInvocationCounts,
   resolveEffectiveRoleAssets,
@@ -63,6 +64,12 @@ import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { scanUploadForMalware } from "./upload-security";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
+import {
+  buildCustomMcpStatusGroup,
+  customMcpServerId,
+  parseCustomMcpServerId,
+  toggleCustomMcpConnection,
+} from "./custom-mcp";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -772,10 +779,19 @@ export function registerSkillRoutes(app: express.Express) {
         () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
       );
       const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
+      const customRows = await listCustomMcpConnections({
+        adoptId,
+        userId: Number((claw as any).userId || 0),
+      });
+      const customGroup = await buildCustomMcpStatusGroup(adoptId, Number((claw as any).userId || 0));
+      const customServerIds = customRows.map((row) => customMcpServerId(row.id));
+      const enabledCustomServerIds = customRows.filter((row) => row.enabled).map((row) => customMcpServerId(row.id));
       const enabledServerIds = new Set(selection.enabledServerIds);
+      const items = customGroup ? [...rawPayload.items, customGroup] : rawPayload.items;
       const payload = {
         ...rawPayload,
-        items: rawPayload.items.map((group: any) => {
+        items: items.map((group: any) => {
+          if (group.id === "custom-user-mcp") return group;
           const children = group.children.map((child: any) => ({
             ...child,
             enabledForAgent: enabledServerIds.has(child.serverId),
@@ -789,30 +805,48 @@ export function registerSkillRoutes(app: express.Express) {
         }),
         totals: {
           ...rawPayload.totals,
-          activeServers: selection.enabledServerIds.length,
+          groups: items.length,
+          configuredServers: Number(rawPayload.totals?.configuredServers || 0) + customRows.length,
+          availableServers: Number(rawPayload.totals?.availableServers || 0)
+            + customRows.filter((row) => row.enabled && row.healthStatus === "ready").length,
+          activeServers: selection.enabledServerIds.length + enabledCustomServerIds.length,
         },
       };
       res.json({
         ...payload,
         roleTemplate,
         filtered: true,
-        allowedServerIds: selection.authorizedServerIds,
-        enabledServerIds: selection.enabledServerIds,
-        disabledServerIds: selection.disabledServerIds,
+        allowedServerIds: [...selection.authorizedServerIds, ...customServerIds],
+        enabledServerIds: [...selection.enabledServerIds, ...enabledCustomServerIds],
+        disabledServerIds: [
+          ...selection.disabledServerIds,
+          ...customRows.filter((row) => !row.enabled).map((row) => customMcpServerId(row.id)),
+        ],
         live: {
           enabled: true,
           ttlMs: MCP_TOOLS_LIVE_TTL_MS,
           checkedAt: new Date().toISOString(),
           serverStatuses: Object.fromEntries(
-            Object.entries(liveStatuses).map(([serverId, status]) => [
-              serverId,
-              {
-                status: status.status,
-                toolCount: status.tools.length,
-                checkedAt: status.checkedAt,
-                error: status.error || null,
-              },
-            ])
+            [
+              ...Object.entries(liveStatuses).map(([serverId, status]) => [
+                serverId,
+                {
+                  status: status.status,
+                  toolCount: status.tools.length,
+                  checkedAt: status.checkedAt,
+                  error: status.error || null,
+                },
+              ]),
+              ...customRows.map((row) => [
+                customMcpServerId(row.id),
+                {
+                  status: row.healthStatus === "ready" ? "live" : "unavailable",
+                  toolCount: Array.isArray(row.selectedToolNames) ? row.selectedToolNames.length : 0,
+                  checkedAt: row.lastTestedAt?.toISOString() || null,
+                  error: row.lastError || null,
+                },
+              ]),
+            ]
           ),
         },
       });
@@ -840,6 +874,50 @@ export function registerSkillRoutes(app: express.Express) {
       if (!claw) return;
       if (!isJiuwenClawAdoptId(adoptId)) {
         res.status(409).json({ error: "当前运行时暂不支持按智能体切换连接" });
+        return;
+      }
+
+      const customConnectionId = parseCustomMcpServerId(serverId);
+      if (customConnectionId) {
+        const userId = Number((claw as any).userId || 0);
+        const { result, selection, customRows } = await withAgentMcpMutationLock(adoptId, async () => {
+          const result = await toggleCustomMcpConnection({
+            id: customConnectionId,
+            adoptId,
+            userId,
+            enabled,
+          });
+          const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
+          const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+          const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
+          const customRows = await listCustomMcpConnections({ adoptId, userId });
+          return { result, selection, customRows };
+        });
+        const enabledCustomIds = customRows.filter((row) => row.enabled).map((row) => customMcpServerId(row.id));
+        await recordAuditBestEffort({
+          action: "agent.connector.updated",
+          actorType: "user",
+          actorUserId: userId,
+          ...auditRequest(req),
+          targetType: "agent_connector",
+          targetId: `${adoptId}:${serverId}`,
+          targetName: serverId,
+          agentInstanceId: adoptId,
+          runtimeType: "jiuwenswarm",
+          metadata: { enabled, custom: true, sessionEpoch: result.sessionEpoch },
+        });
+        res.json({
+          ok: true,
+          changed: result.changed,
+          serverId,
+          enabled,
+          enabledServerIds: [...selection.enabledServerIds, ...enabledCustomIds],
+          disabledServerIds: [
+            ...selection.disabledServerIds,
+            ...customRows.filter((row) => !row.enabled).map((row) => customMcpServerId(row.id)),
+          ],
+          sessionEpoch: result.sessionEpoch,
+        });
         return;
       }
 

@@ -51,6 +51,10 @@ describe("safe Agent endpoint policy", () => {
       const response = await safeAgentRequest(`http://127.0.0.1:${address.port}/ok`);
       expect(await readSafeAgentResponseText(response)).toBe('{"ok":true}');
       await expect(safeAgentRequest(`http://127.0.0.1:${address.port}/redirect`)).rejects.toThrow(/redirects/);
+      await expect(safeAgentRequest(`http://127.0.0.1:${address.port}/ok`, {
+        allowPrivate: false,
+        privateHostAllowlist: new Set(),
+      })).rejects.toThrow(/private or local/);
     } finally {
       await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

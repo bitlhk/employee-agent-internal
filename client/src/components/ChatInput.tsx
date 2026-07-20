@@ -1,5 +1,5 @@
-import { useRef, useState, useCallback, useEffect, useLayoutEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { FileText, Upload, X } from "lucide-react";
+import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { FileText, Mic, Paperclip, Upload, X } from "lucide-react";
 import { prepareChatAttachments } from "@/lib/image-compress";
 
 type MentionUser = {
@@ -22,10 +22,11 @@ type ChatInputProps = {
   streaming?: boolean;
   placeholder?: string;
   maxLength?: number;
-  messages?: Array<{ role: string; text: string; timeLabel: string }>;
   onUserMention?: (user: MentionUser) => void;
   leftControls?: ReactNode;
   rightControls?: ReactNode;
+  renderAddMenu?: (context: { openFilePicker: () => void; disabled: boolean }) => ReactNode;
+  voiceOnRight?: boolean;
   historyStorageKey?: string;
   showUtilityButtons?: boolean;
 };
@@ -104,10 +105,11 @@ export function ChatInput({
   streaming = false,
   placeholder = "Message…",
   maxLength = 4000,
-  messages = [],
   onUserMention,
   leftControls,
   rightControls,
+  renderAddMenu,
+  voiceOnRight = false,
   historyStorageKey,
   showUtilityButtons = true,
 }: ChatInputProps) {
@@ -397,22 +399,6 @@ export function ChatInput({
     setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
-  const exportMarkdown = () => {
-    if (!messages.length) { alert("暂无对话内容"); return; }
-    const content = messages.map(m =>
-      `## ${m.role === "user" ? "**用户**" : "**助手**"}\n\n${m.text}\n\n---\n`
-    ).join("\n");
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `conversation-${new Date().toISOString().slice(0, 10)}.md`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
   // ── 语音录制 ──
   const startRecording = useCallback(async () => {
     try {
@@ -525,6 +511,21 @@ export function ChatInput({
     if (!el || recording || transcribing) return;
     resizeTextarea(el);
   }, [recording, transcribing, value]);
+
+  const attachmentControlDisabled = streaming || submittingAttachments;
+  const voiceControl = (
+    <button
+      type="button"
+      onClick={toggleRecording}
+      title={recording ? "停止录音" : "语音输入"}
+      aria-label={recording ? "停止录音" : "语音输入"}
+      className={`lingxia-toolbar-icon ${recording ? "is-active" : ""}`}
+      style={recording ? { color: "var(--oc-accent)" } : undefined}
+      disabled={transcribing}
+    >
+      <Mic size={16} strokeWidth={1.8} aria-hidden="true" />
+    </button>
+  );
 
   return (
     <div
@@ -721,50 +722,34 @@ export function ChatInput({
             <input ref={fileInputRef} type="file" multiple
               accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,.xls,.xlsx"
               onChange={handleFileSelect} style={{ display: "none" }} />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              title="上传文件"
-              className="lingxia-toolbar-icon"
-              disabled={streaming || submittingAttachments}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-              </svg>
-            </button>
-            <button
-              onClick={toggleRecording}
-              title={recording ? "停止录音" : "语音输入"}
-              className={`lingxia-toolbar-icon ${recording ? "is-active" : ""}`}
-              style={recording ? { color: "var(--oc-accent)" } : undefined}
-              disabled={transcribing}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                <line x1="12" y1="19" x2="12" y2="23"/>
-                <line x1="8" y1="23" x2="16" y2="23"/>
-              </svg>
-            </button>
+            {renderAddMenu ? renderAddMenu({
+              openFilePicker: () => fileInputRef.current?.click(),
+              disabled: attachmentControlDisabled,
+            }) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                title="上传文件"
+                aria-label="上传文件"
+                className="lingxia-toolbar-icon"
+                disabled={attachmentControlDisabled}
+              >
+                <Paperclip size={16} strokeWidth={1.8} aria-hidden="true" />
+              </button>
+            )}
+            {!voiceOnRight ? voiceControl : null}
             {leftControls}
           </div>
 
           <div className="flex items-center gap-1">
             {rightControls}
+            {voiceOnRight ? voiceControl : null}
             {showUtilityButtons ? (
-              <>
-                <button onClick={onNewChat} title="新对话" className="lingxia-toolbar-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                </button>
-                <button onClick={exportMarkdown} title="导出 Markdown" className="lingxia-toolbar-icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                </button>
-              </>
+              <button type="button" onClick={onNewChat} title="新对话" aria-label="新对话" className="lingxia-toolbar-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+              </button>
             ) : null}
             <button
               onClick={() => void submitMessage()}

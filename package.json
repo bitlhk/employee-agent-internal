@@ -28,8 +28,9 @@
     "convert:webp": "tsx scripts/convert-to-webp.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@trpc/server": "^11.6.0",
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.0",
     "axios": "^1.18.1",
     "bcryptjs": "^3.0.3",
     "compression": "^1.8.1",

@@ -56,14 +56,18 @@ export function selectAgentEndpointAddress(
   return records.find((record) => record.family === 4) || records[0];
 }
 
-async function resolveAgentEndpoint(url: URL): Promise<AgentEndpointAddress> {
+async function resolveAgentEndpoint(
+  url: URL,
+  options: { allowPrivate?: boolean; allowlist?: Set<string> } = {},
+): Promise<AgentEndpointAddress> {
   const hostname = normalizedHostname(url);
   const family = isIP(hostname);
   const records = family
     ? [{ address: hostname, family: family as 4 | 6 }]
     : await lookup(hostname, { all: true, verbatim: true }) as AgentEndpointAddress[];
   return selectAgentEndpointAddress(url, records, {
-    allowPrivate: privateEndpointsGloballyAllowed(),
+    allowPrivate: options.allowPrivate ?? privateEndpointsGloballyAllowed(),
+    allowlist: options.allowlist,
   });
 }
 
@@ -73,6 +77,8 @@ export type SafeAgentRequestOptions = {
   body?: string | Buffer;
   signal?: AbortSignal;
   timeoutMs?: number;
+  allowPrivate?: boolean;
+  privateHostAllowlist?: Set<string>;
 };
 
 export type SafeAgentResponse = {
@@ -83,7 +89,10 @@ export type SafeAgentResponse = {
 
 export async function safeAgentRequest(rawUrl: string, options: SafeAgentRequestOptions = {}): Promise<SafeAgentResponse> {
   const url = parseAgentEndpointUrl(rawUrl);
-  const resolved = await resolveAgentEndpoint(url);
+  const resolved = await resolveAgentEndpoint(url, {
+    allowPrivate: options.allowPrivate,
+    allowlist: options.privateHostAllowlist,
+  });
   const body = options.body;
   const headers = { ...(options.headers || {}) };
   if (body !== undefined && !Object.keys(headers).some((name) => name.toLowerCase() === "content-length")) {

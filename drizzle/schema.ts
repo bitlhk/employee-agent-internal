@@ -960,6 +960,35 @@ export const agentMcpPreferences = mysqlTable("agent_mcp_preferences", {
 export type AgentMcpPreference = typeof agentMcpPreferences.$inferSelect;
 export type InsertAgentMcpPreference = typeof agentMcpPreferences.$inferInsert;
 
+// User-managed Streamable HTTP MCP connections. Credentials are encrypted by
+// the application before they reach this table and are never returned by APIs.
+export const customMcpConnections = mysqlTable("custom_mcp_connections", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  displayName: varchar("display_name", { length: 128 }).notNull(),
+  endpointUrl: varchar("endpoint_url", { length: 2048 }).notNull(),
+  endpointDigest: varchar("endpoint_digest", { length: 64 }).notNull(),
+  authType: mysqlEnum("auth_type", ["none", "bearer", "api_key"]).default("none").notNull(),
+  authHeaderName: varchar("auth_header_name", { length: 128 }),
+  credentialEncrypted: text("credential_encrypted"),
+  enabled: boolean("enabled").default(true).notNull(),
+  healthStatus: mysqlEnum("health_status", ["unknown", "ready", "error"]).default("unknown").notNull(),
+  lastError: text("last_error"),
+  toolsJson: json("tools_json").$type<Array<Record<string, unknown>> | null>(),
+  selectedToolNames: json("selected_tool_names").$type<string[] | null>(),
+  lastTestedAt: timestamp("last_tested_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  ownerLookupIdx: index("idx_custom_mcp_owner").on(table.userId, table.adoptId),
+  enabledLookupIdx: index("idx_custom_mcp_adopt_enabled").on(table.adoptId, table.enabled),
+  uniqEndpoint: uniqueIndex("uk_custom_mcp_adopt_endpoint").on(table.adoptId, table.endpointDigest),
+}));
+
+export type CustomMcpConnection = typeof customMcpConnections.$inferSelect;
+export type InsertCustomMcpConnection = typeof customMcpConnections.$inferInsert;
+
 // ── 用户记忆 (平台级) ──
 export const userMemories = mysqlTable("user_memories", {
   id:           int("id").autoincrement().primaryKey(),

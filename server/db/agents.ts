@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
 import { auditEvents, businessAgents, skillMarketplace, agentCallLogs, agentTasks, BusinessAgent, InsertBusinessAgent, InsertAgentTask } from "../../drizzle/schema";
 import { getDb } from "./connection";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "../_core/secret-protection";
@@ -255,15 +255,115 @@ export async function getAgentTask(id: string): Promise<any | undefined> {
   return rows[0];
 }
 
+export async function getAgentTaskBySourceMessage(adoptId: string, sourceMessageId: string): Promise<any | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db.select().from(agentTasks).where(and(
+    eq(agentTasks.adoptId, adoptId),
+    eq(agentTasks.sourceMessageId, sourceMessageId),
+  )).limit(1);
+  return rows[0];
+}
+
 export async function listAgentTasks(adoptId: string, limit = 30): Promise<any[]> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db
-    .select()
+  const rows = await db
+    .select({ task: agentTasks, agentName: businessAgents.name })
     .from(agentTasks)
+    .leftJoin(businessAgents, eq(agentTasks.agentId, businessAgents.id))
     .where(eq(agentTasks.adoptId, adoptId))
     .orderBy(desc(agentTasks.createdAt))
     .limit(Math.max(1, Math.min(100, Number(limit || 30))));
+  return rows.map((row) => ({ ...row.task, agentName: row.agentName || row.task.agentId }));
+}
+
+export async function listAgentTasksByIds(adoptId: string, ids: string[]): Promise<any[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const taskIds = Array.from(new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))).slice(0, 64);
+  if (taskIds.length === 0) return [];
+  const rows = await db
+    .select({ task: agentTasks, agentName: businessAgents.name })
+    .from(agentTasks)
+    .leftJoin(businessAgents, eq(agentTasks.agentId, businessAgents.id))
+    .where(and(eq(agentTasks.adoptId, adoptId), inArray(agentTasks.id, taskIds)))
+    .orderBy(asc(agentTasks.createdAt), asc(agentTasks.id));
+  return rows.map((row) => ({ ...row.task, agentName: row.agentName || row.task.agentId }));
+}
+
+export async function listAgentTasksForHistory(adoptId: string, limit = 500): Promise<any[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db
+    .select({ task: agentTasks, agentName: businessAgents.name })
+    .from(agentTasks)
+    .leftJoin(businessAgents, eq(agentTasks.agentId, businessAgents.id))
+    .where(and(eq(agentTasks.adoptId, adoptId), isNotNull(agentTasks.sourceConversationId)))
+    .orderBy(desc(agentTasks.createdAt), desc(agentTasks.id))
+    .limit(Math.max(1, Math.min(1000, Number(limit || 500))));
+  return rows.map((row) => ({ ...row.task, agentName: row.agentName || row.task.agentId }));
+}
+
+export async function listAgentTasksByConversation(
+  adoptId: string,
+  conversationId: string,
+  limit = 100,
+): Promise<any[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db
+    .select({ task: agentTasks, agentName: businessAgents.name })
+    .from(agentTasks)
+    .leftJoin(businessAgents, eq(agentTasks.agentId, businessAgents.id))
+    .where(and(
+      eq(agentTasks.adoptId, adoptId),
+      eq(agentTasks.sourceConversationId, conversationId),
+    ))
+    .orderBy(asc(agentTasks.createdAt), asc(agentTasks.id))
+    .limit(Math.max(1, Math.min(200, Number(limit || 100))));
+  return rows.map((row) => ({ ...row.task, agentName: row.agentName || row.task.agentId }));
+}
+
+export async function deleteAgentTasksByConversation(adoptId: string, conversationId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db
+    .select({ id: agentTasks.id })
+    .from(agentTasks)
+    .where(and(
+      eq(agentTasks.adoptId, adoptId),
+      eq(agentTasks.sourceConversationId, conversationId),
+    ));
+  if (rows.length === 0) return 0;
+  await db.delete(agentTasks).where(and(
+    eq(agentTasks.adoptId, adoptId),
+    eq(agentTasks.sourceConversationId, conversationId),
+  ));
+  return rows.length;
+}
+
+export async function countActiveAgentTasks(agentId: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(agentTasks)
+    .where(and(
+      eq(agentTasks.agentId, agentId),
+      inArray(agentTasks.status, ["pending", "running"]),
+    ));
+  return Number(rows[0]?.count || 0);
+}
+
+export async function countAgentCallsSince(agentId: string, since: Date): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(agentCallLogs)
+    .where(and(eq(agentCallLogs.agentId, agentId), gte(agentCallLogs.createdAt, since)));
+  return Number(rows[0]?.count || 0);
 }
 
 export async function updateAgentTask(id: string, fields: Record<string, any>): Promise<void> {

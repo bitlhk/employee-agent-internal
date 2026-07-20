@@ -29,6 +29,7 @@ import { PageContainer } from "@/components/console/PageContainer";
 import { handleRovingTabKey } from "@/lib/a11y";
 import { MarketplacePage } from "./MarketplacePage";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
 
 type SourceKind = "builtin" | "role_default" | "marketplace" | "uploaded" | "generated" | "runtime_imported";
 type RuntimeState =
@@ -73,15 +74,6 @@ type RegistrySkill = {
   examples?: string[];
   createdAt: string;
   updatedAt: string;
-};
-
-type SkillPackageInspectResponse = {
-  skill: {
-    skillId: string;
-    displayName: string;
-    description?: string;
-    warnings?: string[];
-  };
 };
 
 type SkillIntroductionResponse = {
@@ -262,14 +254,6 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-async function fetchSkillPackageBinary<T>(url: string, file: File, params: Record<string, string>): Promise<T> {
-  const qs = new URLSearchParams(params);
-  return fetchJson<T>(`${url}?${qs.toString()}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: await file.arrayBuffer(),
-  });
-}
 
 function reasonOf(skill: RegistrySkill): string {
   return skill.sync?.reason || skill.review?.reason || "";
@@ -1279,10 +1263,7 @@ export function SkillsPage({ adoptId, onChanged }: {
     }
     setUploading(true);
     try {
-      const inspect = await fetchSkillPackageBinary<SkillPackageInspectResponse>("/api/claw/skill-package/inspect", file, {
-        adoptId,
-        filename: file.name,
-      });
+      const inspect = await inspectSkillPackage(file, adoptId);
       const defaultName = inspect.skill.displayName || inspect.skill.skillId || file.name.replace(/\.(zip|skill)$/i, "");
       const displayName = prompt("技能名称", defaultName)?.trim();
       if (!displayName) return;
@@ -1291,9 +1272,9 @@ export function SkillsPage({ adoptId, onChanged }: {
         return;
       }
       const description = prompt("技能说明", inspect.skill.description || "")?.trim() || inspect.skill.description || "";
-      await fetchSkillPackageBinary("/api/claw/skill-package/upload", file, {
+      await uploadSkillPackage({
         adoptId,
-        filename: file.name,
+        file,
         displayName,
         description,
       });

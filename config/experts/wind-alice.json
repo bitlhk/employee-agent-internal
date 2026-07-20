@@ -1,0 +1,98 @@
+{
+  "id": "wind-alice",
+  "name": "万得金融专家",
+  "description": "万得专业金融分析 Agent，支持公司研究、事实核验、财报点评、宏观、债券、基金与信用分析。",
+  "kind": "remote",
+  "apiUrl": "https://alice.wind.com.cn/Weaver/ChatAgent",
+  "apiTokenEnv": "WIND_API_KEY",
+  "remoteAgentId": "alice",
+  "icon": "W",
+  "enabled": 1,
+  "sortOrder": 20,
+  "maxDailyRequests": 100,
+  "allowedProfiles": "plus,internal",
+  "tags": "金融研究,事实核验,公司分析,异步专家",
+  "providerType": "a2a",
+  "adapterProtocol": "a2a-v1",
+  "capabilities": [
+    "agent",
+    "async-agent",
+    "a2a",
+    "公司一页纸",
+    "事实核验",
+    "调研问题清单",
+    "财报点评",
+    "宏观与信用分析"
+  ],
+  "uiConfig": {
+    "badge": "A2A",
+    "displayMode": "agent-task",
+    "resultFormat": "markdown"
+  },
+  "endpointConfig": {
+    "method": "message/stream",
+    "timeoutMs": 1200000,
+    "executionMode": "async",
+    "authRequired": true,
+    "maxConcurrent": 3,
+    "requestProfile": {
+      "idVersion": 7,
+      "messageKind": "message",
+      "includeContextId": true,
+      "includeTaskId": true,
+      "messageFields": {
+        "referenceTaskIds": []
+      },
+      "dataPart": {
+        "chatMode": "0",
+        "switchMode": "auto",
+        "selectedSkillIds": [],
+        "intentionModel": null,
+        "files": [],
+        "file": null,
+        "fileIds": [],
+        "index": "{{uuid}}",
+        "questionIndex": 1,
+        "coEditState": {},
+        "hasCoEdit": "1",
+        "questionType": "",
+        "timezone": "Asia/Shanghai"
+      },
+      "dataPartMetadata": {
+        "key": "Wind.WindSearch.ChatService.A2A",
+        "version": "1.0.0"
+      },
+      "paramsMetadata": {
+        "agentCard": {
+          "name": "{\"zh\":\"智能金融助理\",\"en\":\"alice chat\"}",
+          "description": "{\"agentId\":\"6ba7b810-9dad-11d1-80b4-00c04fd430c8\",\"agentDescription\":{\"zh\":\"2023年诞生的智能金融助理，由万得（Wind）AI团队与金融专家团队联合开发，融合近30年金融领域知识及实时全球金融数据，为投资者提供全方位金融咨询与投资决策支持\",\"en\":\"Intelligent financial assistant launched in 2023, jointly developed by Wind AI team and financial experts, integrating 30 years of financial expertise and real-time global financial data to provide comprehensive financial consulting and investment decision support\"}}",
+          "url": "https://114.80.154.45/AliceChat.Agent/",
+          "version": "1.0.0",
+          "capabilities": {
+            "streaming": true,
+            "pushNotifications": false,
+            "stateTransitionHistory": false
+          },
+          "defaultInputModes": ["text/plain", "application/json"],
+          "defaultOutputModes": ["text/plain", "application/json"],
+          "skills": [],
+          "documentationUrl": "",
+          "provider": { "name": "alice", "contact": "" },
+          "security": [{ "apiKey": [] }],
+          "securitySchemes": { "apiKey": { "type": "", "name": "", "in": "" } },
+          "supportsAuthenticatedExtendedCard": false
+        },
+        "activatedSkills": []
+      }
+    },
+    "resultProfile": {
+      "artifactNames": ["agentResult"]
+    },
+    "retryProfile": {
+      "method": "tasks/resubscribe",
+      "maxRetries": 10,
+      "baseDelayMs": 1000,
+      "maxDelayMs": 10000
+    }
+  }
+}

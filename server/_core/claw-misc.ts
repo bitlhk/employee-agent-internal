@@ -37,6 +37,17 @@ import {
   readJiuwenSessionArtifacts,
   type JiuwenSessionArtifactFile,
 } from "./jiuwen-session-artifacts";
+import {
+  deleteAgentTasksByConversation,
+  listAgentTasksByConversation,
+  listAgentTasksForHistory,
+} from "../db/agents";
+import {
+  buildExpertTaskHistoryMessages,
+  buildExpertTaskHistorySessions,
+  expertConversationIdFromSessionKey,
+  mergeExpertTaskHistorySessions,
+} from "./expert-task-history";
 
 type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -1361,13 +1372,20 @@ export async function listClawChatHistorySessionRecords(args: {
   const claw = args.claw;
   const limit = Math.min(Math.max(Number(args.limit || 50) || 50, 1), 100);
   const dbAgentId = String((claw as any).agentId || "").trim();
+  const expertTasks = await listAgentTasksForHistory(adoptId, 1000).catch((error: any) => {
+    console.warn("[chat-history] expert task session merge skipped", error?.message || error);
+    return [];
+  });
+  const expertSessions = buildExpertTaskHistorySessions(expertTasks);
 
   if (isJiuwenClawAdoptId(adoptId)) {
-    const sessions = listJiuwenChatHistorySessions({ adoptId, dbAgentId, limit });
+    const runtimeSessions = listJiuwenChatHistorySessions({ adoptId, dbAgentId, limit });
+    const sessions = mergeExpertTaskHistorySessions(runtimeSessions, expertSessions, limit);
     logIosLoadDebug("chat_history_sessions_done_jiuwen", {
       adoptId,
       runtimeAgentId: jiuwenClawAgentId(adoptId, dbAgentId),
       returnedCount: sessions.length,
+      expertConversationCount: expertSessions.length,
       ms: Date.now() - startedAt,
     });
     return {
@@ -1389,7 +1407,13 @@ export async function listClawChatHistorySessionRecords(args: {
       sessionsPath,
       ms: Date.now() - startedAt,
     });
-    return { sessions: [], meta: { timings: { totalMs: Date.now() - startedAt } } };
+    return {
+      sessions: expertSessions.slice(0, limit),
+      meta: {
+        expertConversationCount: expertSessions.length,
+        timings: { totalMs: Date.now() - startedAt },
+      },
+    };
   }
 
   const rawIndex = JSON.parse(readFileSync(sessionsPath, "utf8") || "{}") || {};
@@ -1437,7 +1461,7 @@ export async function listClawChatHistorySessionRecords(args: {
   const summaryStartedAt = Date.now();
   const summaryCache = readSessionSummaryCache(sessionsDir);
   const summaryCacheStats = { hits: 0, misses: 0 };
-  const sessions = Array.from(byConversation.values())
+  const runtimeSessions = Array.from(byConversation.values())
     .sort((a, b) => b.updatedAt - a.updatedAt)
     .slice(0, limit)
     .map((entry) => {
@@ -1460,6 +1484,7 @@ export async function listClawChatHistorySessionRecords(args: {
       };
     })
     .filter((entry) => entry.messageCount > 0);
+  const sessions = mergeExpertTaskHistorySessions(runtimeSessions, expertSessions, limit);
   if (summaryCacheStats.misses > 0) {
     writeSessionSummaryCache(sessionsDir, summaryCache);
   }
@@ -1479,6 +1504,7 @@ export async function listClawChatHistorySessionRecords(args: {
     sessions,
     meta: {
       cache: summaryCacheStats,
+      expertConversationCount: expertSessions.length,
       timings: {
         summaryMs: Date.now() - summaryStartedAt,
         totalMs: Date.now() - startedAt,
@@ -1772,19 +1798,49 @@ export function registerMiscRoutes(app: express.Express) {
       }
 
       const dbAgentId = String((claw as any).agentId || "").trim();
+      const expertConversationId = expertConversationIdFromSessionKey(sessionKey);
+      if (expertConversationId) {
+        const expertTasks = await listAgentTasksByConversation(adoptId, expertConversationId, 100);
+        const messages = buildExpertTaskHistoryMessages(expertTasks, 200);
+        if (messages.length === 0) {
+          res.status(404).json({ error: "session_missing" });
+          return;
+        }
+        logIosLoadDebug("chat_history_messages_done_expert", {
+          adoptId,
+          conversationId: expertConversationId,
+          sessionKey,
+          messageCount: messages.length,
+          ms: Date.now() - startedAt,
+        });
+        res.json({
+          conversationId: expertConversationId,
+          sessionKey,
+          sessionId: sessionKey,
+          runtime: "ea-expert",
+          messages,
+        });
+        return;
+      }
+
       if (isJiuwenClawAdoptId(adoptId)) {
         const resolved = resolveJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
         if (!resolved) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
-        const messages = bindHistoryAttachmentOwner(mergeJiuwenHistoryCandidates({
+        const runtimeMessages = mergeJiuwenHistoryCandidates({
           candidates: resolved.segments,
           adoptId,
           dbAgentId,
           maxMessages: 200,
           workspaceDir: resolveRuntimeWorkspace(claw, adoptId),
-        }), adoptId);
+        });
+        const expertTasks = await listAgentTasksByConversation(adoptId, resolved.conversationId, 100).catch(() => []);
+        const messages = bindHistoryAttachmentOwner(dedupeHistoryMessages([
+          ...runtimeMessages,
+          ...buildExpertTaskHistoryMessages(expertTasks, 200),
+        ], 200), adoptId);
         logIosLoadDebug("chat_history_messages_done_jiuwen", {
           adoptId,
           runtimeAgentId: jiuwenClawAgentId(adoptId, dbAgentId),
@@ -1830,12 +1886,17 @@ export function registerMiscRoutes(app: express.Express) {
         res.status(403).json({ error: "session_file_not_allowed" });
         return;
       }
-      const messages = bindHistoryAttachmentOwner(collectOpenClawChatHistoryMessages({
+      const runtimeMessages = collectOpenClawChatHistoryMessages({
         sessionsDir,
         sessionKey,
         currentSessionFile: resolvedFile,
         maxMessages: 200,
-      }), adoptId);
+      });
+      const expertTasks = await listAgentTasksByConversation(adoptId, parsed.conversationId, 100).catch(() => []);
+      const messages = bindHistoryAttachmentOwner(dedupeHistoryMessages([
+        ...runtimeMessages,
+        ...buildExpertTaskHistoryMessages(expertTasks, 200),
+      ], 200), adoptId);
       logIosLoadDebug("chat_history_messages_done", {
         adoptId,
         runtimeAgentId,
@@ -1867,6 +1928,23 @@ export function registerMiscRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
+      const expertConversationId = expertConversationIdFromSessionKey(sessionKey);
+      if (expertConversationId) {
+        const deleted = await deleteAgentTasksByConversation(adoptId, expertConversationId);
+        if (deleted === 0) {
+          res.status(404).json({ error: "session_missing" });
+          return;
+        }
+        res.json({
+          ok: true,
+          runtime: "ea-expert",
+          conversationId: expertConversationId,
+          sessionId: sessionKey,
+          deleted,
+        });
+        return;
+      }
+
       const dbAgentId = String((claw as any).agentId || "").trim();
       if (isJiuwenClawAdoptId(adoptId)) {
         const result = deleteJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
@@ -1874,12 +1952,14 @@ export function registerMiscRoutes(app: express.Express) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
+        const expertDeleted = await deleteAgentTasksByConversation(adoptId, result.conversationId);
         res.json({
           ok: true,
           runtime: "jiuwenswarm",
           conversationId: result.conversationId,
           sessionId: result.sessionId,
-          deleted: result.deleted,
+          deleted: result.deleted + expertDeleted,
+          expertDeleted,
         });
         return;
       }
@@ -1901,6 +1981,22 @@ export function registerMiscRoutes(app: express.Express) {
       }
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
+
+      const expertConversationId = expertConversationIdFromSessionKey(sessionKey);
+      if (expertConversationId) {
+        const tasks = await listAgentTasksByConversation(adoptId, expertConversationId, 1);
+        if (tasks.length === 0) {
+          res.status(404).json({ error: "session_missing" });
+          return;
+        }
+        res.json({
+          ok: true,
+          conversationId: expertConversationId,
+          sessionKey,
+          runtime: "ea-expert",
+        });
+        return;
+      }
 
       const dbAgentId = String((claw as any).agentId || "").trim();
       if (isJiuwenClawAdoptId(adoptId)) {

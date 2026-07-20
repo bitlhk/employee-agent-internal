@@ -710,7 +710,6 @@ export default function CoopSession() {
                 }
                 maxLength={4000}
                 historyStorageKey={`coop_group_input_${sessionId}`}
-                messages={[]}
                 showUtilityButtons={false}
                 leftControls={agentMode && selectedComposerSkill ? (
                   <span className="lingxia-composer-skill-chip" title={`本轮优先使用：${selectedComposerSkill.label}`}>

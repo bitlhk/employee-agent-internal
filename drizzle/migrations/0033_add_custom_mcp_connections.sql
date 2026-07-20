@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `custom_mcp_connections` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `adopt_id` VARCHAR(64) NOT NULL,
+  `display_name` VARCHAR(128) NOT NULL,
+  `endpoint_url` VARCHAR(2048) NOT NULL,
+  `endpoint_digest` VARCHAR(64) NOT NULL,
+  `auth_type` ENUM('none','bearer','api_key') NOT NULL DEFAULT 'none',
+  `auth_header_name` VARCHAR(128) NULL,
+  `credential_encrypted` TEXT NULL,
+  `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
+  `health_status` ENUM('unknown','ready','error') NOT NULL DEFAULT 'unknown',
+  `last_error` TEXT NULL,
+  `tools_json` JSON NULL,
+  `selected_tool_names` JSON NULL,
+  `last_tested_at` TIMESTAMP NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_custom_mcp_adopt_endpoint` (`adopt_id`, `endpoint_digest`),
+  KEY `idx_custom_mcp_owner` (`user_id`, `adopt_id`),
+  KEY `idx_custom_mcp_adopt_enabled` (`adopt_id`, `enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

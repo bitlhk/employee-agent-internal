@@ -32,30 +32,42 @@ def update_env(path: Path, values: dict[str, str]) -> None:
     path.chmod(0o600)
 
 
-def upsert_platform_mcp(config: dict, port: int) -> None:
+def upsert_managed_mcp_servers(config: dict, port: int) -> None:
     mcp = config.setdefault("mcp", {})
     servers = mcp.setdefault("servers", [])
     if not isinstance(servers, list):
         servers = []
         mcp["servers"] = servers
-    server = next(
-        (item for item in servers if isinstance(item, dict) and item.get("name") == "platform_tools"),
-        None,
-    )
-    desired = {
-        "name": "platform_tools",
-        "enabled": True,
-        "transport": "streamable-http",
-        "url": f"http://127.0.0.1:{port}/api/internal/platform-tools/mcp",
-        "headers": {"x-internal-key": "${INTERNAL_API_KEY}"},
-        "user_context": True,
-        "timeout_s": 30,
-    }
-    if server is None:
-        servers.append(desired)
-    else:
-        server.clear()
-        server.update(desired)
+    desired_servers = [
+        {
+            "name": "platform_tools",
+            "enabled": True,
+            "transport": "streamable-http",
+            "url": f"http://127.0.0.1:{port}/api/internal/platform-tools/mcp",
+            "headers": {"x-internal-key": "${INTERNAL_API_KEY}"},
+            "user_context": True,
+            "timeout_s": 30,
+        },
+        {
+            "name": "custom_mcp_gateway",
+            "enabled": True,
+            "transport": "streamable-http",
+            "url": f"http://127.0.0.1:{port}/api/internal/custom-mcp/mcp",
+            "headers": {"x-internal-key": "${INTERNAL_API_KEY}"},
+            "user_context": True,
+            "timeout_s": 65,
+        },
+    ]
+    for desired in desired_servers:
+        server = next(
+            (item for item in servers if isinstance(item, dict) and item.get("name") == desired["name"]),
+            None,
+        )
+        if server is None:
+            servers.append(desired)
+        else:
+            server.clear()
+            server.update(desired)
 
 
 def main() -> int:
@@ -92,7 +104,7 @@ def main() -> int:
             "send_file_allowed": True,
         }
     )
-    upsert_platform_mcp(config, args.port)
+    upsert_managed_mcp_servers(config, args.port)
 
     with config_path.open("w", encoding="utf-8") as handle:
         yaml.dump(config, handle)

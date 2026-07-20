@@ -2,27 +2,25 @@ import express from "express";
 import { randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
 import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
-import { readSafeAgentResponseText, safeAgentRequest } from "./safe-agent-http";
 import {
+  runA2AExpertTask,
+  summarizeA2AEvents,
+  type A2AEndpointConfig,
+} from "./a2a-expert-client";
+import {
+  countActiveAgentTasks,
+  countAgentCallsSince,
   createAgentTask,
   getBusinessAgent,
+  getAgentTaskBySourceMessage,
+  insertCallLog,
   listAgentTasks,
+  listAgentTasksByIds,
   listEnabledBusinessAgents,
   updateAgentTask,
 } from "../db/agents";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
-
-type AgentEndpointConfig = {
-  path?: string;
-  rpcPath?: string;
-  stream?: boolean;
-  method?: string;
-  timeoutMs?: number;
-  taskPrefix?: string;
-  taskSuffix?: string;
-  [key: string]: any;
-};
 
 const AGENT_TASK_TEXT_LIMIT_BYTES = 60_000;
 const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
@@ -110,6 +108,7 @@ function isAgentIntegration(agent: any) {
   return (
     providerType === "a2a" ||
     providerType === "agent" ||
+    adapterProtocol === "a2a-v1" ||
     adapterProtocol === "agent-a2a-v1" ||
     adapterProtocol === "a2a-task-v1" ||
     capabilities.includes("agent") ||
@@ -120,9 +119,11 @@ function isAgentIntegration(agent: any) {
 function routeReason(agent: any) {
   if (!agent?.apiUrl) return "缺少 Agent endpoint";
   const adapterProtocol = String(agent?.adapterProtocol || "").trim();
-  if (!["agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
+  if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
     return `暂不支持 ${adapterProtocol || "未配置"} adapter`;
   }
+  const endpointConfig = parseJsonRecord(agent?.endpointConfigJson);
+  if (endpointConfig.authRequired === true && !agent?.apiToken) return "缺少 Agent 凭据";
   return "";
 }
 
@@ -145,119 +146,6 @@ function publicAgent(agent: any) {
     healthStatus: String(agent.healthStatus || "unknown"),
     lastHealthCheck: agent.lastHealthCheck || null,
   };
-}
-
-function endpoint(baseUrl: string, pathValue?: string) {
-  if (!pathValue) return baseUrl;
-  const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  const path = String(pathValue || "").replace(/^\//, "");
-  return new URL(path, base).toString();
-}
-
-function authHeaders(token?: string | null) {
-  const headers: Record<string, string> = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
-
-function extractA2AText(value: any): string {
-  const texts: string[] = [];
-  const artifactTexts: string[] = [];
-  const compactText = (text: string) => text.replace(/\s+/g, "");
-  const collectPartsText = (parts: any[]) => parts
-    .map((part) => ((part?.kind === "text" || part?.type === "text") && typeof part?.text === "string") ? part.text : "")
-    .filter(Boolean);
-  const visit = (node: any) => {
-    if (!node) return;
-    if (typeof node === "string") return;
-    if (Array.isArray(node)) {
-      node.forEach(visit);
-      return;
-    }
-    if (typeof node !== "object") return;
-    if (Array.isArray(node.parts)) {
-      const partTexts = collectPartsText(node.parts);
-      if (partTexts.length > 0 && (node.artifactId || node.artifact_id || node.kind === "artifact")) {
-        const last = partTexts[partTexts.length - 1] || "";
-        const previousJoined = partTexts.slice(0, -1).join("");
-        artifactTexts.push(last && previousJoined && compactText(last) === compactText(previousJoined) ? last : partTexts.join(""));
-        return;
-      }
-    }
-    if ((node.kind === "text" || node.type === "text") && typeof node.text === "string") {
-      texts.push(node.text);
-      return;
-    }
-    if (Array.isArray(node.parts)) visit(node.parts);
-    if (Array.isArray(node.artifacts)) visit(node.artifacts);
-    if (node.artifact) visit(node.artifact);
-    if (node.message) visit(node.message);
-    if (node.status?.message) visit(node.status.message);
-    if (node.result) visit(node.result);
-  };
-  visit(value);
-  if (artifactTexts.length > 0) {
-    return artifactTexts[artifactTexts.length - 1].trim();
-  }
-  return texts.join("\n").trim();
-}
-
-function extractA2AResult(events: any[]): { text: string; remoteTaskId?: string } {
-  const responseArtifacts = new Map<string, string>();
-  let remoteTaskId = "";
-
-  for (const event of events) {
-    const result = event?.result ?? event;
-    if (!result || typeof result !== "object") continue;
-    remoteTaskId = String(result.taskId || result.id || result.contextId || remoteTaskId || "").trim();
-
-    const artifact = result.artifact || result.result?.artifact;
-    if (!artifact || typeof artifact !== "object") continue;
-    const artifactId = String(artifact.artifactId || artifact.artifact_id || artifact.name || "response");
-    const artifactName = String(artifact.name || artifactId).toLowerCase();
-    const partText = extractA2AText(artifact);
-    if (!partText) continue;
-
-    // JiuwenSwarm A2A sends response artifact snapshots. Keeping the latest
-    // response artifact avoids concatenating every intermediate chunk/tool trace.
-    if (artifactName === "response" || artifactId.includes("_response")) {
-      responseArtifacts.set(artifactId, partText);
-    }
-  }
-
-  const responseText = Array.from(responseArtifacts.values()).at(-1)?.trim();
-  if (responseText) return { text: responseText, remoteTaskId: remoteTaskId || undefined };
-
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const result = events[i]?.result ?? events[i];
-    const text = extractA2AText(result);
-    if (text) return { text, remoteTaskId: remoteTaskId || undefined };
-  }
-
-  const last = events[events.length - 1]?.result ?? events[events.length - 1] ?? {};
-  return { text: JSON.stringify(last || {}, null, 2), remoteTaskId: remoteTaskId || undefined };
-}
-
-function summarizeA2AEvents(events: any[]) {
-  const compact = events.slice(-20).map((event) => {
-    const result = event?.result ?? event;
-    if (!result || typeof result !== "object") return event;
-    const artifact = result.artifact;
-    return {
-      id: event?.id,
-      kind: result.kind,
-      taskId: result.taskId || result.id,
-      contextId: result.contextId,
-      final: result.final,
-      state: result.status?.state,
-      artifact: artifact ? {
-        artifactId: artifact.artifactId || artifact.artifact_id,
-        name: artifact.name,
-        textBytes: Buffer.byteLength(extractA2AText(artifact), "utf8"),
-      } : undefined,
-    };
-  });
-  return truncateUtf8(JSON.stringify(compact), AGENT_TASK_RAW_EVENTS_LIMIT_BYTES);
 }
 
 function decodePythonSingleQuoted(raw: string): string {
@@ -301,167 +189,55 @@ export function cleanA2AText(text: string): string {
   return trimmed;
 }
 
-function parseA2AEvents(raw: string): any[] {
-  const events: any[] = [];
-  const blocks = raw.includes("\n\n") ? raw.split(/\n\n+/) : [raw];
-  for (const block of blocks) {
-    const data = block
-      .split(/\n/)
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith("data:"))
-      .map((line) => line.slice(5).trim())
-      .filter((line) => line && line !== "[DONE]")
-      .join("\n");
-    if (!data) continue;
-    try {
-      events.push(JSON.parse(data));
-    } catch {}
-  }
-  if (events.length === 0) {
-    try {
-      events.push(JSON.parse(raw || "{}"));
-    } catch {}
-  }
-  return events;
-}
-
-function parseA2ADataBlock(block: string): any[] {
-  const events: any[] = [];
-  const data = block
-    .split(/\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice(5).trim())
-    .filter((line) => line && line !== "[DONE]")
-    .join("\n");
-  if (!data) return events;
-  try {
-    events.push(JSON.parse(data));
-  } catch {}
-  return events;
-}
-
-function isA2ACompleteEvent(event: any): boolean {
-  const result = event?.result ?? event;
-  if (!result || typeof result !== "object") return false;
-  const state = String(result.status?.state || result.state || "").toLowerCase();
-  if (["completed", "succeeded", "failed", "canceled", "cancelled"].includes(state)) return true;
-  if (result.final === true || result.done === true || result.completed === true) return true;
-  const kind = String(result.kind || result.type || "").toLowerCase();
-  return kind.includes("complete") || kind.includes("completed");
-}
-
-async function runA2ATask(agent: any, input: string): Promise<{ text: string; remoteTaskId?: string; rawEvents: any[] }> {
-  const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as AgentEndpointConfig;
-  const rpcUrl = endpoint(String(agent.apiUrl || ""), endpointConfig.rpcPath ?? endpointConfig.path ?? "");
-  const method = String(endpointConfig.method || (endpointConfig.stream === true ? "message/stream" : "message/send"));
-  const taskText = [
-    String(endpointConfig.taskPrefix || "").trim(),
-    input,
-    String(endpointConfig.taskSuffix || "").trim(),
-  ].filter(Boolean).join("\n\n");
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.max(5000, Math.min(30 * 60_000, Number(endpointConfig.timeoutMs || 10 * 60_000))));
-  try {
-    const body = {
-      jsonrpc: "2.0",
-      id: randomUUID(),
-      method,
-      params: {
-        message: {
-          role: "user",
-          messageId: randomUUID(),
-          parts: [{ kind: "text", text: taskText }],
-        },
-      },
-    };
-    const response = await safeAgentRequest(rpcUrl, {
-      method: "POST",
-      headers: {
-        Accept: "application/json, text/event-stream",
-        "Content-Type": "application/json",
-        ...authHeaders(agent.apiToken),
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-      timeoutMs: Math.max(5000, Math.min(30 * 60_000, Number(endpointConfig.timeoutMs || 10 * 60_000))),
-    });
-    if (response.status < 200 || response.status >= 300) {
-      const raw = await readSafeAgentResponseText(response).catch(() => "");
-      throw new Error(`A2A HTTP ${response.status}: ${raw.slice(0, 300)}`);
-    }
-    const contentType = String(response.headers["content-type"] || "").toLowerCase();
-    if (!contentType.includes("text/event-stream")) {
-      const raw = await readSafeAgentResponseText(response);
-      const events = parseA2AEvents(raw);
-      const result = extractA2AResult(events);
-      return { text: result.text, remoteTaskId: result.remoteTaskId, rawEvents: events.slice(-20) };
-    }
-
-    const decoder = new TextDecoder();
-    const events: any[] = [];
-    let buffer = "";
-    let lastText = "";
-    let lastRemoteTaskId = "";
-    let responseBytes = 0;
-    for await (const chunk of response.body) {
-      const value = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      responseBytes += value.length;
-      if (responseBytes > 16 * 1024 * 1024) {
-        response.body.destroy(new Error("Agent endpoint response is too large"));
-        throw new Error("Agent endpoint response is too large");
-      }
-      buffer += decoder.decode(value, { stream: true });
-      const blocks = buffer.split(/\r?\n\r?\n/);
-      buffer = blocks.pop() || "";
-      for (const block of blocks) {
-        const parsedEvents = parseA2ADataBlock(block);
-        for (const event of parsedEvents) {
-          events.push(event);
-          const partial = extractA2AResult(events);
-          if (partial.text) lastText = partial.text;
-          if (partial.remoteTaskId) lastRemoteTaskId = partial.remoteTaskId;
-          if (isA2ACompleteEvent(event) && lastText) {
-            response.body.destroy();
-            return { text: lastText, remoteTaskId: lastRemoteTaskId || partial.remoteTaskId, rawEvents: events.slice(-20) };
-          }
-        }
-      }
-    }
-    if (buffer.trim()) {
-      for (const event of parseA2ADataBlock(buffer)) events.push(event);
-    }
-    const result = extractA2AResult(events);
-    return { text: result.text, remoteTaskId: result.remoteTaskId, rawEvents: events.slice(-20) };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function runAgentTaskInBackground(taskId: string, agent: any, input: string) {
+  const startedAt = Date.now();
   await updateAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
   try {
     const adapterProtocol = String(agent.adapterProtocol || "").trim();
     if (!agent.apiUrl) throw new Error("Agent endpoint is not configured");
-    if (!["agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
+    if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
       throw new Error(`${adapterProtocol || "missing adapter"} is not supported by agent task runner`);
     }
-    const result = await runA2ATask(agent, input);
+    const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as A2AEndpointConfig;
+    const result = await runA2AExpertTask({
+      apiUrl: String(agent.apiUrl || ""),
+      apiToken: agent.apiToken,
+      endpointConfig,
+    }, input);
+    if (!String(result.text || "").trim()) {
+      throw new Error("A2A Agent did not return the configured result artifact");
+    }
     const cleanedText = cleanA2AText(result.text);
     await updateAgentTask(taskId, {
       status: "succeeded" as AgentTaskStatus,
       resultMarkdown: truncateUtf8(cleanedText, AGENT_TASK_TEXT_LIMIT_BYTES),
       remoteTaskId: result.remoteTaskId || null,
-      rawEventsJson: summarizeA2AEvents(result.rawEvents || []),
+      rawEventsJson: summarizeA2AEvents(result.rawEvents || [], endpointConfig, AGENT_TASK_RAW_EVENTS_LIMIT_BYTES),
       completedAt: sql`CURRENT_TIMESTAMP`,
       errorMessage: null,
     });
+    await insertCallLog({
+      agentId: String(agent.id),
+      userId: Number((agent as any).__taskUserId || 0) || undefined,
+      adoptId: String((agent as any).__taskAdoptId || "") || undefined,
+      status: "success",
+      durationMs: Date.now() - startedAt,
+    }).catch(() => undefined);
   } catch (error: any) {
+    const timedOut = error?.name === "AbortError" || /abort|timeout/i.test(String(error?.message || ""));
     await updateAgentTask(taskId, {
       status: "failed" as AgentTaskStatus,
       errorMessage: truncateUtf8(error?.message || String(error), AGENT_TASK_ERROR_LIMIT_BYTES),
       completedAt: sql`CURRENT_TIMESTAMP`,
     });
+    await insertCallLog({
+      agentId: String(agent.id),
+      userId: Number((agent as any).__taskUserId || 0) || undefined,
+      adoptId: String((agent as any).__taskAdoptId || "") || undefined,
+      status: timedOut ? "timeout" : "error",
+      durationMs: Date.now() - startedAt,
+      errorMessage: truncateUtf8(error?.message || String(error), 2_000),
+    }).catch(() => undefined);
   }
 }
 
@@ -490,7 +266,14 @@ export function registerAgentTaskRoutes(app: express.Express) {
     const claw = await resolveClaw(req, res, adoptId);
     if (!claw) return;
     try {
-      const tasks = await listAgentTasks(adoptId, Number(req.query.limit || 30));
+      const ids = String(req.query.ids || "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => /^agt_[A-Za-z0-9]{8,64}$/.test(id))
+        .slice(0, 64);
+      const tasks = ids.length > 0
+        ? await listAgentTasksByIds(adoptId, ids)
+        : await listAgentTasks(adoptId, Number(req.query.limit || 30));
       res.json({ tasks });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "TASKS_UNAVAILABLE" });
@@ -513,24 +296,71 @@ export function registerAgentTaskRoutes(app: express.Express) {
       if (!agent || !isAgentIntegration(agent) || !profileAllowed(agent, profileKeys) || !roleAllowed(agent, (claw as any).roleTemplate)) {
         return res.status(403).json({ error: "AGENT_NOT_ALLOWED" });
       }
+      const reason = routeReason(agent);
+      if (reason) return res.status(409).json({ error: reason });
+
+      const sourceMessageId = req.body?.sourceMessageId ? String(req.body.sourceMessageId).slice(0, 128) : "";
+      if (sourceMessageId) {
+        const existing = await getAgentTaskBySourceMessage(adoptId, sourceMessageId);
+        if (existing) {
+          return res.json({
+            taskId: existing.id,
+            reused: true,
+            task: { ...existing, agent: publicAgent(agent), agentName: agent.name },
+          });
+        }
+      }
+
+      const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
+      const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
+      if (maxConcurrent > 0 && await countActiveAgentTasks(agentId) >= maxConcurrent) {
+        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
+      }
+      const maxDailyRequests = Math.max(0, Number(agent.maxDailyRequests || 0));
+      if (maxDailyRequests > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (await countAgentCallsSince(agentId, today) >= maxDailyRequests) {
+          return res.status(429).json({ error: "专家今日调用额度已用完" });
+        }
+      }
 
       const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+      const taskUserId = Number((claw as any).userId || 0);
       await createAgentTask({
         id: taskId,
         adoptId,
-        userId: Number((claw as any).userId || 0),
+        userId: taskUserId,
         agentId,
         sourceConversationId: req.body?.conversationId ? String(req.body.conversationId).slice(0, 128) : null,
         sourceSessionId: req.body?.sessionId ? String(req.body.sessionId).slice(0, 160) : null,
-        sourceMessageId: req.body?.sourceMessageId ? String(req.body.sourceMessageId).slice(0, 128) : null,
+        sourceMessageId: sourceMessageId || null,
         status: "pending",
         input,
         adapterProtocol: String(agent.adapterProtocol || ""),
       } as any);
 
       const publicPayload = publicAgent(agent);
-      res.json({ taskId, task: { id: taskId, status: "pending", agent: publicPayload } });
-      void runAgentTaskInBackground(taskId, agent, input).catch((error) => {
+      res.json({
+        taskId,
+        reused: false,
+        task: {
+          id: taskId,
+          adoptId,
+          agentId,
+          agentName: agent.name,
+          status: "pending",
+          input,
+          adapterProtocol: String(agent.adapterProtocol || ""),
+          createdAt: new Date().toISOString(),
+          agent: publicPayload,
+        },
+      });
+      void runAgentTaskInBackground(taskId, {
+        ...agent,
+        __taskUserId: taskUserId,
+        __taskAdoptId: adoptId,
+      }, input).catch((error) => {
         console.error("[AGENT-TASK] background runner failed", { taskId, error: error?.message || error });
       });
     } catch (error: any) {

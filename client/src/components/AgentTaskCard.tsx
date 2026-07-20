@@ -5,7 +5,7 @@
  * The card is intentionally self-contained: the main chat keeps local
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, CircleCheck, CircleX, Clock3, Loader2 } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 
@@ -100,7 +100,7 @@ function compactId(id: string | null | undefined): string {
 
 function displayAgentName(agentId: string, name?: string): string {
   const raw = String(name || agentId || "").trim();
-  return raw || "外部智能体";
+  return raw || "专家";
 }
 
 function parseRawEvents(raw: string | null | undefined): string | undefined {
@@ -153,12 +153,19 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
 
   const [now, setNow] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(false);
+  const autoExpandedRef = useRef(false);
 
   useEffect(() => {
     if (!normalized.isActive) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [normalized.isActive]);
+
+  useEffect(() => {
+    if (!normalized.isDone || autoExpandedRef.current) return;
+    autoExpandedRef.current = true;
+    setExpanded(true);
+  }, [normalized.isDone]);
 
   const statusMeta = STATUS_META[normalized.status] || { label: normalized.status || "未知", tone: "muted" };
   const startTime = toTime(normalized.startedAt) || toTime(normalized.createdAt) || now;
@@ -211,7 +218,7 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
           {normalized.isActive ? (
             <div className="agent-task-card__progress">
               <span className="agent-task-card__progress-dot" />
-              <span>{normalized.status === "pending" ? "任务已提交，等待远端 Agent 接收。" : "远端 Agent 正在处理，结果完成后会写回此卡片。"}</span>
+              <span>{normalized.status === "pending" ? "任务已提交，等待专家接收。" : "专家正在处理，结果完成后会写回此卡片。"}</span>
               {remoteEventText ? <span className="agent-task-card__progress-extra">{remoteEventText}</span> : null}
             </div>
           ) : null}

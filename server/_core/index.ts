@@ -33,6 +33,7 @@ import { registerSkillRoutes } from "./claw-skills";
 import { registerCollabRoutes } from "./claw-collab";
 import { registerAgentTaskRoutes } from "./claw-agent-tasks";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
+import { registerCustomMcpRoutes } from "./custom-mcp";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
 import { registerToolsPolicyRoutes } from "./claw-tools-policy";
 import { registerCoreFileRoutes } from "./claw-core-files";
@@ -355,6 +356,7 @@ async function startServer() {
   registerCollabRoutes(app);
   registerAgentTaskRoutes(app);
   registerPlatformToolsMcpRoutes(app);
+  registerCustomMcpRoutes(app);
   registerSkillConfigRoutes(app);
   registerToolsPolicyRoutes(app);
   registerCoreFileRoutes(app);

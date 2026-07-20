@@ -53,7 +53,7 @@ describe("jiuwenswarm role scope manifest", () => {
       ...effectiveAssets,
       mcpServers: {
         ...effectiveAssets.mcpServers,
-        default: ["customer_context_tool", "platform_tools"],
+        default: ["custom_mcp_gateway", "customer_context_tool", "platform_tools"],
       },
     };
     expect(buildJiuwenSwarmRoleScopeManifest(role, effectiveAssets)).toEqual({
@@ -83,6 +83,7 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(second.changed).toBe(false);
       expect(first.manifestPath).toBe(path.join(root, JIUWENSWARM_ROLE_SCOPE_MANIFEST));
       expect(JSON.parse(readFileSync(first.manifestPath, "utf8")).effectiveAssets.mcpServers.default).toEqual([
+        "custom_mcp_gateway",
         "customer_context_tool",
         "platform_tools",
       ]);
@@ -116,7 +117,7 @@ describe("jiuwenswarm role scope manifest", () => {
 
       const manifest = JSON.parse(readFileSync(path.join(root, JIUWENSWARM_ROLE_SCOPE_MANIFEST), "utf8"));
       expect(manifest.effectiveAssets.mcpServers).toEqual({
-        default: ["platform_tools"],
+        default: ["custom_mcp_gateway", "platform_tools"],
         optional: ["market_data"],
       });
     } finally {

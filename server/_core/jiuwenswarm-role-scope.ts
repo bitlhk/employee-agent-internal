@@ -19,7 +19,7 @@ import { projectEffectiveAssetsToMcpSelection } from "./agent-mcp-selection";
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
 export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
-export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools"];
+export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools", "custom_mcp_gateway"];
 
 export type JiuwenSwarmRoleScopeManifest = {
   version: 1;
