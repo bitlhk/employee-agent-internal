@@ -8548,11 +8548,13 @@ body[data-home-light="true"] .claw-home-shell .bg-primary\/10 {
   backdrop-filter: blur(14px);
 }
 .claw-home-v2__header nav button,
+.claw-home-v2__header nav a,
 .claw-home-v2 footer button,
 .claw-home-v2 footer a {
   transition: color 160ms ease;
 }
-.claw-home-v2__header nav button:hover {
+.claw-home-v2__header nav button:hover,
+.claw-home-v2__header nav a:hover {
   color: var(--home-ink);
 }
 .claw-home-v2__hero {
@@ -9043,69 +9045,6 @@ body[data-home-light="true"] .claw-home-shell .bg-primary\/10 {
   border-radius: 8px;
   transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
-.claw-home-learning-highlight {
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 54px;
-  padding: 0 0 32px;
-  border-bottom: 1px solid #e7e3de;
-}
-.claw-home-learning-highlight__icon {
-  display: inline-flex;
-  width: 42px;
-  height: 42px;
-  align-items: center;
-  justify-content: center;
-  color: var(--primary);
-  background: rgba(220, 38, 38, 0.07);
-  border-radius: 8px;
-}
-.claw-home-learning-highlight__icon svg {
-  width: 19px;
-  height: 19px;
-}
-.claw-home-learning-highlight__copy {
-  min-width: 0;
-}
-.claw-home-learning-highlight__copy small {
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 700;
-}
-.claw-home-learning-highlight__copy h2 {
-  margin: 4px 0 0;
-  color: var(--home-ink);
-  font-size: 21px;
-  font-weight: 750;
-}
-.claw-home-learning-highlight__copy p {
-  max-width: 650px;
-  margin: 7px 0 0;
-  color: #77736c;
-  font-size: 13px;
-  line-height: 1.7;
-}
-.claw-home-learning-highlight__flow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #8d8981;
-}
-.claw-home-learning-highlight__flow i {
-  padding: 5px 7px;
-  color: #5e5a54;
-  font-size: 10px;
-  font-style: normal;
-  font-weight: 600;
-  background: #f6f5f3;
-  border-radius: 5px;
-}
-.claw-home-learning-highlight__flow svg {
-  width: 12px;
-  height: 12px;
-}
 .claw-home-feature:hover {
   background: #ffffff;
   border-color: #d4cfc7;
@@ -9225,16 +9164,6 @@ body[data-home-light="true"] .claw-home-shell .bg-primary\/10 {
   }
   .claw-home-feature {
     min-height: 176px;
-  }
-  .claw-home-learning-highlight {
-    grid-template-columns: 38px minmax(0, 1fr);
-    align-items: start;
-    margin-bottom: 42px;
-  }
-  .claw-home-learning-highlight__flow {
-    grid-column: 1 / -1;
-    flex-wrap: wrap;
-    padding-left: 56px;
   }
 }
 

@@ -7,15 +7,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowDown,
   ArrowRight,
   Brain,
   CalendarClock,
   Check,
   CheckCircle2,
+  Code2,
   Copy,
   Cpu,
   Database,
+  ExternalLink,
   FolderOpen,
   Fingerprint,
   Loader2,
@@ -46,7 +47,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { useBrand } from "@/lib/useBrand";
 
 function getRuntimeCardMeta(adoptId: unknown) {
   const id = String(adoptId || "");
@@ -156,6 +156,9 @@ const steps = [
 ];
 
 const INSTALL_COMMAND = "curl -fsSL https://linggan.top/install.sh | bash";
+const EA_ATOMGIT_URL = "https://atomgit.com/linggan_ai/employee-agent";
+const JIUWENSWARM_OFFICIAL_URL = "https://atomgit.com/openJiuwen/jiuwenswarm";
+const OPENJIUWEN_HOME_URL = "https://www.openjiuwen.com";
 const WEALTH_DEMO_RESPONSE =
   "风险提示：本周 2 位客户存在集中到期与流动性需求。推荐建议：优先沟通现金管理与固收类方案，并在产品建议前完整说明波动和期限风险。";
 
@@ -422,7 +425,6 @@ function WealthWorkflowDemo() {
 }
 
 export default function ClawHome() {
-  const brand = useBrand();
   const [, setLocation] = useLocation();
   const { user, logout } = useAuth();
   const [provisioning, setProvisioning] = useState(false);
@@ -622,7 +624,7 @@ export default function ClawHome() {
             </span>
           </button>
 
-          <nav className="hidden items-center gap-8 text-sm font-medium text-[#5d5b54] md:flex">
+          <nav className="hidden items-center gap-8 text-sm font-medium text-[#5d5b54] lg:flex">
             <button type="button" onClick={() => scrollToSection("features")}>
               能力
             </button>
@@ -632,12 +634,20 @@ export default function ClawHome() {
             <button type="button" onClick={() => scrollToSection("steps")}>
               流程
             </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection("agent-panel")}
+            <a
+              href={EA_ATOMGIT_URL}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              开始使用
-            </button>
+              代码仓库
+            </a>
+            <a
+              href={OPENJIUWEN_HOME_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              openJiuwen
+            </a>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -718,17 +728,17 @@ export default function ClawHome() {
             <div className="claw-home-v2__copy">
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3.5 py-1.5 text-xs font-semibold text-red-700">
                 <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse motion-reduce:animate-none" />
-                为岗位而生的 AI Agent · 开源 · 可私有化
+                开源 · 可私有化 · 企业级治理
               </div>
               <h1 className="m-0 text-4xl font-bold leading-[1.12] text-[#1a1a1a] sm:text-5xl xl:text-[52px]">
                 为每个岗位
                 <span className="mt-2 block text-primary">配一个智能体</span>
               </h1>
-              <p className="mt-5 max-w-[560px] text-base leading-7 text-[#5d5b54] sm:text-lg">
-                连接企业知识、专业技能与业务系统，在每次协作中理解工作偏好，逐步形成岗位工作方法。
+              <p className="mt-5 max-w-[560px] text-base font-semibold leading-7 text-[#34322e] sm:text-lg">
+                会做事、可交付，也会在协作中持续成长
               </p>
-              <p className="mt-2 text-xs font-medium text-[#a4a097] sm:text-sm">
-                Open-source · Self-hosted · Enterprise-ready
+              <p className="mt-2 max-w-[560px] text-sm leading-7 text-[#68655f] sm:text-base">
+                连接企业知识、专业技能与业务系统，理解工作偏好，逐步沉淀岗位工作方法。执行过程可见，能力与数据权限可控。
               </p>
 
               <div
@@ -745,12 +755,14 @@ export default function ClawHome() {
                       <LogIn /> 登录开始
                     </Button>
                     <Button
+                      asChild
                       size="lg"
                       variant="outline"
                       className="h-11 border-[#c8c4be] bg-white px-6 text-[#1a1a1a] hover:bg-[#fafaf9]"
-                      onClick={() => scrollToSection("features")}
                     >
-                      了解能力 <ArrowDown />
+                      <a href={EA_ATOMGIT_URL} target="_blank" rel="noopener noreferrer">
+                        <Code2 /> 查看代码仓 <ExternalLink />
+                      </a>
                     </Button>
                   </div>
                 ) : null}
@@ -873,6 +885,56 @@ export default function ClawHome() {
               <p className="mt-2 text-xs text-[#a4a097]">
                 一条命令，让岗位智能体在你的服务器上开工
               </p>
+              <div
+                id="open-source"
+                className="mt-3 grid w-full max-w-[460px] scroll-mt-24 grid-cols-2 gap-2"
+              >
+                <a
+                  href={EA_ATOMGIT_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex min-w-0 items-center gap-2.5 rounded-xl border border-[#dfdcd6] bg-[#f8f7f5] px-3 py-2.5 shadow-[0_4px_14px_rgba(28,28,30,0.035)] transition-[background-color,border-color,box-shadow] hover:border-[#cbc6bf] hover:bg-white hover:shadow-[0_6px_18px_rgba(28,28,30,0.06)]"
+                  aria-label="访问 Employee Agent AtomGit 代码仓"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white ring-1 ring-inset ring-[#e6ddd8]">
+                    <WorkforceAgentIcon size={27} animate={false} breathe={false} />
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <strong className="block truncate text-[13px] font-semibold text-[#302e2a]">
+                      Employee Agent
+                    </strong>
+                    <small className="mt-0.5 block truncate text-[11px] text-[#8a857d]">
+                      平台源码 · MIT
+                    </small>
+                  </span>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#aaa59d] transition-colors group-hover:text-[#5f5b55]" />
+                </a>
+
+                <a
+                  href={JIUWENSWARM_OFFICIAL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex min-w-0 items-center gap-2.5 rounded-xl border border-[#dce0e4] bg-[#f8f7f5] px-3 py-2.5 shadow-[0_4px_14px_rgba(28,28,30,0.035)] transition-[background-color,border-color,box-shadow] hover:border-[#c6d0da] hover:bg-white hover:shadow-[0_6px_18px_rgba(28,28,30,0.06)]"
+                  aria-label="访问 JiuwenSwarm 官方 AtomGit 项目"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center">
+                    <img
+                      src="/images/jiuwenswarm-logo.svg"
+                      alt=""
+                      className="h-8 w-8"
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1 text-left">
+                    <strong className="block truncate text-[13px] font-semibold text-[#302e2a]">
+                      JiuwenSwarm
+                    </strong>
+                    <small className="mt-0.5 block truncate text-[11px] text-[#7c858e]">
+                      官方 Agent Runtime
+                    </small>
+                  </span>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-[#aaaeb3] transition-colors group-hover:text-[#56616c]" />
+                </a>
+              </div>
             </div>
 
             <div className="claw-home-v2__showcase">
@@ -886,17 +948,6 @@ export default function ClawHome() {
           className="claw-home-v2__features scroll-mt-16 border-b border-[#ede9e4] bg-white px-5 pb-20 pt-16 sm:px-8 sm:pb-24 sm:pt-20"
         >
           <div className="mx-auto max-w-[1120px]">
-            <div className="claw-home-learning-highlight">
-              <span className="claw-home-learning-highlight__icon"><Brain aria-hidden="true" /></span>
-              <span className="claw-home-learning-highlight__copy">
-                <small>持续学习</small>
-                <h2>不是记住聊天，而是学会你的工作方式</h2>
-                <p>明确偏好立即生效，重复出现的习惯经过验证后再复用；所有成长记录都能查看、修正或忘记。</p>
-              </span>
-              <span className="claw-home-learning-highlight__flow" aria-label="持续学习流程">
-                <i>明确确认</i><ArrowRight aria-hidden="true" /><i>重复验证</i><ArrowRight aria-hidden="true" /><i>跨会话复用</i>
-              </span>
-            </div>
             <div className="mb-10 text-center sm:mb-12">
               <div className="mb-3 text-xs font-bold text-primary">
                 能力一览
@@ -1024,12 +1075,20 @@ export default function ClawHome() {
               一键安装
             </button>
             <a
-              href={brand.githubUrl}
+              href={EA_ATOMGIT_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="hover:text-primary"
             >
-              GitHub
+              EA 代码仓
+            </a>
+            <a
+              href={JIUWENSWARM_OFFICIAL_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-primary"
+            >
+              JiuwenSwarm 官方仓
             </a>
           </div>
         </div>

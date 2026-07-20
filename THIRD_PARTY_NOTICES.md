@@ -23,14 +23,20 @@ copyright and license metadata remains available in each installed package.
   The license text is distributed at
   `client/public/licenses/shadcn-ui-MIT.txt` and is included in the production
   frontend build.
+- JiuwenSwarm upstream logo, distributed solely to identify the default Agent
+  Runtime and link to the official project. The upstream project is licensed
+  under Apache License 2.0; the license text is distributed at
+  `client/public/licenses/JiuwenSwarm-Apache-2.0.txt`. This use does not grant
+  trademark rights or imply sponsorship.
 
 ## Integration Names and Trademarks
 
 The product can integrate with external runtimes and channels such as
 JiuwenSwarm, A2A-compatible agents, Feishu/Lark, WeChat, WeCom, and DingTalk.
 Those names and marks belong to their respective owners. The open-source
-repository does not grant trademark rights. The repository does not distribute
-their channel or runtime logo artwork; see `ASSET_PROVENANCE.md`.
+repository does not grant trademark rights. Except for the documented
+JiuwenSwarm runtime identifier, the repository does not distribute their channel
+or runtime logo artwork; see `ASSET_PROVENANCE.md`.
 
 ## Deployment-Specific Assets
 

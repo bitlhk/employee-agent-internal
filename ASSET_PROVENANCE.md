@@ -12,12 +12,27 @@ do not contain third-party channel or runtime logos:
 - `client/public/favicon.ico`
 - `client/public/apple-touch-icon.png`
 
-## Third-party names
+## JiuwenSwarm runtime logo
 
-JiuwenSwarm, Feishu/Lark, WeChat, WeCom, and DingTalk names appear only to
-identify compatible integrations. Their logos are not redistributed by this
-repository. Channel UI uses neutral Lucide icons, and runtime UI uses the
-project-owned Workforce Agent asset.
+The homepage uses the upstream JiuwenSwarm logo solely to identify the default
+Agent Runtime and link visitors to the official project:
+
+- Distributed asset: `client/public/images/jiuwenswarm-logo.svg`
+- Upstream source: `https://atomgit.com/openJiuwen/jiuwenswarm/blob/dev_release_0.2.3/docs/assets/images/logo.svg`
+- Upstream project: `https://atomgit.com/openJiuwen/jiuwenswarm`
+- Retrieved: 2026-07-20
+- License: Apache License 2.0; the license text is distributed at
+  `client/public/licenses/JiuwenSwarm-Apache-2.0.txt`
+
+JiuwenSwarm and its logo remain the property of their respective owner. This
+nominative use does not imply sponsorship, endorsement, or a grant of trademark
+rights.
+
+## Other third-party names
+
+Feishu/Lark, WeChat, WeCom, and DingTalk names appear only to identify compatible
+integrations. Their logos are not redistributed by this repository. Channel UI
+uses neutral Lucide icons.
 
 ## Model provider logos
 
