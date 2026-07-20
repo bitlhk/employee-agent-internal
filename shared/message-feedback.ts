@@ -5,6 +5,7 @@ export const MESSAGE_FEEDBACK_REASON_CODES = [
   "unclear",
   "tool_failed",
   "too_slow",
+  "preference_mismatch",
   "unsafe",
   "other",
 ] as const;
@@ -19,6 +20,7 @@ export const MESSAGE_FEEDBACK_REASON_LABELS: Record<MessageFeedbackReasonCode, s
   unclear: "表达不清晰",
   tool_failed: "工具调用失败",
   too_slow: "响应太慢",
+  preference_mismatch: "不符合我的习惯",
   unsafe: "存在安全或合规顾虑",
   other: "其他",
 };

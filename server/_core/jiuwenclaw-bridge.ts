@@ -37,6 +37,7 @@ export type JiuwenClawRuntimeClaw = {
   adoptId: string;
   agentId: string;
   userId: number;
+  roleTemplate?: string;
 };
 
 export type JiuwenForwardOptions = {
@@ -49,6 +50,7 @@ export type JiuwenForwardOptions = {
   runtimeMode?: unknown;
   cancelPendingPermission?: unknown;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
+  memoryUserMessage?: string;
 };
 
 export type JiuwenSelectedSkillMetadata = {
@@ -60,6 +62,27 @@ export type JiuwenSelectedSkillMetadata = {
   sourceKind?: string;
   version?: string;
 };
+
+export type JiuwenRunDescriptor = {
+  runId: string;
+  requestId: string;
+  sessionId: string;
+};
+
+export function buildJiuwenRunDescriptor(args: {
+  clientRunId?: string | null;
+  requestId: string;
+  sessionId: string;
+}): JiuwenRunDescriptor {
+  const requestId = String(args.requestId || "").trim();
+  const sessionId = String(args.sessionId || "").trim();
+  const clientRunId = String(args.clientRunId || "").trim();
+  return {
+    runId: clientRunId || requestId,
+    requestId,
+    sessionId,
+  };
+}
 
 export type JiuwenPermissionRequest = {
   requestId: string;
@@ -976,6 +999,14 @@ export async function forwardToJiuwenClaw(
     selectedSkills: opts.selectedSkills,
   });
 
+  writeData({
+    __run: buildJiuwenRunDescriptor({
+      clientRunId: opts.clientRunId,
+      requestId,
+      sessionId,
+    }),
+  });
+
   appendLogAsync("jiuwenclaw-exec.log", {
     ts: new Date().toISOString(),
     event: "chat_stream_request",
@@ -997,12 +1028,14 @@ export async function forwardToJiuwenClaw(
     let settled = false;
     let requestSent = false;
     let sawText = false;
+    let memoryAssistantText = "";
     let needsTextSectionBreak = false;
     let clientClosed = false;
     let ackFallbackTimer: NodeJS.Timeout | null = null;
     let timeoutTimer: NodeJS.Timeout | null = null;
     let finalGraceTimer: NodeJS.Timeout | null = null;
     const emittedWorkspaceFiles = new Map<string, JiuwenSessionArtifactFile>();
+    const memoryToolNames = new Set<string>();
 
     const logEnd = (event: string, extra: Record<string, unknown> = {}) => {
       appendLogAsync("jiuwenclaw-exec.log", {
@@ -1035,6 +1068,7 @@ export async function forwardToJiuwenClaw(
     const writeTextDelta = (value: string) => {
       const publicText = sanitizePublicRuntimePaths(value, workspaceDir);
       if (!publicText) return;
+      memoryAssistantText += publicText;
       const formattedText = formatJiuwenTextSectionDelta(publicText, sawText && needsTextSectionBreak);
       currentStatus = "正在生成回复...";
       writeData(buildJiuwenTextDelta(formattedText));
@@ -1099,6 +1133,22 @@ export async function forwardToJiuwenClaw(
         }
       }
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
+      if (sawText && memoryAssistantText.trim()) {
+        void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
+          userId: claw.userId,
+          adoptId: claw.adoptId,
+          roleTemplate: claw.roleTemplate || "general-assistant",
+          channel: String(opts.channel || "web"),
+          sessionId,
+          requestId,
+          conversationId: String(opts.conversationId || ""),
+          messageId: requestId,
+          userMessage: opts.memoryUserMessage || message,
+          assistantMessage: memoryAssistantText,
+          selectedSkillIds: (opts.selectedSkills || []).map((skill) => skill.id).filter(Boolean),
+          toolNames: Array.from(memoryToolNames),
+        })).catch(() => {});
+      }
       emitDone();
       logEnd("chat_stream_complete", {
         recentFiles: recentFiles.length,
@@ -1311,6 +1361,7 @@ export async function forwardToJiuwenClaw(
             });
             const tool = normalizeJiuwenToolPayload(eventType, body?.delta);
             if (tool) {
+              if (tool.toolName) memoryToolNames.add(tool.toolName);
               const toolCallId = tool.callId || `jiuwen-${sha256(`${requestId}|${tool.toolName}`).slice(0, 16)}`;
               if (tool.isResult) {
                 writeStatus("工具执行完成，正在整理结果...");

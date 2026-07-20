@@ -5,6 +5,7 @@ import path from "path";
 import {
   getDefaultAgentRoleTemplate,
   getRoleSkillMcpBaseline,
+  getSkillMcpRequirement,
   listAgentRoleTemplates,
   resetRoleTemplateCacheForTests,
   resolveAgentRoleTemplate,
@@ -47,6 +48,7 @@ function baseline(overrides: Record<string, unknown> = {}) {
       fallbackRuntime: "jiuwenswarm",
       selection: "role-driven",
     },
+    skillRequirements: {},
     industries: {
       general: {
         name: "通用",
@@ -104,6 +106,25 @@ describe("role template baseline loader", () => {
       expect(getDefaultAgentRoleTemplate().id).toBe("general-assistant");
       expect(resolveAgentRoleTemplate("wealth-manager").industry).toBe("banking");
       expect(resolveAgentRoleTemplate(null).id).toBe("general-assistant");
+    });
+  });
+
+  it("loads optional per-skill MCP requirements without affecting older baselines", () => {
+    withBaselineFile(baseline({
+      skillRequirements: {
+        "wealth-manager-assistant": {
+          servers: {
+            wealth_customer: ["context_probe", "customer_list"],
+          },
+        },
+      },
+    }), () => {
+      expect(getSkillMcpRequirement("wealth-manager-assistant")).toEqual({
+        servers: {
+          wealth_customer: ["context_probe", "customer_list"],
+        },
+      });
+      expect(getSkillMcpRequirement("plain-skill")).toEqual({ servers: {} });
     });
   });
 

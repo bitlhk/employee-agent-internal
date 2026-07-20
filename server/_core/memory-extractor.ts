@@ -15,7 +15,12 @@ import { addMemory, replaceMemory, removeMemory, readUserMemories } from "./memo
 
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const DEEPSEEK_BASE = "https://api.deepseek.com";
-const MEMORY_ENABLED = (process.env.MEMORY_ENABLED || "true") === "true";
+const MANAGED_MEMORY_ENABLED = !/^(0|false|no|off)$/i.test(
+  String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"),
+);
+// Legacy OpenClaw-compatible extraction remains available only as an explicit
+// compatibility switch. EA managed memory is the default and sole writer.
+const MEMORY_ENABLED = !MANAGED_MEMORY_ENABLED && (process.env.MEMORY_ENABLED || "false") === "true";
 const EXTRACT_INTERVAL = parseInt(process.env.MEMORY_EXTRACT_INTERVAL || "3", 10);
 
 // ── Turn 计数器 ────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import { SkillsPage } from "@/components/pages/SkillsPage";
 import { ChannelsPage } from "@/components/pages/ChannelsPage";
-import { AgentPage } from "@/components/pages/AgentPage";
+import { GrowthPage } from "@/components/pages/GrowthPage";
 import { WorkspacePage } from "@/components/pages/WorkspacePage";
 import { SchedulePageV2 } from "@/components/pages/SchedulePageV2";
 import { SettingsPage } from "@/components/pages/SettingsPage";
@@ -74,7 +74,7 @@ export function MainPanel({
     if (page === "skills") {
       return <SkillsPage skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} />;
     }
-    if (page === "agent") return <AgentPage adoptId={adoptId || ""} skills={safeSkills.data as any} />;
+    if (page === "agent") return <GrowthPage adoptId={adoptId || ""} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;
     if (page === "schedule") return <SchedulePageV2 adoptId={adoptId || ""} />;
     if (page === "collab") return <CollabPage adoptId={adoptId || ""} active={activePage === "collab"} />;

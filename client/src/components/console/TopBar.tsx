@@ -6,7 +6,7 @@ const PAGE_LABELS: Record<string, string> = {
   skills: "技能",
   channels: "频道",
   weixin: "频道",
-  agent: "记忆",
+  agent: "成长记录",
   workspace: "工作空间",
   collab: "协作",
   schedule: "定时任务",

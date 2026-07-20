@@ -95,8 +95,8 @@ const features = [
   },
   {
     icon: Brain,
-    title: "上下文沉淀",
-    desc: "保留必要的工作偏好和任务线索，减少重复说明，保持协作连续性。",
+    title: "持续学习",
+    desc: "从明确确认和重复协作中学习工作偏好，跨会话复用，也支持随时查看、修正和忘记。",
   },
   {
     icon: Cpu,
@@ -157,7 +157,7 @@ const steps = [
 
 const INSTALL_COMMAND = "curl -fsSL https://linggan.top/install.sh | bash";
 const WEALTH_DEMO_RESPONSE =
-  "已筛选出 4 位本周优先跟进客户，并按风险等级、资金到期时间完成产品匹配。建议先联系 2 位稳健型客户，重点沟通现金管理与固收类方案。";
+  "风险提示：本周 2 位客户存在集中到期与流动性需求。推荐建议：优先沟通现金管理与固收类方案，并在产品建议前完整说明波动和期限风险。";
 
 function reportInstallCommandCopied(): void {
   const installId = window.crypto.randomUUID();
@@ -217,7 +217,7 @@ function WealthWorkflowDemo() {
 
   useEffect(() => {
     if (reduceMotion) {
-      setStage(5);
+      setStage(6);
       setAgentText(WEALTH_DEMO_RESPONSE);
       return;
     }
@@ -236,10 +236,11 @@ function WealthWorkflowDemo() {
       setStage(0);
       setAgentText("");
       later(450, () => setStage(1));
-      later(1300, () => setStage(2));
-      later(2550, () => setStage(3));
-      later(3800, () => {
-        setStage(4);
+      later(1100, () => setStage(2));
+      later(1800, () => setStage(3));
+      later(2850, () => setStage(4));
+      later(4050, () => {
+        setStage(5);
         let cursor = 0;
         typingTimer = window.setInterval(() => {
           cursor = Math.min(cursor + 2, WEALTH_DEMO_RESPONSE.length);
@@ -247,7 +248,7 @@ function WealthWorkflowDemo() {
           if (cursor >= WEALTH_DEMO_RESPONSE.length) {
             if (typingTimer !== null) window.clearInterval(typingTimer);
             typingTimer = null;
-            setStage(5);
+            setStage(6);
             later(4800, startCycle);
           }
         }, 42);
@@ -321,21 +322,34 @@ function WealthWorkflowDemo() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.25 }}
                 >
-                  帮我筛选本周重点跟进客户，并推荐合适的财富产品。
+                  还是按之前的方式，先提示风险，再筛选本周重点客户并推荐产品。
                 </motion.div>
               ) : null}
             </AnimatePresence>
 
             {stage >= 2 ? (
+              <motion.div
+                className="claw-home-demo__memory-strip"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <Brain aria-hidden="true" />
+                <span><strong>已加载岗位偏好</strong><small>先风险后建议 · 稳健优先</small></span>
+                <CheckCircle2 aria-hidden="true" />
+              </motion.div>
+            ) : null}
+
+            {stage >= 3 ? (
               <div className="claw-home-demo__tool-stack">
                 <div className="claw-home-demo__trust-strip" aria-label="可信执行状态">
                   <span data-active="true">
                     <Fingerprint aria-hidden="true" /> 岗位身份已验证
                   </span>
-                  <span data-active={stage >= 3 ? "true" : "false"}>
+                  <span data-active={stage >= 4 ? "true" : "false"}>
                     <LockKeyhole aria-hidden="true" /> 本人客户范围
                   </span>
-                  <span data-active={stage >= 5 ? "true" : "false"}>
+                  <span data-active={stage >= 6 ? "true" : "false"}>
                     <ScrollText aria-hidden="true" /> 审计留痕
                   </span>
                 </div>
@@ -346,28 +360,28 @@ function WealthWorkflowDemo() {
                   icon={UsersRound}
                   title="获取客户列表"
                   detail={
-                    stage >= 3
+                    stage >= 4
                       ? "已读取 23 位客户 · 完成分层筛选"
                       : "正在读取客户分层与资金到期信息"
                   }
-                  state={stage >= 3 ? "done" : "running"}
+                  state={stage >= 4 ? "done" : "running"}
                 />
-                {stage >= 3 ? (
+                {stage >= 4 ? (
                   <ToolDemoCard
                     icon={PackageSearch}
                     title="推荐适配产品"
                     detail={
-                      stage >= 4
+                      stage >= 5
                         ? "已匹配 6 款产品 · 完成风险适配"
                         : "正在匹配产品风险等级与客户偏好"
                     }
-                    state={stage >= 4 ? "done" : "running"}
+                    state={stage >= 5 ? "done" : "running"}
                   />
                 ) : null}
               </div>
             ) : null}
 
-            {stage >= 4 ? (
+            {stage >= 5 ? (
               <motion.div
                 className="claw-home-demo__assistant-message"
                 initial={{ opacity: 0, y: 8 }}
@@ -375,19 +389,19 @@ function WealthWorkflowDemo() {
                 transition={{ duration: 0.25 }}
               >
                 {agentText}
-                {stage === 4 ? (
+                {stage === 5 ? (
                   <span className="claw-home-demo__cursor">|</span>
                 ) : null}
               </motion.div>
             ) : null}
 
-            {stage >= 5 ? (
+            {stage >= 6 ? (
               <motion.div
                 className="claw-home-demo__result-note"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
               >
-                <ShieldCheck aria-hidden="true" /> 受控执行已完成 · 审计记录已保存
+                <ShieldCheck aria-hidden="true" /> 使用 1 条岗位偏好 · 受控执行与审计已完成
               </motion.div>
             ) : null}
           </div>
@@ -711,7 +725,7 @@ export default function ClawHome() {
                 <span className="mt-2 block text-primary">配一个智能体</span>
               </h1>
               <p className="mt-5 max-w-[560px] text-base leading-7 text-[#5d5b54] sm:text-lg">
-                连接企业知识、专业技能与业务系统，让每个岗位拥有可落地、可扩展的 AI 工作能力。
+                连接企业知识、专业技能与业务系统，在每次协作中理解工作偏好，逐步形成岗位工作方法。
               </p>
               <p className="mt-2 text-xs font-medium text-[#a4a097] sm:text-sm">
                 Open-source · Self-hosted · Enterprise-ready
@@ -872,6 +886,17 @@ export default function ClawHome() {
           className="claw-home-v2__features scroll-mt-16 border-b border-[#ede9e4] bg-white px-5 pb-20 pt-16 sm:px-8 sm:pb-24 sm:pt-20"
         >
           <div className="mx-auto max-w-[1120px]">
+            <div className="claw-home-learning-highlight">
+              <span className="claw-home-learning-highlight__icon"><Brain aria-hidden="true" /></span>
+              <span className="claw-home-learning-highlight__copy">
+                <small>持续学习</small>
+                <h2>不是记住聊天，而是学会你的工作方式</h2>
+                <p>明确偏好立即生效，重复出现的习惯经过验证后再复用；所有成长记录都能查看、修正或忘记。</p>
+              </span>
+              <span className="claw-home-learning-highlight__flow" aria-label="持续学习流程">
+                <i>明确确认</i><ArrowRight aria-hidden="true" /><i>重复验证</i><ArrowRight aria-hidden="true" /><i>跨会话复用</i>
+              </span>
+            </div>
             <div className="mb-10 text-center sm:mb-12">
               <div className="mb-3 text-xs font-bold text-primary">
                 能力一览

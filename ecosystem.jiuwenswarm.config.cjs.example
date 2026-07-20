@@ -8,6 +8,7 @@ const baseEnv = {
   JIUWENCLAW_HOME: runtimeHome,
   JIUWENSWARM_DATA_DIR: runtimeHome,
   PATH: `${path.dirname(python)}:${process.env.PATH || ""}`,
+  JIUWENSWARM_MANAGED_MEMORY: process.env.JIUWENSWARM_MANAGED_MEMORY || "true",
 };
 
 module.exports = {

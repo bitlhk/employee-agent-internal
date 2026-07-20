@@ -408,6 +408,7 @@ export const clawProfileSettings = mysqlTable("claw_profile_settings", {
   personaPrompt: text("personaPrompt"),
   stylePreset: mysqlEnum("stylePreset", ["steady_research", "aggressive_trading", "education_advisor", "custom"]).default("steady_research").notNull(),
   memoryEnabled: mysqlEnum("memoryEnabled", ["yes", "no"]).default("yes").notNull(),
+  memoryMode: mysqlEnum("memory_mode", ["learn_and_use", "use_only", "off"]).default("learn_and_use").notNull(),
   memorySummary: text("memorySummary"),
   contextTurns: int("contextTurns").default(20).notNull(),
   model: varchar("model", { length: 128 }),
@@ -956,6 +957,100 @@ export const userMemories = mysqlTable("user_memories", {
 
 export type UserMemory = typeof userMemories.$inferSelect;
 export type InsertUserMemory = typeof userMemories.$inferInsert;
+
+// ── 岗位智能体持续学习（EA 为唯一事实源）──
+export const agentMemoryItems = mysqlTable("agent_memory_items", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  roleTemplate:       varchar("role_template", { length: 64 }).notNull(),
+  scope:              mysqlEnum("scope", ["role", "user"]).default("role").notNull(),
+  kind:               mysqlEnum("kind", ["preference", "instruction", "entity", "procedure"]).default("preference").notNull(),
+  status:             mysqlEnum("status", ["candidate", "active", "superseded", "forgotten", "rejected", "expired"]).default("candidate").notNull(),
+  canonicalKey:       varchar("canonical_key", { length: 191 }).notNull(),
+  content:            text("content").notNull(),
+  source:             mysqlEnum("source", ["explicit", "automatic", "feedback", "legacy"]).default("automatic").notNull(),
+  confidence:         int("confidence").default(50).notNull(),
+  evidenceCount:      int("evidence_count").default(0).notNull(),
+  version:            int("version").default(1).notNull(),
+  lastObservedAt:     timestamp("last_observed_at").defaultNow().notNull(),
+  lastUsedAt:         timestamp("last_used_at"),
+  expiresAt:          timestamp("expires_at"),
+  supersededById:     bigint("superseded_by_id", { mode: "number" }),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqueScopeKey: uniqueIndex("uk_agent_memory_scope_key").on(table.userId, table.adoptId, table.canonicalKey),
+  adoptStatusIdx: index("idx_agent_memory_adopt_status").on(table.adoptId, table.status, table.updatedAt),
+  userStatusIdx: index("idx_agent_memory_user_status").on(table.userId, table.status, table.updatedAt),
+  roleKindIdx: index("idx_agent_memory_role_kind").on(table.roleTemplate, table.kind, table.status),
+}));
+
+export type AgentMemoryItem = typeof agentMemoryItems.$inferSelect;
+export type InsertAgentMemoryItem = typeof agentMemoryItems.$inferInsert;
+
+export const agentMemoryEvidence = mysqlTable("agent_memory_evidence", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  memoryId:           bigint("memory_id", { mode: "number" }).notNull(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  sourceType:         mysqlEnum("source_type", ["explicit", "conversation", "feedback", "legacy"]).notNull(),
+  channel:            varchar("channel", { length: 32 }).notNull(),
+  sessionId:          varchar("session_id", { length: 160 }),
+  requestId:          varchar("request_id", { length: 160 }),
+  conversationId:     varchar("conversation_id", { length: 128 }),
+  messageId:          varchar("message_id", { length: 128 }),
+  sourceHash:         varchar("source_hash", { length: 64 }).notNull(),
+  snippet:            varchar("snippet", { length: 1000 }),
+  metadataJson:       json("metadata_json").$type<Record<string, unknown> | null>(),
+  observedAt:         timestamp("observed_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueEvidence: uniqueIndex("uk_agent_memory_evidence").on(table.memoryId, table.sourceHash),
+  memoryObservedIdx: index("idx_agent_memory_evidence_item").on(table.memoryId, table.observedAt),
+  conversationIdx: index("idx_agent_memory_evidence_conversation").on(table.adoptId, table.conversationId),
+}));
+
+export type AgentMemoryEvidence = typeof agentMemoryEvidence.$inferSelect;
+export type InsertAgentMemoryEvidence = typeof agentMemoryEvidence.$inferInsert;
+
+export const agentMemoryJobs = mysqlTable("agent_memory_jobs", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  idempotencyKey:     varchar("idempotency_key", { length: 191 }).notNull(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  roleTemplate:       varchar("role_template", { length: 64 }).notNull(),
+  channel:            varchar("channel", { length: 32 }).notNull(),
+  sessionId:          varchar("session_id", { length: 160 }),
+  requestId:          varchar("request_id", { length: 160 }),
+  conversationId:     varchar("conversation_id", { length: 128 }),
+  status:             mysqlEnum("status", ["pending", "running", "done", "failed", "skipped"]).default("pending").notNull(),
+  payloadEncrypted:   text("payload_encrypted"),
+  attempts:           int("attempts").default(0).notNull(),
+  nextAttemptAt:      timestamp("next_attempt_at").defaultNow().notNull(),
+  errorMessage:       varchar("error_message", { length: 1000 }),
+  startedAt:          timestamp("started_at"),
+  completedAt:        timestamp("completed_at"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqueJob: uniqueIndex("uk_agent_memory_job_idempotency").on(table.idempotencyKey),
+  statusAttemptIdx: index("idx_agent_memory_job_status").on(table.status, table.nextAttemptAt, table.createdAt),
+  adoptCreatedIdx: index("idx_agent_memory_job_adopt").on(table.adoptId, table.createdAt),
+}));
+
+export type AgentMemoryJob = typeof agentMemoryJobs.$inferSelect;
+export type InsertAgentMemoryJob = typeof agentMemoryJobs.$inferInsert;
+
+export const agentMemoryCursors = mysqlTable("agent_memory_cursors", {
+  sourceKey:           varchar("source_key", { length: 191 }).primaryKey(),
+  channel:             varchar("channel", { length: 32 }).notNull(),
+  lastTimestampMs:     bigint("last_timestamp_ms", { mode: "number" }).default(0).notNull(),
+  lastFingerprint:     varchar("last_fingerprint", { length: 64 }),
+  createdAt:           timestamp("created_at").defaultNow().notNull(),
+  updatedAt:           timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AgentMemoryCursor = typeof agentMemoryCursors.$inferSelect;
 
 // ── 消息质量反馈（不保存对话正文） ──
 export const messageFeedback = mysqlTable("message_feedback", {

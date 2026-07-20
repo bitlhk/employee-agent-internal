@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CircleHelp, Home, LogOut, Moon, Palette, Sun } from "lucide-react";
+import { Brain, CircleHelp, Home, LogOut, Moon, Palette, Sun } from "lucide-react";
 import { applySettings, getSettings, subscribeSettings } from "@/lib/settings";
 import type { ThemeMode } from "@/types/settings";
 
@@ -18,6 +18,7 @@ type SidebarFooterProps = {
   userEmail?: string;
   collapsed?: boolean;
   onReturnHome: () => void;
+  onOpenGrowth?: () => void;
   onLogout: () => void;
 };
 
@@ -35,6 +36,7 @@ export function SidebarFooter({
   userEmail,
   collapsed = false,
   onReturnHome,
+  onOpenGrowth,
   onLogout,
 }: SidebarFooterProps) {
   const [themeMode, setThemeMode] = useState<ThemeMode>(
@@ -109,6 +111,12 @@ export function SidebarFooter({
             {accountEmail ? <span>{accountEmail}</span> : null}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          {onOpenGrowth ? (
+            <DropdownMenuItem onClick={onOpenGrowth}>
+              <Brain />
+              成长记录
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuItem onClick={onReturnHome}>
             <Home />
             首页

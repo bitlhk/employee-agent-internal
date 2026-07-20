@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyAssistantFinalSnapshot, mergeAssistantStreamText } from "./assistant-stream";
+import {
+  applyAssistantFinalSnapshot,
+  mergeAssistantStreamText,
+  parseRuntimeRunDescriptor,
+} from "./assistant-stream";
 
 const markdown = [
   "## 已读完的 12 本书",
@@ -11,6 +15,18 @@ const markdown = [
 ].join("\n");
 
 describe("assistant stream contract", () => {
+  it("accepts only complete runtime run descriptors", () => {
+    expect(parseRuntimeRunDescriptor({
+      __run: { runId: "client-1", requestId: "request-1", sessionId: "session-1" },
+    })).toEqual({ runId: "client-1", requestId: "request-1", sessionId: "session-1" });
+    expect(parseRuntimeRunDescriptor({ __run: { requestId: "request-2", sessionId: "session-2" } })).toEqual({
+      runId: "request-2",
+      requestId: "request-2",
+      sessionId: "session-2",
+    });
+    expect(parseRuntimeRunDescriptor({ __run: { requestId: "request-only" } })).toBeNull();
+  });
+
   it("preserves Markdown across every character boundary", () => {
     for (let split = 0; split <= markdown.length; split += 1) {
       expect(mergeAssistantStreamText(markdown.slice(0, split), markdown.slice(split))).toBe(markdown);

@@ -5,6 +5,7 @@ import path from "path";
 import {
   buildJiuwenAgentServerChatRequest,
   buildJiuwenFinalSnapshot,
+  buildJiuwenRunDescriptor,
   buildJiuwenTextDelta,
   collectRecentWorkspaceFiles,
   formatJiuwenTextSectionDelta,
@@ -14,6 +15,22 @@ import {
 } from "./jiuwenclaw-bridge";
 
 describe("jiuwenclaw bridge audit helpers", () => {
+  it("publishes stable run and session identifiers for terminal reconciliation", () => {
+    expect(buildJiuwenRunDescriptor({
+      clientRunId: "client-run-1",
+      requestId: "request-1",
+      sessionId: "session-1",
+    })).toEqual({
+      runId: "client-run-1",
+      requestId: "request-1",
+      sessionId: "session-1",
+    });
+    expect(buildJiuwenRunDescriptor({
+      requestId: "request-fallback",
+      sessionId: "session-2",
+    }).runId).toBe("request-fallback");
+  });
+
   it("separates post-tool text without adding duplicate blank lines", () => {
     expect(formatJiuwenTextSectionDelta("查询完成。", true)).toBe("\n\n查询完成。");
     expect(formatJiuwenTextSectionDelta("\n\n查询完成。", true)).toBe("\n\n查询完成。");

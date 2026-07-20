@@ -38,8 +38,8 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_DISPLAY=""
 ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$INSTALL_DIR/.bootstrap-admin-password}"
 JIUWENSWARM_REPO="${JIUWENSWARM_REPO:-https://atomgit.com/linggan_ai/jiuwenswarm.git}"
-JIUWENSWARM_REF="${JIUWENSWARM_REF:-ea-runtime-0.2.3.6}"
-JIUWENSWARM_VERSION="${JIUWENSWARM_VERSION:-0.2.3+ea.6}"
+JIUWENSWARM_REF="${JIUWENSWARM_REF:-ea-runtime-0.2.3.7}"
+JIUWENSWARM_VERSION="${JIUWENSWARM_VERSION:-0.2.3+ea.7}"
 JIUWENSWARM_HOME="${JIUWENCLAW_HOME:-$HOME/.jiuwenswarm}"
 JIUWENSWARM_VENV="${JIUWENSWARM_VENV:-$HOME/.venvs/employee-agent-jiuwenswarm}"
 JIUWENSWARM_WHEEL_URL="${JIUWENSWARM_WHEEL_URL:-}"
@@ -564,7 +564,7 @@ start_app() {
   elif [[ -f "$INSTALL_DIR/ecosystem.config.cjs" ]]; then
     run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.config.cjs --update-env || pm2 restart ecosystem.config.cjs --update-env"
     if [[ "$INSTALL_JIUWENSWARM" == "true" ]]; then
-      run bash -lc "cd '$INSTALL_DIR' && HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' pm2 start ecosystem.jiuwenswarm.config.cjs --update-env || HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' pm2 restart ecosystem.jiuwenswarm.config.cjs --update-env"
+      run bash -lc "cd '$INSTALL_DIR' && HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' JIUWENSWARM_MANAGED_MEMORY=true pm2 start ecosystem.jiuwenswarm.config.cjs --update-env || HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' JIUWENSWARM_MANAGED_MEMORY=true pm2 restart ecosystem.jiuwenswarm.config.cjs --update-env"
     fi
     run pm2 save
   else

@@ -14,3 +14,4 @@ export * from "./coop-files";
 export * from "./agents";
 export * from "./install-telemetry";
 export * from "./message-feedback";
+export * from "./agent-memory";

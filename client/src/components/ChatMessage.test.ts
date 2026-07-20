@@ -189,6 +189,7 @@ describe("ChatMessage tool timeline", () => {
     );
 
     expect(html).toContain("lingxia-message-attachments");
+    expect(html).toContain("本轮产物");
     expect(html).toContain("report.pdf");
     expect(html).toContain("2.0 KB");
     expect(html).toContain('title="预览"');
@@ -247,5 +248,39 @@ describe("ChatMessage tool timeline", () => {
     expect(html).not.toContain("测试助手 · test-model");
     expect(html).not.toContain("↑");
     expect(html).not.toContain("ctx");
+  });
+
+  it("renders a compact governed-memory receipt after an explicit save", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "好的，后续会按这个顺序处理。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:00",
+        onForgetMemory: () => undefined,
+        toolCalls: [{
+          id: "memory-1",
+          name: "mcp_platform_tools_remember_preference",
+          arguments: '{"content":"先提示风险，再给产品建议"}',
+          result: JSON.stringify({
+            content: [{
+              type: "text",
+              text: 'EA_MEMORY_RECEIPT:{"action":"remembered","id":42,"content":"先提示风险，再给产品建议"}',
+            }],
+          }),
+          status: "done",
+          ts: Date.now(),
+        }],
+      }),
+    );
+
+    expect(html).toContain("lingxia-memory-receipt");
+    expect(html).toContain("已记住");
+    expect(html).toContain("先提示风险，再给产品建议");
+    expect(html).toContain("撤销");
   });
 });

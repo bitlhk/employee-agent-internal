@@ -33,6 +33,7 @@ import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "./
 import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { privateMessageLogFields } from "./log-privacy";
+import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -89,6 +90,11 @@ async function buildSelectedSkillContext(
   if (!runtimePath) return { ok: false, status: 400, error: "所选技能尚未同步到运行时" };
   const skillFile = path.join(runtimePath, "SKILL.md");
   if (!existsSync(skillFile)) return { ok: false, status: 400, error: "所选技能运行时文件不存在" };
+
+  const mcpReadiness = await probeJiuwenSkillMcpReadiness({ skillId, roleTemplate });
+  if (!mcpReadiness.canProceed) {
+    return { ok: false, status: 503, error: mcpReadiness.message };
+  }
 
   const label = String((skill as any)?.source?.displayName || (skill as any)?.displayName || (skill as any)?.label || skillId).trim() || skillId;
   const description = String((skill as any)?.source?.description || (skill as any)?.description || "").trim();
@@ -298,6 +304,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         adoptId: String(claw.adoptId),
         agentId: String(claw.agentId || `jiuwen_${String(claw.adoptId)}`),
         userId: Number(claw.userId),
+        roleTemplate: String(claw.roleTemplate || "general-assistant"),
       };
       const jiuwenAgentId = buildJiuwenAgentId(jiuwenClaw);
       const jiuwenSessionId = buildJiuwenSessionId(jiuwenClaw, jiuwenAgentId, {
@@ -337,6 +344,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           runtimeMode: normalizedRuntimeMode,
           cancelPendingPermission,
           selectedSkills: selectedSkill?.ok ? [selectedSkill.metadata] : [],
+          memoryUserMessage: msgStrForRuntime,
         },
       );
       return;

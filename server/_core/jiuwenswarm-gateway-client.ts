@@ -6,6 +6,7 @@ import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import {
   buildJiuwenAgentId,
   buildJiuwenImageMediaItems,
+  buildJiuwenRunDescriptor,
   buildJiuwenSessionId,
   buildJiuwenServiceId,
   bumpSessionEpoch,
@@ -321,6 +322,14 @@ export async function forwardToJiuwenGateway(
     selectedSkills: opts.selectedSkills,
   });
 
+  writeSseData(res, {
+    __run: buildJiuwenRunDescriptor({
+      clientRunId: opts.clientRunId,
+      requestId,
+      sessionId,
+    }),
+  });
+
   appendLogAsync("jiuwenclaw-exec.log", {
     ts: new Date().toISOString(),
     event: "gateway_chat_request",
@@ -341,6 +350,9 @@ export async function forwardToJiuwenGateway(
     const startedAt = Date.now();
     const generatedFiles = new Map<string, JiuwenSessionArtifactFile>();
     const emittedFilePaths = new Set<string>();
+    const memoryToolNames = new Set<string>();
+    let memoryAssistantText = "";
+    let finalAssistantText = "";
     let settled = false;
     let clientClosed = false;
     let requestSent = false;
@@ -382,6 +394,23 @@ export async function forwardToJiuwenGateway(
         requestId,
         reason,
       });
+      const assistantMessage = finalAssistantText.trim() || memoryAssistantText.trim();
+      if (reason === "done" && assistantMessage) {
+        void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
+          userId: claw.userId,
+          adoptId: claw.adoptId,
+          roleTemplate: claw.roleTemplate || "general-assistant",
+          channel: String(opts.channel || "web"),
+          sessionId,
+          requestId,
+          conversationId: String(opts.conversationId || ""),
+          messageId: requestId,
+          userMessage: opts.memoryUserMessage || message,
+          assistantMessage,
+          selectedSkillIds: (opts.selectedSkills || []).map((skill) => skill.id).filter(Boolean),
+          toolNames: Array.from(memoryToolNames),
+        })).catch(() => {});
+      }
       try { ws.close(1000, reason); } catch {}
       if (!clientClosed) emitSseDone(res);
       resolve();
@@ -417,6 +446,11 @@ export async function forwardToJiuwenGateway(
       if (eventType === "chat.error") {
         writeSseData(res, { __stream_error: true, error: String(payload.error || payload.message || "JiuwenSwarm gateway 返回错误") });
       }
+      if (eventType === "chat.final" && String(payload.content || "").trim()) {
+        finalAssistantText = sanitizePublicRuntimePaths(String(payload.content || ""), workspaceDir);
+      }
+      const memoryTool = normalizeJiuwenToolPayload(eventType, payload);
+      if (memoryTool?.toolName) memoryToolNames.add(memoryTool.toolName);
       const action = await handleGatewayEvent({
         claw,
         req: opts.req,
@@ -428,6 +462,9 @@ export async function forwardToJiuwenGateway(
         sessionId,
         channelId,
         workspaceDir,
+        collectText: (text) => {
+          memoryAssistantText += text;
+        },
         collectFiles: (files) => {
           for (const file of files.slice(0, 20)) {
             generatedFiles.set(file.path, file);

@@ -56,7 +56,10 @@ export class ResponseAccumulator {
  * 需要 adoptId，通过 userId 解析
  */
 export async function injectMemory(userId: number, basePrompt: string): Promise<string> {
-  if ((process.env.MEMORY_ENABLED || "true") !== "true") return basePrompt;
+  const managedMemoryEnabled = !/^(0|false|no|off)$/i.test(
+    String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"),
+  );
+  if (managedMemoryEnabled || (process.env.MEMORY_ENABLED || "false") !== "true") return basePrompt;
   if (!userId || userId <= 0) return basePrompt;
 
   try {

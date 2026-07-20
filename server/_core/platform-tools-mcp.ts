@@ -10,6 +10,11 @@ import { skillInstaller } from "./skills/skill-installer";
 import { skillRegistry } from "./skills/skill-registry";
 import { skillStoreRuntimeImportedDir } from "./skills/skill-store";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
+import {
+  forgetAgentMemory,
+  listAgentMemoryView,
+  rememberExplicitPreference,
+} from "./agent-memory";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -58,6 +63,40 @@ const TOOLS = [
       },
       required: ["agent_id", "task"],
     },
+  },
+  {
+    name: "remember_preference",
+    description: [
+      "Save a durable work preference for the current EA employee agent only when the user explicitly asks to remember it, corrects a prior preference, or clearly says future work should follow it.",
+      "Store only stable working style, output format, or reusable personal process preferences.",
+      "Never store credentials, attachment contents, customer records, balances, positions, market data, product status, or other changing business facts.",
+      "Do not claim that something was remembered unless this tool returns success.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        content: { type: "string", description: "A concise Chinese statement of the durable preference, without secrets or transient facts." },
+        key: { type: "string", description: "Optional stable dotted key such as output.risk_first. Use the same key when correcting the same preference." },
+        kind: { type: "string", enum: ["preference", "instruction", "entity", "procedure"], description: "Preference category; normally preference or instruction." },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "forget_preference",
+    description: "Forget a saved preference for the current EA employee agent when the user explicitly asks to remove or stop using it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        memory_id: { type: "integer", description: "Optional memory id returned by list_learned_preferences." },
+        query: { type: "string", description: "Short text identifying the preference to forget when memory_id is unavailable." },
+      },
+    },
+  },
+  {
+    name: "list_learned_preferences",
+    description: "List active work preferences learned by the current EA employee agent. Use when the user asks what is remembered about their work style.",
+    inputSchema: { type: "object", properties: {} },
   },
 ];
 
@@ -204,6 +243,89 @@ async function callTool(req: Request, name: string, args: Record<string, unknown
   }
   if (!adoptId) return textResult("Error: adoptId is missing from JiuwenSwarm user context.", { isError: true });
 
+  if (name === "remember_preference") {
+    const content = String(args.content || "").trim();
+    if (!content) return textResult("Error: content is required", { isError: true });
+    const memory = await rememberExplicitPreference({
+      adoptId,
+      content,
+      key: String(args.key || "").trim() || undefined,
+      kind: ["preference", "instruction", "entity", "procedure"].includes(String(args.kind || ""))
+        ? String(args.kind) as any
+        : "preference",
+      channel: pickHeader(req, ["x-jiuwen-channel-id", "x-openclaw-channel-id"]) || "conversation",
+    });
+    await recordAuditBestEffort({
+      action: "memory.preference.remember",
+      result: "success",
+      severity: "info",
+      actorType: "agent",
+      targetType: "agent_memory",
+      targetId: String(memory.id),
+      agentInstanceId: adoptId,
+      toolName: name,
+      source: "platform_tools_mcp",
+      ...auditRequest(req),
+      metadata: { kind: memory.kind, scope: memory.scope },
+    });
+    return textResult(`EA_MEMORY_RECEIPT:${JSON.stringify({
+      action: "remembered",
+      id: memory.id,
+      content: memory.content,
+      kind: memory.kind,
+      scope: memory.scope,
+      status: memory.status,
+    })}`);
+  }
+
+  if (name === "forget_preference") {
+    const claw = await getClawByAdoptId(adoptId);
+    if (!claw) return textResult("Error: employee agent not found", { isError: true });
+    const memoryId = Number(args.memory_id || args.memoryId || 0) || undefined;
+    const query = String(args.query || args.content || "").trim() || undefined;
+    if (!memoryId && !query) return textResult("Error: memory_id or query is required", { isError: true });
+    const memory = await forgetAgentMemory({
+      userId: Number(claw.userId),
+      adoptId,
+      id: memoryId,
+      query,
+    });
+    await recordAuditBestEffort({
+      action: "memory.preference.forget",
+      result: "success",
+      severity: "info",
+      actorType: "agent",
+      targetType: "agent_memory",
+      targetId: String(memory.id),
+      agentInstanceId: adoptId,
+      toolName: name,
+      source: "platform_tools_mcp",
+      ...auditRequest(req),
+    });
+    return textResult(`EA_MEMORY_RECEIPT:${JSON.stringify({
+      action: "forgotten",
+      id: memory.id,
+      content: memory.content,
+      status: "forgotten",
+    })}`);
+  }
+
+  if (name === "list_learned_preferences") {
+    const claw = await getClawByAdoptId(adoptId);
+    if (!claw) return textResult("Error: employee agent not found", { isError: true });
+    const view = await listAgentMemoryView({
+      userId: Number(claw.userId),
+      adoptId,
+      adoptionId: Number(claw.id),
+    });
+    const active = view.items.filter((item) => item.status === "active");
+    if (!active.length) return textResult("当前岗位还没有已生效的工作偏好。");
+    return textResult([
+      `当前岗位已学会 ${active.length} 条工作偏好：`,
+      ...active.map((item) => `- [${item.id}] ${item.content}`),
+    ].join("\n"));
+  }
+
   if (name === "get_user_channels") {
     const channels = ["conversation"];
     try {
@@ -286,7 +408,7 @@ async function handleMessage(req: Request, msg: any) {
         protocolVersion: "2025-03-26",
         capabilities: { tools: {} },
         serverInfo: { name: SERVICE_NAME, version: SERVICE_VERSION },
-        instructions: "EA platform-control tools for scheduling, channel lookup, and external Agent task submission.",
+        instructions: "EA platform-control tools for scheduling, channel lookup, external Agent task submission, and governed employee-agent preference learning.",
       });
     }
     if (msg.method === "ping") return hasRequestId(id) ? ok(id, {}) : null;

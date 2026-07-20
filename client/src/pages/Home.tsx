@@ -7,7 +7,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { RuntimeWSClient } from "@/lib/runtime-ws";
-import { applyAssistantFinalSnapshot, mergeAssistantStreamText } from "@/lib/assistant-stream";
+import {
+  applyAssistantFinalSnapshot,
+  mergeAssistantStreamText,
+  parseRuntimeRunDescriptor,
+} from "@/lib/assistant-stream";
 import { toast } from "sonner";
 import { useBrand } from "@/lib/useBrand";
 import { trpc } from "@/lib/trpc";
@@ -135,6 +139,7 @@ type ComposerSkillOption = {
   desc: string;
   source: string;
   initial: string;
+  requiredMcpServers: string[];
 };
 
 function composerSkillInitial(skill: any, id: string): string {
@@ -173,6 +178,9 @@ function flattenComposerSkills(groups: any): ComposerSkillOption[] {
       desc: String(skill?.desc || skill?.description || skill?.source?.description || "").trim(),
       source: String(skill?.scope || skill?.source || "skill").trim(),
       initial: composerSkillInitial(skill, id),
+      requiredMcpServers: Array.isArray(skill?.requirements?.mcpServers)
+        ? skill.requirements.mcpServers.map((value: unknown) => String(value || "").trim()).filter(Boolean)
+        : [],
     });
   }
   return out.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
@@ -1060,6 +1068,10 @@ export default function Home() {
     { adoptId: resolvedAdoptId || "", conversationId: webConversationId || "" },
     { enabled: !!resolvedAdoptId && !!webConversationId && !!user, retry: false },
   );
+  const forgetMemoryMutation = trpc.claw.forgetMemory.useMutation({
+    onSuccess: () => toast.success("已撤销这条岗位偏好"),
+    onError: (error) => toast.error(error.message || "撤销失败"),
+  });
   const setMessageFeedbackMutation = trpc.claw.setMessageFeedback.useMutation();
   useEffect(() => {
     const rows = Array.isArray((messageFeedbackQuery.data as any)?.rows)
@@ -1928,18 +1940,21 @@ export default function Home() {
     conversationId: string;
     assistantMessageId: string;
     streamSeq: number;
+    sessionKey?: string;
   }) => {
-    if (!resolvedAdoptId || isDirectHttpRuntime) return;
+    if (!resolvedAdoptId || (isDirectHttpRuntime && !args.sessionKey)) return;
     const delays = [600, 1800, 4000, 8000];
     const apiBase = import.meta.env.VITE_API_URL || "";
     for (const delayMs of delays) {
       await new Promise((resolve) => window.setTimeout(resolve, delayMs));
       if (streamSeqRef.current !== args.streamSeq || webConversationIdRef.current !== args.conversationId) return;
-      let sessionKey = "";
-      try {
-        const sessions = await refreshBackendWebSessions(true);
-        sessionKey = String(sessions.find((item) => item.conversationId === args.conversationId)?.sessionKey || "");
-      } catch {}
+      let sessionKey = String(args.sessionKey || "");
+      if (!sessionKey) {
+        try {
+          const sessions = await refreshBackendWebSessions(true);
+          sessionKey = String(sessions.find((item) => item.conversationId === args.conversationId)?.sessionKey || "");
+        } catch {}
+      }
       if (!sessionKey) continue;
 
       try {
@@ -2286,6 +2301,7 @@ export default function Home() {
   const [composerSkillMenuOpen, setComposerSkillMenuOpen] = useState(false);
   const [composerSkillSearch, setComposerSkillSearch] = useState("");
   const composerSkillSearchRef = useRef<HTMLInputElement | null>(null);
+  const probeSkillReadinessMutation = trpc.claw.probeSkillReadiness.useMutation();
   const selectedComposerSkill = useMemo(
     () => composerSkills.find((skill) => skill.id === selectedComposerSkillId) || null,
     [composerSkills, selectedComposerSkillId],
@@ -2297,6 +2313,28 @@ export default function Home() {
       `${skill.label} ${skill.id} ${skill.desc}`.toLocaleLowerCase().includes(query)
     ));
   }, [composerSkillSearch, composerSkills]);
+  const selectComposerSkill = useCallback(async (skill: ComposerSkillOption) => {
+    if (skill.requiredMcpServers.length === 0 || !resolvedAdoptId) {
+      setSelectedComposerSkillId(skill.id);
+      setComposerSkillMenuOpen(false);
+      return;
+    }
+    try {
+      const readiness = await probeSkillReadinessMutation.mutateAsync({
+        adoptId: resolvedAdoptId,
+        skillId: skill.id,
+      });
+      if (!readiness.canProceed) {
+        toast.error(readiness.message);
+        return;
+      }
+      if (readiness.status === "unchecked") toast.warning(readiness.message);
+    } catch {
+      toast.warning("暂时无法验证技能所需的业务工具，将在发送时再次检查");
+    }
+    setSelectedComposerSkillId(skill.id);
+    setComposerSkillMenuOpen(false);
+  }, [probeSkillReadinessMutation, resolvedAdoptId]);
   useEffect(() => {
     if (selectedComposerSkillId && !composerSkills.some((skill) => skill.id === selectedComposerSkillId)) {
       setSelectedComposerSkillId("");
@@ -2599,6 +2637,7 @@ export default function Home() {
     setLingxiaToolCalls([]);
 
     let wsOk = false;
+    let runtimeSessionKey = "";
     try {
       const apiBase = import.meta.env.VITE_API_URL || "";
       const perf: Record<string, number> = { clientSendMs: Date.now() };
@@ -2632,6 +2671,12 @@ export default function Home() {
               if (chunk.type === "connected") return;
               lastEventAtRef.current = Date.now();
 
+              const runDescriptor = parseRuntimeRunDescriptor(chunk);
+              if (runDescriptor) {
+                runtimeSessionKey = runDescriptor.sessionId;
+                return;
+              }
+
               if (typeof chunk.__final_text === "string") {
                 setLingxiaMsgs((prev) => applyAssistantFinalSnapshot(prev, assistantMessageId, chunk.__final_text));
                 return;
@@ -2642,7 +2687,7 @@ export default function Home() {
                 console.log("[DIAG] ✅ WSS 收到 __stream_end，流结束");
                 setLingxiaStreaming(false);
                 wsClient.setRawHandler(null);
-                if (conversationIdAtSend) void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq });
+                if (conversationIdAtSend) void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq, sessionKey: runtimeSessionKey || undefined });
                 return;
               }
               // ── 2026-04-29 批次 2 A3：上游 EOF 但 runtime 未确认完成 ──
@@ -2849,7 +2894,7 @@ export default function Home() {
                 console.log("[DIAG] ✅ WSS finish_reason=stop，流结束");
                 setLingxiaStreaming(false);
                 wsClient.setRawHandler(null);
-                if (conversationIdAtSend) void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq });
+                if (conversationIdAtSend) void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq, sessionKey: runtimeSessionKey || undefined });
               }
             } catch {}
           };
@@ -2908,9 +2953,11 @@ export default function Home() {
         }),
       });
 
-      if (!resp.ok || !resp.body) {
-        throw new Error(`请求失败 (${resp.status})`);
+      if (!resp.ok) {
+        const payload = await resp.json().catch(() => null);
+        throw new Error(String(payload?.error || `请求失败 (${resp.status})`));
       }
+      if (!resp.body) throw new Error("请求失败：服务器未返回流式响应");
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -2985,6 +3032,11 @@ export default function Home() {
           try {
             const chunk = JSON.parse(raw);
             lastEventAtRef.current = Date.now(); // 任意事件进来，重置断连计时
+            const runDescriptor = parseRuntimeRunDescriptor(chunk);
+            if (runDescriptor) {
+              runtimeSessionKey = runDescriptor.sessionId;
+              continue;
+            }
             if (chunk.__model_selected) {
               const selectedModel = String(chunk.__model_selected);
               setLingxiaMsgs((prev) => {
@@ -3320,7 +3372,7 @@ export default function Home() {
         firstPaintToDoneMs: toDur(perf.firstPaintMs, perf.clientDoneMs),
       });
       if (shouldReconcileCanonical && !isStale() && conversationIdAtSend) {
-        void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq });
+        void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq, sessionKey: runtimeSessionKey || undefined });
       }
     } catch (error: any) {
       // SSE race fix: stale 流的 AbortError / 网络错误都不要写 state，否则会污染新流
@@ -3336,6 +3388,14 @@ export default function Home() {
         return;
       }
       // 网络错误 / fetch 失败 → 进入"重连中"状态，不直接判任务失败
+      if (conversationIdAtSend && runtimeSessionKey) {
+        void reconcileStreamedConversation({
+          conversationId: conversationIdAtSend,
+          assistantMessageId,
+          streamSeq: myStreamSeq,
+          sessionKey: runtimeSessionKey,
+        });
+      }
       setConnStatus("reconnecting");
       setLingxiaMsgs((prev) => {
         const next = [...prev];
@@ -3799,6 +3859,11 @@ export default function Home() {
                   userName={String((user as any)?.name || "")}
                   userEmail={String((user as any)?.email || "")}
                   collapsed={effectiveSidebarCollapsed}
+                  onOpenGrowth={() => {
+                    setSidebarSelection("navigation");
+                    setActivePage("agent");
+                    setMobileSidebarOpen(false);
+                  }}
                   onReturnHome={() => setLocationCoop("/")}
                   onLogout={() => void handleWorkbenchLogout()}
                 />
@@ -3987,6 +4052,9 @@ export default function Home() {
                     feedback={m.role === "assistant" ? messageFeedbackById[m.id] || null : null}
                     feedbackPending={messageFeedbackPendingIds.has(m.id)}
                     onFeedback={m.role === "assistant" ? (feedback) => updateMessageFeedback(m, feedback) : undefined}
+                    onForgetMemory={m.role === "assistant" && resolvedAdoptId
+                      ? (memoryId) => forgetMemoryMutation.mutateAsync({ adoptId: resolvedAdoptId, id: memoryId }).then(() => undefined)
+                      : undefined}
                     jiuwenPermission={m.role === "assistant" ? (m as LxMsg).jiuwenPermission : undefined}
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
                     onDelete={m.role === "assistant" ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
@@ -4179,7 +4247,11 @@ export default function Home() {
                             key={skill.id}
                             className="lingxia-skill-select-item"
                             data-selected={skill.id === selectedComposerSkillId ? "true" : "false"}
-                            onSelect={() => setSelectedComposerSkillId(skill.id)}
+                            disabled={probeSkillReadinessMutation.isPending}
+                            onSelect={(event) => {
+                              if (skill.requiredMcpServers.length > 0) event.preventDefault();
+                              void selectComposerSkill(skill);
+                            }}
                           >
                             <span className="lingxia-skill-select-item__content">
                               <span className="lingxia-skill-select-item__icon" aria-hidden="true">

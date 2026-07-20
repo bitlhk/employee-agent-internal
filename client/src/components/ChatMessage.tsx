@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
+import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
@@ -16,6 +17,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Bot,
+  Brain,
   Check,
   ChevronDown,
   Code2,
@@ -153,6 +155,7 @@ type ChatMessageProps = {
   feedback?: MessageFeedbackValue | null;
   feedbackPending?: boolean;
   onFeedback?: (feedback: MessageFeedbackValue | null) => void | Promise<void>;
+  onForgetMemory?: (memoryId: number) => void | Promise<void>;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "reject") => void;
 };
@@ -348,15 +351,6 @@ function RunFileButton({ adoptId, filePath, fileName }: { adoptId: string; fileP
   );
 }
 
-function formatToolArguments(rawArguments: string) {
-  let argsDisplay = sanitizePublicRuntimePaths(rawArguments);
-  try {
-    const parsed = JSON.parse(argsDisplay);
-    argsDisplay = JSON.stringify(parsed, null, 2);
-  } catch {}
-  return argsDisplay;
-}
-
 function toolResultSnippet(tc: ToolCallEntry): string {
   if (!tc.result || tc.status === "running") return "";
   const text = sanitizePublicRuntimePaths(tc.result)
@@ -365,61 +359,6 @@ function toolResultSnippet(tc: ToolCallEntry): string {
     .trim();
   if (!text) return "";
   return text.length > 78 ? `${text.slice(0, 78)}...` : text;
-}
-
-function CopyableToolBlock({ label, value, danger = false }: { label: string; value: string; danger?: boolean }) {
-  const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const text = String(value || "");
-  const isLong = text.length > 900 || text.split("\n").length > 14;
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
-    } catch {}
-  };
-
-  return (
-    <div className="lingxia-toolcard__section">
-      <div className="lingxia-toolcard__section-head">
-        <div className="lingxia-toolcard__label">{label}</div>
-        <div className="lingxia-toolcard__section-actions">
-          {isLong ? (
-            <button type="button" className="lingxia-toolcard__mini-btn" onClick={() => setExpanded((current) => !current)}>
-              {expanded ? "收起" : "展开"}
-            </button>
-          ) : null}
-          <button type="button" className="lingxia-toolcard__mini-btn" onClick={copy}>
-            {copied ? "已复制" : "复制"}
-          </button>
-        </div>
-      </div>
-      <pre className={`lingxia-toolcard__pre ${danger ? "lingxia-toolcard__pre--danger" : ""}`} data-expanded={expanded ? "true" : "false"}>
-        {text || "(无输出)"}
-      </pre>
-    </div>
-  );
-}
-
-function ToolCallDetailBody({ tc }: { tc: ToolCallEntry }) {
-  const isRunning = tc.status === "running";
-  const isError = tc.status === "error";
-  const argsDisplay = formatToolArguments(tc.arguments);
-
-  return (
-    <div className="lingxia-toolcard__body">
-      {argsDisplay && (
-        <CopyableToolBlock label="参数" value={argsDisplay} />
-      )}
-
-      {!isRunning && (
-        <CopyableToolBlock label={isError ? "错误" : "结果"} value={sanitizePublicRuntimePaths(tc.result || "(无输出)")} danger={isError} />
-      )}
-
-    </div>
-  );
 }
 
 export function ToolExecutionReceipt({ toolCalls }: { toolCalls: ToolCallEntry[] }) {
@@ -588,7 +527,7 @@ function MessageAttachments({
   return (
     <>
       <div className={`lingxia-message-attachments is-${variant}`} aria-label={variant === "user" ? "上传的附件" : "生成的附件"}>
-        <div className="lingxia-message-attachments__label">附件 · {files.length}</div>
+        <div className="lingxia-message-attachments__label">{variant === "assistant" ? "本轮产物" : "附件"} · {files.length}</div>
         <div className="lingxia-message-attachments__list">
           {files.map((file) => {
             const key = `${file.adoptId}:${file.path}`;
@@ -670,51 +609,15 @@ function MessageAttachments({
   );
 }
 
-function ToolCallCard({ tc }: { tc: ToolCallEntry }) {
-  const isRunning = tc.status === "running";
-  const isDone    = tc.status === "done";
-  const isError   = tc.status === "error";
-
-  const duration = tc.durationMs != null ? `${tc.durationMs}ms` : null;
-
-  return (
-    <details className="lingxia-toolcard" >
-      <summary className="lingxia-toolcard__header" style={{ cursor: "pointer", listStyle: "none" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 18, height: 18, borderRadius: 4, background: isRunning ? "rgba(239,68,68,0.12)" : isDone ? "rgba(34,197,94,0.12)" : "rgba(239,68,68,0.12)", flexShrink: 0 }}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={isRunning ? "#ef4444" : isDone ? "#22c55e" : "#ef4444"} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        </span>
-        <span className="lingxia-toolcard__title">{toolCallLabel(tc)}</span>
-        <span className="lingxia-toolcard__status">
-          {isRunning && <span className="animate-pulse">执行中…</span>}
-          {isDone    && "✓"}
-          {isError   && "✕"}
-        </span>
-        <div className="lingxia-toolcard__meta">
-          {tc.executor === "sandbox" && (
-            <span className="lingxia-toolcard__chip lingxia-toolcard__chip--sandbox">沙箱</span>
-          )}
-          {tc.truncated && (
-            <span className="lingxia-toolcard__chip lingxia-toolcard__chip--warn">输出已截断</span>
-          )}
-          {tc.policyDenyReason && (
-            <span className="lingxia-toolcard__chip lingxia-toolcard__chip--danger">安全策略拒绝</span>
-          )}
-          {duration && <span className="lingxia-toolcard__status">{duration}</span>}
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: 4, opacity: 0.4, transition: "transform 0.2s" }} className="lingxia-toolcard__chevron"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-      </summary>
-
-      <ToolCallDetailBody tc={tc} />
-    </details>
-  );
-}
-
 function toolCallLabel(tc: ToolCallEntry): string {
   const rawName = String(tc.name || "tool");
   const lower = rawName.toLowerCase();
   if (GATEWAY_TOOL_META[rawName]) return GATEWAY_TOOL_META[rawName].label;
   if (GATEWAY_TOOL_META[lower]) return GATEWAY_TOOL_META[lower].label;
   if (rawName === "[产出文件]" || lower.includes("workspace_files")) return "产出文件";
+  if (lower.includes("remember_preference")) return "记住岗位偏好";
+  if (lower.includes("forget_preference")) return "忘记岗位偏好";
+  if (lower.includes("list_learned_preferences")) return "查看岗位偏好";
   if (lower === "load_tools") return "加载工具";
   if (lower.includes("weather")) return "查询天气";
   if (lower.includes("search")) return "检索信息";
@@ -722,6 +625,65 @@ function toolCallLabel(tc: ToolCallEntry): string {
   if (lower.includes("mcp")) return "调用 MCP 工具";
   if (lower.includes("bash") || lower.includes("shell")) return "执行命令";
   return rawName.replace(/[_-]+/g, " ");
+}
+
+type MemoryReceipt = {
+  action: "remembered" | "forgotten";
+  id: number;
+  content: string;
+  status?: string;
+};
+
+function parseMemoryReceipt(result: string | undefined): MemoryReceipt | null {
+  const value = String(result || "");
+  const marker = "EA_MEMORY_RECEIPT:";
+  try {
+    const parsed = JSON.parse(value);
+    const queue: unknown[] = [parsed];
+    let inspected = 0;
+    while (queue.length && inspected < 100) {
+      const current = queue.shift();
+      inspected += 1;
+      if (typeof current === "string" && current.includes(marker)) {
+        return parseMemoryReceipt(current);
+      }
+      if (Array.isArray(current)) queue.push(...current);
+      else if (current && typeof current === "object") queue.push(...Object.values(current));
+    }
+  } catch {}
+  const markerIndex = value.indexOf(marker);
+  if (markerIndex < 0) return null;
+  const start = value.indexOf("{", markerIndex + marker.length);
+  if (start < 0) return null;
+  let depth = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const char = value[index];
+    if (quoted) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') quoted = false;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === "{") depth += 1;
+    else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          const parsed = JSON.parse(value.slice(start, index + 1));
+          const id = Number(parsed?.id || 0);
+          const action = parsed?.action === "forgotten" ? "forgotten" : "remembered";
+          const content = String(parsed?.content || "").trim();
+          return id > 0 && content ? { action, id, content, status: String(parsed?.status || "") } : null;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function toolCallDurationLabel(tc: ToolCallEntry): string {
@@ -833,7 +795,7 @@ function ToolTimelineStep({ tc, index, total }: { tc: ToolCallEntry; index: numb
             transition={transition}
           >
             <div className="lingxia-tool-step-detail__body">
-              <ToolCallDetailBody tc={tc} />
+              <ToolDetailRenderer tool={tc} />
             </div>
           </motion.div>
         ) : null}
@@ -1008,12 +970,26 @@ function ChatMessageInner({
   feedback,
   feedbackPending = false,
   onFeedback,
+  onForgetMemory,
   jiuwenPermission,
   onJiuwenPermissionAnswer,
 }: ChatMessageProps) {
   const eventToolCalls = toolCallsFromMessageEvents(messageEvents);
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
   const timelineToolCalls = effectiveToolCalls.filter((tool) => tool.name !== "[产出文件]");
+  const memoryReceipt = useMemo(() => {
+    for (let index = effectiveToolCalls.length - 1; index >= 0; index -= 1) {
+      const receipt = parseMemoryReceipt(effectiveToolCalls[index]?.result);
+      if (receipt) return receipt;
+    }
+    return null;
+  }, [effectiveToolCalls]);
+  const [memoryReceiptDismissed, setMemoryReceiptDismissed] = useState(false);
+  const [memoryUndoPending, setMemoryUndoPending] = useState(false);
+  useEffect(() => {
+    setMemoryReceiptDismissed(false);
+    setMemoryUndoPending(false);
+  }, [memoryReceipt?.id, memoryReceipt?.action]);
   const showToolTimeline = showToolCalls && timelineToolCalls.length > 0;
   const [copied, setCopied] = useState(false);
   const [ttsPlaying, setTtsPlaying] = useState(false);
@@ -1143,6 +1119,34 @@ function ChatMessageInner({
           </div>
         </div>
         <MessageAttachments toolCalls={effectiveToolCalls} attachments={attachments} />
+        {!streaming && memoryReceipt && !memoryReceiptDismissed ? (
+          <div className="lingxia-memory-receipt" data-action={memoryReceipt.action}>
+            <Brain aria-hidden="true" />
+            <span>
+              <strong>{memoryReceipt.action === "forgotten" ? "已忘记" : "已记住"}</strong>
+              <small>{memoryReceipt.content}</small>
+            </span>
+            {memoryReceipt.action === "remembered" && onForgetMemory ? (
+              <button
+                type="button"
+                disabled={memoryUndoPending}
+                onClick={async () => {
+                  setMemoryUndoPending(true);
+                  try {
+                    await onForgetMemory(memoryReceipt.id);
+                    setMemoryReceiptDismissed(true);
+                  } catch {
+                    // The mutation reports its own user-facing error.
+                  } finally {
+                    setMemoryUndoPending(false);
+                  }
+                }}
+              >
+                {memoryUndoPending ? "撤销中..." : "撤销"}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         {jiuwenPermission && (
           <div
             className="mt-2 rounded-xl px-3 py-3 text-xs"

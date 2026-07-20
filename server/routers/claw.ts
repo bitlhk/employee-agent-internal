@@ -77,6 +77,7 @@ import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "..
 import {
   getAgentRoleTemplate,
   getRoleSkillMcpBaseline,
+  getSkillMcpRequirement,
   listAgentRoleTemplates,
   resolveAgentRoleTemplate,
 } from "../_core/role-templates";
@@ -86,11 +87,21 @@ import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-run
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
 import { MESSAGE_FEEDBACK_REASON_CODES } from "../../shared/message-feedback";
 import { resolvePublicBaseUrl } from "../_core/public-base-url";
+import { probeJiuwenSkillMcpReadiness } from "../_core/skill-mcp-readiness";
 import {
   getEaAssistantModelAdminConfig,
   saveEaAssistantModelConfig,
   validateEaAssistantModel,
 } from "../_core/ea-assistant-model";
+import {
+  applyNegativeMemoryFeedback,
+  applyPositiveMemoryFeedback,
+  changeAgentMemoryMode,
+  forgetAgentMemory,
+  listAgentMemoryView,
+  rememberExplicitPreference,
+  updateAgentMemory,
+} from "../_core/agent-memory";
 import {
   JIUWEN_AUTO_MODEL_ID,
   JIUWEN_MODEL_PROVIDERS,
@@ -640,7 +651,143 @@ export const clawRouter = router({
           outputTokens: input.outputTokens,
           durationMs: input.durationMs,
         });
+        if (input.rating === "positive") {
+          void applyPositiveMemoryFeedback({
+            userId,
+            adoptId: input.adoptId,
+            conversationId: input.conversationId,
+          }).catch(() => {});
+        } else if (input.reasonCodes.includes("preference_mismatch")) {
+          void applyNegativeMemoryFeedback({
+            userId,
+            adoptId: input.adoptId,
+            conversationId: input.conversationId,
+          }).catch(() => {});
+        }
         return { ok: true, deleted: false };
+      }),
+
+    memoryView: protectedProcedure
+      .input(z.object({ adoptId: z.string().min(1).max(64) }))
+      .query(async ({ input, ctx }) => {
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
+        return listAgentMemoryView({
+          userId: Number(ctx.user!.id),
+          adoptId: input.adoptId,
+          adoptionId: Number(claw.id),
+        });
+      }),
+
+    setMemoryMode: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        mode: z.enum(["learn_and_use", "use_only", "off"]),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
+        await changeAgentMemoryMode({
+          userId: Number(ctx.user!.id),
+          adoptId: input.adoptId,
+          adoptionId: Number(claw.id),
+          dbAgentId: String(claw.agentId || ""),
+          mode: input.mode,
+        });
+        await recordAuditBestEffort({
+          action: "memory.mode.update",
+          result: "success",
+          severity: "info",
+          actorType: "user",
+          ...auditActor(ctx.user),
+          targetType: "claw_adoption",
+          targetId: input.adoptId,
+          agentInstanceId: input.adoptId,
+          source: "claw_router",
+          metadata: { mode: input.mode },
+        });
+        return { ok: true, mode: input.mode };
+      }),
+
+    rememberMemory: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        content: z.string().trim().min(4).max(800),
+        kind: z.enum(["preference", "instruction", "entity", "procedure"]).default("preference"),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const memory = await rememberExplicitPreference({
+          adoptId: input.adoptId,
+          content: input.content,
+          kind: input.kind,
+          channel: "web-settings",
+        });
+        await recordAuditBestEffort({
+          action: "memory.preference.remember",
+          result: "success",
+          severity: "info",
+          actorType: "user",
+          ...auditActor(ctx.user),
+          targetType: "agent_memory",
+          targetId: String(memory.id),
+          agentInstanceId: input.adoptId,
+          source: "claw_router",
+          metadata: { kind: memory.kind, scope: memory.scope },
+        });
+        return memory;
+      }),
+
+    updateMemory: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        id: z.number().int().positive(),
+        content: z.string().trim().min(4).max(800),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const memory = await updateAgentMemory({
+          userId: Number(ctx.user!.id),
+          adoptId: input.adoptId,
+          id: input.id,
+          content: input.content,
+        });
+        await recordAuditBestEffort({
+          action: "memory.preference.update",
+          result: "success",
+          severity: "info",
+          actorType: "user",
+          ...auditActor(ctx.user),
+          targetType: "agent_memory",
+          targetId: String(memory.id),
+          agentInstanceId: input.adoptId,
+          source: "claw_router",
+        });
+        return memory;
+      }),
+
+    forgetMemory: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        id: z.number().int().positive(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const memory = await forgetAgentMemory({
+          userId: Number(ctx.user!.id),
+          adoptId: input.adoptId,
+          id: input.id,
+        });
+        await recordAuditBestEffort({
+          action: "memory.preference.forget",
+          result: "success",
+          severity: "info",
+          actorType: "user",
+          ...auditActor(ctx.user),
+          targetType: "agent_memory",
+          targetId: String(memory.id),
+          agentInstanceId: input.adoptId,
+          source: "claw_router",
+        });
+        return memory;
       }),
 
     adminMessageFeedbackSummary: adminProcedure
@@ -2201,6 +2348,7 @@ export const clawRouter = router({
           personaPrompt: "",
           stylePreset: "steady_research",
           memoryEnabled: "yes",
+          memoryMode: "learn_and_use",
           memorySummary: "",
           contextTurns: 20,
           crossSessionContext: "yes",
@@ -2223,6 +2371,7 @@ export const clawRouter = router({
           personaPrompt: z.string().max(5000).optional(),
           stylePreset: z.enum(["steady_research", "aggressive_trading", "education_advisor", "custom"]).optional(),
           memoryEnabled: z.enum(["yes", "no"]).optional(),
+          memoryMode: z.enum(["learn_and_use", "use_only", "off"]).optional(),
           memorySummary: z.string().max(5000).optional(),
           contextTurns: z.number().int().min(5).max(100).optional(),
           crossSessionContext: z.enum(["yes", "no"]).optional(),
@@ -2236,6 +2385,11 @@ export const clawRouter = router({
         }
 
         const { adoptId, ...patch } = input;
+        if (patch.memoryMode !== undefined) {
+          patch.memoryEnabled = patch.memoryMode === "off" ? "no" : "yes";
+        } else if (patch.memoryEnabled !== undefined) {
+          patch.memoryMode = patch.memoryEnabled === "no" ? "off" : "learn_and_use";
+        }
         const updated = await upsertClawProfileSettings(Number(claw.id), {
           ...patch,
           updatedBy: ctx.user!.id,
@@ -2657,6 +2811,29 @@ export const clawRouter = router({
       }),
 
     // ── 技能管理 ──────────────────────────────────────────────
+    probeSkillReadiness: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        skillId: z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
+        if (!isJiuwenClawAdoptId(input.adoptId)) {
+          return {
+            skillId: input.skillId,
+            status: "unchecked" as const,
+            canProceed: true,
+            message: "当前运行时不支持 MCP 就绪检查",
+            checkedAt: new Date().toISOString(),
+            servers: [],
+          };
+        }
+        return await probeJiuwenSkillMcpReadiness({
+          skillId: input.skillId,
+          roleTemplate: String(claw.roleTemplate || "general-assistant"),
+        });
+      }),
+
     // ── 技能管理（三层架构）────────────────────────────────────
     // Layer1: openclaw 系统内置  /usr/lib/node_modules/openclaw/skills/
     // Layer2: 灵感公共金融技能  /root/.openclaw/skills-shared/
@@ -2691,6 +2868,9 @@ export const clawRouter = router({
             state: skill.state,
             enabled: skill.enabled,
             sync: skill.sync,
+            requirements: {
+              mcpServers: Object.keys(getSkillMcpRequirement(skill.id).servers),
+            },
           }));
           return {
             shared: [],

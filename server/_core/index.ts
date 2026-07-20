@@ -67,6 +67,7 @@ import {
   resolveInstallTelemetryEndpoint,
 } from "./install-telemetry";
 import { recordInstallEvent } from "../db/install-telemetry";
+import { startAgentMemoryRuntime } from "./agent-memory";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -760,6 +761,7 @@ async function startServer() {
           ok: Boolean(db),
           ms: Date.now() - dbWarmupStartedAt,
         });
+        if (db) startAgentMemoryRuntime();
       })
       .catch((error) => {
         console.warn("[Database] Warmup failed:", (error as any)?.message || error);

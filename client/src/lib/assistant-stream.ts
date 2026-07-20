@@ -7,6 +7,34 @@ export type AssistantStreamMessage = {
 
 export type AssistantTextChunkMode = "delta" | "snapshot";
 
+export type RuntimeRunDescriptor = {
+  runId: string;
+  requestId: string;
+  sessionId: string;
+};
+
+function normalizeRuntimeIdentifier(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 256 || /[\u0000-\u001f\u007f]/.test(normalized)) return "";
+  return normalized;
+}
+
+export function parseRuntimeRunDescriptor(chunk: unknown): RuntimeRunDescriptor | null {
+  if (!chunk || typeof chunk !== "object") return null;
+  const raw = (chunk as { __run?: unknown }).__run;
+  if (!raw || typeof raw !== "object") return null;
+  const candidate = raw as Record<string, unknown>;
+  const requestId = normalizeRuntimeIdentifier(candidate.requestId);
+  const sessionId = normalizeRuntimeIdentifier(candidate.sessionId);
+  if (!requestId || !sessionId) return null;
+  return {
+    runId: normalizeRuntimeIdentifier(candidate.runId) || requestId,
+    requestId,
+    sessionId,
+  };
+}
+
 export function mergeAssistantStreamText(
   currentText: string,
   incomingText: string,

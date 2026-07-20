@@ -9,6 +9,14 @@ const PermissionProfileSchema = z.enum(["plus", "internal"]);
 const RuntimeSchema = z.enum(["jiuwenswarm", "openclaw"]);
 const IndustrySchema = z.enum(["general", "banking", "insurance", "securities"]);
 const VisibleZoneSchema = z.enum(["opensource", "finance", "squad"]);
+const RuntimeAssetIdSchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/);
+
+const SkillMcpRequirementSchema = z.object({
+  servers: z.record(
+    RuntimeAssetIdSchema,
+    z.array(RuntimeAssetIdSchema).max(100),
+  ).default({}),
+});
 
 const RoleTemplateSchema = z.object({
   name: z.string().min(1),
@@ -34,6 +42,7 @@ const IndustryBlockSchema = z.object({
 const BaselineSchema = z.object({
   version: z.string().min(1),
   principles: z.array(z.string()).default([]),
+  skillRequirements: z.record(RuntimeAssetIdSchema, SkillMcpRequirementSchema).default({}),
   schema: z.object({
     defaultRole: z.string().min(1),
     permissionProfiles: z.array(PermissionProfileSchema),
@@ -55,6 +64,7 @@ const BaselineSchema = z.object({
 export type AgentIndustry = z.infer<typeof IndustrySchema>;
 export type AgentRuntime = z.infer<typeof RuntimeSchema>;
 export type AgentRoleStatus = z.infer<typeof RoleStatusSchema>;
+export type SkillMcpRequirement = z.infer<typeof SkillMcpRequirementSchema>;
 export type AgentRoleTemplate = z.infer<typeof RoleTemplateSchema> & {
   id: string;
   industry: AgentIndustry;
@@ -97,6 +107,14 @@ function loadBaselineFromDisk(): RoleSkillMcpBaseline {
 export function getRoleSkillMcpBaseline(): RoleSkillMcpBaseline {
   if (!cachedBaseline) cachedBaseline = loadBaselineFromDisk();
   return cachedBaseline;
+}
+
+export function getSkillMcpRequirement(skillId: string): SkillMcpRequirement {
+  const normalized = String(skillId || "").trim();
+  const configured = normalized ? getRoleSkillMcpBaseline().skillRequirements[normalized] : undefined;
+  return configured
+    ? { servers: Object.fromEntries(Object.entries(configured.servers).map(([serverId, tools]) => [serverId, [...tools]])) }
+    : { servers: {} };
 }
 
 export function listAgentRoleTemplates(): AgentRoleTemplate[] {

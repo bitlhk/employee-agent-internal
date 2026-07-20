@@ -4,8 +4,9 @@
     "Open-source default grants only general assistant capability.",
     "Role templates define baseline skills, MCP servers, model, runtime, and visible zones.",
     "Production deployments should keep business roles and MCP grants in an external baseline file and point ROLE_SKILL_MCP_BASELINE_PATH to it.",
-    "MCP tools are discovered from runtime tools/list; this baseline stores server-level grants only."
+    "MCP tools are discovered from runtime tools/list; role grants remain server-level, while optional skillRequirements entries only declare readiness checks."
   ],
+  "skillRequirements": {},
   "schema": {
     "defaultRole": "general-assistant",
     "permissionProfiles": [
@@ -32,7 +33,7 @@
     ],
     "notes": [
       "defaultSkills are installed/enabled by default for a role; optionalSkills are visible but not automatically installed.",
-      "mcpServers are server-level runtime grants. Tool-level grants are reserved for future use and should stay empty in the OSS default.",
+      "mcpServers are server-level runtime grants. skillRequirements may list required tool names for readiness checks, but those names are not authorization grants.",
       "permissionProfile describes platform permissions, not a business job title.",
       "dataScope is documentation only; real data isolation must be enforced by each MCP service using agent/user context."
     ]
