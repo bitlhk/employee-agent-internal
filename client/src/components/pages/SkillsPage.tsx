@@ -119,6 +119,8 @@ type McpToolChild = {
   liveStatus?: McpLiveStatus;
   liveCheckedAt?: string | null;
   liveError?: string | null;
+  enabledForAgent?: boolean;
+  grantMode?: "default" | "optional";
 };
 type McpToolGroup = {
   id: string;
@@ -129,6 +131,7 @@ type McpToolGroup = {
   availableCount: number;
   configuredCount: number;
   serverCount: number;
+  activeCount?: number;
   children: McpToolChild[];
   recommendedSkills?: string[];
   liveStatus?: McpLiveStatus;
@@ -425,9 +428,12 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
     });
   };
 
-  const availableGroups = items.filter((item) => item.status === "available").length;
+  const availableGroups = items.filter((item) => item.children.some((child) => child.enabledForAgent !== false && child.status === "available")).length;
   const configuredServers = items.reduce((sum, item) => sum + item.configuredCount, 0);
-  const availableServers = items.reduce((sum, item) => sum + item.availableCount, 0);
+  const availableServers = items.reduce(
+    (sum, item) => sum + item.children.filter((child) => child.enabledForAgent !== false && child.status === "available").length,
+    0,
+  );
 
   return (
     <div className="skills-market skills-mcp">
@@ -477,7 +483,7 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
                         {mcpLiveStatusLabel(item.liveStatus)}
                       </span>
                       <span className={`skills-chip ${pillToneClass(mcpStatusTone(item.status))}`}>
-                        {mcpStatusLabel(item.status)} {item.availableCount}/{item.serverCount}
+                        {item.activeCount === 0 ? "已关闭" : mcpStatusLabel(item.status)} {item.activeCount ?? item.availableCount}/{item.serverCount}
                       </span>
                     </span>
                   </button>
@@ -493,7 +499,7 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
                           <span className="skills-mcp-flat__meta">
                             <span className="skills-mcp-child__server">{flatChild.serverId}</span>
                             <span className={`skills-chip ${pillToneClass(mcpLiveStatusTone(flatChild.liveStatus))}`}>{mcpLiveStatusLabel(flatChild.liveStatus)}</span>
-                            <span className={`skills-chip ${pillToneClass(mcpStatusTone(flatChild.status))}`}>{mcpStatusLabel(flatChild.status)}</span>
+                            <span className={`skills-chip ${pillToneClass(flatChild.enabledForAgent === false ? "neutral" : mcpStatusTone(flatChild.status))}`}>{flatChild.enabledForAgent === false ? "已关闭" : mcpStatusLabel(flatChild.status)}</span>
                           </span>
                         </div>
                         {flatChild.liveError && (
@@ -526,7 +532,7 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
                                 <span className="skills-mcp-child__meta">
                                   <span className="skills-mcp-child__server">{child.serverId}</span>
                                   <span className={`skills-chip ${pillToneClass(mcpLiveStatusTone(child.liveStatus))}`}>{mcpLiveStatusLabel(child.liveStatus)}</span>
-                                  <span className={`skills-chip ${pillToneClass(childTone)}`}>{mcpStatusLabel(child.status)}</span>
+                                  <span className={`skills-chip ${pillToneClass(child.enabledForAgent === false ? "neutral" : childTone)}`}>{child.enabledForAgent === false ? "已关闭" : mcpStatusLabel(child.status)}</span>
                                 </span>
                               </div>
 

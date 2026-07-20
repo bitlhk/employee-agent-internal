@@ -943,6 +943,23 @@ export const roleAssetGrants = mysqlTable("role_asset_grants", {
 export type RoleAssetGrant = typeof roleAssetGrants.$inferSelect;
 export type InsertRoleAssetGrant = typeof roleAssetGrants.$inferInsert;
 
+// Per-agent MCP preferences only narrow the role grant. Missing rows mean enabled.
+export const agentMcpPreferences = mysqlTable("agent_mcp_preferences", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  serverId: varchar("server_id", { length: 128 }).notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedBy: int("updated_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  adoptLookupIdx: index("idx_agent_mcp_preferences_adopt").on(table.adoptId),
+  uniqPreference: uniqueIndex("uk_agent_mcp_preferences_scope").on(table.adoptId, table.serverId),
+}));
+
+export type AgentMcpPreference = typeof agentMcpPreferences.$inferSelect;
+export type InsertAgentMcpPreference = typeof agentMcpPreferences.$inferInsert;
+
 // ── 用户记忆 (平台级) ──
 export const userMemories = mysqlTable("user_memories", {
   id:           int("id").autoincrement().primaryKey(),

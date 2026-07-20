@@ -1,5 +1,6 @@
 import { WebSocket, type RawData } from "ws";
 import { resolveEffectiveRoleAssets } from "../db/role-assets";
+import { resolvePersistedAgentMcpSelection } from "../db/agent-mcp-preferences";
 import { getSkillMcpRequirement, type SkillMcpRequirement } from "./role-templates";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
@@ -35,6 +36,7 @@ type EvaluateSkillMcpReadinessInput = {
   skillId: string;
   requirement: SkillMcpRequirement;
   authorizedServerIds: Set<string>;
+  activeServerIds?: Set<string>;
   configuredServers: RuntimeMcpServer[] | null;
   toolsByServer?: Record<string, string[] | undefined>;
   probeErrors?: Record<string, string | undefined>;
@@ -199,13 +201,15 @@ export function evaluateSkillMcpReadiness(input: EvaluateSkillMcpReadinessInput)
   const warningReasons: string[] = [];
   const servers = requiredEntries.map(([serverId, requiredTools]) => {
     const authorized = input.authorizedServerIds.has(serverId);
+    const active = authorized && (input.activeServerIds?.has(serverId) ?? true);
     const configured = configuredByName.has(serverId);
-    const enabled = configuredByName.get(serverId)?.enabled === true;
+    const enabled = active && configuredByName.get(serverId)?.enabled === true;
     const availableTools = input.toolsByServer?.[serverId] || [];
     const probeError = input.probeErrors?.[serverId];
     const missingTools = requiredTools.filter((tool) => !availableTools.includes(tool));
 
     if (!authorized) blockingReasons.push(`岗位未授权 ${serverId}`);
+    else if (!active) blockingReasons.push(`连接 ${serverId} 已关闭`);
     else if (!configured) blockingReasons.push(`JiuwenSwarm 未配置 ${serverId}`);
     else if (!enabled) blockingReasons.push(`MCP ${serverId} 已停用`);
     else if (probeError) warningReasons.push(`${serverId} 暂时无法探测`);
@@ -256,6 +260,7 @@ export function evaluateSkillMcpReadiness(input: EvaluateSkillMcpReadinessInput)
 }
 
 export async function probeJiuwenSkillMcpReadiness(args: {
+  adoptId?: string;
   skillId: string;
   roleTemplate: string;
   force?: boolean;
@@ -263,15 +268,20 @@ export async function probeJiuwenSkillMcpReadiness(args: {
   const requirement = getSkillMcpRequirement(args.skillId);
   const requiredServerIds = Object.keys(requirement.servers);
   const assets = await resolveEffectiveRoleAssets(args.roleTemplate);
+  const selection = args.adoptId
+    ? await resolvePersistedAgentMcpSelection(args.adoptId, assets)
+    : null;
   const authorizedServerIds = new Set([
     ...assets.mcpServers.default,
     ...assets.mcpServers.optional,
   ]);
+  const activeServerIds = new Set(selection?.enabledServerIds || authorizedServerIds);
   if (requiredServerIds.length === 0) {
     return evaluateSkillMcpReadiness({
       skillId: args.skillId,
       requirement,
       authorizedServerIds,
+      activeServerIds,
       configuredServers: [],
     });
   }
@@ -284,6 +294,7 @@ export async function probeJiuwenSkillMcpReadiness(args: {
       skillId: args.skillId,
       requirement,
       authorizedServerIds,
+      activeServerIds,
       configuredServers: null,
       catalogError: sanitizeProbeError(error),
     });
@@ -295,7 +306,7 @@ export async function probeJiuwenSkillMcpReadiness(args: {
   await Promise.all(requiredServerIds.map(async (serverId) => {
     const requiredTools = requirement.servers[serverId] || [];
     const server = configuredByName.get(serverId);
-    if (!authorizedServerIds.has(serverId) || !server?.enabled || requiredTools.length === 0) return;
+    if (!authorizedServerIds.has(serverId) || !activeServerIds.has(serverId) || !server?.enabled || requiredTools.length === 0) return;
     try {
       toolsByServer[serverId] = await listRuntimeMcpTools(serverId, Boolean(args.force));
     } catch (error) {
@@ -307,6 +318,7 @@ export async function probeJiuwenSkillMcpReadiness(args: {
     skillId: args.skillId,
     requirement,
     authorizedServerIds,
+    activeServerIds,
     configuredServers,
     toolsByServer,
     probeErrors,

@@ -13,7 +13,9 @@ import { applyOpenClawRoleScope } from "../_core/openclaw-role-scope";
 import { OPENCLAW_JSON_PATH, openClawWorkspaceDir, resolveRuntimeWorkspaceByIds } from "../_core/helpers";
 import { skillSourceDirsForRuntime } from "../_core/skills/skill-store";
 import { isJiuwenClawRuntimeEnabled } from "../_core/jiuwenclaw-bridge";
-import { bumpClawSessionEpochBestEffort, provisionEmployeeAgentInstance } from "./helpers";
+import { bumpSessionEpoch } from "../_core/helpers";
+import { resolvePersistedAgentMcpSelection } from "../db/agent-mcp-preferences";
+import { provisionEmployeeAgentInstance } from "./helpers";
 
 function noOpReconcile(reason: string): RoleRuntimeReconcileResult {
   return { ok: true, applied: false, changed: 0, skipped: 0, reason };
@@ -80,7 +82,7 @@ class OpenClawRoleRuntimeAdapter implements RoleRuntimeAdapter {
   }
 
   bumpSessionEpoch(adoptId: string): number {
-    return bumpClawSessionEpochBestEffort(adoptId);
+    return bumpSessionEpoch(adoptId);
   }
 
   audit(): void {
@@ -143,12 +145,27 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
     };
   }
 
-  reconcileMcp(_input: RoleRuntimeReconcileInput): RoleRuntimeReconcileResult {
-    return noOpReconcile("jiuwenswarm MCP allowlist is recorded in the role scope manifest; enforcement stays service-side");
+  async reconcileMcp(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> {
+    const selection = await resolvePersistedAgentMcpSelection(input.adoptId, input.effectiveAssets);
+    const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
+    const workspacePermission = ensureJiuwenSwarmWorkspacePermission(workspaceDir);
+    const result = writeJiuwenSwarmRoleScopeManifest({
+      workspaceDir,
+      role: input.role,
+      effectiveAssets: input.effectiveAssets,
+      activeMcpServerIds: selection.enabledServerIds,
+    });
+    const changed = Number(result.changed) + Number(workspacePermission.changed);
+    return {
+      ok: true,
+      applied: changed > 0,
+      changed,
+      reason: `${result.manifestPath}; enabledMcp=${selection.enabledServerIds.length}; workspacePermission=${workspacePermission.changed ? "updated" : "ok"}`,
+    };
   }
 
   bumpSessionEpoch(adoptId: string): number {
-    return bumpClawSessionEpochBestEffort(adoptId);
+    return bumpSessionEpoch(adoptId);
   }
 
   audit(): void {

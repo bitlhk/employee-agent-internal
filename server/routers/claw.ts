@@ -2829,6 +2829,7 @@ export const clawRouter = router({
           };
         }
         return await probeJiuwenSkillMcpReadiness({
+          adoptId: input.adoptId,
           skillId: input.skillId,
           roleTemplate: String(claw.roleTemplate || "general-assistant"),
         });

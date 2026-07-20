@@ -91,6 +91,39 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("preserves an agent MCP selection during later skill reconciliation", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-mcp-selection-"));
+    const assetsWithOptional: EffectiveRoleAssets = {
+      ...effectiveAssets,
+      mcpServers: {
+        default: ["customer_context_tool"],
+        optional: ["market_data"],
+      },
+    };
+    try {
+      writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: root,
+        role,
+        effectiveAssets: assetsWithOptional,
+        activeMcpServerIds: ["market_data"],
+      });
+      writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: root,
+        role,
+        effectiveAssets: assetsWithOptional,
+        activeSkillIds: ["portfolio-doctor"],
+      });
+
+      const manifest = JSON.parse(readFileSync(path.join(root, JIUWENSWARM_ROLE_SCOPE_MANIFEST), "utf8"));
+      expect(manifest.effectiveAssets.mcpServers).toEqual({
+        default: ["platform_tools"],
+        optional: ["market_data"],
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes external-agent routing guidance into JiuwenSwarm identity", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-risk-"));
     try {

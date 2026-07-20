@@ -91,7 +91,7 @@ async function buildSelectedSkillContext(
   const skillFile = path.join(runtimePath, "SKILL.md");
   if (!existsSync(skillFile)) return { ok: false, status: 400, error: "所选技能运行时文件不存在" };
 
-  const mcpReadiness = await probeJiuwenSkillMcpReadiness({ skillId, roleTemplate });
+  const mcpReadiness = await probeJiuwenSkillMcpReadiness({ adoptId, skillId, roleTemplate });
   if (!mcpReadiness.canProceed) {
     return { ok: false, status: 503, error: mcpReadiness.message };
   }

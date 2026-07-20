@@ -31,6 +31,20 @@ describe("skill MCP readiness", () => {
     expect(result.message).toContain("岗位未授权");
   });
 
+  it("reports an agent-disabled connector separately from role authorization", () => {
+    const result = evaluateSkillMcpReadiness({
+      skillId: "wealth-manager-assistant",
+      requirement,
+      authorizedServerIds: new Set(["wealth_customer"]),
+      activeServerIds: new Set(),
+      configuredServers: [{ name: "wealth_customer", enabled: true }],
+      toolsByServer: { wealth_customer: ["context_probe", "customer_list"] },
+    });
+    expect(result.status).toBe("blocked");
+    expect(result.message).toContain("连接 wealth_customer 已关闭");
+    expect(result.message).not.toContain("岗位未授权");
+  });
+
   it("blocks missing runtime servers and missing required tools", () => {
     const missingServer = evaluateSkillMcpReadiness({
       skillId: "wealth-manager-assistant",

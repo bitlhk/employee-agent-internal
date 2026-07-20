@@ -15,6 +15,7 @@ import {
 } from "fs";
 import type { AgentRoleTemplate } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
+import { projectEffectiveAssetsToMcpSelection } from "./agent-mcp-selection";
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
 export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
@@ -144,8 +145,12 @@ function withJiuwenSwarmPlatformMcp(effectiveAssets: EffectiveRoleAssets): Effec
 export function buildJiuwenSwarmRoleScopeManifest(
   role: AgentRoleTemplate,
   effectiveAssets: EffectiveRoleAssets,
+  activeMcpServerIds?: string[],
 ): JiuwenSwarmRoleScopeManifest {
-  const scopedAssets = withJiuwenSwarmPlatformMcp(effectiveAssets);
+  const selectedAssets = activeMcpServerIds === undefined
+    ? effectiveAssets
+    : projectEffectiveAssetsToMcpSelection(effectiveAssets, activeMcpServerIds);
+  const scopedAssets = withJiuwenSwarmPlatformMcp(selectedAssets);
   return {
     version: 1,
     runtime: "jiuwenswarm",
@@ -171,12 +176,16 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
   skillSourceDirs?: string[];
   activeSkillIds?: string[];
   disabledDefaultSkillIds?: string[];
+  activeMcpServerIds?: string[];
 }): JiuwenSwarmRoleScopeWriteResult {
   const workspaceDir = path.resolve(args.workspaceDir);
   const manifestPath = path.join(workspaceDir, JIUWENSWARM_ROLE_SCOPE_MANIFEST);
-  const manifest = buildJiuwenSwarmRoleScopeManifest(args.role, args.effectiveAssets);
-  const next = `${JSON.stringify(manifest, null, 2)}\n`;
   const current = existsSync(manifestPath) ? readFileSync(manifestPath, "utf8") : "";
+  const activeMcpServerIds = args.activeMcpServerIds === undefined
+    ? readPreservedMcpSelection(current, args.effectiveAssets)
+    : args.activeMcpServerIds;
+  const manifest = buildJiuwenSwarmRoleScopeManifest(args.role, args.effectiveAssets, activeMcpServerIds);
+  const next = `${JSON.stringify(manifest, null, 2)}\n`;
 
   mkdirSync(workspaceDir, { recursive: true });
   mkdirSync(path.join(workspaceDir, "skills"), { recursive: true });
@@ -202,8 +211,42 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
 
   if (current === next) return { manifestPath, changed: false, identityChanged, userChanged, ...linkResult };
 
-  writeFileSync(manifestPath, next, "utf8");
+  writeTextFileAtomic(manifestPath, next);
   return { manifestPath, changed: true, identityChanged, userChanged, ...linkResult };
+}
+
+function readPreservedMcpSelection(
+  current: string,
+  effectiveAssets: EffectiveRoleAssets,
+): string[] | undefined {
+  if (!current.trim()) return undefined;
+  try {
+    const parsed = JSON.parse(current);
+    if (parsed?.version !== 1 || parsed?.runtime !== "jiuwenswarm") return undefined;
+    const currentMcp = parsed?.effectiveAssets?.mcpServers;
+    if (!currentMcp || !Array.isArray(currentMcp.default) || !Array.isArray(currentMcp.optional)) {
+      return undefined;
+    }
+    const authorized = new Set([
+      ...effectiveAssets.mcpServers.default,
+      ...effectiveAssets.mcpServers.optional,
+    ]);
+    return uniqueSorted([...currentMcp.default, ...currentMcp.optional])
+      .filter((serverId) => authorized.has(serverId));
+  } catch {
+    return undefined;
+  }
+}
+
+function writeTextFileAtomic(filePath: string, content: string): void {
+  const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  try {
+    writeFileSync(temporaryPath, content, "utf8");
+    renameSync(temporaryPath, filePath);
+  } catch (error) {
+    rmSync(temporaryPath, { force: true });
+    throw error;
+  }
 }
 
 function roleGuidance(role: AgentRoleTemplate): string {

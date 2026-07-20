@@ -7656,6 +7656,118 @@ html:has(:root[data-theme-mode="light"]) body {
   font-size: 12px;
   text-align: center;
 }
+.lingxia-connector-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-secondary);
+  font-size: 10px;
+  line-height: 1;
+}
+.lingxia-connector-menu__results {
+  max-height: 316px;
+}
+.lingxia-connector-item {
+  min-height: 48px;
+  margin: 0 0 1px;
+  padding: 6px 8px !important;
+  border-radius: 7px !important;
+  cursor: pointer !important;
+}
+.lingxia-connector-item[data-highlighted],
+.lingxia-connector-item:hover {
+  background: var(--oc-bg-hover) !important;
+  color: var(--oc-text-primary) !important;
+}
+.lingxia-connector-item__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid var(--oc-border);
+  border-radius: 7px;
+  background: var(--oc-bg);
+  color: var(--oc-text-secondary);
+}
+.lingxia-connector-item__icon > svg {
+  width: 14px !important;
+  height: 14px !important;
+  stroke-width: 1.7;
+}
+.lingxia-connector-item__main {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.lingxia-connector-item__name {
+  overflow: hidden;
+  color: var(--oc-text-primary);
+  font-size: 13px;
+  font-weight: var(--oc-weight-normal);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingxia-connector-item__meta {
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+.lingxia-connector-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 28px;
+  height: 16px;
+  flex: 0 0 28px;
+  padding: 2px;
+  border: 1px solid var(--oc-border-strong);
+  border-radius: 999px;
+  background: var(--oc-bg-hover);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.lingxia-connector-switch > span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--oc-text-tertiary);
+  transform: translateX(0);
+  transition: transform 140ms ease, background 140ms ease;
+}
+.lingxia-connector-switch[data-checked="true"] {
+  border-color: color-mix(in oklab, var(--oc-accent) 58%, var(--oc-border));
+  background: color-mix(in oklab, var(--oc-accent) 78%, var(--oc-bg));
+}
+.lingxia-connector-switch[data-checked="true"] > span {
+  background: #fff;
+  transform: translateX(12px);
+}
+.lingxia-connector-switch__loader {
+  width: 10px !important;
+  height: 10px !important;
+  margin: auto;
+  animation: spin 0.8s linear infinite;
+}
+.lingxia-connector-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.lingxia-connector-loading > svg {
+  width: 14px;
+  height: 14px;
+  animation: spin 0.8s linear infinite;
+}
 .lingxia-skill-select-item > span:last-child {
   display: flex;
   min-width: 0;

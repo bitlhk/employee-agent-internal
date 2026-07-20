@@ -24,9 +24,19 @@ import {
   OPENCLAW_JSON_PATH,
   isJiuwenClawAdoptId,
   openClawAgentDir,
+  readSessionEpoch,
   resolveRuntimeWorkspaceByIds,
 } from "./helpers";
-import { listApprovedSkillMarketItems, listMcpInvocationCounts, listSkillInvocationCounts, resolveEffectiveRoleAssets } from "../db";
+import {
+  deleteAgentMcpPreference,
+  getAgentMcpPreference,
+  listApprovedSkillMarketItems,
+  listMcpInvocationCounts,
+  listSkillInvocationCounts,
+  resolveEffectiveRoleAssets,
+  resolvePersistedAgentMcpSelection,
+  setAgentMcpPreference,
+} from "../db";
 import { skillRegistry } from "./skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { roleSkillPreferences } from "./skills/role-skill-preferences";
@@ -52,6 +62,7 @@ import { toPublicSkillMarketItem } from "./skills/skill-market-policy";
 import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { scanUploadForMalware } from "./upload-security";
+import { auditRequest, recordAuditBestEffort } from "./audit-events";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -127,7 +138,20 @@ type McpToolGroupOverride = {
 
 const DEFAULT_MCP_CATEGORY = "MCP 工具";
 
-const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [];
+const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
+  { id: "wind_financial_docs", name: "Wind 财务与公告", category: "公共金融数据", description: "财务资料、公告与金融文档查询。", serverIds: ["wind_financial_docs"] },
+  { id: "wind_stock_data", name: "Wind 股票数据", category: "公共金融数据", description: "股票行情、财务和市场数据查询。", serverIds: ["wind_stock_data"] },
+  { id: "wind_index_data", name: "Wind 指数数据", category: "公共金融数据", description: "指数、板块与市场数据查询。", serverIds: ["wind_index_data"] },
+  { id: "qieman", name: "且慢基金数据", category: "公共金融数据", description: "基金产品与组合数据查询。", serverIds: ["qieman"] },
+  { id: "bond_quote_parse", name: "债券报价", category: "内部业务 MCP", description: "债券报价识别与结构化处理。", serverIds: ["bond_quote_parse"] },
+  { id: "group_insurance_audit", name: "团险审核", category: "内部业务 MCP", description: "团体保险材料审核与校验。", serverIds: ["group_insurance_audit"] },
+  { id: "credential_skills", name: "凭证审核", category: "内部业务 MCP", description: "业务凭证识别、核验与审核。", serverIds: ["credential_skills"] },
+  { id: "insurance_telesales_recommend", name: "保险电销推荐", category: "内部业务 MCP", description: "保险电销场景的产品与话术推荐。", serverIds: ["insurance_telesales_recommend"] },
+  { id: "insurance_kb", name: "保险知识库", category: "内部业务 MCP", description: "保险产品、条款与业务知识查询。", serverIds: ["insurance_kb"] },
+  { id: "post_loan_risk_data", name: "贷后风险数据", category: "内部业务 MCP", description: "企业贷后风险指标与预警数据查询。", serverIds: ["post_loan_risk_data"] },
+  { id: "wealth_assistant_customer", name: "财富客户数据", category: "内部业务 MCP", description: "客户经理名下客户与持仓信息查询。", serverIds: ["wealth_assistant_customer"] },
+  { id: "wealth_assistant_product", name: "财富产品数据", category: "内部业务 MCP", description: "财富产品筛选、匹配与详情查询。", serverIds: ["wealth_assistant_product"] },
+];
 
 function readableMcpName(serverId: string): string {
   return serverId
@@ -203,6 +227,22 @@ type McpLiveStatus = {
 
 const MCP_TOOLS_LIVE_TTL_MS = 45_000;
 const mcpToolsLiveCache = new Map<string, { expiresAt: number; value: McpLiveStatus }>();
+const agentMcpMutationTails = new Map<string, Promise<void>>();
+
+async function withAgentMcpMutationLock<T>(adoptId: string, action: () => Promise<T>): Promise<T> {
+  const previous = agentMcpMutationTails.get(adoptId) || Promise.resolve();
+  let release = () => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const tail = previous.catch(() => {}).then(() => gate);
+  agentMcpMutationTails.set(adoptId, tail);
+  await previous.catch(() => {});
+  try {
+    return await action();
+  } finally {
+    release();
+    if (agentMcpMutationTails.get(adoptId) === tail) agentMcpMutationTails.delete(adoptId);
+  }
+}
 
 function normalizeMcpTransport(raw: any): string {
   return String(raw?.transport || raw?.type || "").trim().toLowerCase();
@@ -717,11 +757,9 @@ export function registerSkillRoutes(app: express.Express) {
       if (!claw) return;
       const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
       const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+      const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
       const force = String(req.query.force || "") === "1";
-      const allowedServerIds = new Set([
-        ...effectiveAssets.mcpServers.default,
-        ...effectiveAssets.mcpServers.optional,
-      ]);
+      const allowedServerIds = new Set(selection.authorizedServerIds);
       const config = readOpenClawConfig();
       const servers = readOpenClawMcpServers(config);
       const liveStatuses = await fetchMcpLiveStatuses(servers, allowedServerIds, { force }).catch(
@@ -733,12 +771,34 @@ export function registerSkillRoutes(app: express.Express) {
       const invocationCounts = await listMcpInvocationCounts(Array.from(allowedServerIds)).catch(
         () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
       );
-      const payload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
+      const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
+      const enabledServerIds = new Set(selection.enabledServerIds);
+      const payload = {
+        ...rawPayload,
+        items: rawPayload.items.map((group: any) => {
+          const children = group.children.map((child: any) => ({
+            ...child,
+            enabledForAgent: enabledServerIds.has(child.serverId),
+            grantMode: selection.grantModeByServerId[child.serverId] || "optional",
+          }));
+          return {
+            ...group,
+            activeCount: children.filter((child: any) => child.enabledForAgent).length,
+            children,
+          };
+        }),
+        totals: {
+          ...rawPayload.totals,
+          activeServers: selection.enabledServerIds.length,
+        },
+      };
       res.json({
         ...payload,
         roleTemplate,
         filtered: true,
-        allowedServerIds: Array.from(allowedServerIds).sort(),
+        allowedServerIds: selection.authorizedServerIds,
+        enabledServerIds: selection.enabledServerIds,
+        disabledServerIds: selection.disabledServerIds,
         live: {
           enabled: true,
           ttlMs: MCP_TOOLS_LIVE_TTL_MS,
@@ -759,6 +819,125 @@ export function registerSkillRoutes(app: express.Express) {
     } catch (e) {
       console.error("[mcp tools] status failed", e);
       res.status(500).json({ error: "list mcp tools failed" });
+    }
+  });
+
+  app.post("/api/claw/mcp-tools/toggle", async (req, res) => {
+    const adoptId = String(req.body?.adoptId || "").trim();
+    const serverId = String(req.body?.serverId || "").trim();
+    const enabled = req.body?.enabled;
+    if (!adoptId || !serverId || typeof enabled !== "boolean") {
+      res.status(400).json({ error: "adoptId, serverId and enabled are required" });
+      return;
+    }
+    if (!/^[A-Za-z0-9._-]{1,128}$/.test(serverId)) {
+      res.status(400).json({ error: "invalid serverId" });
+      return;
+    }
+
+    try {
+      const claw = await requireClawOwner(req, res, adoptId);
+      if (!claw) return;
+      if (!isJiuwenClawAdoptId(adoptId)) {
+        res.status(409).json({ error: "当前运行时暂不支持按智能体切换连接" });
+        return;
+      }
+
+      const result = await withAgentMcpMutationLock(adoptId, async () => {
+        const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
+        const role = resolveAgentRoleTemplate(roleTemplate);
+        const effectiveAssets = await resolveEffectiveRoleAssets(role.id);
+        const authorized = new Set([
+          ...effectiveAssets.mcpServers.default,
+          ...effectiveAssets.mcpServers.optional,
+        ]);
+        if (!authorized.has(serverId)) {
+          const error = new Error("该连接未授权给当前岗位");
+          (error as any).statusCode = 403;
+          throw error;
+        }
+
+        const previous = await getAgentMcpPreference(adoptId, serverId);
+        const previousEnabled = previous ? Boolean(previous.enabled) : true;
+        if (previousEnabled === enabled) {
+          const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
+          return { changed: false, selection, sessionEpoch: readSessionEpoch(adoptId) };
+        }
+
+        const runtimeAgentId = resolveRuntimeAgentId(adoptId, String((claw as any).agentId || ""));
+        const runtimeAdapter = getRoleRuntimeAdapter("jiuwenswarm");
+        try {
+          if (enabled) await deleteAgentMcpPreference(adoptId, serverId);
+          else await setAgentMcpPreference({
+            adoptId,
+            serverId,
+            enabled: false,
+            updatedBy: Number((claw as any).userId || 0) || null,
+          });
+
+          const reconcile = await runtimeAdapter.reconcileMcp({
+            adoptId,
+            agentId: runtimeAgentId,
+            role,
+            effectiveAssets,
+          });
+          const sessionEpoch = await runtimeAdapter.bumpSessionEpoch(adoptId, runtimeAgentId);
+          if (sessionEpoch <= 0) throw new Error("会话配置刷新失败");
+          const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
+          await recordAuditBestEffort({
+            action: "agent.connector.updated",
+            actorType: "user",
+            actorUserId: Number((claw as any).userId || 0) || null,
+            ...auditRequest(req),
+            targetType: "agent_connector",
+            targetId: `${adoptId}:${serverId}`,
+            targetName: serverId,
+            agentInstanceId: adoptId,
+            runtimeType: "jiuwenswarm",
+            runtimeAgentId,
+            metadata: { enabled, roleTemplate: role.id, reconcile, sessionEpoch },
+          });
+          return { changed: true, selection, sessionEpoch };
+        } catch (error) {
+          try {
+            if (previous) {
+              await setAgentMcpPreference({
+                adoptId,
+                serverId,
+                enabled: Boolean(previous.enabled),
+                updatedBy: previous.updatedBy,
+              });
+            } else {
+              await deleteAgentMcpPreference(adoptId, serverId);
+            }
+            await runtimeAdapter.reconcileMcp({
+              adoptId,
+              agentId: runtimeAgentId,
+              role,
+              effectiveAssets,
+            });
+          } catch (rollbackError) {
+            console.error("[AGENT-MCP] rollback failed", { adoptId, serverId, rollbackError });
+          }
+          throw error;
+        }
+      });
+
+      res.json({
+        ok: true,
+        changed: result.changed,
+        serverId,
+        enabled,
+        enabledServerIds: result.selection.enabledServerIds,
+        disabledServerIds: result.selection.disabledServerIds,
+        sessionEpoch: result.sessionEpoch,
+      });
+    } catch (error) {
+      const statusCode = Number((error as any)?.statusCode || 0);
+      console.error("[AGENT-MCP] toggle failed", { adoptId, serverId, enabled, error });
+      res.status(statusCode >= 400 && statusCode < 500 ? statusCode : 500).json({
+        error: error instanceof Error ? error.message : "连接切换失败",
+      });
     }
   });
 
