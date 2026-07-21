@@ -6,8 +6,10 @@
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, CircleCheck, CircleX, Clock3, Loader2 } from "lucide-react";
+import { ChevronDown, CircleCheck, CircleX, Clock3, Eye, Files, Loader2 } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
+import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
+import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
 
 export interface AgentToolStep {
   name: string;
@@ -19,6 +21,8 @@ export type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "
 
 export interface AgentTask {
   id: string;
+  parentTaskId?: string | null;
+  parent_task_id?: string | null;
   adoptId?: string;
   adopt_id?: string;
   agentId?: string;
@@ -38,6 +42,14 @@ export interface AgentTask {
   remote_task_id?: string | null;
   adapterProtocol?: string | null;
   adapter_protocol?: string | null;
+  artifactsJson?: string | null;
+  artifacts_json?: string | null;
+  interactionJson?: string | null;
+  interaction_json?: string | null;
+  interactionStatus?: string | null;
+  interaction_status?: string | null;
+  interactionResponseJson?: string | null;
+  interaction_response_json?: string | null;
   createdAt?: string | Date | null;
   created_at?: string | Date | null;
   startedAt?: string | Date | null;
@@ -113,7 +125,15 @@ function parseRawEvents(raw: string | null | undefined): string | undefined {
   return undefined;
 }
 
-export function AgentTaskCard({ task }: { task: AgentTask }) {
+export function AgentTaskCard({
+  task,
+  onOpenArtifact,
+  onResumeExpert,
+}: {
+  task: AgentTask;
+  onOpenArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
+  onResumeExpert?: (task: AgentTask) => void;
+}) {
   const normalized = useMemo(() => {
     const status = String(task.status || "pending");
     const result = value(task.resultMarkdown, task.result_markdown) || task.result || "";
@@ -127,9 +147,15 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
     const startedAt = value(task.startedAt, task.started_at);
     const completedAt = value(task.completedAt, task.completed_at);
     const updatedAt = value(task.updatedAt, task.updated_at);
+    const interactionStatus = value(task.interactionStatus, task.interaction_status) || "";
+    const isWaitingForInput = interactionStatus === "pending";
     const isActive = status === "pending" || status === "running";
     const isDone = status === "succeeded" || status === "done";
     const isFailed = status === "failed" || status === "cancelled";
+    const artifacts = parseAgentTaskArtifacts(value(task.artifactsJson, task.artifacts_json)).map((artifact) => ({
+      ...artifact,
+      adoptId: String(task.adoptId || task.adopt_id || ""),
+    }));
 
     return {
       status,
@@ -147,6 +173,9 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
       isActive,
       isDone,
       isFailed,
+      interactionStatus,
+      isWaitingForInput,
+      artifacts,
       steps: task.steps || [],
     };
   }, [task]);
@@ -167,7 +196,11 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
     setExpanded(true);
   }, [normalized.isDone]);
 
-  const statusMeta = STATUS_META[normalized.status] || { label: normalized.status || "未知", tone: "muted" };
+  const statusMeta = normalized.isWaitingForInput
+    ? { label: "等待确认", tone: "pending" }
+    : normalized.interactionStatus === "answered"
+      ? { label: "已确认", tone: "success" }
+      : STATUS_META[normalized.status] || { label: normalized.status || "未知", tone: "muted" };
   const startTime = toTime(normalized.startedAt) || toTime(normalized.createdAt) || now;
   const endTime = toTime(normalized.completedAt) || now;
   const elapsedMs = task.durationMs ?? Math.max(0, endTime - startTime);
@@ -179,8 +212,34 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
     normalized.createdAt ? `提交 ${formatTime(normalized.createdAt)}` : "",
     normalized.updatedAt ? `更新 ${formatTime(normalized.updatedAt)}` : "",
   ].filter(Boolean);
+  const subtitle = normalized.isWaitingForInput
+    ? "需要你确认后继续"
+    : normalized.interactionStatus === "answered"
+      ? "本轮确认已提交"
+      : normalized.status === "pending"
+        ? "正在等待专家接收"
+        : normalized.status === "running"
+          ? "正在处理你的任务"
+          : normalized.isDone
+            ? normalized.artifacts.length > 0
+              ? `已完成并生成 ${normalized.artifacts.length} 个产物`
+              : "任务已经完成"
+            : normalized.isFailed
+              ? "任务未能完成"
+              : "查看任务详情";
+  const previewArtifact = normalized.artifacts.find((artifact) => (
+    artifact.role === "preview" && agentArtifactPreviewKind(artifact) === "image"
+  )) || normalized.artifacts.find((artifact) => agentArtifactPreviewKind(artifact) === "image");
 
-  const Icon = normalized.isDone ? CircleCheck : normalized.isFailed ? CircleX : normalized.isActive ? Loader2 : Clock3;
+  const Icon = normalized.isWaitingForInput
+    ? Clock3
+    : normalized.isDone
+      ? CircleCheck
+      : normalized.isFailed
+        ? CircleX
+        : normalized.isActive
+          ? Loader2
+          : Clock3;
 
   return (
     <section className={`agent-task-card agent-task-card--${statusMeta.tone}`}>
@@ -190,12 +249,10 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
         </span>
         <span className="agent-task-card__main">
           <span className="agent-task-card__title-row">
-            <span className="agent-task-card__title">{normalized.agentName}</span>
+            <span className="agent-task-card__title">{normalized.isActive ? `${normalized.agentName}已接手` : normalized.agentName}</span>
             <span className={`agent-task-card__badge agent-task-card__badge--${statusMeta.tone}`}>{statusMeta.label}</span>
           </span>
-          <span className="agent-task-card__meta agent-task-card__meta--compact">
-            {metaItems.map((item) => <span key={item}>{item}</span>)}
-          </span>
+          <span className="agent-task-card__subtitle">{subtitle}</span>
         </span>
         <span className="agent-task-card__elapsed">{formatElapsed(elapsedMs)}</span>
         <ChevronDown size={15} className={`agent-task-card__chevron ${expanded ? "is-open" : ""}`} />
@@ -203,6 +260,9 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
 
       {expanded ? (
         <div className="agent-task-card__body">
+          <div className="agent-task-card__meta">
+            {metaItems.map((item) => <span key={item}>{item}</span>)}
+          </div>
           {normalized.steps.length > 0 ? (
             <div className="agent-task-card__steps">
               {normalized.steps.map((step, i) => (
@@ -223,6 +283,13 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
             </div>
           ) : null}
 
+          {normalized.isWaitingForInput ? (
+            <div className="agent-task-card__progress">
+              <span className="agent-task-card__progress-dot" />
+              <span>专家需要继续确认，请在输入框中选择或补充。</span>
+            </div>
+          ) : null}
+
           {normalized.error ? (
             <div className="agent-task-card__error">{normalized.error}</div>
           ) : null}
@@ -231,6 +298,38 @@ export function AgentTaskCard({ task }: { task: AgentTask }) {
             <div className="agent-task-card__result">
               <ChatMarkdown content={normalized.result} />
             </div>
+          ) : null}
+
+          {previewArtifact && onOpenArtifact ? (
+            <AgentArtifactThumbnail
+              artifact={previewArtifact}
+              onOpen={() => onOpenArtifact(normalized.artifacts, previewArtifact.id)}
+            />
+          ) : null}
+
+          {normalized.artifacts.length > 0 ? (
+            <div className="agent-task-card__artifacts">
+              <span><Files size={14} /> 任务产物</span>
+              <div>
+                {normalized.artifacts.map((artifact) => (
+                  <button
+                    type="button"
+                    key={`${artifact.id}:${artifact.path}`}
+                    onClick={() => onOpenArtifact?.(normalized.artifacts, artifact.id)}
+                    title={`查看 ${artifact.name}`}
+                  >
+                    <Eye size={13} />
+                    <span>{artifact.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {normalized.isWaitingForInput && onResumeExpert ? (
+            <button type="button" className="agent-task-card__resume" onClick={() => onResumeExpert(task)}>
+              继续与{normalized.agentName}协作
+            </button>
           ) : null}
         </div>
       ) : null}

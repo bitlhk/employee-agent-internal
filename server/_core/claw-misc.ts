@@ -2,6 +2,7 @@ import express from "express";
 import { COOKIE_NAME } from "@shared/const";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
+import { stripExpertHandoffRuntimeMessage } from "@shared/expert-handoff-context";
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, statSync } from "fs";
 import { execSync } from "child_process";
 import path from "path";
@@ -68,6 +69,7 @@ type ChatHistoryMessage = {
   text: string;
   timeLabel: string;
   timestamp: number;
+  agentTaskIds?: string[];
   attachments?: Array<{ name: string; size: number; path: string; adoptId?: string }>;
   toolCalls?: ChatHistoryToolCall[];
 };
@@ -103,7 +105,7 @@ function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}):
 }
 
 function normalizeHistoryText(value: unknown): string {
-  return String(value || "").replace(/\s+/g, " ").trim();
+  return stripExpertHandoffRuntimeMessage(value).replace(/\s+/g, " ").trim();
 }
 
 function truncateHistoryText(value: unknown, max = 28): string {

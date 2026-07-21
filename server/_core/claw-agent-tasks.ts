@@ -1,7 +1,15 @@
 import express from "express";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
-import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
+import {
+  EA_INTERACTION_SCHEMA,
+  agentInteractionAgentInput,
+  agentInteractionResponseText,
+  parseAgentInteraction,
+  parseAgentInteractionResponse,
+} from "@shared/agent-interaction";
+import { isAuthorizedInternalRequest, requireClawOwner, resolveRuntimeWorkspaceByIds } from "./helpers";
+import { materializeA2AArtifacts } from "./agent-artifacts";
 import {
   runA2AExpertTask,
   summarizeA2AEvents,
@@ -10,13 +18,15 @@ import {
 import {
   countActiveAgentTasks,
   countAgentCallsSince,
+  answerAgentTaskInteractionAndCreate,
   createAgentTask,
-  getBusinessAgent,
+  getBusinessAgentForContext,
+  getAgentTask,
   getAgentTaskBySourceMessage,
   insertCallLog,
   listAgentTasks,
   listAgentTasksByIds,
-  listEnabledBusinessAgents,
+  listEnabledBusinessAgentsForContext,
   updateAgentTask,
 } from "../db/agents";
 
@@ -101,6 +111,11 @@ function roleAllowed(agent: any, roleTemplate: unknown) {
   return allowedRoles.includes(role);
 }
 
+export function agentDailyRequestLimit(agent: { visibility?: unknown; maxDailyRequests?: unknown }): number {
+  if (String(agent.visibility || "platform") === "personal") return 0;
+  return Math.max(0, Number(agent.maxDailyRequests || 0));
+}
+
 function isAgentIntegration(agent: any) {
   const providerType = String(agent?.providerType || "").trim().toLowerCase();
   const adapterProtocol = String(agent?.adapterProtocol || "").trim().toLowerCase();
@@ -118,6 +133,9 @@ function isAgentIntegration(agent: any) {
 
 function routeReason(agent: any) {
   if (!agent?.apiUrl) return "缺少 Agent endpoint";
+  if (String(agent.visibility || "platform") === "personal" && agent.healthStatus === "offline") {
+    return "连接异常，请在专家管理中重新测试";
+  }
   const adapterProtocol = String(agent?.adapterProtocol || "").trim();
   if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
     return `暂不支持 ${adapterProtocol || "未配置"} adapter`;
@@ -140,7 +158,9 @@ function publicAgent(agent: any) {
     providerType: String(agent.providerType || "agent"),
     adapterProtocol: String(agent.adapterProtocol || ""),
     capabilities,
+    source: String(agent.visibility || "platform") === "personal" ? "personal" : "platform",
     executionMode: endpointConfig.executionMode || "async",
+    interactionMode: endpointConfig.interactionMode === "session" ? "session" : "single",
     routeReady: !reason,
     reason,
     healthStatus: String(agent.healthStatus || "unknown"),
@@ -161,9 +181,32 @@ function formatStructuredToolContent(value: unknown): string {
   return `\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``;
 }
 
-export function cleanA2AText(text: string): string {
+function stripArtifactInventory(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const output: string[] = [];
+  let skipping = false;
+  for (const line of lines) {
+    if (/^\s*(?:#{1,4}\s*)?(?:已创建文件|生成文件|本轮产物|created files|artifacts)\s*[：:]?\s*$/i.test(line)) {
+      skipping = true;
+      continue;
+    }
+    if (skipping) {
+      if (!line.trim()) continue;
+      if (/^\s*[-*]\s+(?:\[[^\]]+\]\([^)]+\)|`?[^`\s]+\.[A-Za-z0-9]{1,8}`?|(?:projects|artifacts|outputs?)\/\S+)/i.test(line)) {
+        continue;
+      }
+      skipping = false;
+    }
+    if (/^\s*下载链接[^。\n]*[。.]?\s*$/.test(line)) continue;
+    output.push(line);
+  }
+  return output.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function cleanA2AText(text: string, options: { hasStructuredArtifacts?: boolean } = {}): string {
   const trimmed = String(text || "").trim();
   if (!trimmed) return trimmed;
+  const finish = (value: string) => options.hasStructuredArtifacts ? stripArtifactInventory(value) : value;
 
   // JiuwenSwarm A2A may include tool traces inside the final response artifact.
   // Prefer the last structured tool result without interpreting business fields.
@@ -178,18 +221,41 @@ export function cleanA2AText(text: string): string {
       best = formatStructuredToolContent(parsed);
     } catch {}
   }
-  if (best) return best;
+  if (best) return finish(best);
 
   const lastToolResult = Math.max(trimmed.lastIndexOf("[tool_result"), trimmed.lastIndexOf("[tool_call]"));
   if (lastToolResult > 0) {
     const tail = trimmed.slice(lastToolResult);
     const firstHeading = tail.search(/(^|\n)#{1,3}\s+/);
-    if (firstHeading >= 0) return tail.slice(firstHeading).trim();
+    if (firstHeading >= 0) return finish(tail.slice(firstHeading).trim());
   }
-  return trimmed;
+  return finish(trimmed);
 }
 
-async function runAgentTaskInBackground(taskId: string, agent: any, input: string) {
+export function a2aConversationContextId(
+  adoptId: unknown,
+  agentId: unknown,
+  conversationKey: unknown,
+): string | undefined {
+  const conversation = String(conversationKey || "").trim();
+  if (!conversation) return undefined;
+  const digest = createHash("sha256")
+    .update(`${String(adoptId || "").trim()}\0${String(agentId || "").trim()}\0${conversation}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `ea-${digest}`;
+}
+
+async function runAgentTaskInBackground(
+  taskId: string,
+  agent: any,
+  input: string,
+  runtime: {
+    contextId?: string;
+    dataPart?: Record<string, unknown>;
+    dataPartMetadata?: Record<string, unknown>;
+  } = {},
+) {
   const startedAt = Date.now();
   await updateAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
   try {
@@ -199,20 +265,33 @@ async function runAgentTaskInBackground(taskId: string, agent: any, input: strin
       throw new Error(`${adapterProtocol || "missing adapter"} is not supported by agent task runner`);
     }
     const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as A2AEndpointConfig;
-    const result = await runA2AExpertTask({
+    const connection = {
       apiUrl: String(agent.apiUrl || ""),
       apiToken: agent.apiToken,
       endpointConfig,
-    }, input);
-    if (!String(result.text || "").trim()) {
+    };
+    const result = await runA2AExpertTask(connection, input, runtime);
+    if (!String(result.text || "").trim() && !result.interaction) {
       throw new Error("A2A Agent did not return the configured result artifact");
     }
-    const cleanedText = cleanA2AText(result.text);
+    const cleanedText = cleanA2AText(result.text, { hasStructuredArtifacts: Boolean(result.artifacts?.length) });
+    const runtimeAgentId = String((agent as any).__runtimeAgentId || "").trim();
+    const artifacts = runtimeAgentId && result.artifacts?.length
+      ? await materializeA2AArtifacts({
+          taskId,
+          workspaceDir: resolveRuntimeWorkspaceByIds(String((agent as any).__taskAdoptId || ""), runtimeAgentId),
+          connection,
+          artifacts: result.artifacts,
+        })
+      : [];
     await updateAgentTask(taskId, {
       status: "succeeded" as AgentTaskStatus,
-      resultMarkdown: truncateUtf8(cleanedText, AGENT_TASK_TEXT_LIMIT_BYTES),
+      resultMarkdown: cleanedText ? truncateUtf8(cleanedText, AGENT_TASK_TEXT_LIMIT_BYTES) : null,
       remoteTaskId: result.remoteTaskId || null,
       rawEventsJson: summarizeA2AEvents(result.rawEvents || [], endpointConfig, AGENT_TASK_RAW_EVENTS_LIMIT_BYTES),
+      artifactsJson: artifacts.length > 0 ? JSON.stringify(artifacts) : null,
+      interactionJson: result.interaction ? JSON.stringify(result.interaction) : null,
+      interactionStatus: result.interaction ? "pending" : null,
       completedAt: sql`CURRENT_TIMESTAMP`,
       errorMessage: null,
     });
@@ -248,8 +327,9 @@ export function registerAgentTaskRoutes(app: express.Express) {
     const claw = await resolveClaw(req, res, adoptId);
     if (!claw) return;
     try {
-      const profileKeys = await requesterProfiles(Number((claw as any).userId || 0));
-      const agents = (await listEnabledBusinessAgents())
+      const userId = Number((claw as any).userId || 0);
+      const profileKeys = await requesterProfiles(userId);
+      const agents = (await listEnabledBusinessAgentsForContext({ userId, adoptId }))
         .filter((agent) => isAgentIntegration(agent))
         .filter((agent) => profileAllowed(agent, profileKeys))
         .filter((agent) => roleAllowed(agent, (claw as any).roleTemplate))
@@ -291,8 +371,9 @@ export function registerAgentTaskRoutes(app: express.Express) {
     if (!claw) return;
 
     try {
-      const profileKeys = await requesterProfiles(Number((claw as any).userId || 0));
-      const agent = await getBusinessAgent(agentId);
+      const userId = Number((claw as any).userId || 0);
+      const profileKeys = await requesterProfiles(userId);
+      const agent = await getBusinessAgentForContext(agentId, { userId, adoptId });
       if (!agent || !isAgentIntegration(agent) || !profileAllowed(agent, profileKeys) || !roleAllowed(agent, (claw as any).roleTemplate)) {
         return res.status(403).json({ error: "AGENT_NOT_ALLOWED" });
       }
@@ -316,7 +397,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
       if (maxConcurrent > 0 && await countActiveAgentTasks(agentId) >= maxConcurrent) {
         return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
       }
-      const maxDailyRequests = Math.max(0, Number(agent.maxDailyRequests || 0));
+      const maxDailyRequests = agentDailyRequestLimit(agent);
       if (maxDailyRequests > 0) {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -327,13 +408,19 @@ export function registerAgentTaskRoutes(app: express.Express) {
 
       const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
       const taskUserId = Number((claw as any).userId || 0);
+      const sourceConversationId = req.body?.conversationId
+        ? String(req.body.conversationId).slice(0, 128)
+        : null;
+      const sourceSessionId = req.body?.sessionId
+        ? String(req.body.sessionId).slice(0, 160)
+        : null;
       await createAgentTask({
         id: taskId,
         adoptId,
         userId: taskUserId,
         agentId,
-        sourceConversationId: req.body?.conversationId ? String(req.body.conversationId).slice(0, 128) : null,
-        sourceSessionId: req.body?.sessionId ? String(req.body.sessionId).slice(0, 160) : null,
+        sourceConversationId,
+        sourceSessionId,
         sourceMessageId: sourceMessageId || null,
         status: "pending",
         input,
@@ -360,11 +447,138 @@ export function registerAgentTaskRoutes(app: express.Express) {
         ...agent,
         __taskUserId: taskUserId,
         __taskAdoptId: adoptId,
-      }, input).catch((error) => {
+        __runtimeAgentId: String((claw as any).agentId || ""),
+      }, input, {
+        contextId: a2aConversationContextId(
+          adoptId,
+          agentId,
+          sourceConversationId || sourceSessionId,
+        ),
+      }).catch((error) => {
         console.error("[AGENT-TASK] background runner failed", { taskId, error: error?.message || error });
       });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "TASK_SUBMIT_FAILED" });
+    }
+  });
+
+  app.post("/api/claw/agent-tasks/:taskId/respond", async (req, res) => {
+    const adoptId = String(req.body?.adoptId || "").trim();
+    const taskId = String(req.params.taskId || "").trim();
+    if (!adoptId) return res.status(400).json({ error: "adoptId required" });
+    if (!/^agt_[A-Za-z0-9]{8,64}$/.test(taskId)) return res.status(400).json({ error: "taskId invalid" });
+    const claw = await resolveClaw(req, res, adoptId);
+    if (!claw) return;
+
+    try {
+      const userId = Number((claw as any).userId || 0);
+      const sourceMessageId = String(req.body?.sourceMessageId || "").trim().slice(0, 128);
+      if (sourceMessageId) {
+        const existing = await getAgentTaskBySourceMessage(adoptId, sourceMessageId);
+        if (existing && String(existing.parentTaskId || "") === taskId && Number(existing.userId) === userId) {
+          const existingAgent = await getBusinessAgentForContext(String(existing.agentId || ""), { userId, adoptId });
+          return res.json({
+            taskId: existing.id,
+            reused: true,
+            task: { ...existing, agentName: existingAgent?.name || existing.agentId },
+          });
+        }
+      }
+
+      const sourceTask = await getAgentTask(taskId);
+      if (!sourceTask || sourceTask.adoptId !== adoptId || Number(sourceTask.userId) !== userId) {
+        return res.status(404).json({ error: "待确认任务不存在" });
+      }
+      const interaction = parseAgentInteraction(parseJsonRecord(sourceTask.interactionJson));
+      if (!interaction || sourceTask.interactionStatus !== "pending") {
+        return res.status(409).json({ error: "该确认已处理或不再有效" });
+      }
+      const responseValue = parseAgentInteractionResponse(req.body?.response, interaction);
+      if (!responseValue) return res.status(400).json({ error: "请选择有效选项或填写自定义回答" });
+
+      const profileKeys = await requesterProfiles(userId);
+      const agent = await getBusinessAgentForContext(String(sourceTask.agentId || ""), { userId, adoptId });
+      if (!agent || !isAgentIntegration(agent) || !profileAllowed(agent, profileKeys) || !roleAllowed(agent, (claw as any).roleTemplate)) {
+        return res.status(403).json({ error: "AGENT_NOT_ALLOWED" });
+      }
+      const reason = routeReason(agent);
+      if (reason) return res.status(409).json({ error: reason });
+
+      const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
+      const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
+      if (maxConcurrent > 0 && await countActiveAgentTasks(agent.id) >= maxConcurrent) {
+        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
+      }
+      const maxDailyRequests = agentDailyRequestLimit(agent);
+      if (maxDailyRequests > 0) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (await countAgentCallsSince(agent.id, today) >= maxDailyRequests) {
+          return res.status(429).json({ error: "专家今日调用额度已用完" });
+        }
+      }
+
+      const responseText = agentInteractionResponseText(interaction, responseValue);
+      const remoteInput = agentInteractionAgentInput(interaction, responseValue);
+      const continuationId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+      const continuation = {
+        id: continuationId,
+        parentTaskId: sourceTask.id,
+        adoptId,
+        userId,
+        agentId: sourceTask.agentId,
+        sourceConversationId: sourceTask.sourceConversationId || null,
+        sourceSessionId: sourceTask.sourceSessionId || null,
+        sourceMessageId: sourceMessageId || null,
+        status: "pending" as AgentTaskStatus,
+        input: responseText,
+        adapterProtocol: String(agent.adapterProtocol || ""),
+      };
+      const claimed = await answerAgentTaskInteractionAndCreate(
+        taskId,
+        { userId, adoptId },
+        JSON.stringify(responseValue),
+        continuation as any,
+      );
+      if (!claimed) return res.status(409).json({ error: "该确认已被处理，请刷新会话" });
+
+      const publicPayload = publicAgent(agent);
+      res.json({
+        taskId: continuationId,
+        reused: false,
+        displayText: responseText,
+        task: {
+          ...continuation,
+          agentName: agent.name,
+          createdAt: new Date().toISOString(),
+          agent: publicPayload,
+        },
+      });
+      void runAgentTaskInBackground(continuationId, {
+        ...agent,
+        __taskUserId: userId,
+        __taskAdoptId: adoptId,
+        __runtimeAgentId: String((claw as any).agentId || ""),
+      }, remoteInput, {
+        contextId: a2aConversationContextId(
+          adoptId,
+          sourceTask.agentId,
+          sourceTask.sourceConversationId || sourceTask.sourceSessionId,
+        ),
+        dataPart: {
+          schema: EA_INTERACTION_SCHEMA,
+          kind: "response",
+          response: responseValue,
+        },
+        dataPartMetadata: { "ea.interaction": true, version: "1.0.0" },
+      }).catch((error) => {
+        console.error("[AGENT-TASK] continuation runner failed", {
+          taskId: continuationId,
+          error: error?.message || error,
+        });
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "TASK_RESPONSE_FAILED" });
     }
   });
 }

@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
+import type { AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
@@ -158,6 +159,8 @@ type ChatMessageProps = {
   onForgetMemory?: (memoryId: number) => void | Promise<void>;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "reject") => void;
+  onOpenAgentArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
+  onResumeExpert?: (task: AgentTask) => void;
 };
 
 export type MessageFeedbackValue = {
@@ -948,6 +951,7 @@ function agentTasksRenderSignature(tasks?: AgentTask[]): string {
       task.resultMarkdown || task.result_markdown || task.result || "",
       task.errorMessage || task.error_message || "",
       task.remoteTaskId || task.remote_task_id || "",
+      task.artifactsJson || task.artifacts_json || "",
       task.updatedAt || task.updated_at || "",
     ].join(":"))
     .join("|");
@@ -973,6 +977,8 @@ function ChatMessageInner({
   onForgetMemory,
   jiuwenPermission,
   onJiuwenPermissionAnswer,
+  onOpenAgentArtifact,
+  onResumeExpert,
 }: ChatMessageProps) {
   const eventToolCalls = toolCallsFromMessageEvents(messageEvents);
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
@@ -1231,7 +1237,14 @@ function ChatMessageInner({
         )}
         {agentTasks && agentTasks.length > 0 ? (
           <div className="agent-task-card-list agent-task-card-list--inline">
-            {agentTasks.map((task) => <AgentTaskCard key={task.id} task={task} />)}
+            {agentTasks.map((task) => (
+              <AgentTaskCard
+                key={task.id}
+                task={task}
+                onOpenArtifact={onOpenAgentArtifact}
+                onResumeExpert={onResumeExpert}
+              />
+            ))}
           </div>
         ) : null}
         {!streaming && text && (
@@ -1420,6 +1433,8 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     toolCallsRenderSignature(prev.toolCalls) === toolCallsRenderSignature(next.toolCalls) &&
     messageEventsRenderSignature(prev.messageEvents) === messageEventsRenderSignature(next.messageEvents) &&
     agentTasksRenderSignature(prev.agentTasks) === agentTasksRenderSignature(next.agentTasks) &&
+    prev.onOpenAgentArtifact === next.onOpenAgentArtifact &&
+    prev.onResumeExpert === next.onResumeExpert &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&
     prev.usage?.input === next.usage?.input &&
     prev.usage?.output === next.usage?.output &&

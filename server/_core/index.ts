@@ -32,6 +32,7 @@ import { registerFeishuRoutes } from "./claw-feishu";
 import { registerSkillRoutes } from "./claw-skills";
 import { registerCollabRoutes } from "./claw-collab";
 import { registerAgentTaskRoutes } from "./claw-agent-tasks";
+import { registerPersonalExpertRoutes } from "./personal-experts";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
@@ -69,6 +70,7 @@ import {
 } from "./install-telemetry";
 import { recordInstallEvent } from "../db/install-telemetry";
 import { startAgentMemoryRuntime } from "./agent-memory";
+import { registerLocalProfileA2AProxy } from "./local-profile-a2a-proxy";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -339,6 +341,8 @@ async function startServer() {
   // Configure body parser with larger size limit for 50MB base64 file uploads.
   app.use(express.json({ limit: "80mb" }));
   app.use(express.urlencoded({ limit: "80mb", extended: true }));
+
+  registerLocalProfileA2AProxy(app);
   
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
@@ -354,6 +358,7 @@ async function startServer() {
   import("./cron-delivery").then(m => m.startCronDeliveryPoller()).catch(e => console.error("cron delivery poller start failed:", e));
   registerSkillRoutes(app);
   registerCollabRoutes(app);
+  registerPersonalExpertRoutes(app);
   registerAgentTaskRoutes(app);
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);

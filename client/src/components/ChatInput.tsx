@@ -25,6 +25,8 @@ type ChatInputProps = {
   onUserMention?: (user: MentionUser) => void;
   leftControls?: ReactNode;
   rightControls?: ReactNode;
+  interactionPanel?: ReactNode;
+  canSubmitWithoutContent?: boolean;
   renderAddMenu?: (context: { openFilePicker: () => void; disabled: boolean }) => ReactNode;
   voiceOnRight?: boolean;
   historyStorageKey?: string;
@@ -108,6 +110,8 @@ export function ChatInput({
   onUserMention,
   leftControls,
   rightControls,
+  interactionPanel,
+  canSubmitWithoutContent = false,
   renderAddMenu,
   voiceOnRight = false,
   historyStorageKey,
@@ -262,7 +266,7 @@ export function ChatInput({
       return;
     }
     if (disabled || submittingAttachments) return;
-    if (!value.trim() && attachments.length === 0) return;
+    if (!canSubmitWithoutContent && !value.trim() && attachments.length === 0) return;
 
     const selectedAttachments = [...attachments];
     setSubmittingAttachments(true);
@@ -275,7 +279,7 @@ export function ChatInput({
     } finally {
       setSubmittingAttachments(false);
     }
-  }, [attachments, disabled, onSend, onStop, pushInputHistory, streaming, submittingAttachments, value]);
+  }, [attachments, canSubmitWithoutContent, disabled, onSend, onStop, pushInputHistory, streaming, submittingAttachments, value]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (composingRef.current || e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -643,6 +647,8 @@ export function ChatInput({
           transition: "border-color 0.18s, box-shadow 0.18s, outline-color 0.18s",
         }}
       >
+        {interactionPanel}
+
         {attachments.length > 0 && (
           <div className="lingxia-attachment-list lingxia-attachment-list--composer">
             {attachments.map((file, i) => (
@@ -753,11 +759,11 @@ export function ChatInput({
             ) : null}
             <button
               onClick={() => void submitMessage()}
-              disabled={streaming ? false : (disabled || submittingAttachments || (!value.trim() && attachments.length === 0))}
+              disabled={streaming ? false : (disabled || submittingAttachments || (!canSubmitWithoutContent && !value.trim() && attachments.length === 0))}
               title={streaming ? "停止生成" : submittingAttachments ? "上传中" : "发送"}
               className="lingxia-send-btn"
               style={{
-                background: (streaming || value.trim() || attachments.length > 0) ? "var(--oc-accent)" : "rgba(128,128,128,0.2)",
+                background: (streaming || canSubmitWithoutContent || value.trim() || attachments.length > 0) ? "var(--oc-accent)" : "rgba(128,128,128,0.2)",
               }}
             >
               {streaming ? (

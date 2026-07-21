@@ -2,6 +2,7 @@ export const EXPERT_HISTORY_SESSION_PREFIX = "ea-expert:";
 
 export type ExpertHistoryTask = {
   id: string;
+  parentTaskId?: string | null;
   sourceConversationId?: string | null;
   sourceMessageId?: string | null;
   input?: string | null;
@@ -22,6 +23,7 @@ export type ExpertHistoryMessage = {
   text: string;
   timeLabel: string;
   timestamp: number;
+  agentTaskIds?: string[];
 };
 
 export type ExpertHistorySession = {
@@ -64,7 +66,9 @@ function taskAgentName(task: ExpertHistoryTask): string {
 }
 
 function taskMessage(task: ExpertHistoryTask): string {
-  return `已提交任务给 **${taskAgentName(task)}**，完成后结果会自动写回。\n\n任务编号：\`${task.id}\``;
+  return task.parentTaskId
+    ? `好的，已将你的选择交给 **${taskAgentName(task)}**，它会继续处理。`
+    : `**${taskAgentName(task)}** 已接手，正在为你处理。`;
 }
 
 function taskUpdatedAt(task: ExpertHistoryTask, createdAt: number): number {
@@ -121,6 +125,7 @@ export function buildExpertTaskHistoryMessages(
           text: taskMessage(task),
           timeLabel: historyTimeLabel(createdAt + 1),
           timestamp: createdAt + 1,
+          agentTaskIds: [String(task.id)],
         },
       ];
     })

@@ -1,5 +1,7 @@
 import { randomBytes, randomUUID } from "crypto";
 
+import { parseAgentInteraction, type AgentInteraction } from "@shared/agent-interaction";
+import { resolveTrustedLocalProfileA2ATarget } from "./local-profile-a2a-proxy";
 import { readSafeAgentResponseText, safeAgentRequest } from "./safe-agent-http";
 
 export type A2ARequestProfile = {
@@ -48,7 +50,27 @@ export type A2AAgentConnection = {
 export type A2ATaskResult = {
   text: string;
   remoteTaskId?: string;
+  state?: string;
+  interaction?: AgentInteraction;
+  artifacts?: A2ARemoteArtifact[];
   rawEvents: unknown[];
+};
+
+export type A2ARemoteArtifact = {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: number;
+  role: "primary" | "preview" | "supporting" | "internal";
+  uri?: string;
+  bytesBase64?: string;
+  previewOf?: string;
+};
+
+export type A2ATaskRuntimeContext = {
+  contextId?: string;
+  dataPart?: Record<string, unknown>;
+  dataPartMetadata?: Record<string, unknown>;
 };
 
 const MAX_STATIC_PROFILE_BYTES = 64 * 1024;
@@ -133,15 +155,31 @@ function renderTaskText(input: string, config: A2AEndpointConfig): string {
   return template.split("{{prompt}}").join(base);
 }
 
-export function buildA2ATaskRequest(input: string, config: A2AEndpointConfig) {
+function normalizeRuntimeContextId(raw: unknown): string | undefined {
+  const value = String(raw || "").trim();
+  if (!value) return undefined;
+  if (value.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error("runtime contextId is invalid");
+  }
+  return value;
+}
+
+export function buildA2ATaskRequest(
+  input: string,
+  config: A2AEndpointConfig,
+  runtime: A2ATaskRuntimeContext = {},
+) {
   const profile = config.requestProfile || {};
   const createId = () => profileId(config);
   const messageId = createId();
-  const contextId = profile.includeContextId ? createId() : undefined;
+  const contextId = normalizeRuntimeContextId(runtime.contextId)
+    || (profile.includeContextId ? createId() : undefined);
   const taskId = profile.includeTaskId ? createId() : undefined;
   const messageFields = safeRecord(profile.messageFields, "requestProfile.messageFields", createId) || {};
   const dataPart = safeRecord(profile.dataPart, "requestProfile.dataPart", createId);
   const dataPartMetadata = safeRecord(profile.dataPartMetadata, "requestProfile.dataPartMetadata", createId);
+  const runtimeDataPart = safeRecord(runtime.dataPart, "runtime.dataPart", createId);
+  const runtimeDataPartMetadata = safeRecord(runtime.dataPartMetadata, "runtime.dataPartMetadata", createId);
   const paramsMetadata = safeRecord(profile.paramsMetadata, "requestProfile.paramsMetadata", createId);
   const parts: Array<Record<string, unknown>> = [{ kind: "text", text: renderTaskText(input, config) }];
   if (dataPart) {
@@ -149,6 +187,13 @@ export function buildA2ATaskRequest(input: string, config: A2AEndpointConfig) {
       kind: "data",
       data: dataPart,
       ...(dataPartMetadata ? { metadata: dataPartMetadata } : {}),
+    });
+  }
+  if (runtimeDataPart) {
+    parts.push({
+      kind: "data",
+      data: runtimeDataPart,
+      ...(runtimeDataPartMetadata ? { metadata: runtimeDataPartMetadata } : {}),
     });
   }
   const message = {
@@ -193,6 +238,10 @@ function partText(part: any): string {
   }
   if (part.kind === "data" || part.type === "data") {
     const payload = part.data;
+    if (findAgentInteraction(payload)) return "";
+    if (payload && typeof payload === "object" && ["ea.artifact.v1", "ea.artifact-manifest.v1"].includes(String(payload.schema || ""))) {
+      return "";
+    }
     if (payload && typeof payload === "object" && "data" in payload) {
       return valueText(payload.data);
     }
@@ -204,6 +253,26 @@ function partText(part: any): string {
   return "";
 }
 
+function findAgentInteraction(value: unknown): AgentInteraction | undefined {
+  const direct = parseAgentInteraction(value);
+  if (direct) return direct;
+  if (!value || typeof value !== "object") return undefined;
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = findAgentInteraction(child);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  const source = value as Record<string, unknown>;
+  for (const key of ["data", "value", "interaction", "parts", "message", "status", "result", "artifact", "artifacts"]) {
+    if (!(key in source)) continue;
+    const found = findAgentInteraction(source[key]);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 function partsText(parts: unknown): string {
   if (!Array.isArray(parts)) return "";
   const values = parts.map(partText).filter(Boolean);
@@ -212,6 +281,92 @@ function partsText(parts: unknown): string {
   const preceding = values.slice(0, -1).join("");
   const compact = (text: string) => text.replace(/\s+/g, "");
   return last && preceding && compact(last) === compact(preceding) ? last : values.join("\n");
+}
+
+function artifactRole(value: unknown): A2ARemoteArtifact["role"] {
+  const role = String(value || "").trim().toLowerCase();
+  if (role === "preview" || role === "supporting" || role === "internal") return role;
+  return "primary";
+}
+
+function artifactText(value: unknown, maxLength: number): string {
+  return String(value || "").trim().slice(0, maxLength);
+}
+
+function collectA2AArtifacts(value: unknown): A2ARemoteArtifact[] {
+  const artifacts = new Map<string, A2ARemoteArtifact>();
+
+  const add = (source: Record<string, any>, inherited: Record<string, any> = {}) => {
+    const metadata = source.metadata && typeof source.metadata === "object" ? source.metadata : {};
+    const file = source.file && typeof source.file === "object" ? source.file : source;
+    const uri = artifactText(file.uri || file.url || source.uri || source.url, 4096);
+    const bytesBase64 = artifactText(file.bytes || file.base64 || source.bytes || source.base64, 72 * 1024 * 1024);
+    if (!uri && !bytesBase64) return;
+    const name = artifactText(file.name || source.name || metadata.name || inherited.name, 255);
+    if (!name) return;
+    const rawId = artifactText(
+      metadata.id || metadata.artifactId || source.id || source.artifactId || source.artifact_id || inherited.artifactId || name,
+      128,
+    );
+    const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(rawId)
+      ? rawId
+      : `artifact-${artifacts.size + 1}`;
+    const mimeType = artifactText(
+      file.mimeType || file.mime_type || source.mimeType || source.mime_type || metadata.mimeType,
+      160,
+    ) || "application/octet-stream";
+    const size = Number(file.size || source.size || metadata.size || 0);
+    const role = artifactRole(metadata["ea.role"] || metadata.role || source.role || inherited.role);
+    const previewOf = artifactText(metadata["ea.previewOf"] || metadata.previewOf || source.previewOf, 128);
+    const artifact: A2ARemoteArtifact = {
+      id,
+      name,
+      mimeType,
+      ...(Number.isFinite(size) && size > 0 ? { size } : {}),
+      role,
+      ...(uri ? { uri } : {}),
+      ...(bytesBase64 ? { bytesBase64 } : {}),
+      ...(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(previewOf) ? { previewOf } : {}),
+    };
+    artifacts.set(`${artifact.id}:${artifact.uri || artifact.name}`, artifact);
+  };
+
+  const visit = (node: any, inherited: Record<string, any> = {}): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach((child) => visit(child, inherited));
+      return;
+    }
+    const kind = String(node.kind || node.type || "").toLowerCase();
+    if (kind === "file") {
+      add(node, inherited);
+      return;
+    }
+    if (kind === "data" && node.data && typeof node.data === "object") {
+      const data = node.data as Record<string, any>;
+      if (data.schema === "ea.artifact.v1") add(data, inherited);
+      if (data.schema === "ea.artifact-manifest.v1" && Array.isArray(data.artifacts)) {
+        data.artifacts.forEach((artifact: unknown) => {
+          if (artifact && typeof artifact === "object") add(artifact as Record<string, any>, inherited);
+        });
+      }
+    }
+    const nextInherited = {
+      ...inherited,
+      ...(node.artifactId || node.artifact_id ? { artifactId: node.artifactId || node.artifact_id } : {}),
+      ...(node.name ? { name: node.name } : {}),
+      ...(node.role ? { role: node.role } : {}),
+    };
+    if (Array.isArray(node.parts)) visit(node.parts, nextInherited);
+    if (Array.isArray(node.artifacts)) visit(node.artifacts, nextInherited);
+    if (node.artifact) visit(node.artifact, nextInherited);
+    if (node.message) visit(node.message, nextInherited);
+    if (node.status?.message) visit(node.status.message, nextInherited);
+    if (node.result) visit(node.result, nextInherited);
+  };
+
+  visit(value);
+  return Array.from(artifacts.values()).slice(0, 40);
 }
 
 function recursiveA2AText(value: unknown): string {
@@ -242,7 +397,10 @@ function recursiveA2AText(value: unknown): string {
   return texts.join("\n").trim();
 }
 
-export function extractA2ATaskResult(events: unknown[], config: A2AEndpointConfig): { text: string; remoteTaskId?: string } {
+export function extractA2ATaskResult(
+  events: unknown[],
+  config: A2AEndpointConfig,
+): Omit<A2ATaskResult, "rawEvents"> {
   const preferredNames = new Set(
     (Array.isArray(config.resultProfile?.artifactNames) ? config.resultProfile?.artifactNames : [])
       .map((name) => String(name || "").trim().toLowerCase())
@@ -251,11 +409,19 @@ export function extractA2ATaskResult(events: unknown[], config: A2AEndpointConfi
   const artifactSnapshots = new Map<string, string>();
   const responseSnapshots = new Map<string, string>();
   let remoteTaskId = "";
+  let state = "";
+  let interaction: AgentInteraction | undefined;
+  const artifacts = new Map<string, A2ARemoteArtifact>();
 
   for (const event of events as any[]) {
     const result = event?.result ?? event;
     if (!result || typeof result !== "object") continue;
     remoteTaskId = String(result.taskId || result.id || result.contextId || remoteTaskId || "").trim();
+    state = String(result.status?.state || result.state || state || "").trim().toLowerCase();
+    interaction = findAgentInteraction(result) || interaction;
+    for (const artifact of collectA2AArtifacts(result)) {
+      artifacts.set(`${artifact.id}:${artifact.uri || artifact.name}`, artifact);
+    }
     const artifact = result.artifact || result.result?.artifact;
     if (!artifact || typeof artifact !== "object") continue;
     const artifactId = String(artifact.artifactId || artifact.artifact_id || artifact.name || "response");
@@ -271,20 +437,26 @@ export function extractA2ATaskResult(events: unknown[], config: A2AEndpointConfi
   }
 
   const preferred = Array.from(artifactSnapshots.values()).at(-1)?.trim();
-  if (preferred) return { text: preferred, remoteTaskId: remoteTaskId || undefined };
+  const meta = {
+    ...(remoteTaskId ? { remoteTaskId } : {}),
+    ...(state ? { state } : {}),
+    ...(interaction ? { interaction } : {}),
+    ...(artifacts.size > 0 ? { artifacts: Array.from(artifacts.values()) } : {}),
+  };
+  if (preferred) return { text: preferred, ...meta };
   if (preferredNames.size > 0) {
-    return { text: "", remoteTaskId: remoteTaskId || undefined };
+    return { text: "", ...meta };
   }
   const response = Array.from(responseSnapshots.values()).at(-1)?.trim();
-  if (response) return { text: response, remoteTaskId: remoteTaskId || undefined };
+  if (response) return { text: response, ...meta };
 
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index] as any;
     const text = recursiveA2AText(event?.result ?? event);
-    if (text) return { text, remoteTaskId: remoteTaskId || undefined };
+    if (text) return { text, ...meta };
   }
   const last = (events.at(-1) as any)?.result ?? events.at(-1) ?? {};
-  return { text: valueText(last), remoteTaskId: remoteTaskId || undefined };
+  return { text: interaction ? "" : valueText(last), ...meta };
 }
 
 function parseA2ADataBlock(block: string): unknown[] {
@@ -318,7 +490,7 @@ function isA2ACompleteEvent(event: any): boolean {
   const result = event?.result ?? event;
   if (!result || typeof result !== "object") return false;
   const state = String(result.status?.state || result.state || "").toLowerCase();
-  if (["completed", "succeeded", "failed", "canceled", "cancelled"].includes(state)) return true;
+  if (["completed", "succeeded", "failed", "canceled", "cancelled", "input-required"].includes(state)) return true;
   if (result.final === true || result.done === true || result.completed === true) return true;
   const kind = String(result.kind || result.type || "").toLowerCase();
   return kind.includes("complete") || kind.includes("completed");
@@ -334,13 +506,18 @@ function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-export async function runA2AExpertTask(connection: A2AAgentConnection, input: string): Promise<A2ATaskResult> {
+export async function runA2AExpertTask(
+  connection: A2AAgentConnection,
+  input: string,
+  runtime: A2ATaskRuntimeContext = {},
+): Promise<A2ATaskResult> {
   const config = connection.endpointConfig || {};
-  const rpcUrl = endpoint(String(connection.apiUrl || ""), String(config.rpcPath ?? config.path ?? ""));
+  const publicRpcUrl = endpoint(String(connection.apiUrl || ""), String(config.rpcPath ?? config.path ?? ""));
+  const rpcTarget = resolveTrustedLocalProfileA2ATarget(publicRpcUrl);
   const timeoutMs = Math.max(5_000, Math.min(30 * 60_000, Number(config.timeoutMs || 10 * 60_000)));
   const retry = config.retryProfile || {};
   const maxRetries = Math.max(0, Math.min(10, Number(retry.maxRetries || 0)));
-  const request = buildA2ATaskRequest(input, config);
+  const request = buildA2ATaskRequest(input, config, runtime);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const events: unknown[] = [];
@@ -361,7 +538,7 @@ export async function runA2AExpertTask(connection: A2AAgentConnection, input: st
             },
           };
       try {
-        const response = await safeAgentRequest(rpcUrl, {
+        const response = await safeAgentRequest(rpcTarget.url, {
           method: "POST",
           headers: {
             Accept: "application/json, text/event-stream",
@@ -371,6 +548,7 @@ export async function runA2AExpertTask(connection: A2AAgentConnection, input: st
           body: JSON.stringify(body),
           signal: controller.signal,
           timeoutMs,
+          allowPrivate: rpcTarget.allowPrivate,
         });
         if (response.status < 200 || response.status >= 300) {
           const raw = await readSafeAgentResponseText(response).catch(() => "");
@@ -406,7 +584,7 @@ export async function runA2AExpertTask(connection: A2AAgentConnection, input: st
             const parsed = parseA2ADataBlock(block);
             events.push(...parsed);
             const partial = extractA2ATaskResult(events, config);
-            if (parsed.some(isA2ACompleteEvent) && partial.text) {
+            if (parsed.some(isA2ACompleteEvent) && (partial.text || partial.interaction)) {
               response.body.destroy();
               return { ...partial, rawEvents: events.slice(-20) };
             }
@@ -439,6 +617,7 @@ export function summarizeA2AEvents(events: unknown[], config: A2AEndpointConfig,
       contextId: result.contextId,
       final: result.final,
       state: result.status?.state,
+      interaction: findAgentInteraction(result)?.interactionId,
       artifact: artifact ? {
         artifactId: artifact.artifactId || artifact.artifact_id,
         name: artifact.name,

@@ -32,8 +32,9 @@ describe("expert task history", () => {
     expect(messages).toHaveLength(2);
     expect(messages[0]).toMatchObject({ id: "lx-user-one", role: "user", text: "分析这家公司的估值" });
     expect(messages[1]).toMatchObject({ role: "assistant" });
-    expect(messages[1].text).toContain("已提交任务给 **万得金融专家**");
-    expect(messages[1].text).toContain("agt_1234567890abcdef");
+    expect(messages[1].text).toContain("**万得金融专家** 已接手");
+    expect(messages[1].agentTaskIds).toEqual(["agt_1234567890abcdef"]);
+    expect(messages[1].text).not.toContain("agt_1234567890abcdef");
   });
 
   it("groups tasks into a durable expert-only conversation", () => {

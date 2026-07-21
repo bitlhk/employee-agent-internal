@@ -26,9 +26,29 @@ describe("expert agents", () => {
     expect(expertSupportsAttachments(expert)).toBe(true);
   });
 
-  it("keeps the task id in the assistant marker text", () => {
+  it("keeps the personal expert source marker", () => {
+    const [expert] = normalizeExpertAgents({
+      agents: [{ id: "mine", name: "我的专家", source: "personal", routeReady: true }],
+    });
+
+    expect(expert.source).toBe("personal");
+    expect(expert.interactionMode).toBe("single");
+  });
+
+  it("keeps the continuous interaction mode advertised by an expert", () => {
+    const [expert] = normalizeExpertAgents({
+      agents: [{ id: "session", name: "PPT 专家", interactionMode: "session", routeReady: true }],
+    });
+
+    expect(expert.interactionMode).toBe("session");
+  });
+
+  it("uses natural task copy without exposing the internal task id", () => {
     expect(expertTaskMessage("万得金融专家", "agt_12345678")).toBe(
-      "已提交任务给 **万得金融专家**，完成后结果会自动写回。\n\n任务编号：`agt_12345678`",
+      "**万得金融专家** 已接手，正在为你处理。",
+    );
+    expect(expertTaskMessage("万得金融专家", "agt_12345678", true)).toBe(
+      "好的，已将你的选择交给 **万得金融专家**，它会继续处理。",
     );
   });
 });

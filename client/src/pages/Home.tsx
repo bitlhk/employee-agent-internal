@@ -20,10 +20,13 @@ import { useRoute, useLocation } from "wouter";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
 import { CustomMcpDialog } from "@/components/CustomMcpDialog";
+import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
+import { ExpertInteractionPrompt } from "@/components/ExpertInteractionPrompt";
 import { ChatMessage, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
 import { ModelPicker } from "@/components/ModelPicker";
 import type { AgentTask } from "@/components/AgentTaskCard";
+import { AgentArtifactPanel, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { BrandIcon } from "@/components/BrandIcon";
 import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
 import { SessionList } from "@/components/console/SessionList";
@@ -45,6 +48,19 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { BrainCircuit, ChevronRight, FolderOpen, History, Link2, LoaderCircle, Menu, Paperclip, Plus, Search, Settings2, Upload, Wand2, X } from "lucide-react";
 import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
+import {
+  buildExpertHandoffRuntimeMessage,
+  stripExpertHandoffRuntimeMessage,
+  type ExpertHandoffContext,
+} from "@shared/expert-handoff-context";
+import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
+import {
+  EA_INTERACTION_SCHEMA,
+  agentInteractionResponseText,
+  parseAgentInteraction,
+  type AgentInteraction,
+  type AgentInteractionResponse,
+} from "@shared/agent-interaction";
 import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
 import {
   flattenComposerConnectors,
@@ -132,6 +148,7 @@ const legacyWebMessagesStorageKeys = (userId: string, adoptId: string, conversat
   `lgc_msgs_${adoptId}_${conversationId}`,
 ];
 const webDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_draft_${userId}_${adoptId}_${conversationId}`;
+const webExpertModeStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_expert_${userId}_${adoptId}_${conversationId}`;
 const legacyWebDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `lingxia_web_draft_${userId}_${adoptId}_${conversationId}`;
 const webInputHistoryStorageKey = (userId: string, adoptId: string) => `agent_web_input_history_${userId}_${adoptId}`;
 const legacyWebInputHistoryStorageKey = (userId: string, adoptId: string) => `lingxia_web_input_history_${userId}_${adoptId}`;
@@ -452,6 +469,75 @@ function extractAgentTaskIds(text: unknown): string[] {
   return Array.from(value.matchAll(/\bagt_[A-Za-z0-9]{8,64}\b/g), (match) => match[0]);
 }
 
+function messageAgentTaskIds(message: Pick<LxMsg, "text" | "agentTaskIds">): string[] {
+  return Array.from(new Set([
+    ...(Array.isArray(message.agentTaskIds) ? message.agentTaskIds : []),
+    ...extractAgentTaskIds(message.text),
+  ].filter((id) => /^agt_[A-Za-z0-9]{8,64}$/.test(id))));
+}
+
+function agentTaskTimestamp(task: AgentTask): number {
+  const value = task.updatedAt || task.updated_at || task.completedAt || task.completed_at || task.createdAt || task.created_at;
+  const time = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(time) ? time : 0;
+}
+
+function compactExpertSummary(value: unknown): string {
+  return String(value || "")
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/```[a-z0-9_-]*|```/gi, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 1800);
+}
+
+function buildExpertHandoff(
+  tasks: AgentTask[],
+  expertId: string,
+  expertName: string,
+): ExpertHandoffContext | null {
+  const related = tasks
+    .filter((task) => String(task.agentId || task.agent_id || "") === expertId)
+    .sort((left, right) => agentTaskTimestamp(left) - agentTaskTimestamp(right));
+  if (related.length === 0) return null;
+  const latest = related.at(-1)!;
+  const byId = new Map(related.map((task) => [task.id, task]));
+  let root = latest;
+  const visited = new Set<string>();
+  while (root.parentTaskId || root.parent_task_id) {
+    const parentId = String(root.parentTaskId || root.parent_task_id || "");
+    if (!parentId || visited.has(parentId)) break;
+    visited.add(parentId);
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    root = parent;
+  }
+  const status = String(latest.status || "");
+  const interactionStatus = String(latest.interactionStatus || latest.interaction_status || "");
+  const handoffStatus: ExpertHandoffContext["status"] = interactionStatus === "pending"
+    ? "waiting_input"
+    : status === "pending" || status === "running"
+      ? "processing"
+      : status === "failed" || status === "cancelled"
+        ? "failed"
+        : "completed";
+  const artifacts = related.flatMap((task) => (
+    parseAgentTaskArtifacts(task.artifactsJson || task.artifacts_json).map((artifact) => artifact.name)
+  ));
+  return {
+    schema: "ea.expert_handoff.v1",
+    expertName,
+    status: handoffStatus,
+    goal: compactExpertSummary(root.input || root.prompt),
+    latestSummary: compactExpertSummary(
+      latest.resultMarkdown || latest.result_markdown || latest.result || latest.errorMessage || latest.error_message,
+    ),
+    artifacts: Array.from(new Set(artifacts)).slice(0, 20),
+  };
+}
+
 type LxMsg = {
   id: string;
   role: "user" | "assistant";
@@ -463,6 +549,7 @@ type LxMsg = {
   contextWindow?: number;
   contextPercent?: number;
   selectedSkillId?: string;
+  agentTaskIds?: string[];
   attachments?: ChatMessageAttachment[];
   toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
@@ -586,7 +673,7 @@ const backfillLxMsgIds = (raw: any): LxMsg[] => {
   if (!Array.isArray(raw)) return [];
   return raw.map((m: any) => {
     const parsed = extractJiuwenPermissionMarker(String(m?.text ?? ""));
-    const parsedAttachmentContext = parseUploadedAttachmentRuntimeMessage(parsed.text);
+    const parsedAttachmentContext = parseUploadedAttachmentRuntimeMessage(stripExpertHandoffRuntimeMessage(parsed.text));
     const rawAttachments = Array.isArray(m?.attachments) && m.attachments.length > 0
       ? m.attachments
       : parsedAttachmentContext.attachments;
@@ -629,6 +716,10 @@ const backfillLxMsgIds = (raw: any): LxMsg[] => {
       id: typeof m?.id === "string" && m.id ? m.id : makeLxMsgId(),
       role: m?.role === "assistant" ? "assistant" : "user",
       text: parsedAttachmentContext.text,
+      agentTaskIds: Array.from(new Set([
+        ...(Array.isArray(m?.agentTaskIds) ? m.agentTaskIds.map((id: unknown) => String(id || "")) : []),
+        ...extractAgentTaskIds(m?.text),
+      ].filter((id) => /^agt_[A-Za-z0-9]{8,64}$/.test(id)))),
       timeLabel: String(m?.timeLabel ?? new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })),
       ...(attachments.length > 0 ? { attachments } : {}),
       ...(toolCalls.length > 0 ? { toolCalls } : {}),
@@ -756,6 +847,10 @@ export default function Home() {
   const clientLoadReportedRef = useRef(false);
   const [clientLoadMetrics, setClientLoadMetrics] = useState<Record<string, ClientLoadMetric>>({});
   const [workspacePanelOpen, setWorkspacePanelOpen] = useState(false);
+  const [artifactPanel, setArtifactPanel] = useState<{
+    artifacts: AgentArtifactView[];
+    initialArtifactId?: string;
+  } | null>(null);
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState(initialWorkspacePanelWidth);
   const [workspacePanelResizing, setWorkspacePanelResizing] = useState(false);
   const workbenchContentRef = useRef<HTMLDivElement | null>(null);
@@ -883,14 +978,18 @@ export default function Home() {
     } catch {}
   }, [workspacePanelWidth]);
 
+  const sidePanelOpen = activePage === "chat" && (workspacePanelOpen || Boolean(artifactPanel));
+
   useEffect(() => {
-    if (!workspacePanelOpen) return;
+    if (!sidePanelOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) setWorkspacePanelOpen(false);
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (artifactPanel) setArtifactPanel(null);
+      else setWorkspacePanelOpen(false);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [workspacePanelOpen]);
+  }, [artifactPanel, sidePanelOpen]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 768px)");
@@ -958,11 +1057,20 @@ export default function Home() {
     document.body.style.userSelect = "none";
   }, [constrainWorkspacePanelWidth, workspacePanelWidth]);
 
+  const openAgentArtifactPanel = useCallback((artifacts: AgentArtifactView[], initialArtifactId?: string) => {
+    if (artifacts.length === 0) return;
+    setWorkspacePanelOpen(false);
+    setArtifactPanel({ artifacts, initialArtifactId });
+  }, []);
+
   const selectWorkbenchPage = (page: PageKey) => {
     setSidebarSelection("navigation");
     setActivePage(page);
     setMobileSidebarOpen(false);
-    if (page !== "chat") setWorkspacePanelOpen(false);
+    if (page !== "chat") {
+      setWorkspacePanelOpen(false);
+      setArtifactPanel(null);
+    }
   };
   const handleWorkbenchLogout = async () => {
     try {
@@ -1213,6 +1321,8 @@ export default function Home() {
   const LEGACY_MSGS_KEY_USER = resolvedAdoptId && userStorageId && webConversationId ? legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, webConversationId)[0] : "";
   const LEGACY_MSGS_KEY_ADOPT = resolvedAdoptId && userStorageId && webConversationId ? legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, webConversationId)[1] : "";
   const DRAFT_KEY = resolvedAdoptId && userStorageId && webConversationId ? webDraftStorageKey(userStorageId, resolvedAdoptId, webConversationId) : null;
+  const EXPERT_MODE_KEY = resolvedAdoptId && userStorageId && webConversationId ? webExpertModeStorageKey(userStorageId, resolvedAdoptId, webConversationId) : null;
+  const EXPERT_HANDOFF_KEY = EXPERT_MODE_KEY ? `${EXPERT_MODE_KEY}:handoff` : null;
   const LEGACY_DRAFT_KEY = resolvedAdoptId && userStorageId && webConversationId ? legacyWebDraftStorageKey(userStorageId, resolvedAdoptId, webConversationId) : "";
   const INPUT_HISTORY_KEY = resolvedAdoptId && userStorageId ? webInputHistoryStorageKey(userStorageId, resolvedAdoptId) : "";
   const LEGACY_INPUT_HISTORY_KEY = resolvedAdoptId && userStorageId ? legacyWebInputHistoryStorageKey(userStorageId, resolvedAdoptId) : "";
@@ -1274,7 +1384,7 @@ export default function Home() {
   const activeAgentTaskIds = useMemo(() => {
     const ids = new Set<string>();
     for (const msg of activeLingxiaMsgs as LxMsg[]) {
-      for (const id of extractAgentTaskIds(msg?.text)) {
+      for (const id of messageAgentTaskIds(msg)) {
         ids.add(id);
       }
     }
@@ -2321,6 +2431,8 @@ export default function Home() {
   const [skillPackageUploading, setSkillPackageUploading] = useState(false);
   const [customMcpDialogOpen, setCustomMcpDialogOpen] = useState(false);
   const [customMcpDialogMode, setCustomMcpDialogMode] = useState<"add" | "manage">("manage");
+  const [personalExpertDialogOpen, setPersonalExpertDialogOpen] = useState(false);
+  const [personalExpertDialogMode, setPersonalExpertDialogMode] = useState<"add" | "manage">("manage");
   const probeSkillReadinessMutation = trpc.claw.probeSkillReadiness.useMutation();
   const selectedComposerSkill = useMemo(
     () => composerSkills.find((skill) => skill.id === selectedComposerSkillId) || null,
@@ -2342,12 +2454,52 @@ export default function Home() {
   const [composerExpertsLoading, setComposerExpertsLoading] = useState(false);
   const [composerExpertSearch, setComposerExpertSearch] = useState("");
   const [selectedComposerExpertId, setSelectedComposerExpertId] = useState("");
+  const [detachedExpertId, setDetachedExpertId] = useState("");
+  const [selectedExpertInteractionOptionId, setSelectedExpertInteractionOptionId] = useState("");
+  const expertModeHydratingRef = useRef(false);
   const [expertTaskSubmitting, setExpertTaskSubmitting] = useState(false);
   const composerExpertSearchRef = useRef<HTMLInputElement | null>(null);
   const selectedComposerExpert = useMemo(
     () => composerExperts.find((expert) => expert.id === selectedComposerExpertId) || null,
     [composerExperts, selectedComposerExpertId],
   );
+  const detachedExpertHandoff = useMemo(() => {
+    if (!detachedExpertId) return null;
+    const expertName = composerExperts.find((expert) => expert.id === detachedExpertId)?.name
+      || agentTasks.find((task) => String(task.agentId || task.agent_id || "") === detachedExpertId)?.agentName
+      || "专家";
+    return buildExpertHandoff(agentTasks, detachedExpertId, expertName);
+  }, [agentTasks, composerExperts, detachedExpertId]);
+  const pendingExpertInteraction = useMemo(() => {
+    if (!selectedComposerExpertId) return null;
+    const candidates = agentTasks
+      .map((task) => {
+        if (String(task.interactionStatus || task.interaction_status || "") !== "pending") return null;
+        const raw = task.interactionJson || task.interaction_json;
+        if (!raw) return null;
+        try {
+          const interaction = parseAgentInteraction(JSON.parse(raw));
+          if (!interaction) return null;
+          return {
+            task,
+            interaction,
+            agentId: String(task.agentId || task.agent_id || ""),
+            createdAt: new Date(task.createdAt || task.created_at || 0).getTime() || 0,
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((item): item is { task: AgentTask; interaction: AgentInteraction; agentId: string; createdAt: number } => Boolean(item))
+      .filter((item) => item.agentId === selectedComposerExpertId)
+      .sort((left, right) => right.createdAt - left.createdAt);
+    return candidates[0] || null;
+  }, [agentTasks, selectedComposerExpertId]);
+  const selectedExpertHasActiveTask = useMemo(() => agentTasks.some((task) => {
+    const agentId = String(task.agentId || task.agent_id || "");
+    const status = String(task.status || "");
+    return agentId === selectedComposerExpertId && (status === "pending" || status === "running");
+  }), [agentTasks, selectedComposerExpertId]);
   const loadComposerConnectors = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!resolvedAdoptId) return;
     if (!options.silent) setComposerConnectorsLoading(true);
@@ -2406,6 +2558,12 @@ export default function Home() {
     setCustomMcpDialogMode(mode);
     setCustomMcpDialogOpen(true);
   }, []);
+  const openPersonalExpertDialog = useCallback((mode: "add" | "manage") => {
+    setComposerAddMenuOpen(false);
+    setComposerAddMenuView("root");
+    setPersonalExpertDialogMode(mode);
+    setPersonalExpertDialogOpen(true);
+  }, []);
   const openSkillManager = useCallback(() => {
     try { window.localStorage.setItem("employee-agent:skills:last-tab", "mine"); } catch {}
     setComposerAddMenuOpen(false);
@@ -2450,7 +2608,6 @@ export default function Home() {
     setComposerExperts([]);
     setComposerConnectorSearch("");
     setComposerExpertSearch("");
-    setSelectedComposerExpertId("");
     setComposerAddMenuOpen(false);
     setComposerAddMenuView("root");
     setCustomMcpDialogOpen(false);
@@ -2459,6 +2616,47 @@ export default function Home() {
       void loadComposerExperts({ silent: true });
     }
   }, [activePage, loadComposerConnectors, loadComposerExperts, resolvedAdoptId]);
+  useEffect(() => {
+    expertModeHydratingRef.current = true;
+    if (!EXPERT_MODE_KEY) {
+      setSelectedComposerExpertId("");
+      return;
+    }
+    try {
+      setSelectedComposerExpertId(localStorage.getItem(EXPERT_MODE_KEY) || "");
+    } catch {
+      setSelectedComposerExpertId("");
+    }
+  }, [EXPERT_MODE_KEY]);
+  useEffect(() => {
+    if (!EXPERT_MODE_KEY) return;
+    if (expertModeHydratingRef.current) {
+      expertModeHydratingRef.current = false;
+      return;
+    }
+    try {
+      if (selectedComposerExpertId) localStorage.setItem(EXPERT_MODE_KEY, selectedComposerExpertId);
+      else localStorage.removeItem(EXPERT_MODE_KEY);
+    } catch {}
+  }, [EXPERT_MODE_KEY, selectedComposerExpertId]);
+  useEffect(() => {
+    if (!EXPERT_HANDOFF_KEY) {
+      setDetachedExpertId("");
+      return;
+    }
+    try {
+      setDetachedExpertId(localStorage.getItem(EXPERT_HANDOFF_KEY) || "");
+    } catch {
+      setDetachedExpertId("");
+    }
+  }, [EXPERT_HANDOFF_KEY]);
+  useEffect(() => {
+    if (!EXPERT_HANDOFF_KEY) return;
+    try {
+      if (detachedExpertId) localStorage.setItem(EXPERT_HANDOFF_KEY, detachedExpertId);
+      else localStorage.removeItem(EXPERT_HANDOFF_KEY);
+    } catch {}
+  }, [EXPERT_HANDOFF_KEY, detachedExpertId]);
   const filteredComposerConnectors = useMemo(() => {
     const query = composerConnectorSearch.trim().toLocaleLowerCase();
     if (!query) return composerConnectors;
@@ -2515,10 +2713,47 @@ export default function Home() {
       setPendingConnectorId("");
     }
   }, [activeLingxiaStreaming, pendingConnectorId, resolvedAdoptId, selectedComposerSkill]);
+  const expertDraftKey = useCallback((expertId: string) => (
+    EXPERT_MODE_KEY && expertId ? `${EXPERT_MODE_KEY}:draft:${expertId}` : ""
+  ), [EXPERT_MODE_KEY]);
+  const exitComposerExpert = useCallback((notify = true) => {
+    const expertId = selectedComposerExpertId;
+    if (!expertId) return;
+    const draftKey = expertDraftKey(expertId);
+    try {
+      if (draftKey && lingxiaInput.trim()) localStorage.setItem(draftKey, lingxiaInput);
+    } catch {}
+    if (agentTasks.some((task) => String(task.agentId || task.agent_id || "") === expertId)) {
+      setDetachedExpertId(expertId);
+    }
+    setSelectedComposerExpertId("");
+    setSelectedExpertInteractionOptionId("");
+    setLingxiaInput("");
+    clearLingxiaDraft();
+    if (notify) toast.info("已回到主对话，专家任务会继续在后台处理");
+  }, [agentTasks, clearLingxiaDraft, expertDraftKey, lingxiaInput, selectedComposerExpertId]);
+  const enterComposerExpert = useCallback((expert: ExpertAgent) => {
+    if (!expert.routeReady) {
+      toast.error(expert.reason || "该专家当前不可用");
+      return;
+    }
+    if (!lingxiaInput.trim()) {
+      const draftKey = expertDraftKey(expert.id);
+      try {
+        const draft = draftKey ? localStorage.getItem(draftKey) || "" : "";
+        if (draft) setLingxiaInput(draft);
+      } catch {}
+    }
+    setSelectedComposerExpertId(expert.id);
+    setDetachedExpertId((current) => current === expert.id ? "" : current);
+    setSelectedComposerSkillId("");
+    setComposerAddMenuView("root");
+    setComposerAddMenuOpen(false);
+  }, [expertDraftKey, lingxiaInput]);
   const selectComposerSkill = useCallback(async (skill: ComposerSkillOption) => {
     if (skill.requiredMcpServers.length === 0 || !resolvedAdoptId) {
       setSelectedComposerSkillId(skill.id);
-      setSelectedComposerExpertId("");
+      exitComposerExpert(false);
       setComposerAddMenuView("root");
       setComposerAddMenuOpen(false);
       return;
@@ -2537,30 +2772,40 @@ export default function Home() {
       toast.warning("暂时无法验证技能所需的业务工具，将在发送时再次检查");
     }
     setSelectedComposerSkillId(skill.id);
-    setSelectedComposerExpertId("");
+    exitComposerExpert(false);
     setComposerAddMenuView("root");
     setComposerAddMenuOpen(false);
-  }, [probeSkillReadinessMutation, resolvedAdoptId]);
+  }, [exitComposerExpert, probeSkillReadinessMutation, resolvedAdoptId]);
   const selectComposerExpert = useCallback((expert: ExpertAgent) => {
-    if (!expert.routeReady) {
-      toast.error(expert.reason || "该专家当前不可用");
+    enterComposerExpert(expert);
+  }, [enterComposerExpert]);
+  const resumeComposerExpertTask = useCallback((task: AgentTask) => {
+    const agentId = String(task.agentId || task.agent_id || "").trim();
+    const expert = composerExperts.find((item) => item.id === agentId && item.routeReady);
+    if (!expert) {
+      toast.error("该专家当前不可用");
       return;
     }
-    setSelectedComposerExpertId(expert.id);
-    setSelectedComposerSkillId("");
-    setComposerAddMenuView("root");
-    setComposerAddMenuOpen(false);
-  }, []);
+    enterComposerExpert(expert);
+    setSelectedExpertInteractionOptionId("");
+  }, [composerExperts, enterComposerExpert]);
   useEffect(() => {
     if (selectedComposerSkillId && !composerSkills.some((skill) => skill.id === selectedComposerSkillId)) {
       setSelectedComposerSkillId("");
     }
   }, [composerSkills, selectedComposerSkillId]);
   useEffect(() => {
-    if (selectedComposerExpertId && !composerExperts.some((expert) => expert.id === selectedComposerExpertId && expert.routeReady)) {
+    if (
+      selectedComposerExpertId
+      && composerExperts.length > 0
+      && !composerExperts.some((expert) => expert.id === selectedComposerExpertId && expert.routeReady)
+    ) {
       setSelectedComposerExpertId("");
     }
   }, [composerExperts, selectedComposerExpertId]);
+  useEffect(() => {
+    setSelectedExpertInteractionOptionId("");
+  }, [pendingExpertInteraction?.task.id]);
   useEffect(() => {
     if (!resolvedAdoptId || lingxiaSkillsLoading) return;
     const count = Number((lingxiaSkills as any)?.shared?.length || 0)
@@ -2812,13 +3057,22 @@ export default function Home() {
       }
       setLingxiaMsgs((previous) => previous.map((message) => (
         message.id === assistantMessageId
-          ? { ...message, text: expertTaskMessage(args.expert.name, payload.taskId || ""), status: undefined }
+          ? {
+              ...message,
+              text: expertTaskMessage(args.expert.name, payload.taskId || ""),
+              agentTaskIds: [payload.taskId || ""].filter(Boolean),
+              status: undefined,
+            }
           : message
       )));
       if (payload.task) {
         setAgentTasks((previous) => [payload.task as AgentTask, ...previous.filter((task) => task.id !== payload.task?.id)].slice(0, 8));
       }
-      setSelectedComposerExpertId("");
+      try {
+        const draftKey = expertDraftKey(args.expert.id);
+        if (draftKey) localStorage.removeItem(draftKey);
+      } catch {}
+      if (args.expert.interactionMode !== "session") setSelectedComposerExpertId("");
       toast.success(`${args.expert.name}已接收任务`);
       return true;
     } catch (error) {
@@ -2826,6 +3080,109 @@ export default function Home() {
       setLingxiaMsgs((previous) => previous.map((item) => (
         item.id === assistantMessageId
           ? { ...item, text: `专家任务提交失败：${message}`, status: undefined }
+          : item
+      )));
+      toast.error(message);
+      return false;
+    } finally {
+      setExpertTaskSubmitting(false);
+    }
+  };
+
+  const respondToExpertInteraction = async (optionId = ""): Promise<boolean> => {
+    if (!resolvedAdoptId || !pendingExpertInteraction || expertTaskSubmitting) return false;
+    const { interaction, task } = pendingExpertInteraction;
+    const inputText = String(lingxiaInput || "").trim();
+    const responseValue: AgentInteractionResponse = {
+      schema: EA_INTERACTION_SCHEMA,
+      interactionId: interaction.interactionId,
+      ...(optionId ? { optionId } : {}),
+      ...(!optionId && interaction.allowCustom && inputText ? { customText: inputText } : {}),
+      ...(optionId && interaction.allowNote && inputText ? { note: inputText } : {}),
+    };
+    if (!responseValue.optionId && !responseValue.customText) {
+      toast.error(interaction.allowCustom ? "请选择一个选项，或输入其他方案" : "请选择一个选项");
+      return false;
+    }
+    if (optionId && inputText && !interaction.allowNote) {
+      toast.error("当前确认不支持补充说明，请清空输入框后发送");
+      return false;
+    }
+
+    const expert = composerExperts.find((item) => item.id === String(task.agentId || task.agent_id || ""))
+      || selectedComposerExpert;
+    const expertName = expert?.name || task.agentName || task.agent_name || "专家";
+    const displayText = agentInteractionResponseText(interaction, responseValue);
+    const nowLabel = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+    const userMessageId = makeLxMsgId();
+    const assistantMessageId = makeLxMsgId();
+    setExpertTaskSubmitting(true);
+    setLingxiaMsgs((previous) => [
+      ...previous,
+      { id: userMessageId, role: "user", text: displayText, timeLabel: nowLabel },
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        text: "",
+        status: `正在提交给${expertName}...`,
+        timeLabel: nowLabel,
+        model: effectiveLingxiaModelId,
+      },
+    ]);
+    clearLingxiaDraft();
+    setLingxiaInput("");
+    updateLingxiaNearBottom(true);
+
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      const response = await fetchWithTimeout(`${apiBase}/api/claw/agent-tasks/${encodeURIComponent(task.id)}/respond`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adoptId: resolvedAdoptId,
+          sourceMessageId: userMessageId,
+          response: responseValue,
+        }),
+      }, 12_000);
+      const payload = await response.json().catch(() => ({})) as {
+        error?: string;
+        taskId?: string;
+        task?: AgentTask;
+      };
+      if (!response.ok || !payload.taskId) {
+        throw new Error(payload.error || `专家确认提交失败 (${response.status})`);
+      }
+      setLingxiaMsgs((previous) => previous.map((message) => (
+        message.id === assistantMessageId
+          ? {
+              ...message,
+              text: expertTaskMessage(expertName, payload.taskId || "", true),
+              agentTaskIds: [payload.taskId || ""].filter(Boolean),
+              status: undefined,
+            }
+          : message
+      )));
+      setAgentTasks((previous) => {
+        const answered = previous.map((item) => item.id === task.id
+          ? { ...item, interactionStatus: "answered" }
+          : item);
+        return payload.task
+          ? [payload.task, ...answered.filter((item) => item.id !== payload.task?.id)].slice(0, 64)
+          : answered;
+      });
+      setSelectedExpertInteractionOptionId("");
+      try {
+        const draftKey = expertDraftKey(String(task.agentId || task.agent_id || ""));
+        if (draftKey) localStorage.removeItem(draftKey);
+      } catch {}
+      toast.success(`${expertName}已继续处理`);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "专家确认提交失败";
+      setLingxiaMsgs((previous) => previous.map((item) => (
+        item.id === assistantMessageId
+          ? { ...item, text: `专家确认提交失败：${message}`, status: undefined }
           : item
       )));
       toast.error(message);
@@ -4073,6 +4430,13 @@ export default function Home() {
         onOpenChange={setCustomMcpDialogOpen}
         onChanged={() => loadComposerConnectors({ silent: true })}
       />
+      <PersonalExpertDialog
+        open={personalExpertDialogOpen}
+        initialMode={personalExpertDialogMode}
+        adoptId={resolvedAdoptId || ""}
+        onOpenChange={setPersonalExpertDialogOpen}
+        onChanged={() => loadComposerExperts({ silent: true })}
+      />
       <input
         ref={skillPackageInputRef}
         type="file"
@@ -4238,7 +4602,10 @@ export default function Home() {
                 <button
                   type="button"
                   className={`workbench-workspace-trigger ${workspacePanelOpen ? "is-active" : ""}`}
-                  onClick={() => setWorkspacePanelOpen((open) => !open)}
+                  onClick={() => {
+                    setArtifactPanel(null);
+                    setWorkspacePanelOpen((open) => !open);
+                  }}
                   title={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
                   aria-label={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
                   aria-expanded={workspacePanelOpen}
@@ -4253,7 +4620,7 @@ export default function Home() {
           <div
             ref={workbenchContentRef}
             className={`workbench-content-row ${workspacePanelResizing ? "is-resizing" : ""}`}
-            data-workspace-open={workspacePanelOpen && activePage === "chat" ? "true" : "false"}
+            data-workspace-open={sidePanelOpen ? "true" : "false"}
           >
           <div className="workbench-primary-pane">
           {activePage === "chat" ? (
@@ -4340,7 +4707,7 @@ export default function Home() {
                 const isLast = idx === activeLingxiaMsgs.length - 1;
                 const isPlaceholder = isLast && m.role === "assistant" && m.text === "" && activeLingxiaStreaming;
                 const messageAgentTasks = m.role === "assistant"
-                  ? extractAgentTaskIds(m.text)
+                  ? messageAgentTaskIds(m)
                       .map((id) => agentTasksById.get(id))
                       .filter((task): task is AgentTask => Boolean(task))
                   : [];
@@ -4378,6 +4745,8 @@ export default function Home() {
                       : undefined}
                     jiuwenPermission={m.role === "assistant" ? (m as LxMsg).jiuwenPermission : undefined}
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
+                    onOpenAgentArtifact={openAgentArtifactPanel}
+                    onResumeExpert={resumeComposerExpertTask}
                     onDelete={m.role === "assistant" ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
                   />
                   </div>
@@ -4425,6 +4794,13 @@ export default function Home() {
               onChange={setLingxiaInput}
               onSend={async (files = []) => {
                 const text = (lingxiaInput || "").trim();
+                if (pendingExpertInteraction) {
+                  if (files.length > 0) {
+                    toast.error("专家确认暂不支持附件");
+                    return false;
+                  }
+                  return respondToExpertInteraction(selectedExpertInteractionOptionId);
+                }
                 if (!text && files.length === 0) return false;
                 const selectedExpert = selectedComposerExpert;
                 if (selectedExpert && files.length > 0) {
@@ -4465,7 +4841,12 @@ export default function Home() {
                 if (liveMentions.length === 0) {
                   // 没 @ 任何人 → 普通消息
                   if (mentionedUsers.length > 0) setMentionedUsers([]);
-                  void sendLingxiaMessage(finalText, {
+                  const includeExpertHandoff = Boolean(detachedExpertHandoff && !text.startsWith("/"));
+                  const runtimeText = includeExpertHandoff
+                    ? buildExpertHandoffRuntimeMessage(finalText, detachedExpertHandoff!)
+                    : finalText;
+                  if (includeExpertHandoff) setDetachedExpertId("");
+                  void sendLingxiaMessage(runtimeText, {
                     selectedSkillId,
                     displayText: text || (messageAttachments.length > 0 ? "请查看我上传的附件。" : ""),
                     attachments: messageAttachments,
@@ -4507,11 +4888,34 @@ export default function Home() {
 	              }}
               onStop={stopLingxiaStreaming}
               streaming={activeLingxiaStreaming}
-              disabled={expertTaskSubmitting}
-              placeholder={`Message ${lingxiaDisplayName || brand.name}…`}
+              disabled={expertTaskSubmitting || selectedExpertHasActiveTask}
+              placeholder={selectedExpertHasActiveTask
+                ? `${selectedComposerExpert?.name || "专家"}正在处理当前任务…`
+                : pendingExpertInteraction
+                ? pendingExpertInteraction.interaction.allowCustom
+                  ? "选择选项，或输入其他方案…"
+                  : pendingExpertInteraction.interaction.allowNote
+                    ? "可补充说明…"
+                    : "请选择一个选项"
+                : `Message ${lingxiaDisplayName || brand.name}…`}
               maxLength={4000}
               historyStorageKey={INPUT_HISTORY_KEY}
               voiceOnRight
+              canSubmitWithoutContent={Boolean(pendingExpertInteraction && selectedExpertInteractionOptionId)}
+              interactionPanel={pendingExpertInteraction ? (
+                <ExpertInteractionPrompt
+                  expertName={selectedComposerExpert?.name || pendingExpertInteraction.task.agentName || "专家"}
+                  interaction={pendingExpertInteraction.interaction}
+                  selectedOptionId={selectedExpertInteractionOptionId}
+                  disabled={expertTaskSubmitting}
+                  onSelect={(optionId) => {
+                    setSelectedExpertInteractionOptionId(optionId);
+                    if (pendingExpertInteraction.interaction.submitMode === "immediate") {
+                      void respondToExpertInteraction(optionId);
+                    }
+                  }}
+                />
+              ) : undefined}
               showUtilityButtons={false}
               onUserMention={(u) => {
                 setMentionedUsers((prev) => prev.some((x) => x.userId === u.userId) ? prev : [...prev, u]);
@@ -4566,7 +4970,7 @@ export default function Home() {
                       }}
                     >
                       <Link2 aria-hidden="true" />
-                      <span>连接</span>
+                      <span>连接工具</span>
                       {composerConnectors.length > 0 ? (
                         <span className="lingxia-composer-add-item__meta">
                           {activeComposerConnectorCount}/{composerConnectors.length}
@@ -4586,7 +4990,7 @@ export default function Home() {
                       }}
                     >
                       <Wand2 aria-hidden="true" />
-                      <span>技能</span>
+                      <span>使用技能</span>
                       {composerSkills.length > 0 ? (
                         <span className="lingxia-composer-add-item__meta">{composerSkills.length}</span>
                       ) : null}
@@ -4604,7 +5008,7 @@ export default function Home() {
                       }}
                     >
                       <BrainCircuit aria-hidden="true" />
-                      <span>专家</span>
+                      <span>召唤专家</span>
                       {composerExperts.length > 0 ? (
                         <span className="lingxia-composer-add-item__meta">
                           {composerExperts.filter((expert) => expert.routeReady).length}
@@ -4803,7 +5207,10 @@ export default function Home() {
                                 <BrainCircuit />
                               </span>
                               <span className="lingxia-expert-item__main">
-                                <span className="lingxia-expert-item__name">{expert.name}</span>
+                                <span className="lingxia-expert-item__name">
+                                  {expert.name}
+                                  {expert.source === "personal" ? <small className="lingxia-expert-item__mine">我的</small> : null}
+                                </span>
                                 <span className="lingxia-expert-item__desc">
                                   {expert.routeReady ? expert.description || "异步处理专业任务" : expert.reason || "暂不可用"}
                                 </span>
@@ -4813,6 +5220,16 @@ export default function Home() {
                               </span>
                             </DropdownMenuItem>
                           ))}
+                        </div>
+                        <div className="lingxia-composer-submenu__footer">
+                          <button type="button" className="lingxia-composer-submenu__action" onClick={() => openPersonalExpertDialog("add")}>
+                            <Plus aria-hidden="true" />
+                            <span>添加专家</span>
+                          </button>
+                          <button type="button" className="lingxia-composer-submenu__action" onClick={() => openPersonalExpertDialog("manage")}>
+                            <Settings2 aria-hidden="true" />
+                            <span>管理专家</span>
+                          </button>
                         </div>
                       </div>
                     ) : null}
@@ -4825,8 +5242,9 @@ export default function Home() {
                   <span>{selectedComposerExpert.name}</span>
                   <button
                     type="button"
-                    aria-label="取消选择专家"
-                    onClick={() => setSelectedComposerExpertId("")}
+                    aria-label="退出专家模式"
+                    title="退出专家模式"
+                    onClick={() => exitComposerExpert(true)}
                   >
                     <X size={12} strokeWidth={1.8} />
                   </button>
@@ -4882,14 +5300,14 @@ export default function Home() {
           </div>
 
           <div
-            className={`workspace-split-handle ${workspacePanelOpen && activePage === "chat" ? "is-open" : ""}`}
+            className={`workspace-split-handle ${sidePanelOpen ? "is-open" : ""}`}
             role="separator"
             aria-label="调整工作空间宽度"
             aria-orientation="vertical"
             aria-valuemin={WORKSPACE_PANEL_MIN_WIDTH}
             aria-valuemax={WORKSPACE_PANEL_MAX_WIDTH}
             aria-valuenow={workspacePanelWidth}
-            tabIndex={workspacePanelOpen && activePage === "chat" ? 0 : -1}
+            tabIndex={sidePanelOpen ? 0 : -1}
             onPointerDown={beginWorkspacePanelResize}
             onDoubleClick={() => setWorkspacePanelWidth(WORKSPACE_PANEL_DEFAULT_WIDTH)}
             onKeyDown={(event) => {
@@ -4901,19 +5319,27 @@ export default function Home() {
           />
 
           <aside
-            className={`workbench-workspace-panel ${workspacePanelOpen && activePage === "chat" ? "is-open" : ""}`}
+            className={`workbench-workspace-panel ${sidePanelOpen ? "is-open" : ""}`}
             style={{
               "--workspace-panel-width": `${workspacePanelWidth}px`,
-              width: workspacePanelOpen && activePage === "chat" ? workspacePanelWidth : 0,
+              width: sidePanelOpen ? workspacePanelWidth : 0,
             } as CSSProperties}
-            aria-hidden={workspacePanelOpen && activePage === "chat" ? undefined : true}
-            inert={workspacePanelOpen && activePage === "chat" ? undefined : true}
+            aria-hidden={sidePanelOpen ? undefined : true}
+            inert={sidePanelOpen ? undefined : true}
           >
-            <WorkspaceBrowser
-              adoptId={resolvedAdoptId || ""}
-              variant="panel"
-              active={workspacePanelOpen && activePage === "chat"}
-            />
+            {artifactPanel ? (
+              <AgentArtifactPanel
+                artifacts={artifactPanel.artifacts}
+                initialArtifactId={artifactPanel.initialArtifactId}
+                onClose={() => setArtifactPanel(null)}
+              />
+            ) : (
+              <WorkspaceBrowser
+                adoptId={resolvedAdoptId || ""}
+                variant="panel"
+                active={workspacePanelOpen && activePage === "chat"}
+              />
+            )}
           </aside>
           </div>
           </div>

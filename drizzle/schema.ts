@@ -743,7 +743,11 @@ export const businessAgents = mysqlTable("business_agents", {
   name:          varchar("name", { length: 128 }).notNull(),
   description:   text("description"),
   kind:          mysqlEnum("kind", ["local", "remote"]).notNull().default("remote"),
+  visibility:    mysqlEnum("visibility", ["platform", "personal"]).notNull().default("platform"),
+  ownerUserId:   int("owner_user_id"),
+  ownerAdoptId:  varchar("owner_adopt_id", { length: 64 }),
   apiUrl:        varchar("api_url", { length: 512 }),
+  endpointDigest: varchar("endpoint_digest", { length: 64 }),
   apiToken:      text("api_token"),
   remoteAgentId: varchar("remote_agent_id", { length: 128 }).default("main"),
   localAgentId:  varchar("local_agent_id", { length: 128 }),
@@ -763,9 +767,21 @@ export const businessAgents = mysqlTable("business_agents", {
   adapterProtocol: varchar("adapter_protocol", { length: 96 }),
   capabilitiesJson: text("capabilities_json"),
   endpointConfigJson: text("endpoint_config_json"),
+  deletedAt:     timestamp("deleted_at"),
   createdAt:     timestamp("created_at").defaultNow().notNull(),
   updatedAt:     timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  ownerLookupIdx: index("idx_business_agents_owner").on(
+    table.visibility,
+    table.ownerUserId,
+    table.ownerAdoptId,
+    table.enabled,
+  ),
+  personalEndpointUniq: uniqueIndex("uk_business_agents_personal_endpoint").on(
+    table.ownerAdoptId,
+    table.endpointDigest,
+  ),
+}));
 
 export type BusinessAgent = typeof businessAgents.$inferSelect;
 export type InsertBusinessAgent = typeof businessAgents.$inferInsert;
@@ -843,6 +859,7 @@ export type InsertInstallEvent = typeof installEvents.$inferInsert;
 
 export const agentTasks = mysqlTable("agent_tasks", {
   id: varchar("id", { length: 64 }).primaryKey(),
+  parentTaskId: varchar("parent_task_id", { length: 64 }),
   adoptId: varchar("adopt_id", { length: 64 }).notNull(),
   userId: int("user_id").notNull(),
   agentId: varchar("agent_id", { length: 64 }).notNull(),
@@ -856,6 +873,11 @@ export const agentTasks = mysqlTable("agent_tasks", {
   adapterProtocol: varchar("adapter_protocol", { length: 96 }),
   remoteTaskId: varchar("remote_task_id", { length: 128 }),
   rawEventsJson: text("raw_events_json"),
+  artifactsJson: text("artifacts_json"),
+  interactionJson: text("interaction_json"),
+  interactionStatus: varchar("interaction_status", { length: 16 }),
+  interactionResponseJson: text("interaction_response_json"),
+  interactionAnsweredAt: timestamp("interaction_answered_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
@@ -864,6 +886,7 @@ export const agentTasks = mysqlTable("agent_tasks", {
   adoptStatusIdx: index("idx_agent_tasks_adopt_status").on(table.adoptId, table.status, table.createdAt),
   sourceConversationIdx: index("idx_agent_tasks_source_conversation").on(table.sourceConversationId),
   agentStatusIdx: index("idx_agent_tasks_agent_status").on(table.agentId, table.status),
+  parentTaskIdx: index("idx_agent_tasks_parent").on(table.parentTaskId),
 }));
 
 export type AgentTask = typeof agentTasks.$inferSelect;

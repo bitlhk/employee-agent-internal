@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { auditEvents, businessAgents, skillMarketplace, agentCallLogs, agentTasks, BusinessAgent, InsertBusinessAgent, InsertAgentTask } from "../../drizzle/schema";
 import { getDb } from "./connection";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "../_core/secret-protection";
@@ -32,8 +32,36 @@ export async function listEnabledBusinessAgents(): Promise<BusinessAgent[]> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const rows = await db.select().from(businessAgents)
-    .where(eq(businessAgents.enabled, 1))
+    .where(and(eq(businessAgents.enabled, 1), isNull(businessAgents.deletedAt)))
     .orderBy(businessAgents.sortOrder);
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows.map(revealBusinessAgentToken);
+}
+
+export type BusinessAgentOwnerContext = {
+  userId: number;
+  adoptId: string;
+};
+
+export async function listEnabledBusinessAgentsForContext(
+  context: BusinessAgentOwnerContext,
+): Promise<BusinessAgent[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db.select().from(businessAgents)
+    .where(and(
+      eq(businessAgents.enabled, 1),
+      isNull(businessAgents.deletedAt),
+      or(
+        eq(businessAgents.visibility, "platform"),
+        and(
+          eq(businessAgents.visibility, "personal"),
+          eq(businessAgents.ownerUserId, context.userId),
+          eq(businessAgents.ownerAdoptId, context.adoptId),
+        ),
+      ),
+    ))
+    .orderBy(businessAgents.sortOrder, businessAgents.createdAt);
   await protectLegacyBusinessAgentTokens(db, rows);
   return rows.map(revealBusinessAgentToken);
 }
@@ -44,6 +72,115 @@ export async function getBusinessAgent(id: string): Promise<BusinessAgent | unde
   const rows = await db.select().from(businessAgents).where(eq(businessAgents.id, id)).limit(1);
   await protectLegacyBusinessAgentTokens(db, rows);
   return rows[0] ? revealBusinessAgentToken(rows[0]) : undefined;
+}
+
+export async function getBusinessAgentForContext(
+  id: string,
+  context: BusinessAgentOwnerContext,
+): Promise<BusinessAgent | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db.select().from(businessAgents).where(and(
+    eq(businessAgents.id, id),
+    isNull(businessAgents.deletedAt),
+    or(
+      eq(businessAgents.visibility, "platform"),
+      and(
+        eq(businessAgents.visibility, "personal"),
+        eq(businessAgents.ownerUserId, context.userId),
+        eq(businessAgents.ownerAdoptId, context.adoptId),
+      ),
+    ),
+  )).limit(1);
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows[0] ? revealBusinessAgentToken(rows[0]) : undefined;
+}
+
+export async function listPersonalBusinessAgents(
+  context: BusinessAgentOwnerContext,
+): Promise<BusinessAgent[]> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db.select().from(businessAgents).where(and(
+    eq(businessAgents.visibility, "personal"),
+    eq(businessAgents.ownerUserId, context.userId),
+    eq(businessAgents.ownerAdoptId, context.adoptId),
+    isNull(businessAgents.deletedAt),
+  )).orderBy(businessAgents.createdAt);
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows.map(revealBusinessAgentToken);
+}
+
+export async function getPersonalBusinessAgent(
+  id: string,
+  context: BusinessAgentOwnerContext,
+): Promise<BusinessAgent | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db.select().from(businessAgents).where(and(
+    eq(businessAgents.id, id),
+    eq(businessAgents.visibility, "personal"),
+    eq(businessAgents.ownerUserId, context.userId),
+    eq(businessAgents.ownerAdoptId, context.adoptId),
+    isNull(businessAgents.deletedAt),
+  )).limit(1);
+  await protectLegacyBusinessAgentTokens(db, rows);
+  return rows[0] ? revealBusinessAgentToken(rows[0]) : undefined;
+}
+
+export async function createPersonalBusinessAgent(data: InsertBusinessAgent): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.insert(businessAgents).values({
+    ...data,
+    apiToken: data.apiToken
+      ? encryptSecret(String(data.apiToken), { maxStoredLength: null })
+      : data.apiToken,
+  });
+}
+
+export async function updatePersonalBusinessAgent(
+  id: string,
+  context: BusinessAgentOwnerContext,
+  patch: Partial<InsertBusinessAgent>,
+): Promise<BusinessAgent | undefined> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const protectedPatch: Record<string, unknown> = { ...patch };
+  if (Object.prototype.hasOwnProperty.call(patch, "apiToken")) {
+    protectedPatch.apiToken = patch.apiToken
+      ? encryptSecret(String(patch.apiToken), { maxStoredLength: null })
+      : patch.apiToken;
+  }
+  await db.update(businessAgents).set(protectedPatch).where(and(
+    eq(businessAgents.id, id),
+    eq(businessAgents.visibility, "personal"),
+    eq(businessAgents.ownerUserId, context.userId),
+    eq(businessAgents.ownerAdoptId, context.adoptId),
+    isNull(businessAgents.deletedAt),
+  ));
+  return getPersonalBusinessAgent(id, context);
+}
+
+export async function deletePersonalBusinessAgent(
+  id: string,
+  context: BusinessAgentOwnerContext,
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(businessAgents).set({
+    enabled: 0,
+    apiUrl: null,
+    apiToken: null,
+    endpointDigest: null,
+    deletedAt: new Date(),
+  }).where(and(
+    eq(businessAgents.id, id),
+    eq(businessAgents.visibility, "personal"),
+    eq(businessAgents.ownerUserId, context.userId),
+    eq(businessAgents.ownerAdoptId, context.adoptId),
+    isNull(businessAgents.deletedAt),
+  ));
 }
 
 export async function upsertBusinessAgent(data: InsertBusinessAgent): Promise<void> {
@@ -60,7 +197,11 @@ export async function upsertBusinessAgent(data: InsertBusinessAgent): Promise<vo
       name: data.name,
       description: data.description,
       kind: data.kind,
+      visibility: data.visibility,
+      ownerUserId: data.ownerUserId,
+      ownerAdoptId: data.ownerAdoptId,
       apiUrl: data.apiUrl,
+      endpointDigest: data.endpointDigest,
       apiToken: protectedData.apiToken,
       remoteAgentId: data.remoteAgentId,
       localAgentId: data.localAgentId,
@@ -78,6 +219,7 @@ export async function upsertBusinessAgent(data: InsertBusinessAgent): Promise<vo
       adapterProtocol: (data as any).adapterProtocol,
       capabilitiesJson: (data as any).capabilitiesJson,
       endpointConfigJson: (data as any).endpointConfigJson,
+      deletedAt: data.deletedAt,
     }});
 }
 
@@ -370,4 +512,32 @@ export async function updateAgentTask(id: string, fields: Record<string, any>): 
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.update(agentTasks).set(fields).where(eq(agentTasks.id, id));
+}
+
+export async function answerAgentTaskInteractionAndCreate(
+  taskId: string,
+  context: BusinessAgentOwnerContext,
+  responseJson: string,
+  continuation: InsertAgentTask,
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.transaction(async (tx) => {
+    const updated = await tx
+      .update(agentTasks)
+      .set({
+        interactionStatus: "answered",
+        interactionResponseJson: responseJson,
+        interactionAnsweredAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(and(
+        eq(agentTasks.id, taskId),
+        eq(agentTasks.adoptId, context.adoptId),
+        eq(agentTasks.userId, context.userId),
+        eq(agentTasks.interactionStatus, "pending"),
+      ));
+    if (Number((updated as any)?.[0]?.affectedRows || 0) !== 1) return false;
+    await tx.insert(agentTasks).values(continuation as any);
+    return true;
+  });
 }

@@ -7,6 +7,8 @@ export type ExpertAgent = {
   providerType?: string;
   adapterProtocol?: string;
   executionMode?: string;
+  interactionMode: "single" | "session";
+  source?: "platform" | "personal";
   routeReady: boolean;
   reason?: string;
   healthStatus?: string;
@@ -30,6 +32,8 @@ export function normalizeExpertAgents(payload: ExpertAgentsResponse): ExpertAgen
       providerType: String(agent.providerType || "").trim(),
       adapterProtocol: String(agent.adapterProtocol || "").trim(),
       executionMode: String(agent.executionMode || "async").trim(),
+      interactionMode: (agent.interactionMode === "session" ? "session" : "single") as ExpertAgent["interactionMode"],
+      source: (agent.source === "personal" ? "personal" : "platform") as ExpertAgent["source"],
       routeReady: agent.routeReady === true,
       reason: String(agent.reason || "").trim(),
       healthStatus: String(agent.healthStatus || "unknown").trim(),
@@ -46,6 +50,8 @@ export function expertSupportsAttachments(expert: ExpertAgent): boolean {
   return expert.capabilities.some((capability) => ["files", "attachments", "multimodal"].includes(capability.toLowerCase()));
 }
 
-export function expertTaskMessage(expertName: string, taskId: string): string {
-  return `已提交任务给 **${expertName}**，完成后结果会自动写回。\n\n任务编号：\`${taskId}\``;
+export function expertTaskMessage(expertName: string, _taskId: string, continuation = false): string {
+  return continuation
+    ? `好的，已将你的选择交给 **${expertName}**，它会继续处理。`
+    : `**${expertName}** 已接手，正在为你处理。`;
 }

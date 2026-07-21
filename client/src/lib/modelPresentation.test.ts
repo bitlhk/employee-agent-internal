@@ -18,6 +18,14 @@ describe("presentModel", () => {
     });
   });
 
+  it("presents DeepSeek with its official provider icon", () => {
+    expect(presentModel({ id: "deepseek-v4-flash" })).toMatchObject({
+      displayName: "DeepSeek-V4-Flash",
+      brand: "deepseek",
+      iconSrc: "/images/model-providers/deepseek.svg",
+    });
+  });
+
   it("presents automatic selection as a first-class option", () => {
     expect(presentModel({ id: "__auto", name: "自动" })).toMatchObject({
       displayName: "自动",

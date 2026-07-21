@@ -27,6 +27,7 @@ export type ModelPresentation = {
 };
 
 const BRAND_ICON_SRC: Partial<Record<ModelBrand, string>> = {
+  deepseek: "/images/model-providers/deepseek.svg",
   glm: "/images/model-providers/glm.png",
   pangu: "/images/model-providers/pangu.png",
 };
@@ -55,7 +56,7 @@ function formatKnownModelName(token: string, brand: ModelBrand) {
   }
 
   if (brand === "deepseek") {
-    return normalized
+    const name = normalized
       .replace(/^deepseek-?/i, "")
       .split("-")
       .filter(Boolean)
@@ -64,8 +65,8 @@ function formatKnownModelName(token: string, brand: ModelBrand) {
           ? part.toUpperCase()
           : part[0].toUpperCase() + part.slice(1)
       )
-      .reduce((name, part) => `${name} ${part}`, "DeepSeek")
-      .trim();
+      .join("-");
+    return name ? `DeepSeek-${name}` : "DeepSeek";
   }
 
   if (brand === "qwen") {

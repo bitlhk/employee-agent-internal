@@ -42,4 +42,19 @@ describe("ChatInput toolbar", () => {
 
     expect(html).toContain('data-attachment-disabled="true"');
   });
+
+  it("keeps the send action available for a selected interaction without text", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatInput, {
+        value: "",
+        onChange: vi.fn(),
+        onSend: vi.fn(),
+        canSubmitWithoutContent: true,
+        interactionPanel: React.createElement("section", { "data-interaction": "pending" }, "请选择"),
+      }),
+    );
+
+    expect(html.indexOf('data-interaction="pending"')).toBeLessThan(html.indexOf("main-chat-input"));
+    expect(html).not.toContain('class="lingxia-send-btn" disabled=""');
+  });
 });

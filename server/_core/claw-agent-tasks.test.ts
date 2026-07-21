@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cleanA2AText } from "./claw-agent-tasks";
+import { a2aConversationContextId, agentDailyRequestLimit, cleanA2AText } from "./claw-agent-tasks";
 
 describe("cleanA2AText", () => {
   it("renders embedded structured tool output without business-specific interpretation", () => {
@@ -17,5 +17,47 @@ describe("cleanA2AText", () => {
     const result = cleanA2AText("trace\n[tool_result]\n# Final answer\n\nDone");
 
     expect(result).toBe("# Final answer\n\nDone");
+  });
+
+  it("removes file inventories when files are represented as structured artifacts", () => {
+    const result = cleanA2AText([
+      "已完成报告并通过检查。",
+      "",
+      "已创建文件：",
+      "- projects/report/report.pdf",
+      "- projects/report/qa.json",
+      "",
+      "下一步：请确认内容。",
+      "",
+      "### 本轮产物",
+      "- [report.pdf](https://files.example.com/report.pdf)",
+      "",
+      "下载链接 1 小时内有效。",
+    ].join("\n"), { hasStructuredArtifacts: true });
+
+    expect(result).toBe("已完成报告并通过检查。\n\n下一步：请确认内容。");
+  });
+});
+
+describe("a2aConversationContextId", () => {
+  it("is stable inside one conversation and isolated across conversations", () => {
+    const first = a2aConversationContextId("lgj-one", "expert-one", "conversation-one");
+
+    expect(first).toMatch(/^ea-[a-f0-9]{32}$/);
+    expect(a2aConversationContextId("lgj-one", "expert-one", "conversation-one")).toBe(first);
+    expect(a2aConversationContextId("lgj-one", "expert-one", "conversation-two")).not.toBe(first);
+    expect(a2aConversationContextId("lgj-two", "expert-one", "conversation-one")).not.toBe(first);
+    expect(a2aConversationContextId("lgj-one", "expert-two", "conversation-one")).not.toBe(first);
+  });
+
+  it("omits context for legacy tasks without conversation or session identity", () => {
+    expect(a2aConversationContextId("lgj-one", "expert-one", "")).toBeUndefined();
+  });
+});
+
+describe("agentDailyRequestLimit", () => {
+  it("does not interrupt multi-turn personal experts with a daily call limit", () => {
+    expect(agentDailyRequestLimit({ visibility: "personal", maxDailyRequests: 20 })).toBe(0);
+    expect(agentDailyRequestLimit({ visibility: "platform", maxDailyRequests: 20 })).toBe(20);
   });
 });

@@ -28,6 +28,10 @@ copyright and license metadata remains available in each installed package.
   under Apache License 2.0; the license text is distributed at
   `client/public/licenses/JiuwenSwarm-Apache-2.0.txt`. This use does not grant
   trademark rights or imply sponsorship.
+- Lobe Icons DeepSeek provider icon, Copyright 2023 LobeHub, MIT License. The
+  license text is distributed at `client/public/licenses/Lobe-Icons-MIT.txt`.
+  The provider mark is used solely for identification and remains the property
+  of its respective owner.
 
 ## Integration Names and Trademarks
 

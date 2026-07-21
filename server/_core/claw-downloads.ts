@@ -39,7 +39,15 @@ const INLINE_PREVIEW_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   gif: "image/gif",
+  svg: "image/svg+xml",
   webp: "image/webp",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  m4a: "audio/mp4",
+  aac: "audio/aac",
+  ogg: "audio/ogg",
+  mp4: "video/mp4",
+  webm: "video/webm",
 };
 
 function streamInlinePreview(res: express.Response, filePath: string, fileName: string): boolean {

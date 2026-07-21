@@ -45,6 +45,19 @@ The model picker uses the following assets supplied by the project owner on
 GLM, openPangu, and their associated marks remain the property of their
 respective owners. Their inclusion does not grant trademark rights.
 
+The DeepSeek provider icon is distributed from the Lobe Icons static SVG
+package solely to identify the configured model provider:
+
+- Distributed asset: `client/public/images/model-providers/deepseek.svg`
+- Upstream source: `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/deepseek-color.svg`
+- Upstream project: `https://github.com/lobehub/lobe-icons`
+- Retrieved: 2026-07-21
+- License: MIT; the license text is distributed at
+  `client/public/licenses/Lobe-Icons-MIT.txt`
+
+DeepSeek and its associated mark remain the property of their respective
+owner. This nominative use does not imply sponsorship or endorsement.
+
 ## Adding assets
 
 Every externally sourced asset must record its source URL, copyright owner,

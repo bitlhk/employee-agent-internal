@@ -18,6 +18,10 @@ export async function getDb() {
       // 创建连接池
       const connection = mysql.createPool({
         uri: databaseUrl,
+        // Drizzle maps MySQL TIMESTAMP strings as UTC. Keep the server session
+        // in UTC as well so browser-local formatting does not add the DB host
+        // timezone a second time.
+        timezone: "Z",
         waitForConnections: true,
         connectionLimit: 10,
         maxIdle: 2,
@@ -35,6 +39,11 @@ export async function getDb() {
           console.error('[Database] Connection error:', err);
           if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ECONNRESET') {
             console.warn('[Database] Connection lost, will reconnect on next query');
+          }
+        });
+        conn.query("SET time_zone = '+00:00'", (err: NodeJS.ErrnoException | null) => {
+          if (err) {
+            console.error('[Database] Failed to initialize UTC session timezone:', err.message);
           }
         });
       });
