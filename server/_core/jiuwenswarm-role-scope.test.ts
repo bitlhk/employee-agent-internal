@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
@@ -154,6 +154,8 @@ describe("jiuwenswarm role scope manifest", () => {
       mkdirSync(path.join(shared, "wealth-manager-assistant"), { recursive: true });
       mkdirSync(path.join(shared, "old-skill"), { recursive: true });
       writeFileSync(path.join(shared, "wealth-manager-assistant", "SKILL.md"), "# Wealth\n", "utf8");
+      chmodSync(path.join(shared, "wealth-manager-assistant"), 0o700);
+      chmodSync(path.join(shared, "wealth-manager-assistant", "SKILL.md"), 0o600);
       writeFileSync(path.join(shared, "old-skill", "SKILL.md"), "# Old\n", "utf8");
 
       const oldLink = path.join(workspace, "skills", "old-skill");
@@ -172,6 +174,8 @@ describe("jiuwenswarm role scope manifest", () => {
       const materializedPath = path.join(workspace, "skills", "wealth-manager-assistant");
       expect(lstatSync(materializedPath).isSymbolicLink()).toBe(false);
       expect(readFileSync(path.join(materializedPath, "SKILL.md"), "utf8")).toBe("# Wealth\n");
+      expect(lstatSync(materializedPath).mode & 0o777).toBe(0o750);
+      expect(lstatSync(path.join(materializedPath, "SKILL.md")).mode & 0o777).toBe(0o640);
       expect(JSON.parse(readFileSync(path.join(workspace, JIUWENSWARM_MANAGED_SKILLS_MANIFEST), "utf8"))).toMatchObject({
         version: 1,
         skills: { "wealth-manager-assistant": { digest: expect.any(String) } },

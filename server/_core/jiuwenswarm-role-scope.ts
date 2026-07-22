@@ -16,6 +16,7 @@ import {
 import type { AgentRoleTemplate } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
 import { projectEffectiveAssetsToMcpSelection } from "./agent-mcp-selection";
+import { normalizeSkillRuntimePermissions } from "./skills/skill-runtime-permissions";
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
 export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
@@ -103,13 +104,17 @@ function materializeManagedSkill(sourcePath: string, targetPath: string, sourceD
     targetIsSymlink = stats.isSymbolicLink();
     if (stats.isDirectory() && !targetIsSymlink) targetDigest = skillDirectoryDigest(targetPath);
   } catch {}
-  if (!targetIsSymlink && targetDigest === sourceDigest) return false;
+  if (!targetIsSymlink && targetDigest === sourceDigest) {
+    normalizeSkillRuntimePermissions(targetPath);
+    return false;
+  }
 
   const temporaryPath = `${targetPath}.linggan-sync-${process.pid}-${Date.now()}`;
   rmSync(temporaryPath, { recursive: true, force: true });
   cpSync(sourcePath, temporaryPath, { recursive: true, force: false, errorOnExist: true });
   rmSync(targetPath, { recursive: true, force: true });
   renameSync(temporaryPath, targetPath);
+  normalizeSkillRuntimePermissions(targetPath);
   return true;
 }
 

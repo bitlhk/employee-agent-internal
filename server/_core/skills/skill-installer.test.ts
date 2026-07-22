@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
@@ -17,6 +17,29 @@ describe("FileSystemSkillInstaller", () => {
 
       expect(lstatSync(runtime).isSymbolicLink()).toBe(false);
       expect(existsSync(path.join(runtime, "SKILL.md"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes runtime permissions while preserving executable scripts", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "skill-installer-mode-"));
+    try {
+      const source = path.join(root, "source");
+      const runtime = path.join(root, "runtime", "skill");
+      mkdirSync(path.join(source, "scripts"), { recursive: true });
+      writeFileSync(path.join(source, "SKILL.md"), "# Skill\n", "utf8");
+      const executable = path.join(source, "scripts", "run.sh");
+      writeFileSync(executable, "#!/bin/sh\n", "utf8");
+      chmodSync(source, 0o700);
+      chmodSync(path.join(source, "SKILL.md"), 0o600);
+      chmodSync(executable, 0o700);
+
+      new FileSystemSkillInstaller().installFromSource(source, runtime);
+
+      expect(lstatSync(runtime).mode & 0o777).toBe(0o750);
+      expect(lstatSync(path.join(runtime, "SKILL.md")).mode & 0o777).toBe(0o640);
+      expect(lstatSync(path.join(runtime, "scripts", "run.sh")).mode & 0o777).toBe(0o750);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

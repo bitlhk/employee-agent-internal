@@ -9,6 +9,7 @@ import {
   MAX_SKILL_ZIP_PATH_DEPTH,
   MAX_SKILL_ZIP_UNCOMPRESSED_BYTES,
 } from "./skill-zip-security";
+import { normalizeSkillRuntimePermissions } from "./skill-runtime-permissions";
 
 export type SkillInstallKind = "directory" | "zip";
 
@@ -155,6 +156,7 @@ export class FileSystemSkillInstaller implements SkillInstaller {
 
     if (stat.isDirectory()) {
       cpSync(sourcePath, runtimePath, { recursive: true });
+      normalizeSkillRuntimePermissions(runtimePath);
       return { kind: "directory", sourceRoot: sourcePath };
     }
 
@@ -168,6 +170,7 @@ export class FileSystemSkillInstaller implements SkillInstaller {
       const skillRoot = findSkillRoot(tempRoot);
       if (!skillRoot) throw new Error("zip package does not contain SKILL.md");
       cpSync(skillRoot, runtimePath, { recursive: true });
+      normalizeSkillRuntimePermissions(runtimePath);
       return { kind: "zip", sourceRoot: skillRoot };
     } finally {
       rmSync(tempRoot, { recursive: true, force: true });
