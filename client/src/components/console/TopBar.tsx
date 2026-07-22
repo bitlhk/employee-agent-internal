@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 const PAGE_LABELS: Record<string, string> = {
   chat: "聊天",
-  skills: "技能",
+  skills: "插件中心",
   channels: "频道",
   weixin: "频道",
   agent: "成长记录",

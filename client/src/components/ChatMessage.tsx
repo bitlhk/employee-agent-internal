@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import type { AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
@@ -26,15 +27,10 @@ import {
   Database,
   Download,
   Eye,
-  FileArchive,
-  FileCode2,
-  FileImage,
-  FileSpreadsheet,
   FileText,
   Globe2,
   Image as ImageIcon,
   Loader2,
-  Presentation,
   Plug,
   Puzzle,
   Search,
@@ -409,16 +405,6 @@ function attachmentPreviewKind(file: ChatMessageAttachment): AttachmentPreviewKi
   return "none";
 }
 
-function attachmentIcon(name: string) {
-  const ext = attachmentExtension(name);
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return FileImage;
-  if (["xls", "xlsx", "csv"].includes(ext)) return FileSpreadsheet;
-  if (["ppt", "pptx"].includes(ext)) return Presentation;
-  if (["zip", "tar", "gz", "rar", "7z"].includes(ext)) return FileArchive;
-  if (["html", "htm", "json", "xml", "js", "jsx", "ts", "tsx", "py", "java", "go", "rs", "sh", "sql", "css"].includes(ext)) return FileCode2;
-  return FileText;
-}
-
 function formatAttachmentSize(size: number): string {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
@@ -535,7 +521,6 @@ function MessageAttachments({
           {files.map((file) => {
             const key = `${file.adoptId}:${file.path}`;
             const kind = attachmentPreviewKind(file);
-            const Icon = attachmentIcon(file.name);
             const runnable = ["py", "js", "sh", "bash"].includes(attachmentExtension(file.name));
             return (
               <div className="lingxia-message-attachment" key={key}>
@@ -546,7 +531,7 @@ function MessageAttachments({
                   disabled={kind === "none"}
                   title={kind === "none" ? "该格式请下载后查看" : `预览 ${file.name}`}
                 >
-                  <span className="lingxia-message-attachment__icon"><Icon size={18} strokeWidth={1.8} /></span>
+                  <span className="lingxia-message-attachment__icon"><FileTypeIcon name={file.name} /></span>
                   <span className="lingxia-message-attachment__info">
                     <span className="lingxia-message-attachment__name">{file.name}</span>
                     <span className="lingxia-message-attachment__meta">{formatAttachmentSize(file.size)}</span>

@@ -15,6 +15,7 @@ import { runA2AExpertTask, type A2AEndpointConfig } from "./a2a-expert-client";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { requireClawOwner } from "./helpers";
 import { strictLimiter } from "./security";
+import { invalidateAgentHealthSnapshot } from "./agent-health";
 
 export const MAX_PERSONAL_EXPERTS = 3;
 const TEST_TICKET_TTL_MS = 5 * 60_000;
@@ -301,6 +302,7 @@ export function registerPersonalExpertRoutes(app: Express): void {
       const latencyMs = await probeConnection(config);
       rememberSuccessfulTest(context, config);
       if (existing && testsSavedConnection) {
+        invalidateAgentHealthSnapshot(existing.id);
         await updatePersonalBusinessAgent(existing.id, context, {
           healthStatus: "healthy",
           lastHealthCheck: new Date(),
@@ -317,6 +319,7 @@ export function registerPersonalExpertRoutes(app: Express): void {
         } catch {}
       }
       if (existing && testsSavedConnection) {
+        invalidateAgentHealthSnapshot(existing.id);
         await updatePersonalBusinessAgent(existing.id, context, {
           healthStatus: "offline",
           lastHealthCheck: new Date(),
@@ -428,6 +431,7 @@ export function registerPersonalExpertRoutes(app: Express): void {
       const config = normalizeConfig({}, existing);
       const latencyMs = await probeConnection(config);
       rememberSuccessfulTest(context, config);
+      invalidateAgentHealthSnapshot(existing.id);
       const updated = await updatePersonalBusinessAgent(id, context, {
         healthStatus: "healthy",
         lastHealthCheck: new Date(),
@@ -437,6 +441,7 @@ export function registerPersonalExpertRoutes(app: Express): void {
     } catch (error) {
       const message = cleanError(error);
       if (existing) {
+        invalidateAgentHealthSnapshot(existing.id);
         await updatePersonalBusinessAgent(existing.id, context, {
           healthStatus: "offline",
           lastHealthCheck: new Date(),

@@ -1,7 +1,7 @@
 import {
   MessageCircle,
+  Plug,
   Radio,
-  Sparkle,
   Timer,
   Users,
 } from "lucide-react";
@@ -16,7 +16,7 @@ export type SidebarConversation = SessionListConversation;
 
 const primaryItems: NavItem[] = [
   { key: "chat", label: "聊天", icon: MessageCircle },
-  { key: "skills", label: "技能", icon: Sparkle },
+  { key: "skills", label: "插件", icon: Plug },
   { key: "collab", label: "协作", icon: Users },
   { key: "channels", label: "频道", icon: Radio },
   { key: "schedule", label: "定时任务", icon: Timer },

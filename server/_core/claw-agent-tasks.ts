@@ -16,6 +16,14 @@ import {
   type A2AEndpointConfig,
 } from "./a2a-expert-client";
 import {
+  AgentUnavailableError,
+  agentHealthRouteReason,
+  ensureAgentAvailable,
+  friendlyAgentTaskError,
+  markAgentTaskFailed,
+  markAgentTaskSucceeded,
+} from "./agent-health";
+import {
   countActiveAgentTasks,
   countAgentCallsSince,
   answerAgentTaskInteractionAndCreate,
@@ -133,9 +141,8 @@ function isAgentIntegration(agent: any) {
 
 function routeReason(agent: any) {
   if (!agent?.apiUrl) return "缺少 Agent endpoint";
-  if (String(agent.visibility || "platform") === "personal" && agent.healthStatus === "offline") {
-    return "连接异常，请在专家管理中重新测试";
-  }
+  const healthReason = agentHealthRouteReason(agent);
+  if (healthReason) return healthReason;
   const adapterProtocol = String(agent?.adapterProtocol || "").trim();
   if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
     return `暂不支持 ${adapterProtocol || "未配置"} adapter`;
@@ -271,6 +278,9 @@ async function runAgentTaskInBackground(
       endpointConfig,
     };
     const result = await runA2AExpertTask(connection, input, runtime);
+    if (["failed", "canceled", "cancelled"].includes(String(result.state || "").toLowerCase())) {
+      throw new Error(String(result.text || "").trim() || `${String(agent.name || "专家")}任务执行失败`);
+    }
     if (!String(result.text || "").trim() && !result.interaction) {
       throw new Error("A2A Agent did not return the configured result artifact");
     }
@@ -295,6 +305,7 @@ async function runAgentTaskInBackground(
       completedAt: sql`CURRENT_TIMESTAMP`,
       errorMessage: null,
     });
+    await markAgentTaskSucceeded(agent).catch(() => undefined);
     await insertCallLog({
       agentId: String(agent.id),
       userId: Number((agent as any).__taskUserId || 0) || undefined,
@@ -304,9 +315,11 @@ async function runAgentTaskInBackground(
     }).catch(() => undefined);
   } catch (error: any) {
     const timedOut = error?.name === "AbortError" || /abort|timeout/i.test(String(error?.message || ""));
+    const displayError = friendlyAgentTaskError(error, String(agent.name || "专家"));
+    await markAgentTaskFailed(agent, error).catch(() => undefined);
     await updateAgentTask(taskId, {
       status: "failed" as AgentTaskStatus,
-      errorMessage: truncateUtf8(error?.message || String(error), AGENT_TASK_ERROR_LIMIT_BYTES),
+      errorMessage: truncateUtf8(displayError, AGENT_TASK_ERROR_LIMIT_BYTES),
       completedAt: sql`CURRENT_TIMESTAMP`,
     });
     await insertCallLog({
@@ -315,7 +328,7 @@ async function runAgentTaskInBackground(
       adoptId: String((agent as any).__taskAdoptId || "") || undefined,
       status: timedOut ? "timeout" : "error",
       durationMs: Date.now() - startedAt,
-      errorMessage: truncateUtf8(error?.message || String(error), 2_000),
+      errorMessage: truncateUtf8(displayError, 2_000),
     }).catch(() => undefined);
   }
 }
@@ -406,6 +419,8 @@ export function registerAgentTaskRoutes(app: express.Express) {
         }
       }
 
+      await ensureAgentAvailable(agent);
+
       const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
       const taskUserId = Number((claw as any).userId || 0);
       const sourceConversationId = req.body?.conversationId
@@ -458,6 +473,9 @@ export function registerAgentTaskRoutes(app: express.Express) {
         console.error("[AGENT-TASK] background runner failed", { taskId, error: error?.message || error });
       });
     } catch (error: any) {
+      if (error instanceof AgentUnavailableError) {
+        return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+      }
       res.status(500).json({ error: error?.message || "TASK_SUBMIT_FAILED" });
     }
   });
@@ -517,6 +535,8 @@ export function registerAgentTaskRoutes(app: express.Express) {
           return res.status(429).json({ error: "专家今日调用额度已用完" });
         }
       }
+
+      await ensureAgentAvailable(agent);
 
       const responseText = agentInteractionResponseText(interaction, responseValue);
       const remoteInput = agentInteractionAgentInput(interaction, responseValue);
@@ -578,6 +598,9 @@ export function registerAgentTaskRoutes(app: express.Express) {
         });
       });
     } catch (error: any) {
+      if (error instanceof AgentUnavailableError) {
+        return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+      }
       res.status(500).json({ error: error?.message || "TASK_RESPONSE_FAILED" });
     }
   });

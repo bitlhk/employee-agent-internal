@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { FileText, Mic, Paperclip, Upload, X } from "lucide-react";
+import { Mic, Paperclip, Upload, X } from "lucide-react";
+import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { prepareChatAttachments } from "@/lib/image-compress";
 
 type MentionUser = {
@@ -61,7 +62,7 @@ function AttachmentChip({ file, index, onRemove }: AttachmentChipProps) {
         <img className="lingxia-attachment-thumb" src={thumbUrl} alt={file.name} />
       ) : (
         <span className="lingxia-attachment-file-icon" aria-hidden="true">
-          <FileText size={14} strokeWidth={2} />
+          <FileTypeIcon name={file.name} />
         </span>
       )}
       <span className="lingxia-attachment-name" title={file.name}>
@@ -705,10 +706,8 @@ export function ChatInput({
               onPaste={(e) => { void handlePaste(e); }}
               placeholder={placeholder}
               rows={1}
-              className="main-chat-input w-full bg-transparent text-sm resize-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+              className="main-chat-input w-full bg-transparent resize-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
               style={{
-                color: "var(--oc-text-primary)",
-                lineHeight: "24px",
                 minHeight: 28,
                 maxHeight: 144,
                 overflowY: "auto",

@@ -4,7 +4,7 @@ export type SidebarNavItem = {
 };
 
 export const AGENT_SIDEBAR_NAV: SidebarNavItem[] = [
-  { key: "skills", label: "技能" },
+  { key: "skills", label: "插件" },
   { key: "memory", label: "记忆" },
   { key: "session", label: "会话" },
   { key: "soul", label: "设定" },

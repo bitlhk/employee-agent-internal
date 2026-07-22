@@ -283,6 +283,39 @@ function partsText(parts: unknown): string {
   return last && preceding && compact(last) === compact(preceding) ? last : values.join("\n");
 }
 
+function failedTaskDisplayText(events: unknown[]): string {
+  const candidates: string[] = [];
+  const add = (value: unknown) => {
+    const normalized = String(value || "").replace(/\s+/g, " ").trim();
+    if (normalized && normalized.length <= 2_000) candidates.push(normalized);
+  };
+  const visit = (node: any): void => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+    const kind = String(node.kind || node.type || "").toLowerCase();
+    if (kind === "text" && typeof node.text === "string") add(node.text);
+    const propertyText = node.properties?.text;
+    if (typeof propertyText === "string") add(propertyText);
+    if (Array.isArray(propertyText)) add(propertyText.filter((item: unknown) => typeof item === "string").join(""));
+    if (Array.isArray(node.__ui_patch__)) {
+      for (const patch of node.__ui_patch__) {
+        if (!String(patch?.path || "").includes("/properties/text")) continue;
+        if (typeof patch?.value === "string") add(patch.value);
+        if (Array.isArray(patch?.value)) add(patch.value.filter((item: unknown) => typeof item === "string").join(""));
+      }
+    }
+    if (typeof node.error?.message === "string") add(node.error.message);
+    for (const key of ["__ui__", "data", "value", "parts", "children", "message", "status", "artifact", "artifacts", "result", "error"]) {
+      if (key in node) visit(node[key]);
+    }
+  };
+  events.forEach(visit);
+  return candidates.sort((left, right) => right.length - left.length)[0] || "";
+}
+
 function artifactRole(value: unknown): A2ARemoteArtifact["role"] {
   const role = String(value || "").trim().toLowerCase();
   if (role === "preview" || role === "supporting" || role === "internal") return role;
@@ -444,6 +477,9 @@ export function extractA2ATaskResult(
     ...(artifacts.size > 0 ? { artifacts: Array.from(artifacts.values()) } : {}),
   };
   if (preferred) return { text: preferred, ...meta };
+  if (["failed", "canceled", "cancelled"].includes(state)) {
+    return { text: failedTaskDisplayText(events), ...meta };
+  }
   if (preferredNames.size > 0) {
     return { text: "", ...meta };
   }

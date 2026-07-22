@@ -1295,25 +1295,25 @@ export function SkillsPage({ adoptId, onChanged }: {
   };
 
   return (
-    <PageContainer title="技能">
+    <PageContainer title="插件中心">
       {dialog}
       <div className="skills-page">
-        <div className="page-tabs" role="tablist" aria-label="技能分区" onKeyDown={(e) => handleRovingTabKey(e, SKILL_TAB_KEYS, skillTab, setSkillTab)}>
+        <div className="page-tabs" role="tablist" aria-label="插件分区" onKeyDown={(e) => handleRovingTabKey(e, SKILL_TAB_KEYS, skillTab, setSkillTab)}>
           <button id="skills-tab-mine" className="page-tab" data-active={skillTab === "mine" ? "true" : "false"} role="tab" aria-selected={skillTab === "mine"} aria-controls="skills-panel-mine" tabIndex={skillTab === "mine" ? 0 : -1} onClick={() => setSkillTab("mine")}>
             <Package className="page-tab__icon" aria-hidden="true" />
-            我的技能
+            技能管理
           </button>
           <button id="skills-tab-market" className="page-tab" data-active={skillTab === "market" ? "true" : "false"} role="tab" aria-selected={skillTab === "market"} aria-controls="skills-panel-market" tabIndex={skillTab === "market" ? 0 : -1} onClick={() => setSkillTab("market")}>
             <Store className="page-tab__icon" aria-hidden="true" />
-            技能广场
+            技能发现
           </button>
           <button id="skills-tab-mcp" className="page-tab" data-active={skillTab === "mcp" ? "true" : "false"} role="tab" aria-selected={skillTab === "mcp"} aria-controls="skills-panel-mcp" tabIndex={skillTab === "mcp" ? 0 : -1} onClick={() => setSkillTab("mcp")}>
             <Wrench className="page-tab__icon" aria-hidden="true" />
-            MCP工具
+            工具连接
           </button>
           <button id="skills-tab-agent" className="page-tab" data-active={skillTab === "agent" ? "true" : "false"} role="tab" aria-selected={skillTab === "agent"} aria-controls="skills-panel-agent" tabIndex={skillTab === "agent" ? 0 : -1} onClick={() => setSkillTab("agent")}>
             <Bot className="page-tab__icon" aria-hidden="true" />
-            Agent
+            专家协作
           </button>
         </div>
 

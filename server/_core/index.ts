@@ -71,6 +71,7 @@ import {
 import { recordInstallEvent } from "../db/install-telemetry";
 import { startAgentMemoryRuntime } from "./agent-memory";
 import { registerLocalProfileA2AProxy } from "./local-profile-a2a-proxy";
+import { startAgentHealthMonitor } from "./agent-health";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -360,6 +361,7 @@ async function startServer() {
   registerCollabRoutes(app);
   registerPersonalExpertRoutes(app);
   registerAgentTaskRoutes(app);
+  startAgentHealthMonitor();
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);
   registerSkillConfigRoutes(app);

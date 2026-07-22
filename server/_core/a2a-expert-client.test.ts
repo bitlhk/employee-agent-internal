@@ -128,6 +128,65 @@ describe("A2A expert profiles", () => {
     expect(result).toEqual({ text: "", remoteTaskId: "context-1" });
   });
 
+  it("surfaces a failed agent UI message instead of reporting a missing artifact", () => {
+    const result = extractA2ATaskResult([
+      {
+        result: {
+          kind: "status-update",
+          status: {
+            state: "working",
+            message: {
+              parts: [{
+                kind: "data",
+                data: {
+                  __ui_patch__: [{
+                    op: "add",
+                    path: "/children/0/properties/text/-",
+                    value: "抱歉，服务繁忙，请稍后再试",
+                  }],
+                },
+              }],
+            },
+          },
+          taskId: "remote-busy",
+        },
+      },
+      {
+        result: {
+          kind: "artifact-update",
+          taskId: "remote-busy",
+          artifact: {
+            name: "UIState",
+            parts: [{
+              kind: "data",
+              data: {
+                __ui__: {
+                  children: [{ properties: { text: ["抱歉，服务繁忙，请稍后再试"] } }],
+                },
+              },
+            }],
+          },
+        },
+      },
+      {
+        result: {
+          kind: "status-update",
+          final: true,
+          taskId: "remote-busy",
+          status: { state: "failed" },
+        },
+      },
+    ], {
+      resultProfile: { artifactNames: ["agentResult"] },
+    });
+
+    expect(result).toEqual({
+      text: "抱歉，服务繁忙，请稍后再试",
+      remoteTaskId: "remote-busy",
+      state: "failed",
+    });
+  });
+
   it("keeps response artifact snapshots compatible with existing A2A agents", () => {
     const result = extractA2ATaskResult([
       {
