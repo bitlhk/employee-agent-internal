@@ -1,14 +1,15 @@
 import {
+  Bot,
+  Library,
   MessageCircle,
   Plug,
-  Radio,
   Timer,
   Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { SessionList, type SessionListConversation } from "./SessionList";
 
-export type PageKey = "chat" | "skills" | "channels" | "weixin" | "agent" | "workspace" | "schedule" | "collab" | "settings";
+export type PageKey = "chat" | "skills" | "experts" | "connectors" | "agent" | "workspace" | "schedule" | "collab" | "settings";
 
 type NavItem = { key: PageKey; label: string; icon: any; adminOnly?: boolean };
 
@@ -16,13 +17,14 @@ export type SidebarConversation = SessionListConversation;
 
 const primaryItems: NavItem[] = [
   { key: "chat", label: "聊天", icon: MessageCircle },
-  { key: "skills", label: "插件", icon: Plug },
+  { key: "skills", label: "技能", icon: Library },
+  { key: "experts", label: "专家", icon: Bot },
+  { key: "connectors", label: "连接器", icon: Plug },
   { key: "collab", label: "协作", icon: Users },
-  { key: "channels", label: "频道", icon: Radio },
   { key: "schedule", label: "定时任务", icon: Timer },
 ];
 
-const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "channels", "weixin", "agent", "workspace", "schedule", "collab", "settings"]);
+const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "agent", "workspace", "schedule", "collab", "settings"]);
 
 export function isPageKey(value: unknown): value is PageKey {
   return PAGE_KEYS.has(String(value || "") as PageKey);

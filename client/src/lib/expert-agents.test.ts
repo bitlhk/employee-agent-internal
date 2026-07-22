@@ -11,11 +11,13 @@ describe("expert agents", () => {
     const experts = normalizeExpertAgents({
       agents: [
         { id: "offline", name: "离线专家", routeReady: false },
-        { id: "alice", name: "万得金融专家", routeReady: true, capabilities: ["a2a"] },
+        { id: "alice", name: "万得金融专家", routeReady: true, capabilities: ["a2a"], usageCount: 12 },
       ],
     });
 
     expect(experts.map((expert) => expert.id)).toEqual(["alice", "offline"]);
+    expect(experts[0].usageCount).toBe(12);
+    expect(experts[1].usageCount).toBe(0);
   });
 
   it("detects declared attachment support", () => {

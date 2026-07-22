@@ -42,4 +42,21 @@ describe("custom MCP client policy", () => {
     expect(customMcpGatewayToolName(13, "customer/list all")).not.toBe(first);
     expect(customMcpGatewayToolName(12, "x".repeat(500)).length).toBeLessThanOrEqual(128);
   });
+
+  it("requires complete encrypted state for OAuth connections", () => {
+    expect(() => validateCustomMcpAuth({
+      endpointUrl: "https://mcp.example.com/mcp",
+      authType: "oauth",
+      oauthData: { redirectUrl: "https://agent.example.com/oauth/callback" },
+    })).toThrow(/尚未完成/);
+    expect(() => validateCustomMcpAuth({
+      endpointUrl: "https://mcp.example.com/mcp",
+      authType: "oauth",
+      oauthData: {
+        redirectUrl: "https://agent.example.com/oauth/callback",
+        clientInformation: { client_id: "client-1" },
+        tokens: { access_token: "access-1", token_type: "Bearer" },
+      },
+    })).not.toThrow();
+  });
 });

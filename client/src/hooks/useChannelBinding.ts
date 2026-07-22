@@ -349,7 +349,7 @@ export function useChannelBinding(channelId: ChannelId, adoptId?: string): Chann
     setQrCode("");
     setVerificationUri("");
     setUserCode("");
-    toast.success("已解绑频道");
+    toast.success(channelId === "feishu" ? "已解绑飞书" : "已解绑频道");
   };
 
   const test = async () => {

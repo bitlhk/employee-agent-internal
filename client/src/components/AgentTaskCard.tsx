@@ -6,8 +6,9 @@
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, CircleCheck, CircleX, Clock3, Eye, Files, Loader2 } from "lucide-react";
+import { ChevronDown, Eye, Files } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
+import { ExpertAvatar } from "@/components/ExpertAvatar";
 import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
 
@@ -231,21 +232,11 @@ export function AgentTaskCard({
     artifact.role === "preview" && agentArtifactPreviewKind(artifact) === "image"
   )) || normalized.artifacts.find((artifact) => agentArtifactPreviewKind(artifact) === "image");
 
-  const Icon = normalized.isWaitingForInput
-    ? Clock3
-    : normalized.isDone
-      ? CircleCheck
-      : normalized.isFailed
-        ? CircleX
-        : normalized.isActive
-          ? Loader2
-          : Clock3;
-
   return (
     <section className={`agent-task-card agent-task-card--${statusMeta.tone}`}>
       <button type="button" className="agent-task-card__header" onClick={() => setExpanded((v) => !v)}>
         <span className="agent-task-card__icon">
-          <Icon size={16} className={normalized.isActive ? "agent-task-card__spin" : undefined} />
+          <ExpertAvatar agentId={normalized.agentId} agentName={normalized.agentName} />
         </span>
         <span className="agent-task-card__main">
           <span className="agent-task-card__title-row">

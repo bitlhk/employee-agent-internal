@@ -19,7 +19,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useRoute, useLocation } from "wouter";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
-import { CustomMcpDialog } from "@/components/CustomMcpDialog";
+import { CustomMcpDialog, type CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
 import { ExpertInteractionPrompt } from "@/components/ExpertInteractionPrompt";
 import { ChatMessage, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
@@ -28,6 +28,7 @@ import { ModelPicker } from "@/components/ModelPicker";
 import type { AgentTask } from "@/components/AgentTaskCard";
 import { AgentArtifactPanel, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { BrandIcon } from "@/components/BrandIcon";
+import { ExpertAvatar } from "@/components/ExpertAvatar";
 import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
 import { SessionList } from "@/components/console/SessionList";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
@@ -914,7 +915,7 @@ export default function Home() {
         sessionStorage.removeItem("home_initial_page");
         if (v === "agentLab") return "chat";
         if (v === "docs") return "workspace";
-        if (v === "weixin") return "channels";
+        if (v === "weixin" || v === "channels") return "connectors";
         if (v === "meeting") return "chat";
         if (v === "office") return "chat";
         if (isPageKey(v)) return v;
@@ -2431,6 +2432,7 @@ export default function Home() {
   const [skillPackageUploading, setSkillPackageUploading] = useState(false);
   const [customMcpDialogOpen, setCustomMcpDialogOpen] = useState(false);
   const [customMcpDialogMode, setCustomMcpDialogMode] = useState<"add" | "manage">("manage");
+  const [customMcpTemplate, setCustomMcpTemplate] = useState<CustomMcpTemplate | null>(null);
   const [personalExpertDialogOpen, setPersonalExpertDialogOpen] = useState(false);
   const [personalExpertDialogMode, setPersonalExpertDialogMode] = useState<"add" | "manage">("manage");
   const probeSkillReadinessMutation = trpc.claw.probeSkillReadiness.useMutation();
@@ -2552,10 +2554,11 @@ export default function Home() {
     void loadComposerExperts({ silent: composerExperts.length > 0 });
     window.setTimeout(() => composerExpertSearchRef.current?.focus(), 0);
   }, [composerExperts.length, loadComposerExperts]);
-  const openCustomMcpDialog = useCallback((mode: "add" | "manage") => {
+  const openCustomMcpDialog = useCallback((mode: "add" | "manage", template?: CustomMcpTemplate | null) => {
     setComposerAddMenuOpen(false);
     setComposerAddMenuView("root");
     setCustomMcpDialogMode(mode);
+    setCustomMcpTemplate(mode === "add" ? template || null : null);
     setCustomMcpDialogOpen(true);
   }, []);
   const openPersonalExpertDialog = useCallback((mode: "add" | "manage") => {
@@ -4426,6 +4429,7 @@ export default function Home() {
       <CustomMcpDialog
         open={customMcpDialogOpen}
         initialMode={customMcpDialogMode}
+        initialTemplate={customMcpTemplate}
         adoptId={resolvedAdoptId || ""}
         onOpenChange={setCustomMcpDialogOpen}
         onChanged={() => loadComposerConnectors({ silent: true })}
@@ -5204,7 +5208,7 @@ export default function Home() {
                               onSelect={() => selectComposerExpert(expert)}
                             >
                               <span className="lingxia-expert-item__icon" aria-hidden="true">
-                                <BrainCircuit />
+                                <ExpertAvatar agentId={expert.id} agentName={expert.name} />
                               </span>
                               <span className="lingxia-expert-item__main">
                                 <span className="lingxia-expert-item__name">
@@ -5238,7 +5242,9 @@ export default function Home() {
               )}
               leftControls={selectedComposerExpert ? (
                 <span className="lingxia-composer-skill-chip lingxia-composer-expert-chip" title={`本轮咨询：${selectedComposerExpert.name}`}>
-                  <BrainCircuit size={13} strokeWidth={1.8} />
+                  <span className="lingxia-composer-expert-chip__avatar" aria-hidden="true">
+                    <ExpertAvatar agentId={selectedComposerExpert.id} agentName={selectedComposerExpert.name} />
+                  </span>
                   <span>{selectedComposerExpert.name}</span>
                   <button
                     type="button"
@@ -5283,7 +5289,7 @@ export default function Home() {
             <MainPanel
               activePage={activePage as Exclude<PageKey, "chat">}
               adoptId={resolvedAdoptId || ""}
-              onAddMcp={() => openCustomMcpDialog("add")}
+              onAddMcp={(template) => openCustomMcpDialog("add", template)}
               onManageMcp={() => openCustomMcpDialog("manage")}
               onAddExpert={() => openPersonalExpertDialog("add")}
               onManageExpert={() => openPersonalExpertDialog("manage")}

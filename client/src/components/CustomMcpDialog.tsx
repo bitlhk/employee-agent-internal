@@ -25,6 +25,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type AuthType = "none" | "bearer" | "api_key";
 
+export type CustomMcpTemplate = {
+  id: string;
+  displayName: string;
+  endpointUrl: string;
+  authType: AuthType;
+  authHeaderName?: string;
+};
+
 type CustomMcpTool = {
   name: string;
   description?: string;
@@ -35,7 +43,7 @@ type CustomMcpConnection = {
   id: number;
   displayName: string;
   endpointUrl: string;
-  authType: AuthType;
+  authType: AuthType | "oauth";
   authHeaderName?: string | null;
   credentialConfigured: boolean;
   enabled: boolean;
@@ -83,12 +91,14 @@ function endpointHost(value: string): string {
 export function CustomMcpDialog({
   open,
   initialMode,
+  initialTemplate,
   adoptId,
   onOpenChange,
   onChanged,
 }: {
   open: boolean;
   initialMode: "add" | "manage";
+  initialTemplate?: CustomMcpTemplate | null;
   adoptId: string;
   onOpenChange: (open: boolean) => void;
   onChanged?: () => void | Promise<void>;
@@ -119,8 +129,14 @@ export function CustomMcpDialog({
     }
   }, [adoptId]);
 
-  const startAdd = useCallback(() => {
-    setForm(EMPTY_FORM);
+  const startAdd = useCallback((template?: CustomMcpTemplate | null) => {
+    setForm(template ? {
+      ...EMPTY_FORM,
+      displayName: template.displayName,
+      endpointUrl: template.endpointUrl,
+      authType: template.authType,
+      authHeaderName: template.authHeaderName || "X-API-Key",
+    } : EMPTY_FORM);
     setTools([]);
     setSelectedTools(new Set());
     setPendingDeleteId(null);
@@ -131,11 +147,15 @@ export function CustomMcpDialog({
     if (!open) return;
     setPendingDeleteId(null);
     void loadConnections();
-    if (initialMode === "add") startAdd();
+    if (initialMode === "add") startAdd(initialTemplate);
     else setView("manage");
-  }, [initialMode, loadConnections, open, startAdd]);
+  }, [initialMode, initialTemplate, loadConnections, open, startAdd]);
 
   const startEdit = (connection: CustomMcpConnection) => {
+    if (connection.authType === "oauth") {
+      toast.info("OAuth 连接请从连接器市场重新授权");
+      return;
+    }
     setForm({
       id: connection.id,
       displayName: connection.displayName,
@@ -266,7 +286,7 @@ export function CustomMcpDialog({
           <div className="custom-mcp-manage">
             <div className="custom-mcp-manage__toolbar">
               <span>{connections.length}/{maxConnections} 个连接</span>
-              <Button size="sm" onClick={startAdd} disabled={connections.length >= maxConnections || Boolean(busyAction)}>
+              <Button size="sm" onClick={() => startAdd()} disabled={connections.length >= maxConnections || Boolean(busyAction)}>
                 <Plus />添加 MCP
               </Button>
             </div>
@@ -285,6 +305,7 @@ export function CustomMcpDialog({
                       <span className="custom-mcp-row__name">{connection.displayName}</span>
                       <span className="custom-mcp-row__meta">
                         {endpointHost(connection.endpointUrl)} · {selectedCount} 个工具
+                        {connection.authType === "oauth" ? " · OAuth" : ""}
                         {connection.healthStatus === "error" ? " · 连接异常" : connection.enabled ? " · 已连接" : " · 已关闭"}
                       </span>
                     </span>
@@ -298,7 +319,7 @@ export function CustomMcpDialog({
                         <button type="button" title="重新测试" aria-label="重新测试" disabled={Boolean(busyAction)} onClick={() => void mutateConnection(connection.id, "retest")}>
                           {rowBusy && busyAction.startsWith("retest") ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}
                         </button>
-                        <button type="button" title="编辑" aria-label="编辑" disabled={Boolean(busyAction)} onClick={() => startEdit(connection)}><Pencil /></button>
+                        {connection.authType !== "oauth" ? <button type="button" title="编辑" aria-label="编辑" disabled={Boolean(busyAction)} onClick={() => startEdit(connection)}><Pencil /></button> : null}
                         <button type="button" title="删除" aria-label="删除" disabled={Boolean(busyAction)} onClick={() => setPendingDeleteId(connection.id)}><Trash2 /></button>
                         <button
                           type="button"

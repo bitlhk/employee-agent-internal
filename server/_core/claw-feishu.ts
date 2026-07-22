@@ -446,7 +446,7 @@ export async function getFeishuStatus(adoptId: string): Promise<{
   const bridgeConfigured = !!(bridgeSender?.appId && bridgeSender?.appSecret);
   const bridgeReady = bridgeConfigured && !!bridge?.openId;
   return {
-    bound: !!(account?.appId && account?.appSecret),
+    bound: accountReady || bridgeReady,
     targetLabel: bridge?.openId || account?.openId || "",
     domain: account?.domain,
     bidirectionalBound: !!bridge?.openId,
@@ -751,10 +751,9 @@ export function registerFeishuRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      const feishuBinding = await loadBridgeBinding(adoptId);
-      const feishuSender = loadBridgeSenderAccount();
-      const feishuConfigured = !!(feishuSender?.appId && feishuSender?.appSecret);
-      const feishuBound = !!feishuBinding?.openId;
+      const feishuStatus = await getFeishuStatus(adoptId);
+      const sharedAppConfigured = Boolean(feishuStatus.bidirectionalConfigured);
+      const feishuBound = Boolean(feishuStatus.deliveryReady);
       res.json({
         adoptId,
         userId: Number(claw.userId || 0) || null,
@@ -763,23 +762,23 @@ export function registerFeishuRoutes(app: express.Express) {
           feishu: {
             key: "feishu",
             label: "飞书",
-            configured: feishuConfigured,
+            configured: sharedAppConfigured || Boolean(feishuStatus.bound),
             bound: feishuBound,
-            routeReady: feishuConfigured && feishuBound,
-            bindMode: "code",
-            routeMode: "openId_to_adoptId",
-            targetLabel: maskRouteTarget(feishuBinding?.openId),
-            boundAt: feishuBinding?.boundAt || "",
+            routeReady: feishuBound,
+            bindMode: sharedAppConfigured ? "code" : "personal_oauth",
+            routeMode: feishuStatus.deliveryMode || "pending",
+            targetLabel: maskRouteTarget(feishuStatus.targetLabel),
+            boundAt: "",
             capabilities: {
-              inbound: feishuConfigured,
-              outbound: feishuConfigured,
-              dm: feishuConfigured,
+              inbound: feishuBound,
+              outbound: feishuBound,
+              dm: feishuBound,
               group: false,
-              scheduleDelivery: feishuConfigured && feishuBound,
-              coopNotify: feishuConfigured && feishuBound,
+              scheduleDelivery: feishuBound,
+              coopNotify: feishuBound,
               files: false,
             },
-            reason: !feishuConfigured ? "not_configured" : !feishuBound ? "not_bound" : null,
+            reason: feishuBound ? null : "not_bound",
           },
           dingtalk: {
             key: "dingtalk",

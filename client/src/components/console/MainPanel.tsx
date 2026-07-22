@@ -1,5 +1,4 @@
 import { SkillsPage } from "@/components/pages/SkillsPage";
-import { ChannelsPage } from "@/components/pages/ChannelsPage";
 import { GrowthPage } from "@/components/pages/GrowthPage";
 import { WorkspacePage } from "@/components/pages/WorkspacePage";
 import { SchedulePageV2 } from "@/components/pages/SchedulePageV2";
@@ -8,20 +7,29 @@ import { CollabPage } from "@/components/pages/CollabPage";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import type { PageKey } from "@/components/console/Sidebar";
 import type { ReactNode } from "react";
+import type { CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { useEffect, useState } from "react";
 
 type PanelPageKey = Exclude<PageKey, "chat">;
+type CapabilityPageKey = "skills" | "experts" | "connectors";
 
 const PANEL_PAGE_ORDER: PanelPageKey[] = [
   "skills",
-  "channels",
-  "weixin",
   "agent",
   "workspace",
   "schedule",
   "collab",
   "settings",
 ];
+
+function normalizedPanelPage(page: PanelPageKey): PanelPageKey {
+  return page === "experts" || page === "connectors" ? "skills" : page;
+}
+
+function capabilitySection(page: PanelPageKey): CapabilityPageKey {
+  if (page === "experts" || page === "connectors") return page;
+  return "skills";
+}
 
 function MainPanelShell({ children }: { children: ReactNode }) {
   return (
@@ -45,7 +53,7 @@ export function MainPanel({
 }: {
   activePage: PanelPageKey;
   adoptId?: string;
-  onAddMcp?: () => void;
+  onAddMcp?: (template?: CustomMcpTemplate) => void;
   onManageMcp?: () => void;
   onTryMcp?: () => void;
   onMcpChanged?: () => void | Promise<void>;
@@ -68,25 +76,25 @@ export function MainPanel({
     onChanged: skills?.onChanged,
     adoptId: adoptId || "",
   };
-  const [visitedPages, setVisitedPages] = useState<Set<PanelPageKey>>(() => new Set([activePage]));
+  const panelPage = normalizedPanelPage(activePage);
+  const [visitedPages, setVisitedPages] = useState<Set<PanelPageKey>>(() => new Set([panelPage]));
 
   useEffect(() => {
-    setVisitedPages(new Set([activePage]));
+    setVisitedPages(new Set([panelPage]));
   }, [adoptId]);
 
   useEffect(() => {
     setVisitedPages((previous) => {
-      if (previous.has(activePage)) return previous;
+      if (previous.has(panelPage)) return previous;
       const next = new Set(previous);
-      next.add(activePage);
+      next.add(panelPage);
       return next;
     });
-  }, [activePage]);
+  }, [panelPage]);
 
   const renderPage = (page: PanelPageKey): ReactNode => {
-    if (page === "channels" || page === "weixin") return <ChannelsPage adoptId={adoptId || ""} />;
     if (page === "skills") {
-      return <SkillsPage skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
+      return <SkillsPage section={capabilitySection(activePage)} skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
     }
     if (page === "agent") return <GrowthPage adoptId={adoptId || ""} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;
@@ -99,7 +107,7 @@ export function MainPanel({
     <MainPanelShell>
       {PANEL_PAGE_ORDER.map((page) => {
         if (!visitedPages.has(page)) return null;
-        const active = activePage === page;
+        const active = panelPage === page;
         return (
           <div
             key={`${page}:${adoptId || ""}`}
@@ -108,7 +116,7 @@ export function MainPanel({
             aria-hidden={active ? undefined : true}
           >
             <PanelErrorBoundary
-              resetKey={`${page}:${adoptId || ""}`}
+              resetKey={`${page}:${activePage}:${adoptId || ""}`}
               title="当前功能页暂时不可用"
               description="该功能页渲染时出现异常，侧栏和其他功能仍可继续使用。"
             >

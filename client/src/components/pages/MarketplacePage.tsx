@@ -474,7 +474,7 @@ export function MarketplacePage({
             return (
               <div
                 key={item.id}
-                className="skills-market-card skills-catalog-card settings-card"
+                className="skills-market-card skills-catalog-card skills-action-card"
                 role="button"
                 tabIndex={0}
                 onClick={() => setSelectedSkill(item)}
@@ -491,7 +491,6 @@ export function MarketplacePage({
                     <div className="skills-market-card__title skills-catalog-card__title">{title}</div>
                     <div className="skills-market-card__meta">{item.author} · v{item.version}</div>
                   </div>
-                  <span className="skills-chip skills-chip--neutral skills-catalog-card__status">{roleChipLabel(item)}</span>
                 </div>
 
                 <div className="skills-market-card__desc skills-catalog-card__desc">{item.description}</div>

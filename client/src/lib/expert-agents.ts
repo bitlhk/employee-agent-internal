@@ -13,6 +13,7 @@ export type ExpertAgent = {
   reason?: string;
   healthStatus?: string;
   capabilities: string[];
+  usageCount: number;
   lastHealthCheck?: string | null;
 };
 
@@ -40,6 +41,7 @@ export function normalizeExpertAgents(payload: ExpertAgentsResponse): ExpertAgen
       capabilities: Array.isArray(agent.capabilities)
         ? agent.capabilities.map((item) => String(item || "").trim()).filter(Boolean)
         : [],
+      usageCount: Math.max(0, Number(agent.usageCount || 0)),
       lastHealthCheck: agent.lastHealthCheck || null,
     }))
     .filter((agent) => agent.id)

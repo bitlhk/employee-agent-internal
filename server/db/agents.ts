@@ -498,6 +498,22 @@ export async function countActiveAgentTasks(agentId: string): Promise<number> {
   return Number(rows[0]?.count || 0);
 }
 
+export async function listAgentTaskCounts(adoptId: string, agentIds: string[]): Promise<Record<string, number>> {
+  const normalized = [...new Set(agentIds.map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!adoptId || normalized.length === 0) return {};
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const rows = await db
+    .select({
+      agentId: agentTasks.agentId,
+      count: sql<number>`count(*)`,
+    })
+    .from(agentTasks)
+    .where(and(eq(agentTasks.adoptId, adoptId), inArray(agentTasks.agentId, normalized)))
+    .groupBy(agentTasks.agentId);
+  return Object.fromEntries(rows.map((row) => [String(row.agentId), Number(row.count || 0)]));
+}
+
 export async function countAgentCallsSince(agentId: string, since: Date): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

@@ -121,47 +121,6 @@
   color: var(--banking-text-muted);
 }
 
-.channel-layout {
-  display: grid;
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: stretch;
-}
-
-.channel-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-}
-
-.channel-list__item {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid transparent;
-  border-radius: var(--banking-radius-md);
-  background: transparent;
-  color: var(--banking-text-muted);
-  cursor: pointer;
-  text-align: left;
-  transition: background .15s, border-color .15s, color .15s;
-}
-
-.channel-list__item:hover {
-  background: var(--banking-card);
-  border-color: var(--banking-border);
-  color: var(--banking-text);
-}
-
-.channel-list__item[data-active="true"] {
-  background: var(--banking-brand-red-subtle);
-  border-color: color-mix(in oklab, var(--banking-brand-red) 28%, transparent);
-  color: var(--banking-brand-red);
-}
-
 .lingxia-soft-action {
   border: 1px solid var(--banking-border) !important;
   background: var(--banking-card) !important;
@@ -208,211 +167,6 @@
 
 .lingxia-soft-row:hover {
   background: color-mix(in oklab, var(--banking-brand-red) 3%, var(--banking-card)) !important;
-}
-
-.channel-list__icon {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--banking-radius-md);
-  background: var(--banking-card);
-  border: 1px solid var(--banking-border);
-  flex-shrink: 0;
-}
-
-.channel-brand {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--banking-radius-md);
-  color: var(--banking-brand-red);
-  font-size: 13px;
-  font-weight: 800;
-  flex-shrink: 0;
-  box-shadow: var(--banking-shadow-sm);
-  overflow: hidden;
-  background: color-mix(in oklab, var(--banking-brand-red) 8%, var(--banking-card));
-}
-
-.channel-brand img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
-}
-
-.channel-list__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.channel-list__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--banking-text);
-}
-
-.channel-list__desc {
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--banking-text-muted);
-}
-
-.channel-pill {
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 0 7px;
-  border: 1px solid var(--banking-info-border);
-  background: var(--banking-info-subtle);
-  color: var(--banking-info);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.channel-pill--ok {
-  border-color: var(--banking-ok-border);
-  background: var(--banking-ok-subtle);
-  color: var(--banking-ok);
-}
-
-.channel-pill--info {
-  border-color: var(--banking-info-border);
-  background: var(--banking-info-subtle);
-  color: var(--banking-info);
-}
-
-.channel-detail {
-  min-height: 380px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 30px;
-}
-
-.channel-detail__body {
-  width: 100%;
-  max-width: 520px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.channel-status-icon {
-  width: 52px;
-  height: 52px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--banking-radius-lg);
-  background: var(--banking-brand-red-subtle);
-  color: var(--banking-brand-red);
-  border: 1px solid color-mix(in oklab, var(--banking-brand-red) 28%, transparent);
-}
-
-.channel-status-icon--ok {
-  background: var(--banking-ok-subtle);
-  color: var(--banking-ok);
-  border-color: var(--banking-ok-border);
-}
-
-.channel-status-icon--muted {
-  background: var(--banking-card);
-  color: var(--banking-text-muted);
-  border-color: var(--banking-border);
-}
-
-.channel-detail__title {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.35;
-  font-weight: 700;
-  color: var(--banking-text);
-}
-
-.channel-detail__desc {
-  margin: -6px 0 0;
-  max-width: 460px;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--banking-text-muted);
-}
-
-.channel-meta {
-  width: 100%;
-  max-width: 360px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: var(--banking-radius-md);
-  border: 1px solid var(--banking-border);
-  background: var(--banking-card);
-  font-size: 12px;
-  color: var(--banking-text-muted);
-}
-
-.channel-meta strong {
-  color: var(--banking-text);
-  font-weight: 700;
-}
-
-.channel-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.channel-qr {
-  width: 220px;
-  height: 220px;
-  border-radius: var(--banking-radius-lg);
-  border: 1px solid var(--banking-border);
-  background: white;
-  padding: 10px;
-}
-
-.channel-bullets {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--banking-text-muted);
-}
-
-.channel-bullets span {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.channel-bullets svg {
-  color: var(--banking-brand-red);
-  flex-shrink: 0;
-}
-
-@media (max-width: 760px) {
-  .channel-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .channel-detail {
-    min-height: 320px;
-    padding: 22px;
-  }
 }
 
 .page-primary-action {
@@ -3986,6 +3740,7 @@ select.settings-input {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  margin-bottom: 10px;
   flex-shrink: 0;
 }
 .skills-console-toolbar > .page-tabs {
@@ -3994,6 +3749,7 @@ select.settings-input {
 }
 .skills-console-toolbar__actions {
   min-width: 0;
+  margin-left: auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -4047,6 +3803,11 @@ select.settings-input {
   gap: 22px;
   margin-top: 12px;
   margin-left: 4px;
+}
+.skills-console-toolbar > .skills-secondary-tabs {
+  margin-top: 0;
+  margin-left: 4px;
+  flex-shrink: 0;
 }
 .skills-secondary-tabs button {
   height: 30px;
@@ -4593,7 +4354,7 @@ input.session-searchbar__input:focus-visible,
   gap: 10px;
 }
 .skills-market-card {
-  min-height: 146px;
+  min-height: 174px;
   padding: 12px 13px;
   display: flex;
   flex-direction: column;
@@ -4669,7 +4430,7 @@ input.session-searchbar__input:focus-visible,
 }
 .skills-catalog-card {
   min-width: 0;
-  min-height: 146px;
+  min-height: 174px;
   border-radius: 8px;
   overflow: hidden;
   transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
@@ -4677,7 +4438,7 @@ input.session-searchbar__input:focus-visible,
 .skills-catalog-card__surface {
   width: 100%;
   min-width: 0;
-  min-height: 144px;
+  min-height: 172px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4744,6 +4505,8 @@ input.session-searchbar__input:focus-visible,
 .skills-catalog-card__desc {
   min-height: 38px;
   overflow: hidden;
+  margin-top: auto;
+  margin-bottom: auto;
   color: var(--oc-text-secondary);
   font-size: 12px;
   line-height: 1.55;
@@ -4759,6 +4522,42 @@ input.session-searchbar__input:focus-visible,
   justify-content: space-between;
   gap: 8px;
   margin-top: auto;
+}
+.skills-catalog-card__capabilities {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.skills-catalog-card__capabilities > span {
+  min-width: 0;
+  overflow: hidden;
+  padding: 5px 6px;
+  border-radius: 5px;
+  background: color-mix(in oklab, var(--oc-bg-hover) 76%, transparent);
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  line-height: 15px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skills-catalog-card__usage {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--oc-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skills-catalog-card__usage svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  stroke-width: 1.7;
 }
 .skills-catalog-card__footnote {
   min-width: 0;
@@ -4786,13 +4585,98 @@ input.session-searchbar__input:focus-visible,
   box-shadow: 0 8px 24px rgba(0, 0, 0, .07);
   transform: translateY(-1px);
 }
+.skills-action-card,
+.skills-expert-card {
+  position: relative;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--oc-card) 88%, transparent);
+}
+.skills-action-card:hover,
+.skills-action-card:focus-within,
+.skills-expert-card:hover,
+.skills-expert-card:focus-within {
+  border-color: var(--oc-border-subtle);
+  background: color-mix(in oklab, var(--oc-bg-hover) 68%, var(--oc-card));
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .045);
+  transform: translateY(-1px);
+}
+.skills-expert-card .skills-catalog-card__icon,
+.skills-expert-detail .skills-mcp-detail__icon {
+  overflow: hidden;
+  border-radius: 50%;
+}
+.skills-expert-card .skills-catalog-card__icon img.expert-avatar-image,
+.skills-expert-detail .skills-mcp-detail__icon img.expert-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.skills-expert-card .skills-catalog-card__head {
+  grid-template-columns: 34px minmax(0, 1fr);
+  padding-right: 54px;
+}
+.skills-expert-card__summon {
+  position: absolute;
+  z-index: 2;
+  top: 11px;
+  right: 11px;
+  height: 27px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px solid var(--banking-brand-red);
+  border-radius: 7px;
+  background: var(--banking-brand-red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: var(--oc-weight-medium);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .09);
+  transition: opacity .14s ease, transform .14s ease, background .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.skills-expert-card:hover .skills-expert-card__summon,
+.skills-expert-card:focus-within .skills-expert-card__summon {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+.skills-expert-card__summon:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--banking-brand-red) 84%, #000);
+  background: color-mix(in oklab, var(--banking-brand-red) 84%, #000);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .12);
+}
+.skills-expert-card__summon:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--oc-accent) 36%, transparent);
+  outline-offset: 1px;
+}
+.skills-expert-card__summon:disabled {
+  cursor: not-allowed;
+  opacity: .42;
+}
+@media (hover: none) {
+  .skills-expert-card__summon {
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+  }
+}
+.skills-expert-card .skills-catalog-card__capabilities {
+  margin-bottom: 4px;
+}
 .skills-catalog-card__surface:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--oc-accent) 40%, transparent);
   outline-offset: -2px;
 }
-.skills-market-card.skills-catalog-card:hover {
-  border-color: var(--oc-border-strong);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .07);
+.skills-market-card.skills-catalog-card:hover,
+.skills-market-card.skills-catalog-card:focus-within {
+  border-color: var(--oc-border-subtle);
+  background: color-mix(in oklab, var(--oc-bg-hover) 68%, var(--oc-card));
+  box-shadow: 0 5px 16px rgba(0, 0, 0, .045);
+  transform: translateY(-1px);
 }
 .skills-market-card .skills-market-card__meta {
   margin-top: 0;
@@ -4828,8 +4712,8 @@ input.session-searchbar__input:focus-visible,
   overflow: visible;
 }
 .skills-my-card .skills-catalog-card__desc {
-  min-height: 74px;
-  -webkit-line-clamp: 4;
+  min-height: 38px;
+  -webkit-line-clamp: 2;
 }
 .skills-my-card .skills-switch:disabled {
   cursor: not-allowed;
@@ -4917,11 +4801,62 @@ input.session-searchbar__input:focus-visible,
   border-color: var(--oc-border-strong);
   background: var(--oc-bg-hover);
 }
+.skills-connector-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-bottom: 12px;
+}
+.skills-connector-section {
+  min-width: 0;
+}
+.skills-connector-section__head {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.skills-connector-section__head h3 {
+  margin: 0;
+  color: var(--oc-text-primary);
+  font-size: 14px;
+  font-weight: var(--oc-weight-semibold);
+  line-height: 20px;
+}
+.skills-connector-section__head > span {
+  color: var(--oc-text-muted);
+  font-size: 11px;
+  line-height: 16px;
+}
 .skills-mcp-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   padding-bottom: 12px;
+}
+.skills-connector-section .skills-mcp-grid {
+  padding-bottom: 0;
+}
+.skills-mcp .skills-catalog-card__head {
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+}
+.skills-mcp .skills-catalog-card__icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--oc-card) 80%, var(--oc-bg-hover));
+}
+.skills-mcp .skills-catalog-card__icon svg {
+  width: 21px;
+  height: 21px;
+  stroke-width: 1.7;
+}
+.skills-mcp .skills-catalog-card__icon img.skills-provider-icon--square {
+  width: 24px;
+  height: 24px;
 }
 .skills-mcp-card-v2 {
   min-width: 0;
@@ -4983,6 +4918,11 @@ input.session-searchbar__input:focus-visible,
   width: 32px;
   height: 18px;
   object-fit: contain;
+}
+.skills-mcp-card-v2__icon img.skills-provider-icon--square,
+.skills-mcp-detail__icon img.skills-provider-icon--square {
+  width: 22px;
+  height: 22px;
 }
 .skills-mcp-card-v2__icon[data-source="public"],
 .skills-mcp-detail__icon[data-source="public"] {
@@ -5280,6 +5220,111 @@ input.session-searchbar__input:focus-visible,
   color: var(--oc-text-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+.skills-feishu-route {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 8px;
+  background: var(--oc-bg-soft);
+  color: var(--oc-text-muted);
+  font-size: 11px;
+}
+.skills-feishu-route strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--oc-text-primary);
+  font-size: 12px;
+  font-weight: var(--oc-weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skills-feishu-bind {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px 12px;
+  margin-bottom: 16px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in oklab, var(--banking-brand-red) 18%, var(--oc-border-subtle));
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--banking-brand-red) 4%, var(--oc-card));
+}
+.skills-feishu-bind > span {
+  color: var(--oc-text-muted);
+  font-size: 11px;
+}
+.skills-feishu-bind > strong {
+  color: var(--oc-text-primary);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 18px;
+  font-weight: var(--oc-weight-semibold);
+  letter-spacing: 2px;
+}
+.skills-feishu-bind > p,
+.skills-feishu-bind > small {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.skills-feishu-bind > small {
+  color: var(--oc-text-muted);
+}
+.skills-feishu-oauth {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 8px;
+  background: var(--oc-bg-soft);
+}
+.skills-feishu-oauth > img {
+  width: 132px;
+  height: 132px;
+  border-radius: 7px;
+  background: white;
+}
+.skills-feishu-oauth > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+.skills-feishu-oauth strong {
+  color: var(--oc-text-primary);
+  font-size: 13px;
+  font-weight: var(--oc-weight-semibold);
+}
+.skills-feishu-oauth p,
+.skills-feishu-oauth span,
+.skills-feishu-oauth a {
+  margin: 0;
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.skills-feishu-oauth a {
+  color: var(--oc-accent);
+}
+@media (max-width: 560px) {
+  .skills-feishu-oauth {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .skills-feishu-oauth > div {
+    align-items: center;
+    text-align: center;
+  }
 }
 .skills-mcp-detail__footer {
   min-height: 66px;
@@ -6305,12 +6350,23 @@ input.session-searchbar__input:focus-visible,
 .agent-task-card__icon {
   width: 24px;
   height: 24px;
-  border-radius: 8px;
+  overflow: hidden;
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--banking-brand-red);
   background: color-mix(in oklab, var(--banking-brand-red) 9%, transparent);
+}
+.agent-task-card__icon > svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.7;
+}
+.agent-task-card__icon > img.expert-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .agent-task-card__spin {
   animation: agent-task-spin 1s linear infinite;
@@ -8805,6 +8861,28 @@ html:has(:root[data-theme-mode="light"]) body {
   border-color: var(--oc-border);
   background: var(--oc-bg-hover);
 }
+.lingxia-composer-expert-chip__avatar {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--oc-bg);
+  color: var(--oc-text-secondary);
+}
+.lingxia-composer-expert-chip__avatar > svg {
+  width: 11px;
+  height: 11px;
+  stroke-width: 1.7;
+}
+.lingxia-composer-expert-chip__avatar > img.expert-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .expert-interaction {
   display: grid;
   gap: 10px;
@@ -9224,7 +9302,8 @@ button[data-selected="true"] .expert-interaction__radio {
   justify-content: center;
   flex: 0 0 30px;
   border: 1px solid var(--oc-border);
-  border-radius: 8px;
+  overflow: hidden;
+  border-radius: 50%;
   background: var(--oc-bg);
   color: var(--oc-text-secondary);
 }
@@ -9232,6 +9311,11 @@ button[data-selected="true"] .expert-interaction__radio {
   width: 15px !important;
   height: 15px !important;
   stroke-width: 1.65;
+}
+.lingxia-expert-item__icon > img.expert-avatar-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .lingxia-expert-item__main {
   display: flex;

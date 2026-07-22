@@ -2,8 +2,9 @@ import { createHash } from "crypto";
 import { Readable } from "stream";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import type { CustomMcpAuthType, CustomMcpToolSnapshot } from "../db/custom-mcp-connections";
+import type { CustomMcpAuthType, CustomMcpOAuthData, CustomMcpToolSnapshot } from "../db/custom-mcp-connections";
 import { safeAgentRequest } from "./safe-agent-http";
+import { CustomMcpOAuthProvider } from "./custom-mcp-oauth-provider";
 
 export const MAX_CUSTOM_MCP_CONNECTIONS = 5;
 export const MAX_CUSTOM_MCP_SELECTED_TOOLS = 20;
@@ -37,6 +38,8 @@ export type CustomMcpEndpointConfig = {
   authType: CustomMcpAuthType;
   authHeaderName?: string | null;
   credential?: string;
+  oauthData?: CustomMcpOAuthData | null;
+  onOAuthDataChanged?: (data: CustomMcpOAuthData) => void | Promise<void>;
 };
 
 export function parseCustomMcpEndpoint(rawUrl: unknown): URL {
@@ -61,10 +64,16 @@ export function parseCustomMcpEndpoint(rawUrl: unknown): URL {
 }
 
 export function validateCustomMcpAuth(config: CustomMcpEndpointConfig): void {
-  if (!(["none", "bearer", "api_key"] as string[]).includes(config.authType)) {
+  if (!(["none", "bearer", "api_key", "oauth"] as string[]).includes(config.authType)) {
     throw new Error("不支持的认证方式");
   }
   if (config.authType === "none") return;
+  if (config.authType === "oauth") {
+    if (!config.oauthData?.tokens || !config.oauthData.clientInformation || !config.oauthData.redirectUrl) {
+      throw new Error("OAuth 授权尚未完成");
+    }
+    return;
+  }
   if (!String(config.credential || "").trim()) throw new Error("请填写认证凭据");
   if (config.authType === "bearer") return;
   const headerName = String(config.authHeaderName || "").trim();
@@ -114,7 +123,7 @@ function responseHeaders(raw: Record<string, string | string[] | undefined>): He
   return headers;
 }
 
-function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS) {
+export function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS) {
   return async (input: string | URL, init: RequestInit = {}): Promise<Response> => {
     const url = parseCustomMcpEndpoint(String(input));
     const response = await safeAgentRequest(url.toString(), {
@@ -137,8 +146,12 @@ function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS) {
 
 async function withMcpClient<T>(config: CustomMcpEndpointConfig, run: (client: Client) => Promise<T>): Promise<T> {
   const url = parseCustomMcpEndpoint(config.endpointUrl);
+  validateCustomMcpAuth(config);
+  const authProvider = config.authType === "oauth" && config.oauthData
+    ? new CustomMcpOAuthProvider({ data: config.oauthData, onDataChanged: config.onOAuthDataChanged })
+    : undefined;
   const transport = new StreamableHTTPClientTransport(url, {
-    requestInit: { headers: authHeaders(config) },
+    ...(authProvider ? { authProvider } : { requestInit: { headers: authHeaders(config) } }),
     fetch: safeMcpFetch(),
     reconnectionOptions: {
       maxReconnectionDelay: 1_000,

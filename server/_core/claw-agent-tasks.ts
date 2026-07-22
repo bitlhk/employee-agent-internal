@@ -34,6 +34,7 @@ import {
   insertCallLog,
   listAgentTasks,
   listAgentTasksByIds,
+  listAgentTaskCounts,
   listEnabledBusinessAgentsForContext,
   updateAgentTask,
 } from "../db/agents";
@@ -152,7 +153,7 @@ function routeReason(agent: any) {
   return "";
 }
 
-function publicAgent(agent: any) {
+function publicAgent(agent: any, usageCount = 0) {
   const capabilities = parseJsonArray(agent.capabilitiesJson).map((item) => String(item || "")).filter(Boolean);
   const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
   const reason = routeReason(agent);
@@ -165,6 +166,7 @@ function publicAgent(agent: any) {
     providerType: String(agent.providerType || "agent"),
     adapterProtocol: String(agent.adapterProtocol || ""),
     capabilities,
+    usageCount: Math.max(0, Number(usageCount || 0)),
     source: String(agent.visibility || "platform") === "personal" ? "personal" : "platform",
     executionMode: endpointConfig.executionMode || "async",
     interactionMode: endpointConfig.interactionMode === "session" ? "session" : "single",
@@ -342,11 +344,12 @@ export function registerAgentTaskRoutes(app: express.Express) {
     try {
       const userId = Number((claw as any).userId || 0);
       const profileKeys = await requesterProfiles(userId);
-      const agents = (await listEnabledBusinessAgentsForContext({ userId, adoptId }))
+      const visibleAgents = (await listEnabledBusinessAgentsForContext({ userId, adoptId }))
         .filter((agent) => isAgentIntegration(agent))
         .filter((agent) => profileAllowed(agent, profileKeys))
-        .filter((agent) => roleAllowed(agent, (claw as any).roleTemplate))
-        .map(publicAgent);
+        .filter((agent) => roleAllowed(agent, (claw as any).roleTemplate));
+      const usageCounts = await listAgentTaskCounts(adoptId, visibleAgents.map((agent) => String(agent.id)));
+      const agents = visibleAgents.map((agent) => publicAgent(agent, usageCounts[String(agent.id)] || 0));
       res.json({ agents });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "AGENTS_UNAVAILABLE" });

@@ -6,6 +6,7 @@ import {
   getClawByAgentId,
   getCustomMcpConnection,
   listCustomMcpConnections,
+  revealCustomMcpOAuthData,
   resolveEffectiveRoleAssets,
   revealCustomMcpCredential,
   toPublicCustomMcpConnection,
@@ -28,12 +29,15 @@ import {
   isAuthorizedInternalRequest,
   isJiuwenClawAdoptId,
   requireClawOwner,
+  resolveRequesterUserId,
   resolveRuntimeAgentId,
 } from "./helpers";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { strictLimiter } from "./security";
 import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
+import { finishCustomMcpOAuth, startCustomMcpOAuth } from "./custom-mcp-oauth";
+import { resolvePublicBaseUrl } from "./public-base-url";
 
 const SERVICE_NAME = "custom-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -68,7 +72,7 @@ function displayName(raw: unknown): string {
 
 function authType(raw: unknown): CustomMcpAuthType {
   const value = String(raw || "none").trim();
-  if (value === "none" || value === "bearer" || value === "api_key") return value;
+  if (value === "none" || value === "bearer" || value === "api_key" || value === "oauth") return value;
   throw new Error("不支持的认证方式");
 }
 
@@ -87,11 +91,16 @@ function selectedTools(raw: unknown, tools: CustomMcpToolSnapshot[]): string[] {
 }
 
 function configFromRow(row: Awaited<ReturnType<typeof getCustomMcpConnection>> & {}): CustomMcpEndpointConfig {
+  const oauthData = row.authType === "oauth" ? revealCustomMcpOAuthData(row) : null;
   return {
     endpointUrl: row.endpointUrl,
     authType: row.authType,
     authHeaderName: row.authHeaderName,
     credential: revealCustomMcpCredential(row),
+    oauthData,
+    onOAuthDataChanged: row.authType === "oauth"
+      ? async (next) => { await updateCustomMcpConnection({ id: row.id, adoptId: row.adoptId, userId: row.userId }, { oauthData: next }); }
+      : undefined,
   };
 }
 
@@ -125,6 +134,7 @@ async function ensureCustomMcpGateway(context: NonNullable<Awaited<ReturnType<ty
 
 function mergeEndpointConfig(body: any, existing?: NonNullable<Awaited<ReturnType<typeof getCustomMcpConnection>>>): CustomMcpEndpointConfig {
   const nextAuthType = authType(body?.authType ?? existing?.authType ?? "none");
+  if (nextAuthType === "oauth") throw new Error("OAuth 连接请从连接器市场发起授权");
   const suppliedCredential = typeof body?.credential === "string" ? body.credential.trim() : undefined;
   const credential = nextAuthType === "none"
     ? ""
@@ -195,6 +205,7 @@ export async function buildCustomMcpStatusGroup(adoptId: string, userId: number)
       liveError: row.lastError || null,
       enabledForAgent: row.enabled,
       grantMode: "optional",
+      catalogId: row.catalogId || null,
     };
   });
   const availableCount = children.filter((child) => child.enabledForAgent && child.status === "available").length;
@@ -340,6 +351,118 @@ async function handleGatewayMessage(req: Request, message: any) {
 }
 
 export function registerCustomMcpRoutes(app: Express): void {
+  app.post("/api/claw/custom-mcp/oauth/start", strictLimiter, async (req, res) => {
+    try {
+      const context = await owner(req, res, req.body?.adoptId);
+      if (!context) return;
+      const existing = await listCustomMcpConnections(context);
+      const catalogId = String(req.body?.catalogId || "").trim();
+      const existingCatalogConnection = existing.find((row) => row.catalogId === catalogId);
+      const alreadyConnected = Boolean(existingCatalogConnection);
+      if (!alreadyConnected && existing.length >= MAX_CUSTOM_MCP_CONNECTIONS) {
+        return res.status(409).json({ error: `每个岗位智能体最多添加 ${MAX_CUSTOM_MCP_CONNECTIONS} 个自定义连接` });
+      }
+      const configuredBase = resolvePublicBaseUrl();
+      const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+      const requestBase = `${forwardedProto === "https" ? "https" : req.protocol}://${req.get("host")}`;
+      const externalBase = configuredBase.startsWith("https://") ? configuredBase : requestBase;
+      const redirectUrl = new URL("/api/claw/custom-mcp/oauth/callback", externalBase).toString();
+      const result = await startCustomMcpOAuth({
+        userId: context.userId,
+        adoptId: context.adoptId,
+        catalogId,
+        redirectUrl,
+        oauthData: existingCatalogConnection ? revealCustomMcpOAuthData(existingCatalogConnection) : null,
+      });
+      res.json(result);
+    } catch (error) {
+      res.status(400).json({ error: cleanError(error) });
+    }
+  });
+
+  app.get("/api/claw/custom-mcp/oauth/callback", async (req, res) => {
+    const configuredBase = resolvePublicBaseUrl();
+    const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+    const requestBase = `${forwardedProto === "https" ? "https" : req.protocol}://${req.get("host")}`;
+    const completeUrl = new URL("/mcp-oauth-callback.html", configuredBase.startsWith("https://") ? configuredBase : requestBase);
+    const fail = (message: string, status = 400) => {
+      completeUrl.searchParams.set("status", "error");
+      completeUrl.searchParams.set("message", message);
+      return res.redirect(status === 401 ? 302 : 303, completeUrl.toString());
+    };
+    try {
+      const state = String(req.query.state || "").trim();
+      const code = String(req.query.code || "").trim();
+      if (req.query.error) return fail("授权已取消或被拒绝");
+      if (!state || !code) return fail("授权回调缺少必要参数");
+      const userId = await resolveRequesterUserId(req, res);
+      if (!userId) return fail("登录状态已失效，请重新登录后连接", 401);
+      const result = await finishCustomMcpOAuth({ state, code, userId });
+      const claw = await getClawByAdoptId(result.adoptId);
+      if (!claw || Number((claw as any).userId || 0) !== userId) return fail("无权为该岗位智能体授权");
+      const context = { adoptId: result.adoptId, userId, claw };
+      const rows = await listCustomMcpConnections(context);
+      const existing = rows.find((row) => row.catalogId === result.catalog.id || row.endpointUrl === result.catalog.endpointUrl);
+      const previousSelected = new Set(Array.isArray(existing?.selectedToolNames) ? existing.selectedToolNames : []);
+      const retained = result.tools.filter((tool) => previousSelected.has(tool.name)).map((tool) => tool.name);
+      const selectedToolNames = (retained.length > 0 ? retained : result.tools.map((tool) => tool.name)).slice(0, MAX_CUSTOM_MCP_SELECTED_TOOLS);
+      await ensureCustomMcpGateway(context);
+      const row = existing
+        ? await updateCustomMcpConnection({ id: existing.id, adoptId: context.adoptId, userId }, {
+          displayName: result.catalog.displayName,
+          endpointUrl: result.catalog.endpointUrl,
+          authType: "oauth",
+          authHeaderName: null,
+          credential: null,
+          catalogId: result.catalog.id,
+          oauthData: result.oauthData,
+          enabled: true,
+          healthStatus: "ready",
+          lastError: null,
+          toolsJson: result.tools,
+          selectedToolNames,
+          lastTestedAt: new Date(),
+        })
+        : await createCustomMcpConnection({
+          userId,
+          adoptId: context.adoptId,
+          displayName: result.catalog.displayName,
+          endpointUrl: result.catalog.endpointUrl,
+          authType: "oauth",
+          authHeaderName: null,
+          catalogId: result.catalog.id,
+          oauthData: result.oauthData,
+          enabled: true,
+          healthStatus: "ready",
+          lastError: null,
+          toolsJson: result.tools,
+          selectedToolNames,
+          lastTestedAt: new Date(),
+        });
+      if (!row) return fail("连接器保存失败");
+      bumpSessionEpoch(context.adoptId);
+      await recordAuditBestEffort({
+        action: existing ? "agent.custom_mcp.oauth_refreshed" : "agent.custom_mcp.oauth_connected",
+        actorType: "user",
+        actorUserId: userId,
+        result: "success",
+        severity: "info",
+        targetType: "mcp_server",
+        targetId: String(row.id),
+        targetName: row.displayName,
+        agentInstanceId: context.adoptId,
+        ...auditRequest(req),
+        metadata: { catalogId: result.catalog.id, toolCount: selectedToolNames.length },
+      });
+      completeUrl.searchParams.set("status", "success");
+      completeUrl.searchParams.set("message", `${result.catalog.displayName}已连接`);
+      res.redirect(303, completeUrl.toString());
+    } catch (error) {
+      console.error("[CustomMCP OAuth] callback failed", error);
+      return fail("授权失败，请返回后重试");
+    }
+  });
+
   app.get("/api/claw/custom-mcp/connections", async (req, res) => {
     try {
       const context = await owner(req, res, req.query.adoptId);
