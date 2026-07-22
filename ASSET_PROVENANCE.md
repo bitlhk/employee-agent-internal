@@ -58,6 +58,21 @@ package solely to identify the configured model provider:
 DeepSeek and its associated mark remain the property of their respective
 owner. This nominative use does not imply sponsorship or endorsement.
 
+## Connector provider logos
+
+The MCP connector catalog uses the official Wind wordmark solely to identify
+Wind-provided financial data connections:
+
+- Distributed asset: `client/public/images/connectors/wind-logo.png`
+- Upstream source: `https://www.wind.com.cn/portal/common/img/logo-red.png`
+- Upstream website: `https://www.wind.com.cn/`
+- Retrieved: 2026-07-22
+
+Wind and its associated mark remain the property of Wind Information Co., Ltd.
+This nominative use does not imply sponsorship or endorsement. Confirm the
+applicable Wind brand-use terms before redistributing this asset outside an
+authorized integration.
+
 ## Adding assets
 
 Every externally sourced asset must record its source URL, copyright owner,

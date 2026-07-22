@@ -2,16 +2,26 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   BarChart3,
   Bot,
   BriefcaseBusiness,
+  Building2,
+  Check,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
+  Database,
   FileText,
+  Globe2,
   Layers,
   Package,
   Pencil,
+  PhoneCall,
+  Plug,
+  Plus,
+  Presentation,
   Power,
   PowerOff,
   RefreshCw,
@@ -22,13 +32,21 @@ import {
   Store,
   Trash2,
   Upload,
+  UsersRound,
   Wrench,
+  Workflow,
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageContainer } from "@/components/console/PageContainer";
 import { handleRovingTabKey } from "@/lib/a11y";
 import { MarketplacePage } from "./MarketplacePage";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
 
 type SourceKind = "builtin" | "role_default" | "marketplace" | "uploaded" | "generated" | "runtime_imported";
@@ -83,12 +101,13 @@ type SkillIntroductionResponse = {
 };
 
 const SKILL_TAB_KEYS = ["mine", "market", "mcp", "agent"] as const;
+const SKILL_NAV_TAB_KEYS = ["market", "agent", "mcp"] as const;
 type SkillTab = (typeof SKILL_TAB_KEYS)[number];
 type SourceFilter = "all" | SourceKind;
 type StateFilter = "all" | "ready" | "attention" | "disabled";
 const SKILL_TAB_CACHE_KEY = "employee-agent:skills:last-tab";
-const MCP_TOOLS_CACHE_PREFIX = "employee-agent:mcp-tools:v3:";
-const AGENT_TOOLS_CACHE_PREFIX = "employee-agent:agent-tools:v1:";
+const MCP_TOOLS_CACHE_PREFIX = "employee-agent:mcp-tools:v4:";
+const AGENT_TOOLS_CACHE_PREFIX = "employee-agent:agent-tools:v2:";
 
 type McpServerStatus = "available" | "disabled" | "missing";
 type McpLiveStatus = "live" | "fallback" | "unavailable" | "unsupported";
@@ -142,6 +161,26 @@ type McpToolsResponse = {
   };
 };
 
+type McpConnectorFilter = "all" | "connected" | "available";
+type McpConnectorSource = "preset" | "public" | "optional" | "personal";
+type McpConnectorHealth = "ready" | "degraded" | "offline" | "idle";
+type McpConnectorCard = {
+  id: string;
+  serverId: string;
+  name: string;
+  description: string;
+  category: string;
+  source: McpConnectorSource;
+  sourceLabel: string;
+  configured: boolean;
+  connected: boolean;
+  health: McpConnectorHealth;
+  statusLabel: string;
+  tools: McpToolSummary[];
+  liveError?: string | null;
+  recommendedSkills: string[];
+};
+
 type ExternalAgentSummary = {
   id: string;
   name: string;
@@ -151,6 +190,8 @@ type ExternalAgentSummary = {
   providerType?: string;
   adapterProtocol?: string;
   executionMode?: string;
+  interactionMode?: "single" | "session";
+  source?: "platform" | "personal";
   routeReady: boolean;
   reason?: string;
   healthStatus?: string;
@@ -310,48 +351,103 @@ function agentToolsCacheKey(adoptId?: string) {
   return `${AGENT_TOOLS_CACHE_PREFIX}${adoptId || "none"}`;
 }
 
-function mcpStatusTone(status: McpServerStatus): "ok" | "warn" | "neutral" {
-  if (status === "available") return "ok";
-  if (status === "disabled") return "warn";
-  return "neutral";
+function mcpConnectorIcon(connector: Pick<McpConnectorCard, "serverId" | "category" | "source">): ReactNode {
+  const id = connector.serverId.toLowerCase();
+  if (id.startsWith("wind_")) {
+    return <img src="/images/connectors/wind-logo.png" alt="" aria-hidden="true" />;
+  }
+  if (connector.source === "personal" || id.includes("custom_mcp")) return <Plug aria-hidden="true" />;
+  if (id.includes("qieman") || id.includes("stock") || id.includes("index")) return <BarChart3 aria-hidden="true" />;
+  if (id.includes("bond")) return <Building2 aria-hidden="true" />;
+  if (id.includes("credential")) return <CheckCircle2 aria-hidden="true" />;
+  if (id.includes("telesales")) return <PhoneCall aria-hidden="true" />;
+  if (id.includes("insurance")) return <ShieldCheck aria-hidden="true" />;
+  if (id.includes("post_loan") || id.includes("risk")) return <AlertTriangle aria-hidden="true" />;
+  if (id.includes("customer")) return <UsersRound aria-hidden="true" />;
+  if (id.includes("product")) return <Layers aria-hidden="true" />;
+  if (id.includes("platform_tools")) return <Wrench aria-hidden="true" />;
+  if (/数据|知识/.test(connector.category)) return <Database aria-hidden="true" />;
+  if (/公共|公开/.test(connector.category)) return <Globe2 aria-hidden="true" />;
+  if (/审核|风控|安全/.test(connector.category)) return <ShieldCheck aria-hidden="true" />;
+  return <Wrench aria-hidden="true" />;
 }
 
-function mcpStatusLabel(status: McpServerStatus) {
-  if (status === "available") return "可用";
-  if (status === "disabled") return "暂不可用";
-  return "未接入";
+function flattenMcpConnectors(items: McpToolGroup[]): McpConnectorCard[] {
+  return items
+    .flatMap((group) => (group.children || []).map((child) => {
+      const source: McpConnectorSource = group.id === "custom-user-mcp"
+        ? "personal"
+        : /公共|公开/.test(group.category)
+          ? "public"
+          : child.grantMode === "default"
+            ? "preset"
+            : "optional";
+      const connected = child.enabledForAgent !== false;
+      const healthy = child.configured && child.status === "available" && child.liveStatus === "live";
+      const unavailable = !child.configured || child.liveStatus === "unavailable" || child.status === "missing";
+      const health: McpConnectorHealth = !connected
+        ? "idle"
+        : healthy
+          ? "ready"
+          : unavailable
+            ? "offline"
+            : "degraded";
+      const useGroupIdentity = group.children.length === 1 && source !== "personal";
+
+      return {
+        id: `${group.id}:${child.serverId}`,
+        serverId: child.serverId,
+        name: useGroupIdentity ? group.name : child.name,
+        description: source === "personal"
+          ? `${child.name} 提供的自定义 MCP 工具连接。`
+          : group.description || child.description,
+        category: group.category,
+        source,
+        sourceLabel: source === "personal"
+          ? "我的连接"
+          : source === "preset"
+            ? "岗位预置"
+            : source === "public"
+              ? "公开连接"
+              : "岗位可选",
+        configured: child.configured,
+        connected,
+        health,
+        statusLabel: !connected
+          ? child.configured ? "可连接" : "未配置"
+          : health === "ready"
+            ? "已连接"
+            : health === "offline"
+              ? "连接异常"
+              : "已连接，待验证",
+        tools: (child.tools || []).filter((tool) => !["tools_list_unavailable", "tool_list"].includes(tool.name)),
+        liveError: child.liveError,
+        recommendedSkills: group.recommendedSkills || [],
+      };
+    }))
+    .sort((a, b) => (
+      Number(b.connected) - Number(a.connected)
+      || ({ preset: 0, public: 1, optional: 2, personal: 3 }[a.source] - { preset: 0, public: 1, optional: 2, personal: 3 }[b.source])
+      || a.name.localeCompare(b.name, "zh-CN")
+    ));
 }
 
-function mcpLiveStatusLabel(status?: McpLiveStatus) {
-  if (status === "live") return "实时";
-  if (status === "unavailable") return "连接失败";
-  if (status === "unsupported") return "未探测";
-  return "配置";
-}
-
-function mcpLiveStatusTone(status?: McpLiveStatus): "ok" | "warn" | "neutral" {
-  if (status === "live") return "ok";
-  if (status === "unavailable") return "warn";
-  return "neutral";
-}
-
-function mcpScopeOf(item: McpToolGroup): "public" | "internal" | "platform" {
-  if (item.category === "公共金融数据") return "public";
-  if (item.category === "内部业务 MCP") return "internal";
-  return "platform";
-}
-
-function mcpScopeLabel(scope: "public" | "internal" | "platform") {
-  if (scope === "public") return "public";
-  if (scope === "internal") return "internal";
-  return "platform";
-}
-
-function McpToolsPage({ adoptId }: { adoptId?: string }) {
+function McpToolsPage({
+  adoptId,
+  query,
+  onTryMcp,
+  onConnectionsChanged,
+}: {
+  adoptId?: string;
+  query: string;
+  onTryMcp?: () => void;
+  onConnectionsChanged?: () => void | Promise<void>;
+}) {
   const [items, setItems] = useState<McpToolGroup[]>([]);
   const [loading, setLoading] = useState(false);
-  const [openGroupIds, setOpenGroupIds] = useState<Set<string>>(new Set());
-  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [filter, setFilter] = useState<McpConnectorFilter>("all");
+  const [detailServerId, setDetailServerId] = useState<string | null>(null);
+  const [pendingServerId, setPendingServerId] = useState<string | null>(null);
 
   const loadMcpTools = async (options?: { silent?: boolean; force?: boolean }) => {
     if (!adoptId) return;
@@ -362,7 +458,6 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
       const data = await fetchJson<McpToolsResponse>(`/api/claw/mcp-tools/status?adoptId=${encodeURIComponent(adoptId)}${force}`);
       const nextItems = Array.isArray(data.items) ? data.items : [];
       setItems(nextItems);
-      setLastCheckedAt(data.live?.checkedAt || new Date().toISOString());
       try {
         window.localStorage.setItem(mcpToolsCacheKey(adoptId), JSON.stringify({ items: nextItems, lastCheckedAt: data.live?.checkedAt || null }));
       } catch {}
@@ -389,7 +484,6 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
       if (Array.isArray(cachedItems) && cachedItems.length > 0) {
         hadCache = true;
         setItems(cachedItems);
-        setLastCheckedAt(parsed?.lastCheckedAt || null);
         setLoading(false);
       }
     } catch {}
@@ -397,174 +491,252 @@ function McpToolsPage({ adoptId }: { adoptId?: string }) {
   }, [adoptId]);
 
   useEffect(() => {
-    setOpenGroupIds((current) => {
-      const validIds = new Set(items.map((item) => item.id));
-      return new Set([...current].filter((id) => validIds.has(id)));
-    });
-  }, [items]);
+    if (!adoptId) return;
+    const refreshVisiblePage = () => {
+      if (document.visibilityState === "visible") void loadMcpTools({ silent: true, force: true });
+    };
+    const timer = window.setInterval(refreshVisiblePage, 60_000);
+    document.addEventListener("visibilitychange", refreshVisiblePage);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisiblePage);
+    };
+  }, [adoptId]);
 
-  const toggleGroup = (groupId: string) => {
-    setOpenGroupIds((current) => {
-      const next = new Set(current);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
+  const connectors = useMemo(() => flattenMcpConnectors(items), [items]);
+  const selectedConnector = useMemo(
+    () => connectors.find((connector) => connector.serverId === detailServerId) || null,
+    [connectors, detailServerId],
+  );
+  const filteredConnectors = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return connectors.filter((connector) => {
+      if (filter === "connected" && !connector.connected) return false;
+      if (filter === "available" && connector.connected) return false;
+      if (!normalizedQuery) return true;
+      return `${connector.name} ${connector.description} ${connector.category} ${connector.tools.map((tool) => `${tool.name} ${tool.description}`).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(normalizedQuery);
     });
+  }, [connectors, filter, query]);
+
+  useEffect(() => {
+    if (detailServerId && !selectedConnector) setDetailServerId(null);
+  }, [detailServerId, selectedConnector]);
+
+  const toggleConnection = async (connector: McpConnectorCard) => {
+    if (!adoptId || pendingServerId || !connector.configured) return;
+    const nextEnabled = !connector.connected;
+    setPendingServerId(connector.serverId);
+    try {
+      const payload = await fetchJson<{ enabledServerIds?: string[] }>("/api/claw/mcp-tools/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adoptId, serverId: connector.serverId, enabled: nextEnabled }),
+      });
+      const enabledServerIds = new Set(payload.enabledServerIds || []);
+      setItems((current) => current.map((group) => {
+        const children = group.children.map((child) => ({
+          ...child,
+          enabledForAgent: payload.enabledServerIds
+            ? enabledServerIds.has(child.serverId)
+            : child.serverId === connector.serverId ? nextEnabled : child.enabledForAgent,
+        }));
+        return { ...group, children, activeCount: children.filter((child) => child.enabledForAgent !== false).length };
+      }));
+      await onConnectionsChanged?.();
+      toast.success(`${connector.name}已${nextEnabled ? "连接" : "解绑"}，下一轮对话生效`);
+    } catch (error: any) {
+      toast.error(error?.message || "连接切换失败");
+    } finally {
+      setPendingServerId(null);
+    }
   };
 
-  const availableGroups = items.filter((item) => item.children.some((child) => child.enabledForAgent !== false && child.status === "available")).length;
-  const configuredServers = items.reduce((sum, item) => sum + item.configuredCount, 0);
-  const availableServers = items.reduce(
-    (sum, item) => sum + item.children.filter((child) => child.enabledForAgent !== false && child.status === "available").length,
-    0,
-  );
+  const filterItems: Array<{ id: McpConnectorFilter; label: string; count: number }> = [
+    { id: "all", label: "全部", count: connectors.length },
+    { id: "connected", label: "已连接", count: connectors.filter((item) => item.connected).length },
+    { id: "available", label: "可连接", count: connectors.filter((item) => !item.connected).length },
+  ];
 
   return (
     <div className="skills-market skills-mcp">
-      <div className="skills-header">
-        <div className="skills-summary skills-muted-text text-xs">
-          共 {items.length} 类能力 · {availableGroups} 类可用 · {availableServers}/{configuredServers} 个服务已启用
-          {lastCheckedAt ? ` · ${new Date(lastCheckedAt).toLocaleTimeString("zh-CN", { hour12: false })} 刷新` : ""}
+      <div className="skills-section-filterbar">
+        <div className="skills-mcp-filters" role="tablist" aria-label="连接筛选">
+          {filterItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === item.id}
+              className="skills-mcp-filter"
+              data-active={filter === item.id ? "true" : "false"}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}<span>{item.count}</span>
+            </button>
+          ))}
         </div>
-        <button className="skills-btn" onClick={() => void loadMcpTools({ force: true })} disabled={loading}>
-          <RefreshCw size={14} /> 刷新
-        </button>
       </div>
 
       {loading && <div className="settings-card skills-market-empty"><RefreshCw size={18} className="animate-spin" /><div>正在加载 MCP 工具...</div></div>}
-      {!loading && items.length === 0 && <div className="settings-card skills-market-empty"><Wrench size={22} /><div>暂无 MCP 工具配置</div></div>}
+      {!loading && connectors.length === 0 && <div className="settings-card skills-market-empty"><Wrench size={22} /><div>暂无可用连接</div></div>}
+      {!loading && connectors.length > 0 && filteredConnectors.length === 0 && <div className="settings-card skills-market-empty"><Search size={22} /><div>没有匹配的连接</div></div>}
 
-      {!loading && items.length > 0 && (
-        <div className="skills-mcp-groups">
-            {items.map((item) => {
-              const groupOpen = openGroupIds.has(item.id);
-              const scope = mcpScopeOf(item);
-              const flatChild = item.children?.length === 1 ? item.children[0] : null;
-              const flatTools = flatChild?.tools && flatChild.tools.length > 0
-                ? flatChild.tools
-                : [{ name: "tool_list", description: "该 MCP 已接入，工具明细以管理员配置为准。" }];
-              return (
-                <section key={item.id} className="settings-card skills-mcp-group" data-open={groupOpen ? "true" : "false"}>
-                  <button
-                    className="skills-mcp-group__head"
-                    type="button"
-                    aria-expanded={groupOpen}
-                    onClick={() => toggleGroup(item.id)}
-                  >
-                    <span className="skills-mcp-group__chevron">
-                      {groupOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      {!loading && filteredConnectors.length > 0 && (
+        <div className="skills-mcp-grid">
+          {filteredConnectors.map((connector) => {
+            const pending = pendingServerId === connector.serverId;
+            return (
+              <article key={connector.id} className="skills-mcp-card-v2 skills-catalog-card" data-connected={connector.connected ? "true" : "false"}>
+                <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailServerId(connector.serverId)}>
+                  <span className="skills-catalog-card__head">
+                  <span className="skills-catalog-card__icon skills-mcp-card-v2__icon" data-source={connector.source}>
+                    {mcpConnectorIcon(connector)}
+                  </span>
+                  <span className="skills-catalog-card__title-wrap">
+                    <span className="skills-catalog-card__title">{connector.name}</span>
+                    <span className="skills-catalog-card__meta">{connector.sourceLabel}</span>
+                  </span>
+                  <span className="skills-mcp-card-v2__status" data-health={connector.health}>
+                    <span aria-hidden="true" />{connector.statusLabel}
+                  </span>
+                  </span>
+                  <span className="skills-catalog-card__desc">{connector.description}</span>
+                  <span className="skills-catalog-card__footer">
+                    <span className="skills-catalog-card__footnote">{connector.category}</span>
+                    <span className="skills-catalog-card__link">
+                      {pending ? <RotateCw className="animate-spin" /> : "查看"}<ChevronRight />
                     </span>
-                    <span className="skills-mcp-group__title-wrap">
-                      <span className="skills-mcp-group__title">
-                        <Wrench size={16} />
-                        <span>{item.name}</span>
-                      </span>
-                      <span className="skills-mcp-group__desc">{item.description}</span>
-                    </span>
-                    <span className="skills-mcp-group__status">
-                      <span className={`skills-chip skills-mcp-scope skills-mcp-scope--${scope}`}>{mcpScopeLabel(scope)}</span>
-                      <span className={`skills-chip ${pillToneClass(mcpLiveStatusTone(item.liveStatus))}`}>
-                        {mcpLiveStatusLabel(item.liveStatus)}
-                      </span>
-                      <span className={`skills-chip ${pillToneClass(mcpStatusTone(item.status))}`}>
-                        {item.activeCount === 0 ? "已关闭" : mcpStatusLabel(item.status)} {item.activeCount ?? item.availableCount}/{item.serverCount}
-                      </span>
-                    </span>
-                  </button>
-
-                  <div className="skills-mcp-group__body" aria-hidden={!groupOpen}>
-                    {flatChild ? (
-                      <div className="skills-mcp-flat">
-                        <div className="skills-mcp-flat__head">
-                          <span className="skills-mcp-child__main">
-                            <span className="skills-mcp-child__name">{flatChild.name}</span>
-                            <span className="skills-mcp-child__desc">{flatChild.description}</span>
-                          </span>
-                          <span className="skills-mcp-flat__meta">
-                            <span className="skills-mcp-child__server">{flatChild.serverId}</span>
-                            <span className={`skills-chip ${pillToneClass(mcpLiveStatusTone(flatChild.liveStatus))}`}>{mcpLiveStatusLabel(flatChild.liveStatus)}</span>
-                            <span className={`skills-chip ${pillToneClass(flatChild.enabledForAgent === false ? "neutral" : mcpStatusTone(flatChild.status))}`}>{flatChild.enabledForAgent === false ? "已关闭" : mcpStatusLabel(flatChild.status)}</span>
-                          </span>
-                        </div>
-                        {flatChild.liveError && (
-                          <div className="skills-muted-text text-xs">实时探测失败，当前展示配置回退：{flatChild.liveError}</div>
-                        )}
-                        <div className="skills-mcp-tools">
-                          {flatTools.map((tool) => (
-                            <div key={`${flatChild.id}:${tool.name}`} className="skills-mcp-tool">
-                              <div className="skills-mcp-tool__label">工具名</div>
-                              <div className="skills-mcp-tool__name">{tool.name}</div>
-                              <div className="skills-mcp-tool__desc">{tool.description}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="skills-mcp-children">
-                        {(item.children || []).map((child) => {
-                          const childTone = mcpStatusTone(child.status);
-                          const tools = child.tools && child.tools.length > 0
-                            ? child.tools
-                            : [{ name: "tool_list", description: "该 MCP 已接入，工具明细以管理员配置为准。" }];
-                          return (
-                            <div key={child.id} className="skills-mcp-child" data-open="true">
-                              <div className="skills-mcp-child__row">
-                                <span className="skills-mcp-child__main">
-                                  <span className="skills-mcp-child__name">{child.name}</span>
-                                  <span className="skills-mcp-child__desc">{child.description}</span>
-                                </span>
-                                <span className="skills-mcp-child__meta">
-                                  <span className="skills-mcp-child__server">{child.serverId}</span>
-                                  <span className={`skills-chip ${pillToneClass(mcpLiveStatusTone(child.liveStatus))}`}>{mcpLiveStatusLabel(child.liveStatus)}</span>
-                                  <span className={`skills-chip ${pillToneClass(child.enabledForAgent === false ? "neutral" : childTone)}`}>{child.enabledForAgent === false ? "已关闭" : mcpStatusLabel(child.status)}</span>
-                                </span>
-                              </div>
-
-                              <div className="skills-mcp-child__panel" aria-hidden="false">
-                                {child.liveError && (
-                                  <div className="skills-muted-text text-xs">实时探测失败，当前展示配置回退：{child.liveError}</div>
-                                )}
-                                <div className="skills-mcp-tools">
-                                  {tools.map((tool) => (
-                                    <div key={`${child.id}:${tool.name}`} className="skills-mcp-tool">
-                                      <div className="skills-mcp-tool__label">工具名</div>
-                                      <div className="skills-mcp-tool__name">{tool.name}</div>
-                                      <div className="skills-mcp-tool__desc">{tool.description}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {item.recommendedSkills && item.recommendedSkills.length > 0 && (
-                      <div className="skills-mcp-related">
-                        关联技能：{item.recommendedSkills.join("、")}
-                      </div>
-                    )}
-                  </div>
-                </section>
-              );
-            })}
+                  </span>
+                </button>
+              </article>
+            );
+          })}
         </div>
       )}
+
+      <Dialog open={Boolean(selectedConnector)} onOpenChange={(open) => { if (!open) setDetailServerId(null); }}>
+        {selectedConnector ? (
+          <DialogContent className="skills-mcp-detail" aria-describedby="skills-mcp-detail-description">
+            <div className="skills-mcp-detail__header">
+              <span className="skills-mcp-detail__icon" data-source={selectedConnector.source}>
+                {mcpConnectorIcon(selectedConnector)}
+              </span>
+              <div className="skills-mcp-detail__intro">
+                <DialogTitle>{selectedConnector.name}</DialogTitle>
+                <div className="skills-mcp-detail__meta">
+                  <span className="skills-mcp-detail__status" data-health={selectedConnector.health}>
+                    <span aria-hidden="true" />{selectedConnector.statusLabel}
+                  </span>
+                  <span>{selectedConnector.sourceLabel}</span>
+                  <span>{selectedConnector.category}</span>
+                </div>
+                <DialogDescription id="skills-mcp-detail-description">{selectedConnector.description}</DialogDescription>
+              </div>
+            </div>
+
+            <div className="skills-mcp-detail__body stealth-scrollbar">
+              <div className="skills-mcp-detail__section-head">
+                <span>包含工具</span>
+                <span>{selectedConnector.tools.length}</span>
+              </div>
+              {selectedConnector.liveError ? (
+                <div className="skills-mcp-detail__warning">
+                  <CircleAlert aria-hidden="true" />
+                  <span>实时检查暂不可用：{selectedConnector.liveError}</span>
+                </div>
+              ) : null}
+              {selectedConnector.tools.length > 0 ? (
+                <div className="skills-mcp-detail__tools">
+                  {selectedConnector.tools.map((tool) => (
+                    <div key={`${selectedConnector.serverId}:${tool.name}`} className="skills-mcp-detail__tool">
+                      <span className="skills-mcp-detail__tool-icon"><Check aria-hidden="true" /></span>
+                      <span className="skills-mcp-detail__tool-content">
+                        <span className="skills-mcp-detail__tool-name">{tool.description || tool.name}</span>
+                        {tool.description ? <span className="skills-mcp-detail__tool-id">{tool.name}</span> : null}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="skills-mcp-detail__empty">
+                  <Wrench aria-hidden="true" />
+                  <span>工具清单尚未同步，连接正常后会自动读取服务声明。</span>
+                </div>
+              )}
+              {selectedConnector.recommendedSkills.length > 0 ? (
+                <div className="skills-mcp-detail__related">适配技能：{selectedConnector.recommendedSkills.join("、")}</div>
+              ) : null}
+            </div>
+
+            <div className="skills-mcp-detail__footer">
+              {selectedConnector.connected ? (
+                <button
+                  className="skills-mcp-detail__button skills-mcp-detail__button--unlink"
+                  type="button"
+                  disabled={Boolean(pendingServerId)}
+                  onClick={() => void toggleConnection(selectedConnector)}
+                >
+                  {pendingServerId === selectedConnector.serverId ? <RotateCw className="animate-spin" /> : <PowerOff />}
+                  解绑
+                </button>
+              ) : (
+                <span className="skills-mcp-detail__connection-note">连接后，工具将在下一轮对话中生效</span>
+              )}
+              <div className="skills-mcp-detail__footer-actions">
+                {!selectedConnector.connected ? (
+                  <button
+                    className="skills-mcp-detail__button skills-mcp-detail__button--primary"
+                    type="button"
+                    disabled={Boolean(pendingServerId) || !selectedConnector.configured}
+                    onClick={() => void toggleConnection(selectedConnector)}
+                  >
+                    {pendingServerId === selectedConnector.serverId ? <RotateCw className="animate-spin" /> : <Plug />}
+                    {selectedConnector.configured ? "连接" : "尚未配置"}
+                  </button>
+                ) : (
+                  <button
+                    className="skills-mcp-detail__button skills-mcp-detail__button--primary"
+                    type="button"
+                    onClick={() => {
+                      setDetailServerId(null);
+                      onTryMcp?.();
+                    }}
+                  >
+                    去试试 <ArrowRight />
+                  </button>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
-}
-
-function agentStatusTone(agent: ExternalAgentSummary): "ok" | "warn" | "neutral" {
-  if (agent.routeReady) return "ok";
-  if (agent.providerType || agent.adapterProtocol) return "warn";
-  return "neutral";
 }
 
 function agentStatusLabel(agent: ExternalAgentSummary) {
   if (agent.routeReady) return "可调用";
   if (agent.reason) return "待配置";
   return "未接入";
+}
+
+function agentStatusHealth(agent: ExternalAgentSummary): McpConnectorHealth {
+  if (agent.routeReady) return "ready";
+  if (agent.providerType || agent.adapterProtocol) return "degraded";
+  return "offline";
+}
+
+function agentDisplayIcon(agent: ExternalAgentSummary): ReactNode {
+  const signature = `${agent.id} ${agent.name}`.toLocaleLowerCase();
+  if (signature.includes("wind") || signature.includes("万得")) {
+    return <img src="/images/connectors/wind-logo.png" alt="" aria-hidden="true" />;
+  }
+  if (/ppt|presentation|演示/.test(signature)) return <Presentation aria-hidden="true" />;
+  if (/diagram|flow|chart|图表|流程|架构/.test(signature)) return <Workflow aria-hidden="true" />;
+  if (/risk|风控|审核/.test(signature)) return <ShieldCheck aria-hidden="true" />;
+  return <Bot aria-hidden="true" />;
 }
 
 const AGENT_TECH_CAPABILITIES = new Set(["agent", "async-agent", "a2a"]);
@@ -581,6 +753,19 @@ const AGENT_CAPABILITY_DISPLAY: Record<string, { name: string; description: stri
 };
 
 function agentDisplayDescription(agent: ExternalAgentSummary) {
+  const signature = `${agent.id} ${agent.name}`.toLocaleLowerCase();
+  if (signature.includes("wind") || signature.includes("万得")) {
+    return "连接万得金融数据与专业分析能力，完成公司研究、事实核验和投资分析任务。";
+  }
+  if (/ppt|presentation|演示/.test(signature)) {
+    return "将主题、材料和视觉要求整理为可编辑演示文稿，并完成排版、渲染与质量检查。";
+  }
+  if (/diagram|flow|chart|图表|流程|架构/.test(signature)) {
+    return "把业务流程、系统关系或文字说明转换为清晰的流程图、架构图和可交付图稿。";
+  }
+  if (/risk|风控/.test(signature)) {
+    return "对复杂业务材料开展专项风险分析，输出风险结论、依据和后续处置建议。";
+  }
   const description = String(agent.description || "").trim();
   if (!description) return "外部智能体，适合需要异步处理的长任务或专项任务。";
   return description
@@ -616,13 +801,6 @@ function agentCapabilityTools(agent: ExternalAgentSummary): McpToolSummary[] {
   });
 }
 
-function taskStatusTone(status: ExternalAgentTask["status"]): "ok" | "warn" | "danger" | "neutral" {
-  if (status === "succeeded") return "ok";
-  if (status === "failed" || status === "cancelled") return "danger";
-  if (status === "running" || status === "pending") return "warn";
-  return "neutral";
-}
-
 function taskStatusLabel(status: ExternalAgentTask["status"]) {
   if (status === "succeeded") return "完成";
   if (status === "failed") return "失败";
@@ -631,12 +809,22 @@ function taskStatusLabel(status: ExternalAgentTask["status"]) {
   return "排队中";
 }
 
-function AgentToolsPage({ adoptId }: { adoptId?: string }) {
+type ExpertFilter = "all" | "ready";
+
+function AgentToolsPage({
+  adoptId,
+  query,
+  onTryExpert,
+}: {
+  adoptId?: string;
+  query: string;
+  onTryExpert?: (expertId: string) => void;
+}) {
   const [agents, setAgents] = useState<ExternalAgentSummary[]>([]);
   const [tasks, setTasks] = useState<ExternalAgentTask[]>([]);
   const [loading, setLoading] = useState(false);
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
-  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ExpertFilter>("all");
+  const [detailAgentId, setDetailAgentId] = useState<string | null>(null);
 
   const loadAgents = async (options?: { silent?: boolean }) => {
     if (!adoptId) return;
@@ -652,7 +840,6 @@ function AgentToolsPage({ adoptId }: { adoptId?: string }) {
       setAgents(nextAgents);
       setTasks(nextTasks);
       const checkedAt = new Date().toISOString();
-      setLastCheckedAt(checkedAt);
       try {
         window.localStorage.setItem(agentToolsCacheKey(adoptId), JSON.stringify({ agents: nextAgents, tasks: nextTasks, lastCheckedAt: checkedAt }));
       } catch {}
@@ -683,29 +870,24 @@ function AgentToolsPage({ adoptId }: { adoptId?: string }) {
         hadCache = parsed.agents.length > 0;
         setAgents(parsed.agents);
         setTasks(Array.isArray(parsed?.tasks) ? parsed.tasks : []);
-        setLastCheckedAt(parsed?.lastCheckedAt || null);
       }
     } catch {}
     void loadAgents({ silent: hadCache });
   }, [adoptId]);
 
   useEffect(() => {
-    setOpenIds((current) => {
-      const validIds = new Set(agents.map((agent) => agent.id));
-      return new Set([...current].filter((id) => validIds.has(id)));
-    });
-  }, [agents]);
+    if (!adoptId) return;
+    const refreshVisiblePage = () => {
+      if (document.visibilityState === "visible") void loadAgents({ silent: true });
+    };
+    const timer = window.setInterval(refreshVisiblePage, 30_000);
+    document.addEventListener("visibilitychange", refreshVisiblePage);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisiblePage);
+    };
+  }, [adoptId]);
 
-  const toggle = (agentId: string) => {
-    setOpenIds((current) => {
-      const next = new Set(current);
-      if (next.has(agentId)) next.delete(agentId);
-      else next.add(agentId);
-      return next;
-    });
-  };
-
-  const readyCount = agents.filter((agent) => agent.routeReady).length;
   const recentTaskByAgent = useMemo(() => {
     const map = new Map<string, ExternalAgentTask[]>();
     for (const task of tasks) {
@@ -715,119 +897,173 @@ function AgentToolsPage({ adoptId }: { adoptId?: string }) {
     }
     return map;
   }, [tasks]);
+  const selectedAgent = useMemo(
+    () => agents.find((agent) => agent.id === detailAgentId) || null,
+    [agents, detailAgentId],
+  );
+  const filteredAgents = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return agents.filter((agent) => {
+      if (filter === "ready" && !agent.routeReady) return false;
+      if (!normalizedQuery) return true;
+      return `${agent.name} ${agentDisplayDescription(agent)} ${(agent.capabilities || []).join(" ")}`
+        .toLocaleLowerCase()
+        .includes(normalizedQuery);
+    });
+  }, [agents, filter, query]);
+  const filterItems: Array<{ id: ExpertFilter; label: string; count: number }> = [
+    { id: "all", label: "全部", count: agents.length },
+    { id: "ready", label: "可调用", count: agents.filter((agent) => agent.routeReady).length },
+  ];
 
   return (
     <div className="skills-market skills-agent">
-      <div className="skills-header">
-        <div className="skills-summary skills-muted-text text-xs">
-          共 {agents.length} 个 Agent · {readyCount} 个可调用
-          {lastCheckedAt ? ` · ${new Date(lastCheckedAt).toLocaleTimeString("zh-CN", { hour12: false })} 刷新` : ""}
+      <div className="skills-section-filterbar">
+        <div className="skills-mcp-filters" role="tablist" aria-label="专家筛选">
+          {filterItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === item.id}
+              className="skills-mcp-filter"
+              data-active={filter === item.id ? "true" : "false"}
+              onClick={() => setFilter(item.id)}
+            >
+              {item.label}<span>{item.count}</span>
+            </button>
+          ))}
         </div>
-        <button className="skills-btn" onClick={() => void loadAgents()} disabled={loading}>
-          <RefreshCw size={14} /> 刷新
-        </button>
       </div>
 
-      {loading && <div className="settings-card skills-market-empty"><RefreshCw size={18} className="animate-spin" /><div>正在加载 Agent...</div></div>}
-      {!loading && agents.length === 0 && <div className="settings-card skills-market-empty"><Bot size={22} /><div>暂无可用 Agent</div></div>}
+      {loading && <div className="settings-card skills-market-empty"><RefreshCw size={18} className="animate-spin" /><div>正在加载专家...</div></div>}
+      {!loading && agents.length === 0 && <div className="settings-card skills-market-empty"><Bot size={22} /><div>暂无可用专家</div></div>}
+      {!loading && agents.length > 0 && filteredAgents.length === 0 && <div className="settings-card skills-market-empty"><Search size={22} /><div>没有匹配的专家</div></div>}
 
-      {!loading && agents.length > 0 && (
-        <div className="skills-mcp-groups">
-          {agents.map((agent) => {
-            const open = openIds.has(agent.id);
-            const agentTasks = recentTaskByAgent.get(agent.id) || [];
-            const agentTools = agentCapabilityTools(agent);
-            return (
-              <section key={agent.id} className="settings-card skills-mcp-group" data-open={open ? "true" : "false"}>
-                <button
-                  className="skills-mcp-group__head"
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() => toggle(agent.id)}
-                >
-                  <span className="skills-mcp-group__chevron">
-                    {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+      {!loading && filteredAgents.length > 0 && (
+        <div className="skills-mcp-grid">
+          {filteredAgents.map((agent) => (
+            <article key={agent.id} className="skills-mcp-card-v2 skills-catalog-card skills-expert-card" data-connected={agent.routeReady ? "true" : "false"}>
+              <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailAgentId(agent.id)}>
+                <span className="skills-catalog-card__head">
+                <span className="skills-catalog-card__icon skills-mcp-card-v2__icon" data-source={agent.source === "personal" ? "personal" : "preset"}>
+                  {agentDisplayIcon(agent)}
+                </span>
+                <span className="skills-catalog-card__title-wrap">
+                  <span className="skills-catalog-card__title">{agent.name}</span>
+                  <span className="skills-catalog-card__meta">{agent.source === "personal" ? "我的专家" : "公共专家"}</span>
+                </span>
+                <span className="skills-mcp-card-v2__status" data-health={agentStatusHealth(agent)}>
+                  <span aria-hidden="true" />{agentStatusLabel(agent)}
+                </span>
+                </span>
+                <span className="skills-catalog-card__desc">{agentDisplayDescription(agent)}</span>
+                <span className="skills-catalog-card__footer">
+                  <span className="skills-catalog-card__footnote">
+                    {agentModeLabel(agent)}协作{agent.interactionMode === "session" ? " · 连续对话" : ""}
                   </span>
-                  <span className="skills-mcp-group__title-wrap">
-                    <span className="skills-mcp-group__title">
-                      <Bot size={16} />
-                      <span>{agent.name}</span>
-                    </span>
-                    <span className="skills-mcp-group__desc">{agentDisplayDescription(agent)}</span>
-                  </span>
-                  <span className="skills-mcp-group__status">
-                    <span className="skills-chip skills-mcp-scope skills-mcp-scope--platform">Agent</span>
-                    <span className="skills-chip skills-mcp-scope skills-mcp-scope--internal">{agentModeLabel(agent)}</span>
-                    <span className={`skills-chip ${pillToneClass(agentStatusTone(agent))}`}>
-                      {agent.routeReady ? <CheckCircle2 size={12} /> : <AlertTriangle size={12} />}
-                      {agentStatusLabel(agent)}
-                    </span>
-                  </span>
-                </button>
-
-                <div className="skills-mcp-group__body" aria-hidden={!open}>
-                  <div className="skills-mcp-flat">
-                    <div className="skills-mcp-flat__head">
-                      <span className="skills-mcp-child__main">
-                        <span className="skills-mcp-child__name">调用方式</span>
-                        <span className="skills-mcp-child__desc">
-                          在主对话中发起任务，完成后结果会回写到原对话的任务卡片。
-                        </span>
-                      </span>
-                      <span className="skills-mcp-flat__meta">
-                        <span className={`skills-chip ${pillToneClass(agentStatusTone(agent))}`}>{agent.routeReady ? "路由就绪" : agent.reason || "待配置"}</span>
-                      </span>
-                    </div>
-
-                    <div className="skills-mcp-tools">
-                      {agentTools.slice(0, 8).map((tool) => (
-                        <div key={`${agent.id}:${tool.name}`} className="skills-mcp-tool">
-                          <div className="skills-mcp-tool__label">能力</div>
-                          <div className="skills-mcp-tool__name">{tool.name}</div>
-                          <div className="skills-mcp-tool__desc">{tool.description}</div>
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="skills-mcp-related">
-                      最近任务：
-                      {agentTasks.length === 0 ? " 暂无" : ""}
-                    </div>
-                    {agentTasks.length > 0 && (
-                      <div className="skills-mcp-tools">
-                        {agentTasks.slice(0, 4).map((task) => (
-                          <div key={task.id} className="skills-mcp-tool">
-                            <div className="skills-mcp-tool__label">{task.createdAt ? new Date(task.createdAt).toLocaleString("zh-CN", { hour12: false }) : task.id}</div>
-                            <div className="skills-mcp-tool__name">{task.input.slice(0, 48)}{task.input.length > 48 ? "..." : ""}</div>
-                            <div className="skills-mcp-tool__desc">
-                              <span className={`skills-chip ${pillToneClass(taskStatusTone(task.status))}`}>{taskStatusLabel(task.status)}</span>
-                              {task.errorMessage ? ` ${task.errorMessage}` : ""}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </section>
-            );
-          })}
+                  <span className="skills-catalog-card__link">查看 <ChevronRight /></span>
+                </span>
+              </button>
+            </article>
+          ))}
         </div>
       )}
+
+      <Dialog open={Boolean(selectedAgent)} onOpenChange={(open) => { if (!open) setDetailAgentId(null); }}>
+        {selectedAgent ? (
+          <DialogContent className="skills-mcp-detail skills-expert-detail" aria-describedby="skills-expert-detail-description">
+            <div className="skills-mcp-detail__header">
+              <span className="skills-mcp-detail__icon" data-source={selectedAgent.source === "personal" ? "personal" : "preset"}>
+                {agentDisplayIcon(selectedAgent)}
+              </span>
+              <div className="skills-mcp-detail__intro">
+                <DialogTitle>{selectedAgent.name}</DialogTitle>
+                <div className="skills-mcp-detail__meta">
+                  <span className="skills-mcp-detail__status" data-health={agentStatusHealth(selectedAgent)}>
+                    <span aria-hidden="true" />{agentStatusLabel(selectedAgent)}
+                  </span>
+                  <span>{selectedAgent.source === "personal" ? "我的专家" : "公共专家"}</span>
+                  <span>{agentModeLabel(selectedAgent)}协作</span>
+                </div>
+                <DialogDescription id="skills-expert-detail-description">{agentDisplayDescription(selectedAgent)}</DialogDescription>
+              </div>
+            </div>
+
+            <div className="skills-mcp-detail__body stealth-scrollbar">
+              {selectedAgent.reason && !selectedAgent.routeReady ? (
+                <div className="skills-mcp-detail__warning">
+                  <CircleAlert aria-hidden="true" />
+                  <span>{selectedAgent.reason}</span>
+                </div>
+              ) : null}
+              <div className="skills-mcp-detail__section-head">
+                <span>专业能力</span>
+                <span>{agentCapabilityTools(selectedAgent).length}</span>
+              </div>
+              <div className="skills-mcp-detail__tools">
+                {agentCapabilityTools(selectedAgent).map((tool) => (
+                  <div key={`${selectedAgent.id}:${tool.name}`} className="skills-mcp-detail__tool">
+                    <span className="skills-mcp-detail__tool-icon"><Check aria-hidden="true" /></span>
+                    <span className="skills-mcp-detail__tool-content">
+                      <span className="skills-mcp-detail__tool-name">{tool.name}</span>
+                      <span className="skills-mcp-detail__tool-id skills-expert-detail__capability">{tool.description}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="skills-mcp-detail__section-head skills-expert-detail__tasks-head">
+                <span>最近任务</span>
+                <span>{(recentTaskByAgent.get(selectedAgent.id) || []).length}</span>
+              </div>
+              {(recentTaskByAgent.get(selectedAgent.id) || []).length > 0 ? (
+                <div className="skills-expert-detail__tasks">
+                  {(recentTaskByAgent.get(selectedAgent.id) || []).slice(0, 4).map((task) => (
+                    <div key={task.id} className="skills-expert-detail__task">
+                      <span className="skills-expert-detail__task-main">
+                        <span>{task.input.slice(0, 66)}{task.input.length > 66 ? "…" : ""}</span>
+                        <small>{task.createdAt ? new Date(task.createdAt).toLocaleString("zh-CN", { hour12: false }) : task.id}</small>
+                      </span>
+                      <span className="skills-expert-detail__task-status" data-status={task.status}>{taskStatusLabel(task.status)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="skills-expert-detail__tasks-empty">还没有调用记录</div>
+              )}
+            </div>
+
+            <div className="skills-mcp-detail__footer">
+              <span className="skills-mcp-detail__connection-note">任务完成后会自动写回主对话</span>
+              <div className="skills-mcp-detail__footer-actions">
+                <button
+                  className="skills-mcp-detail__button skills-mcp-detail__button--primary"
+                  type="button"
+                  disabled={!selectedAgent.routeReady}
+                  onClick={() => {
+                    const expertId = selectedAgent.id;
+                    setDetailAgentId(null);
+                    onTryExpert?.(expertId);
+                  }}
+                >
+                  {selectedAgent.routeReady ? "召唤专家" : "暂不可用"} <ArrowRight />
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        ) : null}
+      </Dialog>
     </div>
   );
 }
 
 function SkillsToolbar({
-  q,
-  setQ,
   source,
   setSource,
   state,
   setState,
 }: {
-  q: string;
-  setQ: (v: string) => void;
   source: SourceFilter;
   setSource: (v: SourceFilter) => void;
   state: StateFilter;
@@ -850,21 +1086,17 @@ function SkillsToolbar({
   ];
 
   return (
-    <div className="skills-toolbar">
-      <div className="skills-search">
-        <Search size={14} className="skills-search-icon" />
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索技能名称、说明或来源" />
-      </div>
-      <div className="skills-tabs" aria-label="技能来源筛选">
+    <div className="skills-toolbar skills-my-filters">
+      <div className="skills-mcp-filters" role="tablist" aria-label="技能来源筛选">
         {sourceFilters.map((item) => (
-          <button key={item.key} className={`skills-tab ${source === item.key ? "active" : ""}`} onClick={() => setSource(item.key)}>
+          <button key={item.key} type="button" role="tab" aria-selected={source === item.key} className="skills-mcp-filter" data-active={source === item.key ? "true" : "false"} onClick={() => setSource(item.key)}>
             {item.label}
           </button>
         ))}
       </div>
-      <div className="skills-tabs" aria-label="技能状态筛选">
+      <div className="skills-mcp-filters" role="tablist" aria-label="技能状态筛选">
         {stateFilters.map((item) => (
-          <button key={item.key} className={`skills-tab ${state === item.key ? "active" : ""}`} onClick={() => setState(item.key)}>
+          <button key={item.key} type="button" role="tab" aria-selected={state === item.key} className="skills-mcp-filter" data-active={state === item.key ? "true" : "false"} onClick={() => setState(item.key)}>
             {item.label}
           </button>
         ))}
@@ -884,39 +1116,43 @@ function SkillRow({
   onToggle: (enabled: boolean) => void;
   busy: boolean;
 }) {
-  const tone = stateTone(skill.state);
   const canToggle = sourceCanToggle(skill);
   return (
-    <div className="skills-row">
-      <div className="skills-row-main" onClick={onOpen}>
-        <div className="skills-icon">{skillIcon(skill)}</div>
-        <div className="min-w-0">
-          <div className="skills-name">{displayNameOf(skill)}</div>
-          <div className="skills-desc">{descriptionOf(skill)}</div>
-          <div className="skills-badges">
-            <SkillPill>{sourceIcon(skill.source.kind)} {SOURCE_LABEL[skill.source.kind]}</SkillPill>
-            <SkillPill tone={tone}>{STATE_LABEL[skill.state]}</SkillPill>
-            {skill.review.state !== "none" && <SkillPill tone={skill.review.state === "failed" ? "danger" : "warn"}>审核：{skill.review.state}</SkillPill>}
-          </div>
-          {["sync_failed", "source_missing", "review_failed"].includes(skill.state) && (
-            <div className="skills-danger-text text-xs mt-1">
-              {reasonOf(skill) || "需要处理后才能使用"}
-            </div>
-          )}
-        </div>
+    <div
+      className="skills-my-card skills-catalog-card settings-card"
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+    >
+      <div className="skills-catalog-card__head">
+        <span className="skills-catalog-card__icon" aria-hidden="true">{skillIcon(skill)}</span>
+        <span className="skills-catalog-card__title-wrap">
+          <span className="skills-catalog-card__title">{displayNameOf(skill)}</span>
+        </span>
+        <span className="skills-catalog-card__status">
+          <button
+            className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`}
+            type="button"
+            disabled={busy || !canToggle}
+            onClick={(event) => {
+              event.stopPropagation();
+              if (canToggle) onToggle(!skill.enabled);
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            aria-label={canToggle ? (skill.enabled ? "停用技能" : "启用技能") : "技能当前不可切换"}
+            title={canToggle ? (skill.enabled ? "停用技能" : "启用技能") : "技能当前不可切换"}
+          >
+            <span className={`skills-switch-dot ${skill.enabled ? "on" : ""}`} />
+          </button>
+        </span>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          className={`skills-switch ${skill.enabled ? "is-on" : "is-off"}`}
-          disabled={busy || !canToggle}
-          onClick={() => canToggle && onToggle(!skill.enabled)}
-          aria-label={canToggle ? (skill.enabled ? "停用技能" : "启用技能") : "技能当前不可切换"}
-          title={canToggle ? undefined : "技能当前不可切换"}
-        >
-          <span className={`skills-switch-dot ${skill.enabled ? "on" : ""}`} />
-        </button>
-        <button className="skills-btn" onClick={onOpen}>详情</button>
-      </div>
+      <div className="skills-catalog-card__desc">{descriptionOf(skill)}</div>
     </div>
   );
 }
@@ -1089,21 +1325,32 @@ function SkillDetailModal({
   );
 }
 
-export function SkillsPage({ adoptId, onChanged }: {
+export function SkillsPage({ adoptId, onChanged, onAddMcp, onManageMcp, onTryMcp, onMcpChanged, onAddExpert, onManageExpert, onTryExpert }: {
   skills?: { shared: any[]; system: any[]; private: any[] } | null | undefined;
   canEdit?: boolean;
   pending?: boolean;
   onToggle?: (skillId: string, enable: boolean, source: "shared" | "system") => void;
   adoptId?: string;
   onChanged?: () => void | Promise<void>;
+  onAddMcp?: () => void;
+  onManageMcp?: () => void;
+  onTryMcp?: () => void;
+  onMcpChanged?: () => void | Promise<void>;
+  onAddExpert?: () => void;
+  onManageExpert?: () => void;
+  onTryExpert?: (expertId: string) => void;
 }) {
   const { confirm, dialog } = useConfirmDialog();
   const [skillTab, setSkillTab] = useState<SkillTab>(() => cachedSkillTab());
+  const [lastSkillView, setLastSkillView] = useState<"mine" | "market">(() => cachedSkillTab() === "market" ? "market" : "mine");
   const [items, setItems] = useState<RegistrySkill[]>([]);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RegistrySkill | null>(null);
   const [q, setQ] = useState("");
+  const [marketQuery, setMarketQuery] = useState("");
+  const [mcpQuery, setMcpQuery] = useState("");
+  const [expertQuery, setExpertQuery] = useState("");
   const [qDebounced, setQDebounced] = useState("");
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
@@ -1128,6 +1375,7 @@ export function SkillsPage({ adoptId, onChanged }: {
     try {
       window.localStorage.setItem(SKILL_TAB_CACHE_KEY, skillTab);
     } catch {}
+    if (skillTab === "mine" || skillTab === "market") setLastSkillView(skillTab);
     if (skillTab === "mine") void load();
   }, [adoptId, skillTab]);
 
@@ -1146,14 +1394,6 @@ export function SkillsPage({ adoptId, onChanged }: {
       return `${skill.id} ${displayNameOf(skill)} ${descriptionOf(skill)} ${SOURCE_LABEL[skill.source.kind]}`.toLowerCase().includes(qDebounced);
     });
   }, [items, qDebounced, sourceFilter, stateFilter]);
-
-  const counts = useMemo(() => {
-    return {
-      total: items.length,
-      attention: items.filter((x) => ["sync_failed", "source_missing", "review_pending", "reviewing", "review_failed"].includes(x.state)).length,
-      ready: items.filter((x) => x.state === "ready").length,
-    };
-  }, [items]);
 
   const reloadDetail = (nextItems: RegistrySkill[]) => {
     if (!detail) return;
@@ -1284,6 +1524,7 @@ export function SkillsPage({ adoptId, onChanged }: {
         toast.success("技能已上传并同步到运行环境");
       }
       setSourceFilter("uploaded");
+      setSkillTab("mine");
       await load();
       await onChanged?.();
     } catch (e: any) {
@@ -1294,73 +1535,131 @@ export function SkillsPage({ adoptId, onChanged }: {
     }
   };
 
+  const activeSearch = skillTab === "mine"
+    ? q
+    : skillTab === "market"
+      ? marketQuery
+      : skillTab === "mcp"
+        ? mcpQuery
+        : expertQuery;
+  const updateActiveSearch = (value: string) => {
+    if (skillTab === "mine") setQ(value);
+    else if (skillTab === "market") setMarketQuery(value);
+    else if (skillTab === "mcp") setMcpQuery(value);
+    else setExpertQuery(value);
+  };
+  const activeSearchPlaceholder = skillTab === "mcp"
+    ? "搜索工具…"
+    : skillTab === "agent"
+      ? "搜索专家…"
+      : "搜索技能…";
+
   return (
     <PageContainer title="插件中心">
       {dialog}
       <div className="skills-page">
-        <div className="page-tabs" role="tablist" aria-label="插件分区" onKeyDown={(e) => handleRovingTabKey(e, SKILL_TAB_KEYS, skillTab, setSkillTab)}>
-          <button id="skills-tab-mine" className="page-tab" data-active={skillTab === "mine" ? "true" : "false"} role="tab" aria-selected={skillTab === "mine"} aria-controls="skills-panel-mine" tabIndex={skillTab === "mine" ? 0 : -1} onClick={() => setSkillTab("mine")}>
-            <Package className="page-tab__icon" aria-hidden="true" />
-            技能管理
-          </button>
-          <button id="skills-tab-market" className="page-tab" data-active={skillTab === "market" ? "true" : "false"} role="tab" aria-selected={skillTab === "market"} aria-controls="skills-panel-market" tabIndex={skillTab === "market" ? 0 : -1} onClick={() => setSkillTab("market")}>
+        <div className="skills-console-toolbar">
+        <div className="page-tabs" role="tablist" aria-label="插件分区" onKeyDown={(e) => handleRovingTabKey(e, SKILL_NAV_TAB_KEYS, skillTab === "mine" ? "market" : skillTab, setSkillTab)}>
+          <button id="skills-tab-market" className="page-tab" data-active={skillTab === "market" || skillTab === "mine" ? "true" : "false"} role="tab" aria-selected={skillTab === "market" || skillTab === "mine"} aria-controls={skillTab === "mine" ? "skills-panel-mine" : "skills-panel-market"} tabIndex={skillTab === "market" || skillTab === "mine" ? 0 : -1} onClick={() => setSkillTab(lastSkillView)}>
             <Store className="page-tab__icon" aria-hidden="true" />
-            技能发现
-          </button>
-          <button id="skills-tab-mcp" className="page-tab" data-active={skillTab === "mcp" ? "true" : "false"} role="tab" aria-selected={skillTab === "mcp"} aria-controls="skills-panel-mcp" tabIndex={skillTab === "mcp" ? 0 : -1} onClick={() => setSkillTab("mcp")}>
-            <Wrench className="page-tab__icon" aria-hidden="true" />
-            工具连接
+            技能
           </button>
           <button id="skills-tab-agent" className="page-tab" data-active={skillTab === "agent" ? "true" : "false"} role="tab" aria-selected={skillTab === "agent"} aria-controls="skills-panel-agent" tabIndex={skillTab === "agent" ? 0 : -1} onClick={() => setSkillTab("agent")}>
             <Bot className="page-tab__icon" aria-hidden="true" />
-            专家协作
+            专家
+          </button>
+          <button id="skills-tab-mcp" className="page-tab" data-active={skillTab === "mcp" ? "true" : "false"} role="tab" aria-selected={skillTab === "mcp"} aria-controls="skills-panel-mcp" tabIndex={skillTab === "mcp" ? 0 : -1} onClick={() => setSkillTab("mcp")}>
+            <Plug className="page-tab__icon" aria-hidden="true" />
+            连接器
           </button>
         </div>
+        <div className="skills-console-toolbar__actions">
+          <label className="skills-search skills-console-search">
+            <Search size={14} aria-hidden="true" />
+            <input value={activeSearch} onChange={(event) => updateActiveSearch(event.target.value)} placeholder={activeSearchPlaceholder} />
+          </label>
+          {skillTab === "market" || skillTab === "mine" ? (
+            <>
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept=".zip,.skill"
+                style={{ display: "none" }}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void onUploadFile(file);
+                }}
+              />
+              <button className="skills-console-action" type="button" disabled={uploading} onClick={() => uploadInputRef.current?.click()}>
+                {uploading ? <RefreshCw className="animate-spin" aria-hidden="true" /> : <Upload aria-hidden="true" />}
+                {uploading ? "添加中" : "添加技能"}
+              </button>
+            </>
+          ) : skillTab === "mcp" ? (
+            <>
+              {onManageMcp ? <button className="skills-console-action" type="button" onClick={onManageMcp}><Plug aria-hidden="true" /> 我的连接</button> : null}
+              {onAddMcp ? <button className="skills-console-action" type="button" onClick={onAddMcp}><Plus aria-hidden="true" /> 添加连接</button> : null}
+            </>
+          ) : (
+            <>
+              {onManageExpert ? <button className="skills-console-action" type="button" onClick={onManageExpert}><Bot aria-hidden="true" /> 我的专家</button> : null}
+              {onAddExpert ? <button className="skills-console-action" type="button" onClick={onAddExpert}><Plus aria-hidden="true" /> 添加专家</button> : null}
+            </>
+          )}
+        </div>
+        </div>
+
+        {(skillTab === "market" || skillTab === "mine") && (
+          <div className="skills-secondary-tabs" role="tablist" aria-label="技能子页面">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={skillTab === "market"}
+              data-active={skillTab === "market" ? "true" : "false"}
+              onClick={() => setSkillTab("market")}
+            >
+              技能市场
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={skillTab === "mine"}
+              data-active={skillTab === "mine" ? "true" : "false"}
+              onClick={() => setSkillTab("mine")}
+            >
+              我的技能
+            </button>
+          </div>
+        )}
 
         {skillTab === "market" && (
           <div id="skills-panel-market" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-tab-market" tabIndex={0}>
-            <MarketplacePage adoptId={adoptId} onChanged={onChanged} />
+            <MarketplacePage adoptId={adoptId} onChanged={onChanged} query={marketQuery} />
           </div>
         )}
 
         {skillTab === "mcp" && (
           <div id="skills-panel-mcp" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-tab-mcp" tabIndex={0}>
-            <McpToolsPage adoptId={adoptId} />
+            <McpToolsPage
+              adoptId={adoptId}
+              query={mcpQuery}
+              onTryMcp={onTryMcp}
+              onConnectionsChanged={onMcpChanged}
+            />
           </div>
         )}
 
         {skillTab === "agent" && (
           <div id="skills-panel-agent" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-tab-agent" tabIndex={0}>
-            <AgentToolsPage adoptId={adoptId} />
+            <AgentToolsPage adoptId={adoptId} query={expertQuery} onTryExpert={onTryExpert} />
           </div>
         )}
 
         {skillTab === "mine" && (
           <div id="skills-panel-mine" className="skills-panel stealth-scrollbar" role="tabpanel" aria-labelledby="skills-tab-mine" tabIndex={0}>
-            <div className="skills-header">
-              <div className="skills-summary skills-muted-text text-xs">
-                共 {counts.total} 个技能 · {counts.ready} 个可用 · {counts.attention} 个需处理
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="skills-btn" onClick={() => void load()} disabled={loading}><RefreshCw size={14} /> 刷新</button>
-                <input
-                  ref={uploadInputRef}
-                  type="file"
-                  accept=".zip,.skill"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void onUploadFile(file);
-                  }}
-                />
-                <button className="skills-btn" disabled={uploading} onClick={() => uploadInputRef.current?.click()}>
-                  <Upload size={13} /> {uploading ? "上传中..." : "上传技能"}
-                </button>
-              </div>
-            </div>
-            <SkillsToolbar q={q} setQ={setQ} source={sourceFilter} setSource={setSourceFilter} state={stateFilter} setState={setStateFilter} />
+            <SkillsToolbar source={sourceFilter} setSource={setSourceFilter} state={stateFilter} setState={setStateFilter} />
 
-            <div className="skills-list">
+            <div className="skills-market-grid skills-mine-grid">
               {loading && <div className="settings-card skills-muted-card text-sm">正在加载技能...</div>}
               {!loading && filtered.length === 0 && <div className="settings-card skills-muted-card text-sm">暂无匹配技能</div>}
               {!loading && filtered.map((skill) => (

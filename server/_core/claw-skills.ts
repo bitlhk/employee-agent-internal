@@ -146,18 +146,20 @@ type McpToolGroupOverride = {
 const DEFAULT_MCP_CATEGORY = "MCP 工具";
 
 const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
-  { id: "wind_financial_docs", name: "Wind 财务与公告", category: "公共金融数据", description: "财务资料、公告与金融文档查询。", serverIds: ["wind_financial_docs"] },
-  { id: "wind_stock_data", name: "Wind 股票数据", category: "公共金融数据", description: "股票行情、财务和市场数据查询。", serverIds: ["wind_stock_data"] },
-  { id: "wind_index_data", name: "Wind 指数数据", category: "公共金融数据", description: "指数、板块与市场数据查询。", serverIds: ["wind_index_data"] },
-  { id: "qieman", name: "且慢基金数据", category: "公共金融数据", description: "基金产品与组合数据查询。", serverIds: ["qieman"] },
-  { id: "bond_quote_parse", name: "债券报价", category: "内部业务 MCP", description: "债券报价识别与结构化处理。", serverIds: ["bond_quote_parse"] },
-  { id: "group_insurance_audit", name: "团险审核", category: "内部业务 MCP", description: "团体保险材料审核与校验。", serverIds: ["group_insurance_audit"] },
-  { id: "credential_skills", name: "凭证审核", category: "内部业务 MCP", description: "业务凭证识别、核验与审核。", serverIds: ["credential_skills"] },
-  { id: "insurance_telesales_recommend", name: "保险电销推荐", category: "内部业务 MCP", description: "保险电销场景的产品与话术推荐。", serverIds: ["insurance_telesales_recommend"] },
-  { id: "insurance_kb", name: "保险知识库", category: "内部业务 MCP", description: "保险产品、条款与业务知识查询。", serverIds: ["insurance_kb"] },
-  { id: "post_loan_risk_data", name: "贷后风险数据", category: "内部业务 MCP", description: "企业贷后风险指标与预警数据查询。", serverIds: ["post_loan_risk_data"] },
-  { id: "wealth_assistant_customer", name: "财富客户数据", category: "内部业务 MCP", description: "客户经理名下客户与持仓信息查询。", serverIds: ["wealth_assistant_customer"] },
-  { id: "wealth_assistant_product", name: "财富产品数据", category: "内部业务 MCP", description: "财富产品筛选、匹配与详情查询。", serverIds: ["wealth_assistant_product"] },
+  { id: "wind_financial_docs", name: "Wind 财务与公告", category: "公共金融数据", description: "查询上市公司财务指标、公告、新闻与研报资料，辅助公司研究和事实核验。", serverIds: ["wind_financial_docs"] },
+  { id: "wind_stock_data", name: "Wind 股票数据", category: "公共金融数据", description: "查询 A 股、港股和美股行情、K 线、财务与风险指标，用于个股分析。", serverIds: ["wind_stock_data"] },
+  { id: "wind_index_data", name: "Wind 指数数据", category: "公共金融数据", description: "查询指数和行业板块的行情、成分、估值与技术指标，把握市场结构。", serverIds: ["wind_index_data"] },
+  { id: "qieman", name: "且慢基金数据", category: "公共金融数据", description: "查询公募基金档案、净值、持仓和组合表现，用于基金筛选与对比。", serverIds: ["qieman"] },
+  { id: "bond_quote_parse", name: "债券报价", category: "内部业务 MCP", description: "识别文本或文件中的债券报价，并转换为可检索、可计算的结构化数据。", serverIds: ["bond_quote_parse"] },
+  { id: "group_insurance_audit", name: "团险审核", category: "内部业务 MCP", description: "核对团险投保材料、关键字段和审核规则，提示缺失信息与业务风险。", serverIds: ["group_insurance_audit"] },
+  { id: "credential_skills", name: "凭证审核", category: "内部业务 MCP", description: "识别业务凭证和影像内容，校验关键字段并输出结构化审核结果。", serverIds: ["credential_skills"] },
+  { id: "insurance_telesales_recommend", name: "保险电销推荐", category: "内部业务 MCP", description: "结合客户需求匹配保险产品，生成电销沟通重点、推荐理由和话术建议。", serverIds: ["insurance_telesales_recommend"] },
+  { id: "insurance_kb", name: "保险知识库", category: "内部业务 MCP", description: "检索保险产品、责任条款、投保规则与业务口径，回答保险专业问题。", serverIds: ["insurance_kb"] },
+  { id: "post_loan_risk_data", name: "贷后风险数据", category: "内部业务 MCP", description: "查询企业贷后指标、风险事件与预警信号，支撑风险评估和持续跟踪。", serverIds: ["post_loan_risk_data"] },
+  { id: "wealth_assistant_customer", name: "财富客户数据", category: "内部业务 MCP", description: "查询当前客户经理负责的客户、资产、持仓与服务信息，辅助客户洞察。", serverIds: ["wealth_assistant_customer"] },
+  { id: "wealth_assistant_product", name: "财富产品数据", category: "内部业务 MCP", description: "查询财富产品详情、风险等级与适配条件，完成产品筛选和客户匹配。", serverIds: ["wealth_assistant_product"] },
+  { id: "platform_tools", name: "平台协作工具", category: "平台能力", description: "管理投递通道、定时任务和跨智能体协作，让对话结果进入后续工作流程。", serverIds: ["platform_tools"] },
+  { id: "custom_mcp_gateway", name: "自定义连接网关", category: "平台能力", description: "将用户添加的 MCP 安全接入当前智能体，并按用户和智能体实例隔离调用。", serverIds: ["custom_mcp_gateway"] },
 ];
 
 function readableMcpName(serverId: string): string {

@@ -5283,6 +5283,30 @@ export default function Home() {
             <MainPanel
               activePage={activePage as Exclude<PageKey, "chat">}
               adoptId={resolvedAdoptId || ""}
+              onAddMcp={() => openCustomMcpDialog("add")}
+              onManageMcp={() => openCustomMcpDialog("manage")}
+              onAddExpert={() => openPersonalExpertDialog("add")}
+              onManageExpert={() => openPersonalExpertDialog("manage")}
+              onMcpChanged={loadComposerConnectors}
+              onTryMcp={() => {
+                setSidebarSelection("navigation");
+                setActivePage("chat");
+                setMobileSidebarOpen(false);
+                window.setTimeout(() => {
+                  document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus();
+                }, 0);
+              }}
+              onTryExpert={(expertId) => {
+                setSelectedComposerExpertId(expertId);
+                setDetachedExpertId((current) => current === expertId ? "" : current);
+                setSelectedComposerSkillId("");
+                setSidebarSelection("navigation");
+                setActivePage("chat");
+                setMobileSidebarOpen(false);
+                window.setTimeout(() => {
+                  document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus();
+                }, 0);
+              }}
               skills={{
                 data: lingxiaSkills as any,
                 canEdit: !!user,

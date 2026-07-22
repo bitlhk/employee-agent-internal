@@ -35,9 +35,23 @@ export function MainPanel({
   activePage,
   skills,
   adoptId,
+  onAddMcp,
+  onManageMcp,
+  onTryMcp,
+  onMcpChanged,
+  onAddExpert,
+  onManageExpert,
+  onTryExpert,
 }: {
   activePage: PanelPageKey;
   adoptId?: string;
+  onAddMcp?: () => void;
+  onManageMcp?: () => void;
+  onTryMcp?: () => void;
+  onMcpChanged?: () => void | Promise<void>;
+  onAddExpert?: () => void;
+  onManageExpert?: () => void;
+  onTryExpert?: (expertId: string) => void;
   skills?: {
     data?: { shared: any[]; system: any[]; private: any[] } | null;
     canEdit?: boolean;
@@ -72,7 +86,7 @@ export function MainPanel({
   const renderPage = (page: PanelPageKey): ReactNode => {
     if (page === "channels" || page === "weixin") return <ChannelsPage adoptId={adoptId || ""} />;
     if (page === "skills") {
-      return <SkillsPage skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} />;
+      return <SkillsPage skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
     }
     if (page === "agent") return <GrowthPage adoptId={adoptId || ""} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;

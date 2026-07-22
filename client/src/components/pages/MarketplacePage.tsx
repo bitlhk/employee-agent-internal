@@ -11,7 +11,6 @@ import {
   Layers,
   Loader2,
   RefreshCw,
-  Search,
   ShieldCheck,
   Sparkles,
   Store,
@@ -148,9 +147,11 @@ function normalizeMarketSkills(list: any[]): MarketSkill[] {
 export function MarketplacePage({
   adoptId,
   onChanged,
+  query,
 }: {
   adoptId?: string;
   onChanged?: () => void | Promise<void>;
+  query: string;
 }) {
   const { confirm, dialog } = useConfirmDialog();
   const [items, setItems] = useState<MarketSkill[]>([]);
@@ -158,7 +159,6 @@ export function MarketplacePage({
   const [loadError, setLoadError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
   const [installing, setInstalling] = useState<number | null>(null);
-  const [q, setQ] = useState("");
   const [activeOrigin, setActiveOrigin] = useState<OriginKey>("opensource");
   const [activeProviders, setActiveProviders] = useState<Set<string>>(new Set());
   const [activeRoleTags, setActiveRoleTags] = useState<Set<string>>(new Set());
@@ -363,7 +363,7 @@ export function MarketplacePage({
 
   const filtered = items.filter((x) => {
     const matchOrigin = x.origin === activeOrigin;
-    const matchQ = !q.trim() || `${x.title} ${x.description} ${x.skillId}`.toLowerCase().includes(q.toLowerCase());
+    const matchQ = !query.trim() || `${x.title} ${x.description} ${x.skillId}`.toLowerCase().includes(query.toLowerCase());
     const matchProvider = activeProviders.size === 0 || activeProviders.has(x.provider);
     const matchRole = activeRoleTags.size === 0 || activeRoleTags.has(x.roleTag);
     return matchOrigin && matchQ && matchProvider && matchRole;
@@ -376,22 +376,23 @@ export function MarketplacePage({
   return (
     <div className="skills-market">
       {dialog}
-      <div className="skills-market-toolbar">
-        <div className="skills-search skills-market-search">
-          <Search size={14} className="skills-search-icon" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="搜索技能..." />
-        </div>
-        <div className="skills-market-categories" aria-label="技能广场来源">
+      <div className="skills-section-filterbar">
+        <div className="skills-mcp-filters skills-market-categories-v2" role="tablist" aria-label="技能来源筛选">
           {(Object.keys(ORIGIN_META) as OriginKey[]).map((origin) => {
             const meta = ORIGIN_META[origin];
-            const Icon = meta.Icon;
             const active = activeOrigin === origin;
             const count = originCounts[origin] || 0;
             return (
-              <button key={origin} className={`skills-tab ${active ? "active" : ""}`} onClick={() => selectOrigin(origin)}>
-                <Icon size={13} />
-                {meta.label}
-                <span className="skills-market-count">{count}</span>
+              <button
+                key={origin}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className="skills-mcp-filter"
+                data-active={active ? "true" : "false"}
+                onClick={() => selectOrigin(origin)}
+              >
+                {meta.label}<span>{count}</span>
               </button>
             );
           })}
@@ -473,7 +474,7 @@ export function MarketplacePage({
             return (
               <div
                 key={item.id}
-                className="skills-market-card settings-card"
+                className="skills-market-card skills-catalog-card settings-card"
                 role="button"
                 tabIndex={0}
                 onClick={() => setSelectedSkill(item)}
@@ -484,20 +485,18 @@ export function MarketplacePage({
                   }
                 }}
               >
-                <div className="skills-market-card__head">
-                  <div className="skills-market-card__title-wrap">
-                    <div className="skills-market-card__title">
-                      <Icon size={15} />
-                      <span>{title}</span>
-                    </div>
+                <div className="skills-market-card__head skills-catalog-card__head">
+                  <span className="skills-catalog-card__icon" aria-hidden="true"><Icon /></span>
+                  <div className="skills-market-card__title-wrap skills-catalog-card__title-wrap">
+                    <div className="skills-market-card__title skills-catalog-card__title">{title}</div>
                     <div className="skills-market-card__meta">{item.author} · v{item.version}</div>
                   </div>
-                  <span className="skills-chip skills-chip--neutral">{roleChipLabel(item)}</span>
+                  <span className="skills-chip skills-chip--neutral skills-catalog-card__status">{roleChipLabel(item)}</span>
                 </div>
 
-                <div className="skills-market-card__desc">{item.description}</div>
+                <div className="skills-market-card__desc skills-catalog-card__desc">{item.description}</div>
 
-                <div className="skills-market-card__foot">
+                <div className="skills-market-card__foot skills-catalog-card__footer">
                   <span className="skills-market-card__installs"><Download size={12} />{item.installCount} 次安装</span>
                   <button
                     className="skills-btn"
