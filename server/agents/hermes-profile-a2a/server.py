@@ -1044,7 +1044,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
+        except ValueError:
             json_response(self, 400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
             return
         request_id = payload.get("id") if isinstance(payload, dict) else None
