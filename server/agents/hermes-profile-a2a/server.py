@@ -26,7 +26,12 @@ ROOT = Path(__file__).resolve().parent
 MERGE_TOOL = ROOT / "merge_verified_pages_linux.py"
 
 
-def load_env(path: Path) -> None:
+def load_env(
+    path: Path,
+    *,
+    override: bool = False,
+    allowed_keys: set[str] | None = None,
+) -> None:
     if not path.is_file():
         return
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -36,7 +41,9 @@ def load_env(path: Path) -> None:
         key, value = line.split("=", 1)
         key = key.strip()
         value = value.strip().strip("\"").strip("'")
-        if key and key not in os.environ:
+        if allowed_keys is not None and key not in allowed_keys:
+            continue
+        if key and (override or key not in os.environ):
             os.environ[key] = value
 
 
@@ -45,6 +52,20 @@ load_env(ROOT / ".env")
 HOST = os.environ.get("A2A_HOST", "127.0.0.1")
 PORT = int(os.environ.get("A2A_PORT", "8898"))
 PROFILE = os.environ.get("HERMES_PROFILE", "ppt-expert").strip()
+PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+if not PROFILE_RE.fullmatch(PROFILE):
+    raise SystemExit("HERMES_PROFILE is invalid")
+PROFILE_CREDENTIALS_FILE = Path(
+    os.environ.get(
+        "A2A_PROFILE_CREDENTIALS_FILE",
+        f"/home/ubuntu/.hermes/profiles/{PROFILE}/a2a-credentials.env",
+    )
+).expanduser()
+load_env(
+    PROFILE_CREDENTIALS_FILE,
+    override=True,
+    allowed_keys={"A2A_BEARER_TOKEN", "A2A_DOWNLOAD_SECRET"},
+)
 HERMES_BIN = os.environ.get("HERMES_BIN", "/home/ubuntu/.local/bin/hermes")
 SHARED_WORKSPACE = Path(
     os.environ.get(
@@ -191,6 +212,14 @@ SAFE_INTERACTION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 SECRET_RE = re.compile(
     r"(?i)(?:bearer\s+|(?:api[_-]?key|token|secret|password)\s*[=:]\s*)[^\s,;]+"
 )
+SENSITIVE_ENV_KEY_RE = re.compile(
+    r"(?i)(?:^|_)(?:api_?key|token|secret|password|passwd|private_?key|credentials?)(?:_|$)"
+)
+SENSITIVE_ENV_KEYS = {
+    "DATABASE_URL",
+    "REDIS_URL",
+    "SMTP_URL",
+}
 STATE_LOCK = threading.Lock()
 LOCKS_LOCK = threading.Lock()
 ACTIVE_LOCK = threading.Lock()
@@ -212,7 +241,7 @@ def require_secure_config() -> None:
         raise SystemExit("A2A_BEARER_TOKEN must contain at least 32 characters")
     if len(DOWNLOAD_SECRET) < 32:
         raise SystemExit("A2A_DOWNLOAD_SECRET must contain at least 32 characters")
-    if not PROFILE or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", PROFILE):
+    if not PROFILE_RE.fullmatch(PROFILE):
         raise SystemExit("HERMES_PROFILE is invalid")
     if not Path(HERMES_BIN).is_file():
         raise SystemExit(f"Hermes executable not found: {HERMES_BIN}")
@@ -236,8 +265,37 @@ def require_secure_config() -> None:
             raise SystemExit(f"Linux PPTX merge tool is missing: {MERGE_TOOL}")
 
 
+def is_sensitive_env_key(key: str) -> bool:
+    return key.upper() in SENSITIVE_ENV_KEYS or bool(SENSITIVE_ENV_KEY_RE.search(key))
+
+
+def sensitive_env_values(env: dict[str, str] | None = None) -> set[str]:
+    source = env if env is not None else os.environ
+    return {
+        str(value)
+        for key, value in source.items()
+        if is_sensitive_env_key(key) and len(str(value)) >= 8
+    }
+
+
+def subprocess_environment() -> dict[str, str]:
+    process_env = {
+        key: value
+        for key, value in os.environ.items()
+        if not is_sensitive_env_key(key)
+    }
+    # PM2 gives non-Node apps an IPC descriptor. A later Node child treats the
+    # inherited descriptor as its own channel and aborts after successful work.
+    for key in ("NODE_CHANNEL_FD", "NODE_CHANNEL_SERIALIZATION_MODE", "NODE_UNIQUE_ID"):
+        process_env.pop(key, None)
+    return process_env
+
+
 def redact_error(value: str) -> str:
-    text = SECRET_RE.sub("[REDACTED]", value or "")
+    text = value or ""
+    for secret in sorted(sensitive_env_values(), key=len, reverse=True):
+        text = text.replace(secret, "[REDACTED]")
+    text = SECRET_RE.sub("[REDACTED]", text)
     text = text.replace(str(Path.home()), "~")
     return text[-2_000:]
 
@@ -656,11 +714,7 @@ def run_process(
     task_id: str,
     context_id: str,
 ) -> tuple[str, str, int]:
-    process_env = os.environ.copy()
-    # PM2 gives non-Node apps an IPC descriptor. A later Node child treats the
-    # inherited descriptor as its own channel and aborts after successful work.
-    for key in ("NODE_CHANNEL_FD", "NODE_CHANNEL_SERIALIZATION_MODE", "NODE_UNIQUE_ID"):
-        process_env.pop(key, None)
+    process_env = subprocess_environment()
     shared_node_modules = SHARED_WORKSPACE / "node_modules"
     if shared_node_modules.is_dir():
         existing_node_path = process_env.get("NODE_PATH", "")
@@ -771,7 +825,7 @@ def run_hermes(
     discovered = SESSION_ID_RE.findall(stderr or "")
     next_session_id = discovered[-1] if discovered else session_id
     if returncode != 0:
-        raise HermesRunError(redact_error(stderr or stdout or f"Hermes exited with code {returncode}"))
+        raise HermesRunError(f"{AGENT_NAME}执行失败（退出码 {returncode}），请稍后重试或缩小任务范围")
     answer = read_final_assistant_message(next_session_id)
     if not answer:
         answer_lines = [

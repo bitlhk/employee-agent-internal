@@ -14,4 +14,13 @@ describe("connectorLogo", () => {
   it("uses the Feishu brand for the platform channel connector", () => {
     expect(connectorLogo({ serverId: "platform:feishu" })?.src).toBe("/images/connectors/feishu-logo.png");
   });
+
+  it("uses the uploaded brand assets for knowledge and creation connectors", () => {
+    expect(connectorLogo({ serverId: "catalog", catalogId: "google-drive" })?.src)
+      .toBe("/images/connectors/google-drive-logo.png");
+    expect(connectorLogo({ serverId: "catalog", catalogId: "canva" })?.src)
+      .toBe("/images/connectors/canva-logo.png");
+    expect(connectorLogo({ serverId: "catalog", catalogId: "notion" })?.src)
+      .toBe("/images/connectors/notion-logo.png");
+  });
 });

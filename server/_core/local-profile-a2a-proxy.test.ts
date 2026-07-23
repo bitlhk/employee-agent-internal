@@ -49,6 +49,18 @@ describe("local Hermes profile A2A proxy config", () => {
     });
   });
 
+  it("routes the enabled TCM profile to its isolated loopback sidecar", () => {
+    const env = {
+      PUBLIC_BASE_URL: "https://work.example.com",
+      HERMES_TCM_A2A_PROXY_ENABLED: "true",
+      HERMES_TCM_A2A_PORT: "8900",
+    };
+    expect(resolveTrustedLocalProfileA2ATarget(
+      "https://work.example.com/a2a/tcm-expert",
+      env,
+    )).toEqual({ url: "http://127.0.0.1:8900/", allowPrivate: true });
+  });
+
   it("does not rewrite disabled, foreign-origin, or lookalike routes", () => {
     const enabled = {
       PUBLIC_BASE_URL: "https://work.example.com",

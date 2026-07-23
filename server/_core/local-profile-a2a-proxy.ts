@@ -38,6 +38,11 @@ function profileRouteSpecs(env: LocalProfileA2AEnvironment) {
       publicPath: "/a2a/diagram-expert",
       port: resolveLocalProfileA2AProxyPort(env.HERMES_DIAGRAM_A2A_PORT, 8899),
     },
+    {
+      enabled: localProfileA2AProxyEnabled(env.HERMES_TCM_A2A_PROXY_ENABLED),
+      publicPath: "/a2a/tcm-expert",
+      port: resolveLocalProfileA2AProxyPort(env.HERMES_TCM_A2A_PORT, 8900),
+    },
   ];
 }
 
@@ -135,6 +140,17 @@ export function registerLocalProfileA2AProxy(app: Express): void {
       timeoutMs: resolveLocalProfileA2AProxyTimeout(process.env.HERMES_DIAGRAM_A2A_PROXY_TIMEOUT_MS),
       label: "HERMES-DIAGRAM-A2A",
       unavailableMessage: "Diagram expert is unavailable",
+    });
+  }
+
+  // TCM expert (tcm-expert profile) — knowledge lookup and health education.
+  if (localProfileA2AProxyEnabled(process.env.HERMES_TCM_A2A_PROXY_ENABLED)) {
+    registerOneProfileProxy(app, {
+      publicPath: "/a2a/tcm-expert",
+      port: resolveLocalProfileA2AProxyPort(process.env.HERMES_TCM_A2A_PORT, 8900),
+      timeoutMs: resolveLocalProfileA2AProxyTimeout(process.env.HERMES_TCM_A2A_PROXY_TIMEOUT_MS),
+      label: "HERMES-TCM-A2A",
+      unavailableMessage: "TCM expert is unavailable",
     });
   }
 }

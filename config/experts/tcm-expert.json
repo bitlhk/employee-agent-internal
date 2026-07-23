@@ -1,0 +1,41 @@
+{
+  "id": "tcm-expert",
+  "name": "中医专家",
+  "description": "基于中医经典与经方资料进行知识检索和健康科普，明确区分资料观点与个人医疗建议。",
+  "kind": "remote",
+  "apiUrl": "https://work.linggan.top/a2a/tcm-expert",
+  "apiTokenEnv": "A2A_BEARER_TOKEN",
+  "remoteAgentId": "main",
+  "icon": "医",
+  "enabled": 1,
+  "sortOrder": 50,
+  "maxDailyRequests": 0,
+  "allowedProfiles": "plus,internal",
+  "tags": "中医经典,经方知识,健康科普,异步专家",
+  "providerType": "a2a",
+  "adapterProtocol": "a2a-v1",
+  "capabilities": [
+    "agent",
+    "async-agent",
+    "a2a",
+    "中医经典",
+    "经方知识",
+    "六经辨证",
+    "健康科普"
+  ],
+  "uiConfig": {
+    "badge": "平台",
+    "displayMode": "agent-task",
+    "resultFormat": "markdown"
+  },
+  "endpointConfig": {
+    "stream": false,
+    "method": "message/send",
+    "timeoutMs": 300000,
+    "executionMode": "async",
+    "maxConcurrent": 2,
+    "authType": "bearer",
+    "interactionMode": "session",
+    "supportsCancellation": true
+  }
+}

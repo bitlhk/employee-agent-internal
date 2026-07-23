@@ -41,6 +41,12 @@ describe("custom MCP client policy", () => {
     expect(() => validateCustomMcpAuth({
       endpointUrl: "https://mcp.example.com/mcp",
       authType: "api_key",
+      authHeaderName: "query:token",
+      credential: "",
+    })).toThrow(/凭据/);
+    expect(() => validateCustomMcpAuth({
+      endpointUrl: "https://mcp.example.com/mcp",
+      authType: "api_key",
       authHeaderName: "query:bad parameter",
       credential: "secret",
     })).toThrow(/Query 参数名称/);

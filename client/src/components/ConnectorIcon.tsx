@@ -23,11 +23,14 @@ export type ConnectorIconInput = {
 type ConnectorLogo = { src: string; shape: "square" | "wide" | "natural" };
 
 const CONNECTOR_LOGOS: Record<string, ConnectorLogo> = {
+  canva: { src: "/images/connectors/canva-logo.png", shape: "square" },
   feishu: { src: "/images/connectors/feishu-logo.png", shape: "square" },
   github: { src: "/images/connectors/github-logo.png", shape: "square" },
+  "google-drive": { src: "/images/connectors/google-drive-logo.png", shape: "natural" },
   hengshengjuyuan: { src: "/images/connectors/hengshengjuyuan-logo.png", shape: "square" },
   jinshuju: { src: "/images/connectors/jinshuju-logo.png", shape: "square" },
   mcdonalds: { src: "/images/connectors/mcdonalds-logo.png", shape: "square" },
+  notion: { src: "/images/connectors/notion-logo.png", shape: "square" },
   tianyancha: { src: "/images/connectors/tianyancha-logo.svg", shape: "wide" },
   wind: { src: "/images/connectors/wind-logo.png", shape: "natural" },
   yingmi: { src: "/images/connectors/yingmi-logo.png", shape: "square" },
@@ -40,7 +43,7 @@ export function connectorLogo(input: ConnectorIconInput): ConnectorLogo | null {
   const id = String(input.serverId || "").trim().toLowerCase();
   if (id === "platform:feishu" || id.includes("feishu")) return CONNECTOR_LOGOS.feishu;
   if (id.startsWith("wind_") || id === "wind") return CONNECTOR_LOGOS.wind;
-  for (const key of ["yingmi", "github", "jinshuju", "hengshengjuyuan", "mcdonalds", "yunzhangfang", "tianyancha"]) {
+  for (const key of ["yingmi", "github", "google-drive", "canva", "notion", "jinshuju", "hengshengjuyuan", "mcdonalds", "yunzhangfang", "tianyancha"]) {
     if (id.includes(key)) return CONNECTOR_LOGOS[key];
   }
   return null;

@@ -340,16 +340,6 @@ const CONNECTOR_CATALOG_TEMPLATES: ConnectorCatalogTemplate[] = [
     oauthCatalogId: "notion",
   },
   {
-    id: "atlassian",
-    name: "Jira · Confluence",
-    description: "连接研发事项与企业知识，查询并更新 Jira、Confluence 内容。",
-    capabilities: ["事项管理", "知识检索", "协作更新"],
-    category: "development-collaboration",
-    availability: "oauth",
-    requirement: "点击授权后登录 Atlassian，并选择允许访问的 Jira、Confluence 站点。",
-    oauthCatalogId: "atlassian",
-  },
-  {
     id: "slack",
     name: "Slack",
     description: "搜索频道和文件、发送消息，并让团队协作上下文进入智能体。",
@@ -366,15 +356,6 @@ const CONNECTOR_CATALOG_TEMPLATES: ConnectorCatalogTemplate[] = [
     category: "knowledge-creation",
     availability: "preview",
     requirement: "Google Drive MCP 当前处于开发者预览阶段。",
-  },
-  {
-    id: "tongzhou",
-    name: "同舟金融研究",
-    description: "面向金融研究流程提供资料检索、证据整理和研究交付能力。",
-    capabilities: ["金融研究", "证据整理", "报告交付"],
-    category: "business-data",
-    availability: "partner",
-    requirement: "需要服务商提供通用 MCP Gateway 与授权方案。",
   },
   {
     id: "yunzhangfang",

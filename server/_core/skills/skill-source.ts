@@ -35,14 +35,37 @@ export function sanitizeSkillId(raw: string): string {
     .slice(0, 48) || "generated-skill";
 }
 
-export function parseSkillMarkdown(text: string): { title: string; description: string } {
+export function parseSkillMarkdown(text: string): { name: string; title: string; description: string } {
   const lines = text.split(/\r?\n/);
   let i = 0;
+  let frontmatterLines: string[] = [];
   if (lines[0]?.trim() === "---") {
     i = 1;
+    const start = i;
     while (i < lines.length && lines[i]?.trim() !== "---") i++;
+    frontmatterLines = lines.slice(start, i);
     if (i < lines.length) i++;
   }
+  const frontmatterValue = (key: string): string => {
+    const keyPattern = new RegExp(`^${key}:\\s*(.*)$`, "i");
+    const index = frontmatterLines.findIndex((line) => keyPattern.test(line));
+    if (index < 0) return "";
+    let value = String(frontmatterLines[index]?.match(keyPattern)?.[1] || "").trim();
+    if (value === "|" || value === ">") {
+      const folded = value === ">";
+      const block: string[] = [];
+      for (let j = index + 1; j < frontmatterLines.length; j++) {
+        const line = frontmatterLines[j] || "";
+        if (line.trim() && !/^\s+/.test(line)) break;
+        block.push(line.replace(/^\s+/, "").trimEnd());
+      }
+      value = folded ? block.join(" ").replace(/\s+/g, " ").trim() : block.join("\n").trim();
+    }
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1).trim();
+    }
+    return value;
+  };
   let title = "";
   let description = "";
   for (let j = i; j < lines.length; j++) {
@@ -59,7 +82,11 @@ export function parseSkillMarkdown(text: string): { title: string; description: 
       break;
     }
   }
-  return { title, description };
+  return {
+    name: frontmatterValue("name"),
+    title,
+    description: frontmatterValue("description") || description,
+  };
 }
 
 function toBuffer(content: string | Buffer): Buffer {
@@ -140,13 +167,13 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
     }
   }
 
-  const mdMeta = skillMd ? parseSkillMarkdown(textContent(skillMd.content, 16000)) : { title: "", description: "" };
+  const mdMeta = skillMd ? parseSkillMarkdown(textContent(skillMd.content, 16000)) : { name: "", title: "", description: "" };
   const fileStem = String(fallbackName || "generated-skill").replace(/\.(zip|skill)$/i, "");
   const skillMdTopDir = skillMd?.path.includes("/") ? skillMd.path.split("/")[0] : "";
   const topDirs = skillMdTopDir ? [skillMdTopDir] : [];
-  const rawSkillId = String(manifest?.name || manifest?.id || (topDirs.length === 1 ? topDirs[0] : fileStem));
+  const rawSkillId = String(manifest?.name || manifest?.id || mdMeta.name || (topDirs.length === 1 ? topDirs[0] : fileStem));
   const skillId = sanitizeSkillId(rawSkillId);
-  const displayName = String(manifest?.displayName || manifest?.title || manifest?.name || mdMeta.title || fileStem).trim();
+  const displayName = String(manifest?.displayName || manifest?.title || manifest?.name || mdMeta.title || mdMeta.name || fileStem).trim();
   const description = String(manifest?.description || mdMeta.description || "").replace(/\s+/g, " ").slice(0, 240);
 
   const dangerousPatterns = [

@@ -261,8 +261,13 @@ function valueText(value: unknown): string {
 
 function partText(part: any): string {
   if (!part || typeof part !== "object") return "";
-  if (typeof part.text === "string"
-    && (!part.kind || part.kind === "text" || part.type === "text")) {
+  const explicitTextPart = part.kind === "text" || part.type === "text";
+  const protocolV1TextPart = !part.kind
+    && !part.type
+    && !("data" in part)
+    && !("file" in part)
+    && typeof part.text === "string";
+  if (typeof part.text === "string" && (explicitTextPart || protocolV1TextPart)) {
     return part.text.trim();
   }
   if (part.kind === "data" || part.type === "data") {
@@ -477,6 +482,10 @@ function normalizeA2AState(value: unknown): string {
     .replace(/_/g, "-");
 }
 
+function isTerminalA2AState(value: string): boolean {
+  return ["completed", "succeeded", "failed", "canceled", "cancelled", "rejected", "input-required"].includes(value);
+}
+
 export function extractA2ATaskResult(
   events: unknown[],
   config: A2AEndpointConfig,
@@ -497,7 +506,10 @@ export function extractA2ATaskResult(
     const result = a2aEventPayload(event);
     if (!result || typeof result !== "object") continue;
     remoteTaskId = String(result.taskId || result.id || result.contextId || remoteTaskId || "").trim();
-    state = normalizeA2AState(result.status?.state || result.state || state);
+    const nextState = normalizeA2AState(result.status?.state || result.state);
+    if (nextState && (!isTerminalA2AState(state) || isTerminalA2AState(nextState))) {
+      state = nextState;
+    }
     interaction = findAgentInteraction(result) || interaction;
     for (const artifact of collectA2AArtifacts(result)) {
       artifacts.set(`${artifact.id}:${artifact.uri || artifact.name}`, artifact);
@@ -574,7 +586,7 @@ function isA2ACompleteEvent(event: any): boolean {
   const result = a2aEventPayload(event);
   if (!result || typeof result !== "object") return false;
   const state = normalizeA2AState(result.status?.state || result.state);
-  if (["completed", "succeeded", "failed", "canceled", "cancelled", "input-required"].includes(state)) return true;
+  if (isTerminalA2AState(state)) return true;
   if (result.final === true || result.done === true || result.completed === true) return true;
   const kind = String(result.kind || result.type || "").toLowerCase();
   return kind.includes("complete") || kind.includes("completed");
@@ -727,7 +739,7 @@ export async function cancelA2AExpertTask(
   const event = events[events.length - 1] as any;
   if (event?.error) return false;
   const result = event?.result ?? event;
-  return ["canceled", "cancelled"].includes(String(result?.status?.state || result?.state || "").toLowerCase());
+  return ["canceled", "cancelled"].includes(normalizeA2AState(result?.status?.state || result?.state));
 }
 
 export function summarizeA2AEvents(events: unknown[], config: A2AEndpointConfig, maxBytes = 40_000) {

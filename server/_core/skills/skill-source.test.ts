@@ -21,6 +21,56 @@ describe("parseSkillSourceFiles", () => {
     expect(parsed.displayName).toBe("Smoke Skill");
   });
 
+  it("uses root SKILL.md frontmatter name as the stable skill id", () => {
+    const parsed = parseSkillSourceFiles([
+      {
+        path: "SKILL.md",
+        content: [
+          "---",
+          "name: pdf",
+          "description: Process PDF documents.",
+          "---",
+          "",
+          "# PDF Processing Guide",
+        ].join("\n"),
+      },
+    ], "SKILL.zip");
+
+    expect(parsed.skillId).toBe("pdf");
+    expect(parsed.displayName).toBe("PDF Processing Guide");
+    expect(parsed.description).toBe("Process PDF documents.");
+  });
+
+  it("parses folded and literal frontmatter descriptions", () => {
+    const folded = parseSkillSourceFiles([{
+      path: "SKILL.md",
+      content: [
+        "---",
+        "name: folded-skill",
+        "description: >",
+        "  Analyze customer records",
+        "  and produce a concise report.",
+        "---",
+        "# Folded Skill",
+      ].join("\n"),
+    }], "fallback");
+    const literal = parseSkillSourceFiles([{
+      path: "SKILL.md",
+      content: [
+        "---",
+        "name: literal-skill",
+        "description: |",
+        "  First line.",
+        "  Second line.",
+        "---",
+        "# Literal Skill",
+      ].join("\n"),
+    }], "fallback");
+
+    expect(folded.description).toBe("Analyze customer records and produce a concise report.");
+    expect(literal.description).toBe("First line. Second line.");
+  });
+
   it("parses generated skill files with SKILL.md", () => {
     const parsed = parseSkillSourceFiles([
       { path: "SKILL.md", content: "# 财报摘要助手\n\n帮助用户整理财报重点。" },

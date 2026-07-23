@@ -298,6 +298,48 @@ describe("A2A expert profiles", () => {
     });
   });
 
+  it("does not let a late non-terminal event overwrite a terminal task state", () => {
+    const result = extractA2ATaskResult([
+      {
+        result: {
+          statusUpdate: {
+            taskId: "remote-v1",
+            status: { state: "TASK_STATE_COMPLETED" },
+          },
+        },
+      },
+      {
+        result: {
+          artifactUpdate: {
+            taskId: "remote-v1",
+            status: { state: "TASK_STATE_WORKING" },
+            artifact: {
+              artifactId: "remote-v1_response",
+              name: "response",
+              parts: [{ text: "完成" }],
+            },
+          },
+        },
+      },
+    ], { resultProfile: { artifactNames: ["response"] } });
+
+    expect(result).toMatchObject({ text: "完成", state: "completed" });
+  });
+
+  it("accepts A2A 1.0 text parts without treating untyped data as visible text", () => {
+    const result = extractA2ATaskResult([{
+      result: {
+        kind: "message",
+        parts: [
+          { text: "可见文本" },
+          { text: "不应显示", data: { internal: true } },
+        ],
+      },
+    }], {});
+
+    expect(result.text).toBe("可见文本");
+  });
+
   it("extracts a standard input-required interaction without rendering its JSON as text", () => {
     const result = extractA2ATaskResult([{
       result: {

@@ -1,10 +1,12 @@
 import importlib.util
 import json
+import os
 import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "server.py"
@@ -83,6 +85,54 @@ class HermesProfileA2ATest(unittest.TestCase):
                 SERVER.CANCELLED_PIDS.discard(process.pid)
             if process.poll() is None:
                 process.kill()
+
+    def test_error_redaction_covers_bare_known_secret_values(self):
+        secret = "0123456789abcdef0123456789abcdef"
+        with patch.dict("os.environ", {"MODEL_PROVIDER_API_KEY": secret}, clear=False):
+            message = SERVER.redact_error(f"provider failed with {secret}")
+        self.assertNotIn(secret, message)
+        self.assertIn("[REDACTED]", message)
+
+    def test_nonzero_hermes_exit_does_not_return_child_stderr(self):
+        secret = "fedcba9876543210fedcba9876543210"
+        workspace = SERVER.workspace_for_context("failed-run")
+        with patch.object(SERVER, "run_process", return_value=("", f"failure {secret}", 2)):
+            with self.assertRaises(SERVER.HermesRunError) as raised:
+                SERVER.run_hermes("test", None, workspace, "agt_failed", "failed-run")
+        self.assertNotIn(secret, str(raised.exception))
+        self.assertIn("退出码 2", str(raised.exception))
+
+    def test_subprocess_environment_drops_secrets_but_keeps_runtime_context(self):
+        with patch.dict("os.environ", {
+            "A2A_BEARER_TOKEN": "a" * 32,
+            "MODEL_PROVIDER_API_KEY": "b" * 32,
+            "PATH": "/usr/bin",
+            "HERMES_PROFILE": "ppt-expert",
+        }, clear=True):
+            process_env = SERVER.subprocess_environment()
+        self.assertNotIn("A2A_BEARER_TOKEN", process_env)
+        self.assertNotIn("MODEL_PROVIDER_API_KEY", process_env)
+        self.assertEqual(process_env["PATH"], "/usr/bin")
+        self.assertEqual(process_env["HERMES_PROFILE"], "ppt-expert")
+
+    def test_profile_credentials_cannot_override_runtime_paths(self):
+        credentials = Path(self.temp.name) / "credentials.env"
+        credentials.write_text(
+            "A2A_BEARER_TOKEN=new-token-value\n"
+            "HERMES_BIN=/tmp/untrusted-hermes\n",
+            encoding="utf-8",
+        )
+        with patch.dict("os.environ", {
+            "A2A_BEARER_TOKEN": "old-token-value",
+            "HERMES_BIN": "/usr/bin/hermes",
+        }, clear=False):
+            SERVER.load_env(
+                credentials,
+                override=True,
+                allowed_keys={"A2A_BEARER_TOKEN", "A2A_DOWNLOAD_SECRET"},
+            )
+            self.assertEqual(os.environ["A2A_BEARER_TOKEN"], "new-token-value")
+            self.assertEqual(os.environ["HERMES_BIN"], "/usr/bin/hermes")
 
 
 if __name__ == "__main__":
