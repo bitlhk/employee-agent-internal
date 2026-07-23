@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   localProfileA2AProxyEnabled,
+  localProfileA2AProxySpecs,
   resolveLocalProfileA2AProxyPort,
   resolveLocalProfileA2AProxyTimeout,
   resolveTrustedLocalProfileA2ATarget,
@@ -59,6 +60,24 @@ describe("local Hermes profile A2A proxy config", () => {
       "https://work.example.com/a2a/tcm-expert",
       env,
     )).toEqual({ url: "http://127.0.0.1:8900/", allowPrivate: true });
+  });
+
+  it("uses one profile registry for routing and proxy registration metadata", () => {
+    const specs = localProfileA2AProxySpecs({
+      HERMES_PPT_A2A_PROXY_ENABLED: "true",
+      HERMES_PPT_A2A_PORT: "8898",
+      HERMES_DIAGRAM_A2A_PROXY_ENABLED: "true",
+      HERMES_DIAGRAM_A2A_PORT: "8899",
+      HERMES_TCM_A2A_PROXY_ENABLED: "true",
+      HERMES_TCM_A2A_PORT: "8900",
+    });
+
+    expect(specs.map(({ publicPath, port, enabled }) => ({ publicPath, port, enabled }))).toEqual([
+      { publicPath: "/a2a/ppt-expert", port: 8898, enabled: true },
+      { publicPath: "/a2a/diagram-expert", port: 8899, enabled: true },
+      { publicPath: "/a2a/tcm-expert", port: 8900, enabled: true },
+    ]);
+    expect(specs.every((spec) => spec.label && spec.unavailableMessage && spec.timeoutMs)).toBe(true);
   });
 
   it("does not rewrite disabled, foreign-origin, or lookalike routes", () => {

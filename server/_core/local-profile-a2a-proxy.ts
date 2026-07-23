@@ -26,24 +26,60 @@ export type TrustedLocalProfileA2ATarget = {
 
 type LocalProfileA2AEnvironment = Record<string, string | undefined>;
 
-function profileRouteSpecs(env: LocalProfileA2AEnvironment) {
-  return [
-    {
-      enabled: localProfileA2AProxyEnabled(env.HERMES_PPT_A2A_PROXY_ENABLED),
-      publicPath: "/a2a/ppt-expert",
-      port: resolveLocalProfileA2AProxyPort(env.HERMES_PPT_A2A_PORT, 8898),
-    },
-    {
-      enabled: localProfileA2AProxyEnabled(env.HERMES_DIAGRAM_A2A_PROXY_ENABLED),
-      publicPath: "/a2a/diagram-expert",
-      port: resolveLocalProfileA2AProxyPort(env.HERMES_DIAGRAM_A2A_PORT, 8899),
-    },
-    {
-      enabled: localProfileA2AProxyEnabled(env.HERMES_TCM_A2A_PROXY_ENABLED),
-      publicPath: "/a2a/tcm-expert",
-      port: resolveLocalProfileA2AProxyPort(env.HERMES_TCM_A2A_PORT, 8900),
-    },
-  ];
+interface ProfileProxySpec {
+  publicPath: string;
+  port: number;
+  timeoutMs: number;
+  label: string;
+  unavailableMessage: string;
+}
+
+type ProfileProxyDefinition = Omit<ProfileProxySpec, "port" | "timeoutMs"> & {
+  enabledEnv: string;
+  portEnv: string;
+  timeoutEnv: string;
+  defaultPort: number;
+};
+
+const PROFILE_PROXY_DEFINITIONS: readonly ProfileProxyDefinition[] = [
+  {
+    enabledEnv: "HERMES_PPT_A2A_PROXY_ENABLED",
+    portEnv: "HERMES_PPT_A2A_PORT",
+    timeoutEnv: "HERMES_PPT_A2A_PROXY_TIMEOUT_MS",
+    defaultPort: 8898,
+    publicPath: "/a2a/ppt-expert",
+    label: "HERMES-PPT-A2A",
+    unavailableMessage: "PPT expert is unavailable",
+  },
+  {
+    enabledEnv: "HERMES_DIAGRAM_A2A_PROXY_ENABLED",
+    portEnv: "HERMES_DIAGRAM_A2A_PORT",
+    timeoutEnv: "HERMES_DIAGRAM_A2A_PROXY_TIMEOUT_MS",
+    defaultPort: 8899,
+    publicPath: "/a2a/diagram-expert",
+    label: "HERMES-DIAGRAM-A2A",
+    unavailableMessage: "Diagram expert is unavailable",
+  },
+  {
+    enabledEnv: "HERMES_TCM_A2A_PROXY_ENABLED",
+    portEnv: "HERMES_TCM_A2A_PORT",
+    timeoutEnv: "HERMES_TCM_A2A_PROXY_TIMEOUT_MS",
+    defaultPort: 8900,
+    publicPath: "/a2a/tcm-expert",
+    label: "HERMES-TCM-A2A",
+    unavailableMessage: "TCM expert is unavailable",
+  },
+];
+
+export function localProfileA2AProxySpecs(env: LocalProfileA2AEnvironment = process.env) {
+  return PROFILE_PROXY_DEFINITIONS.map((definition) => ({
+    enabled: localProfileA2AProxyEnabled(env[definition.enabledEnv]),
+    publicPath: definition.publicPath,
+    port: resolveLocalProfileA2AProxyPort(env[definition.portEnv], definition.defaultPort),
+    timeoutMs: resolveLocalProfileA2AProxyTimeout(env[definition.timeoutEnv]),
+    label: definition.label,
+    unavailableMessage: definition.unavailableMessage,
+  }));
 }
 
 /** Keep same-host profile traffic off the public reverse-proxy round trip. */
@@ -64,7 +100,7 @@ export function resolveTrustedLocalProfileA2ATarget(
     return { url: rawUrl, allowPrivate: false };
   }
 
-  for (const spec of profileRouteSpecs(env)) {
+  for (const spec of localProfileA2AProxySpecs(env)) {
     if (!spec.enabled) continue;
     if (target.pathname !== spec.publicPath && !target.pathname.startsWith(`${spec.publicPath}/`)) {
       continue;
@@ -77,14 +113,6 @@ export function resolveTrustedLocalProfileA2ATarget(
   }
 
   return { url: rawUrl, allowPrivate: false };
-}
-
-interface ProfileProxySpec {
-  publicPath: string;
-  port: number;
-  timeoutMs: number;
-  label: string;
-  unavailableMessage: string;
 }
 
 function registerOneProfileProxy(app: Express, spec: ProfileProxySpec): void {
@@ -121,36 +149,7 @@ function registerOneProfileProxy(app: Express, spec: ProfileProxySpec): void {
 }
 
 export function registerLocalProfileA2AProxy(app: Express): void {
-  // PPT expert (ppt-expert profile) — long-running deck builds.
-  if (localProfileA2AProxyEnabled(process.env.HERMES_PPT_A2A_PROXY_ENABLED)) {
-    registerOneProfileProxy(app, {
-      publicPath: "/a2a/ppt-expert",
-      port: resolveLocalProfileA2AProxyPort(process.env.HERMES_PPT_A2A_PORT, 8898),
-      timeoutMs: resolveLocalProfileA2AProxyTimeout(process.env.HERMES_PPT_A2A_PROXY_TIMEOUT_MS),
-      label: "HERMES-PPT-A2A",
-      unavailableMessage: "PPT expert is unavailable",
-    });
-  }
-
-  // Diagram expert (diagram-expert profile) — archify text-to-diagram.
-  if (localProfileA2AProxyEnabled(process.env.HERMES_DIAGRAM_A2A_PROXY_ENABLED)) {
-    registerOneProfileProxy(app, {
-      publicPath: "/a2a/diagram-expert",
-      port: resolveLocalProfileA2AProxyPort(process.env.HERMES_DIAGRAM_A2A_PORT, 8899),
-      timeoutMs: resolveLocalProfileA2AProxyTimeout(process.env.HERMES_DIAGRAM_A2A_PROXY_TIMEOUT_MS),
-      label: "HERMES-DIAGRAM-A2A",
-      unavailableMessage: "Diagram expert is unavailable",
-    });
-  }
-
-  // TCM expert (tcm-expert profile) — knowledge lookup and health education.
-  if (localProfileA2AProxyEnabled(process.env.HERMES_TCM_A2A_PROXY_ENABLED)) {
-    registerOneProfileProxy(app, {
-      publicPath: "/a2a/tcm-expert",
-      port: resolveLocalProfileA2AProxyPort(process.env.HERMES_TCM_A2A_PORT, 8900),
-      timeoutMs: resolveLocalProfileA2AProxyTimeout(process.env.HERMES_TCM_A2A_PROXY_TIMEOUT_MS),
-      label: "HERMES-TCM-A2A",
-      unavailableMessage: "TCM expert is unavailable",
-    });
+  for (const { enabled, ...spec } of localProfileA2AProxySpecs()) {
+    if (enabled) registerOneProfileProxy(app, spec);
   }
 }

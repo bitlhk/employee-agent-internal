@@ -51,8 +51,8 @@ export function parseSkillMarkdown(text: string): { name: string; title: string;
     const index = frontmatterLines.findIndex((line) => keyPattern.test(line));
     if (index < 0) return "";
     let value = String(frontmatterLines[index]?.match(keyPattern)?.[1] || "").trim();
-    if (value === "|" || value === ">") {
-      const folded = value === ">";
+    if (/^[>|][+-]?$/.test(value)) {
+      const folded = value.startsWith(">");
       const block: string[] = [];
       for (let j = index + 1; j < frontmatterLines.length; j++) {
         const line = frontmatterLines[j] || "";

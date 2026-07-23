@@ -71,6 +71,23 @@ describe("parseSkillSourceFiles", () => {
     expect(literal.description).toBe("First line. Second line.");
   });
 
+  it("accepts YAML block chomping indicators in frontmatter descriptions", () => {
+    const parsed = parseSkillSourceFiles([{
+      path: "SKILL.md",
+      content: [
+        "---",
+        "name: block-indicators",
+        "description: >-",
+        "  First folded line.",
+        "  Second folded line.",
+        "---",
+        "# Block Indicators",
+      ].join("\n"),
+    }], "fallback");
+
+    expect(parsed.description).toBe("First folded line. Second folded line.");
+  });
+
   it("parses generated skill files with SKILL.md", () => {
     const parsed = parseSkillSourceFiles([
       { path: "SKILL.md", content: "# 财报摘要助手\n\n帮助用户整理财报重点。" },
