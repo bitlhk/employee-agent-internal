@@ -1013,7 +1013,7 @@ class Handler(BaseHTTPRequestHandler):
         supplied = self.headers.get("Authorization", "")
         return hmac.compare_digest(supplied, f"Bearer {BEARER_TOKEN}")
 
-    def do_GET(self) -> None:  # pylint: disable=invalid-name
+    def do_get(self) -> None:
         parsed = urlparse(self.path)
         if parsed.path in {"/health", "/readyz"}:
             active = active_task_count()
@@ -1079,7 +1079,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk)
                 chunk = handle.read(1024 * 1024)
 
-    def do_POST(self) -> None:  # pylint: disable=invalid-name
+    def do_post(self) -> None:
         if urlparse(self.path).path not in {"/", "/a2a", "/rpc"}:
             json_response(self, 404, {"error": "not found"})
             return
@@ -1198,6 +1198,11 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, 500, {"jsonrpc": "2.0", "id": request_id, "error": response_error})
         finally:
             release_task_slot(task_lock)
+
+
+# BaseHTTPRequestHandler dispatches these exact HTTP verb method names.
+setattr(Handler, "do_GET", Handler.do_get)
+setattr(Handler, "do_POST", Handler.do_post)
 
 
 def main() -> None:
