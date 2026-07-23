@@ -7,6 +7,7 @@ import argparse
 import os
 from pathlib import Path
 
+import yaml as pyyaml
 from dotenv import dotenv_values
 from ruamel.yaml import YAML
 
@@ -88,10 +89,7 @@ def main() -> int:
     yaml = YAML()
     yaml.preserve_quotes = True
     with config_path.open("r", encoding="utf-8") as handle:
-        documents = yaml.load_all(handle)
-        config = next(documents, None) or {}
-        if next(documents, None) is not None:
-            raise ValueError("JiuwenSwarm config must contain exactly one YAML document")
+        config = pyyaml.safe_load(handle) or {}
 
     react = config.setdefault("react", {})
     react["skill_mode"] = "auto_list"
