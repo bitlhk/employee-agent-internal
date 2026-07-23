@@ -255,6 +255,16 @@ export function a2aConversationContextId(
   return `ea-${digest}`;
 }
 
+export function a2aRuntimeContextId(
+  endpointConfig: Record<string, unknown>,
+  adoptId: unknown,
+  agentId: unknown,
+  conversationKey: unknown,
+): string | undefined {
+  if (endpointConfig.reuseConversationContext === false) return undefined;
+  return a2aConversationContextId(adoptId, agentId, conversationKey);
+}
+
 async function runAgentTaskInBackground(
   taskId: string,
   agent: any,
@@ -467,7 +477,8 @@ export function registerAgentTaskRoutes(app: express.Express) {
         __taskAdoptId: adoptId,
         __runtimeAgentId: String((claw as any).agentId || ""),
       }, input, {
-        contextId: a2aConversationContextId(
+        contextId: a2aRuntimeContextId(
+          endpointConfig,
           adoptId,
           agentId,
           sourceConversationId || sourceSessionId,
@@ -583,7 +594,8 @@ export function registerAgentTaskRoutes(app: express.Express) {
         __taskAdoptId: adoptId,
         __runtimeAgentId: String((claw as any).agentId || ""),
       }, remoteInput, {
-        contextId: a2aConversationContextId(
+        contextId: a2aRuntimeContextId(
+          endpointConfig,
           adoptId,
           sourceTask.agentId,
           sourceTask.sourceConversationId || sourceTask.sourceSessionId,

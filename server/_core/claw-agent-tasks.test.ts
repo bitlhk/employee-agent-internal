@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { a2aConversationContextId, agentDailyRequestLimit, cleanA2AText } from "./claw-agent-tasks";
+import {
+  a2aConversationContextId,
+  a2aRuntimeContextId,
+  agentDailyRequestLimit,
+  cleanA2AText,
+} from "./claw-agent-tasks";
 
 describe("cleanA2AText", () => {
   it("renders embedded structured tool output without business-specific interpretation", () => {
@@ -52,6 +57,22 @@ describe("a2aConversationContextId", () => {
 
   it("omits context for legacy tasks without conversation or session identity", () => {
     expect(a2aConversationContextId("lgj-one", "expert-one", "")).toBeUndefined();
+  });
+});
+
+describe("a2aRuntimeContextId", () => {
+  it("reuses the conversation context by default", () => {
+    expect(a2aRuntimeContextId({}, "lgj-one", "expert-one", "conversation-one"))
+      .toBe(a2aConversationContextId("lgj-one", "expert-one", "conversation-one"));
+  });
+
+  it("lets stateless experts request a fresh remote context per task", () => {
+    expect(a2aRuntimeContextId(
+      { reuseConversationContext: false },
+      "lgj-one",
+      "expert-one",
+      "conversation-one",
+    )).toBeUndefined();
   });
 });
 

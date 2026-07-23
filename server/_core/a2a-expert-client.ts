@@ -33,6 +33,7 @@ export type A2AEndpointConfig = {
   stream?: boolean;
   method?: string;
   timeoutMs?: number;
+  reuseConversationContext?: boolean;
   taskPrefix?: string;
   taskSuffix?: string;
   requestProfile?: A2ARequestProfile;

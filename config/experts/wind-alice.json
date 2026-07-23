@@ -32,6 +32,7 @@
   "endpointConfig": {
     "method": "message/stream",
     "timeoutMs": 1200000,
+    "reuseConversationContext": false,
     "executionMode": "async",
     "authRequired": true,
     "maxConcurrent": 3,
