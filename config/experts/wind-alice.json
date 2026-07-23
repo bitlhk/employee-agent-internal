@@ -1,6 +1,6 @@
 {
   "id": "wind-alice",
-  "name": "万得金融专家",
+  "name": "万得 · Alice",
   "description": "万得专业金融分析 Agent，支持公司研究、事实核验、财报点评、宏观、债券、基金与信用分析。",
   "kind": "remote",
   "apiUrl": "https://alice.wind.com.cn/Weaver/ChatAgent",
