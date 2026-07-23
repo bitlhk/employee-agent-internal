@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import posixpath
 import re
@@ -39,6 +40,16 @@ SLIDE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.presentation
 SLIDE_MASTER_CONTENT_TYPE = (
     "application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"
 )
+LOGGER = logging.getLogger("merge_verified_pages_linux")
+
+
+@dataclass(frozen=True)
+class RenderRegressionOptions:
+    qa_dir: Path
+    pdf_output: Path | None
+    threshold: float
+    changed_pixel_threshold: float
+    dpi: int
 
 
 def qname(namespace: str, local_name: str) -> str:
@@ -250,7 +261,11 @@ def next_numbered_part(entries: dict[str, bytes], directory: str, prefix: str, s
     expression = re.compile(
         rf"^{re.escape(directory)}/{re.escape(prefix)}(\d+){re.escape(suffix)}$"
     )
-    used = [int(match.group(1)) for name in entries if (match := expression.match(name))]
+    used = []
+    for name in entries:
+        match = expression.match(name)
+        if match:
+            used.append(int(match.group(1)))
     number = max(used, default=0) + 1
     while f"{directory}/{prefix}{number}{suffix}" in entries:
         number += 1
@@ -298,11 +313,11 @@ class PresentationEditor:
                 self.notes_master_target = target
 
     def _next_relationship_id(self) -> str:
-        numeric = [
-            int(match.group(1))
-            for value in self.relationship_ids
-            if (match := re.fullmatch(r"rId(\d+)", value))
-        ]
+        numeric = []
+        for value in self.relationship_ids:
+            match = re.fullmatch(r"rId(\d+)", value)
+            if match:
+                numeric.append(int(match.group(1)))
         number = max(numeric, default=0) + 1
         while f"rId{number}" in self.relationship_ids:
             number += 1
@@ -622,12 +637,13 @@ def render_pdf_to_png(pdf: Path, output_prefix: Path, dpi: int) -> list[Path]:
 def verify_render_regression(
     pages: list[Path],
     merged: Path,
-    qa_dir: Path,
-    pdf_output: Path | None,
-    threshold: float,
-    changed_pixel_threshold: float,
-    dpi: int,
+    options: RenderRegressionOptions,
 ) -> dict:
+    qa_dir = options.qa_dir
+    pdf_output = options.pdf_output
+    threshold = options.threshold
+    changed_pixel_threshold = options.changed_pixel_threshold
+    dpi = options.dpi
     try:
         import numpy as np
         from PIL import Image
@@ -811,13 +827,15 @@ def main() -> int:
         if not args.skip_render_verification:
             pdf_output.unlink(missing_ok=True)
             regression = verify_render_regression(
-                pages=pages,
-                merged=output,
-                qa_dir=qa_dir,
-                pdf_output=pdf_output,
-                threshold=args.threshold,
-                changed_pixel_threshold=args.changed_pixel_threshold,
-                dpi=args.dpi,
+                pages,
+                output,
+                RenderRegressionOptions(
+                    qa_dir=qa_dir,
+                    pdf_output=pdf_output,
+                    threshold=args.threshold,
+                    changed_pixel_threshold=args.changed_pixel_threshold,
+                    dpi=args.dpi,
+                ),
             )
             manifest["merge_regression_rendered"] = True
             manifest["merge_regression_pass"] = bool(regression["passed"])
@@ -825,14 +843,15 @@ def main() -> int:
             if regression["passed"] and pdf_output.is_file():
                 manifest["pdfOutput"] = str(pdf_output)
         write_manifest(manifest_path, manifest)
-        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+        LOGGER.info("%s", json.dumps(manifest, ensure_ascii=False, indent=2))
         return 0 if manifest["merge_regression_pass"] or args.skip_render_verification else 2
     except Exception as exc:
         manifest["failure"] = str(exc)
         write_manifest(manifest_path, manifest)
-        print(json.dumps(manifest, ensure_ascii=False, indent=2))
+        LOGGER.error("%s", json.dumps(manifest, ensure_ascii=False, indent=2))
         return 1
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     raise SystemExit(main())

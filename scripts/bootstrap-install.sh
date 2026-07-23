@@ -544,7 +544,7 @@ configure_jiuwenswarm() {
     echo "[dry-run] configure JiuwenSwarm workspace, Platform MCP, callback and isolation"
     return
   fi
-  "$JIUWENSWARM_VENV/bin/python" "$INSTALL_DIR/scripts/configure-jiuwenswarm.py" \
+  "$JIUWENSWARM_VENV/bin/python" "$INSTALL_DIR/scripts/configure_jiuwenswarm.py" \
     --config "$JIUWENSWARM_HOME/config/config.yaml" \
     --runtime-env "$JIUWENSWARM_HOME/config/.env" \
     --ea-env "$INSTALL_DIR/.env" \

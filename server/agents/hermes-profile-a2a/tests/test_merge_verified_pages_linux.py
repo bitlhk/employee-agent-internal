@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -9,14 +11,18 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+MODULE_PATH = ROOT / "merge_verified_pages_linux.py"
+SPEC = importlib.util.spec_from_file_location("merge_verified_pages_linux", MODULE_PATH)
+MERGE_TOOL = importlib.util.module_from_spec(SPEC)
+assert SPEC and SPEC.loader
+sys.modules[SPEC.name] = MERGE_TOOL
+SPEC.loader.exec_module(MERGE_TOOL)
 
-from merge_verified_pages_linux import (  # noqa: E402
-    merge_presentations,
-    validate_internal_relationships,
-    verify_render_regression,
-    read_package,
-)
+RenderRegressionOptions = MERGE_TOOL.RenderRegressionOptions
+merge_presentations = MERGE_TOOL.merge_presentations
+read_package = MERGE_TOOL.read_package
+validate_internal_relationships = MERGE_TOOL.validate_internal_relationships
+verify_render_regression = MERGE_TOOL.verify_render_regression
 
 
 class LinuxPptxMergeTests(unittest.TestCase):
@@ -30,9 +36,11 @@ class LinuxPptxMergeTests(unittest.TestCase):
             environment["NODE_PATH"] = str(
                 Path.home() / ".hermes/profiles/ppt-expert/workspace/node_modules"
             )
+            node = shutil.which("node")
+            self.assertIsNotNone(node)
             subprocess.run(
                 [
-                    "node",
+                    str(node),
                     str(ROOT / "tests/generate_merge_fixtures.js"),
                     str(first),
                     str(second),
@@ -58,13 +66,15 @@ class LinuxPptxMergeTests(unittest.TestCase):
             )
 
             rendered = verify_render_regression(
-                pages=[first, second],
-                merged=output,
-                qa_dir=temporary / "qa",
-                pdf_output=temporary / "merged.pdf",
-                threshold=0.25,
-                changed_pixel_threshold=0.01,
-                dpi=96,
+                [first, second],
+                output,
+                RenderRegressionOptions(
+                    qa_dir=temporary / "qa",
+                    pdf_output=temporary / "merged.pdf",
+                    threshold=0.25,
+                    changed_pixel_threshold=0.01,
+                    dpi=96,
+                ),
             )
             self.assertTrue(rendered["passed"], rendered)
             self.assertTrue((temporary / "merged.pdf").is_file())

@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -24,6 +25,11 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 MERGE_TOOL = ROOT / "merge_verified_pages_linux.py"
+LOGGER = logging.getLogger("hermes_profile_a2a")
+
+
+class ConfigurationError(RuntimeError):
+    pass
 
 
 def load_env(
@@ -54,7 +60,7 @@ PORT = int(os.environ.get("A2A_PORT", "8898"))
 PROFILE = os.environ.get("HERMES_PROFILE", "ppt-expert").strip()
 PROFILE_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 if not PROFILE_RE.fullmatch(PROFILE):
-    raise SystemExit("HERMES_PROFILE is invalid")
+    raise ConfigurationError("HERMES_PROFILE is invalid")
 PROFILE_CREDENTIALS_FILE = Path(
     os.environ.get(
         "A2A_PROFILE_CREDENTIALS_FILE",
@@ -144,12 +150,19 @@ CLEANUP_INTERVAL_SECONDS = max(
 )
 MAX_CONCURRENT_TASKS = max(1, min(8, int(os.environ.get("A2A_MAX_CONCURRENT_TASKS", "2"))))
 ALLOWED_TOOLSETS = {"terminal", "file", "vision", "web"}
-HERMES_TOOLSETS = ",".join(
-    item
-    for item in dict.fromkeys(
-        part.strip() for part in os.environ.get("HERMES_TOOLSETS", "terminal,file,vision").split(",")
-    )
-    if item
+
+
+def normalized_toolsets(value: str) -> str:
+    toolsets: list[str] = []
+    for part in value.split(","):
+        item = part.strip()
+        if item and item not in toolsets:
+            toolsets.append(item)
+    return ",".join(toolsets)
+
+
+HERMES_TOOLSETS = normalized_toolsets(
+    os.environ.get("HERMES_TOOLSETS", "terminal,file,vision")
 )
 ALLOWED_ARTIFACT_SUFFIXES = {
     ".pptx",
@@ -238,31 +251,31 @@ class HermesRunError(RuntimeError):
 
 def require_secure_config() -> None:
     if len(BEARER_TOKEN) < 32:
-        raise SystemExit("A2A_BEARER_TOKEN must contain at least 32 characters")
+        raise ConfigurationError("A2A_BEARER_TOKEN must contain at least 32 characters")
     if len(DOWNLOAD_SECRET) < 32:
-        raise SystemExit("A2A_DOWNLOAD_SECRET must contain at least 32 characters")
+        raise ConfigurationError("A2A_DOWNLOAD_SECRET must contain at least 32 characters")
     if not PROFILE_RE.fullmatch(PROFILE):
-        raise SystemExit("HERMES_PROFILE is invalid")
+        raise ConfigurationError("HERMES_PROFILE is invalid")
     if not Path(HERMES_BIN).is_file():
-        raise SystemExit(f"Hermes executable not found: {HERMES_BIN}")
+        raise ConfigurationError(f"Hermes executable not found: {HERMES_BIN}")
     configured_toolsets = set(HERMES_TOOLSETS.split(","))
     if not configured_toolsets or not configured_toolsets.issubset(ALLOWED_TOOLSETS):
-        raise SystemExit("HERMES_TOOLSETS may only contain terminal,file,vision,web")
+        raise ConfigurationError("HERMES_TOOLSETS may only contain terminal,file,vision,web")
     if WORKSPACE_KIND not in {"generic", "ppt", "diagram"}:
-        raise SystemExit("A2A_WORKSPACE_KIND must be generic, ppt, or diagram")
+        raise ConfigurationError("A2A_WORKSPACE_KIND must be generic, ppt, or diagram")
     if WORKSPACE_KIND in {"ppt", "diagram"} and not {"terminal", "file"}.issubset(configured_toolsets):
-        raise SystemExit(f"{WORKSPACE_KIND} experts require terminal and file toolsets")
+        raise ConfigurationError(f"{WORKSPACE_KIND} experts require terminal and file toolsets")
     SHARED_WORKSPACE.mkdir(parents=True, exist_ok=True)
     WORKSPACES_ROOT.mkdir(parents=True, exist_ok=True)
     if WORKSPACE_KIND in {"ppt", "diagram"} and not shutil.which("node"):
-        raise SystemExit(f"Node.js is required by the {WORKSPACE_KIND} expert")
+        raise ConfigurationError(f"Node.js is required by the {WORKSPACE_KIND} expert")
     if WORKSPACE_KIND == "ppt":
         if not shutil.which("libreoffice"):
-            raise SystemExit("LibreOffice is required by the PPT expert")
+            raise ConfigurationError("LibreOffice is required by the PPT expert")
         if not (SHARED_WORKSPACE / "node_modules" / "pptxgenjs").is_dir():
-            raise SystemExit("PptxGenJS is missing from the shared PPT workspace")
+            raise ConfigurationError("PptxGenJS is missing from the shared PPT workspace")
         if not MERGE_TOOL.is_file():
-            raise SystemExit(f"Linux PPTX merge tool is missing: {MERGE_TOOL}")
+            raise ConfigurationError(f"Linux PPTX merge tool is missing: {MERGE_TOOL}")
 
 
 def is_sensitive_env_key(key: str) -> bool:
@@ -411,9 +424,9 @@ def cleanup_loop() -> None:
         try:
             removed = cleanup_stale_contexts()
             if removed:
-                print(f"Hermes A2A cleanup removed {removed} stale workspaces", flush=True)
+                LOGGER.info("Hermes A2A cleanup removed %s stale workspaces", removed)
         except Exception as error:
-            print(f"Hermes A2A cleanup failed: {redact_error(str(error))}", flush=True)
+            LOGGER.error("Hermes A2A cleanup failed: %s", redact_error(str(error)))
 
 
 def read_session(key: str) -> str | None:
@@ -484,7 +497,10 @@ def workspace_for_context(key: str) -> Path:
             "Node.js, PptxGenJS, LibreOffice, terminal, file, and vision tools are available.",
             "On Linux, final deck assembly must use tools/merge_verified_pages_linux.py.",
             "Do not call the Windows COM merger and do not create an ad-hoc OOXML merge script.",
-            "The Linux merger imports slide dependencies and performs render regression QA; only exit code 0 is a valid final merge.",
+            (
+                "The Linux merger imports slide dependencies and performs render regression QA; "
+                "only exit code 0 is a valid final merge."
+            ),
             "Use relative paths when reporting generated files.",
             "",
         ]
@@ -636,18 +652,46 @@ def build_prompt(user_text: str) -> str:
         [
             "[EA A2A PPT 专家任务]",
             "必须使用 cyber-ppt skill，并遵循其中的分析、蓝图、还原确认门。",
-            "默认使用 EA batch_review：只保留大纲和完整视觉蓝图两次确认；第二次确认后在本轮连续完成全部页面，不得逐页请求用户确认。只有用户明确要求逐页验收时才切换 strict page-by-page。",
-            "整套生成仍须对每页执行内容锁定、可编辑 PPTX、渲染和 QA；同一页最多自修复两次，仍失败就明确停止在该页，禁止无界重试。",
-            "在 EA batch_review 中不要运行 canonical validate_pptx.py --strict，也不要补造逐页用户确认字段；该校验器仅用于 strict page-by-page。批量模式使用实际渲染、视觉检查、紧凑批量 QA 记录和最终合并回归作为交付门。",
+            (
+                "默认使用 EA batch_review：只保留大纲和完整视觉蓝图两次确认；第二次确认后在本轮连续完成"
+                "全部页面，不得逐页请求用户确认。只有用户明确要求逐页验收时才切换 strict page-by-page。"
+            ),
+            (
+                "整套生成仍须对每页执行内容锁定、可编辑 PPTX、渲染和 QA；同一页最多自修复两次，"
+                "仍失败就明确停止在该页，禁止无界重试。"
+            ),
+            (
+                "在 EA batch_review 中不要运行 canonical validate_pptx.py --strict，也不要补造逐页用户确认字段；"
+                "该校验器仅用于 strict page-by-page。批量模式使用实际渲染、视觉检查、紧凑批量 QA 记录和"
+                "最终合并回归作为交付门。"
+            ),
             "所有新文件只能写入当前工作目录；回复中不要暴露绝对系统路径。",
-            "当前环境已提供 terminal、file、vision、Node.js、PptxGenJS 和 LibreOffice。进入制作阶段必须实际调用工具；在执行探测命令失败前，不得声称没有文件生成或渲染能力。",
-            "最终合并必须调用当前工作区的 tools/merge_verified_pages_linux.py；不得调用依赖 Windows COM 的 merge_verified_pages.py，也不得临时编写 OOXML 合并脚本。",
-            "调用格式：python3 tools/merge_verified_pages_linux.py --pages <按顺序列出已确认的单页PPTX> --out <最终PPTX> --pdf-out <最终PDF> --manifest-out <合并manifest.json> --qa-dir <QA目录>。只有退出码为0且 merge_regression_pass=true 才能交付。",
+            (
+                "当前环境已提供 terminal、file、vision、Node.js、PptxGenJS 和 LibreOffice。进入制作阶段必须"
+                "实际调用工具；在执行探测命令失败前，不得声称没有文件生成或渲染能力。"
+            ),
+            (
+                "最终合并必须调用当前工作区的 tools/merge_verified_pages_linux.py；不得调用依赖 Windows COM "
+                "的 merge_verified_pages.py，也不得临时编写 OOXML 合并脚本。"
+            ),
+            (
+                "调用格式：python3 tools/merge_verified_pages_linux.py --pages <按顺序列出已确认的单页PPTX> "
+                "--out <最终PPTX> --pdf-out <最终PDF> --manifest-out <合并manifest.json> --qa-dir <QA目录>。"
+                "只有退出码为0且 merge_regression_pass=true 才能交付。"
+            ),
             "如果当前阶段需要用户确认，请先用一两句话说明进展，再在回复末尾输出一个结构化确认块并停止。",
             "确认块必须严格使用 <ea_interaction>{JSON}</ea_interaction>，不要使用 Markdown 代码围栏。",
-            "JSON 格式：{\"schema\":\"ea.interaction.v1\",\"interactionId\":\"本轮唯一英文ID\",\"type\":\"single_choice\",\"title\":\"确认问题\",\"options\":[{\"id\":\"option-id\",\"label\":\"选项\",\"description\":\"可选说明\",\"recommended\":true}],\"allowCustom\":true,\"allowNote\":true,\"submitMode\":\"confirm\"}",
+            (
+                "JSON 格式：{\"schema\":\"ea.interaction.v1\",\"interactionId\":\"本轮唯一英文ID\","
+                "\"type\":\"single_choice\",\"title\":\"确认问题\",\"options\":[{\"id\":\"option-id\","
+                "\"label\":\"选项\",\"description\":\"可选说明\",\"recommended\":true}],"
+                "\"allowCustom\":true,\"allowNote\":true,\"submitMode\":\"confirm\"}"
+            ),
             "选项最多 8 个；可立即执行的简单选择才使用 submitMode=immediate，其余使用 confirm。",
-            "若生成文件，最终回答只说明交付物和 QA 结论，不要列出文件路径或下载链接；A2A 网关会自动识别并返回结构化产物。",
+            (
+                "若生成文件，最终回答只说明交付物和 QA 结论，不要列出文件路径或下载链接；"
+                "A2A 网关会自动识别并返回结构化产物。"
+            ),
             "",
             "用户请求：",
             user_text,
@@ -740,12 +784,12 @@ def run_process(
     try:
         try:
             stdout, stderr = process.communicate(timeout=TASK_TIMEOUT_SECONDS)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
             _terminate_process(process)
             stdout, stderr = process.communicate()
             raise HermesRunError(
                 f"{AGENT_NAME}本轮超过 {TASK_TIMEOUT_SECONDS} 秒，已安全停止。请缩小单轮范围后继续。"
-            )
+            ) from error
         with PROCESS_LOCK:
             was_cancelled = process.pid in CANCELLED_PIDS
             CANCELLED_PIDS.discard(process.pid)
@@ -888,7 +932,8 @@ def download_signature(key: str, relative: str, expires: int) -> str:
 def download_url(key: str, relative: str) -> str:
     expires = int(time.time()) + DOWNLOAD_TTL_SECONDS
     signature = download_signature(key, relative, expires)
-    return f"{PUBLIC_BASE_URL}/files/{quote(key, safe='')}/{quote(relative, safe='/')}?expires={expires}&sig={signature}"
+    artifact_path = f"{quote(key, safe='')}/{quote(relative, safe='/')}"
+    return f"{PUBLIC_BASE_URL}/files/{artifact_path}?expires={expires}&sig={signature}"
 
 
 def artifact_file_parts(artifacts: list[tuple[Path, str]], key: str) -> list[dict]:
@@ -955,17 +1000,20 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         status = str(args[1]) if len(args) > 1 else "-"
         request_path = urlparse(self.path).path
-        print(
-            f"{self.log_date_time_string()} {self.address_string()} "
-            f"{self.command} {request_path} {status}",
-            flush=True,
+        LOGGER.info(
+            "%s %s %s %s %s",
+            self.log_date_time_string(),
+            self.address_string(),
+            self.command,
+            request_path,
+            status,
         )
 
     def authorized(self) -> bool:
         supplied = self.headers.get("Authorization", "")
         return hmac.compare_digest(supplied, f"Bearer {BEARER_TOKEN}")
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:  # pylint: disable=invalid-name
         parsed = urlparse(self.path)
         if parsed.path in {"/health", "/readyz"}:
             active = active_task_count()
@@ -1016,7 +1064,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         path, _ = item
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        disposition = "inline" if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".txt", ".md", ".json"} else "attachment"
+        inline_suffixes = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".txt", ".md", ".json"}
+        disposition = "inline" if path.suffix.lower() in inline_suffixes else "attachment"
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(path.stat().st_size))
@@ -1025,15 +1074,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         with path.open("rb") as handle:
-            while chunk := handle.read(1024 * 1024):
+            chunk = handle.read(1024 * 1024)
+            while chunk:
                 self.wfile.write(chunk)
+                chunk = handle.read(1024 * 1024)
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:  # pylint: disable=invalid-name
         if urlparse(self.path).path not in {"/", "/a2a", "/rpc"}:
             json_response(self, 404, {"error": "not found"})
             return
         if not self.authorized():
-            json_response(self, 401, {"jsonrpc": "2.0", "id": None, "error": {"code": -32001, "message": "unauthorized"}})
+            error = {"code": -32001, "message": "unauthorized"}
+            json_response(self, 401, {"jsonrpc": "2.0", "id": None, "error": error})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -1045,7 +1097,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
         except ValueError:
-            json_response(self, 400, {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
+            error = {"code": -32700, "message": "parse error"}
+            json_response(self, 400, {"jsonrpc": "2.0", "id": None, "error": error})
             return
         request_id = payload.get("id") if isinstance(payload, dict) else None
         method = payload.get("method") if isinstance(payload, dict) else None
@@ -1065,17 +1118,20 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, 200, {"jsonrpc": "2.0", "id": request_id, "result": result})
             return
         if method not in {"message/send", "tasks/send"}:
-            json_response(self, 200, {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "method not found"}})
+            error = {"code": -32601, "message": "method not found"}
+            json_response(self, 200, {"jsonrpc": "2.0", "id": request_id, "error": error})
             return
         user_text = extract_text(payload)
         if not user_text:
-            json_response(self, 400, {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "message text is required"}})
+            error = {"code": -32602, "message": "message text is required"}
+            json_response(self, 400, {"jsonrpc": "2.0", "id": request_id, "error": error})
             return
         key = context_key(payload)
         request_task_id = task_key(payload)
         task_lock = acquire_task_slot(key)
         if task_lock is None:
-            json_response(self, 429, {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32002, "message": f"{AGENT_NAME}当前任务较多"}})
+            error = {"code": -32002, "message": f"{AGENT_NAME}当前任务较多"}
+            json_response(self, 429, {"jsonrpc": "2.0", "id": request_id, "error": error})
             return
         started_at = time.time()
         try:
@@ -1091,7 +1147,8 @@ class Handler(BaseHTTPRequestHandler):
                 remember_session(key, next_session_id)
             visible_answer, interaction = extract_interaction(answer)
             artifact_parts = artifact_file_parts(recent_artifacts(started_at, workspace), key)
-            if REQUIRE_ARTIFACTS and not is_connection_test and not interaction and not artifact_parts:
+            artifacts_missing = not interaction and not artifact_parts
+            if REQUIRE_ARTIFACTS and not is_connection_test and artifacts_missing:
                 raise HermesRunError("专家未在本次隔离工作区生成可交付文件，任务未完成")
             if interaction:
                 parts = []
@@ -1133,23 +1190,29 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, 200, {"jsonrpc": "2.0", "id": request_id, "result": result})
         except HermesRunError as error:
             message = redact_error(str(error))
-            json_response(self, 500, {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32010, "message": message}})
+            response_error = {"code": -32010, "message": message}
+            json_response(self, 500, {"jsonrpc": "2.0", "id": request_id, "error": response_error})
         except Exception as error:
             message = redact_error(str(error) or "internal error")
-            json_response(self, 500, {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": message}})
+            response_error = {"code": -32603, "message": message}
+            json_response(self, 500, {"jsonrpc": "2.0", "id": request_id, "error": response_error})
         finally:
             release_task_slot(task_lock)
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     require_secure_config()
     cleanup_stale_contexts()
     cleanup_thread = threading.Thread(target=cleanup_loop, name="a2a-context-cleanup", daemon=True)
     cleanup_thread.start()
     server = ThreadingHTTPServer((HOST, PORT), Handler)
-    print(
-        f"Hermes A2A listening on {HOST}:{PORT}; profile={PROFILE}; workspaceKind={WORKSPACE_KIND}",
-        flush=True,
+    LOGGER.info(
+        "Hermes A2A listening on %s:%s; profile=%s; workspaceKind=%s",
+        HOST,
+        PORT,
+        PROFILE,
+        WORKSPACE_KIND,
     )
     try:
         server.serve_forever()

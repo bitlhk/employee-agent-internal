@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -71,7 +72,9 @@ class HermesProfileA2ATest(unittest.TestCase):
         self.assertIsNone(SERVER.safe_artifact(workspace / ".ea-context.json", workspace))
 
     def test_cancel_stops_only_the_registered_process_group(self):
-        process = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        sleep = shutil.which("sleep")
+        self.assertIsNotNone(sleep)
+        process = subprocess.Popen([str(sleep), "30"], start_new_session=True)
         try:
             with SERVER.PROCESS_LOCK:
                 SERVER.ACTIVE_PROCESSES["task:agt_cancel"] = process
