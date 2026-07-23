@@ -11,6 +11,7 @@ export type CustomMcpOAuthCatalogEntry = {
   displayName: string;
   endpointUrl: string;
   scope?: string;
+  clientMetadata?: Record<string, unknown>;
 };
 
 const OAUTH_CATALOG: Record<string, CustomMcpOAuthCatalogEntry> = {
@@ -34,6 +35,13 @@ const OAUTH_CATALOG: Record<string, CustomMcpOAuthCatalogEntry> = {
     id: "atlassian",
     displayName: "Jira · Confluence",
     endpointUrl: "https://mcp.atlassian.com/v1/mcp/authv2",
+  },
+  yunzhangfang: {
+    id: "yunzhangfang",
+    displayName: "云账房 AI 开票",
+    endpointUrl: "https://super-ai-app.yunzhangfang.com/api/mcp",
+    scope: "mcp:visit",
+    clientMetadata: { mcp_name: "yzf-invoice-mcp-server" },
   },
 };
 
@@ -86,6 +94,7 @@ export async function startCustomMcpOAuth(input: {
   const provider = new CustomMcpOAuthProvider({
     data,
     state,
+    clientMetadata: catalog.clientMetadata,
     onRedirect: (url) => { authorizationUrl = url.toString(); },
   });
   const result = await auth(provider, {

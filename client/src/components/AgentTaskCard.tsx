@@ -6,7 +6,7 @@
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Eye, Files } from "lucide-react";
+import { ChevronDown, Eye, Files, Square } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { ExpertAvatar } from "@/components/ExpertAvatar";
 import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
@@ -130,10 +130,12 @@ export function AgentTaskCard({
   task,
   onOpenArtifact,
   onResumeExpert,
+  onCancel,
 }: {
   task: AgentTask;
   onOpenArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
   onResumeExpert?: (task: AgentTask) => void;
+  onCancel?: (task: AgentTask) => Promise<void> | void;
 }) {
   const normalized = useMemo(() => {
     const status = String(task.status || "pending");
@@ -183,6 +185,7 @@ export function AgentTaskCard({
 
   const [now, setNow] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
   const autoExpandedRef = useRef(false);
 
   useEffect(() => {
@@ -267,10 +270,31 @@ export function AgentTaskCard({
           ) : null}
 
           {normalized.isActive ? (
-            <div className="agent-task-card__progress">
-              <span className="agent-task-card__progress-dot" />
-              <span>{normalized.status === "pending" ? "任务已提交，等待专家接收。" : "专家正在处理，结果完成后会写回此卡片。"}</span>
-              {remoteEventText ? <span className="agent-task-card__progress-extra">{remoteEventText}</span> : null}
+            <div className="agent-task-card__active-row">
+              <div className="agent-task-card__progress">
+                <span className="agent-task-card__progress-dot" />
+                <span>{normalized.status === "pending" ? "任务已提交，等待专家接收。" : "专家正在处理，结果完成后会写回此卡片。"}</span>
+                {remoteEventText ? <span className="agent-task-card__progress-extra">{remoteEventText}</span> : null}
+              </div>
+              {onCancel ? (
+                <button
+                  type="button"
+                  className="agent-task-card__cancel"
+                  disabled={cancelPending}
+                  onClick={async (event) => {
+                    event.stopPropagation();
+                    setCancelPending(true);
+                    try {
+                      await onCancel(task);
+                    } finally {
+                      setCancelPending(false);
+                    }
+                  }}
+                >
+                  <Square size={11} fill="currentColor" />
+                  {cancelPending ? "停止中" : "停止任务"}
+                </button>
+              ) : null}
             </div>
           ) : null}
 

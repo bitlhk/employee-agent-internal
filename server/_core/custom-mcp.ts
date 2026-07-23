@@ -70,6 +70,13 @@ function displayName(raw: unknown): string {
   return value;
 }
 
+function catalogId(raw: unknown): string | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(value)) throw new Error("连接器标识格式不正确");
+  return value;
+}
+
 function authType(raw: unknown): CustomMcpAuthType {
   const value = String(raw || "none").trim();
   if (value === "none" || value === "bearer" || value === "api_key" || value === "oauth") return value;
@@ -510,6 +517,7 @@ export function registerCustomMcpRoutes(app: Express): void {
         endpointUrl: config.endpointUrl,
         authType: config.authType,
         authHeaderName: config.authHeaderName || null,
+        catalogId: catalogId(req.body?.catalogId),
         credential: config.credential,
         enabled: true,
         healthStatus: "ready",
@@ -555,6 +563,7 @@ export function registerCustomMcpRoutes(app: Express): void {
         endpointUrl: config.endpointUrl,
         authType: config.authType,
         authHeaderName: config.authHeaderName || null,
+        catalogId: catalogId(req.body?.catalogId) || existing.catalogId,
         ...(typeof req.body?.credential === "string" || config.authType === "none" ? { credential: config.credential } : {}),
         enabled: existing.enabled,
         healthStatus: "ready",

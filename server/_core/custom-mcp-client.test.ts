@@ -32,6 +32,18 @@ describe("custom MCP client policy", () => {
       authHeaderName: "X-API-Key",
       credential: "secret",
     })).not.toThrow();
+    expect(() => validateCustomMcpAuth({
+      endpointUrl: "https://mcp.example.com/mcp",
+      authType: "api_key",
+      authHeaderName: "query:token",
+      credential: "secret",
+    })).not.toThrow();
+    expect(() => validateCustomMcpAuth({
+      endpointUrl: "https://mcp.example.com/mcp",
+      authType: "api_key",
+      authHeaderName: "query:bad parameter",
+      credential: "secret",
+    })).toThrow(/Query 参数名称/);
   });
 
   it("builds stable, bounded gateway tool names scoped by connection", () => {

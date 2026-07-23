@@ -86,6 +86,18 @@ This nominative use does not imply sponsorship or endorsement. Confirm the
 applicable Wind brand-use terms before redistributing this asset outside an
 authorized integration.
 
+The connector catalog uses the McDonald's Golden Arches mark solely to identify
+the official McDonald's MCP connection:
+
+- Distributed asset: `client/public/images/connectors/mcdonalds-logo.png`
+- Source: project-owner supplied source file
+- Upstream service: `https://open.mcd.cn/mcp`
+- Retrieved: 2026-07-23
+
+McDonald's and the Golden Arches mark remain the property of McDonald's
+Corporation and its affiliates. This nominative use does not imply sponsorship
+or endorsement. Confirm the applicable brand-use terms before redistribution.
+
 ## Expert avatars
 
 The Alice expert portrait was supplied by the project owner on 2026-07-22 and
@@ -98,6 +110,15 @@ is used solely as the avatar for the Wind Alice expert:
 The project owner must confirm the image's copyright and redistribution rights
 before including it in a public release. If those rights cannot be documented,
 replace it with project-owned or permissively licensed neutral artwork.
+
+The PPT and workflow expert portraits were supplied by the project owner on
+2026-07-23:
+
+- `client/public/images/experts/ppt-expert.jpg`
+- `client/public/images/experts/workflow-expert.png`
+
+The project owner must confirm the portraits' copyright and redistribution
+rights before including them in a public release.
 
 ## Adding assets
 

@@ -29,6 +29,7 @@ import type { AgentTask } from "@/components/AgentTaskCard";
 import { AgentArtifactPanel, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { BrandIcon } from "@/components/BrandIcon";
 import { ExpertAvatar } from "@/components/ExpertAvatar";
+import { ConnectorIcon } from "@/components/ConnectorIcon";
 import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
 import { SessionList } from "@/components/console/SessionList";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
@@ -3195,6 +3196,32 @@ export default function Home() {
     }
   };
 
+  const cancelExpertTask = useCallback(async (task: AgentTask): Promise<void> => {
+    if (!resolvedAdoptId || !task.id) return;
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      const response = await fetchWithTimeout(
+        `${apiBase}/api/claw/agent-tasks/${encodeURIComponent(task.id)}/cancel`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ adoptId: resolvedAdoptId }),
+        },
+        12_000,
+      );
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || `停止专家任务失败 (${response.status})`);
+      const completedAt = new Date().toISOString();
+      setAgentTasks((previous) => previous.map((item) => item.id === task.id
+        ? { ...item, status: "cancelled", completedAt, updatedAt: completedAt, errorMessage: null }
+        : item));
+      toast.success("专家任务已停止");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "停止专家任务失败");
+    }
+  }, [resolvedAdoptId]);
+
   const sendLingxiaMessage = async (
     messageOverride?: string,
     opts?: {
@@ -4751,6 +4778,7 @@ export default function Home() {
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
                     onOpenAgentArtifact={openAgentArtifactPanel}
                     onResumeExpert={resumeComposerExpertTask}
+                    onCancelExpert={cancelExpertTask}
                     onDelete={m.role === "assistant" ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
                   />
                   </div>
@@ -5068,7 +5096,7 @@ export default function Home() {
                                 }}
                               >
                                 <span className="lingxia-connector-item__icon" aria-hidden="true">
-                                  <Link2 />
+                                  <ConnectorIcon {...connector} />
                                 </span>
                                 <span className="lingxia-connector-item__main">
                                   <span className="lingxia-connector-item__name">{connector.name}</span>

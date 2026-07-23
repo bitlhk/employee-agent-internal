@@ -3,6 +3,8 @@ export type ComposerConnector = {
   name: string;
   description: string;
   category: string;
+  source: "preset" | "public" | "optional" | "personal";
+  catalogId?: string | null;
   configured: boolean;
   status: "available" | "disabled" | "missing";
   liveStatus?: "live" | "fallback" | "unavailable" | "unsupported";
@@ -40,6 +42,12 @@ export function flattenComposerConnectors(payload: ComposerConnectorResponse): C
             : group.description || child.description || "",
         ).trim(),
         category: String(group.category || child.category || "业务连接").trim(),
+        source: (isCustomGroup
+          ? "personal"
+          : /公共|公开/.test(String(group.category || child.category || ""))
+            ? "public"
+            : child.grantMode === "default" ? "preset" : "optional") as ComposerConnector["source"],
+        catalogId: child.catalogId ? String(child.catalogId) : null,
         configured: Boolean(child.configured),
         status: (child.status === "available" || child.status === "disabled"
           ? child.status

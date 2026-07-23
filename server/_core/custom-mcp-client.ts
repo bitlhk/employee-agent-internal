@@ -8,12 +8,14 @@ import { CustomMcpOAuthProvider } from "./custom-mcp-oauth-provider";
 
 export const MAX_CUSTOM_MCP_CONNECTIONS = 5;
 export const MAX_CUSTOM_MCP_SELECTED_TOOLS = 20;
-export const MAX_CUSTOM_MCP_DISCOVERED_TOOLS = 100;
+export const MAX_CUSTOM_MCP_DISCOVERED_TOOLS = 256;
 const MAX_TOOL_SCHEMA_BYTES = 32 * 1024;
-const MAX_ALL_TOOL_SCHEMAS_BYTES = 256 * 1024;
+const MAX_ALL_TOOL_SCHEMAS_BYTES = 512 * 1024;
 const MAX_TOOL_RESULT_BYTES = 1024 * 1024;
 const MCP_REQUEST_TIMEOUT_MS = 60_000;
 const HEADER_NAME_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
+const QUERY_AUTH_PREFIX = "query:";
+const QUERY_PARAM_NAME_RE = /^[A-Za-z0-9._~-]{1,64}$/;
 const BLOCKED_AUTH_HEADERS = new Set([
   "connection",
   "content-length",
@@ -42,7 +44,7 @@ export type CustomMcpEndpointConfig = {
   onOAuthDataChanged?: (data: CustomMcpOAuthData) => void | Promise<void>;
 };
 
-export function parseCustomMcpEndpoint(rawUrl: unknown): URL {
+export function parseCustomMcpEndpoint(rawUrl: unknown, allowedSensitiveQueryParam = ""): URL {
   const value = String(rawUrl || "").trim();
   if (!value || value.length > 2048) throw new Error("MCP 地址无效");
   let url: URL;
@@ -55,12 +57,18 @@ export function parseCustomMcpEndpoint(rawUrl: unknown): URL {
   if (url.username || url.password) throw new Error("请在认证配置中填写凭据");
   if (!url.hostname) throw new Error("MCP 地址缺少主机名");
   for (const key of url.searchParams.keys()) {
-    if (/token|secret|password|api[-_]?key|access[-_]?key/i.test(key)) {
+    if (/token|secret|password|api[-_]?key|access[-_]?key/i.test(key) && key !== allowedSensitiveQueryParam) {
       throw new Error("MCP 地址不能包含明文凭据，请使用认证配置");
     }
   }
   url.hash = "";
   return url;
+}
+
+function queryAuthParam(config: CustomMcpEndpointConfig): string {
+  if (config.authType !== "api_key") return "";
+  const target = String(config.authHeaderName || "").trim();
+  return target.startsWith(QUERY_AUTH_PREFIX) ? target.slice(QUERY_AUTH_PREFIX.length) : "";
 }
 
 export function validateCustomMcpAuth(config: CustomMcpEndpointConfig): void {
@@ -77,6 +85,11 @@ export function validateCustomMcpAuth(config: CustomMcpEndpointConfig): void {
   if (!String(config.credential || "").trim()) throw new Error("请填写认证凭据");
   if (config.authType === "bearer") return;
   const headerName = String(config.authHeaderName || "").trim();
+  const queryParam = queryAuthParam(config);
+  if (queryParam) {
+    if (!QUERY_PARAM_NAME_RE.test(queryParam)) throw new Error("API Key Query 参数名称无效");
+    return;
+  }
   if (!HEADER_NAME_RE.test(headerName)) throw new Error("API Key Header 名称无效");
   if (BLOCKED_AUTH_HEADERS.has(headerName.toLowerCase()) || headerName.toLowerCase() === "authorization") {
     throw new Error("该 Header 不允许用于自定义 MCP 认证");
@@ -89,6 +102,7 @@ function authHeaders(config: CustomMcpEndpointConfig): Record<string, string> {
     return { Authorization: `Bearer ${String(config.credential || "").trim()}` };
   }
   if (config.authType === "api_key") {
+    if (queryAuthParam(config)) return {};
     return { [String(config.authHeaderName)]: String(config.credential || "").trim() };
   }
   return {};
@@ -123,9 +137,9 @@ function responseHeaders(raw: Record<string, string | string[] | undefined>): He
   return headers;
 }
 
-export function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS) {
+export function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS, allowedSensitiveQueryParam = "") {
   return async (input: string | URL, init: RequestInit = {}): Promise<Response> => {
-    const url = parseCustomMcpEndpoint(String(input));
+    const url = parseCustomMcpEndpoint(String(input), allowedSensitiveQueryParam);
     const response = await safeAgentRequest(url.toString(), {
       method: init.method || "GET",
       headers: requestHeaders(init.headers),
@@ -147,12 +161,14 @@ export function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS) {
 async function withMcpClient<T>(config: CustomMcpEndpointConfig, run: (client: Client) => Promise<T>): Promise<T> {
   const url = parseCustomMcpEndpoint(config.endpointUrl);
   validateCustomMcpAuth(config);
+  const queryParam = queryAuthParam(config);
+  if (queryParam) url.searchParams.set(queryParam, String(config.credential || "").trim());
   const authProvider = config.authType === "oauth" && config.oauthData
     ? new CustomMcpOAuthProvider({ data: config.oauthData, onDataChanged: config.onOAuthDataChanged })
     : undefined;
   const transport = new StreamableHTTPClientTransport(url, {
     ...(authProvider ? { authProvider } : { requestInit: { headers: authHeaders(config) } }),
-    fetch: safeMcpFetch(),
+    fetch: safeMcpFetch(MCP_REQUEST_TIMEOUT_MS, queryParam),
     reconnectionOptions: {
       maxReconnectionDelay: 1_000,
       initialReconnectionDelay: 250,

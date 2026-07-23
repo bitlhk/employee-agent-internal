@@ -8,29 +8,23 @@ import {
   BookOpen,
   Bot,
   BriefcaseBusiness,
-  Building2,
   Check,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleAlert,
-  Database,
+  ExternalLink,
   FileText,
-  Globe2,
-  Github,
   HardDrive,
   Layers,
   LibraryBig,
   Package,
   Palette,
   Pencil,
-  PhoneCall,
   Plug,
   Plus,
   Power,
   PowerOff,
   RefreshCw,
-  ReceiptText,
   RotateCw,
   Search,
   Send,
@@ -45,6 +39,7 @@ import {
 import { toast } from "sonner";
 import type { CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { ExpertAvatar } from "@/components/ExpertAvatar";
+import { ConnectorIcon } from "@/components/ConnectorIcon";
 import { PageContainer } from "@/components/console/PageContainer";
 import { useChannelBinding } from "@/hooks/useChannelBinding";
 import { MarketplacePage } from "./MarketplacePage";
@@ -230,16 +225,23 @@ type ConnectorCatalogTemplate = {
   category: ConnectorCatalogCategory;
   availability: "direct" | "oauth" | "partner" | "preview";
   requirement: string;
+  docsUrl?: string;
   binding?: CustomMcpTemplate;
   oauthCatalogId?: string;
 };
 
-type ConnectorCatalogCategory = "business-data" | "knowledge-creation" | "development-collaboration";
+type ConnectorCatalogCardEntry =
+  | { kind: "template"; key: string; connected: boolean; position: number; template: ConnectorCatalogTemplate }
+  | { kind: "connector"; key: string; connected: boolean; position: number; connector: McpConnectorCard }
+  | { kind: "feishu"; key: string; connected: boolean; position: number };
+
+type ConnectorCatalogCategory = "business-data" | "knowledge-creation" | "development-collaboration" | "consumer-services";
 
 const CONNECTOR_CATALOG_CATEGORIES: Array<{ id: ConnectorCatalogCategory; label: string }> = [
   { id: "business-data", label: "业务数据" },
   { id: "knowledge-creation", label: "知识创作" },
   { id: "development-collaboration", label: "研发协作" },
+  { id: "consumer-services", label: "生活服务" },
 ];
 
 const CONNECTOR_CATALOG_TEMPLATES: ConnectorCatalogTemplate[] = [
@@ -251,6 +253,7 @@ const CONNECTOR_CATALOG_TEMPLATES: ConnectorCatalogTemplate[] = [
     category: "business-data",
     availability: "direct",
     requirement: "使用者填写自己的盈米 API Key。",
+    docsUrl: "https://yingmi.feishu.cn/docx/PRPRds5SBo2MITxHJL2cMPminEf",
     binding: { id: "yingmi", displayName: "盈米 · 且慢", endpointUrl: "https://stargate.yingmi.com/mcp/v2", authType: "api_key", authHeaderName: "X-API-Key" },
   },
   {
@@ -282,6 +285,39 @@ const CONNECTOR_CATALOG_TEMPLATES: ConnectorCatalogTemplate[] = [
     availability: "oauth",
     requirement: "点击授权后登录金数据；凭据由平台加密保存，并仅供当前岗位智能体使用。",
     oauthCatalogId: "jinshuju",
+  },
+  {
+    id: "hengshengjuyuan",
+    name: "恒生聚源",
+    description: "连接专业金融数据与研究资讯，支持行情、公司资料和公告研报检索。",
+    capabilities: ["行情数据", "公司资料", "公告研报"],
+    category: "business-data",
+    availability: "direct",
+    requirement: "使用者向恒生聚源申请自己的 JY_API_KEY；平台会加密保存，不会写入连接地址。",
+    docsUrl: "https://vcn7e7nesi3s.feishu.cn/docx/MeCmd4q0Yo7nmkx9D8IcMYbknob",
+    binding: {
+      id: "hengshengjuyuan",
+      displayName: "恒生聚源",
+      endpointUrl: "https://api.gildata.com/mcp-servers/aidata-assistant-srv-tool",
+      authType: "query_api_key",
+      authHeaderName: "token",
+    },
+  },
+  {
+    id: "tianyancha",
+    name: "天眼查",
+    description: "连接企业工商、司法风险、知识产权与经营信息，辅助尽调和客户核验。",
+    capabilities: ["企业工商", "司法风险", "知识产权"],
+    category: "business-data",
+    availability: "direct",
+    requirement: "使用者在天眼 AI 智能体数据平台注册并获取自己的 API Key。",
+    docsUrl: "https://ai.tianyancha.com/guide",
+    binding: {
+      id: "tianyancha",
+      displayName: "天眼查",
+      endpointUrl: "https://mcp.tianyancha.com/v1",
+      authType: "bearer",
+    },
   },
   {
     id: "canva",
@@ -346,8 +382,25 @@ const CONNECTOR_CATALOG_TEMPLATES: ConnectorCatalogTemplate[] = [
     description: "连接企业开票场景，辅助抬头校验、开票申请和结果查询。",
     capabilities: ["抬头校验", "开票申请", "结果查询"],
     category: "business-data",
-    availability: "partner",
-    requirement: "需要服务商开放接口；写操作接入后仍需用户二次确认。",
+    availability: "oauth",
+    requirement: "点击授权后使用云账房手机号和短信验证码登录；开票等写操作仍需用户确认。",
+    oauthCatalogId: "yunzhangfang",
+  },
+  {
+    id: "mcdonalds",
+    name: "麦当劳",
+    description: "查询餐品营养、门店与优惠信息，并连接会员积分、领券和点餐服务。",
+    capabilities: ["餐品门店", "优惠积分", "点餐配送"],
+    category: "consumer-services",
+    availability: "direct",
+    requirement: "使用者登录麦当劳 MCP 平台申请自己的 MCP Token；涉及地址、兑换和下单时请核对关键信息。",
+    docsUrl: "https://open.mcd.cn/mcp/doc",
+    binding: {
+      id: "mcdonalds",
+      displayName: "麦当劳",
+      endpointUrl: "https://mcp.mcd.cn",
+      authType: "bearer",
+    },
   },
 ];
 
@@ -536,39 +589,30 @@ function agentToolsCacheKey(adoptId?: string) {
   return `${AGENT_TOOLS_CACHE_PREFIX}${adoptId || "none"}`;
 }
 
-function mcpConnectorIcon(connector: Pick<McpConnectorCard, "serverId" | "category" | "source">): ReactNode {
-  const id = connector.serverId.toLowerCase();
-  if (id.startsWith("wind_")) {
-    return <img src="/images/connectors/wind-logo.png" alt="" aria-hidden="true" />;
-  }
-  if (connector.source === "personal" || id.includes("custom_mcp")) return <Plug aria-hidden="true" />;
-  if (id.includes("qieman") || id.includes("stock") || id.includes("index")) return <BarChart3 aria-hidden="true" />;
-  if (id.includes("bond")) return <Building2 aria-hidden="true" />;
-  if (id.includes("credential")) return <CheckCircle2 aria-hidden="true" />;
-  if (id.includes("telesales")) return <PhoneCall aria-hidden="true" />;
-  if (id.includes("insurance")) return <ShieldCheck aria-hidden="true" />;
-  if (id.includes("post_loan") || id.includes("risk")) return <AlertTriangle aria-hidden="true" />;
-  if (id.includes("customer")) return <UsersRound aria-hidden="true" />;
-  if (id.includes("product")) return <Layers aria-hidden="true" />;
-  if (id.includes("platform_tools")) return <Wrench aria-hidden="true" />;
-  if (/数据|知识/.test(connector.category)) return <Database aria-hidden="true" />;
-  if (/公共|公开/.test(connector.category)) return <Globe2 aria-hidden="true" />;
-  if (/审核|风控|安全/.test(connector.category)) return <ShieldCheck aria-hidden="true" />;
-  return <Wrench aria-hidden="true" />;
-}
-
 function connectorTemplateIcon(templateId: string): ReactNode {
-  if (templateId === "yingmi") return <BarChart3 aria-hidden="true" />;
-  if (templateId === "github") return <Github aria-hidden="true" />;
+  const squareLogo = {
+    yingmi: "/images/connectors/yingmi-logo.png",
+    github: "/images/connectors/github-logo.png",
+    jinshuju: "/images/connectors/jinshuju-logo.png",
+    hengshengjuyuan: "/images/connectors/hengshengjuyuan-logo.png",
+    mcdonalds: "/images/connectors/mcdonalds-logo.png",
+  }[templateId];
+  if (squareLogo) {
+    return <img className="skills-provider-icon--square" src={squareLogo} alt="" aria-hidden="true" />;
+  }
+  if (templateId === "yunzhangfang") {
+    return <img src="/images/connectors/yunzhangfang-logo.png" alt="" aria-hidden="true" />;
+  }
+  if (templateId === "tianyancha") {
+    return <img className="skills-provider-icon--wide" src="/images/connectors/tianyancha-logo.svg" alt="" aria-hidden="true" />;
+  }
   if (templateId === "microsoft-learn") return <BookOpen aria-hidden="true" />;
-  if (templateId === "jinshuju") return <FileText aria-hidden="true" />;
   if (templateId === "canva") return <Palette aria-hidden="true" />;
   if (templateId === "notion") return <Layers aria-hidden="true" />;
   if (templateId === "atlassian") return <BriefcaseBusiness aria-hidden="true" />;
   if (templateId === "slack") return <UsersRound aria-hidden="true" />;
   if (templateId === "google-drive") return <HardDrive aria-hidden="true" />;
   if (templateId === "tongzhou") return <LibraryBig aria-hidden="true" />;
-  if (templateId === "yunzhangfang") return <ReceiptText aria-hidden="true" />;
   return <Plug aria-hidden="true" />;
 }
 
@@ -589,13 +633,28 @@ function connectorCapabilityLabels(connector: McpConnectorCard): string[] {
     return ["产品检索", "产品详情", "市场资讯"];
   }
   if (id.includes("wind_financial_docs")) {
-    return ["公司公告", "财经新闻", "财务数据"];
+    return ["公司公告", "财经新闻", "资料检索"];
   }
   if (id.includes("wind_stock_data")) {
-    return ["股票行情", "财务指标", "风险数据"];
+    return ["A股行情", "公司财务", "风险指标"];
+  }
+  if (id.includes("wind_global_stock_data")) {
+    return ["港股行情", "美股行情", "公司基本面"];
+  }
+  if (id.includes("wind_fund_data")) {
+    return ["基金行情", "基金持仓", "基金业绩"];
   }
   if (id.includes("wind_index_data")) {
     return ["指数行情", "行业板块", "估值指标"];
+  }
+  if (id.includes("wind_bond_data")) {
+    return ["债券档案", "行情估值", "主体财务"];
+  }
+  if (id.includes("wind_economic_data")) {
+    return ["宏观指标", "行业指标", "经济序列"];
+  }
+  if (id.includes("wind_analytics_data")) {
+    return ["综合取数", "跨域查询", "自然语言检索"];
   }
   const toolNames = connector.tools.map((tool) => String(tool.name || "").trim()).filter(Boolean);
   return Array.from(new Set([...toolNames, connector.category, "业务连接", "对话可用"])).slice(0, 3);
@@ -603,6 +662,9 @@ function connectorCapabilityLabels(connector: McpConnectorCard): string[] {
 
 function connectorCatalogCategory(connector: McpConnectorCard): ConnectorCatalogCategory {
   const searchable = `${connector.serverId} ${connector.name} ${connector.category} ${connector.description}`.toLocaleLowerCase();
+  if (/mcd|麦当劳|餐品|门店|点餐|优惠券|会员积分|生活服务/.test(searchable)) {
+    return "consumer-services";
+  }
   if (/wind|wealth|customer|product|stock|index|bond|fund|risk|insurance|finance|金融|财富|客户|产品|行情|债券|基金|风控|保险|数据/.test(searchable)) {
     return "business-data";
   }
@@ -834,6 +896,18 @@ function McpToolsPage({
   }, [adoptId]);
 
   const connectors = useMemo(() => flattenMcpConnectors(items), [items]);
+  const templateConnectionById = useMemo(() => {
+    const matches = new Map<string, McpConnectorCard>();
+    for (const template of CONNECTOR_CATALOG_TEMPLATES) {
+      const catalogId = template.oauthCatalogId || template.binding?.catalogId || template.binding?.id || template.id;
+      const connection = connectors.find((connector) => (
+        connector.catalogId === catalogId
+        || (template.binding && connector.name === template.binding.displayName)
+      ));
+      if (connection) matches.set(template.id, connection);
+    }
+    return matches;
+  }, [connectors]);
   const scopedConnectors = useMemo(
     () => connectors.filter((connector) => view === "mine" ? connector.source === "personal" : connector.source !== "personal"),
     [connectors, view],
@@ -891,22 +965,46 @@ function McpToolsPage({
     });
   }, [normalizedQuery, selectedCategory, view]);
   const connectorCatalogGroups = useMemo(() => {
+    const cards: ConnectorCatalogCardEntry[] = [
+      ...filteredTemplates.map((template, index) => ({
+        kind: "template" as const,
+        key: `catalog:${template.id}`,
+        connected: Boolean(
+          templateConnectionById.get(template.id)?.connected
+          && templateConnectionById.get(template.id)?.health === "ready",
+        ),
+        position: index,
+        template,
+      })),
+      ...(showFeishuConnector ? [{
+        kind: "feishu" as const,
+        key: FEISHU_CONNECTOR_ID,
+        connected: feishuConnected && feishuHealth === "ready",
+        position: filteredTemplates.length,
+      }] : []),
+      ...filteredConnectors.map((connector, index) => ({
+        kind: "connector" as const,
+        key: connector.id,
+        connected: connector.connected && connector.health === "ready",
+        position: filteredTemplates.length + 1 + index,
+        connector,
+      })),
+    ].sort((a, b) => Number(b.connected) - Number(a.connected) || a.position - b.position);
     const group = {
       id: selectedCategory,
       label: "",
-      templates: filteredTemplates,
-      connectors: filteredConnectors,
-      includeFeishu: showFeishuConnector,
+      cards,
     };
-    return group.templates.length > 0 || group.connectors.length > 0 || group.includeFeishu ? [group] : [];
-  }, [filteredConnectors, filteredTemplates, selectedCategory, showFeishuConnector]);
+    return group.cards.length > 0 ? [group] : [];
+  }, [feishuConnected, feishuHealth, filteredConnectors, filteredTemplates, selectedCategory, showFeishuConnector, templateConnectionById]);
   const selectedTemplate = useMemo(
     () => CONNECTOR_CATALOG_TEMPLATES.find((template) => template.id === detailTemplateId) || null,
     [detailTemplateId],
   );
-  const selectedTemplateConnection = selectedTemplate?.oauthCatalogId
-    ? connectors.find((connector) => connector.catalogId === selectedTemplate.oauthCatalogId) || null
+  const selectedTemplateConnection = selectedTemplate
+    ? templateConnectionById.get(selectedTemplate.id) || null
     : null;
+  const selectedTemplateConnected = Boolean(selectedTemplateConnection?.connected);
 
   useEffect(() => {
     if (detailServerId && !selectedConnector && !feishuSelected) setDetailServerId(null);
@@ -1059,7 +1157,7 @@ function McpToolsPage({
       {connectorCatalogGroups.length > 0 && (
         <div className="skills-connector-sections">
           {connectorCatalogGroups.map((group) => {
-            const count = group.templates.length + group.connectors.length + Number(group.includeFeishu);
+            const count = group.cards.length;
             return (
               <section key={group.id} className="skills-connector-section" aria-labelledby={group.label ? `connector-category-${group.id}` : undefined}>
                 {group.label ? (
@@ -1069,11 +1167,11 @@ function McpToolsPage({
                   </div>
                 ) : null}
                 <div className="skills-mcp-grid">
-                  {group.templates.map((template) => {
-                    const connected = Boolean(template.oauthCatalogId && connectors.some((connector) => connector.catalogId === template.oauthCatalogId));
-                    const status = connectorTemplateStatus(template, connected);
-                    return (
-                      <article key={`catalog:${template.id}`} className="skills-mcp-card-v2 skills-catalog-card skills-action-card" data-connected="false">
+                  {group.cards.map((entry) => {
+                    if (entry.kind === "template") {
+                      const { template, connected } = entry;
+                      return (
+                      <article key={entry.key} className="skills-mcp-card-v2 skills-catalog-card skills-action-card" data-connected={connected ? "true" : "false"}>
                         <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailTemplateId(template.id)}>
                           <span className="skills-catalog-card__head">
                             <span className="skills-catalog-card__icon skills-mcp-card-v2__icon" data-source={template.availability === "direct" ? "public" : "optional"}>
@@ -1083,9 +1181,11 @@ function McpToolsPage({
                               <span className="skills-catalog-card__title">{template.name}</span>
                               <span className="skills-catalog-card__meta">预置连接器</span>
                             </span>
-                            <span className="skills-mcp-card-v2__status" data-health={status.health}>
-                              <span aria-hidden="true" />{status.label}
-                            </span>
+                            {connected ? (
+                              <span className="skills-mcp-card-v2__status" data-health="ready">
+                                <span aria-hidden="true" />已连接
+                              </span>
+                            ) : null}
                           </span>
                           <span className="skills-catalog-card__desc">{template.description}</span>
                           <span className="skills-catalog-card__capabilities" aria-label="连接能力">
@@ -1093,10 +1193,10 @@ function McpToolsPage({
                           </span>
                         </button>
                       </article>
-                    );
-                  })}
-                  {group.includeFeishu ? (
-                    <article className="skills-mcp-card-v2 skills-catalog-card skills-action-card" data-connected={feishuConnected ? "true" : "false"}>
+                      );
+                    }
+                    if (entry.kind === "feishu") return (
+                    <article key={entry.key} className="skills-mcp-card-v2 skills-catalog-card skills-action-card" data-connected={feishuConnected ? "true" : "false"}>
                       <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailServerId(FEISHU_CONNECTOR_ID)}>
                         <span className="skills-catalog-card__head">
                           <span className="skills-catalog-card__icon skills-mcp-card-v2__icon" data-source="preset">
@@ -1106,9 +1206,11 @@ function McpToolsPage({
                             <span className="skills-catalog-card__title">飞书</span>
                             <span className="skills-catalog-card__meta">平台连接</span>
                           </span>
-                          <span className="skills-mcp-card-v2__status" data-health={feishuHealth}>
-                            <span aria-hidden="true" />{feishuStatusLabel}
-                          </span>
+                          {feishuConnected && feishuHealth === "ready" ? (
+                            <span className="skills-mcp-card-v2__status" data-health="ready">
+                              <span aria-hidden="true" />已连接
+                            </span>
+                          ) : null}
                         </span>
                         <span className="skills-catalog-card__desc">在飞书中使用岗位智能体，接收任务结果、定时通知和协作提醒。</span>
                         <span className="skills-catalog-card__capabilities" aria-label="连接能力">
@@ -1116,21 +1218,24 @@ function McpToolsPage({
                         </span>
                       </button>
                     </article>
-                  ) : null}
-                  {group.connectors.map((connector) => (
-                    <article key={connector.id} className="skills-mcp-card-v2 skills-catalog-card skills-action-card" data-connected={connector.connected ? "true" : "false"}>
+                    );
+                    const { connector } = entry;
+                    return (
+                    <article key={entry.key} className="skills-mcp-card-v2 skills-catalog-card skills-action-card" data-connected={entry.connected ? "true" : "false"}>
                       <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailServerId(connector.serverId)}>
                         <span className="skills-catalog-card__head">
                           <span className="skills-catalog-card__icon skills-mcp-card-v2__icon" data-source={connector.source}>
-                            {mcpConnectorIcon(connector)}
+                            <ConnectorIcon {...connector} />
                           </span>
                           <span className="skills-catalog-card__title-wrap">
                             <span className="skills-catalog-card__title">{connector.name}</span>
                             <span className="skills-catalog-card__meta">{connector.sourceLabel}</span>
                           </span>
-                          <span className="skills-mcp-card-v2__status" data-health={connector.health}>
-                            <span aria-hidden="true" />{connector.statusLabel}
-                          </span>
+                          {connector.connected && connector.health === "ready" ? (
+                            <span className="skills-mcp-card-v2__status" data-health="ready">
+                              <span aria-hidden="true" />已连接
+                            </span>
+                          ) : null}
                         </span>
                         <span className="skills-catalog-card__desc">{connector.description}</span>
                         <span className="skills-catalog-card__capabilities" aria-label="工具能力">
@@ -1138,7 +1243,8 @@ function McpToolsPage({
                         </span>
                       </button>
                     </article>
-                  ))}
+                    );
+                  })}
                 </div>
               </section>
             );
@@ -1156,8 +1262,8 @@ function McpToolsPage({
               <div className="skills-mcp-detail__intro">
                 <DialogTitle>{selectedTemplate.name}</DialogTitle>
                 <div className="skills-mcp-detail__meta">
-                  <span className="skills-mcp-detail__status" data-health={connectorTemplateStatus(selectedTemplate, Boolean(selectedTemplateConnection)).health}>
-                    <span aria-hidden="true" />{connectorTemplateStatus(selectedTemplate, Boolean(selectedTemplateConnection)).label}
+                  <span className="skills-mcp-detail__status" data-health={connectorTemplateStatus(selectedTemplate, selectedTemplateConnected).health}>
+                    <span aria-hidden="true" />{connectorTemplateStatus(selectedTemplate, selectedTemplateConnected).label}
                   </span>
                   <span>用户自行授权</span>
                 </div>
@@ -1182,11 +1288,26 @@ function McpToolsPage({
             <div className="skills-mcp-detail__footer">
               <span className="skills-mcp-detail__connection-note">平台不提供或共享用户凭据</span>
               <div className="skills-mcp-detail__footer-actions">
+                {selectedTemplate.docsUrl ? (
+                  <a
+                    className="skills-mcp-detail__button"
+                    href={selectedTemplate.docsUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    使用说明 <ExternalLink />
+                  </a>
+                ) : null}
                 <button
                   className="skills-mcp-detail__button skills-mcp-detail__button--primary"
                   type="button"
-                  disabled={Boolean(oauthAction) || (!selectedTemplate.binding && !selectedTemplate.oauthCatalogId) || (Boolean(selectedTemplate.binding) && !onAddMcp)}
+                  disabled={Boolean(oauthAction) || (!selectedTemplateConnected && ((!selectedTemplate.binding && !selectedTemplate.oauthCatalogId) || (Boolean(selectedTemplate.binding) && !onAddMcp)))}
                   onClick={() => {
+                    if (selectedTemplateConnected) {
+                      setDetailTemplateId(null);
+                      onTryMcp?.();
+                      return;
+                    }
                     if (selectedTemplate.oauthCatalogId) {
                       void beginOAuthConnection(selectedTemplate);
                       return;
@@ -1200,7 +1321,9 @@ function McpToolsPage({
                 >
                   {oauthAction === selectedTemplate.id
                     ? "正在授权"
-                    : selectedTemplate.oauthCatalogId
+                    : selectedTemplateConnected
+                      ? "去试试"
+                      : selectedTemplate.oauthCatalogId
                       ? selectedTemplateConnection ? "重新授权" : "授权连接"
                       : selectedTemplate.binding ? "绑定连接" : "等待开放"}
                   <ArrowRight />
@@ -1216,7 +1339,7 @@ function McpToolsPage({
           <DialogContent className="skills-mcp-detail" aria-describedby="skills-mcp-detail-description">
             <div className="skills-mcp-detail__header">
               <span className="skills-mcp-detail__icon" data-source={selectedConnector.source}>
-                {mcpConnectorIcon(selectedConnector)}
+                <ConnectorIcon {...selectedConnector} />
               </span>
               <div className="skills-mcp-detail__intro">
                 <DialogTitle>{selectedConnector.name}</DialogTitle>

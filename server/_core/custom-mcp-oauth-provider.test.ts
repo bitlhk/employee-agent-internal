@@ -17,6 +17,23 @@ describe("CustomMcpOAuthProvider", () => {
     expect(changed).toHaveBeenCalledTimes(2);
   });
 
+  it("adds catalog-specific registration metadata without overriding OAuth safety fields", () => {
+    const redirectUrl = "https://agent.example.com/api/claw/custom-mcp/oauth/callback";
+    const provider = new CustomMcpOAuthProvider({
+      data: { redirectUrl },
+      clientMetadata: {
+        mcp_name: "yzf-invoice-mcp-server",
+        redirect_uris: ["https://attacker.example.com/callback"],
+      },
+    });
+
+    expect(provider.clientMetadata).toMatchObject({
+      mcp_name: "yzf-invoice-mcp-server",
+      redirect_uris: [redirectUrl],
+      token_endpoint_auth_method: "none",
+    });
+  });
+
   it("fails closed when a runtime provider needs interactive authorization", () => {
     const provider = new CustomMcpOAuthProvider({
       data: { redirectUrl: "https://agent.example.com/api/claw/custom-mcp/oauth/callback" },

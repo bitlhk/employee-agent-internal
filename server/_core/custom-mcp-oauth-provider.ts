@@ -12,6 +12,7 @@ import type { CustomMcpOAuthData } from "../db/custom-mcp-connections";
 type ProviderOptions = {
   data: CustomMcpOAuthData;
   state?: string;
+  clientMetadata?: Record<string, unknown>;
   onRedirect?: (url: URL) => void;
   onDataChanged?: (data: CustomMcpOAuthData) => void | Promise<void>;
 };
@@ -27,12 +28,13 @@ export class CustomMcpOAuthProvider implements OAuthClientProvider {
 
   get clientMetadata(): OAuthClientMetadata {
     return {
+      ...(this.options.clientMetadata || {}),
       redirect_uris: [this.redirectUrl],
       token_endpoint_auth_method: "none",
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       client_name: "Employee Agent",
-    };
+    } as OAuthClientMetadata;
   }
 
   state(): string {

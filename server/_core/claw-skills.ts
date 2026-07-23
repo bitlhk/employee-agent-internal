@@ -146,9 +146,14 @@ type McpToolGroupOverride = {
 const DEFAULT_MCP_CATEGORY = "MCP 工具";
 
 const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
-  { id: "wind_financial_docs", name: "Wind 财务与公告", category: "公共金融数据", description: "查询上市公司财务指标、公告、新闻与研报资料，辅助公司研究和事实核验。", serverIds: ["wind_financial_docs"] },
-  { id: "wind_stock_data", name: "Wind 股票数据", category: "公共金融数据", description: "查询 A 股、港股和美股行情、K 线、财务与风险指标，用于个股分析。", serverIds: ["wind_stock_data"] },
+  { id: "wind_stock_data", name: "Wind A股数据", category: "公共金融数据", description: "查询 A 股行情、K 线、公司档案、财务、股东、事件、技术与风险指标。", serverIds: ["wind_stock_data"] },
+  { id: "wind_global_stock_data", name: "Wind 全球股票", category: "公共金融数据", description: "查询港股和美股行情、K 线、公司基本面、股东、事件、技术与风险指标。", serverIds: ["wind_global_stock_data"] },
+  { id: "wind_fund_data", name: "Wind 基金数据", category: "公共金融数据", description: "查询 ETF、公募基金行情、档案、持仓、业绩、持有人和基金公司信息。", serverIds: ["wind_fund_data"] },
   { id: "wind_index_data", name: "Wind 指数数据", category: "公共金融数据", description: "查询指数和行业板块的行情、成分、估值与技术指标，把握市场结构。", serverIds: ["wind_index_data"] },
+  { id: "wind_bond_data", name: "Wind 债券数据", category: "公共金融数据", description: "查询债券档案、发债主体、行情估值、久期利差与主体财务数据。", serverIds: ["wind_bond_data"] },
+  { id: "wind_financial_docs", name: "Wind 公告资讯", category: "公共金融数据", description: "检索上市公司公告和财经新闻，辅助公司研究、事件跟踪与事实核验。", serverIds: ["wind_financial_docs"] },
+  { id: "wind_economic_data", name: "Wind 宏观经济", category: "公共金融数据", description: "查询宏观经济和行业指标时间序列，覆盖频率、量纲和币种等维度。", serverIds: ["wind_economic_data"] },
+  { id: "wind_analytics_data", name: "Wind 综合取数", category: "公共金融数据", description: "通过自然语言跨领域查询 Wind 数据，适合复杂金融问题和补充取数。", serverIds: ["wind_analytics_data"] },
   { id: "qieman", name: "且慢基金数据", category: "公共金融数据", description: "查询公募基金档案、净值、持仓和组合表现，用于基金筛选与对比。", serverIds: ["qieman"] },
   { id: "bond_quote_parse", name: "债券报价", category: "内部业务 MCP", description: "识别文本或文件中的债券报价，并转换为可检索、可计算的结构化数据。", serverIds: ["bond_quote_parse"] },
   { id: "group_insurance_audit", name: "团险审核", category: "内部业务 MCP", description: "核对团险投保材料、关键字段和审核规则，提示缺失信息与业务风险。", serverIds: ["group_insurance_audit"] },

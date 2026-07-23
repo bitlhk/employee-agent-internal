@@ -530,6 +530,15 @@ export async function updateAgentTask(id: string, fields: Record<string, any>): 
   await db.update(agentTasks).set(fields).where(eq(agentTasks.id, id));
 }
 
+export async function updateActiveAgentTask(id: string, fields: Record<string, any>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(agentTasks).set(fields).where(and(
+    eq(agentTasks.id, id),
+    inArray(agentTasks.status, ["pending", "running"]),
+  ));
+}
+
 export async function answerAgentTaskInteractionAndCreate(
   taskId: string,
   context: BusinessAgentOwnerContext,

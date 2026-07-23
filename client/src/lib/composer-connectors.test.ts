@@ -36,6 +36,7 @@ describe("flattenComposerConnectors", () => {
           serverId: "custom_mcp_42",
           name: "项目知识库",
           description: "mcp.example.com",
+          catalogId: "yingmi",
           configured: true,
           status: "available",
           enabledForAgent: true,
@@ -46,5 +47,7 @@ describe("flattenComposerConnectors", () => {
 
     expect(connector.name).toBe("项目知识库");
     expect(connector.description).toBe("mcp.example.com");
+    expect(connector.source).toBe("personal");
+    expect(connector.catalogId).toBe("yingmi");
   });
 });

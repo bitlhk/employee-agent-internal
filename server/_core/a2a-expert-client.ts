@@ -30,6 +30,7 @@ export type A2ARetryProfile = {
 export type A2AEndpointConfig = {
   path?: string;
   rpcPath?: string;
+  protocolVersion?: string;
   stream?: boolean;
   method?: string;
   timeoutMs?: number;
@@ -70,8 +71,10 @@ export type A2ARemoteArtifact = {
 
 export type A2ATaskRuntimeContext = {
   contextId?: string;
+  taskId?: string;
   dataPart?: Record<string, unknown>;
   dataPartMetadata?: Record<string, unknown>;
+  signal?: AbortSignal;
 };
 
 const MAX_STATIC_PROFILE_BYTES = 64 * 1024;
@@ -89,6 +92,15 @@ function authHeaders(token?: string | null) {
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
+}
+
+function protocolHeaders(config: A2AEndpointConfig): Record<string, string> {
+  const version = String(config.protocolVersion || "").trim();
+  return version ? { "A2A-Version": version } : {};
+}
+
+function usesA2AProtocolV1(config: A2AEndpointConfig): boolean {
+  return /^1(?:\.|$)/.test(String(config.protocolVersion || "").trim());
 }
 
 function assertSafeProfileValue(value: unknown, label: string): void {
@@ -165,6 +177,15 @@ function normalizeRuntimeContextId(raw: unknown): string | undefined {
   return value;
 }
 
+function normalizeRuntimeTaskId(raw: unknown): string | undefined {
+  const value = String(raw || "").trim();
+  if (!value) return undefined;
+  if (value.length > 128 || !/^[A-Za-z0-9._:-]+$/.test(value)) {
+    throw new Error("runtime taskId is invalid");
+  }
+  return value;
+}
+
 export function buildA2ATaskRequest(
   input: string,
   config: A2AEndpointConfig,
@@ -175,38 +196,44 @@ export function buildA2ATaskRequest(
   const messageId = createId();
   const contextId = normalizeRuntimeContextId(runtime.contextId)
     || (profile.includeContextId ? createId() : undefined);
-  const taskId = profile.includeTaskId ? createId() : undefined;
+  const taskId = normalizeRuntimeTaskId(runtime.taskId)
+    || (profile.includeTaskId ? createId() : undefined);
   const messageFields = safeRecord(profile.messageFields, "requestProfile.messageFields", createId) || {};
   const dataPart = safeRecord(profile.dataPart, "requestProfile.dataPart", createId);
   const dataPartMetadata = safeRecord(profile.dataPartMetadata, "requestProfile.dataPartMetadata", createId);
   const runtimeDataPart = safeRecord(runtime.dataPart, "runtime.dataPart", createId);
   const runtimeDataPartMetadata = safeRecord(runtime.dataPartMetadata, "runtime.dataPartMetadata", createId);
   const paramsMetadata = safeRecord(profile.paramsMetadata, "requestProfile.paramsMetadata", createId);
-  const parts: Array<Record<string, unknown>> = [{ kind: "text", text: renderTaskText(input, config) }];
+  const protocolV1 = usesA2AProtocolV1(config);
+  const parts: Array<Record<string, unknown>> = [
+    protocolV1
+      ? { text: renderTaskText(input, config) }
+      : { kind: "text", text: renderTaskText(input, config) },
+  ];
   if (dataPart) {
-    parts.push({
-      kind: "data",
-      data: dataPart,
-      ...(dataPartMetadata ? { metadata: dataPartMetadata } : {}),
-    });
+    parts.push(protocolV1
+      ? { data: dataPart, ...(dataPartMetadata ? { metadata: dataPartMetadata } : {}) }
+      : { kind: "data", data: dataPart, ...(dataPartMetadata ? { metadata: dataPartMetadata } : {}) });
   }
   if (runtimeDataPart) {
-    parts.push({
-      kind: "data",
-      data: runtimeDataPart,
-      ...(runtimeDataPartMetadata ? { metadata: runtimeDataPartMetadata } : {}),
-    });
+    parts.push(protocolV1
+      ? { data: runtimeDataPart, ...(runtimeDataPartMetadata ? { metadata: runtimeDataPartMetadata } : {}) }
+      : { kind: "data", data: runtimeDataPart, ...(runtimeDataPartMetadata ? { metadata: runtimeDataPartMetadata } : {}) });
   }
   const message = {
     ...messageFields,
-    role: "user",
+    role: protocolV1 ? "ROLE_USER" : "user",
     messageId,
     ...(profile.messageKind ? { kind: String(profile.messageKind) } : {}),
     parts,
     ...(contextId ? { contextId } : {}),
     ...(taskId ? { taskId } : {}),
   };
-  const method = String(config.method || (config.stream === true ? "message/stream" : "message/send"));
+  const method = String(config.method || (
+    protocolV1
+      ? (config.stream === true ? "SendStreamingMessage" : "SendMessage")
+      : (config.stream === true ? "message/stream" : "message/send")
+  ));
   return {
     body: {
       jsonrpc: "2.0",
@@ -234,7 +261,8 @@ function valueText(value: unknown): string {
 
 function partText(part: any): string {
   if (!part || typeof part !== "object") return "";
-  if ((part.kind === "text" || part.type === "text") && typeof part.text === "string") {
+  if (typeof part.text === "string"
+    && (!part.kind || part.kind === "text" || part.type === "text")) {
     return part.text.trim();
   }
   if (part.kind === "data" || part.type === "data") {
@@ -309,7 +337,7 @@ function failedTaskDisplayText(events: unknown[]): string {
       }
     }
     if (typeof node.error?.message === "string") add(node.error.message);
-    for (const key of ["__ui__", "data", "value", "parts", "children", "message", "status", "artifact", "artifacts", "result", "error"]) {
+    for (const key of ["__ui__", "data", "value", "parts", "children", "message", "status", "statusUpdate", "status_update", "artifact", "artifacts", "artifactUpdate", "artifact_update", "result", "error"]) {
       if (key in node) visit(node[key]);
     }
   };
@@ -431,6 +459,24 @@ function recursiveA2AText(value: unknown): string {
   return texts.join("\n").trim();
 }
 
+function a2aEventPayload(event: any): any {
+  const result = event?.result ?? event;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return result;
+  for (const key of ["task", "message", "statusUpdate", "status_update", "artifactUpdate", "artifact_update"]) {
+    const payload = result[key];
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) return payload;
+  }
+  return result;
+}
+
+function normalizeA2AState(value: unknown): string {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^task_state_/, "")
+    .replace(/_/g, "-");
+}
+
 export function extractA2ATaskResult(
   events: unknown[],
   config: A2AEndpointConfig,
@@ -448,10 +494,10 @@ export function extractA2ATaskResult(
   const artifacts = new Map<string, A2ARemoteArtifact>();
 
   for (const event of events as any[]) {
-    const result = event?.result ?? event;
+    const result = a2aEventPayload(event);
     if (!result || typeof result !== "object") continue;
     remoteTaskId = String(result.taskId || result.id || result.contextId || remoteTaskId || "").trim();
-    state = String(result.status?.state || result.state || state || "").trim().toLowerCase();
+    state = normalizeA2AState(result.status?.state || result.state || state);
     interaction = findAgentInteraction(result) || interaction;
     for (const artifact of collectA2AArtifacts(result)) {
       artifacts.set(`${artifact.id}:${artifact.uri || artifact.name}`, artifact);
@@ -462,11 +508,12 @@ export function extractA2ATaskResult(
     const artifactName = String(artifact.name || artifactId).trim().toLowerCase();
     const text = partsText(artifact.parts) || recursiveA2AText(artifact);
     if (!text) continue;
+    const append = result.append === true;
     if (preferredNames.size > 0 && preferredNames.has(artifactName)) {
-      artifactSnapshots.set(artifactId, text);
+      artifactSnapshots.set(artifactId, append ? `${artifactSnapshots.get(artifactId) || ""}${text}` : text);
     }
     if (artifactName === "response" || artifactId.includes("_response")) {
-      responseSnapshots.set(artifactId, text);
+      responseSnapshots.set(artifactId, append ? `${responseSnapshots.get(artifactId) || ""}${text}` : text);
     }
   }
 
@@ -489,7 +536,7 @@ export function extractA2ATaskResult(
 
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index] as any;
-    const text = recursiveA2AText(event?.result ?? event);
+    const text = recursiveA2AText(a2aEventPayload(event));
     if (text) return { text, ...meta };
   }
   const last = (events.at(-1) as any)?.result ?? events.at(-1) ?? {};
@@ -524,9 +571,9 @@ function parseA2AResponse(raw: string): unknown[] {
 }
 
 function isA2ACompleteEvent(event: any): boolean {
-  const result = event?.result ?? event;
+  const result = a2aEventPayload(event);
   if (!result || typeof result !== "object") return false;
-  const state = String(result.status?.state || result.state || "").toLowerCase();
+  const state = normalizeA2AState(result.status?.state || result.state);
   if (["completed", "succeeded", "failed", "canceled", "cancelled", "input-required"].includes(state)) return true;
   if (result.final === true || result.done === true || result.completed === true) return true;
   const kind = String(result.kind || result.type || "").toLowerCase();
@@ -556,6 +603,9 @@ export async function runA2AExpertTask(
   const maxRetries = Math.max(0, Math.min(10, Number(retry.maxRetries || 0)));
   const request = buildA2ATaskRequest(input, config, runtime);
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(runtime.signal?.reason);
+  if (runtime.signal?.aborted) abortFromCaller();
+  else runtime.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const events: unknown[] = [];
   let lastError: unknown;
@@ -580,6 +630,7 @@ export async function runA2AExpertTask(
           headers: {
             Accept: "application/json, text/event-stream",
             "Content-Type": "application/json",
+            ...protocolHeaders(config),
             ...authHeaders(connection.apiToken),
           },
           body: JSON.stringify(body),
@@ -639,12 +690,49 @@ export async function runA2AExpertTask(
     throw lastError instanceof Error ? lastError : new Error("A2A task failed");
   } finally {
     clearTimeout(timeout);
+    runtime.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+export async function cancelA2AExpertTask(
+  connection: A2AAgentConnection,
+  runtime: Pick<A2ATaskRuntimeContext, "contextId" | "taskId">,
+): Promise<boolean> {
+  const contextId = normalizeRuntimeContextId(runtime.contextId);
+  const taskId = normalizeRuntimeTaskId(runtime.taskId);
+  if (!contextId && !taskId) return false;
+  const config = connection.endpointConfig || {};
+  const publicRpcUrl = endpoint(String(connection.apiUrl || ""), String(config.rpcPath ?? config.path ?? ""));
+  const rpcTarget = resolveTrustedLocalProfileA2ATarget(publicRpcUrl);
+  const response = await safeAgentRequest(rpcTarget.url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...protocolHeaders(config),
+      ...authHeaders(connection.apiToken),
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: randomUUID(),
+      method: usesA2AProtocolV1(config) ? "CancelTask" : "tasks/cancel",
+      params: { ...(taskId ? { id: taskId } : {}), ...(contextId ? { contextId } : {}) },
+    }),
+    timeoutMs: 10_000,
+    allowPrivate: rpcTarget.allowPrivate,
+  });
+  if (response.status < 200 || response.status >= 300) return false;
+  const raw = await readSafeAgentResponseText(response);
+  const events = parseA2AResponse(raw);
+  const event = events[events.length - 1] as any;
+  if (event?.error) return false;
+  const result = event?.result ?? event;
+  return ["canceled", "cancelled"].includes(String(result?.status?.state || result?.state || "").toLowerCase());
 }
 
 export function summarizeA2AEvents(events: unknown[], config: A2AEndpointConfig, maxBytes = 40_000) {
   const compact = (events as any[]).slice(-20).map((event) => {
-    const result = event?.result ?? event;
+    const result = a2aEventPayload(event);
     if (!result || typeof result !== "object") return event;
     const artifact = result.artifact;
     return {

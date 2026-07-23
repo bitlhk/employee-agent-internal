@@ -4482,7 +4482,7 @@ input.session-searchbar__input:focus-visible,
   min-width: 0;
   overflow: hidden;
   color: var(--oc-text-primary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: var(--oc-weight-semibold);
   line-height: 18px;
   text-overflow: ellipsis;
@@ -4858,6 +4858,14 @@ input.session-searchbar__input:focus-visible,
   width: 24px;
   height: 24px;
 }
+.skills-mcp .skills-catalog-card__icon img.skills-provider-icon--wide {
+  width: 34px;
+  height: 20px;
+}
+.skills-mcp .skills-catalog-card__icon:has(img),
+.skills-mcp-detail__icon:has(img) {
+  background: transparent;
+}
 .skills-mcp-card-v2 {
   min-width: 0;
   min-height: 146px;
@@ -4924,6 +4932,11 @@ input.session-searchbar__input:focus-visible,
   width: 22px;
   height: 22px;
 }
+.skills-mcp-card-v2__icon img.skills-provider-icon--wide,
+.skills-mcp-detail__icon img.skills-provider-icon--wide {
+  width: 32px;
+  height: 20px;
+}
 .skills-mcp-card-v2__icon[data-source="public"],
 .skills-mcp-detail__icon[data-source="public"] {
   color: color-mix(in oklab, var(--oc-info) 78%, var(--oc-text-primary));
@@ -4967,6 +4980,13 @@ input.session-searchbar__input:focus-visible,
   font-size: 11px;
   line-height: 16px;
   white-space: nowrap;
+}
+.skills-mcp-card-v2__status[data-health="ready"] {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in oklab, var(--oc-success) 46%, var(--oc-border-subtle));
+  border-radius: 6px;
+  color: color-mix(in oklab, var(--oc-success) 78%, var(--oc-text-primary));
+  background: color-mix(in oklab, var(--oc-success) 6%, transparent);
 }
 .skills-mcp-card-v2__status > span,
 .skills-mcp-detail__status > span {
@@ -5358,6 +5378,7 @@ input.session-searchbar__input:focus-visible,
   background: var(--oc-card);
   color: var(--oc-text-primary);
   font-size: 12px;
+  text-decoration: none;
   transition: background .14s ease, border-color .14s ease, color .14s ease;
 }
 .skills-mcp-detail__button svg {
@@ -6503,6 +6524,40 @@ input.session-searchbar__input:focus-visible,
   font-size: 13px;
   line-height: 1.55;
 }
+.agent-task-card__active-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agent-task-card__active-row .agent-task-card__progress {
+  min-width: 0;
+}
+.agent-task-card__cancel {
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid var(--oc-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--oc-text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.agent-task-card__cancel:hover,
+.agent-task-card__cancel:focus-visible {
+  border-color: var(--oc-border-strong);
+  outline: none;
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-primary);
+}
+.agent-task-card__cancel:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 .agent-task-card__progress-dot {
   width: 7px;
   height: 7px;
@@ -6618,6 +6673,12 @@ input.session-searchbar__input:focus-visible,
 }
 .agent-task-card__resume {
   margin-top: 12px;
+}
+@media (max-width: 640px) {
+  .agent-task-card__active-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 /* ── Generic Agent artifact side panel ── */
@@ -9207,6 +9268,28 @@ button[data-selected="true"] .expert-interaction__radio {
   width: 14px !important;
   height: 14px !important;
   stroke-width: 1.7;
+}
+.lingxia-connector-item__icon > img {
+  display: block;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+.lingxia-connector-item__icon > img.connector-provider-icon--wide {
+  width: 21px;
+  height: 14px;
+}
+.skills-mcp-card-v2__icon > img.connector-provider-icon,
+.skills-mcp-detail__icon > img.connector-provider-icon {
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+.skills-mcp-card-v2__icon > img.connector-provider-icon--wide,
+.skills-mcp-detail__icon > img.connector-provider-icon--wide {
+  width: 32px;
+  height: 20px;
 }
 .lingxia-connector-item__main {
   display: flex;

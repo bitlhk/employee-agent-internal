@@ -19,6 +19,31 @@ describe("A2A expert profiles", () => {
     expect(request.body.params).not.toHaveProperty("metadata");
   });
 
+  it("builds Linux Foundation A2A 1.0 JSON-RPC requests when configured", () => {
+    const request = buildA2ATaskRequest("research this", {
+      protocolVersion: "1.0",
+      stream: true,
+    }, { contextId: "ea-context-v1" });
+
+    expect(request.body.method).toBe("SendStreamingMessage");
+    expect(request.body.params.message).toMatchObject({
+      messageId: expect.any(String),
+      contextId: "ea-context-v1",
+      role: "ROLE_USER",
+      parts: [{ text: "research this" }],
+    });
+    expect(request.body.params.message.parts[0]).not.toHaveProperty("kind");
+  });
+
+  it("uses the trusted runtime task id for cancellable local expert calls", () => {
+    const request = buildA2ATaskRequest("build it", {}, {
+      contextId: "ea-context-123",
+      taskId: "agt_12345678",
+    });
+    expect(request.taskId).toBe("agt_12345678");
+    expect(request.body.params.message.taskId).toBe("agt_12345678");
+  });
+
   it("uses an explicit stable runtime context when the caller supplies one", () => {
     const request = buildA2ATaskRequest("continue", {}, { contextId: "ea-context-123" });
 
@@ -214,6 +239,63 @@ describe("A2A expert profiles", () => {
     ], {});
 
     expect(result).toEqual({ text: "final", remoteTaskId: "context-1" });
+  });
+
+  it("unwraps and joins Linux Foundation A2A 1.0 stream events", () => {
+    const result = extractA2ATaskResult([
+      {
+        result: {
+          task: {
+            id: "remote-v1",
+            contextId: "context-v1",
+            status: { state: "TASK_STATE_WORKING" },
+          },
+        },
+      },
+      {
+        result: {
+          artifactUpdate: {
+            taskId: "remote-v1",
+            contextId: "context-v1",
+            artifact: {
+              artifactId: "remote-v1_response",
+              name: "response",
+              parts: [{ text: "研究" }],
+            },
+          },
+        },
+      },
+      {
+        result: {
+          artifactUpdate: {
+            taskId: "remote-v1",
+            contextId: "context-v1",
+            append: true,
+            lastChunk: true,
+            artifact: {
+              artifactId: "remote-v1_response",
+              name: "response",
+              parts: [{ text: "完成" }],
+            },
+          },
+        },
+      },
+      {
+        result: {
+          statusUpdate: {
+            taskId: "remote-v1",
+            contextId: "context-v1",
+            status: { state: "TASK_STATE_COMPLETED" },
+          },
+        },
+      },
+    ], { resultProfile: { artifactNames: ["response"] } });
+
+    expect(result).toEqual({
+      text: "研究完成",
+      remoteTaskId: "remote-v1",
+      state: "completed",
+    });
   });
 
   it("extracts a standard input-required interaction without rendering its JSON as text", () => {

@@ -23,10 +23,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-type AuthType = "none" | "bearer" | "api_key";
+type AuthType = "none" | "bearer" | "api_key" | "query_api_key";
 
 export type CustomMcpTemplate = {
   id: string;
+  catalogId?: string;
   displayName: string;
   endpointUrl: string;
   authType: AuthType;
@@ -41,6 +42,7 @@ type CustomMcpTool = {
 
 type CustomMcpConnection = {
   id: number;
+  catalogId?: string | null;
   displayName: string;
   endpointUrl: string;
   authType: AuthType | "oauth";
@@ -56,6 +58,7 @@ type CustomMcpConnection = {
 
 type FormState = {
   id?: number;
+  catalogId?: string;
   displayName: string;
   endpointUrl: string;
   authType: AuthType;
@@ -72,6 +75,17 @@ const EMPTY_FORM: FormState = {
   credential: "",
   credentialConfigured: false,
 };
+
+const QUERY_AUTH_PREFIX = "query:";
+
+function storedAuthType(authType: AuthType): "none" | "bearer" | "api_key" {
+  return authType === "query_api_key" ? "api_key" : authType;
+}
+
+function queryAuthParamName(value: unknown): string {
+  const target = String(value || "").trim();
+  return target.startsWith(QUERY_AUTH_PREFIX) ? target.slice(QUERY_AUTH_PREFIX.length) : "";
+}
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { credentials: "include", ...init });
@@ -132,6 +146,7 @@ export function CustomMcpDialog({
   const startAdd = useCallback((template?: CustomMcpTemplate | null) => {
     setForm(template ? {
       ...EMPTY_FORM,
+      catalogId: template.catalogId || template.id,
       displayName: template.displayName,
       endpointUrl: template.endpointUrl,
       authType: template.authType,
@@ -156,12 +171,14 @@ export function CustomMcpDialog({
       toast.info("OAuth 连接请从连接器市场重新授权");
       return;
     }
+    const queryParam = queryAuthParamName(connection.authHeaderName);
     setForm({
       id: connection.id,
+      catalogId: connection.catalogId || undefined,
       displayName: connection.displayName,
       endpointUrl: connection.endpointUrl,
-      authType: connection.authType,
-      authHeaderName: connection.authHeaderName || "X-API-Key",
+      authType: queryParam ? "query_api_key" : connection.authType,
+      authHeaderName: queryParam || connection.authHeaderName || "X-API-Key",
       credential: "",
       credentialConfigured: connection.credentialConfigured,
     });
@@ -180,10 +197,13 @@ export function CustomMcpDialog({
   const connectionPayload = useMemo(() => ({
     adoptId,
     ...(form.id ? { connectionId: form.id } : {}),
+    ...(form.catalogId ? { catalogId: form.catalogId } : {}),
     displayName: form.displayName.trim(),
     endpointUrl: form.endpointUrl.trim(),
-    authType: form.authType,
-    authHeaderName: form.authType === "api_key" ? form.authHeaderName.trim() : undefined,
+    authType: storedAuthType(form.authType),
+    authHeaderName: form.authType === "query_api_key"
+      ? `${QUERY_AUTH_PREFIX}${form.authHeaderName.trim()}`
+      : form.authType === "api_key" ? form.authHeaderName.trim() : undefined,
     ...(form.credential.trim() ? { credential: form.credential.trim() } : {}),
   }), [adoptId, form]);
 
@@ -353,19 +373,31 @@ export function CustomMcpDialog({
             <div className="custom-mcp-form__auth">
               <label>
                 <span>认证方式</span>
-                <Select value={form.authType} onValueChange={(value: AuthType) => invalidateTest({ authType: value, credential: "" })}>
+                <Select
+                  value={form.authType}
+                  onValueChange={(value: AuthType) => invalidateTest({
+                    authType: value,
+                    credential: "",
+                    authHeaderName: value === "query_api_key" ? "token" : value === "api_key" ? "X-API-Key" : form.authHeaderName,
+                  })}
+                >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">无需认证</SelectItem>
                     <SelectItem value="bearer">Bearer Token</SelectItem>
                     <SelectItem value="api_key">API Key Header</SelectItem>
+                    <SelectItem value="query_api_key">API Key Query</SelectItem>
                   </SelectContent>
                 </Select>
               </label>
-              {form.authType === "api_key" ? (
+              {form.authType === "api_key" || form.authType === "query_api_key" ? (
                 <label>
-                  <span>Header 名称</span>
-                  <Input value={form.authHeaderName} placeholder="X-API-Key" onChange={(event) => invalidateTest({ authHeaderName: event.target.value })} />
+                  <span>{form.authType === "query_api_key" ? "Query 参数名" : "Header 名称"}</span>
+                  <Input
+                    value={form.authHeaderName}
+                    placeholder={form.authType === "query_api_key" ? "token" : "X-API-Key"}
+                    onChange={(event) => invalidateTest({ authHeaderName: event.target.value })}
+                  />
                 </label>
               ) : null}
             </div>

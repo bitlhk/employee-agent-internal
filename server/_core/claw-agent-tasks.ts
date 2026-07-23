@@ -11,6 +11,7 @@ import {
 import { isAuthorizedInternalRequest, requireClawOwner, resolveRuntimeWorkspaceByIds } from "./helpers";
 import { materializeA2AArtifacts } from "./agent-artifacts";
 import {
+  cancelA2AExpertTask,
   runA2AExpertTask,
   summarizeA2AEvents,
   type A2AEndpointConfig,
@@ -36,7 +37,7 @@ import {
   listAgentTasksByIds,
   listAgentTaskCounts,
   listEnabledBusinessAgentsForContext,
-  updateAgentTask,
+  updateActiveAgentTask,
 } from "../db/agents";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
@@ -44,6 +45,7 @@ type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancell
 const AGENT_TASK_TEXT_LIMIT_BYTES = 60_000;
 const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
 const AGENT_TASK_RAW_EVENTS_LIMIT_BYTES = 40_000;
+const activeAgentTaskControllers = new Map<string, AbortController>();
 
 function truncateUtf8(value: unknown, maxBytes: number): string {
   const text = String(value ?? "");
@@ -276,8 +278,12 @@ async function runAgentTaskInBackground(
   } = {},
 ) {
   const startedAt = Date.now();
-  await updateAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
+  const controller = new AbortController();
+  activeAgentTaskControllers.set(taskId, controller);
+  await updateActiveAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
   try {
+    const startingTask = await getAgentTask(taskId);
+    if (String(startingTask?.status || "") !== "running") return;
     const adapterProtocol = String(agent.adapterProtocol || "").trim();
     if (!agent.apiUrl) throw new Error("Agent endpoint is not configured");
     if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
@@ -289,7 +295,11 @@ async function runAgentTaskInBackground(
       apiToken: agent.apiToken,
       endpointConfig,
     };
-    const result = await runA2AExpertTask(connection, input, runtime);
+    const result = await runA2AExpertTask(connection, input, {
+      ...runtime,
+      taskId: endpointConfig.supportsCancellation === true ? taskId : undefined,
+      signal: controller.signal,
+    });
     if (["failed", "canceled", "cancelled"].includes(String(result.state || "").toLowerCase())) {
       throw new Error(String(result.text || "").trim() || `${String(agent.name || "专家")}任务执行失败`);
     }
@@ -306,7 +316,7 @@ async function runAgentTaskInBackground(
           artifacts: result.artifacts,
         })
       : [];
-    await updateAgentTask(taskId, {
+    await updateActiveAgentTask(taskId, {
       status: "succeeded" as AgentTaskStatus,
       resultMarkdown: cleanedText ? truncateUtf8(cleanedText, AGENT_TASK_TEXT_LIMIT_BYTES) : null,
       remoteTaskId: result.remoteTaskId || null,
@@ -317,6 +327,8 @@ async function runAgentTaskInBackground(
       completedAt: sql`CURRENT_TIMESTAMP`,
       errorMessage: null,
     });
+    const completedTask = await getAgentTask(taskId);
+    if (String(completedTask?.status || "") !== "succeeded") return;
     await markAgentTaskSucceeded(agent).catch(() => undefined);
     await insertCallLog({
       agentId: String(agent.id),
@@ -328,12 +340,14 @@ async function runAgentTaskInBackground(
   } catch (error: any) {
     const timedOut = error?.name === "AbortError" || /abort|timeout/i.test(String(error?.message || ""));
     const displayError = friendlyAgentTaskError(error, String(agent.name || "专家"));
-    await markAgentTaskFailed(agent, error).catch(() => undefined);
-    await updateAgentTask(taskId, {
+    await updateActiveAgentTask(taskId, {
       status: "failed" as AgentTaskStatus,
       errorMessage: truncateUtf8(displayError, AGENT_TASK_ERROR_LIMIT_BYTES),
       completedAt: sql`CURRENT_TIMESTAMP`,
     });
+    const failedTask = await getAgentTask(taskId);
+    if (String(failedTask?.status || "") === "cancelled") return;
+    await markAgentTaskFailed(agent, error).catch(() => undefined);
     await insertCallLog({
       agentId: String(agent.id),
       userId: Number((agent as any).__taskUserId || 0) || undefined,
@@ -342,6 +356,10 @@ async function runAgentTaskInBackground(
       durationMs: Date.now() - startedAt,
       errorMessage: truncateUtf8(displayError, 2_000),
     }).catch(() => undefined);
+  } finally {
+    if (activeAgentTaskControllers.get(taskId) === controller) {
+      activeAgentTaskControllers.delete(taskId);
+    }
   }
 }
 
@@ -383,6 +401,63 @@ export function registerAgentTaskRoutes(app: express.Express) {
       res.json({ tasks });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "TASKS_UNAVAILABLE" });
+    }
+  });
+
+  app.post("/api/claw/agent-tasks/:taskId/cancel", async (req, res) => {
+    const adoptId = String(req.body?.adoptId || "").trim();
+    const taskId = String(req.params.taskId || "").trim();
+    if (!adoptId) return res.status(400).json({ error: "adoptId required" });
+    if (!/^agt_[A-Za-z0-9]{8,64}$/.test(taskId)) return res.status(400).json({ error: "taskId invalid" });
+    const claw = await resolveClaw(req, res, adoptId);
+    if (!claw) return;
+
+    try {
+      const userId = Number((claw as any).userId || 0);
+      const task = await getAgentTask(taskId);
+      if (!task || String(task.adoptId || "") !== adoptId || Number(task.userId || 0) !== userId) {
+        return res.status(404).json({ error: "专家任务不存在" });
+      }
+      if (!["pending", "running"].includes(String(task.status || ""))) {
+        return res.status(409).json({ error: "该任务已结束，无法取消" });
+      }
+      const agent = await getBusinessAgentForContext(String(task.agentId || ""), { userId, adoptId });
+      if (!agent || !isAgentIntegration(agent)) {
+        return res.status(404).json({ error: "专家配置不存在" });
+      }
+      const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as A2AEndpointConfig;
+      const contextId = a2aRuntimeContextId(
+        endpointConfig,
+        adoptId,
+        task.agentId,
+        task.sourceConversationId || task.sourceSessionId,
+      );
+
+      await updateActiveAgentTask(taskId, {
+        status: "cancelled" as AgentTaskStatus,
+        errorMessage: null,
+        completedAt: sql`CURRENT_TIMESTAMP`,
+      });
+      const controller = activeAgentTaskControllers.get(taskId);
+      const remoteCancellation = endpointConfig.supportsCancellation === true && agent.apiUrl
+        ? cancelA2AExpertTask({
+            apiUrl: String(agent.apiUrl),
+            apiToken: agent.apiToken,
+            endpointConfig,
+          }, { contextId, taskId }).catch((error) => {
+            console.warn("[AGENT-TASK] remote cancellation failed", {
+              taskId,
+              agentId: agent.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return false;
+          })
+        : Promise.resolve(false);
+      controller?.abort(new Error("agent task cancelled"));
+      const remoteCancelled = await remoteCancellation;
+      res.json({ ok: true, taskId, status: "cancelled", remoteCancelled });
+    } catch (error: any) {
+      res.status(500).json({ error: error?.message || "TASK_CANCEL_FAILED" });
     }
   });
 

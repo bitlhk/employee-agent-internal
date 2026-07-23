@@ -1,4 +1,4 @@
-import { Bot, Presentation, ShieldCheck, Workflow } from "lucide-react";
+import { Bot, ShieldCheck } from "lucide-react";
 
 export function expertVisualKind(agentId: unknown, agentName: unknown) {
   const signature = `${String(agentId || "")} ${String(agentName || "")}`.toLocaleLowerCase();
@@ -14,8 +14,12 @@ export function ExpertAvatar({ agentId, agentName }: { agentId?: unknown; agentN
   if (kind === "alice") {
     return <img className="expert-avatar-image" src="/images/experts/alice.png" alt="" aria-hidden="true" />;
   }
-  if (kind === "presentation") return <Presentation aria-hidden="true" />;
-  if (kind === "workflow") return <Workflow aria-hidden="true" />;
+  if (kind === "presentation") {
+    return <img className="expert-avatar-image" src="/images/experts/ppt-expert.jpg" alt="" aria-hidden="true" />;
+  }
+  if (kind === "workflow") {
+    return <img className="expert-avatar-image" src="/images/experts/workflow-expert.png" alt="" aria-hidden="true" />;
+  }
   if (kind === "risk") return <ShieldCheck aria-hidden="true" />;
   return <Bot aria-hidden="true" />;
 }
