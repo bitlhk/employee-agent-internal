@@ -342,8 +342,8 @@ bash /tmp/bootstrap-install.sh \
   --dir "$HOME/employee-agent" \
   --port 5180 \
   --host <your-server-ip-or-domain> \
-  --ref c24cb7d28046709be872e95d24eaa6be4d6b3110 \
-  --expected-commit c24cb7d28046709be872e95d24eaa6be4d6b3110
+  --ref 88a11b9d661a103f05ec225d2abe9368d1ae481a \
+  --expected-commit 88a11b9d661a103f05ec225d2abe9368d1ae481a
 ```
 
 常用参数：
