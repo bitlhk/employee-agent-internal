@@ -128,7 +128,8 @@ bash /tmp/employee-agent-install.sh --host 你的服务器IP
 ```bash
 bash /tmp/employee-agent-install.sh \
   --repo https://atomgit.com/linggan_ai/employee-agent.git \
-  --branch main \
+  --ref 16060481b3e282f5b743336ab7d484689afe67f9 \
+  --expected-commit 16060481b3e282f5b743336ab7d484689afe67f9 \
   --mirror auto \
   --dir "$HOME/employee-agent" \
   --host your-server-ip \
@@ -138,7 +139,9 @@ bash /tmp/employee-agent-install.sh \
 | 参数 | 说明 |
 |---|---|
 | `--repo <url>` | Git 仓库地址，默认 AtomGit 国内镜像 |
-| `--branch <name>` | 分支，默认 `main` |
+| `--ref <tag-or-commit>` | 固定版本标签或提交，默认使用已审计提交 |
+| `--expected-commit <sha>` | 校验外部源码最终提交 |
+| `--local-source` | 直接安装当前检出的代码，不再获取外部源码 |
 | `--dir <path>` | 安装目录，默认 `$HOME/employee-agent` |
 | `--port <port>` | 服务端口，默认 `5180` |
 | `--host <ip-or-host>` | 用于生成 `FRONTEND_URL`，不传则自动探测 |

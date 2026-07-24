@@ -342,7 +342,8 @@ bash /tmp/bootstrap-install.sh \
   --dir "$HOME/employee-agent" \
   --port 5180 \
   --host <your-server-ip-or-domain> \
-  --branch main
+  --ref 16060481b3e282f5b743336ab7d484689afe67f9 \
+  --expected-commit 16060481b3e282f5b743336ab7d484689afe67f9
 ```
 
 常用参数：
@@ -352,7 +353,9 @@ bash /tmp/bootstrap-install.sh \
 | `--dir` | 安装目录，默认 `$HOME/employee-agent` |
 | `--port` | 服务端口，默认 `5180` |
 | `--host` | 访问地址使用的公网 IP 或域名 |
-| `--branch` | Git 分支，默认 `main` |
+| `--ref` | 固定版本标签或提交，默认使用已审计提交 |
+| `--expected-commit` | 校验外部源码最终提交 |
+| `--local-source` | 直接安装当前检出的代码，不再获取外部源码 |
 | `--repo` | Git 仓库地址 |
 | `--skip-start` | 只初始化，不启动 |
 | `--skip-mysql` | 不安装本机 MySQL |

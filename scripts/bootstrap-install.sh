@@ -2,10 +2,9 @@
 set -euo pipefail
 
 # Bootstrap installer for Workforce Agent Platform.
-# Intended usage:
-#   git clone --depth 1 https://atomgit.com/linggan_ai/employee-agent.git /tmp/employee-agent-installer
-#   bash /tmp/employee-agent-installer/scripts/bootstrap-install.sh
-INSTALLER_VERSION="2026.07.15.1"
+# Intended audited usage from a checked-out release:
+#   bash scripts/bootstrap-install.sh --local-source
+INSTALLER_VERSION="2026.07.24.1"
 INSTALL_ID="${EMPLOYEE_AGENT_INSTALL_ID:-}"
 TELEMETRY_ENDPOINT="${EMPLOYEE_AGENT_INSTALL_TELEMETRY_ENDPOINT:-}"
 TELEMETRY_SOURCE="${EMPLOYEE_AGENT_INSTALL_SOURCE:-bootstrap}"
@@ -14,9 +13,13 @@ INSTALL_STAGE="preflight"
 INSTALL_STARTED_AT=0
 DEFAULT_REPO_URL="https://atomgit.com/linggan_ai/employee-agent.git"
 REPO_URL="${EMPLOYEE_AGENT_REPO_URL:-${LINGXIA_REPO_URL:-$DEFAULT_REPO_URL}}"
-BRANCH="${EMPLOYEE_AGENT_BRANCH:-${LINGXIA_BRANCH:-main}}"
+DEFAULT_REPO_REF="16060481b3e282f5b743336ab7d484689afe67f9"
+REPO_REF="${EMPLOYEE_AGENT_REF:-${EMPLOYEE_AGENT_BRANCH:-${LINGXIA_BRANCH:-$DEFAULT_REPO_REF}}}"
+EXPECTED_REPO_COMMIT="${EMPLOYEE_AGENT_EXPECTED_COMMIT:-}"
 DEFAULT_INSTALL_DIR="$HOME/employee-agent"
 INSTALL_DIR="${EMPLOYEE_AGENT_INSTALL_DIR:-${LINGXIA_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
+LOCAL_SOURCE=false
+LOCAL_SOURCE_DIR=""
 PORT="${WORKFORCE_AGENT_PORT:-${LINGXIA_PORT:-5180}}"
 HOST="${WORKFORCE_AGENT_HOST:-${LINGXIA_HOST:-}}"
 RESOLVED_HOST=""
@@ -36,9 +39,9 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-admin@employee-agent.local}"
 ADMIN_NAME="${ADMIN_NAME:-Admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 ADMIN_PASSWORD_DISPLAY=""
-ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$INSTALL_DIR/.bootstrap-admin-password}"
+ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-}"
 JIUWENSWARM_REPO="${JIUWENSWARM_REPO:-https://atomgit.com/linggan_ai/jiuwenswarm.git}"
-JIUWENSWARM_REF="${JIUWENSWARM_REF:-ea-runtime-0.2.3.7}"
+JIUWENSWARM_REF="${JIUWENSWARM_REF:-a1b0409e1f39b7fbea5a5c3109e5e267b14cc32c}"
 JIUWENSWARM_VERSION="${JIUWENSWARM_VERSION:-0.2.3+ea.7}"
 JIUWENSWARM_HOME="${JIUWENCLAW_HOME:-$HOME/.jiuwenswarm}"
 JIUWENSWARM_VENV="${JIUWENSWARM_VENV:-$HOME/.venvs/employee-agent-jiuwenswarm}"
@@ -51,7 +54,10 @@ Usage: bash bootstrap-install.sh [options]
 
 Options:
   --repo <url>             Git repository URL.
-  --branch <name>          Git branch, default main.
+  --ref <tag-or-commit>    Git tag or commit. Defaults to an audited release commit.
+  --expected-commit <sha>  Require the external checkout to resolve to this full commit.
+  --branch <name>          Compatibility option for an explicitly selected branch.
+  --local-source           Install the current checked-out source without fetching another repository.
   --dir <path>             Install directory, default $HOME/employee-agent for new installs.
   --port <port>            App port, default 5180.
   --host <ip-or-host>      Public host/IP for FRONTEND_URL. The app still binds to loopback by default.
@@ -68,7 +74,7 @@ Options:
   -h, --help               Show this help.
 
 Examples:
-  bash bootstrap-install.sh
+  bash bootstrap-install.sh --local-source
   bash bootstrap-install.sh --host 203.0.113.10 --dir "$HOME/employee-agent"
   bash bootstrap-install.sh --db-mode existing --skip-mysql
 EOF
@@ -77,7 +83,10 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo) REPO_URL="${2:?missing --repo value}"; shift 2 ;;
-    --branch) BRANCH="${2:?missing --branch value}"; shift 2 ;;
+    --ref) REPO_REF="${2:?missing --ref value}"; shift 2 ;;
+    --expected-commit) EXPECTED_REPO_COMMIT="${2:?missing --expected-commit value}"; shift 2 ;;
+    --branch) REPO_REF="${2:?missing --branch value}"; EXPECTED_REPO_COMMIT=""; shift 2 ;;
+    --local-source) LOCAL_SOURCE=true; shift ;;
     --dir) INSTALL_DIR="${2:?missing --dir value}"; shift 2 ;;
     --port) PORT="${2:?missing --port value}"; shift 2 ;;
     --host) HOST="${2:?missing --host value}"; shift 2 ;;
@@ -95,6 +104,15 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+if [[ "$LOCAL_SOURCE" == "true" ]]; then
+  LOCAL_SOURCE_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)
+  INSTALL_DIR="$LOCAL_SOURCE_DIR"
+fi
+ADMIN_PASSWORD_FILE="${ADMIN_PASSWORD_FILE:-$INSTALL_DIR/.bootstrap-admin-password}"
+if [[ -z "$EXPECTED_REPO_COMMIT" && "$REPO_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  EXPECTED_REPO_COMMIT="${REPO_REF,,}"
+fi
 
 log() { printf "\n==> %s\n" "$*"; }
 run() {
@@ -485,20 +503,43 @@ ensure_node_tools() {
 
 clone_repo() {
   local target="$1"
-  git clone --depth 1 --single-branch --branch "$BRANCH" "$REPO_URL" "$target"
+  git init "$target"
+  git -C "$target" remote add origin "$REPO_URL"
+  git -C "$target" fetch --depth 1 origin "$REPO_REF"
+  git -C "$target" checkout --detach FETCH_HEAD
+}
+
+verify_repo_commit() {
+  local actual
+  actual=$(git -C "$INSTALL_DIR" rev-parse HEAD)
+  if [[ -n "$EXPECTED_REPO_COMMIT" && "${actual,,}" != "${EXPECTED_REPO_COMMIT,,}" ]]; then
+    echo "Repository verification failed: expected $EXPECTED_REPO_COMMIT, got $actual" >&2
+    exit 1
+  fi
+  echo "  Verified Employee Agent source commit: $actual"
 }
 
 checkout_repo() {
   log "Checking out Workforce Agent Platform"
   local parent owner
+  if [[ "$LOCAL_SOURCE" == "true" ]]; then
+    if [[ ! -f "$INSTALL_DIR/package.json" || ! -f "$INSTALL_DIR/pnpm-lock.yaml" || ! -x "$INSTALL_DIR/setup.sh" ]]; then
+      echo "--local-source must be run from a complete Employee Agent checkout." >&2
+      exit 1
+    fi
+    echo "  Using audited local source: $INSTALL_DIR"
+    if [[ -d "$INSTALL_DIR/.git" ]]; then
+      echo "  Local source commit: $(git -C "$INSTALL_DIR" rev-parse HEAD)"
+    fi
+    return
+  fi
   parent=$(dirname "$INSTALL_DIR")
   owner="${SUDO_USER:-${USER:-$(id -un)}}"
   run sudo_cmd mkdir -p "$parent"
 
   if [[ -d "$INSTALL_DIR/.git" ]]; then
-    run git -C "$INSTALL_DIR" fetch origin "$BRANCH"
-    run git -C "$INSTALL_DIR" checkout "$BRANCH"
-    run git -C "$INSTALL_DIR" pull --ff-only origin "$BRANCH"
+    run git -C "$INSTALL_DIR" fetch --depth 1 origin "$REPO_REF"
+    run git -C "$INSTALL_DIR" checkout --detach FETCH_HEAD
   elif [[ -e "$INSTALL_DIR" ]]; then
     if [[ -z "$(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 2>/dev/null | head -1)" ]]; then
       run sudo_cmd chown "$owner":"$owner" "$INSTALL_DIR"
@@ -511,6 +552,9 @@ checkout_repo() {
     run sudo_cmd mkdir -p "$INSTALL_DIR"
     run sudo_cmd chown "$owner":"$owner" "$INSTALL_DIR"
     run clone_repo "$INSTALL_DIR"
+  fi
+  if [[ "$DRY_RUN" != "true" ]]; then
+    verify_repo_commit
   fi
 }
 
