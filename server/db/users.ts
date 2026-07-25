@@ -95,19 +95,35 @@ export async function upsertUser(input: InsertUser): Promise<void> {
   }
 }
 
-export async function getUserByOpenId(openId: string) {
+type UserLookup =
+  | { field: "openId"; value: string }
+  | { field: "email"; value: string }
+  | { field: "id"; value: number };
+
+async function lookupUser(request: UserLookup) {
   const database = await optionalDatabase("get user");
-  return database ? findUser(database, eq(users.openId, openId)) : undefined;
+  if (!database) return undefined;
+
+  switch (request.field) {
+    case "openId":
+      return findUser(database, eq(users.openId, request.value));
+    case "email":
+      return findUser(database, eq(users.email, request.value));
+    case "id":
+      return findUser(database, eq(users.id, request.value));
+  }
+}
+
+export async function getUserByOpenId(openId: string) {
+  return lookupUser({ field: "openId", value: openId });
 }
 
 export async function getUserByEmail(email: string) {
-  const database = await optionalDatabase("get user");
-  return database ? findUser(database, eq(users.email, email)) : undefined;
+  return lookupUser({ field: "email", value: email });
 }
 
 export async function getUserById(id: number) {
-  const database = await optionalDatabase("get user");
-  return database ? findUser(database, eq(users.id, id)) : undefined;
+  return lookupUser({ field: "id", value: id });
 }
 
 export async function createUser(user: InsertUser): Promise<number> {

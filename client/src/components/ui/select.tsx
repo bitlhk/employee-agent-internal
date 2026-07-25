@@ -89,6 +89,27 @@ function SelectScrollDownButton(
   return <SelectScrollControl direction="down" {...props} />;
 }
 
+function SelectMenuBody({
+  children,
+  matchTriggerWidth,
+}: {
+  children: React.ReactNode;
+  matchTriggerWidth: boolean;
+}) {
+  const viewportClass = matchTriggerWidth
+    ? "min-w-[var(--radix-select-trigger-width)] scroll-my-1"
+    : undefined;
+  return (
+    <>
+      <SelectScrollUpButton />
+      <RadixSelect.Viewport className={cn("p-1", viewportClass)}>
+        {children}
+      </RadixSelect.Viewport>
+      <SelectScrollDownButton />
+    </>
+  );
+}
+
 function SelectContent({
   className,
   children,
@@ -97,6 +118,10 @@ function SelectContent({
   ...props
 }: ContentProps) {
   const popper = position === "popper";
+  const placementClass = popper
+    ? "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1"
+    : undefined;
+  const contentClass = cn(menuStyle, placementClass, className);
 
   return (
     <RadixSelect.Portal>
@@ -104,23 +129,9 @@ function SelectContent({
         {...props}
         align={align}
         position={position}
-        className={cn(
-          menuStyle,
-          popper &&
-            "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-          className
-        )}
+        className={contentClass}
       >
-        <SelectScrollUpButton />
-        <RadixSelect.Viewport
-          className={cn(
-            "p-1",
-            popper && "min-w-[var(--radix-select-trigger-width)] scroll-my-1"
-          )}
-        >
-          {children}
-        </RadixSelect.Viewport>
-        <SelectScrollDownButton />
+        <SelectMenuBody matchTriggerWidth={popper}>{children}</SelectMenuBody>
       </RadixSelect.Content>
     </RadixSelect.Portal>
   );
@@ -130,12 +141,11 @@ function SelectLabel({
   className,
   ...props
 }: React.ComponentProps<typeof RadixSelect.Label>) {
-  return (
-    <RadixSelect.Label
-      {...props}
-      className={cn("px-2 py-1.5 text-xs text-muted-foreground", className)}
-    />
-  );
+  const labelClass = cn("px-2 py-1.5 text-xs text-muted-foreground", className);
+  return React.createElement(RadixSelect.Label, {
+    ...props,
+    className: labelClass,
+  });
 }
 
 function SelectItem({
