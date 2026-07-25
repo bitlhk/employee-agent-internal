@@ -59,7 +59,7 @@ export function MainPanel({
   onMcpChanged?: () => void | Promise<void>;
   onAddExpert?: () => void;
   onManageExpert?: () => void;
-  onTryExpert?: (expertId: string) => void;
+  onTryExpert?: (expertId: string, initialPrompt?: string, scenarioId?: string) => void;
   skills?: {
     data?: { shared: any[]; system: any[]; private: any[] } | null;
     canEdit?: boolean;

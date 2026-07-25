@@ -1638,6 +1638,36 @@ function taskStatusLabel(status: ExternalAgentTask["status"]) {
 
 type ExpertFilter = "expert" | "team";
 
+const INVESTMENT_TEAM_SCENARIOS = [
+  {
+    id: "comprehensive",
+    name: "单股综合研究",
+    description: "经营质量、安全边际与估值的完整研判",
+    prompt: "请对【股票名称或六位代码】进行单股综合研究，并说明我最需要关注的核心问题。",
+    icon: "analysis",
+  },
+  {
+    id: "comparison",
+    name: "多股横向对比",
+    description: "统一口径比较公司质量、估值、趋势和风险",
+    prompt: "请对【股票一】和【股票二】进行横向对比，重点比较经营质量、估值、趋势和风险。",
+    icon: "compare",
+  },
+  {
+    id: "earnings_review",
+    name: "财报复盘",
+    description: "复核现金流、经营变化与估值假设",
+    prompt: "请复盘【股票名称或六位代码】的最新财报，重点检查现金流、经营质量和估值变化。",
+    icon: "report",
+  },
+] as const;
+
+function InvestmentScenarioIcon({ kind }: { kind: typeof INVESTMENT_TEAM_SCENARIOS[number]["icon"] }) {
+  if (kind === "compare") return <Layers aria-hidden="true" />;
+  if (kind === "report") return <FileText aria-hidden="true" />;
+  return <BarChart3 aria-hidden="true" />;
+}
+
 function isExpertTeam(agent: ExternalAgentSummary) {
   return isInvestmentTeamExpert(agent.id, agent.name)
     || (agent.capabilities || []).some((item) => item.toLocaleLowerCase() === "expert-team")
@@ -1653,7 +1683,7 @@ function AgentToolsPage({
   adoptId?: string;
   query: string;
   view: CatalogView;
-  onTryExpert?: (expertId: string) => void;
+  onTryExpert?: (expertId: string, initialPrompt?: string, scenarioId?: string) => void;
 }) {
   const [agents, setAgents] = useState<ExternalAgentSummary[]>([]);
   const [tasks, setTasks] = useState<ExternalAgentTask[]>([]);
@@ -1794,10 +1824,10 @@ function AgentToolsPage({
                 className="skills-expert-card__summon"
                 type="button"
                 disabled={!agent.routeReady}
-                aria-label={`召唤${agent.name}`}
-                onClick={() => onTryExpert?.(agent.id)}
+                aria-label={team ? `选择${agent.name}场景` : `召唤${agent.name}`}
+                onClick={() => team ? setDetailAgentId(agent.id) : onTryExpert?.(agent.id)}
               >
-                召唤
+                {team ? "选择场景" : "召唤"}
               </button>
               <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailAgentId(agent.id)}>
                 <span className="skills-catalog-card__head">
@@ -1812,7 +1842,7 @@ function AgentToolsPage({
                 </span>
                 </span>
                 <span className="skills-catalog-card__desc">{agentDisplayDescription(agent)}</span>
-                {team ? <ExpertTeamRoster compact /> : null}
+                {team ? <ExpertTeamRoster card /> : null}
                 <span className="skills-catalog-card__capabilities" aria-label="核心能力">
                   {expertCapabilityLabels(agent).map((capability) => <span key={capability}>{capability}</span>)}
                 </span>
@@ -1858,6 +1888,30 @@ function AgentToolsPage({
                     <span>6</span>
                   </div>
                   <ExpertTeamRoster />
+                  <div className="skills-mcp-detail__section-head skills-expert-detail__scenarios-head">
+                    <span>选择研究场景</span>
+                    <span>{INVESTMENT_TEAM_SCENARIOS.length}</span>
+                  </div>
+                  <div className="skills-expert-detail__scenarios">
+                    {INVESTMENT_TEAM_SCENARIOS.map((scenario) => (
+                      <button
+                        key={scenario.id}
+                        type="button"
+                        className="skills-expert-detail__scenario"
+                        disabled={!selectedAgent.routeReady}
+                        onClick={() => {
+                          const expertId = selectedAgent.id;
+                          setDetailAgentId(null);
+                          onTryExpert?.(expertId, scenario.prompt, scenario.id);
+                        }}
+                      >
+                        <span><InvestmentScenarioIcon kind={scenario.icon} /></span>
+                        <strong>{scenario.name}</strong>
+                        <small>{scenario.description}</small>
+                        <ArrowRight aria-hidden="true" />
+                      </button>
+                    ))}
+                  </div>
                 </>
               ) : null}
               <div className="skills-mcp-detail__section-head">
@@ -1910,7 +1964,7 @@ function AgentToolsPage({
                     onTryExpert?.(expertId);
                   }}
                 >
-                  {selectedAgent.routeReady ? (isExpertTeam(selectedAgent) ? "召唤专家团" : "召唤专家") : "暂不可用"} <ArrowRight />
+                  {selectedAgent.routeReady ? (isExpertTeam(selectedAgent) ? "自由提问" : "召唤专家") : "暂不可用"} <ArrowRight />
                 </button>
               </div>
             </div>
@@ -2202,7 +2256,7 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
   onMcpChanged?: () => void | Promise<void>;
   onAddExpert?: () => void;
   onManageExpert?: () => void;
-  onTryExpert?: (expertId: string) => void;
+  onTryExpert?: (expertId: string, initialPrompt?: string, scenarioId?: string) => void;
 }) {
   const { confirm, dialog } = useConfirmDialog();
   const [skillTab, setSkillTab] = useState<SkillTab>(() => initialSkillTab(section));

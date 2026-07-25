@@ -478,9 +478,13 @@ export function registerAgentTaskRoutes(app: express.Express) {
     const adoptId = String(req.body?.adoptId || "").trim();
     const agentId = String(req.body?.agentId || "").trim();
     const input = String(req.body?.task || req.body?.input || "").trim();
+    const scenarioId = String(req.body?.scenarioId || "").trim();
     if (!adoptId) return res.status(400).json({ error: "adoptId required" });
     if (!agentId) return res.status(400).json({ error: "agentId required" });
     if (!input) return res.status(400).json({ error: "task required" });
+    if (scenarioId && !["comprehensive", "comparison", "earnings_review"].includes(scenarioId)) {
+      return res.status(400).json({ error: "scenarioId invalid" });
+    }
     const claw = await resolveClaw(req, res, adoptId);
     if (!claw) return;
 
@@ -571,6 +575,13 @@ export function registerAgentTaskRoutes(app: express.Express) {
           agentId,
           sourceConversationId || sourceSessionId,
         ),
+        ...(scenarioId && agentId === "a-share-research-committee" ? {
+          dataPart: {
+            schema: "ea.investment-team.request.v1",
+            scenarioId,
+          },
+          dataPartMetadata: { "ea.investment-team": true, version: "1.0.0" },
+        } : {}),
       }).catch((error) => {
         console.error("[AGENT-TASK] background runner failed", { taskId, error: error?.message || error });
       });

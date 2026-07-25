@@ -2458,6 +2458,7 @@ export default function Home() {
   const [composerExpertsLoading, setComposerExpertsLoading] = useState(false);
   const [composerExpertSearch, setComposerExpertSearch] = useState("");
   const [selectedComposerExpertId, setSelectedComposerExpertId] = useState("");
+  const [selectedExpertScenarioId, setSelectedExpertScenarioId] = useState("");
   const [detachedExpertId, setDetachedExpertId] = useState("");
   const [selectedExpertInteractionOptionId, setSelectedExpertInteractionOptionId] = useState("");
   const expertModeHydratingRef = useRef(false);
@@ -2732,6 +2733,7 @@ export default function Home() {
       setDetachedExpertId(expertId);
     }
     setSelectedComposerExpertId("");
+    setSelectedExpertScenarioId("");
     setSelectedExpertInteractionOptionId("");
     setLingxiaInput("");
     clearLingxiaDraft();
@@ -2750,6 +2752,7 @@ export default function Home() {
       } catch {}
     }
     setSelectedComposerExpertId(expert.id);
+    setSelectedExpertScenarioId("");
     setDetachedExpertId((current) => current === expert.id ? "" : current);
     setSelectedComposerSkillId("");
     setComposerAddMenuView("root");
@@ -3050,6 +3053,7 @@ export default function Home() {
           conversationId: conversationIdAtSend,
           sessionId: currentSession?.sessionKey || currentSession?.sessionId || undefined,
           sourceMessageId: userMessageId,
+          ...(selectedExpertScenarioId ? { scenarioId: selectedExpertScenarioId } : {}),
         }),
       }, 12_000);
       const payload = await response.json().catch(() => ({})) as {
@@ -3078,6 +3082,7 @@ export default function Home() {
         if (draftKey) localStorage.removeItem(draftKey);
       } catch {}
       if (args.expert.interactionMode !== "session") setSelectedComposerExpertId("");
+      setSelectedExpertScenarioId("");
       toast.success(`${args.expert.name}已接收任务`);
       return true;
     } catch (error) {
@@ -4291,8 +4296,24 @@ export default function Home() {
       updateLingxiaNearBottom(nearBottom);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest(".agent-task-card__header, .agent-task-card__details-toggle")) return;
+      const scrollTop = el.scrollTop;
+      lingxiaManualNavigationRef.current = true;
+      updateLingxiaNearBottom(false);
+      window.requestAnimationFrame(() => {
+        el.scrollTop = scrollTop;
+        lingxiaManualNavigationRef.current = true;
+        updateLingxiaNearBottom(false);
+      });
+    };
+    el.addEventListener("pointerdown", onPointerDown);
     onScroll();
-    return () => el.removeEventListener("scroll", onScroll);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("pointerdown", onPointerDown);
+    };
   }, [isLingxiaNearBottom, updateLingxiaNearBottom]);
 
   useEffect(() => {
@@ -5348,10 +5369,12 @@ export default function Home() {
                   document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus();
                 }, 0);
               }}
-              onTryExpert={(expertId) => {
+              onTryExpert={(expertId, initialPrompt, scenarioId) => {
                 setSelectedComposerExpertId(expertId);
+                setSelectedExpertScenarioId(scenarioId || "");
                 setDetachedExpertId((current) => current === expertId ? "" : current);
                 setSelectedComposerSkillId("");
+                if (initialPrompt) setLingxiaInput(initialPrompt);
                 setSidebarSelection("navigation");
                 setActivePage("chat");
                 setMobileSidebarOpen(false);

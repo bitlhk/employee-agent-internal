@@ -6,9 +6,9 @@
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Eye, Files, Square } from "lucide-react";
+import { ChevronDown, Database, Eye, FileCheck2, Files, ShieldCheck, Square } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
-import { ExpertAvatar, ExpertMemberAvatar, isInvestmentTeamExpert } from "@/components/ExpertAvatar";
+import { ExpertAvatar, ExpertMemberAvatar, ExpertTeamAvatar, isInvestmentTeamExpert, isInvestmentTeamMember } from "@/components/ExpertAvatar";
 import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
 
@@ -133,6 +133,9 @@ type TeamProgress = {
   memberName: string;
   status: "running" | "done" | "error" | string;
   summary: string;
+  stage: string;
+  reason: string;
+  memberIds: string[];
 };
 
 function parseTeamProgress(raw: string | null | undefined): TeamProgress[] {
@@ -151,6 +154,11 @@ function parseTeamProgress(raw: string | null | undefined): TeamProgress[] {
         memberName,
         status: String(progress?.status || "running"),
         summary: String(progress?.summary || "").trim(),
+        stage: String(progress?.stage || "").trim(),
+        reason: String(progress?.reason || "").trim(),
+        memberIds: Array.isArray(progress?.memberIds)
+          ? progress.memberIds.map((memberId: unknown) => String(memberId || "").trim()).filter(Boolean)
+          : [],
       });
     }
     return Array.from(latest.values());
@@ -246,7 +254,15 @@ export function AgentTaskCard({
   const rawEventsJson = value(task.rawEventsJson, task.raw_events_json);
   const remoteEventText = parseRawEvents(rawEventsJson);
   const teamProgress = useMemo(() => parseTeamProgress(rawEventsJson), [rawEventsJson]);
-  const completedTeamSteps = teamProgress.filter((item) => item.status === "done").length;
+  const isInvestmentTeam = isInvestmentTeamExpert(normalized.agentId, normalized.agentName);
+  const teamPlan = teamProgress.find((item) => item.memberId === "team_planner");
+  const selectedTeamProgress = teamProgress.filter((item) => isInvestmentTeamMember(item.memberId));
+  const dataProgress = teamProgress.find((item) => item.memberId === "data");
+  const workflowProgress = teamProgress.filter((item) => ["risk_manager", "committee_chair"].includes(item.memberId));
+  const completedTeamSteps = selectedTeamProgress.filter((item) => item.status === "done").length;
+  const plannedTeamMemberIds = teamPlan?.memberIds.length
+    ? teamPlan.memberIds
+    : selectedTeamProgress.map((item) => item.memberId);
   const metaItems = [
     `任务 ${compactId(task.id)}`,
     normalized.remoteTaskId ? `远端 ${compactId(normalized.remoteTaskId)}` : "",
@@ -280,10 +296,12 @@ export function AgentTaskCard({
   }, [normalized.isActive, teamProgress.length]);
 
   return (
-    <section className={`agent-task-card agent-task-card--${statusMeta.tone}`} data-team={isInvestmentTeamExpert(normalized.agentId, normalized.agentName) ? "true" : "false"}>
+    <section className={`agent-task-card agent-task-card--${statusMeta.tone}`} data-team={isInvestmentTeam ? "true" : "false"}>
       <button type="button" className="agent-task-card__header" onClick={() => setExpanded((v) => !v)}>
         <span className="agent-task-card__icon">
-          <ExpertAvatar agentId={normalized.agentId} agentName={normalized.agentName} />
+          {isInvestmentTeam
+            ? <ExpertTeamAvatar memberIds={plannedTeamMemberIds} animated={normalized.isActive} />
+            : <ExpertAvatar agentId={normalized.agentId} agentName={normalized.agentName} />}
         </span>
         <span className="agent-task-card__main">
           <span className="agent-task-card__title-row">
@@ -312,14 +330,35 @@ export function AgentTaskCard({
               {metaItems.map((item) => <span key={item}>{item}</span>)}
             </div>
           ) : null}
-          {teamProgress.length > 0 ? (
+          {teamPlan ? (
+            <div className="agent-task-card__team-plan">
+              <span className="agent-task-card__team-plan-avatar">
+                <ExpertTeamAvatar memberIds={plannedTeamMemberIds} animated={normalized.isActive} />
+              </span>
+              <div>
+                <strong>动态组队</strong>
+                <p>{teamPlan.summary}</p>
+                {teamPlan.reason ? <small>{teamPlan.reason}</small> : null}
+              </div>
+            </div>
+          ) : null}
+          {dataProgress ? (
+            <div className="agent-task-card__data" data-status={dataProgress.status}>
+              <span><Database aria-hidden="true" /></span>
+              <div>
+                <strong>{dataProgress.memberName}</strong>
+                <p>{dataProgress.summary || (dataProgress.status === "done" ? "研究数据已准备完成" : "正在准备研究数据")}</p>
+              </div>
+            </div>
+          ) : null}
+          {selectedTeamProgress.length > 0 ? (
             <div className="agent-task-card__team" aria-label="专家团进度">
               <div className="agent-task-card__team-heading">
-                <strong>专家团进度</strong>
-                <span>{completedTeamSteps}/{teamProgress.length} 完成</span>
+                <strong>本轮专家</strong>
+                <span>{completedTeamSteps}/{selectedTeamProgress.length} 完成</span>
               </div>
               <div className="agent-task-card__team-list">
-                {teamProgress.map((item) => (
+                {selectedTeamProgress.map((item) => (
                   <div key={item.memberId} className={`agent-task-card__team-item is-${item.status}`}>
                     <span className="agent-task-card__team-visual">
                       <ExpertMemberAvatar memberId={item.memberId} />
@@ -327,11 +366,28 @@ export function AgentTaskCard({
                     </span>
                     <span className="agent-task-card__team-copy">
                       <strong>{item.memberName}</strong>
+                      {item.reason ? <small>{item.reason}</small> : null}
                       <span>{item.summary || (item.status === "done" ? "已完成" : item.status === "error" ? "未完成" : "处理中")}</span>
                     </span>
                   </div>
                 ))}
               </div>
+            </div>
+          ) : null}
+          {workflowProgress.length > 0 ? (
+            <div className="agent-task-card__workflow" aria-label="复核与交付">
+              <div className="agent-task-card__team-heading">
+                <strong>复核与交付</strong>
+              </div>
+              {workflowProgress.map((item) => (
+                <span key={item.memberId} data-status={item.status}>
+                  <i aria-hidden="true">
+                    {item.memberId === "risk_manager" ? <ShieldCheck /> : <FileCheck2 />}
+                  </i>
+                  <strong>{item.memberName}</strong>
+                  <em>{item.summary || (item.status === "done" ? "已完成" : "处理中")}</em>
+                </span>
+              ))}
             </div>
           ) : null}
           {normalized.steps.length > 0 ? (

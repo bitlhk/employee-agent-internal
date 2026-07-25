@@ -4368,6 +4368,9 @@ input.session-searchbar__input:focus-visible,
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
+.skills-market > .skills-market-grid {
+  gap: 20px;
+}
 .skills-market-card {
   min-height: 174px;
   padding: 12px 13px;
@@ -4632,10 +4635,35 @@ input.session-searchbar__input:focus-visible,
   height: 100%;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
   gap: 1px;
   padding: 1px;
   box-sizing: border-box;
+}
+.expert-team-avatar[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+.expert-team-avatar[data-count="2"],
+.expert-team-avatar[data-count="3"],
+.expert-team-avatar[data-count="4"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.expert-team-avatar.is-dynamic img {
+  animation: expert-team-member-enter 360ms cubic-bezier(.22, .8, .26, 1) both;
+}
+.expert-team-avatar.is-dynamic img:nth-child(2) { animation-delay: 45ms; }
+.expert-team-avatar.is-dynamic img:nth-child(3) { animation-delay: 90ms; }
+.expert-team-avatar.is-dynamic img:nth-child(4) { animation-delay: 135ms; }
+.expert-team-avatar.is-dynamic img:nth-child(5) { animation-delay: 180ms; }
+.expert-team-avatar.is-dynamic img:nth-child(6) { animation-delay: 225ms; }
+@keyframes expert-team-member-enter {
+  from { opacity: 0; transform: translateY(3px) scale(.72); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .expert-team-avatar.is-dynamic img {
+    animation: none;
+  }
 }
 .expert-team-avatar img {
   width: 100%;
@@ -4645,6 +4673,30 @@ input.session-searchbar__input:focus-visible,
 }
 .skills-expert-card[data-team="true"] .skills-catalog-card__head {
   grid-template-columns: 44px minmax(0, 1fr);
+}
+.skills-expert-card[data-team="true"] {
+  grid-column: 1 / -1;
+  min-height: 206px;
+}
+.skills-expert-card[data-team="true"] .skills-catalog-card__surface {
+  min-height: 204px;
+  gap: 10px;
+  padding: 16px 18px;
+}
+.skills-expert-card[data-team="true"] .skills-catalog-card__desc {
+  min-height: auto;
+  max-width: 760px;
+  margin: 0;
+}
+.skills-expert-card[data-team="true"] .skills-catalog-card__capabilities {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+}
+.skills-expert-card[data-team="true"] .skills-catalog-card__capabilities > span {
+  width: auto;
+  min-width: 104px;
+  padding-inline: 12px;
 }
 .skills-expert-card[data-team="true"] .skills-catalog-card__icon {
   width: 44px;
@@ -4658,8 +4710,8 @@ input.session-searchbar__input:focus-visible,
 }
 .expert-team-roster {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
   margin-bottom: 14px;
 }
 .expert-team-roster__member {
@@ -4667,15 +4719,15 @@ input.session-searchbar__input:focus-visible,
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--oc-border-subtle);
   border-radius: 8px;
   background: color-mix(in oklab, var(--oc-bg-hover) 42%, transparent);
 }
 .expert-team-roster__member > img {
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
   border-radius: 50%;
   object-fit: cover;
 }
@@ -4691,6 +4743,34 @@ input.session-searchbar__input:focus-visible,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.expert-team-roster.is-card {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin: 2px 0;
+}
+.expert-team-roster.is-card .expert-team-roster__member {
+  min-height: 52px;
+  padding: 8px;
+  border-color: transparent;
+  background: color-mix(in oklab, var(--oc-bg-hover) 62%, transparent);
+}
+.expert-team-roster.is-card .expert-team-roster__member > img {
+  width: 32px;
+  height: 32px;
+  flex-basis: 32px;
+}
+.expert-team-roster.is-card .expert-team-roster__member strong {
+  font-size: 12px;
+}
+.expert-team-roster.is-card .expert-team-roster__member small {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .expert-team-roster__member strong {
   color: var(--oc-text-primary);
   font-size: 12px;
@@ -4698,7 +4778,7 @@ input.session-searchbar__input:focus-visible,
 }
 .expert-team-roster__member small {
   color: var(--oc-text-tertiary);
-  font-size: 10px;
+  font-size: 11px;
 }
 .expert-team-roster.is-compact {
   display: flex;
@@ -4729,6 +4809,14 @@ input.session-searchbar__input:focus-visible,
 .skills-expert-card .skills-catalog-card__head {
   grid-template-columns: 34px minmax(0, 1fr);
   padding-right: 54px;
+}
+.skills-expert-card:not([data-team="true"]) .skills-catalog-card__head {
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+}
+.skills-expert-card:not([data-team="true"]) .skills-catalog-card__icon {
+  width: 48px;
+  height: 48px;
 }
 .skills-expert-card__summon {
   position: absolute;
@@ -4797,6 +4885,66 @@ input.session-searchbar__input:focus-visible,
   color: var(--oc-text-muted);
   font-size: 10px;
   line-height: 14px;
+}
+.skills-market > .skills-market-grid .skills-market-card {
+  min-height: 206px;
+  gap: 14px;
+  padding: 20px 22px;
+}
+.skills-market > .skills-market-grid .skills-market-card__head {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+.skills-market > .skills-market-grid .skills-market-card__title {
+  font-size: 15px;
+  line-height: 1.35;
+}
+.skills-market > .skills-market-grid .skills-market-card__desc {
+  min-height: 43px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.skills-market > .skills-market-grid .skills-market-card__foot {
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--oc-border-subtle);
+}
+.skills-role-mark {
+  width: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in oklab, currentColor 13%, transparent);
+  border-radius: 10px;
+  background: color-mix(in oklab, currentColor 8%, var(--oc-card));
+  color: #52525b;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+}
+.skills-role-mark[data-tone="bond"] { color: #0369a1; }
+.skills-role-mark[data-tone="insurance"] { color: #1d4ed8; }
+.skills-role-mark[data-tone="audit"] { color: #6d28d9; }
+.skills-role-mark[data-tone="risk"] { color: #b91c1c; }
+.skills-role-mark[data-tone="investment"] { color: #0f766e; }
+.skills-role-mark[data-tone="wealth"] { color: #a16207; }
+.skills-role-mark[data-tone="data"] { color: #047857; }
+.skills-role-mark[data-tone="development"] { color: #334155; }
+.skills-role-mark[data-tone="office"] { color: #7c3aed; }
+.skills-role-mark[data-tone="sales"] { color: #c2410c; }
+.skills-market-detail__icon.skills-role-mark {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  border-radius: 12px;
+  font-size: 21px;
+}
+.skills-market-detail__head:has(.skills-role-mark) {
+  align-items: center;
 }
 .skills-mine-grid {
   margin-top: 12px;
@@ -5582,6 +5730,77 @@ input.session-searchbar__input:focus-visible,
   white-space: normal;
   text-overflow: clip;
 }
+.skills-expert-detail__scenarios-head {
+  margin-top: 4px;
+}
+.skills-expert-detail__scenarios {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.skills-expert-detail__scenario {
+  position: relative;
+  min-width: 0;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  padding: 12px 30px 12px 12px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--oc-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.skills-expert-detail__scenario:hover:not(:disabled),
+.skills-expert-detail__scenario:focus-visible:not(:disabled) {
+  border-color: var(--oc-border-subtle);
+  outline: none;
+  background: var(--oc-bg-hover);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .04);
+  transform: translateY(-1px);
+}
+.skills-expert-detail__scenario > span {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--banking-brand-red);
+  background: color-mix(in oklab, var(--banking-brand-red) 8%, transparent);
+}
+.skills-expert-detail__scenario > span svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.7;
+}
+.skills-expert-detail__scenario > strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.skills-expert-detail__scenario > small {
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.skills-expert-detail__scenario > svg {
+  position: absolute;
+  top: 14px;
+  right: 11px;
+  width: 14px;
+  height: 14px;
+  color: var(--oc-text-tertiary);
+  stroke-width: 1.7;
+}
+.skills-expert-detail__scenario:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
 .skills-expert-detail__tasks-head {
   margin-top: 18px;
 }
@@ -5649,6 +5868,10 @@ input.session-searchbar__input:focus-visible,
   .skills-mcp-grid {
     gap: 16px;
   }
+  .expert-team-roster.is-card {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-right: 0;
+  }
 }
 @media (max-width: 900px) {
   .skills-market-grid,
@@ -5690,6 +5913,12 @@ input.session-searchbar__input:focus-visible,
   }
   .skills-mcp-grid {
     gap: 12px;
+  }
+  .expert-team-roster.is-card {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .skills-expert-card[data-team="true"] .skills-catalog-card__capabilities {
+    flex-wrap: wrap;
   }
   .skills-page {
     padding-inline: 0;
@@ -6706,6 +6935,112 @@ input.session-searchbar__input:focus-visible,
   border-radius: 0;
   background: transparent;
 }
+.agent-task-card__team-plan {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 2px 0 10px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--oc-bg-soft);
+}
+.agent-task-card__team-plan > span {
+  width: 25px;
+  height: 25px;
+  flex: 0 0 25px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--banking-brand-red);
+  background: color-mix(in oklab, var(--banking-brand-red) 8%, transparent);
+}
+.agent-task-card__team-plan > .agent-task-card__team-plan-avatar {
+  width: 36px;
+  height: 36px;
+  flex-basis: 36px;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 9px;
+  background: var(--oc-bg-surface);
+}
+.agent-task-card__team-plan-avatar .expert-team-avatar {
+  width: 100%;
+  height: 100%;
+}
+.agent-task-card__team-plan svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.7;
+}
+.agent-task-card__team-plan > div {
+  min-width: 0;
+}
+.agent-task-card__team-plan strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--oc-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.agent-task-card__team-plan p {
+  margin: 0;
+  color: var(--oc-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.agent-task-card__team-plan small {
+  display: block;
+  margin-top: 3px;
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.agent-task-card__data {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0 0 12px;
+  padding: 7px 2px 10px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+}
+.agent-task-card__data > span {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--oc-text-secondary);
+  background: var(--oc-bg-soft);
+}
+.agent-task-card__data > span svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.7;
+}
+.agent-task-card__data[data-status="running"] > span {
+  color: var(--banking-brand-red);
+}
+.agent-task-card__data[data-status="done"] > span {
+  color: #15803d;
+}
+.agent-task-card__data > div {
+  min-width: 0;
+}
+.agent-task-card__data strong {
+  display: block;
+  color: var(--oc-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+}
+.agent-task-card__data p {
+  margin: 2px 0 0;
+  color: var(--oc-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
 .agent-task-card__team-heading {
   display: flex;
   align-items: center;
@@ -6762,31 +7097,13 @@ input.session-searchbar__input:focus-visible,
   background: var(--oc-text-tertiary);
 }
 .agent-task-card[data-team="true"] .agent-task-card__header {
-  grid-template-columns: 122px minmax(0, 1fr) auto 18px;
+  grid-template-columns: 34px minmax(0, 1fr) auto 18px;
 }
 .agent-task-card[data-team="true"] .agent-task-card__icon {
-  width: 122px;
+  width: 34px;
   height: 34px;
-  overflow: visible;
-  border-radius: 0;
-  background: transparent;
-}
-.agent-task-card[data-team="true"] .agent-task-card__icon .expert-team-avatar {
-  display: flex;
-  align-items: center;
-  overflow: visible;
-  padding: 0 0 0 2px;
-}
-.agent-task-card[data-team="true"] .agent-task-card__icon .expert-team-avatar img {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
-  margin-left: -7px;
-  border: 2px solid var(--oc-card);
   border-radius: 50%;
-}
-.agent-task-card[data-team="true"] .agent-task-card__icon .expert-team-avatar img:first-child {
-  margin-left: 0;
+  background: color-mix(in oklab, var(--banking-brand-red) 9%, transparent);
 }
 .agent-task-card__team-item.is-running .agent-task-card__team-dot {
   background: var(--banking-brand-red);
@@ -6809,6 +7126,11 @@ input.session-searchbar__input:focus-visible,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.agent-task-card__team-copy small {
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
 .agent-task-card__team-copy strong {
   color: var(--oc-text-primary);
   font-size: 13px;
@@ -6820,6 +7142,66 @@ input.session-searchbar__input:focus-visible,
   line-height: 1.68;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.agent-task-card__workflow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0 0 10px;
+}
+.agent-task-card__workflow .agent-task-card__team-heading {
+  margin: 2px 0 3px;
+}
+.agent-task-card__workflow > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 24px auto minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  color: var(--oc-text-secondary);
+  font-size: 12px;
+}
+.agent-task-card__workflow i {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--oc-text-tertiary);
+  background: var(--oc-bg-soft);
+}
+.agent-task-card__workflow [data-status="running"] i {
+  color: var(--banking-brand-red);
+}
+.agent-task-card__workflow [data-status="done"] i {
+  color: #15803d;
+}
+.agent-task-card__workflow i svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.7;
+}
+.agent-task-card__workflow strong {
+  color: var(--oc-text-primary);
+  font-weight: 500;
+}
+.agent-task-card__workflow em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--oc-text-tertiary);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .skills-expert-detail__scenarios {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .skills-expert-detail__scenario {
+    min-height: 92px;
+  }
 }
 .agent-task-card__steps {
   display: flex;
@@ -6909,8 +7291,8 @@ input.session-searchbar__input:focus-visible,
   white-space: pre-wrap;
 }
 .agent-task-card__result {
-  max-height: 520px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding-top: 2px;
 }
 .agent-task-card__result .lingxia-markdown {

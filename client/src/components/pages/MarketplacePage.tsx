@@ -49,6 +49,7 @@ const ORIGIN_META: Record<OriginKey, { label: string; Icon: ComponentType<{ size
 const MARKET_SECTIONS: MarketSection[] = ["finance", "opensource"];
 
 const ROLE_LABELS: Record<string, string> = {
+  "post-loan-risk-control": "数智风控",
   "investment-researcher": "投顾分析",
   "wealth-manager":        "财富经理",
   "credential-compliance": "审核专员",
@@ -123,6 +124,42 @@ function scenarioTagOf(item: MarketSkill): string {
 function skillTitleOf(item: MarketSkill): string {
   if (item.skillId.toLowerCase() === "post-loan-risk-control") return "智能风控";
   return item.title;
+}
+
+export function skillRoleMarkOf(item: Pick<MarketSkill, "skillId" | "title" | "category" | "roleTag">): {
+  label: string;
+  tone: string;
+  title: string;
+} {
+  const signature = `${item.roleTag} ${item.category} ${item.skillId} ${item.title}`.toLocaleLowerCase();
+  const rules: Array<[RegExp, string, string, string]> = [
+    [/bond|债券|固收/, "债", "bond", "债券交易"],
+    [/insurance|保险|车险|核保|理赔/, "保", "insurance", "保险业务"],
+    [/credential|audit|compliance|审核|审计|凭证|合规/, "审", "audit", "审核合规"],
+    [/post-loan|credit-risk|risk-control|风控|风险管理|贷后/, "控", "risk", "风险管理"],
+    [/investment|research|投顾|投研|股票|估值/, "投", "investment", "投资研究"],
+    [/wealth|finance|财富|理财|资产配置/, "财", "wealth", "财富管理"],
+    [/data|数据|分析/, "数", "data", "数据分析"],
+    [/dev|code|开发|编程/, "技", "development", "开发工具"],
+    [/writing|office|办公|写作|文档/, "办", "office", "办公效率"],
+    [/sales|销售|营销|外呼/, "销", "sales", "销售经营"],
+  ];
+  const matched = rules.find(([pattern]) => pattern.test(signature));
+  return matched
+    ? { label: matched[1], tone: matched[2], title: matched[3] }
+    : { label: "通", tone: "general", title: "通用能力" };
+}
+
+function SkillRoleMark({ item, className = "skills-catalog-card__icon" }: {
+  item: MarketSkill;
+  className?: string;
+}) {
+  const mark = skillRoleMarkOf(item);
+  return (
+    <span className={`${className} skills-role-mark`} data-tone={mark.tone} title={mark.title} aria-label={mark.title}>
+      {mark.label}
+    </span>
+  );
 }
 
 function skillMatchesSection(item: MarketSkill, section: MarketSection) {
@@ -455,8 +492,6 @@ export function MarketplacePage({
       {!loading && filtered.length > 0 && (
         <div className="skills-market-grid">
           {filtered.map((item) => {
-            const meta = categoryMeta(item.category);
-            const Icon = meta.Icon;
             const { installed, canUpdate } = installState(item);
             const installLabel = canUpdate ? "更新" : installed ? "已安装" : "安装";
             const title = skillTitleOf(item);
@@ -475,10 +510,9 @@ export function MarketplacePage({
                 }}
               >
                 <div className="skills-market-card__head skills-catalog-card__head">
-                  <span className="skills-catalog-card__icon" aria-hidden="true"><Icon /></span>
+                  <SkillRoleMark item={item} />
                   <div className="skills-market-card__title-wrap skills-catalog-card__title-wrap">
                     <div className="skills-market-card__title skills-catalog-card__title">{title}</div>
-                    <div className="skills-market-card__meta">{item.author} · v{item.version}</div>
                   </div>
                 </div>
 
@@ -516,14 +550,13 @@ export function MarketplacePage({
           <div className="skills-market-detail__panel settings-card">
             {(() => {
               const meta = categoryMeta(selectedSkill.category);
-              const Icon = meta.Icon;
               const { installed, installedVersion, canUpdate } = installState(selectedSkill);
               const installLabel = canUpdate ? "更新" : installed ? "已安装" : "安装";
               const title = skillTitleOf(selectedSkill);
               return (
                 <>
                   <div className="skills-market-detail__head">
-                    <div className="skills-market-detail__icon"><Icon size={18} /></div>
+                    <SkillRoleMark item={selectedSkill} className="skills-market-detail__icon" />
                     <div className="min-w-0">
                       <div className="skills-market-detail__title">{title}</div>
                       <div className="skills-market-detail__meta">{selectedSkill.author} · v{selectedSkill.version}</div>
