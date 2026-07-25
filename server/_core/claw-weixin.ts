@@ -12,6 +12,7 @@ import { pathToFileURL } from "url";
 import { isAuthorizedInternalRequest, requireClawOwner, OPENCLAW_HOME, OPENCLAW_JSON_PATH, resolveRuntimeAgentId } from "./helpers";
 import { createOpenClawRuntimeAdapter } from "./runtime";
 import { auditActor, auditRequest, recordAuditBestEffort } from "./audit-events";
+import { guardExternalDelivery } from "./external-delivery-guard";
 
 const OPENCLAW_WEIXIN_CHANNEL = "openclaw-weixin";
 const OPENCLAW_WEIXIN_STATE_DIR = path.join(OPENCLAW_HOME, "openclaw-weixin");
@@ -280,8 +281,10 @@ export async function sendWeixinMessage(adoptId: string, chatId: string, text: s
   if (!status.bound || !status.accountId) return { ok: false, error: "weixin not bound" };
   const target = String(chatId || status.userId || "").trim();
   if (!target) return { ok: false, error: "weixin target missing; send a WeChat message to the bot first" };
+  const guarded = await guardExternalDelivery({ adoptId, channel: "weixin", text });
+  if (!guarded.ok) return { ok: false, error: guarded.error };
   try {
-    sendOfficialWeixinMessage(status.accountId, target, text);
+    sendOfficialWeixinMessage(status.accountId, target, guarded.text);
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message || String(e) };

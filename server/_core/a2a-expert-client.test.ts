@@ -3,10 +3,46 @@ import { describe, expect, it } from "vitest";
 import {
   buildA2ATaskRequest,
   extractA2ATaskResult,
+  summarizeA2AEvents,
   type A2AEndpointConfig,
 } from "./a2a-expert-client";
 
 describe("A2A expert profiles", () => {
+  it("preserves structured expert-team progress in compact event history", () => {
+    const serialized = summarizeA2AEvents([{
+      id: "progress-1",
+      result: {
+        kind: "status-update",
+        taskId: "task-1",
+        status: {
+          state: "working",
+          message: {
+            parts: [{
+              kind: "data",
+              data: {
+                schema: "ea.team.progress.v1",
+                event: {
+                  memberId: "risk_manager",
+                  memberName: "风险经理",
+                  status: "running",
+                  summary: "正在复核",
+                },
+              },
+            }],
+          },
+        },
+      },
+    }], {});
+
+    expect(JSON.parse(serialized)).toEqual([expect.objectContaining({
+      state: "working",
+      progress: expect.objectContaining({
+        memberId: "risk_manager",
+        status: "running",
+      }),
+    })]);
+  });
+
   it("preserves the existing standard text-only A2A request by default", () => {
     const request = buildA2ATaskRequest("review this", { stream: true });
 

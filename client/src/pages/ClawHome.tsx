@@ -106,7 +106,7 @@ const features = [
   {
     icon: ShieldCheck,
     title: "安全治理",
-    desc: "围绕身份、技能、工具与审计建立治理链路，关键状态可在管理后台持续核验。",
+    desc: "围绕身份、数据护栏、技能、工具与审计建立治理链路，关键状态可在管理后台持续核验。",
   },
 ];
 
@@ -131,9 +131,9 @@ const securityCapabilities = [
   },
   {
     icon: ScrollText,
-    label: "审计",
-    title: "审计与凭据保护",
-    desc: "WORM 审计账本支持查询导出，模型、通知等敏感凭据加密保存。",
+    label: "数据",
+    title: "数据护栏与审计",
+    desc: "高置信识别凭据、私钥和个人信息；外发时阻断或脱敏，并将处置结果写入审计账本。",
   },
 ];
 
@@ -984,7 +984,7 @@ export default function ClawHome() {
                 让 Agent 能工作，也能被治理
               </h2>
               <p className="mt-4 max-w-[480px] text-sm leading-7 text-[#68655f] sm:text-base">
-                从身份绑定、输入防护、技能审核到不可篡改审计，把企业关心的边界落实到每一次调用。
+                从身份绑定、输入防护、数据护栏、技能审核到不可篡改审计，把企业关心的边界落实到每一次调用。
               </p>
               <div className="mt-6 flex items-center gap-2 text-xs font-medium text-[#68655f]">
                 <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />

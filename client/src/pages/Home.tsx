@@ -2377,6 +2377,7 @@ export default function Home() {
     return () => { ws.disconnect(); wsClientRef.current = null; };
   }, [resolvedAdoptId, webConversationId, isDirectHttpRuntime]);
   const lingxiaMsgViewportRef = useRef<HTMLDivElement | null>(null);
+  const lingxiaMsgContentRef = useRef<HTMLDivElement | null>(null);
   const lingxiaMessageNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const lingxiaMessageRefCallbacks = useRef<Map<string, (node: HTMLDivElement | null) => void>>(new Map());
   const lingxiaManualNavigationRef = useRef(false);
@@ -4295,6 +4296,23 @@ export default function Home() {
   }, [isLingxiaNearBottom, updateLingxiaNearBottom]);
 
   useEffect(() => {
+    const content = lingxiaMsgContentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+
+    let animationFrame = 0;
+    const observer = new ResizeObserver(() => {
+      if (lingxiaManualNavigationRef.current || !lingxiaNearBottomRef.current) return;
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => scrollLingxiaToBottom("auto"));
+    });
+    observer.observe(content);
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      observer.disconnect();
+    };
+  }, [activePage, scrollLingxiaToBottom, webConversationId]);
+
+  useEffect(() => {
     const lastMessage = activeLingxiaMsgs[activeLingxiaMsgs.length - 1];
     const userJustSent = lastMessage?.role === "user";
     if (userJustSent) {
@@ -4718,7 +4736,7 @@ export default function Home() {
               ref={lingxiaMsgViewportRef}
               className="flex-1 min-h-0 overflow-y-auto pt-6 stealth-scrollbar" style={{ paddingBottom: 100 }}
             >
-              <div className="mx-auto w-full max-w-[880px] px-6 space-y-5">
+              <div ref={lingxiaMsgContentRef} className="mx-auto w-full max-w-[880px] px-6 space-y-5">
 
               {clawByAdoptLoading && activeLingxiaMsgs.length === 0 ? <ChatStartupSkeleton /> : null}
 

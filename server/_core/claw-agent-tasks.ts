@@ -279,6 +279,7 @@ async function runAgentTaskInBackground(
 ) {
   const startedAt = Date.now();
   const controller = new AbortController();
+  let progressWrites = Promise.resolve();
   activeAgentTaskControllers.set(taskId, controller);
   await updateActiveAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
   try {
@@ -299,7 +300,19 @@ async function runAgentTaskInBackground(
       ...runtime,
       taskId: endpointConfig.supportsCancellation === true ? taskId : undefined,
       signal: controller.signal,
+      onEvents: (events) => {
+        const rawEventsJson = summarizeA2AEvents(events, endpointConfig, AGENT_TASK_RAW_EVENTS_LIMIT_BYTES);
+        progressWrites = progressWrites
+          .then(() => updateActiveAgentTask(taskId, { rawEventsJson }))
+          .catch((error) => {
+            console.warn("[AGENT-TASK] progress update failed", {
+              taskId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+      },
     });
+    await progressWrites;
     if (["failed", "canceled", "cancelled"].includes(String(result.state || "").toLowerCase())) {
       throw new Error(String(result.text || "").trim() || `${String(agent.name || "专家")}任务执行失败`);
     }

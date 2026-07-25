@@ -26,4 +26,14 @@ describe("private chat log fields", () => {
     expect(fields.messagePreview).toContain("[URL]");
     expect(fields.messagePreview).not.toContain("test@example.com");
   });
+
+  it("redacts validated identity, phone and payment values in diagnostic previews", () => {
+    process.env.LOG_MESSAGE_PREVIEW_ENABLED = "true";
+    const fields = privateMessageLogFields(
+      "联系 13800138000，证件 11010519491231002X，卡号 4111111111111111",
+    );
+    expect(fields.messagePreview).toContain("[REDACTED_PHONE]");
+    expect(fields.messagePreview).toContain("[REDACTED_ID]");
+    expect(fields.messagePreview).toContain("[REDACTED_BANK_CARD]");
+  });
 });

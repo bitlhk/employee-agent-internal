@@ -41,6 +41,7 @@ import {
   type AgentMemoryStatus,
 } from "../db";
 import { callEaAssistantModel } from "./ea-assistant-model";
+import { detectSensitiveData, type SensitiveDataType } from "./data-guardrail";
 import { decryptSecret, encryptSecret } from "./secret-protection";
 import { JIUWENCLAW_HOME, appendLogAsync, jiuwenClawWorkspaceDir } from "./helpers";
 
@@ -94,16 +95,18 @@ type MemoryEvidenceInput = {
 
 const MEMORY_KINDS = new Set<AgentMemoryKind>(["preference", "instruction", "entity", "procedure"]);
 const HIGH_RISK_PATTERNS: Array<[RegExp, string]> = [
-  [/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i, "private_key"],
-  [/(?:api[_ -]?key|access[_ -]?token|client[_ -]?secret|password)\s*[:=]\s*\S{6,}/i, "credential"],
-  [/\b(?:sk|ak)-[A-Za-z0-9_-]{16,}\b/i, "credential"],
-  [/\bBearer\s+[A-Za-z0-9._~+\/-]{16,}\b/i, "credential"],
-  [/\b\d{17}[0-9Xx]\b/, "identity_number"],
-  [/\b(?:\d[ -]?){16,19}\b/, "payment_number"],
   [/ignore\s+(?:all|previous|prior|above)\s+instructions/i, "prompt_injection"],
   [/忽略(?:以上|之前|所有).{0,10}(?:指令|规则|要求)/i, "prompt_injection"],
   [/system\s+prompt|系统提示词/i, "prompt_injection"],
 ];
+
+const MEMORY_RISK_BY_SENSITIVE_TYPE: Record<SensitiveDataType, string> = {
+  private_key: "private_key",
+  credential: "credential",
+  cn_id_card: "identity_number",
+  cn_phone: "phone_number",
+  bank_card: "payment_number",
+};
 
 function featureEnabled(): boolean {
   return !/^(0|false|no|off)$/i.test(String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"));
@@ -125,6 +128,8 @@ export function memoryContentRisk(value: string): string | null {
   const content = normalizeMemoryContent(value);
   if (!content) return "empty";
   if (content.length < 4) return "too_short";
+  const sensitive = detectSensitiveData(content, { requireBankCardContext: false })[0];
+  if (sensitive) return MEMORY_RISK_BY_SENSITIVE_TYPE[sensitive.type];
   for (const [pattern, code] of HIGH_RISK_PATTERNS) {
     if (pattern.test(content)) return code;
   }

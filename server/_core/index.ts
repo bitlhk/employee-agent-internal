@@ -72,6 +72,7 @@ import { recordInstallEvent } from "../db/install-telemetry";
 import { startAgentMemoryRuntime } from "./agent-memory";
 import { registerLocalProfileA2AProxy } from "./local-profile-a2a-proxy";
 import { startAgentHealthMonitor } from "./agent-health";
+import { centralAuthConfigFromEnv, centralAuthRedirectUrl } from "./central-auth";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,6 +85,7 @@ let runtimeVersionsCache: {
   expiresAt: number;
 } | null = null;
 const iosLoadDebugEnabled = process.env.IOS_LOAD_DEBUG === "1";
+const centralAuthConfig = centralAuthConfigFromEnv();
 startApplicationLogRetention();
 
 const roleBaseline = getRoleSkillMcpBaseline();
@@ -606,6 +608,17 @@ async function startServer() {
       
       // 如果已经发送了响应（比如静态文件已匹配），直接返回
       if (res.headersSent) {
+        return;
+      }
+
+      const centralRedirect = centralAuthRedirectUrl({
+        config: centralAuthConfig,
+        pathname: req.path,
+        redirect: req.query.redirect,
+      });
+      if (centralRedirect) {
+        res.setHeader("Cache-Control", "no-store");
+        res.redirect(302, centralRedirect);
         return;
       }
 

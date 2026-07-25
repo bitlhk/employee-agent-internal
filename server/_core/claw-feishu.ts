@@ -30,6 +30,7 @@ import {
   removeChannelBindingsForExternalUser,
   upsertChannelBinding,
 } from "../db/channel-bindings";
+import { guardExternalDelivery } from "./external-delivery-guard";
 
 const FEISHU_ACCOUNTS_URL = "https://accounts.feishu.cn";
 const LARK_ACCOUNTS_URL = "https://accounts.larksuite.com";
@@ -583,6 +584,8 @@ export async function sendFeishuMessage(adoptId: string, text: string): Promise<
   if (!account?.appId || !account?.appSecret || !account?.openId) {
     return { ok: false, error: "feishu not bound" };
   }
+  const guarded = await guardExternalDelivery({ adoptId, channel: "feishu", text });
+  if (!guarded.ok) return { ok: false, error: guarded.error };
   try {
     const token = await getTenantAccessToken(account);
     const response = await fetchWithTimeout(`${apiBaseUrl(account.domain)}/im/v1/messages?receive_id_type=open_id`, {
@@ -594,7 +597,7 @@ export async function sendFeishuMessage(adoptId: string, text: string): Promise<
       body: JSON.stringify({
         receive_id: account.openId,
         msg_type: "text",
-        content: JSON.stringify({ text }),
+        content: JSON.stringify({ text: guarded.text }),
       }),
     });
     const data = await response.json().catch(() => ({}));
@@ -616,6 +619,8 @@ export async function sendFeishuBridgeMessage(adoptId: string, text: string): Pr
   if (!account?.appId || !account?.appSecret) {
     return { ok: false, error: "feishu bridge app not configured" };
   }
+  const guarded = await guardExternalDelivery({ adoptId, channel: "feishu_bridge", text });
+  if (!guarded.ok) return { ok: false, error: guarded.error };
   try {
     const token = await getTenantAccessToken(account);
     const response = await fetchWithTimeout(`${apiBaseUrl(account.domain)}/im/v1/messages?receive_id_type=open_id`, {
@@ -627,7 +632,7 @@ export async function sendFeishuBridgeMessage(adoptId: string, text: string): Pr
       body: JSON.stringify({
         receive_id: binding.openId,
         msg_type: "text",
-        content: JSON.stringify({ text }),
+        content: JSON.stringify({ text: guarded.text }),
       }),
     });
     const data = await response.json().catch(() => ({}));

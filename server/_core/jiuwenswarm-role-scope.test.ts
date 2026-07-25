@@ -140,6 +140,28 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(identity).toContain("优先使用本地已安装的岗位技能和已授权 MCP");
       expect(identity).toContain("完整评估");
       expect(identity).toContain("远程 Agent 异步任务");
+      expect(identity).toContain("符合社会主义核心价值观");
+      expect(identity).toContain("正常的事实概述、政策研究、历史分析和风险研判");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("adds the managed compliance policy to an existing identity exactly once", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-compliance-"));
+    try {
+      const identityPath = path.join(root, "IDENTITY.md");
+      writeFileSync(identityPath, "# 自定义身份\n\n保留现有岗位说明。\n", "utf8");
+
+      const first = writeJiuwenSwarmRoleScopeManifest({ workspaceDir: root, role, effectiveAssets });
+      const second = writeJiuwenSwarmRoleScopeManifest({ workspaceDir: root, role, effectiveAssets });
+      const identity = readFileSync(identityPath, "utf8");
+
+      expect(first.identityChanged).toBe(true);
+      expect(second.identityChanged).toBe(false);
+      expect(identity).toContain("保留现有岗位说明");
+      expect(identity.match(/EA_CONTENT_COMPLIANCE_START/g)).toHaveLength(1);
+      expect(identity.match(/符合社会主义核心价值观/g)).toHaveLength(1);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

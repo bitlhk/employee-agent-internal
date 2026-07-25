@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Eye, Files, Square } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
-import { ExpertAvatar } from "@/components/ExpertAvatar";
+import { ExpertAvatar, ExpertMemberAvatar, isInvestmentTeamExpert } from "@/components/ExpertAvatar";
 import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
 
@@ -41,6 +41,8 @@ export interface AgentTask {
   error_message?: string | null;
   remoteTaskId?: string | null;
   remote_task_id?: string | null;
+  rawEventsJson?: string | null;
+  raw_events_json?: string | null;
   adapterProtocol?: string | null;
   adapter_protocol?: string | null;
   artifactsJson?: string | null;
@@ -126,6 +128,37 @@ function parseRawEvents(raw: string | null | undefined): string | undefined {
   return undefined;
 }
 
+type TeamProgress = {
+  memberId: string;
+  memberName: string;
+  status: "running" | "done" | "error" | string;
+  summary: string;
+};
+
+function parseTeamProgress(raw: string | null | undefined): TeamProgress[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const latest = new Map<string, TeamProgress>();
+    for (const item of parsed) {
+      const progress = item?.progress;
+      const memberId = String(progress?.memberId || "").trim();
+      const memberName = String(progress?.memberName || "").trim();
+      if (!memberId || !memberName) continue;
+      latest.set(memberId, {
+        memberId,
+        memberName,
+        status: String(progress?.status || "running"),
+        summary: String(progress?.summary || "").trim(),
+      });
+    }
+    return Array.from(latest.values());
+  } catch {
+    return [];
+  }
+}
+
 export function AgentTaskCard({
   task,
   onOpenArtifact,
@@ -185,8 +218,10 @@ export function AgentTaskCard({
 
   const [now, setNow] = useState(() => Date.now());
   const [expanded, setExpanded] = useState(false);
+  const [taskDetailsExpanded, setTaskDetailsExpanded] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const autoExpandedRef = useRef(false);
+  const teamAutoExpandedRef = useRef(false);
 
   useEffect(() => {
     if (!normalized.isActive) return;
@@ -208,7 +243,10 @@ export function AgentTaskCard({
   const startTime = toTime(normalized.startedAt) || toTime(normalized.createdAt) || now;
   const endTime = toTime(normalized.completedAt) || now;
   const elapsedMs = task.durationMs ?? Math.max(0, endTime - startTime);
-  const remoteEventText = parseRawEvents((task as any).rawEventsJson || (task as any).raw_events_json);
+  const rawEventsJson = value(task.rawEventsJson, task.raw_events_json);
+  const remoteEventText = parseRawEvents(rawEventsJson);
+  const teamProgress = useMemo(() => parseTeamProgress(rawEventsJson), [rawEventsJson]);
+  const completedTeamSteps = teamProgress.filter((item) => item.status === "done").length;
   const metaItems = [
     `任务 ${compactId(task.id)}`,
     normalized.remoteTaskId ? `远端 ${compactId(normalized.remoteTaskId)}` : "",
@@ -235,8 +273,14 @@ export function AgentTaskCard({
     artifact.role === "preview" && agentArtifactPreviewKind(artifact) === "image"
   )) || normalized.artifacts.find((artifact) => agentArtifactPreviewKind(artifact) === "image");
 
+  useEffect(() => {
+    if (!normalized.isActive || teamProgress.length === 0 || teamAutoExpandedRef.current) return;
+    teamAutoExpandedRef.current = true;
+    setExpanded(true);
+  }, [normalized.isActive, teamProgress.length]);
+
   return (
-    <section className={`agent-task-card agent-task-card--${statusMeta.tone}`}>
+    <section className={`agent-task-card agent-task-card--${statusMeta.tone}`} data-team={isInvestmentTeamExpert(normalized.agentId, normalized.agentName) ? "true" : "false"}>
       <button type="button" className="agent-task-card__header" onClick={() => setExpanded((v) => !v)}>
         <span className="agent-task-card__icon">
           <ExpertAvatar agentId={normalized.agentId} agentName={normalized.agentName} />
@@ -254,9 +298,42 @@ export function AgentTaskCard({
 
       {expanded ? (
         <div className="agent-task-card__body">
-          <div className="agent-task-card__meta">
-            {metaItems.map((item) => <span key={item}>{item}</span>)}
-          </div>
+          <button
+            type="button"
+            className="agent-task-card__details-toggle"
+            aria-expanded={taskDetailsExpanded}
+            onClick={() => setTaskDetailsExpanded((current) => !current)}
+          >
+            <span>任务详情</span>
+            <ChevronDown size={14} className={taskDetailsExpanded ? "is-open" : ""} />
+          </button>
+          {taskDetailsExpanded ? (
+            <div className="agent-task-card__meta">
+              {metaItems.map((item) => <span key={item}>{item}</span>)}
+            </div>
+          ) : null}
+          {teamProgress.length > 0 ? (
+            <div className="agent-task-card__team" aria-label="专家团进度">
+              <div className="agent-task-card__team-heading">
+                <strong>专家团进度</strong>
+                <span>{completedTeamSteps}/{teamProgress.length} 完成</span>
+              </div>
+              <div className="agent-task-card__team-list">
+                {teamProgress.map((item) => (
+                  <div key={item.memberId} className={`agent-task-card__team-item is-${item.status}`}>
+                    <span className="agent-task-card__team-visual">
+                      <ExpertMemberAvatar memberId={item.memberId} />
+                      <span className="agent-task-card__team-dot" />
+                    </span>
+                    <span className="agent-task-card__team-copy">
+                      <strong>{item.memberName}</strong>
+                      <span>{item.summary || (item.status === "done" ? "已完成" : item.status === "error" ? "未完成" : "处理中")}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {normalized.steps.length > 0 ? (
             <div className="agent-task-card__steps">
               {normalized.steps.map((step, i) => (

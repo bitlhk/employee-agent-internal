@@ -3,6 +3,7 @@ import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "fs";
 import { safePostWebhookJson, validateWebhookTarget } from "./safe-webhook";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-protection";
+import { guardExternalDelivery } from "./external-delivery-guard";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const NOTIFY_CONFIG_PATH = `${APP_ROOT}/data/claw-notify-configs.json`;
@@ -152,9 +153,11 @@ export async function sendNotification(adoptId: string, text: string, title?: st
   const sendType = channel || cfg.type;
   // 统一别名：wecom → wechat_work
   const t = sendType === "wecom" ? "wechat_work" : sendType;
-  if (t === "wechat_work") return sendWechatWork(cfg, text, title);
-  if (t === "feishu") return sendFeishu(cfg, text, title);
-  if (t === "webhook") return sendWebhook(cfg, text, title);
+  const guarded = await guardExternalDelivery({ adoptId, channel: t, text, title });
+  if (!guarded.ok) return { ok: false, error: guarded.error };
+  if (t === "wechat_work") return sendWechatWork(cfg, guarded.text, guarded.title);
+  if (t === "feishu") return sendFeishu(cfg, guarded.text, guarded.title);
+  if (t === "webhook") return sendWebhook(cfg, guarded.text, guarded.title);
   return { ok: false, error: "unknown notify type: " + sendType };
 }
 

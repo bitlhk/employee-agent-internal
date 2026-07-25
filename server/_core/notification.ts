@@ -1,5 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
+import { guardExternalDelivery } from "./external-delivery-guard";
 
 export type NotificationPayload = {
   title: string;
@@ -67,6 +68,14 @@ export async function notifyOwner(
   payload: NotificationPayload
 ): Promise<boolean> {
   const { title, content } = validatePayload(payload);
+  const guarded = await guardExternalDelivery({
+    channel: "owner_notification",
+    title,
+    text: content,
+  });
+  if (!guarded.ok) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: guarded.error });
+  }
 
   if (!ENV.forgeApiUrl) {
     throw new TRPCError({
@@ -93,7 +102,7 @@ export async function notifyOwner(
         "content-type": "application/json",
         "connect-protocol-version": "1",
       },
-      body: JSON.stringify({ title, content }),
+      body: JSON.stringify({ title: guarded.title || title, content: guarded.text }),
     });
 
     if (!response.ok) {

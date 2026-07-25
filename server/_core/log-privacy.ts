@@ -1,4 +1,5 @@
 import { createHmac } from "crypto";
+import { redactSensitiveData } from "./data-guardrail";
 
 function hmacKey(): string {
   return String(
@@ -10,7 +11,7 @@ function hmacKey(): string {
 }
 
 export function redactLogPreview(raw: unknown): string {
-  return String(raw || "")
+  return redactSensitiveData(raw, { requireBankCardContext: false }).text
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, "Bearer [REDACTED]")
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
     .replace(/https?:\/\/[^\s]+/gi, "[URL]")

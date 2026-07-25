@@ -1199,7 +1199,7 @@ export default function ClawAdmin() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">上传共享技能</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">管理员上传的 .zip 技能包解析后进入待审核，可按来源展示到“开源技能”“金融专业”或“中队专区”</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">管理员上传的 .zip 技能包解析后进入待审核，可按来源展示到“通用技能”或“金融专业”；中队专区内容合并到金融专业展示</p>
                 </div>
               </div>
               <div
@@ -1242,10 +1242,10 @@ export default function ClawAdmin() {
                 <div className="space-y-2">
                   {(marketSkills || []).map((item: any) => {
                     const catLabels: any = { finance: "金融", dev: "开发", data: "数据", writing: "写作", general: "通用" };
-                    const originLabels: any = { opensource: "开源技能", finance: "金融专业", squad: "中队专区" };
+                    const originLabels: any = { opensource: "通用技能", finance: "金融专业", squad: "中队专区" };
                     const originLabel = item.origin === "finance" || (item.origin === "opensource" && item.category === "finance")
                       ? "金融专业"
-                      : (originLabels[item.origin || "opensource"] || item.origin || "开源技能");
+                      : (originLabels[item.origin || "opensource"] || item.origin || "通用技能");
                     const stLabels: any = { pending: "待审核", approved: "已上架", rejected: "已拒绝", offline: "已下架" };
                     const stColors: any = { pending: "bg-yellow-50 text-yellow-700 border-yellow-200", approved: "bg-green-50 text-green-700 border-green-200", rejected: "bg-red-50 text-red-700 border-red-200", offline: "bg-gray-50 text-gray-500 border-gray-200" };
                     return (

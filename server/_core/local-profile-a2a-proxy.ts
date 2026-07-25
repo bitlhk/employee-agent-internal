@@ -69,6 +69,15 @@ const PROFILE_PROXY_DEFINITIONS: readonly ProfileProxyDefinition[] = [
     label: "HERMES-TCM-A2A",
     unavailableMessage: "TCM expert is unavailable",
   },
+  {
+    enabledEnv: "A_SHARE_COMMITTEE_A2A_PROXY_ENABLED",
+    portEnv: "A_SHARE_COMMITTEE_A2A_PORT",
+    timeoutEnv: "A_SHARE_COMMITTEE_A2A_PROXY_TIMEOUT_MS",
+    defaultPort: 18791,
+    publicPath: "/a2a/a-share-committee",
+    label: "A-SHARE-COMMITTEE-A2A",
+    unavailableMessage: "A-share research committee is unavailable",
+  },
 ];
 
 export function localProfileA2AProxySpecs(env: LocalProfileA2AEnvironment = process.env) {

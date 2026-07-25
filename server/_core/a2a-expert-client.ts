@@ -75,7 +75,16 @@ export type A2ATaskRuntimeContext = {
   dataPart?: Record<string, unknown>;
   dataPartMetadata?: Record<string, unknown>;
   signal?: AbortSignal;
+  onEvents?: (events: unknown[]) => void;
 };
+
+function notifyRuntimeEvents(runtime: A2ATaskRuntimeContext, events: unknown[]) {
+  try {
+    runtime.onEvents?.(events.slice(-60));
+  } catch {
+    // Progress persistence must never interrupt the remote task stream.
+  }
+}
 
 const MAX_STATIC_PROFILE_BYTES = 64 * 1024;
 const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
@@ -663,8 +672,9 @@ export async function runA2AExpertTask(
         if (!contentType.includes("text/event-stream")) {
           const raw = await readSafeAgentResponseText(response);
           events.push(...parseA2AResponse(raw));
+          notifyRuntimeEvents(runtime, events);
           const result = extractA2ATaskResult(events, config);
-          return { ...result, rawEvents: events.slice(-20) };
+          return { ...result, rawEvents: events.slice(-60) };
         }
 
         const decoder = new TextDecoder();
@@ -683,16 +693,20 @@ export async function runA2AExpertTask(
           for (const block of blocks) {
             const parsed = parseA2ADataBlock(block);
             events.push(...parsed);
+            if (parsed.length > 0) notifyRuntimeEvents(runtime, events);
             const partial = extractA2ATaskResult(events, config);
             if (parsed.some(isA2ACompleteEvent) && (partial.text || partial.interaction)) {
               response.body.destroy();
-              return { ...partial, rawEvents: events.slice(-20) };
+              return { ...partial, rawEvents: events.slice(-60) };
             }
           }
         }
-        if (buffer.trim()) events.push(...parseA2ADataBlock(buffer));
+        if (buffer.trim()) {
+          events.push(...parseA2ADataBlock(buffer));
+          notifyRuntimeEvents(runtime, events);
+        }
         const result = extractA2ATaskResult(events, config);
-        return { ...result, rawEvents: events.slice(-20) };
+        return { ...result, rawEvents: events.slice(-60) };
       } catch (error) {
         if (controller.signal.aborted) throw error;
         lastError = error;
@@ -743,10 +757,14 @@ export async function cancelA2AExpertTask(
 }
 
 export function summarizeA2AEvents(events: unknown[], config: A2AEndpointConfig, maxBytes = 40_000) {
-  const compact = (events as any[]).slice(-20).map((event) => {
+  const compact = (events as any[]).slice(-60).map((event) => {
     const result = a2aEventPayload(event);
     if (!result || typeof result !== "object") return event;
     const artifact = result.artifact;
+    const parts = result.status?.message?.parts || result.message?.parts || [];
+    const progress = Array.isArray(parts)
+      ? parts.find((part: any) => part?.data?.schema === "ea.team.progress.v1")?.data?.event
+      : undefined;
     return {
       id: event?.id,
       kind: result.kind,
@@ -754,6 +772,7 @@ export function summarizeA2AEvents(events: unknown[], config: A2AEndpointConfig,
       contextId: result.contextId,
       final: result.final,
       state: result.status?.state,
+      progress,
       interaction: findAgentInteraction(result)?.interactionId,
       artifact: artifact ? {
         artifactId: artifact.artifactId || artifact.artifact_id,

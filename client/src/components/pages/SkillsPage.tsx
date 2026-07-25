@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, UIEvent } from "react";
 import QRCode from "qrcode";
 import {
   AlertTriangle,
@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { CustomMcpTemplate } from "@/components/CustomMcpDialog";
-import { ExpertAvatar } from "@/components/ExpertAvatar";
+import { ExpertAvatar, ExpertTeamRoster, isInvestmentTeamExpert } from "@/components/ExpertAvatar";
 import { ConnectorIcon } from "@/components/ConnectorIcon";
 import { PageContainer } from "@/components/console/PageContainer";
 import { useChannelBinding } from "@/hooks/useChannelBinding";
@@ -63,6 +63,20 @@ type RuntimeState =
   | "reviewing"
   | "review_failed";
 type ReviewState = "none" | "pending" | "reviewing" | "passed" | "failed";
+
+const panelScrollTimers = new WeakMap<HTMLElement, number>();
+
+function handleSkillsPanelScroll(event: UIEvent<HTMLDivElement>) {
+  const panel = event.currentTarget;
+  panel.dataset.scrolling = "true";
+  const previousTimer = panelScrollTimers.get(panel);
+  if (previousTimer) window.clearTimeout(previousTimer);
+  const timer = window.setTimeout(() => {
+    delete panel.dataset.scrolling;
+    panelScrollTimers.delete(panel);
+  }, 650);
+  panelScrollTimers.set(panel, timer);
+}
 
 type RegistrySkill = {
   id: string;
@@ -1622,7 +1636,13 @@ function taskStatusLabel(status: ExternalAgentTask["status"]) {
   return "排队中";
 }
 
-type ExpertFilter = "all" | "ready";
+type ExpertFilter = "expert" | "team";
+
+function isExpertTeam(agent: ExternalAgentSummary) {
+  return isInvestmentTeamExpert(agent.id, agent.name)
+    || (agent.capabilities || []).some((item) => item.toLocaleLowerCase() === "expert-team")
+    || /专家团|研究团队|投研团/.test(String(agent.tags || ""));
+}
 
 function AgentToolsPage({
   adoptId,
@@ -1638,7 +1658,7 @@ function AgentToolsPage({
   const [agents, setAgents] = useState<ExternalAgentSummary[]>([]);
   const [tasks, setTasks] = useState<ExternalAgentTask[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<ExpertFilter>("all");
+  const [filter, setFilter] = useState<ExpertFilter>("expert");
   const [detailAgentId, setDetailAgentId] = useState<string | null>(null);
 
   const loadAgents = async (options?: { silent?: boolean }) => {
@@ -1723,7 +1743,7 @@ function AgentToolsPage({
   const filteredAgents = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return scopedAgents.filter((agent) => {
-      if (filter === "ready" && !agent.routeReady) return false;
+      if (filter === "team" ? !isExpertTeam(agent) : isExpertTeam(agent)) return false;
       if (!normalizedQuery) return true;
       return `${agent.name} ${agentDisplayDescription(agent)} ${(agent.capabilities || []).join(" ")}`
         .toLocaleLowerCase()
@@ -1731,11 +1751,14 @@ function AgentToolsPage({
     });
   }, [scopedAgents, filter, query]);
   const filterItems: Array<{ id: ExpertFilter; label: string; count: number }> = [
-    { id: "all", label: "全部", count: scopedAgents.length },
-    { id: "ready", label: "可调用", count: scopedAgents.filter((agent) => agent.routeReady).length },
+    { id: "expert", label: "专家", count: scopedAgents.filter((agent) => !isExpertTeam(agent)).length },
+    { id: "team", label: "专家团", count: scopedAgents.filter(isExpertTeam).length },
   ];
 
-  useEffect(() => setDetailAgentId(null), [view]);
+  useEffect(() => {
+    setDetailAgentId(null);
+    setFilter("expert");
+  }, [view]);
 
   return (
     <div className="skills-market skills-agent">
@@ -1763,8 +1786,10 @@ function AgentToolsPage({
 
       {!loading && filteredAgents.length > 0 && (
         <div className="skills-mcp-grid">
-          {filteredAgents.map((agent) => (
-            <article key={agent.id} className="skills-mcp-card-v2 skills-catalog-card skills-action-card skills-expert-card" data-connected={agent.routeReady ? "true" : "false"}>
+          {filteredAgents.map((agent) => {
+            const team = isExpertTeam(agent);
+            return (
+            <article key={agent.id} className="skills-mcp-card-v2 skills-catalog-card skills-action-card skills-expert-card" data-connected={agent.routeReady ? "true" : "false"} data-team={team ? "true" : "false"}>
               <button
                 className="skills-expert-card__summon"
                 type="button"
@@ -1782,17 +1807,18 @@ function AgentToolsPage({
                 <span className="skills-catalog-card__title-wrap">
                   <span className="skills-catalog-card__title">{agent.name}</span>
                   <span className="skills-catalog-card__meta">
-                    {agent.source === "personal" ? "我的专家" : "公共专家"} · {agentStatusLabel(agent)}
+                    {agent.source === "personal" ? (team ? "我的专家团" : "我的专家") : (team ? "公共专家团" : "公共专家")} · {agentStatusLabel(agent)}
                   </span>
                 </span>
                 </span>
                 <span className="skills-catalog-card__desc">{agentDisplayDescription(agent)}</span>
+                {team ? <ExpertTeamRoster compact /> : null}
                 <span className="skills-catalog-card__capabilities" aria-label="核心能力">
                   {expertCapabilityLabels(agent).map((capability) => <span key={capability}>{capability}</span>)}
                 </span>
               </button>
             </article>
-          ))}
+          )})}
         </div>
       )}
 
@@ -1809,19 +1835,30 @@ function AgentToolsPage({
                   <span className="skills-mcp-detail__status" data-health={agentStatusHealth(selectedAgent)}>
                     <span aria-hidden="true" />{agentStatusLabel(selectedAgent)}
                   </span>
-                  <span>{selectedAgent.source === "personal" ? "我的专家" : "公共专家"}</span>
+                  <span>{selectedAgent.source === "personal"
+                    ? (isExpertTeam(selectedAgent) ? "我的专家团" : "我的专家")
+                    : (isExpertTeam(selectedAgent) ? "公共专家团" : "公共专家")}</span>
                   <span>{Math.max(0, Number(selectedAgent.usageCount || 0))} 次使用</span>
                 </div>
                 <DialogDescription id="skills-expert-detail-description">{agentDisplayDescription(selectedAgent)}</DialogDescription>
               </div>
             </div>
 
-            <div className="skills-mcp-detail__body stealth-scrollbar">
+              <div className="skills-mcp-detail__body stealth-scrollbar">
               {selectedAgent.reason && !selectedAgent.routeReady ? (
                 <div className="skills-mcp-detail__warning">
                   <CircleAlert aria-hidden="true" />
                   <span>{selectedAgent.reason}</span>
                 </div>
+              ) : null}
+              {isExpertTeam(selectedAgent) ? (
+                <>
+                  <div className="skills-mcp-detail__section-head">
+                    <span>专家团成员</span>
+                    <span>6</span>
+                  </div>
+                  <ExpertTeamRoster />
+                </>
               ) : null}
               <div className="skills-mcp-detail__section-head">
                 <span>专业能力</span>
@@ -1873,7 +1910,7 @@ function AgentToolsPage({
                     onTryExpert?.(expertId);
                   }}
                 >
-                  {selectedAgent.routeReady ? "召唤专家" : "暂不可用"} <ArrowRight />
+                  {selectedAgent.routeReady ? (isExpertTeam(selectedAgent) ? "召唤专家团" : "召唤专家") : "暂不可用"} <ArrowRight />
                 </button>
               </div>
             </div>
@@ -2450,13 +2487,13 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
         </div>
 
         {skillTab === "market" && (
-          <div id="skills-panel-market" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-subtab-market" tabIndex={0}>
+          <div id="skills-panel-market" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-subtab-market" tabIndex={0} onScroll={handleSkillsPanelScroll}>
             <MarketplacePage adoptId={adoptId} onChanged={onChanged} query={marketQuery} />
           </div>
         )}
 
         {skillTab === "mcp" && (
-          <div id="skills-panel-mcp" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby={`connectors-subtab-${connectorView}`} tabIndex={0}>
+          <div id="skills-panel-mcp" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby={`connectors-subtab-${connectorView}`} tabIndex={0} onScroll={handleSkillsPanelScroll}>
             <McpToolsPage
               adoptId={adoptId}
               query={mcpQuery}
@@ -2469,13 +2506,13 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
         )}
 
         {skillTab === "agent" && (
-          <div id="skills-panel-agent" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby={`experts-subtab-${expertView}`} tabIndex={0}>
+          <div id="skills-panel-agent" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby={`experts-subtab-${expertView}`} tabIndex={0} onScroll={handleSkillsPanelScroll}>
             <AgentToolsPage adoptId={adoptId} query={expertQuery} view={expertView} onTryExpert={onTryExpert} />
           </div>
         )}
 
         {skillTab === "mine" && (
-          <div id="skills-panel-mine" className="skills-panel stealth-scrollbar" role="tabpanel" aria-labelledby="skills-subtab-mine" tabIndex={0}>
+          <div id="skills-panel-mine" className="skills-panel stealth-scrollbar" role="tabpanel" aria-labelledby="skills-subtab-mine" tabIndex={0} onScroll={handleSkillsPanelScroll}>
             <SkillsToolbar source={sourceFilter} setSource={setSourceFilter} state={stateFilter} setState={setStateFilter} />
 
             <div className="skills-market-grid skills-mine-grid">

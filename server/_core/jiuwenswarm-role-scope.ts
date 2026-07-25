@@ -16,11 +16,14 @@ import {
 import type { AgentRoleTemplate } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
 import { projectEffectiveAssetsToMcpSelection } from "./agent-mcp-selection";
+import { PLATFORM_CONTENT_COMPLIANCE_POLICY } from "./platform-content-compliance";
 import { normalizeSkillRuntimePermissions } from "./skills/skill-runtime-permissions";
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
 export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
 export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools", "custom_mcp_gateway"];
+const CONTENT_COMPLIANCE_BLOCK_START = "<!-- EA_CONTENT_COMPLIANCE_START -->";
+const CONTENT_COMPLIANCE_BLOCK_END = "<!-- EA_CONTENT_COMPLIANCE_END -->";
 
 export type JiuwenSwarmRoleScopeManifest = {
   version: 1;
@@ -254,6 +257,25 @@ function writeTextFileAtomic(filePath: string, content: string): void {
   }
 }
 
+function managedContentComplianceBlock(): string {
+  return [
+    CONTENT_COMPLIANCE_BLOCK_START,
+    PLATFORM_CONTENT_COMPLIANCE_POLICY,
+    CONTENT_COMPLIANCE_BLOCK_END,
+  ].join("\n");
+}
+
+function upsertManagedContentComplianceBlock(content: string): string {
+  const block = managedContentComplianceBlock();
+  const start = content.indexOf(CONTENT_COMPLIANCE_BLOCK_START);
+  const end = content.indexOf(CONTENT_COMPLIANCE_BLOCK_END, Math.max(0, start));
+  if (start >= 0) {
+    const after = end >= start ? end + CONTENT_COMPLIANCE_BLOCK_END.length : content.length;
+    return `${content.slice(0, start).trimEnd()}\n\n${block}${content.slice(after)}`.trim() + "\n";
+  }
+  return `${content.trimEnd()}\n\n${block}\n`;
+}
+
 function roleGuidance(role: AgentRoleTemplate): string {
   switch (role.id) {
     case "wealth-manager":
@@ -297,6 +319,8 @@ export function buildJiuwenSwarmIdentityMarkdown(
     "- 回答默认使用中文，面向业务用户，避免暴露底层 runtime、文件路径、调试日志等实现细节。",
     "- 对金融、保险、证券、风控、审核相关内容保持合规审慎；区分事实、推断和建议。",
     "",
+    managedContentComplianceBlock(),
+    "",
     "## 当前岗位资产",
     "",
     formatAssetLine("默认技能", effectiveAssets.skills.default),
@@ -322,8 +346,11 @@ export function writeJiuwenSwarmIdentityFilesIfMissing(
   effectiveAssets: EffectiveRoleAssets,
 ): { identityPath: string; identityChanged: boolean } {
   const identityPath = path.join(workspaceDir, "IDENTITY.md");
-  if (existsSync(identityPath)) return { identityPath, identityChanged: false };
-  writeFileSync(identityPath, buildJiuwenSwarmIdentityMarkdown(role, effectiveAssets), "utf8");
+  const current = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
+  const base = current || buildJiuwenSwarmIdentityMarkdown(role, effectiveAssets);
+  const next = upsertManagedContentComplianceBlock(base);
+  if (current === next) return { identityPath, identityChanged: false };
+  writeTextFileAtomic(identityPath, next);
   return { identityPath, identityChanged: true };
 }
 

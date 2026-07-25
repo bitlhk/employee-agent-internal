@@ -22,6 +22,7 @@ import { toast } from "sonner";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type OriginKey = "opensource" | "finance" | "squad";
+type MarketSection = "finance" | "opensource";
 
 const CATEGORY_MAP: Record<string, { label: string; Icon: ComponentType<{ size?: number; className?: string }> }> = {
   all: { label: "全部", Icon: Layers },
@@ -40,10 +41,12 @@ const CATEGORY_MAP: Record<string, { label: string; Icon: ComponentType<{ size?:
 };
 
 const ORIGIN_META: Record<OriginKey, { label: string; Icon: ComponentType<{ size?: number; className?: string }> }> = {
-  opensource: { label: "开源技能", Icon: Compass },
+  opensource: { label: "通用技能", Icon: Compass },
   finance: { label: "金融专业", Icon: BarChart3 },
   squad: { label: "中队专区", Icon: Sparkles },
 };
+
+const MARKET_SECTIONS: MarketSection[] = ["finance", "opensource"];
 
 const ROLE_LABELS: Record<string, string> = {
   "investment-researcher": "投顾分析",
@@ -118,7 +121,13 @@ function scenarioTagOf(item: MarketSkill): string {
 }
 
 function skillTitleOf(item: MarketSkill): string {
+  if (item.skillId.toLowerCase() === "post-loan-risk-control") return "智能风控";
   return item.title;
+}
+
+function skillMatchesSection(item: MarketSkill, section: MarketSection) {
+  if (section === "opensource") return item.origin === "opensource";
+  return item.origin === "finance" || item.origin === "squad";
 }
 
 function normalizeMarketSkills(list: any[]): MarketSkill[] {
@@ -159,30 +168,26 @@ export function MarketplacePage({
   const [loadError, setLoadError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
   const [installing, setInstalling] = useState<number | null>(null);
-  const [activeOrigin, setActiveOrigin] = useState<OriginKey>("opensource");
-  const [activeProviders, setActiveProviders] = useState<Set<string>>(new Set());
+  const [activeSection, setActiveSection] = useState<MarketSection>("finance");
   const [activeRoleTags, setActiveRoleTags] = useState<Set<string>>(new Set());
   const [installedMarket, setInstalledMarket] = useState<Record<string, { skillId: string; version?: string }>>({});
   const [selectedSkill, setSelectedSkill] = useState<MarketSkill | null>(null);
 
-  const filterableOrigin = activeOrigin === "finance" || activeOrigin === "squad";
-  const originProviders = useMemo(() =>
-    [...new Set(items.filter(x => x.origin === activeOrigin).map(x => x.provider).filter(Boolean))].sort()
-  , [activeOrigin, items]);
+  const filterableOrigin = activeSection === "finance";
+  const sectionItems = useMemo(
+    () => items.filter((item) => skillMatchesSection(item, activeSection)),
+    [activeSection, items],
+  );
 
   const originRoleTags = useMemo(() => {
-    const keys = [...new Set(items.filter(x => x.origin === activeOrigin && x.roleTag).map(x => x.roleTag))];
+    const keys = [...new Set(sectionItems.filter(x => x.roleTag).map(x => x.roleTag))];
     return keys.sort((a, b) => (ROLE_LABELS[a] || a).localeCompare(ROLE_LABELS[b] || b));
-  }, [activeOrigin, items]);
+  }, [sectionItems]);
 
-  const selectOrigin = (origin: OriginKey) => {
-    setActiveOrigin(origin);
-    setActiveProviders(new Set());
+  const selectSection = (section: MarketSection) => {
+    setActiveSection(section);
     setActiveRoleTags(new Set());
   };
-  const toggleProvider = (p: string) => setActiveProviders(prev => {
-    const next = new Set(prev); next.has(p) ? next.delete(p) : next.add(p); return next;
-  });
   const toggleRoleTag = (r: string) => setActiveRoleTags(prev => {
     const next = new Set(prev); next.has(r) ? next.delete(r) : next.add(r); return next;
   });
@@ -362,35 +367,36 @@ export function MarketplacePage({
   };
 
   const filtered = items.filter((x) => {
-    const matchOrigin = x.origin === activeOrigin;
+    const matchOrigin = skillMatchesSection(x, activeSection);
     const matchQ = !query.trim() || `${x.title} ${x.description} ${x.skillId}`.toLowerCase().includes(query.toLowerCase());
-    const matchProvider = activeProviders.size === 0 || activeProviders.has(x.provider);
     const matchRole = activeRoleTags.size === 0 || activeRoleTags.has(x.roleTag);
-    return matchOrigin && matchQ && matchProvider && matchRole;
+    return matchOrigin && matchQ && matchRole;
   });
-  const originCounts = items.reduce<Record<string, number>>((acc, x) => {
+  const originCounts = items.reduce<Record<OriginKey, number>>((acc, x) => {
     acc[x.origin] = (acc[x.origin] || 0) + 1;
     return acc;
-  }, {});
+  }, { opensource: 0, finance: 0, squad: 0 });
 
   return (
     <div className="skills-market">
       {dialog}
       <div className="skills-section-filterbar">
         <div className="skills-mcp-filters skills-market-categories-v2" role="tablist" aria-label="技能来源筛选">
-          {(Object.keys(ORIGIN_META) as OriginKey[]).map((origin) => {
-            const meta = ORIGIN_META[origin];
-            const active = activeOrigin === origin;
-            const count = originCounts[origin] || 0;
+          {MARKET_SECTIONS.map((section) => {
+            const meta = ORIGIN_META[section];
+            const active = activeSection === section;
+            const count = section === "finance"
+              ? originCounts.finance + originCounts.squad
+              : originCounts.opensource;
             return (
               <button
-                key={origin}
+                key={section}
                 type="button"
                 role="tab"
                 aria-selected={active}
                 className="skills-mcp-filter"
                 data-active={active ? "true" : "false"}
-                onClick={() => selectOrigin(origin)}
+                onClick={() => selectSection(section)}
               >
                 {meta.label}<span>{count}</span>
               </button>
@@ -399,25 +405,8 @@ export function MarketplacePage({
         </div>
       </div>
 
-      {filterableOrigin && (originProviders.length > 0 || originRoleTags.length > 0) && (
+      {filterableOrigin && originRoleTags.length > 0 && (
         <div className="skills-market-filters settings-card">
-          {originProviders.length > 0 && (
-            <div className="skills-market-filter-row">
-              <span className="skills-market-filter-label">提供方</span>
-              <div className="skills-market-filter-chips">
-                {originProviders.map(p => (
-                  <button
-                    key={p}
-                    type="button"
-                    className={`skills-filter-chip ${activeProviders.has(p) ? "skills-filter-chip--active" : ""}`}
-                    onClick={() => toggleProvider(p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
           {originRoleTags.length > 0 && (
             <div className="skills-market-filter-row">
               <span className="skills-market-filter-label">岗位</span>

@@ -3,6 +3,7 @@ import { appendFile, mkdir, open, readdir, readFile, rename, stat, statfs, unlin
 import path from "path";
 import { getDb } from "../db";
 import { auditEvents } from "../../drizzle/schema";
+import { redactSensitiveData } from "./data-guardrail";
 
 const METADATA_MAX_BYTES = 16 * 1024;
 const DEFAULT_APP_ROOT = process.env.APP_ROOT || process.cwd();
@@ -12,9 +13,6 @@ const DLQ_LOCK_FILE = ".drain.lock";
 
 const SECRET_KEY_RE = /password|token|secret|apiKey|cookie|authorization|credential|privateKey|gatewayToken|botToken/i;
 const EMAIL_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
-const PHONE_RE = /(?<!\d)(?:\+?86[-\s]?)?1[3-9]\d{9}(?!\d)/g;
-const NATIONAL_ID_RE = /(?<!\d)\d{6}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)/g;
-const BANK_CARD_RE = /(?<!\d)(?:\d[ -]?){15,18}\d(?!\d)/g;
 
 export const FAIL_CLOSE_AUDIT_ACTIONS = new Set([
   "audit.export.requested",
@@ -623,14 +621,11 @@ function redactValue(value: unknown, seen: WeakSet<object>): unknown {
 }
 
 function redactString(value: string): string {
-  return value
+  return redactSensitiveData(value, { requireBankCardContext: false }).text
     .replace(/(bearer\s+)[A-Za-z0-9._~+/=-]+/gi, "$1[REDACTED]")
     .replace(/((?:password|token|secret|api[-_]?key|cookie|authorization|credential|private[-_]?key|gatewayToken|botToken)\s*[=:]\s*)(["']?)[^"'\s&]+/gi, "$1$2[REDACTED]")
     .replace(/([?&](?:password|token|secret|api[-_]?key|cookie|authorization|credential|private[-_]?key|gatewayToken|botToken)=)[^&#\s]+/gi, "$1[REDACTED]")
-    .replace(EMAIL_RE, "[REDACTED_EMAIL]")
-    .replace(PHONE_RE, "[REDACTED_PHONE]")
-    .replace(NATIONAL_ID_RE, "[REDACTED_ID]")
-    .replace(BANK_CARD_RE, "[REDACTED_BANK_CARD]");
+    .replace(EMAIL_RE, "[REDACTED_EMAIL]");
 }
 
 function safeStringify(value: unknown): string {

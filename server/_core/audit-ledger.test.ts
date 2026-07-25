@@ -35,8 +35,8 @@ describe("audit ledger metadata redaction", () => {
         authorization: "Bearer abc",
         email: "alice@example.com",
         phone: "13800138000",
-        id: "110105199001011234",
-        card: "6222 0202 0202 0202",
+        id: "11010519491231002X",
+        card: "4111 1111 1111 1111",
       },
     }) as any;
 
