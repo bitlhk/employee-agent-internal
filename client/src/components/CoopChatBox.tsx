@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/action-button";
 import { Loader2, Send, Sparkles, Square } from "lucide-react";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { CoopSubmitModal, type SubmitAttachment } from "@/components/CoopSubmitModal";

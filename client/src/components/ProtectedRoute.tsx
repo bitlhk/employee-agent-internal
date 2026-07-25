@@ -1,64 +1,74 @@
-/**
- * 路由保护组件
- * 用于保护需要登录才能访问的路由
- */
-
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useLocation } from "wouter";
-import { useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { type ReactNode, useEffect } from "react";
+import { useLocation } from "wouter";
 
-type ProtectedRouteProps = {
-  children: React.ReactNode;
+export type RouteAccessDecision =
+  | { status: "checking" }
+  | { status: "granted" }
+  | { status: "redirect"; destination: string };
+
+type RouteAccessInput = {
+  loading: boolean;
+  authenticated: boolean;
+  role?: string | null;
+  adminOnly: boolean;
+  requestedPath: string;
+};
+
+export function decideRouteAccess(input: RouteAccessInput): RouteAccessDecision {
+  if (input.loading) return { status: "checking" };
+  if (!input.authenticated) {
+    return {
+      status: "redirect",
+      destination: `/login?redirect=${encodeURIComponent(input.requestedPath)}`,
+    };
+  }
+  if (input.adminOnly && input.role !== "admin") {
+    return { status: "redirect", destination: "/" };
+  }
+  return { status: "granted" };
+}
+
+function RouteAccessPending() {
+  return (
+    <div className="flex min-h-screen items-center justify-center" role="status" aria-live="polite">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden="true" />
+        <span className="text-muted-foreground">正在验证访问权限...</span>
+      </div>
+    </div>
+  );
+}
+
+type AccessGateProps = {
+  children: ReactNode;
   requireAdmin?: boolean;
 };
 
-export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRouteProps) {
+export function ProtectedRoute(properties: AccessGateProps) {
   const { user, loading, isAuthenticated } = useAuth();
-  const [, setLocation] = useLocation();
+  const [, navigate] = useLocation();
+  const adminOnly = properties.requireAdmin === true;
+  const requestedPath = `${window.location.pathname}${window.location.search}`;
+  const decision = decideRouteAccess({
+    loading,
+    authenticated: isAuthenticated,
+    role: user?.role,
+    adminOnly,
+    requestedPath,
+  });
+  const redirectDestination = decision.status === "redirect" ? decision.destination : null;
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      // 未登录，重定向到登录页
-      const currentPath = window.location.pathname;
-      setLocation(`/login?redirect=${encodeURIComponent(currentPath)}`);
-    } else if (!loading && isAuthenticated && requireAdmin && user?.role !== "admin") {
-      // 已登录但不是管理员，重定向到首页
-      setLocation("/");
-    }
-  }, [loading, isAuthenticated, user, requireAdmin, setLocation]);
+    if (redirectDestination) navigate(redirectDestination);
+  }, [navigate, redirectDestination]);
 
-  // 加载中
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">加载中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // 未登录
-  if (!isAuthenticated) {
-    return null; // useEffect会处理重定向
-  }
-
-  // 需要管理员权限但用户不是管理员
-  if (requireAdmin && user?.role !== "admin") {
-    return null; // useEffect会处理重定向
-  }
-
-  // 已登录且权限足够
-  return <>{children}</>;
+  if (decision.status === "checking") return <RouteAccessPending />;
+  if (decision.status === "redirect") return null;
+  return <>{properties.children}</>;
 }
 
-/**
- * 管理员路由保护组件
- * 只有管理员可以访问
- */
-export function AdminRoute({ children }: { children: React.ReactNode }) {
-  return <ProtectedRoute requireAdmin={true}>{children}</ProtectedRoute>;
+export function AdminRoute({ children }: { children: ReactNode }) {
+  return <ProtectedRoute requireAdmin>{children}</ProtectedRoute>;
 }
-

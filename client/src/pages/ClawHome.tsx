@@ -37,7 +37,7 @@ import { toast } from "sonner";
 import { BrandIcon } from "@/components/BrandIcon";
 import { RoleAdoptionDialog } from "@/components/RoleAdoptionDialog";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/action-button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,

@@ -19,7 +19,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+} from "@/components/ui/confirmation-dialog";
 
 export type FileNode = { name: string; path: string; type: "file" | "directory"; size?: number; modifiedAt?: string };
 export type WorkspaceTreeRow = FileNode & { depth: number };

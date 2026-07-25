@@ -1,4 +1,4 @@
-import { Toaster } from "@/components/ui/sonner";
+import { Toaster } from "@/components/ui/notification-host";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch, Redirect } from "wouter";
 import { lazy, Suspense, useEffect } from "react";

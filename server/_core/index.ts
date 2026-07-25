@@ -21,7 +21,7 @@ import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import compression from "compression";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { registerOAuthRoutes } from "./oauth";
+import { registerExternalOAuthRoutes } from "./external-oauth-routes";
 import { registerVoiceRoutes } from "./voice";
 import { startRecycler } from "./recycler";
 import { registerCronRoutes } from "./claw-cron";
@@ -348,7 +348,7 @@ async function startServer() {
   registerLocalProfileA2AProxy(app);
   
   // OAuth callback under /api/oauth/callback
-  registerOAuthRoutes(app);
+  registerExternalOAuthRoutes(app);
   registerVoiceRoutes(app);
   registerJiuwenWebhookRoutes(app);
   registerCronRoutes(app);

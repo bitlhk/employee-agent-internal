@@ -21,7 +21,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { sessionStatusMeta } from "@/lib/coopStatus";
 import { CoopNewForm } from "@/pages/CoopNew";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/action-button";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type PageMode = "list" | "create";

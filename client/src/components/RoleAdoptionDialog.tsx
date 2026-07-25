@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { ArrowRight, Check, Loader2, Sparkles } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/action-button";
 import {
   Dialog,
   DialogContent,

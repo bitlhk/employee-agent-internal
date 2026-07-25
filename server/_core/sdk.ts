@@ -8,13 +8,6 @@ import { SignJWT, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
-import type {
-  ExchangeTokenRequest,
-  ExchangeTokenResponse,
-  GetUserInfoResponse,
-  GetUserInfoWithJwtRequest,
-  GetUserInfoWithJwtResponse,
-} from "./types/oauthTypes";
 import { sessionRevocations } from "./session-revocations";
 // Utility function
 const isNonEmptyString = (value: unknown): value is string =>
@@ -53,7 +46,43 @@ const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
 
-class OAuthService {
+type AuthorizationCodePayload = {
+  clientId: string;
+  grantType: "authorization_code";
+  code: string;
+  redirectUri: string;
+};
+
+type ExternalAccessToken = {
+  accessToken: string;
+  tokenType?: string;
+  expiresIn?: number;
+  refreshToken?: string;
+  scope?: string;
+  idToken?: string;
+};
+
+type ExternalUserIdentity = {
+  openId: string;
+  projectId?: string;
+  name: string;
+  email?: string | null;
+  platform?: string | null;
+  platforms?: unknown;
+  loginMethod?: string | null;
+};
+
+function externalIdentityUpdate(identity: ExternalUserIdentity, lastSignedIn: Date) {
+  return {
+    openId: identity.openId,
+    name: identity.name || null,
+    email: identity.email ?? null,
+    loginMethod: identity.loginMethod ?? identity.platform ?? null,
+    lastSignedIn,
+  };
+}
+
+class ExternalIdentityClient {
   constructor(private client: ReturnType<typeof axios.create>) {}
 
   private requireConfigured() {
@@ -62,19 +91,19 @@ class OAuthService {
     }
   }
 
-  async getTokenByCode(
+  async exchangeCode(
     code: string,
     redirectUri: string
-  ): Promise<ExchangeTokenResponse> {
+  ): Promise<ExternalAccessToken> {
     this.requireConfigured();
-    const payload: ExchangeTokenRequest = {
+    const payload: AuthorizationCodePayload = {
       clientId: ENV.appId,
       grantType: "authorization_code",
       code,
       redirectUri,
     };
 
-    const { data } = await this.client.post<ExchangeTokenResponse>(
+    const { data } = await this.client.post<ExternalAccessToken>(
       EXCHANGE_TOKEN_PATH,
       payload
     );
@@ -82,14 +111,12 @@ class OAuthService {
     return data;
   }
 
-  async getUserInfoByToken(
-    token: ExchangeTokenResponse
-  ): Promise<GetUserInfoResponse> {
+  async fetchUser(accessToken: string): Promise<ExternalUserIdentity> {
     this.requireConfigured();
-    const { data } = await this.client.post<GetUserInfoResponse>(
+    const { data } = await this.client.post<ExternalUserIdentity>(
       GET_USER_INFO_PATH,
       {
-        accessToken: token.accessToken,
+        accessToken,
       }
     );
 
@@ -105,11 +132,11 @@ const createOAuthHttpClient = (): AxiosInstance =>
 
 class SDKServer {
   private readonly client: AxiosInstance;
-  private readonly oauthService: OAuthService;
+  private readonly identityClient: ExternalIdentityClient;
 
   constructor(client: AxiosInstance = createOAuthHttpClient()) {
     this.client = client;
-    this.oauthService = new OAuthService(this.client);
+    this.identityClient = new ExternalIdentityClient(this.client);
   }
 
   private deriveLoginMethod(
@@ -142,8 +169,8 @@ class SDKServer {
   async exchangeCodeForToken(
     code: string,
     redirectUri: string
-  ): Promise<ExchangeTokenResponse> {
-    return this.oauthService.getTokenByCode(code, redirectUri);
+  ): Promise<ExternalAccessToken> {
+    return this.identityClient.exchangeCode(code, redirectUri);
   }
 
   /**
@@ -151,19 +178,17 @@ class SDKServer {
    * @example
    * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
    */
-  async getUserInfo(accessToken: string): Promise<GetUserInfoResponse> {
-    const data = await this.oauthService.getUserInfoByToken({
-      accessToken,
-    } as ExchangeTokenResponse);
+  async getUserInfo(accessToken: string): Promise<ExternalUserIdentity> {
+    const data = await this.identityClient.fetchUser(accessToken);
     const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
+      data.platforms,
+      data.platform ?? null
     );
     return {
-      ...(data as any),
+      ...data,
       platform: loginMethod,
       loginMethod,
-    } as GetUserInfoResponse;
+    };
   }
 
   private parseCookies(cookieHeader: string | undefined) {
@@ -345,26 +370,26 @@ class SDKServer {
 
   async getUserInfoWithJwt(
     jwtToken: string
-  ): Promise<GetUserInfoWithJwtResponse> {
-    const payload: GetUserInfoWithJwtRequest = {
+  ): Promise<ExternalUserIdentity> {
+    const payload = {
       jwtToken,
       projectId: ENV.appId,
     };
 
-    const { data } = await this.client.post<GetUserInfoWithJwtResponse>(
+    const { data } = await this.client.post<ExternalUserIdentity>(
       GET_USER_INFO_WITH_JWT_PATH,
       payload
     );
 
     const loginMethod = this.deriveLoginMethod(
-      (data as any)?.platforms,
-      (data as any)?.platform ?? data.platform ?? null
+      data.platforms,
+      data.platform ?? null
     );
     return {
-      ...(data as any),
+      ...data,
       platform: loginMethod,
       loginMethod,
-    } as GetUserInfoWithJwtResponse;
+    };
   }
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
@@ -404,13 +429,7 @@ class SDKServer {
       if (!user) {
         try {
           const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-          await db.upsertUser({
-            openId: userInfo.openId,
-            name: userInfo.name || null,
-            email: userInfo.email ?? null,
-            loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
-            lastSignedIn: signedInAt,
-          });
+          await db.upsertUser(externalIdentityUpdate(userInfo, signedInAt));
           user = await db.getUserByOpenId(userInfo.openId);
         } catch (error) {
           console.error("[Auth] Failed to sync user from OAuth:", error);

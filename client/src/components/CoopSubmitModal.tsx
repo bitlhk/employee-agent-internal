@@ -13,7 +13,7 @@
  *   - 文本草稿用 LLM 总结（现在是简单拼接最后 2 条）
  */
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/action-button";
 import { Loader2, Send, X, FileText, Sparkles, Paperclip, Upload } from "lucide-react";
 import { toast } from "sonner";
 

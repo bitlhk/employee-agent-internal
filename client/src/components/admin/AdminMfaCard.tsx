@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Check, Copy, KeyRound, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/action-button";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";

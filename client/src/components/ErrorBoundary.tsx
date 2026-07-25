@@ -1,15 +1,20 @@
 import { cn } from "@/lib/utils";
 import { AlertTriangle, RefreshCw, RotateCcw } from "lucide-react";
-import { Component, ReactNode } from "react";
+import { Component, type ReactNode } from "react";
 
-interface Props {
+type BoundaryVariant = "page" | "panel";
+
+type ErrorBoundaryProps = {
   children: ReactNode;
-}
+  variant?: BoundaryVariant;
+  title?: string;
+  description?: string;
+  resetKey?: string;
+};
 
-interface State {
-  hasError: boolean;
-  error: Error | null;
-}
+type ErrorBoundaryState = {
+  failure: Error | null;
+};
 
 export function isDynamicImportError(error: Error | null): boolean {
   if (!error) return false;
@@ -17,71 +22,106 @@ export function isDynamicImportError(error: Error | null): boolean {
   return /ChunkLoadError|Loading chunk .* failed|Failed to fetch dynamically imported module|error loading dynamically imported module|Importing a module script failed/i.test(detail);
 }
 
-class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false, error: null };
+function PanelFailureIcon() {
+  return (
+    <div className="panel-error-boundary__icon">
+      <AlertTriangle size={18} aria-hidden="true" />
+    </div>
+  );
+}
+
+function PanelFailureDetails({ failure }: { failure: Error }) {
+  return (
+    <details className="panel-error-boundary__details">
+      <summary>错误详情</summary>
+      <pre>{failure.stack || failure.message || "unknown error"}</pre>
+    </details>
+  );
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { failure: null };
+
+  static getDerivedStateFromError(failure: Error): ErrorBoundaryState {
+    return { failure };
   }
 
-  static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+  componentDidUpdate(previous: ErrorBoundaryProps) {
+    if (this.state.failure && previous.resetKey !== this.props.resetKey) {
+      this.setState({ failure: null });
+    }
   }
 
-  render() {
-    if (this.state.hasError) {
-      const dynamicImportFailed = isDynamicImportError(this.state.error);
-      return (
-        <div className="flex items-center justify-center min-h-screen p-8 bg-background">
-          <div className="flex flex-col items-center w-full max-w-2xl p-8">
-            <AlertTriangle
-              size={48}
-              className="text-destructive mb-6 flex-shrink-0"
-            />
+  private retry = () => this.setState({ failure: null });
 
-            <h2 className="text-xl mb-2">{dynamicImportFailed ? "页面资源加载失败" : "页面暂时无法显示"}</h2>
-            <p className="mb-6 text-sm text-muted-foreground">
-              {dynamicImportFailed ? "网络中断或版本更新可能导致资源加载失败，刷新后即可重新获取。" : "请重试；如果问题持续存在，请刷新页面。"}
-            </p>
+  private renderPanelFailure(failure: Error) {
+    const heading = this.props.title || "当前页面暂时不可用";
+    const guidance = this.props.description || "组件渲染时出现异常，其他工作台区域不受影响。可以重试当前页面，或切换到其他功能。";
+    return (
+      <div className="panel-error-boundary">
+        <div className="panel-error-boundary__card">
+          <PanelFailureIcon />
+          <div className="panel-error-boundary__body">
+            <h2>{heading}</h2>
+            <p>{guidance}</p>
+            <PanelFailureDetails failure={failure} />
+            <button type="button" className="panel-error-boundary__action" onClick={this.retry}>
+              <RotateCcw size={14} aria-hidden="true" />
+              重试当前页面
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-            {import.meta.env.DEV ? <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
-                {this.state.error?.stack}
-              </pre>
-            </div> : null}
-
-            <div className="flex flex-wrap items-center justify-center gap-3">
+  private renderPageFailure(failure: Error) {
+    const reloadRequired = isDynamicImportError(failure);
+    const primaryAction = reloadRequired ? () => window.location.reload() : this.retry;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-8">
+        <div className="flex w-full max-w-2xl flex-col items-center p-8">
+          <AlertTriangle size={48} className="mb-6 flex-shrink-0 text-destructive" aria-hidden="true" />
+          <h2 className="mb-2 text-xl">{reloadRequired ? "页面资源加载失败" : "页面暂时无法显示"}</h2>
+          <p className="mb-6 text-sm text-muted-foreground">
+            {reloadRequired ? "网络中断或版本更新可能导致资源加载失败，刷新后即可重新获取。" : "请重试；如果问题持续存在，请刷新页面。"}
+          </p>
+          {import.meta.env.DEV ? (
+            <div className="mb-6 w-full overflow-auto rounded bg-muted p-4">
+              <pre className="whitespace-break-spaces text-sm text-muted-foreground">{failure.stack}</pre>
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              onClick={primaryAction}
+              className={cn("flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2", "bg-primary text-primary-foreground hover:opacity-90")}
+            >
+              {reloadRequired ? <RefreshCw size={16} /> : <RotateCcw size={16} />}
+              {reloadRequired ? "刷新页面" : "重试"}
+            </button>
+            {!reloadRequired ? (
               <button
-                onClick={() => {
-                  if (dynamicImportFailed) window.location.reload();
-                  else this.setState({ hasError: false, error: null });
-                }}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg",
-                  "bg-primary text-primary-foreground",
-                  "hover:opacity-90 cursor-pointer"
-                )}
-              >
-                {dynamicImportFailed ? <RefreshCw size={16} /> : <RotateCcw size={16} />}
-                {dynamicImportFailed ? "刷新页面" : "重试"}
-              </button>
-              {!dynamicImportFailed ? <button
+                type="button"
                 onClick={() => window.location.reload()}
-                className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg",
-                  "border border-border bg-background text-foreground",
-                  "hover:bg-muted cursor-pointer"
-                )}
+                className={cn("flex cursor-pointer items-center gap-2 rounded-lg px-4 py-2", "border border-border bg-background text-foreground hover:bg-muted")}
               >
                 <RefreshCw size={16} />
                 刷新页面
-              </button> : null}
-            </div>
+              </button>
+            ) : null}
           </div>
         </div>
-      );
-    }
+      </div>
+    );
+  }
 
-    return this.props.children;
+  render() {
+    const failure = this.state.failure;
+    if (!failure) return this.props.children;
+    return this.props.variant === "panel"
+      ? this.renderPanelFailure(failure)
+      : this.renderPageFailure(failure);
   }
 }
 

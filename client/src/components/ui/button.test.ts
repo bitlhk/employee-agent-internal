@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buttonVariants } from "./button";
+import { buttonVariants } from "./action-button";
 
 describe("buttonVariants", () => {
   it.each(["outline", "ghost"] as const)(
