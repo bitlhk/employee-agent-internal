@@ -1,17 +1,14 @@
-import { AXIOS_TIMEOUT_MS, COOKIE_NAME } from "@shared/const";
 import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import { ForbiddenError } from "@shared/_core/errors";
-import axios, { type AxiosInstance } from "axios";
+import { AXIOS_TIMEOUT_MS, COOKIE_NAME } from "@shared/const";
+import axios from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
 import { sessionRevocations } from "./session-revocations";
-// Utility function
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === "string" && value.length > 0;
 
 export type SessionPayload = {
   openId?: string;
@@ -22,36 +19,16 @@ export type SessionPayload = {
   mfaVerifiedAt?: number;
 };
 
-export type AuthenticatedUser = User & { mfaVerifiedAt?: number };
-
-const DEFAULT_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-const configuredSessionMaxAge = Number(process.env.SESSION_MAX_AGE_MS || DEFAULT_SESSION_MAX_AGE_MS);
-export const SESSION_MAX_AGE_MS = Number.isFinite(configuredSessionMaxAge)
-  ? Math.max(15 * 60 * 1000, Math.min(MAX_SESSION_MAX_AGE_MS, Math.floor(configuredSessionMaxAge)))
-  : DEFAULT_SESSION_MAX_AGE_MS;
-
-export function sessionAuthVersion(user: { id: number; password?: string | null; openId?: string | null }): string {
-  const credential = user.password ? `password:${user.password}` : `oauth:${user.openId || "local"}`;
-  return createHmac("sha256", ENV.cookieSecret).update(`${user.id}:${credential}`).digest("base64url");
-}
-
-function equalAuthVersion(left: string, right: string): boolean {
-  const a = Buffer.from(left);
-  const b = Buffer.from(right);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
-const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
-const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
-
-type AuthorizationCodePayload = {
-  clientId: string;
-  grantType: "authorization_code";
-  code: string;
-  redirectUri: string;
+type VerifiedSession = {
+  openId?: string;
+  userId?: number;
+  appId?: string;
+  name: string;
+  authVersion: string;
+  mfaVerifiedAt?: number;
 };
+
+export type AuthenticatedUser = User & { mfaVerifiedAt?: number };
 
 type ExternalAccessToken = {
   accessToken: string;
@@ -72,424 +49,430 @@ type ExternalUserIdentity = {
   loginMethod?: string | null;
 };
 
-function externalIdentityUpdate(identity: ExternalUserIdentity, lastSignedIn: Date) {
+const MIN_SESSION_AGE_MS = 15 * 60 * 1000;
+const DEFAULT_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_SESSION_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function configuredSessionAge(): number {
+  const requested = Number(
+    process.env.SESSION_MAX_AGE_MS ?? DEFAULT_SESSION_AGE_MS
+  );
+  if (!Number.isFinite(requested)) return DEFAULT_SESSION_AGE_MS;
+  return Math.min(
+    MAX_SESSION_AGE_MS,
+    Math.max(MIN_SESSION_AGE_MS, Math.floor(requested))
+  );
+}
+
+export const SESSION_MAX_AGE_MS = configuredSessionAge();
+
+export function sessionAuthVersion(user: {
+  id: number;
+  password?: string | null;
+  openId?: string | null;
+}): string {
+  const identity = user.password
+    ? `password:${user.password}`
+    : `oauth:${user.openId ?? "local"}`;
+  return createHmac("sha256", ENV.cookieSecret)
+    .update(`${user.id}:${identity}`)
+    .digest("base64url");
+}
+
+function secureStringsMatch(expected: string, actual: string): boolean {
+  const left = Buffer.from(expected);
+  const right = Buffer.from(actual);
+  return left.byteLength === right.byteLength && timingSafeEqual(left, right);
+}
+
+function signingKey(): Uint8Array {
+  return new TextEncoder().encode(ENV.cookieSecret);
+}
+
+function nonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function sessionClaims(payload: SessionPayload): Record<string, unknown> {
+  const claims: Record<string, unknown> = {
+    name: payload.name,
+    authVersion: payload.authVersion,
+  };
+  if (payload.openId) {
+    claims.openId = payload.openId;
+    claims.appId = payload.appId ?? ENV.appId;
+  }
+  if (typeof payload.userId === "number") claims.userId = payload.userId;
+  if (typeof payload.mfaVerifiedAt === "number") {
+    claims.mfaVerifiedAt = payload.mfaVerifiedAt;
+  }
+  return claims;
+}
+
+async function issueJwt(
+  claims: Record<string, unknown>,
+  expiresAtSeconds: number
+): Promise<string> {
+  return new SignJWT(claims)
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setJti(randomUUID())
+    .setExpirationTime(expiresAtSeconds)
+    .sign(signingKey());
+}
+
+function sessionFromClaims(payload: JWTPayload): VerifiedSession | null {
+  if (!nonEmptyText(payload.jti) || typeof payload.exp !== "number") {
+    console.warn("[Auth] Session payload missing jti or expiry");
+    return null;
+  }
+  if (sessionRevocations.isRevoked(payload.jti)) {
+    console.warn("[Auth] Session has been explicitly revoked");
+    return null;
+  }
+  if (!nonEmptyText(payload.name)) {
+    console.warn("[Auth] Session payload missing name field");
+    return null;
+  }
+
+  const openId = nonEmptyText(payload.openId) ? payload.openId : undefined;
+  const userId =
+    typeof payload.userId === "number" ? payload.userId : undefined;
+  if (!openId && userId === undefined) {
+    console.warn("[Auth] Session payload missing openId or userId");
+    return null;
+  }
+  if (!nonEmptyText(payload.authVersion)) {
+    console.warn("[Auth] Session payload missing auth version");
+    return null;
+  }
+
+  return {
+    ...(openId ? { openId } : {}),
+    ...(userId !== undefined ? { userId } : {}),
+    ...(nonEmptyText(payload.appId) ? { appId: payload.appId } : {}),
+    name: payload.name,
+    authVersion: payload.authVersion,
+    ...(typeof payload.mfaVerifiedAt === "number"
+      ? { mfaVerifiedAt: payload.mfaVerifiedAt }
+      : {}),
+  };
+}
+
+async function signSession(
+  payload: SessionPayload,
+  options: { expiresInMs?: number } = {}
+): Promise<string> {
+  if (!payload.authVersion) {
+    throw new Error("authVersion is required to sign a session");
+  }
+  const lifetime = Math.min(
+    options.expiresInMs ?? SESSION_MAX_AGE_MS,
+    MAX_SESSION_AGE_MS
+  );
+  const expiresAt = Math.floor((Date.now() + lifetime) / 1000);
+  return issueJwt(sessionClaims(payload), expiresAt);
+}
+
+async function verifySession(
+  token: string | null | undefined
+): Promise<VerifiedSession | null> {
+  if (!token) {
+    console.warn("[Auth] Missing session cookie");
+    return null;
+  }
+  try {
+    const verified = await jwtVerify(token, signingKey(), {
+      algorithms: ["HS256"],
+    });
+    return sessionFromClaims(verified.payload);
+  } catch (error) {
+    console.warn("[Auth] Session verification failed", String(error));
+    return null;
+  }
+}
+
+const externalIdentityHttp = axios.create({
+  baseURL: ENV.oAuthServerUrl,
+  timeout: AXIOS_TIMEOUT_MS,
+});
+
+const externalIdentityPaths = {
+  exchange: "/webdev.v1.WebDevAuthPublicService/ExchangeToken",
+  user: "/webdev.v1.WebDevAuthPublicService/GetUserInfo",
+  jwtUser: "/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt",
+} as const;
+
+function requireExternalIdentityService(): void {
+  if (!ENV.oAuthServerUrl) throw new Error("External OAuth is not configured");
+}
+
+function normalizedLoginMethod(identity: ExternalUserIdentity): string | null {
+  if (identity.platform) return identity.platform;
+  if (!Array.isArray(identity.platforms)) return null;
+
+  const platforms = new Set(
+    identity.platforms.filter(
+      (value): value is string => typeof value === "string"
+    )
+  );
+  const knownMethods = [
+    ["REGISTERED_PLATFORM_EMAIL", "email"],
+    ["REGISTERED_PLATFORM_GOOGLE", "google"],
+    ["REGISTERED_PLATFORM_APPLE", "apple"],
+    ["REGISTERED_PLATFORM_MICROSOFT", "microsoft"],
+    ["REGISTERED_PLATFORM_AZURE", "microsoft"],
+    ["REGISTERED_PLATFORM_GITHUB", "github"],
+  ] as const;
+
+  for (const [platform, method] of knownMethods) {
+    if (platforms.has(platform)) return method;
+  }
+  const [first] = platforms;
+  return first ? first.toLowerCase() : null;
+}
+
+function withLoginMethod(identity: ExternalUserIdentity): ExternalUserIdentity {
+  const loginMethod = normalizedLoginMethod(identity);
+  return { ...identity, platform: loginMethod, loginMethod };
+}
+
+async function exchangeCodeForToken(
+  code: string,
+  redirectUri: string
+): Promise<ExternalAccessToken> {
+  requireExternalIdentityService();
+  const response = await externalIdentityHttp.post<ExternalAccessToken>(
+    externalIdentityPaths.exchange,
+    {
+      clientId: ENV.appId,
+      grantType: "authorization_code",
+      code,
+      redirectUri,
+    }
+  );
+  return response.data;
+}
+
+async function getUserInfo(accessToken: string): Promise<ExternalUserIdentity> {
+  requireExternalIdentityService();
+  const response = await externalIdentityHttp.post<ExternalUserIdentity>(
+    externalIdentityPaths.user,
+    { accessToken }
+  );
+  return withLoginMethod(response.data);
+}
+
+async function getUserInfoWithJwt(
+  jwtToken: string
+): Promise<ExternalUserIdentity> {
+  requireExternalIdentityService();
+  const response = await externalIdentityHttp.post<ExternalUserIdentity>(
+    externalIdentityPaths.jwtUser,
+    { jwtToken, projectId: ENV.appId }
+  );
+  return withLoginMethod(response.data);
+}
+
+function cookieValues(
+  cookieHeader: string | undefined,
+  name: string
+): string[] {
+  if (!cookieHeader) return [];
+
+  const values: string[] = [];
+  for (const segment of cookieHeader.split(";")) {
+    const separator = segment.indexOf("=");
+    if (separator < 0 || segment.slice(0, separator).trim() !== name) continue;
+    const encoded = segment.slice(separator + 1).trim();
+    try {
+      values.push(decodeURIComponent(encoded));
+    } catch {
+      values.push(encoded);
+    }
+  }
+
+  if (values.length === 0) {
+    const fallback = parseCookieHeader(cookieHeader)[name];
+    if (fallback) values.push(fallback);
+  }
+  return [...new Set(values.filter(Boolean))];
+}
+
+async function createSessionToken(
+  openId: string,
+  options: { expiresInMs?: number; name?: string } = {}
+): Promise<string> {
+  const user = await db.getUserByOpenId(openId);
+  if (!user) throw new Error("Cannot create session for unknown OAuth user");
+  return signSession(
+    {
+      openId,
+      appId: ENV.appId,
+      name: options.name ?? "",
+      authVersion: sessionAuthVersion(user),
+    },
+    options
+  );
+}
+
+async function signAdminMfaChallenge(payload: {
+  userId: number;
+  name: string;
+  authVersion: string;
+}): Promise<string> {
+  return issueJwt(
+    { ...payload, purpose: "admin-mfa-login" },
+    Math.floor((Date.now() + 5 * 60 * 1000) / 1000)
+  );
+}
+
+async function verifyAdminMfaChallenge(
+  token: string
+): Promise<{ userId: number; name: string; authVersion: string }> {
+  const { payload } = await jwtVerify(token, signingKey(), {
+    algorithms: ["HS256"],
+  });
+  const valid =
+    payload.purpose === "admin-mfa-login" &&
+    typeof payload.userId === "number" &&
+    nonEmptyText(payload.name) &&
+    nonEmptyText(payload.authVersion);
+  if (!valid) throw new Error("invalid administrator MFA challenge");
+  return {
+    userId: payload.userId as number,
+    name: payload.name as string,
+    authVersion: payload.authVersion as string,
+  };
+}
+
+async function revokeRequestSessions(req: Request): Promise<void> {
+  const tokens = cookieValues(req.headers.cookie, COOKIE_NAME);
+  await Promise.all(
+    tokens.map(async token => {
+      try {
+        const { payload } = await jwtVerify(token, signingKey(), {
+          algorithms: ["HS256"],
+        });
+        if (nonEmptyText(payload.jti) && typeof payload.exp === "number") {
+          sessionRevocations.revoke(payload.jti, payload.exp);
+        }
+      } catch {
+        // Invalid cookies have no active session to revoke.
+      }
+    })
+  );
+}
+
+function developmentUser(session: VerifiedSession): User | undefined {
+  if (process.env.NODE_ENV !== "development" || session.userId === undefined) {
+    return undefined;
+  }
+  const administrator = session.name === "admin";
+  return {
+    id: session.userId,
+    openId: null,
+    name: session.name || (administrator ? "admin" : "test-user"),
+    email: administrator
+      ? "admin@example.com"
+      : `${session.name || "test-user"}@local.dev`,
+    password: null,
+    loginMethod: "email",
+    role: administrator ? "admin" : "user",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    lastSignedIn: new Date(),
+  } as User;
+}
+
+function externalIdentityUpdate(
+  identity: ExternalUserIdentity,
+  signedInAt: Date
+) {
   return {
     openId: identity.openId,
     name: identity.name || null,
     email: identity.email ?? null,
     loginMethod: identity.loginMethod ?? identity.platform ?? null,
-    lastSignedIn,
+    lastSignedIn: signedInAt,
   };
 }
 
-class ExternalIdentityClient {
-  constructor(private client: ReturnType<typeof axios.create>) {}
-
-  private requireConfigured() {
-    if (!ENV.oAuthServerUrl) {
-      throw new Error("External OAuth is not configured");
-    }
-  }
-
-  async exchangeCode(
-    code: string,
-    redirectUri: string
-  ): Promise<ExternalAccessToken> {
-    this.requireConfigured();
-    const payload: AuthorizationCodePayload = {
-      clientId: ENV.appId,
-      grantType: "authorization_code",
-      code,
-      redirectUri,
-    };
-
-    const { data } = await this.client.post<ExternalAccessToken>(
-      EXCHANGE_TOKEN_PATH,
-      payload
-    );
-
-    return data;
-  }
-
-  async fetchUser(accessToken: string): Promise<ExternalUserIdentity> {
-    this.requireConfigured();
-    const { data } = await this.client.post<ExternalUserIdentity>(
-      GET_USER_INFO_PATH,
-      {
-        accessToken,
-      }
-    );
-
-    return data;
-  }
-}
-
-const createOAuthHttpClient = (): AxiosInstance =>
-  axios.create({
-    baseURL: ENV.oAuthServerUrl,
-    timeout: AXIOS_TIMEOUT_MS,
-  });
-
-class SDKServer {
-  private readonly client: AxiosInstance;
-  private readonly identityClient: ExternalIdentityClient;
-
-  constructor(client: AxiosInstance = createOAuthHttpClient()) {
-    this.client = client;
-    this.identityClient = new ExternalIdentityClient(this.client);
-  }
-
-  private deriveLoginMethod(
-    platforms: unknown,
-    fallback: string | null | undefined
-  ): string | null {
-    if (fallback && fallback.length > 0) return fallback;
-    if (!Array.isArray(platforms) || platforms.length === 0) return null;
-    const set = new Set<string>(
-      platforms.filter((p): p is string => typeof p === "string")
-    );
-    if (set.has("REGISTERED_PLATFORM_EMAIL")) return "email";
-    if (set.has("REGISTERED_PLATFORM_GOOGLE")) return "google";
-    if (set.has("REGISTERED_PLATFORM_APPLE")) return "apple";
-    if (
-      set.has("REGISTERED_PLATFORM_MICROSOFT") ||
-      set.has("REGISTERED_PLATFORM_AZURE")
-    )
-      return "microsoft";
-    if (set.has("REGISTERED_PLATFORM_GITHUB")) return "github";
-    const first = Array.from(set)[0];
-    return first ? first.toLowerCase() : null;
-  }
-
-  /**
-   * Exchange OAuth authorization code for access token
-   * @example
-   * const tokenResponse = await sdk.exchangeCodeForToken(code, redirectUri);
-   */
-  async exchangeCodeForToken(
-    code: string,
-    redirectUri: string
-  ): Promise<ExternalAccessToken> {
-    return this.identityClient.exchangeCode(code, redirectUri);
-  }
-
-  /**
-   * Get user information using access token
-   * @example
-   * const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-   */
-  async getUserInfo(accessToken: string): Promise<ExternalUserIdentity> {
-    const data = await this.identityClient.fetchUser(accessToken);
-    const loginMethod = this.deriveLoginMethod(
-      data.platforms,
-      data.platform ?? null
-    );
-    return {
-      ...data,
-      platform: loginMethod,
-      loginMethod,
-    };
-  }
-
-  private parseCookies(cookieHeader: string | undefined) {
-    if (!cookieHeader) {
-      return new Map<string, string>();
-    }
-
-    const parsed = parseCookieHeader(cookieHeader);
-    return new Map(Object.entries(parsed));
-  }
-
-  private getCookieValues(cookieHeader: string | undefined, name: string) {
-    if (!cookieHeader) return [];
-
-    const values: string[] = [];
-    for (const part of cookieHeader.split(";")) {
-      const index = part.indexOf("=");
-      if (index < 0) continue;
-
-      const key = part.slice(0, index).trim();
-      if (key !== name) continue;
-
-      const rawValue = part.slice(index + 1).trim();
-      try {
-        values.push(decodeURIComponent(rawValue));
-      } catch {
-        values.push(rawValue);
-      }
-    }
-
-    return Array.from(new Set(values.filter(Boolean)));
-  }
-
-  private getSessionSecret() {
-    const secret = ENV.cookieSecret;
-    return new TextEncoder().encode(secret);
-  }
-
-  /**
-   * Create a session token for an OAuth user openId.
-   * @example
-   * const sessionToken = await sdk.createSessionToken(userInfo.openId);
-   */
-  async createSessionToken(
-    openId: string,
-    options: { expiresInMs?: number; name?: string } = {}
-  ): Promise<string> {
-    const user = await db.getUserByOpenId(openId);
-    if (!user) throw new Error("Cannot create session for unknown OAuth user");
-    return this.signSession(
-      {
-        openId,
-        appId: ENV.appId,
-        name: options.name || "",
-        authVersion: sessionAuthVersion(user),
-      },
-      options
-    );
-  }
-
-  async signSession(
-    payload: SessionPayload,
-    options: { expiresInMs?: number } = {}
-  ): Promise<string> {
-    if (!payload.authVersion) throw new Error("authVersion is required to sign a session");
-    const issuedAt = Date.now();
-    const expiresInMs = Math.min(options.expiresInMs ?? SESSION_MAX_AGE_MS, MAX_SESSION_MAX_AGE_MS);
-    const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
-    const secretKey = this.getSessionSecret();
-
-    const jwtPayload: Record<string, unknown> = {
-      name: payload.name,
-      authVersion: payload.authVersion,
-    };
-    
-    if (payload.openId) {
-      jwtPayload.openId = payload.openId;
-      jwtPayload.appId = payload.appId || ENV.appId;
-    }
-    
-    if (payload.userId) {
-      jwtPayload.userId = payload.userId;
-    }
-    if (payload.mfaVerifiedAt) {
-      jwtPayload.mfaVerifiedAt = payload.mfaVerifiedAt;
-    }
-
-    return new SignJWT(jwtPayload)
-      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-      .setIssuedAt()
-      .setJti(randomUUID())
-      .setExpirationTime(expirationSeconds)
-      .sign(secretKey);
-  }
-
-  async verifySession(
-    cookieValue: string | undefined | null
-  ): Promise<{ openId?: string; userId?: number; appId?: string; name: string; authVersion: string; mfaVerifiedAt?: number } | null> {
-    if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
-      return null;
-    }
-
+async function oauthUser(
+  session: VerifiedSession,
+  token: string,
+  signedInAt: Date
+): Promise<User> {
+  let user = await db.getUserByOpenId(session.openId as string);
+  if (!user) {
     try {
-      const secretKey = this.getSessionSecret();
-      const { payload } = await jwtVerify(cookieValue, secretKey, {
-        algorithms: ["HS256"],
-      });
-      if (!isNonEmptyString(payload.jti) || typeof payload.exp !== "number") {
-        console.warn("[Auth] Session payload missing jti or expiry");
-        return null;
-      }
-      if (sessionRevocations.isRevoked(payload.jti)) {
-        console.warn("[Auth] Session has been explicitly revoked");
-        return null;
-      }
-      const { openId, userId, appId, name, authVersion, mfaVerifiedAt } = payload as Record<string, unknown>;
-
-      if (!isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing name field");
-        return null;
-      }
-
-      // 支持两种认证方式：OAuth (openId) 或 邮箱密码 (userId)
-      if (!openId && !userId) {
-        console.warn("[Auth] Session payload missing openId or userId");
-        return null;
-      }
-      if (!isNonEmptyString(authVersion)) {
-        console.warn("[Auth] Session payload missing auth version");
-        return null;
-      }
-
-      return {
-        openId: isNonEmptyString(openId) ? openId : undefined,
-        userId: typeof userId === 'number' ? userId : undefined,
-        appId: isNonEmptyString(appId) ? appId : undefined,
-        name,
-        authVersion,
-        mfaVerifiedAt: typeof mfaVerifiedAt === "number" ? mfaVerifiedAt : undefined,
-      };
+      const identity = await getUserInfoWithJwt(token);
+      await db.upsertUser(externalIdentityUpdate(identity, signedInAt));
+      user = await db.getUserByOpenId(identity.openId);
     } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
-      return null;
+      console.error("[Auth] Failed to sync user from OAuth:", error);
+      throw ForbiddenError("Failed to sync user info");
     }
   }
-
-  async signAdminMfaChallenge(payload: { userId: number; name: string; authVersion: string }): Promise<string> {
-    const secretKey = this.getSessionSecret();
-    return new SignJWT({ ...payload, purpose: "admin-mfa-login" })
-      .setProtectedHeader({ alg: "HS256", typ: "JWT" })
-      .setIssuedAt()
-      .setJti(randomUUID())
-      .setExpirationTime(Math.floor((Date.now() + 5 * 60 * 1000) / 1000))
-      .sign(secretKey);
-  }
-
-  async verifyAdminMfaChallenge(token: string): Promise<{ userId: number; name: string; authVersion: string }> {
-    const { payload } = await jwtVerify(token, this.getSessionSecret(), { algorithms: ["HS256"] });
-    if (payload.purpose !== "admin-mfa-login" || typeof payload.userId !== "number"
-      || !isNonEmptyString(payload.name) || !isNonEmptyString(payload.authVersion)) {
-      throw new Error("invalid administrator MFA challenge");
-    }
-    return { userId: payload.userId, name: payload.name, authVersion: payload.authVersion };
-  }
-
-  async revokeRequestSessions(req: Request): Promise<void> {
-    const values = this.getCookieValues(req.headers.cookie, COOKIE_NAME);
-    const fallback = this.parseCookies(req.headers.cookie).get(COOKIE_NAME);
-    for (const token of Array.from(new Set([...values, ...(fallback ? [fallback] : [])]))) {
-      try {
-        const { payload } = await jwtVerify(token, this.getSessionSecret(), { algorithms: ["HS256"] });
-        if (isNonEmptyString(payload.jti) && typeof payload.exp === "number") {
-          sessionRevocations.revoke(payload.jti, payload.exp);
-        }
-      } catch {}
-    }
-  }
-
-  async getUserInfoWithJwt(
-    jwtToken: string
-  ): Promise<ExternalUserIdentity> {
-    const payload = {
-      jwtToken,
-      projectId: ENV.appId,
-    };
-
-    const { data } = await this.client.post<ExternalUserIdentity>(
-      GET_USER_INFO_WITH_JWT_PATH,
-      payload
-    );
-
-    const loginMethod = this.deriveLoginMethod(
-      data.platforms,
-      data.platform ?? null
-    );
-    return {
-      ...data,
-      platform: loginMethod,
-      loginMethod,
-    };
-  }
-
-  async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
-    // Regular authentication flow
-    const sessionCookies = this.getCookieValues(req.headers.cookie, COOKIE_NAME);
-    const fallbackCookie = this.parseCookies(req.headers.cookie).get(COOKIE_NAME);
-    const candidates = sessionCookies.length > 0
-      ? sessionCookies
-      : fallbackCookie
-        ? [fallbackCookie]
-        : [];
-    let session: Awaited<ReturnType<typeof this.verifySession>> = null;
-    let sessionCookie: string | undefined;
-
-    for (const candidate of candidates) {
-      const verified = await this.verifySession(candidate);
-      if (verified) {
-        session = verified;
-        sessionCookie = candidate;
-        break;
-      }
-    }
-
-    if (!session) {
-      throw ForbiddenError("Invalid session cookie");
-    }
-
-    const signedInAt = new Date();
-    let user: User | undefined;
-
-    // 支持两种认证方式
-    if (session.openId) {
-      // OAuth 认证流程
-      user = await db.getUserByOpenId(session.openId);
-
-      // If user not in DB, sync from OAuth server automatically
-      if (!user) {
-        try {
-          const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-          await db.upsertUser(externalIdentityUpdate(userInfo, signedInAt));
-          user = await db.getUserByOpenId(userInfo.openId);
-        } catch (error) {
-          console.error("[Auth] Failed to sync user from OAuth:", error);
-          throw ForbiddenError("Failed to sync user info");
-        }
-      }
-
-      if (!user) {
-        throw ForbiddenError("User not found");
-      }
-
-      await db.upsertUser({
-        openId: user.openId,
-        lastSignedIn: signedInAt,
-      });
-    } else if (session.userId) {
-      // 邮箱密码认证流程
-      user = await db.getUserById(session.userId);
-
-      // 开发模式下允许无数据库联调：根据 session 直接构造测试用户
-      if (!user && process.env.NODE_ENV === "development") {
-        const isAdmin = session.name === "admin";
-        user = {
-          id: session.userId,
-          openId: null,
-          name: session.name || (isAdmin ? "admin" : "test-user"),
-          email: isAdmin ? "admin@example.com" : `${session.name || "test-user"}@local.dev`,
-          password: null,
-          loginMethod: "email",
-          role: isAdmin ? "admin" : "user",
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastSignedIn: new Date(),
-        } as User;
-      }
-
-      if (!user) {
-        throw ForbiddenError("User not found");
-      }
-
-      // 仅真实数据库用户才更新最后登录时间
-      if (process.env.NODE_ENV !== "development") {
-        await db.updateUser(session.userId, {
-          lastSignedIn: signedInAt,
-        });
-        user = await db.getUserById(session.userId);
-      }
-    } else {
-      throw ForbiddenError("Invalid session: missing openId or userId");
-    }
-
-    if (!user) {
-      throw ForbiddenError("User not found");
-    }
-    if (!equalAuthVersion(sessionAuthVersion(user), session.authVersion)) {
-      throw ForbiddenError("Session has been revoked");
-    }
-
-    return Object.assign(user, { mfaVerifiedAt: session.mfaVerifiedAt });
-  }
+  if (!user) throw ForbiddenError("User not found");
+  await db.upsertUser({ openId: user.openId, lastSignedIn: signedInAt });
+  return user;
 }
 
-export const sdk = new SDKServer();
+async function passwordUser(
+  session: VerifiedSession,
+  signedInAt: Date
+): Promise<User> {
+  const userId = session.userId as number;
+  let user = await db.getUserById(userId);
+  user ??= developmentUser(session);
+  if (!user) throw ForbiddenError("User not found");
+
+  if (process.env.NODE_ENV !== "development") {
+    await db.updateUser(userId, { lastSignedIn: signedInAt });
+    user = await db.getUserById(userId);
+  }
+  if (!user) throw ForbiddenError("User not found");
+  return user;
+}
+
+async function authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+  const tokens = cookieValues(req.headers.cookie, COOKIE_NAME);
+  let accepted: { session: VerifiedSession; token: string } | undefined;
+
+  for (const token of tokens) {
+    const session = await verifySession(token);
+    if (session) {
+      accepted = { session, token };
+      break;
+    }
+  }
+  if (!accepted) throw ForbiddenError("Invalid session cookie");
+
+  const signedInAt = new Date();
+  const { session, token } = accepted;
+  const user = session.openId
+    ? await oauthUser(session, token, signedInAt)
+    : session.userId !== undefined
+      ? await passwordUser(session, signedInAt)
+      : undefined;
+  if (!user) throw ForbiddenError("Invalid session: missing openId or userId");
+
+  if (!secureStringsMatch(sessionAuthVersion(user), session.authVersion)) {
+    throw ForbiddenError("Session has been revoked");
+  }
+  return Object.assign(user, { mfaVerifiedAt: session.mfaVerifiedAt });
+}
+
+export const sdk = {
+  authenticateRequest,
+  createSessionToken,
+  exchangeCodeForToken,
+  getUserInfo,
+  getUserInfoWithJwt,
+  revokeRequestSessions,
+  signAdminMfaChallenge,
+  signSession,
+  verifyAdminMfaChallenge,
+  verifySession,
+};

@@ -1,76 +1,93 @@
-import { desc, eq } from "drizzle-orm";
-import { InsertUser, users, registrations, InsertRegistration } from "../../drizzle/schema";
-import { ENV } from '../_core/env';
-import { getDb } from "./connection";
+import { desc, eq, type SQL } from "drizzle-orm";
+import {
+  type InsertRegistration,
+  type InsertUser,
+  registrations,
+  users,
+} from "../../drizzle/schema";
+import { ENV } from "../_core/env";
 import { getSystemConfigValue } from "./config";
+import { getDb } from "./connection";
 
-export async function upsertUser(user: InsertUser): Promise<void> {
-  // OAuth用户必须有openId，邮箱密码用户不需要
-  if (!user.openId && !user.email) {
+type Database = NonNullable<Awaited<ReturnType<typeof getDb>>>;
+
+async function requireDatabase(): Promise<Database> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  return database;
+}
+
+async function optionalDatabase(action: string): Promise<Database | undefined> {
+  const database = await getDb();
+  if (!database)
+    console.warn(`[Database] Cannot ${action}: database not available`);
+  return database ?? undefined;
+}
+
+async function findUser(database: Database, condition: SQL<unknown>) {
+  const [record] = await database
+    .select()
+    .from(users)
+    .where(condition)
+    .limit(1);
+  return record;
+}
+
+const mutableTextFields = ["name", "email", "loginMethod", "password"] as const;
+
+function prepareUserWrite(input: InsertUser) {
+  const values: InsertUser = input.openId ? { openId: input.openId } : {};
+  const updates: Partial<InsertUser> = {};
+
+  for (const field of mutableTextFields) {
+    if (input[field] === undefined) continue;
+    const value = input[field] ?? null;
+    Object.assign(values, { [field]: value });
+    Object.assign(updates, { [field]: value });
+  }
+
+  if (input.lastSignedIn !== undefined) {
+    values.lastSignedIn = input.lastSignedIn;
+    updates.lastSignedIn = input.lastSignedIn;
+  }
+
+  const role =
+    input.role ?? (input.openId === ENV.ownerOpenId ? "admin" : undefined);
+  if (role !== undefined) {
+    values.role = role;
+    updates.role = role;
+  }
+
+  values.lastSignedIn ??= new Date();
+  if (Object.keys(updates).length === 0) updates.lastSignedIn = new Date();
+
+  return { values, updates };
+}
+
+export async function upsertUser(input: InsertUser): Promise<void> {
+  if (!input.openId && !input.email) {
     throw new Error("User openId or email is required for upsert");
   }
 
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
+  const database = await optionalDatabase("upsert user");
+  if (!database) return;
 
+  const { values, updates } = prepareUserWrite(input);
   try {
-    const values: InsertUser = {};
-    const updateSet: Record<string, unknown> = {};
-
-    // 如果有openId，使用openId作为唯一标识
-    if (user.openId) {
-      values.openId = user.openId;
+    if (input.openId) {
+      await database
+        .insert(users)
+        .values(values)
+        .onDuplicateKeyUpdate({ set: updates });
+      return;
     }
 
-    const textFields = ["name", "email", "loginMethod", "password"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    // 如果有openId，使用openId作为唯一键；否则使用email
-    if (user.openId) {
-      await db.insert(users).values(values).onDuplicateKeyUpdate({
-        set: updateSet,
-      });
-    } else if (user.email) {
-      // 对于邮箱密码用户，使用email作为唯一标识
-      const existing = await getUserByEmail(user.email);
-      if (existing) {
-        await db.update(users).set(updateSet).where(eq(users.email, user.email));
-      } else {
-        await db.insert(users).values(values);
-      }
+    const email = input.email as string;
+    const existing = await findUser(database, eq(users.email, email));
+    if (existing) {
+      await database.update(users).set(updates).where(eq(users.email, email));
+    } else {
+      await database.insert(users).values(values);
     }
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
@@ -79,170 +96,102 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 }
 
 export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  const database = await optionalDatabase("get user");
+  return database ? findUser(database, eq(users.openId, openId)) : undefined;
 }
 
-/**
- * 根据邮箱获取用户
- */
 export async function getUserByEmail(email: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  const database = await optionalDatabase("get user");
+  return database ? findUser(database, eq(users.email, email)) : undefined;
 }
 
-/**
- * 根据ID获取用户
- */
 export async function getUserById(id: number) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
+  const database = await optionalDatabase("get user");
+  return database ? findUser(database, eq(users.id, id)) : undefined;
 }
 
-/**
- * 创建用户（用于邮箱密码注册）
- */
 export async function createUser(user: InsertUser): Promise<number> {
-  const db = await getDb();
-  if (!db) {
-    throw new Error("Database not available");
-  }
-
-  const result = await db.insert(users).values(user);
-  return result[0].insertId;
+  const database = await requireDatabase();
+  const [result] = await database.insert(users).values(user);
+  return result.insertId;
 }
 
-/**
- * 更新用户信息
- */
-export async function updateUser(id: number, updates: Partial<InsertUser>): Promise<void> {
-  const db = await getDb();
-  if (!db) {
-    throw new Error("Database not available");
-  }
-
-  await db.update(users).set(updates).where(eq(users.id, id));
+export async function updateUser(
+  id: number,
+  updates: Partial<InsertUser>
+): Promise<void> {
+  const database = await requireDatabase();
+  await database.update(users).set(updates).where(eq(users.id, id));
 }
 
-export async function updateUserPasswordAndRevokeSessions(id: number, password: string): Promise<void> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  await db.update(users).set({ password }).where(eq(users.id, id));
+export async function updateUserPasswordAndRevokeSessions(
+  id: number,
+  password: string
+): Promise<void> {
+  await updateUser(id, { password });
 }
 
-/**
- * 获取全部登录用户（用于后台权限管理）
- */
 export async function getAllAuthUsers() {
-  const db = await getDb();
-  if (!db) return [];
-  return await db
-    .select()
-    .from(users)
-    .orderBy(desc(users.createdAt));
+  const database = await getDb();
+  if (!database) return [];
+  return database.select().from(users).orderBy(desc(users.createdAt));
 }
 
-/**
- * 更新用户访问级别
- */
-export async function updateUserAccessLevel(userId: number, accessLevel: "public_only" | "all"): Promise<void> {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  await db
-    .update(users)
-    .set({ accessLevel })
-    .where(eq(users.id, userId));
+export async function updateUserAccessLevel(
+  userId: number,
+  accessLevel: "public_only" | "all"
+): Promise<void> {
+  await updateUser(userId, { accessLevel });
 }
 
-/**
- * 从系统配置读取内部访问白名单（支持邮箱或域名规则，一行一个）
- */
 export async function getInternalAccessWhitelistRules(): Promise<string[]> {
-  const raw = await getSystemConfigValue("internal_access_whitelist", "");
-  return raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
+  const configured = await getSystemConfigValue(
+    "internal_access_whitelist",
+    ""
+  );
+  return configured
+    .split(/\r?\n/u)
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0 && !entry.startsWith("#"));
 }
 
-/**
- * 判断邮箱是否命中内部白名单
- */
-export async function isEmailInInternalAccessWhitelist(email: string): Promise<boolean> {
-  const normalized = (email || "").trim().toLowerCase();
-  if (!normalized) return false;
+export async function isEmailInInternalAccessWhitelist(
+  email: string
+): Promise<boolean> {
+  const candidate = email.trim().toLowerCase();
+  if (!candidate) return false;
 
   const rules = await getInternalAccessWhitelistRules();
-  for (const rule of rules) {
-    const r = rule.toLowerCase();
-    if (!r) continue;
-    if (r.startsWith("@")) {
-      if (normalized.endsWith(r)) return true;
-    } else if (normalized === r) {
-      return true;
-    }
-  }
-  return false;
+  return rules.some(entry => {
+    const rule = entry.toLowerCase();
+    return rule.startsWith("@") ? candidate.endsWith(rule) : candidate === rule;
+  });
 }
 
-// ==================== Registration Functions ====================
-
-/**
- * 创建新的注册记录
- */
-export async function createRegistration(data: InsertRegistration): Promise<number> {
-  const db = await getDb();
-  if (!db) {
-    throw new Error("Database not available");
-  }
-
-  const result = await db.insert(registrations).values(data);
-  return result[0].insertId;
+export async function createRegistration(
+  data: InsertRegistration
+): Promise<number> {
+  const database = await requireDatabase();
+  const [result] = await database.insert(registrations).values(data);
+  return result.insertId;
 }
 
-/**
- * 根据邮箱获取注册记录
- */
 export async function getRegistrationByEmail(email: string) {
-  const db = await getDb();
-  if (!db) {
-    return undefined;
-  }
-
-  const result = await db.select().from(registrations).where(eq(registrations.email, email)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
+  const database = await getDb();
+  if (!database) return undefined;
+  const [registration] = await database
+    .select()
+    .from(registrations)
+    .where(eq(registrations.email, email))
+    .limit(1);
+  return registration;
 }
 
-/**
- * 获取所有注册记录
- */
 export async function getAllRegistrations() {
-  const db = await getDb();
-  if (!db) {
-    return [];
-  }
-
-  return await db.select().from(registrations).orderBy(desc(registrations.createdAt));
+  const database = await getDb();
+  if (!database) return [];
+  return database
+    .select()
+    .from(registrations)
+    .orderBy(desc(registrations.createdAt));
 }
