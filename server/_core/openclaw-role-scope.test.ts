@@ -84,7 +84,7 @@ describe("openclaw role scope", () => {
       config,
       "trial_lgc-test",
       effectiveAssets,
-      ["uploaded-personal-skill"],
+      ["uploaded-personal-skill", "wealth-manager-assistant"],
       ["wealth-manager-assistant"],
     );
 

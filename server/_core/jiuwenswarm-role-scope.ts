@@ -133,7 +133,9 @@ function activeRoleSkillIds(
   const disabled = new Set(uniqueSorted(disabledDefaultSkillIds));
   return uniqueSorted([
     ...effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId)),
-    ...activeSkillIds,
+    // Old agents may have role defaults recorded as runtime-imported skills.
+    // A user-level disable must still win over that legacy registry entry.
+    ...activeSkillIds.filter((skillId) => !disabled.has(skillId)),
   ]);
 }
 

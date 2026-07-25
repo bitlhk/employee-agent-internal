@@ -1204,8 +1204,9 @@ export function registerSkillRoutes(app: express.Express) {
             .json({ error: registered.error.detail, kind: registered.error.kind });
           return;
         }
+        const roleDefaultSkillIds = new Set(effectiveAssets.skills.default);
         const activeSkillIds = registered.value
-          .filter((skill) => skill.source.kind !== "role_default" && skill.enabled && skill.state === "ready")
+          .filter((skill) => !roleDefaultSkillIds.has(skill.id) && skill.enabled && skill.state === "ready")
           .map((skill) => skill.id);
         const previousDisabled = roleSkillPreferences.getDisabledDefaultSkillIds(adoptId);
         const wasDisabled = previousDisabled.includes(skillId);

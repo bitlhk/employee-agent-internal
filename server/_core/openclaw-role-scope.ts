@@ -34,7 +34,9 @@ export function activeRoleSkillIds(
   const disabled = new Set(uniqueSorted(disabledDefaultSkillIds));
   return uniqueSorted([
     ...effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId)),
-    ...activeSkillIds,
+    // Legacy registry rows can classify a role default as an imported skill.
+    // Keep the explicit per-agent disable authoritative by skill ID.
+    ...activeSkillIds.filter((skillId) => !disabled.has(skillId)),
   ]);
 }
 

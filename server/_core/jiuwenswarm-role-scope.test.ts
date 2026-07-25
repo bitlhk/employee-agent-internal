@@ -298,6 +298,7 @@ describe("jiuwenswarm role scope manifest", () => {
         role,
         effectiveAssets,
         sharedSkillsDir: shared,
+        activeSkillIds: ["wealth-manager-assistant"],
         disabledDefaultSkillIds: ["wealth-manager-assistant"],
       });
 

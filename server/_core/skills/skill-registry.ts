@@ -620,8 +620,14 @@ export class FileSkillRegistry implements SkillRegistry {
     const roleTemplate = String((claw as any)?.roleTemplate || "general-assistant");
     const role = resolveAgentRoleTemplate(roleTemplate);
     const effectiveAssets = await resolveEffectiveRoleAssets(role.id);
+    const roleDefaultSkillIds = new Set(effectiveAssets.skills.default);
     const activeSkillIds = this.loadRegistry()
-      .filter((skill) => skill.adoptId === adoptId && skill.enabled && skill.state === "ready")
+      .filter((skill) =>
+        skill.adoptId === adoptId
+        && !roleDefaultSkillIds.has(skill.id)
+        && skill.enabled
+        && skill.state === "ready"
+      )
       .map((skill) => skill.id);
     const disabledDefaultSkillIds = roleSkillPreferences.getDisabledDefaultSkillIds(adoptId);
 
