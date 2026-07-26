@@ -1,16 +1,28 @@
 import {
   AlertTriangle,
   BarChart3,
+  BookOpen,
+  BriefcaseBusiness,
   Building2,
   CheckCircle2,
   Database,
+  GitBranch,
   Globe2,
+  HardDrive,
   Layers,
+  LibraryBig,
+  MessageSquare,
+  Palette,
   PhoneCall,
   Plug,
+  ReceiptText,
   ShieldCheck,
+  TableProperties,
   UsersRound,
+  Utensils,
+  WalletCards,
   Wrench,
+  type LucideIcon,
 } from "lucide-react";
 
 export type ConnectorIconInput = {
@@ -20,61 +32,115 @@ export type ConnectorIconInput = {
   catalogId?: string | null;
 };
 
-type ConnectorLogo = { src: string; shape: "square" | "wide" | "natural" };
+export type ConnectorIconKind =
+  | "alert"
+  | "book"
+  | "briefcase"
+  | "building"
+  | "chart"
+  | "check"
+  | "database"
+  | "git"
+  | "globe"
+  | "hard-drive"
+  | "layers"
+  | "library"
+  | "message"
+  | "palette"
+  | "phone"
+  | "plug"
+  | "receipt"
+  | "shield"
+  | "table"
+  | "users"
+  | "utensils"
+  | "wallet"
+  | "wrench";
 
-const CONNECTOR_LOGOS: Record<string, ConnectorLogo> = {
-  canva: { src: "/images/connectors/canva-logo.png", shape: "square" },
-  feishu: { src: "/images/connectors/feishu-logo.png", shape: "square" },
-  github: { src: "/images/connectors/github-logo.png", shape: "square" },
-  "google-drive": { src: "/images/connectors/google-drive-logo.png", shape: "natural" },
-  hengshengjuyuan: { src: "/images/connectors/hengshengjuyuan-logo.png", shape: "square" },
-  jinshuju: { src: "/images/connectors/jinshuju-logo.png", shape: "square" },
-  mcdonalds: { src: "/images/connectors/mcdonalds-logo.png", shape: "square" },
-  notion: { src: "/images/connectors/notion-logo.png", shape: "square" },
-  tianyancha: { src: "/images/connectors/tianyancha-logo.svg", shape: "wide" },
-  wind: { src: "/images/connectors/wind-logo.png", shape: "natural" },
-  yingmi: { src: "/images/connectors/yingmi-logo.png", shape: "square" },
-  yunzhangfang: { src: "/images/connectors/yunzhangfang-logo.png", shape: "natural" },
+const CATALOG_ICON_KINDS: Record<string, ConnectorIconKind> = {
+  atlassian: "briefcase",
+  canva: "palette",
+  feishu: "message",
+  github: "git",
+  "google-drive": "hard-drive",
+  hengshengjuyuan: "database",
+  jinshuju: "table",
+  mcdonalds: "utensils",
+  "microsoft-learn": "book",
+  notion: "library",
+  slack: "users",
+  tianyancha: "building",
+  tongzhou: "library",
+  wind: "chart",
+  yingmi: "wallet",
+  yunzhangfang: "receipt",
 };
 
-export function connectorLogo(input: ConnectorIconInput): ConnectorLogo | null {
-  const catalogId = String(input.catalogId || "").trim().toLowerCase();
-  if (CONNECTOR_LOGOS[catalogId]) return CONNECTOR_LOGOS[catalogId];
-  const id = String(input.serverId || "").trim().toLowerCase();
-  if (id === "platform:feishu" || id.includes("feishu")) return CONNECTOR_LOGOS.feishu;
-  if (id.startsWith("wind_") || id === "wind") return CONNECTOR_LOGOS.wind;
-  for (const key of ["yingmi", "github", "google-drive", "canva", "notion", "jinshuju", "hengshengjuyuan", "mcdonalds", "yunzhangfang", "tianyancha"]) {
-    if (id.includes(key)) return CONNECTOR_LOGOS[key];
+const ICONS: Record<ConnectorIconKind, LucideIcon> = {
+  alert: AlertTriangle,
+  book: BookOpen,
+  briefcase: BriefcaseBusiness,
+  building: Building2,
+  chart: BarChart3,
+  check: CheckCircle2,
+  database: Database,
+  git: GitBranch,
+  globe: Globe2,
+  "hard-drive": HardDrive,
+  layers: Layers,
+  library: LibraryBig,
+  message: MessageSquare,
+  palette: Palette,
+  phone: PhoneCall,
+  plug: Plug,
+  receipt: ReceiptText,
+  shield: ShieldCheck,
+  table: TableProperties,
+  users: UsersRound,
+  utensils: Utensils,
+  wallet: WalletCards,
+  wrench: Wrench,
+};
+
+export function connectorIconKind(
+  input: ConnectorIconInput
+): ConnectorIconKind {
+  const catalogId = String(input.catalogId || "")
+    .trim()
+    .toLowerCase();
+  if (CATALOG_ICON_KINDS[catalogId]) return CATALOG_ICON_KINDS[catalogId];
+
+  const id = String(input.serverId || "")
+    .trim()
+    .toLowerCase();
+  if (id === "platform:feishu" || id.includes("feishu")) return "message";
+  if (id.startsWith("wind_") || id === "wind") return "chart";
+  for (const [key, kind] of Object.entries(CATALOG_ICON_KINDS)) {
+    if (id.includes(key)) return kind;
   }
-  return null;
+  if (
+    input.source === "personal" ||
+    id.includes("custom_mcp") ||
+    id.includes("custom_user")
+  )
+    return "plug";
+  if (id.includes("qieman") || id.includes("stock") || id.includes("index"))
+    return "chart";
+  if (id.includes("bond")) return "building";
+  if (id.includes("credential")) return "check";
+  if (id.includes("telesales")) return "phone";
+  if (id.includes("insurance")) return "shield";
+  if (id.includes("post_loan") || id.includes("risk")) return "alert";
+  if (id.includes("customer")) return "users";
+  if (id.includes("product")) return "layers";
+  if (id.includes("platform_tools")) return "wrench";
+  if (/数据|知识/.test(input.category || "")) return "database";
+  if (/公共|公开/.test(input.category || "")) return "globe";
+  if (/审核|风控|安全/.test(input.category || "")) return "shield";
+  return "wrench";
 }
 
 export function ConnectorIcon(input: ConnectorIconInput) {
-  const logo = connectorLogo(input);
-  if (logo) {
-    return (
-      <img
-        className={`connector-provider-icon connector-provider-icon--${logo.shape}`}
-        src={logo.src}
-        alt=""
-        aria-hidden="true"
-      />
-    );
-  }
-
-  const id = input.serverId.toLowerCase();
-  if (input.source === "personal" || id.includes("custom_mcp") || id.includes("custom_user")) return <Plug aria-hidden="true" />;
-  if (id.includes("qieman") || id.includes("stock") || id.includes("index")) return <BarChart3 aria-hidden="true" />;
-  if (id.includes("bond")) return <Building2 aria-hidden="true" />;
-  if (id.includes("credential")) return <CheckCircle2 aria-hidden="true" />;
-  if (id.includes("telesales")) return <PhoneCall aria-hidden="true" />;
-  if (id.includes("insurance")) return <ShieldCheck aria-hidden="true" />;
-  if (id.includes("post_loan") || id.includes("risk")) return <AlertTriangle aria-hidden="true" />;
-  if (id.includes("customer")) return <UsersRound aria-hidden="true" />;
-  if (id.includes("product")) return <Layers aria-hidden="true" />;
-  if (id.includes("platform_tools")) return <Wrench aria-hidden="true" />;
-  if (/数据|知识/.test(input.category || "")) return <Database aria-hidden="true" />;
-  if (/公共|公开/.test(input.category || "")) return <Globe2 aria-hidden="true" />;
-  if (/审核|风控|安全/.test(input.category || "")) return <ShieldCheck aria-hidden="true" />;
-  return <Wrench aria-hidden="true" />;
+  const Icon = ICONS[connectorIconKind(input)];
+  return <Icon aria-hidden="true" />;
 }

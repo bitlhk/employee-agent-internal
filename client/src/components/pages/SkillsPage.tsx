@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
-  BookOpen,
   Bot,
   BriefcaseBusiness,
   Check,
@@ -14,11 +13,8 @@ import {
   CircleAlert,
   ExternalLink,
   FileText,
-  HardDrive,
   Layers,
-  LibraryBig,
   Package,
-  Palette,
   Pencil,
   Plug,
   Plus,
@@ -33,7 +29,6 @@ import {
   Store,
   Trash2,
   Upload,
-  UsersRound,
   Wrench,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -585,30 +580,13 @@ function agentToolsCacheKey(adoptId?: string) {
 }
 
 function connectorTemplateIcon(templateId: string): ReactNode {
-  const squareLogo = {
-    yingmi: "/images/connectors/yingmi-logo.png",
-    github: "/images/connectors/github-logo.png",
-    jinshuju: "/images/connectors/jinshuju-logo.png",
-    hengshengjuyuan: "/images/connectors/hengshengjuyuan-logo.png",
-    mcdonalds: "/images/connectors/mcdonalds-logo.png",
-  }[templateId];
-  if (squareLogo) {
-    return <img className="skills-provider-icon--square" src={squareLogo} alt="" aria-hidden="true" />;
-  }
-  if (templateId === "yunzhangfang") {
-    return <img src="/images/connectors/yunzhangfang-logo.png" alt="" aria-hidden="true" />;
-  }
-  if (templateId === "tianyancha") {
-    return <img className="skills-provider-icon--wide" src="/images/connectors/tianyancha-logo.svg" alt="" aria-hidden="true" />;
-  }
-  if (templateId === "microsoft-learn") return <BookOpen aria-hidden="true" />;
-  if (templateId === "canva") return <Palette aria-hidden="true" />;
-  if (templateId === "notion") return <Layers aria-hidden="true" />;
-  if (templateId === "atlassian") return <BriefcaseBusiness aria-hidden="true" />;
-  if (templateId === "slack") return <UsersRound aria-hidden="true" />;
-  if (templateId === "google-drive") return <HardDrive aria-hidden="true" />;
-  if (templateId === "tongzhou") return <LibraryBig aria-hidden="true" />;
-  return <Plug aria-hidden="true" />;
+  return (
+    <ConnectorIcon
+      serverId={`catalog:${templateId}`}
+      catalogId={templateId}
+      source="catalog"
+    />
+  );
 }
 
 function connectorTemplateStatus(template: ConnectorCatalogTemplate, connected = false) {
@@ -1195,7 +1173,7 @@ function McpToolsPage({
                       <button className="skills-catalog-card__surface" type="button" onClick={() => setDetailServerId(FEISHU_CONNECTOR_ID)}>
                         <span className="skills-catalog-card__head">
                           <span className="skills-catalog-card__icon skills-mcp-card-v2__icon" data-source="preset">
-                            <img className="skills-provider-icon--square" src="/images/connectors/feishu-logo.png" alt="" aria-hidden="true" />
+                            <ConnectorIcon serverId={FEISHU_CONNECTOR_ID} catalogId="feishu" source="platform" />
                           </span>
                           <span className="skills-catalog-card__title-wrap">
                             <span className="skills-catalog-card__title">飞书</span>
@@ -1281,7 +1259,7 @@ function McpToolsPage({
               </div>
             </div>
             <div className="skills-mcp-detail__footer">
-              <span className="skills-mcp-detail__connection-note">平台不提供或共享用户凭据</span>
+              <span className="skills-mcp-detail__connection-note">第三方连接器；需自行取得账号、凭据与数据使用权</span>
               <div className="skills-mcp-detail__footer-actions">
                 {selectedTemplate.docsUrl ? (
                   <a
@@ -1427,7 +1405,7 @@ function McpToolsPage({
           <DialogContent className="skills-mcp-detail" aria-describedby="skills-feishu-detail-description">
             <div className="skills-mcp-detail__header">
               <span className="skills-mcp-detail__icon" data-source="preset">
-                <img className="skills-provider-icon--square" src="/images/connectors/feishu-logo.png" alt="" aria-hidden="true" />
+                <ConnectorIcon serverId={FEISHU_CONNECTOR_ID} catalogId="feishu" source="platform" />
               </span>
               <div className="skills-mcp-detail__intro">
                 <DialogTitle>飞书</DialogTitle>
@@ -1439,7 +1417,7 @@ function McpToolsPage({
                   <span>消息与协作</span>
                 </div>
                 <DialogDescription id="skills-feishu-detail-description">
-                  绑定当前岗位智能体后，可以在飞书中直接对话，并接收任务结果、定时通知和协作提醒。
+                  绑定当前岗位智能体后，可以在飞书中直接对话，并接收任务结果、定时通知和协作提醒。飞书为第三方服务，需使用者自行取得账号和授权。
                 </DialogDescription>
               </div>
             </div>

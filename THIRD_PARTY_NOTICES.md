@@ -35,12 +35,14 @@ copyright and license metadata remains available in each installed package.
 
 ## Integration Names and Trademarks
 
-The product can integrate with external runtimes and channels such as
-JiuwenSwarm, A2A-compatible agents, Feishu/Lark, WeChat, WeCom, and DingTalk.
-Those names and marks belong to their respective owners. The open-source
-repository does not grant trademark rights. Except for the documented
-JiuwenSwarm runtime identifier, the repository does not distribute their channel
-or runtime logo artwork; see `ASSET_PROVENANCE.md`.
+The product can integrate with third-party runtimes, channels, data services,
+and MCP endpoints. Their names are used solely to identify compatibility. The
+open-source repository does not grant provider accounts, credentials, data
+licenses, trademark rights, sponsorship, or endorsement.
+
+Connector cards use neutral Lucide icons and do not redistribute provider logo
+artwork. Separately documented runtime and model-provider assets are listed in
+`ASSET_PROVENANCE.md` with their source and applicable license information.
 
 ## Deployment-Specific Assets
 

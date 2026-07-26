@@ -1,26 +1,34 @@
 import { describe, expect, it } from "vitest";
-import { connectorLogo } from "./ConnectorIcon";
+import { connectorIconKind } from "./ConnectorIcon";
 
-describe("connectorLogo", () => {
-  it("uses the Wind logo for every Wind MCP server", () => {
-    expect(connectorLogo({ serverId: "wind_index_data" })?.src).toBe("/images/connectors/wind-logo.png");
+describe("connectorIconKind", () => {
+  it("uses a financial chart for every Wind MCP server", () => {
+    expect(connectorIconKind({ serverId: "wind_index_data" })).toBe("chart");
   });
 
-  it("keeps the catalog brand for a generated custom MCP server id", () => {
-    expect(connectorLogo({ serverId: "custom_user_42", source: "personal", catalogId: "yingmi" })?.src)
-      .toBe("/images/connectors/yingmi-logo.png");
+  it("keeps the catalog meaning for generated custom MCP server ids", () => {
+    expect(
+      connectorIconKind({
+        serverId: "custom_user_42",
+        source: "personal",
+        catalogId: "yingmi",
+      })
+    ).toBe("wallet");
   });
 
-  it("uses the Feishu brand for the platform channel connector", () => {
-    expect(connectorLogo({ serverId: "platform:feishu" })?.src).toBe("/images/connectors/feishu-logo.png");
+  it("uses a messaging symbol for the Feishu platform channel", () => {
+    expect(connectorIconKind({ serverId: "platform:feishu" })).toBe("message");
   });
 
-  it("uses the uploaded brand assets for knowledge and creation connectors", () => {
-    expect(connectorLogo({ serverId: "catalog", catalogId: "google-drive" })?.src)
-      .toBe("/images/connectors/google-drive-logo.png");
-    expect(connectorLogo({ serverId: "catalog", catalogId: "canva" })?.src)
-      .toBe("/images/connectors/canva-logo.png");
-    expect(connectorLogo({ serverId: "catalog", catalogId: "notion" })?.src)
-      .toBe("/images/connectors/notion-logo.png");
+  it("uses neutral semantic symbols for knowledge and creation connectors", () => {
+    expect(
+      connectorIconKind({ serverId: "catalog", catalogId: "google-drive" })
+    ).toBe("hard-drive");
+    expect(connectorIconKind({ serverId: "catalog", catalogId: "canva" })).toBe(
+      "palette"
+    );
+    expect(
+      connectorIconKind({ serverId: "catalog", catalogId: "notion" })
+    ).toBe("library");
   });
 });

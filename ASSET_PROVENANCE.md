@@ -30,9 +30,11 @@ rights.
 
 ## Other third-party names
 
-Lark, WeChat, WeCom, and DingTalk names appear only to identify compatible
-integrations. Their logos are not redistributed by this repository. Integration
-UI uses neutral Lucide icons unless a provider asset is documented below.
+Third-party product and provider names appear only to identify compatible
+integrations, model providers, or externally hosted services. A name or endpoint
+in the connector catalog does not include an account, credential, data license,
+partnership, sponsorship, or endorsement. Users must obtain the rights required
+to access each external service.
 
 ## Model provider logos
 
@@ -58,45 +60,18 @@ package solely to identify the configured model provider:
 DeepSeek and its associated mark remain the property of their respective
 owner. This nominative use does not imply sponsorship or endorsement.
 
-## Connector provider logos
+## Connector identification
 
-The connector catalog uses the Feishu icon published by the official Feishu
-website solely to identify the Feishu messaging connection:
+The public connector catalog uses project-selected neutral Lucide icons rather
+than redistributing provider logos. Provider names such as Feishu, Wind,
+McDonald's, Tianyancha, Hundsun Juyuan, Yingmi, Jinshuju, and Yunzhangfang are
+shown only where necessary to identify a compatible third-party service.
 
-- Distributed asset: `client/public/images/connectors/feishu-logo.png`
-- Upstream source: `https://p16-hera-overseas.larksuitecdn.com/tos-mya-i-lojyj5t9n9/9b87226605154fb7b8141a9c94de22e9.png~tplv-lojyj5t9n9-origin.image`
-- Upstream website: `https://www.feishu.cn/`
-- Retrieved: 2026-07-22
-
-Feishu and its associated mark remain the property of Beijing Feishu Technology
-Co., Ltd. This nominative use does not imply sponsorship or endorsement. Confirm
-the applicable Feishu brand-use terms before redistributing this asset outside
-an authorized integration.
-
-The MCP connector catalog uses the official Wind wordmark solely to identify
-Wind-provided financial data connections:
-
-- Distributed asset: `client/public/images/connectors/wind-logo.png`
-- Upstream source: `https://www.wind.com.cn/portal/common/img/logo-red.png`
-- Upstream website: `https://www.wind.com.cn/`
-- Retrieved: 2026-07-22
-
-Wind and its associated mark remain the property of Wind Information Co., Ltd.
-This nominative use does not imply sponsorship or endorsement. Confirm the
-applicable Wind brand-use terms before redistributing this asset outside an
-authorized integration.
-
-The connector catalog uses the McDonald's Golden Arches mark solely to identify
-the official McDonald's MCP connection:
-
-- Distributed asset: `client/public/images/connectors/mcdonalds-logo.png`
-- Source: project-owner supplied source file
-- Upstream service: `https://open.mcd.cn/mcp`
-- Retrieved: 2026-07-23
-
-McDonald's and the Golden Arches mark remain the property of McDonald's
-Corporation and its affiliates. This nominative use does not imply sponsorship
-or endorsement. Confirm the applicable brand-use terms before redistribution.
+Connector endpoints are configuration metadata, not project-owned assets. Their
+presence does not grant access or data rights and does not indicate that the
+provider sponsors, endorses, or maintains this project. Deployment owners are
+responsible for verifying the provider's current endpoint, terms, credentials,
+and authorization requirements before enabling a connector.
 
 ## Expert avatars
 
@@ -124,5 +99,6 @@ rights before including them in a public release.
 
 Every externally sourced asset must record its source URL, copyright owner,
 license or written authorization, retrieval date, and any required attribution
-before it is added to a release branch. Assets without sufficient provenance
+before it is added to a release branch. A public download URL alone is not
+evidence of redistribution permission. Assets without sufficient provenance
 must be replaced with project-owned or permissively licensed neutral artwork.
