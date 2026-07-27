@@ -60,6 +60,14 @@ import { parseSkillSourceDirectory } from "./skills/skill-source";
 import { remapLegacySkillMarketPath } from "./skills/skill-store";
 import type { SkillSource } from "../../shared/types/skill";
 import { getAvailableClawModelsFromConfig } from "../routers/helpers";
+import {
+  desktopProtocolMetadata,
+  resolveDesktopRuntimeType,
+} from "./desktop-protocol";
+import {
+  listClawChatHistorySessionRecords,
+  readModernChatHistorySessionMessages,
+} from "./claw-misc";
 
 type DesktopUser = {
   id: string;
@@ -641,6 +649,41 @@ function readDesktopSessions(agentId: string, limit = 50): DesktopSessionSummary
   return summaries.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit);
 }
 
+async function listDesktopSessionsForClaw(
+  claw: NonNullable<Awaited<ReturnType<typeof getDesktopUserClaw>>>,
+  limit: number
+): Promise<DesktopSessionSummary[]> {
+  if (resolveDesktopRuntimeType(claw.adoptId) !== "jiuwenswarm") {
+    return readDesktopSessions(claw.agentId, limit);
+  }
+
+  const payload = await listClawChatHistorySessionRecords({
+    adoptId: claw.adoptId,
+    claw,
+    limit: Math.min(Math.max(limit, 1), 100),
+  });
+  return (Array.isArray(payload.sessions) ? payload.sessions : [])
+    .map((session: any): DesktopSessionSummary | null => {
+      const sessionKey = String(
+        session?.sessionKey || session?.sessionId || ""
+      ).trim();
+      if (!sessionKey) return null;
+      return {
+        id: sessionKey,
+        sessionKey,
+        title: normalizeText(session?.title) || "新对话",
+        preview: normalizeText(session?.preview),
+        searchText: normalizeText(session?.searchText),
+        startedAt: toUnixSeconds(session?.createdAt),
+        updatedAt: toUnixSeconds(session?.updatedAt),
+        source: String(session?.runtime || "JiuwenSwarm Web"),
+        messageCount: Number(session?.messageCount || 0),
+        model: "jiuwenswarm",
+      };
+    })
+    .filter((session): session is DesktopSessionSummary => Boolean(session));
+}
+
 function findDesktopSession(sessionIdOrKey: string, agentId: string): {
   summary: DesktopSessionSummary;
   sessionFile: string;
@@ -669,6 +712,41 @@ function findDesktopSession(sessionIdOrKey: string, agentId: string): {
     return { summary, sessionFile };
   }
   return null;
+}
+
+async function readDesktopSessionMessagesForClaw(
+  claw: NonNullable<Awaited<ReturnType<typeof getDesktopUserClaw>>>,
+  sessionId: string
+): Promise<{ summary: DesktopSessionSummary; messages: DesktopHistoryItem[] } | null> {
+  if (resolveDesktopRuntimeType(claw.adoptId) !== "jiuwenswarm") {
+    const found = findDesktopSession(sessionId, claw.agentId);
+    if (!found) return null;
+    return {
+      summary: found.summary,
+      messages: readDesktopSessionMessagesFromFile(found.sessionFile),
+    };
+  }
+
+  const modern = await readModernChatHistorySessionMessages({
+    adoptId: claw.adoptId,
+    dbAgentId: claw.agentId,
+    sessionKey: sessionId,
+    workspaceDir: resolveRuntimeWorkspaceByIds(claw.adoptId, claw.agentId),
+    maxMessages: 200,
+  });
+  if (!modern) return null;
+  const sessions = await listDesktopSessionsForClaw(claw, 100);
+  const summary = sessions.find(session => session.sessionKey === sessionId);
+  if (!summary) return null;
+  return {
+    summary,
+    messages: modern.messages.map((message, index) => ({
+      kind: message.role,
+      id: index + 1,
+      content: preserveMarkdownText(message.text),
+      timestamp: toUnixSeconds(message.timestamp),
+    })),
+  };
 }
 
 async function authenticateDesktopRequest(
@@ -1310,6 +1388,7 @@ export function registerDesktopRoutes(app: express.Express) {
     const claw = await getDesktopUserClaw(user);
     const agentId = claw?.agentId || defaultDesktopAgentId();
     res.json({
+      ...desktopProtocolMetadata(claw?.adoptId || defaultDesktopAdoptId()),
       mode: "mvp",
       user,
       gatewayUrl:
@@ -1384,7 +1463,10 @@ export function registerDesktopRoutes(app: express.Express) {
     const query = normalizeText(req.query.q).toLowerCase();
     const claw = await getDesktopUserClaw(user);
     if (!claw) return res.status(404).json({ error: "no agent assigned" });
-    const sessions = readDesktopSessions(claw.agentId, query ? 200 : limit);
+    const sessions = await listDesktopSessionsForClaw(
+      claw,
+      query ? 100 : limit
+    );
     const filtered = query
       ? sessions.filter(session =>
           `${session.title} ${session.preview} ${session.searchText}`
@@ -1409,14 +1491,14 @@ export function registerDesktopRoutes(app: express.Express) {
     }
     const claw = await getDesktopUserClaw(user);
     if (!claw) return res.status(404).json({ error: "no agent assigned" });
-    const found = findDesktopSession(sessionId, claw.agentId);
+    const found = await readDesktopSessionMessagesForClaw(claw, sessionId);
     if (!found) {
       res.status(404).json({ error: "session_not_found" });
       return;
     }
     res.json({
       session: found.summary,
-      messages: readDesktopSessionMessagesFromFile(found.sessionFile),
+      messages: found.messages,
     });
   });
 
@@ -1431,6 +1513,7 @@ export function registerDesktopRoutes(app: express.Express) {
         Promise.resolve(listDesktopInstalledSkills(claw.adoptId, claw.agentId)),
       ]);
       res.json({
+        ...desktopProtocolMetadata(claw.adoptId),
         skills: {
           installed,
           market,

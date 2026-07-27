@@ -60,7 +60,11 @@ describe("claw misc admin routes", () => {
     try {
       process.env.JIUWENCLAW_HOME = root;
       process.env.JIUWENCLAW_SERVICE_ID = "linggan_test";
-      const { listJiuwenChatHistorySessions, resolveJiuwenHistorySession } = await import("./claw-misc");
+      const {
+        listJiuwenChatHistorySessions,
+        readModernChatHistorySessionMessages,
+        resolveJiuwenHistorySession,
+      } = await import("./claw-misc");
 
       const writeSession = (
         adoptId: string,
@@ -110,6 +114,19 @@ describe("claw misc admin routes", () => {
       expect(resolvedAlpha?.sessionId).toBe(alphaLatestSessionId);
       expect(resolvedAlpha?.segments.map((segment) => segment.sessionId).sort()).toEqual([alphaSessionId, alphaLatestSessionId].sort());
       expect(resolveJiuwenHistorySession({ adoptId: "lgj-alpha", dbAgentId: "", sessionKey: betaSessionId })).toBeNull();
+
+      const desktopHistory = await readModernChatHistorySessionMessages({
+        adoptId: "lgj-alpha",
+        dbAgentId: "",
+        sessionKey: alphaLatestSessionId,
+      });
+      expect(desktopHistory?.runtime).toBe("jiuwenswarm");
+      expect(desktopHistory?.messages.map((message) => message.text)).toEqual([
+        "你好 alpha",
+        "alpha 回复",
+        "继续 alpha",
+        "alpha 新回复",
+      ]);
     } finally {
       if (previousHome === undefined) delete process.env.JIUWENCLAW_HOME;
       else process.env.JIUWENCLAW_HOME = previousHome;

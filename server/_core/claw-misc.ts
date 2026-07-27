@@ -63,7 +63,7 @@ type ChatHistoryToolCall = {
   outputFiles?: Array<{ name: string; size: number; wsPath: string }>;
   adoptId?: string;
 };
-type ChatHistoryMessage = {
+export type ChatHistoryMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
@@ -986,6 +986,61 @@ export function resolveJiuwenHistorySession(args: {
     };
   }
   return null;
+}
+
+export async function readModernChatHistorySessionMessages(args: {
+  adoptId: string;
+  dbAgentId: string;
+  sessionKey: string;
+  workspaceDir?: string;
+  maxMessages?: number;
+}) {
+  const maxMessages = Math.min(Math.max(Number(args.maxMessages || 200), 1), 500);
+  const expertConversationId = expertConversationIdFromSessionKey(args.sessionKey);
+  if (expertConversationId) {
+    const expertTasks = await listAgentTasksByConversation(args.adoptId, expertConversationId, 100);
+    const messages = buildExpertTaskHistoryMessages(expertTasks, maxMessages);
+    if (messages.length === 0) return null;
+    return {
+      conversationId: expertConversationId,
+      sessionKey: args.sessionKey,
+      sessionId: args.sessionKey,
+      runtime: "ea-expert" as const,
+      messages,
+    };
+  }
+
+  if (!isJiuwenClawAdoptId(args.adoptId)) return null;
+  const resolved = resolveJiuwenHistorySession({
+    adoptId: args.adoptId,
+    dbAgentId: args.dbAgentId,
+    sessionKey: args.sessionKey,
+  });
+  if (!resolved) return null;
+
+  const runtimeMessages = mergeJiuwenHistoryCandidates({
+    candidates: resolved.segments,
+    adoptId: args.adoptId,
+    dbAgentId: args.dbAgentId,
+    maxMessages,
+    workspaceDir: args.workspaceDir,
+  });
+  const expertTasks = await listAgentTasksByConversation(
+    args.adoptId,
+    resolved.conversationId,
+    100,
+  ).catch(() => []);
+  const messages = bindHistoryAttachmentOwner(dedupeHistoryMessages([
+    ...runtimeMessages,
+    ...buildExpertTaskHistoryMessages(expertTasks, maxMessages),
+  ], maxMessages), args.adoptId);
+  return {
+    conversationId: resolved.conversationId,
+    sessionKey: args.sessionKey,
+    sessionId: resolved.sessionId,
+    runtime: "jiuwenswarm" as const,
+    messages,
+  };
 }
 
 function deleteJiuwenHistorySession(args: {
