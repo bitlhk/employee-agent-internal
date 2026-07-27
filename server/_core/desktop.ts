@@ -439,6 +439,43 @@ function listDesktopModels(adoptId: string): {
   return { selected, defaultModel, models };
 }
 
+async function listDesktopModelsForClaw(
+  claw: NonNullable<Awaited<ReturnType<typeof getDesktopUserClaw>>>
+): Promise<{ selected: string; defaultModel: string; models: DesktopModelItem[] }> {
+  if (resolveDesktopRuntimeType(claw.adoptId) !== "jiuwenswarm") {
+    return listDesktopModels(claw.adoptId);
+  }
+  const {
+    JIUWEN_AUTO_MODEL_ID,
+    listSelectableJiuwenModels,
+  } = await import("./jiuwenswarm-model-admin");
+  const runtimeModels = await listSelectableJiuwenModels();
+  const models: DesktopModelItem[] = [
+    {
+      id: JIUWEN_AUTO_MODEL_ID,
+      name: "自动",
+      desc: "由平台自动选择可用模型",
+      isDefault: true,
+    },
+    ...runtimeModels.map(model => ({
+      id: model.id,
+      name: model.name,
+      desc: model.description,
+      isDefault: false,
+    })),
+  ];
+  const override = readDesktopModelOverride(claw.adoptId);
+  const modelIds = new Set(models.map(model => model.id));
+  const selected = override && modelIds.has(override)
+    ? override
+    : JIUWEN_AUTO_MODEL_ID;
+  return {
+    selected,
+    defaultModel: JIUWEN_AUTO_MODEL_ID,
+    models,
+  };
+}
+
 async function listDesktopMarketSkills(adoptId: string, agentId: string): Promise<DesktopSkillItem[]> {
   const installed = new Set(listDesktopInstalledSkills(adoptId, agentId).map(item => item.id));
   const rows = await listApprovedSkillMarketItems();
@@ -795,7 +832,7 @@ async function forwardOpenClawChat(
   const sessionKey =
     String(req.headers["x-openclaw-session-key"] || "").trim() ||
     `agent:${runtimeAgentId}:main:desktop`;
-  const models = listDesktopModels(claw.adoptId);
+  const models = await listDesktopModelsForClaw(claw);
   const allowedModelIds = new Set(models.models.map(model => model.id));
   const requestedModel = String(req.headers["x-openclaw-model"] || "").trim();
   const backendModel =
@@ -840,6 +877,105 @@ async function forwardOpenClawChat(
     if (!res.writableEnded) upstream.destroy();
   });
   upstream.write(body);
+  upstream.end();
+}
+
+function desktopChatMessage(body: unknown): string {
+  const chatBody = body && typeof body === "object"
+    ? body as { messages?: unknown }
+    : {};
+  const messages = Array.isArray(chatBody.messages) ? chatBody.messages : [];
+  const userMessage = [...messages].reverse().find(message => message?.role === "user");
+  const content = userMessage?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter(part => part && typeof part === "object" && part.type === "text")
+    .map(part => String(part.text || ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function forwardJiuwenDesktopChat(
+  req: express.Request,
+  res: express.Response
+) {
+  const user = await requireDesktopUser(req, res);
+  if (!user) return;
+  const claw = await getDesktopUserClaw(user);
+  if (!claw) {
+    res.status(404).json({ error: "no agent assigned" });
+    return;
+  }
+  if (resolveDesktopRuntimeType(claw.adoptId) !== "jiuwenswarm") {
+    res.status(409).json({ error: "desktop_runtime_mismatch" });
+    return;
+  }
+
+  const message = desktopChatMessage(req.body).slice(0, 4000);
+  if (!message.trim()) {
+    res.status(400).json({ error: "message is empty" });
+    return;
+  }
+  const requestedAgentId = String(req.headers["x-openclaw-agent-id"] || "").trim();
+  if (requestedAgentId && requestedAgentId !== claw.agentId) {
+    res.status(403).json({ error: "agent_not_allowed" });
+    return;
+  }
+
+  const sessionKey = String(req.headers["x-openclaw-session-key"] || "").trim();
+  const sessionLabel = sessionKey.split(":").pop() || `desktop_${Date.now().toString(36)}`;
+  const conversationId = `desktop_${sessionLabel}`
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 96);
+  const models = await listDesktopModelsForClaw(claw);
+  const payload = JSON.stringify({
+    adoptId: claw.adoptId,
+    message,
+    model: models.selected,
+    channel: "web",
+    conversationId,
+    clientRunId: `desktop-${randomUUID()}`,
+    runtimeMode: "fast",
+  });
+  const internalKey = String(process.env.INTERNAL_API_KEY || "").trim();
+  if (!internalKey) {
+    res.status(500).json({ error: "INTERNAL_API_KEY is not configured" });
+    return;
+  }
+
+  const upstream = http.request(
+    {
+      hostname: "127.0.0.1",
+      port: parseInt(process.env.PORT || "5180", 10),
+      path: "/api/claw/chat-stream",
+      method: "POST",
+      timeout: 0,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+        "X-Internal-Key": internalKey,
+      },
+    },
+    upstreamRes => {
+      res.status(upstreamRes.statusCode || 502);
+      for (const [key, value] of Object.entries(upstreamRes.headers)) {
+        if (value !== undefined) res.setHeader(key, value as string | string[]);
+      }
+      upstreamRes.pipe(res);
+    }
+  );
+  upstream.on("error", error => {
+    if (!res.headersSent) {
+      res.status(502).json({ error: error.message || "Jiuwen desktop proxy failed" });
+    } else {
+      res.end();
+    }
+  });
+  res.on("close", () => {
+    if (!res.writableEnded) upstream.destroy();
+  });
+  upstream.write(payload);
   upstream.end();
 }
 
@@ -1388,16 +1524,23 @@ export function registerDesktopRoutes(app: express.Express) {
     const wsBase = publicWsBaseUrl(req);
     const claw = await getDesktopUserClaw(user);
     const agentId = claw?.agentId || defaultDesktopAgentId();
+    const runtimeType = resolveDesktopRuntimeType(
+      claw?.adoptId || defaultDesktopAdoptId()
+    );
     res.json({
       ...desktopProtocolMetadata(claw?.adoptId || defaultDesktopAdoptId()),
       mode: "mvp",
       user,
       gatewayUrl:
-        process.env.DESKTOP_OPENCLAW_GATEWAY_URL ||
-        `${base}/api/desktop/openclaw`,
+        runtimeType === "jiuwenswarm"
+          ? `${base}/api/desktop/jiuwen`
+          : process.env.DESKTOP_OPENCLAW_GATEWAY_URL ||
+            `${base}/api/desktop/openclaw`,
       gatewayWsUrl:
-        process.env.DESKTOP_OPENCLAW_GATEWAY_WS_URL ||
-        `${wsBase}/api/desktop/openclaw/ws`,
+        runtimeType === "jiuwenswarm"
+          ? ""
+          : process.env.DESKTOP_OPENCLAW_GATEWAY_WS_URL ||
+            `${wsBase}/api/desktop/openclaw/ws`,
       gatewayToken: bearerToken(req),
       defaultAgentId: agentId,
       agents: agentId
@@ -1416,13 +1559,17 @@ export function registerDesktopRoutes(app: express.Express) {
     res.json({ status: "ok", mode: "desktop-openclaw-proxy" });
   });
 
+  app.get("/api/desktop/jiuwen/health", (_req, res) => {
+    res.json({ status: "ok", mode: "desktop-jiuwen-proxy" });
+  });
+
   app.get("/api/desktop/models", async (req, res) => {
     const user = await requireDesktopUser(req, res);
     if (!user) return;
     try {
       const claw = await getDesktopUserClaw(user);
       if (!claw) return res.status(404).json({ error: "no agent assigned" });
-      res.json(listDesktopModels(claw.adoptId));
+      res.json(await listDesktopModelsForClaw(claw));
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : "Desktop models failed",
@@ -1437,7 +1584,7 @@ export function registerDesktopRoutes(app: express.Express) {
       const claw = await getDesktopUserClaw(user);
       if (!claw) return res.status(404).json({ error: "no agent assigned" });
       const modelId = String(req.body?.modelId || "").trim();
-      const models = listDesktopModels(claw.adoptId);
+      const models = await listDesktopModelsForClaw(claw);
       if (!modelId || !models.models.some(model => model.id === modelId)) {
         res.status(400).json({ error: "Unsupported model" });
         return;
@@ -1670,6 +1817,7 @@ export function registerDesktopRoutes(app: express.Express) {
   );
 
   app.post("/api/desktop/openclaw/v1/chat/completions", forwardOpenClawChat);
+  app.post("/api/desktop/jiuwen/v1/chat/completions", forwardJiuwenDesktopChat);
 
   // ── Soul management for enterprise desktop mode ──────────────────────────
 
