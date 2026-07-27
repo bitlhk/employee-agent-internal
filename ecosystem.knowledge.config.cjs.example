@@ -1,0 +1,32 @@
+const path = require("path");
+
+const appRoot = process.env.APP_ROOT || __dirname;
+const home = process.env.HOME || "";
+const python = process.env.KNOWLEDGE_PYTHON || path.join(home, ".venvs", "employee-agent-knowledge", "bin", "python");
+
+module.exports = {
+  apps: [
+    {
+      name: process.env.PM2_KNOWLEDGE_APP_NAME || "employee-agent-knowledge",
+      cwd: appRoot,
+      script: python,
+      args: path.join(appRoot, "server", "knowledge", "service.py"),
+      interpreter: "none",
+      env: {
+        APP_ROOT: appRoot,
+        PATH: `${path.dirname(python)}:${process.env.PATH || ""}`,
+      },
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 3000,
+      max_memory_restart: process.env.PM2_KNOWLEDGE_MAX_MEMORY_RESTART || "900M",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      error_file: path.join(appRoot, "logs", "pm2-knowledge-error.log"),
+      out_file: path.join(appRoot, "logs", "pm2-knowledge-out.log"),
+      merge_logs: true,
+      kill_timeout: 5000,
+      listen_timeout: 10000,
+      watch: false,
+    },
+  ],
+};

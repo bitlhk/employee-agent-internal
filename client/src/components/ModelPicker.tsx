@@ -1,4 +1,4 @@
-import { Cpu, Loader2, Sparkles } from "lucide-react";
+import { ChevronDown, Cpu, Loader2, Sparkles } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -49,20 +49,30 @@ export function ModelPicker({
     <Select value={value} onValueChange={onValueChange}>
       <SelectTrigger
         size="sm"
-        aria-label="选择模型"
+        showIcon={false}
+        aria-label={`选择模型，当前 ${selected.displayName || "同步模型"}`}
+        title={`当前模型：${selected.displayName || "同步模型"}`}
+        data-pending={pending ? "true" : "false"}
         className="lingxia-composer-model-select focus:ring-0 focus:ring-offset-0"
         disabled={disabled || models.length === 0}
       >
         <ProviderIcon model={selected} />
-        <span className="lingxia-composer-model-select__name">
-          {selected.displayName || "同步模型..."}
+        <span className="lingxia-composer-model-select__details">
+          <span className="lingxia-composer-model-select__name">
+            {selected.displayName || "同步模型..."}
+          </span>
+          {pending ? (
+            <Loader2
+              className="lingxia-composer-model-select__loading animate-spin"
+              aria-hidden="true"
+            />
+          ) : (
+            <ChevronDown
+              className="lingxia-composer-model-select__chevron"
+              aria-hidden="true"
+            />
+          )}
         </span>
-        {pending ? (
-          <Loader2
-            className="lingxia-composer-model-select__loading animate-spin"
-            aria-hidden="true"
-          />
-        ) : null}
       </SelectTrigger>
       <SelectContent
         className="lingxia-model-menu"

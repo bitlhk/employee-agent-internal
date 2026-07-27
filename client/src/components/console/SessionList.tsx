@@ -1,4 +1,4 @@
-import { Check, ChevronRight, MessageCircle, MoreVertical, Pencil, Pin, PinOff, Plus, Trash2 } from "lucide-react";
+import { Check, ChevronRight, MessageCircle, MoreVertical, Pencil, Pin, PinOff, SquarePen, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export type SessionListConversation = {
@@ -225,7 +225,7 @@ export function SessionList({
             disabled={!!sessionSwitchingId}
             className="session-list-new-button"
           >
-            <Plus aria-hidden="true" />
+            <SquarePen aria-hidden="true" />
           </button>
         ) : null}
       </div>

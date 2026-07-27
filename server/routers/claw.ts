@@ -97,9 +97,12 @@ import {
   applyNegativeMemoryFeedback,
   applyPositiveMemoryFeedback,
   changeAgentMemoryMode,
+  confirmAgentMemory,
   forgetAgentMemory,
   listAgentMemoryView,
+  refreshAgentMemorySynthesis,
   rememberExplicitPreference,
+  rejectAgentMemory,
   updateAgentMemory,
 } from "../_core/agent-memory";
 import {
@@ -678,6 +681,31 @@ export const clawRouter = router({
         });
       }),
 
+    refreshMemorySynthesis: protectedProcedure
+      .input(z.object({ adoptId: z.string().min(1).max(64) }))
+      .mutation(async ({ input, ctx }) => {
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const result = await refreshAgentMemorySynthesis({
+          userId: Number(ctx.user!.id),
+          adoptId: input.adoptId,
+          roleTemplate: String(claw.roleTemplate || "general-assistant"),
+          force: true,
+        });
+        await recordAuditBestEffort({
+          action: "memory.synthesis.refresh",
+          result: "success",
+          severity: "info",
+          actorType: "user",
+          ...auditActor(ctx.user),
+          targetType: "claw_adoption",
+          targetId: input.adoptId,
+          agentInstanceId: input.adoptId,
+          source: "claw_router",
+          metadata: { count: result.count, model: result.model },
+        });
+        return result;
+      }),
+
     setMemoryMode: protectedProcedure
       .input(z.object({
         adoptId: z.string().min(1).max(64),
@@ -734,6 +762,28 @@ export const clawRouter = router({
           metadata: { kind: memory.kind, scope: memory.scope },
         });
         return memory;
+      }),
+
+    confirmMemory: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        id: z.number().int().positive(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        await confirmAgentMemory({ userId: Number(ctx.user!.id), adoptId: input.adoptId, id: input.id });
+        return { ok: true };
+      }),
+
+    rejectMemory: protectedProcedure
+      .input(z.object({
+        adoptId: z.string().min(1).max(64),
+        id: z.number().int().positive(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        await rejectAgentMemory({ userId: Number(ctx.user!.id), adoptId: input.adoptId, id: input.id });
+        return { ok: true };
       }),
 
     updateMemory: protectedProcedure

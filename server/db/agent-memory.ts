@@ -5,6 +5,7 @@ export type AgentMemoryMode = "learn_and_use" | "use_only" | "off";
 export type AgentMemoryKind = "preference" | "instruction" | "entity" | "procedure";
 export type AgentMemoryStatus = "candidate" | "active" | "superseded" | "forgotten" | "rejected" | "expired";
 export type AgentMemorySource = "explicit" | "automatic" | "feedback" | "legacy";
+export type AgentMemorySynthesisSlot = "profile" | "recent" | "playbook";
 
 export type AgentMemoryRecord = {
   id: number;
@@ -41,6 +42,44 @@ export type AgentMemoryJobRecord = {
   attempts: number;
 };
 
+export type AgentMemoryEvidenceRecord = {
+  id: number;
+  memoryId: number;
+  sourceType: "explicit" | "conversation" | "feedback" | "legacy";
+  channel: string;
+  sessionId: string | null;
+  conversationId: string | null;
+  messageId: string | null;
+  snippet: string | null;
+  metadata: Record<string, unknown> | null;
+  observedAt: string;
+};
+
+export type AgentMemorySynthesisRecord = {
+  id: number;
+  userId: number;
+  adoptId: string;
+  slot: AgentMemorySynthesisSlot;
+  canonicalKey: string;
+  content: string;
+  memoryIds: number[];
+  sourceSignature: string;
+  confidence: number;
+  model: string;
+  generatedAt: string;
+  updatedAt: string;
+};
+
+export type AgentMemorySynthesisStateRecord = {
+  desiredSignature: string;
+  completedSignature: string;
+  status: "pending" | "running" | "ready" | "failed";
+  model: string;
+  errorMessage: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+};
+
 function rowsFromResult(result: unknown): any[] {
   return Array.isArray(result) ? (Array.isArray(result[0]) ? result[0] : result) : [];
 }
@@ -71,6 +110,32 @@ function mapMemory(row: any): AgentMemoryRecord {
     lastUsedAt: isoDate(row.last_used_at),
     expiresAt: isoDate(row.expires_at),
     createdAt: isoDate(row.created_at) || new Date(0).toISOString(),
+    updatedAt: isoDate(row.updated_at) || new Date(0).toISOString(),
+  };
+}
+
+function numberArray(value: unknown): number[] {
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try { parsed = JSON.parse(parsed); } catch { return []; }
+  }
+  if (!Array.isArray(parsed)) return [];
+  return Array.from(new Set(parsed.map(Number).filter((id) => Number.isInteger(id) && id > 0)));
+}
+
+function mapSynthesis(row: any): AgentMemorySynthesisRecord {
+  return {
+    id: Number(row.id),
+    userId: Number(row.user_id),
+    adoptId: String(row.adopt_id || ""),
+    slot: String(row.slot || "profile") as AgentMemorySynthesisSlot,
+    canonicalKey: String(row.canonical_key || ""),
+    content: String(row.content || ""),
+    memoryIds: numberArray(row.memory_ids_json),
+    sourceSignature: String(row.source_signature || ""),
+    confidence: Number(row.confidence || 0),
+    model: String(row.model || ""),
+    generatedAt: isoDate(row.generated_at) || new Date(0).toISOString(),
     updatedAt: isoDate(row.updated_at) || new Date(0).toISOString(),
   };
 }
@@ -274,6 +339,242 @@ export async function setAgentMemoryStatus(id: number, userId: number, adoptId: 
     SET status = ${status}, version = version + 1
     WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
   `);
+}
+
+export async function listAgentMemoryEvidence(input: {
+  userId: number;
+  adoptId: string;
+  memoryIds?: number[];
+  limit?: number;
+}): Promise<AgentMemoryEvidenceRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const limit = Math.max(1, Math.min(Number(input.limit || 500), 1000));
+  const memoryIds = (input.memoryIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  const memoryFilter = memoryIds.length
+    ? sql`AND evidence.memory_id IN (${sql.join(memoryIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``;
+  const result: any = await db.execute(sql`
+    SELECT evidence.id, evidence.memory_id, evidence.source_type, evidence.channel,
+           evidence.session_id, evidence.conversation_id, evidence.message_id,
+           evidence.snippet, evidence.metadata_json, evidence.observed_at
+    FROM agent_memory_evidence evidence
+    JOIN agent_memory_items item ON item.id = evidence.memory_id
+    WHERE evidence.user_id = ${input.userId}
+      AND evidence.adopt_id = ${input.adoptId}
+      AND item.status IN ('active', 'candidate')
+      ${memoryFilter}
+    ORDER BY evidence.observed_at DESC, evidence.id DESC
+    LIMIT ${limit}
+  `);
+  return rowsFromResult(result).map((row) => ({
+    id: Number(row.id),
+    memoryId: Number(row.memory_id),
+    sourceType: String(row.source_type || "conversation") as AgentMemoryEvidenceRecord["sourceType"],
+    channel: String(row.channel || "web"),
+    sessionId: row.session_id ? String(row.session_id) : null,
+    conversationId: row.conversation_id ? String(row.conversation_id) : null,
+    messageId: row.message_id ? String(row.message_id) : null,
+    snippet: row.snippet ? String(row.snippet) : null,
+    metadata: row.metadata_json && typeof row.metadata_json === "object" ? row.metadata_json : null,
+    observedAt: isoDate(row.observed_at) || new Date(0).toISOString(),
+  }));
+}
+
+export async function listAgentMemorySyntheses(input: {
+  userId: number;
+  adoptId: string;
+  sourceSignature?: string;
+}): Promise<AgentMemorySynthesisRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const signatureFilter = input.sourceSignature
+    ? sql`AND source_signature = ${input.sourceSignature}`
+    : sql``;
+  const result: any = await db.execute(sql`
+    SELECT id, user_id, adopt_id, slot, canonical_key, content, memory_ids_json,
+           source_signature, confidence, model, generated_at, updated_at
+    FROM agent_memory_syntheses
+    WHERE user_id = ${input.userId}
+      AND adopt_id = ${input.adoptId}
+      ${signatureFilter}
+    ORDER BY FIELD(slot, 'profile', 'recent', 'playbook'), canonical_key, id
+  `);
+  return rowsFromResult(result).map(mapSynthesis);
+}
+
+export async function getAgentMemorySynthesisState(
+  userId: number,
+  adoptId: string,
+): Promise<AgentMemorySynthesisStateRecord | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result: any = await db.execute(sql`
+    SELECT desired_signature, completed_signature, status, model, error_message,
+           started_at, completed_at
+    FROM agent_memory_synthesis_state
+    WHERE user_id = ${userId} AND adopt_id = ${adoptId}
+    LIMIT 1
+  `);
+  const row = rowsFromResult(result)[0];
+  return row ? {
+    desiredSignature: String(row.desired_signature || ""),
+    completedSignature: String(row.completed_signature || ""),
+    status: String(row.status || "pending") as AgentMemorySynthesisStateRecord["status"],
+    model: String(row.model || ""),
+    errorMessage: row.error_message ? String(row.error_message) : null,
+    startedAt: isoDate(row.started_at),
+    completedAt: isoDate(row.completed_at),
+  } : null;
+}
+
+export async function markAgentMemorySynthesisPending(input: {
+  userId: number;
+  adoptId: string;
+  desiredSignature: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(sql`
+    INSERT INTO agent_memory_synthesis_state (
+      user_id, adopt_id, desired_signature, completed_signature, status
+    ) VALUES (
+      ${input.userId}, ${input.adoptId}, ${input.desiredSignature}, '', 'pending'
+    )
+    ON DUPLICATE KEY UPDATE
+      desired_signature = VALUES(desired_signature),
+      status = IF(completed_signature = VALUES(desired_signature), 'ready', 'pending'),
+      error_message = NULL,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+}
+
+export async function markAgentMemorySynthesisRunning(input: {
+  userId: number;
+  adoptId: string;
+  desiredSignature: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(sql`
+    INSERT INTO agent_memory_synthesis_state (
+      user_id, adopt_id, desired_signature, completed_signature, status, started_at
+    ) VALUES (
+      ${input.userId}, ${input.adoptId}, ${input.desiredSignature}, '', 'running', CURRENT_TIMESTAMP
+    )
+    ON DUPLICATE KEY UPDATE
+      desired_signature = VALUES(desired_signature),
+      status = 'running',
+      started_at = CURRENT_TIMESTAMP,
+      completed_at = NULL,
+      error_message = NULL,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+}
+
+export async function replaceAgentMemorySyntheses(input: {
+  userId: number;
+  adoptId: string;
+  sourceSignature: string;
+  model: string;
+  rows: Array<{
+    slot: AgentMemorySynthesisSlot;
+    canonicalKey: string;
+    content: string;
+    memoryIds: number[];
+    confidence: number;
+  }>;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      DELETE FROM agent_memory_syntheses
+      WHERE user_id = ${input.userId} AND adopt_id = ${input.adoptId}
+    `);
+    for (const row of input.rows) {
+      await tx.execute(sql`
+        INSERT INTO agent_memory_syntheses (
+          user_id, adopt_id, slot, canonical_key, content, memory_ids_json,
+          source_signature, confidence, model, generated_at
+        ) VALUES (
+          ${input.userId}, ${input.adoptId}, ${row.slot}, ${row.canonicalKey}, ${row.content},
+          ${JSON.stringify(row.memoryIds)}, ${input.sourceSignature}, ${row.confidence},
+          ${input.model.slice(0, 160)}, CURRENT_TIMESTAMP
+        )
+      `);
+    }
+    await tx.execute(sql`
+      INSERT INTO agent_memory_synthesis_state (
+        user_id, adopt_id, desired_signature, completed_signature, status,
+        model, error_message, completed_at
+      ) VALUES (
+        ${input.userId}, ${input.adoptId}, ${input.sourceSignature}, ${input.sourceSignature},
+        'ready', ${input.model.slice(0, 160)}, NULL, CURRENT_TIMESTAMP
+      )
+      ON DUPLICATE KEY UPDATE
+        desired_signature = VALUES(desired_signature),
+        completed_signature = VALUES(completed_signature),
+        status = 'ready',
+        model = VALUES(model),
+        error_message = NULL,
+        completed_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    `);
+  });
+}
+
+export async function failAgentMemorySynthesis(input: {
+  userId: number;
+  adoptId: string;
+  desiredSignature: string;
+  errorMessage: string;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.execute(sql`
+    INSERT INTO agent_memory_synthesis_state (
+      user_id, adopt_id, desired_signature, completed_signature, status,
+      error_message, completed_at
+    ) VALUES (
+      ${input.userId}, ${input.adoptId}, ${input.desiredSignature}, '', 'failed',
+      ${input.errorMessage.slice(0, 1000)}, CURRENT_TIMESTAMP
+    )
+    ON DUPLICATE KEY UPDATE
+      desired_signature = VALUES(desired_signature),
+      status = 'failed',
+      error_message = VALUES(error_message),
+      completed_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+  `);
+}
+
+export async function confirmAgentMemoryRecord(id: number, userId: number, adoptId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.execute(sql`
+    UPDATE agent_memory_items
+    SET status = 'active', source = 'explicit', confidence = 100,
+        version = version + 1, last_observed_at = CURRENT_TIMESTAMP
+    WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId} AND status = 'candidate'
+  `);
+}
+
+export async function rejectAgentMemoryRecord(id: number, userId: number, adoptId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      UPDATE agent_memory_items
+      SET status = 'rejected', version = version + 1, last_observed_at = CURRENT_TIMESTAMP
+      WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId} AND status = 'candidate'
+    `);
+    await tx.execute(sql`
+      UPDATE agent_memory_evidence
+      SET snippet = NULL
+      WHERE memory_id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
+    `);
+  });
 }
 
 export async function forgetAgentMemoryRecord(id: number, userId: number, adoptId: string): Promise<void> {

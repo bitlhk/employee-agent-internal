@@ -2,12 +2,17 @@ import { memo, useEffect, useMemo, useState, useRef } from "react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
-import type { AgentArtifactView } from "@/components/AgentArtifactPanel";
+import {
+  AgentArtifactThumbnail,
+  agentArtifactPreviewKind,
+  type AgentArtifactView,
+} from "@/components/AgentArtifactPanel";
 import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
+import { EA_ARTIFACT_SCHEMA } from "@shared/agent-artifact";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
   MESSAGE_FEEDBACK_REASON_LABELS,
@@ -19,6 +24,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { toast } from "sonner";
 import {
   Bot,
+  BookOpen,
   Brain,
   Check,
   ChevronDown,
@@ -68,6 +74,15 @@ export type ChatMessageAttachment = {
   size: number;
   path: string;
   adoptId: string;
+};
+
+export type ChatKnowledgeSource = {
+  index: number;
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  documentId: string;
+  documentName: string;
+  position: string;
 };
 
 export type MessageEventEntry =
@@ -132,6 +147,7 @@ function ToolTypeIcon({ name, className = "" }: { name: string; className?: stri
 }
 
 type ChatMessageProps = {
+  messageId?: string;
   role: "user" | "assistant";
   text: string;
   status?: string;
@@ -142,6 +158,7 @@ type ChatMessageProps = {
   modelId: string;
   timeLabel: string;
   attachments?: ChatMessageAttachment[];
+  knowledgeSources?: ChatKnowledgeSource[];
   toolCalls?: ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   agentTasks?: AgentTask[];
@@ -437,10 +454,12 @@ function MessageAttachments({
   toolCalls = [],
   attachments = [],
   variant = "assistant",
+  onOpenArtifacts,
 }: {
   toolCalls?: ToolCallEntry[];
   attachments?: ChatMessageAttachment[];
   variant?: "user" | "assistant";
+  onOpenArtifacts?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
 }) {
   const files = useMemo(
     () => collectMessageAttachments(toolCalls, attachments),
@@ -456,6 +475,19 @@ function MessageAttachments({
     content?: string;
     error?: string;
   } | null>(null);
+  const artifacts = useMemo<AgentArtifactView[]>(() => files.map((file, index) => ({
+    schema: EA_ARTIFACT_SCHEMA,
+    id: `message-artifact-${index + 1}`,
+    name: file.name,
+    mimeType: "application/octet-stream",
+    size: file.size,
+    role: index === 0 ? "primary" : "supporting",
+    path: file.path,
+    adoptId: file.adoptId,
+  })), [files]);
+  const imagePreview = variant === "assistant"
+    ? artifacts.find((artifact) => agentArtifactPreviewKind(artifact) === "image")
+    : undefined;
 
   if (!files.length) return null;
 
@@ -514,10 +546,25 @@ function MessageAttachments({
     }
   };
 
+  const openFile = (file: ChatMessageAttachment) => {
+    const artifact = artifacts.find((item) => item.path === file.path && item.adoptId === file.adoptId);
+    if (artifact && onOpenArtifacts) {
+      onOpenArtifacts(artifacts, artifact.id);
+      return;
+    }
+    void previewFile(file);
+  };
+
   return (
     <>
       <div className={`lingxia-message-attachments is-${variant}`} aria-label={variant === "user" ? "上传的附件" : "生成的附件"}>
         <div className="lingxia-message-attachments__label">{variant === "assistant" ? "本轮产物" : "附件"} · {files.length}</div>
+        {imagePreview && onOpenArtifacts ? (
+          <AgentArtifactThumbnail
+            artifact={imagePreview}
+            onOpen={() => onOpenArtifacts(artifacts, imagePreview.id)}
+          />
+        ) : null}
         <div className="lingxia-message-attachments__list">
           {files.map((file) => {
             const key = `${file.adoptId}:${file.path}`;
@@ -528,9 +575,9 @@ function MessageAttachments({
                 <button
                   type="button"
                   className="lingxia-message-attachment__main"
-                  onClick={() => kind !== "none" && void previewFile(file)}
-                  disabled={kind === "none"}
-                  title={kind === "none" ? "该格式请下载后查看" : `预览 ${file.name}`}
+                  onClick={() => (kind !== "none" || onOpenArtifacts) && openFile(file)}
+                  disabled={kind === "none" && !onOpenArtifacts}
+                  title={kind === "none" ? "打开文件信息" : `预览 ${file.name}`}
                 >
                   <span className="lingxia-message-attachment__icon"><FileTypeIcon name={file.name} /></span>
                   <span className="lingxia-message-attachment__info">
@@ -540,7 +587,7 @@ function MessageAttachments({
                 </button>
                 <div className="lingxia-message-attachment__actions">
                   {kind !== "none" ? (
-                    <button type="button" className="lingxia-message-attachment__action" onClick={() => void previewFile(file)} title="预览">
+                    <button type="button" className="lingxia-message-attachment__action" onClick={() => openFile(file)} title="预览">
                       <Eye size={15} strokeWidth={1.9} />
                     </button>
                   ) : null}
@@ -693,30 +740,31 @@ function toolTimelineActivityLabel(status: string | undefined, calls: ToolCallEn
   return clean;
 }
 
-function toolCallSummaryLabel(calls: ToolCallEntry[], activityLabel = ""): string {
-  if (calls.length === 1) {
-    const call = calls[0];
-    const duration = toolCallDurationLabel(call);
-    return [
-      toolCallLabel(call),
-      activityLabel,
-      toolCallStatusLabel(call.status),
-      duration,
-      call.outputFiles?.length ? `${call.outputFiles.length} 个文件` : "",
-    ].filter(Boolean).join(" · ");
-  }
+function toolTimelineDurationLabel(calls: ToolCallEntry[], now: number): string {
+  const startedAt = Math.min(...calls.map((call) => Number(call.ts || now)).filter(Number.isFinite));
+  if (!Number.isFinite(startedAt)) return "";
+  const running = calls.some((call) => call.status === "running");
+  const endedAt = running
+    ? now
+    : Math.max(...calls.map((call) => Number(call.ts || startedAt) + Math.max(0, Number(call.durationMs || 0))));
+  const seconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
+  if (seconds < 1) return "";
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
 
+function toolCallSummaryLabel(calls: ToolCallEntry[], activityLabel: string, now: number): string {
   const running = calls.filter((tc) => tc.status === "running").length;
   const errors = calls.filter((tc) => tc.status === "error").length;
-  const done = calls.filter((tc) => tc.status === "done").length;
-  const files = calls.reduce((total, tc) => total + (tc.outputFiles?.length || 0), 0);
+  const currentCall = [...calls].reverse().find((call) => call.status === "running");
+  const stage = activityLabel
+    || (currentCall ? `正在${toolCallLabel(currentCall).replace(/^正在/, "")}` : "")
+    || (errors ? "处理遇到问题" : `处理完成 · ${calls.length} 个步骤`);
+  const duration = toolTimelineDurationLabel(calls, now);
   return [
-    `调用 ${calls.length} 个工具`,
-    activityLabel,
-    running ? `${running} 执行中` : "",
-    done ? `${done} 完成` : "",
-    errors ? `${errors} 失败` : "",
-    files ? `${files} 个文件` : "",
+    stage,
+    running > 1 ? `${running} 个步骤执行中` : "",
+    errors ? `${errors} 个步骤失败` : "",
+    duration,
   ].filter(Boolean).join(" · ");
 }
 
@@ -793,15 +841,43 @@ function ToolTimelineStep({ tc, index, total }: { tc: ToolCallEntry; index: numb
   );
 }
 
-function ToolCallTimeline({ toolCalls, status }: { toolCalls: ToolCallEntry[]; status?: string }) {
+function ToolCallTimeline({
+  toolCalls,
+  status,
+  contentStarted = false,
+}: {
+  toolCalls: ToolCallEntry[];
+  status?: string;
+  contentStarted?: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const autoExpandedRef = useRef(false);
   const reduceMotion = Boolean(useReducedMotion());
   const visibleCalls = toolCalls.filter((tc) => tc?.id && tc?.name);
-  if (visibleCalls.length === 0) return null;
   const hasError = visibleCalls.some((tc) => tc.status === "error");
   const hasRunning = visibleCalls.some((tc) => tc.status === "running");
   const activityLabel = toolTimelineActivityLabel(status, visibleCalls);
   const isActive = hasRunning || Boolean(activityLabel);
+  const shouldAutoExpand = isActive && !contentStarted;
+  useEffect(() => {
+    if (!isActive) return undefined;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [isActive]);
+  useEffect(() => {
+    if (shouldAutoExpand) {
+      autoExpandedRef.current = true;
+      setExpanded(true);
+      return;
+    }
+    if (autoExpandedRef.current) {
+      autoExpandedRef.current = false;
+      setExpanded(false);
+    }
+  }, [shouldAutoExpand]);
+  if (visibleCalls.length === 0) return null;
   const transition = reduceMotion
     ? { duration: 0 }
     : { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
@@ -824,9 +900,8 @@ function ToolCallTimeline({ toolCalls, status }: { toolCalls: ToolCallEntry[]; s
           )}
         </span>
         <span className="lingxia-tool-summary__text" aria-live="polite">
-          {toolCallSummaryLabel(visibleCalls, activityLabel)}
+          {toolCallSummaryLabel(visibleCalls, activityLabel, now)}
         </span>
-        <span className="lingxia-tool-summary__action">{expanded ? "收起" : "详情"}</span>
         <ChevronDown className="lingxia-tool-summary__chevron" size={12} strokeWidth={2} aria-hidden="true" />
       </button>
       <AnimatePresence initial={false}>
@@ -944,6 +1019,7 @@ function agentTasksRenderSignature(tasks?: AgentTask[]): string {
 }
 
 function ChatMessageInner({
+  messageId,
   role,
   text,
   status,
@@ -952,6 +1028,7 @@ function ChatMessageInner({
   streaming,
   timeLabel,
   attachments,
+  knowledgeSources,
   toolCalls,
   messageEvents,
   agentTasks,
@@ -1007,6 +1084,20 @@ function ChatMessageInner({
     () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
     [displayedSourceText],
   );
+  const knowledgeSourceGroups = useMemo(() => {
+    const groups = new Map<string, { source: ChatKnowledgeSource; indexes: number[]; knowledgeBaseNames: string[] }>();
+    for (const source of knowledgeSources || []) {
+      const key = `${source.documentName.trim().toLocaleLowerCase("zh-CN")}\u0000${source.position.trim().toLocaleLowerCase("zh-CN")}`;
+      const existing = groups.get(key);
+      if (existing) {
+        if (!existing.indexes.includes(source.index)) existing.indexes.push(source.index);
+        if (!existing.knowledgeBaseNames.includes(source.knowledgeBaseName)) existing.knowledgeBaseNames.push(source.knowledgeBaseName);
+        continue;
+      }
+      groups.set(key, { source, indexes: [source.index], knowledgeBaseNames: [source.knowledgeBaseName] });
+    }
+    return Array.from(groups.values());
+  }, [knowledgeSources]);
   const onCopyMarkdown = async () => {
     try {
       await navigator.clipboard.writeText(displayText);
@@ -1054,7 +1145,7 @@ function ChatMessageInner({
           className="lingxia-user-bubble"
           aria-label={timeLabel ? `你的消息，发送于 ${timeLabel}` : "你的消息"}
         >
-          <MessageAttachments attachments={attachments} variant="user" />
+          <MessageAttachments attachments={attachments} variant="user" onOpenArtifacts={onOpenAgentArtifact} />
           {text ? (
             <div className="rounded-2xl rounded-tr-sm px-4 py-3 text-sm whitespace-pre-wrap lingxia-user-msg-text lingxia-bubble-user">
               {text}
@@ -1095,7 +1186,11 @@ function ChatMessageInner({
       <div className="min-w-0 w-full">
         {showToolTimeline && (
           <div className="mb-2">
-            <ToolCallTimeline toolCalls={timelineToolCalls} status={streaming ? status : undefined} />
+            <ToolCallTimeline
+              toolCalls={timelineToolCalls}
+              status={streaming ? status : undefined}
+              contentStarted={Boolean(displayText.trim())}
+            />
           </div>
         )}
         {streaming && status && !showToolTimeline ? (
@@ -1107,11 +1202,45 @@ function ChatMessageInner({
           <div
             className={`relative py-1.5 text-sm leading-relaxed lingxia-bubble-ai ${(isLast && streaming && text) ? "lingxia-token-active" : ""}`}
           >
-            <ChatMarkdown content={displayText} phase={isLast && streaming ? "streaming" : "final"} />
+            <ChatMarkdown
+              content={displayText}
+              phase={isLast && streaming ? "streaming" : "final"}
+              knowledgeSourceIndexes={(knowledgeSources || []).map((source) => source.index)}
+              knowledgeCitationScope={messageId}
+            />
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}
           </div>
         </div>
-        <MessageAttachments toolCalls={effectiveToolCalls} attachments={attachments} />
+        <MessageAttachments
+          toolCalls={effectiveToolCalls}
+          attachments={attachments}
+          onOpenArtifacts={onOpenAgentArtifact}
+        />
+        {!streaming && knowledgeSources?.length ? (
+          <div className="lingxia-knowledge-sources" aria-label="知识来源">
+            <span className="lingxia-knowledge-sources__label"><BookOpen />参考资料</span>
+            {knowledgeSourceGroups.map(({ source, indexes, knowledgeBaseNames }) => (
+              <span
+                id={`ea-knowledge-source-${String(messageId || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message"}-${source.index}`}
+                key={`${source.knowledgeBaseId}:${source.documentId}:${source.index}`}
+                className="lingxia-knowledge-source"
+                title={`${knowledgeBaseNames.join("、")} · ${source.documentName} · ${source.position}`}
+              >
+                {indexes.slice(1).map((index) => (
+                  <i
+                    key={index}
+                    id={`ea-knowledge-source-${String(messageId || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message"}-${index}`}
+                    className="lingxia-knowledge-source__anchor"
+                    aria-hidden="true"
+                  />
+                ))}
+                <b>{indexes.length > 1 ? `${source.index}+` : source.index}</b>
+                <span>{source.documentName}</span>
+                <small>{source.position}{indexes.length > 1 ? ` · ${indexes.length} 处` : ""}</small>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {!streaming && memoryReceipt && !memoryReceiptDismissed ? (
           <div className="lingxia-memory-receipt" data-action={memoryReceipt.action}>
             <Brain aria-hidden="true" />
@@ -1407,6 +1536,7 @@ function ChatMessageInner({
 
 export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
   return (
+    prev.messageId === next.messageId &&
     prev.role === next.role &&
     prev.text === next.text &&
     prev.status === next.status &&

@@ -3,8 +3,10 @@ import {
   __agentMemoryTestables,
   isLowSignalMemoryTurn,
   memoryContentRisk,
+  memorySynthesisSignature,
   normalizeMemoryKey,
   parseMemoryCandidates,
+  parseMemorySyntheses,
   renderManagedMemoryMarkdown,
   replaceManagedBlock,
 } from "./agent-memory";
@@ -41,6 +43,48 @@ describe("agent managed memory", () => {
     expect(normalizeMemoryKey("输出 风险 优先", "用户偏好先提示风险")).toMatch(/^memory\.[a-f0-9]{24}$/);
   });
 
+  it("keeps only traceable and safe L3 syntheses", () => {
+    const rows = parseMemorySyntheses(JSON.stringify({
+      syntheses: [
+        { key: "profile.risk_first", slot: "profile", content: "处理客户方案时重视先说明风险，再展开建议", memory_ids: [1, 2, 999], confidence: 91 },
+        { key: "profile.untraceable", slot: "profile", content: "偏好结论优先", memory_ids: [999], confidence: 95 },
+        { key: "profile.secret", slot: "profile", content: "api_key=secret-value-123456", memory_ids: [1], confidence: 99 },
+      ],
+    }), new Set([1, 2]));
+    expect(rows).toEqual([{
+      key: "profile.risk_first",
+      slot: "profile",
+      content: "处理客户方案时重视先说明风险，再展开建议",
+      memoryIds: [1, 2],
+      confidence: 91,
+    }]);
+  });
+
+  it("changes the synthesis signature when an active fact changes", () => {
+    const base = {
+      id: 1,
+      userId: 1,
+      adoptId: "lgj-test",
+      roleTemplate: "wealth-manager",
+      scope: "role" as const,
+      kind: "preference" as const,
+      status: "active" as const,
+      canonicalKey: "output.risk_first",
+      content: "先提示风险",
+      source: "automatic" as const,
+      confidence: 90,
+      evidenceCount: 2,
+      version: 1,
+      lastObservedAt: new Date().toISOString(),
+      lastUsedAt: null,
+      expiresAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    expect(memorySynthesisSignature([base])).not.toBe(memorySynthesisSignature([{ ...base, content: "先给结论" }]));
+    expect(memorySynthesisSignature([base])).toBe(memorySynthesisSignature([base]));
+  });
+
   it("replaces only the managed block and preserves user-authored content", () => {
     const existing = "# 用户偏好\n\n用户手写内容\n";
     const next = replaceManagedBlock(
@@ -62,7 +106,7 @@ describe("agent managed memory", () => {
   });
 
   it("keeps the projected block bounded", () => {
-    const markdown = renderManagedMemoryMarkdown(Array.from({ length: 100 }, (_, index) => ({
+    const memories = Array.from({ length: 100 }, (_, index) => ({
       id: index + 1,
       userId: 1,
       adoptId: "lgj-test",
@@ -81,8 +125,24 @@ describe("agent managed memory", () => {
       expiresAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    }));
+    const markdown = renderManagedMemoryMarkdown(memories, Array.from({ length: 8 }, (_, index) => ({
+      id: index + 1,
+      userId: 1,
+      adoptId: "lgj-test",
+      slot: "profile" as const,
+      canonicalKey: `profile.${index}`,
+      content: `综合认知 ${"内容".repeat(300)}`,
+      memoryIds: [index + 1],
+      sourceSignature: "a".repeat(64),
+      confidence: 90,
+      model: "test-model",
+      generatedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     })));
     expect(markdown.length).toBeLessThanOrEqual(4800);
+    expect(markdown).toContain("综合认知");
+    expect(markdown).toContain("记忆事实");
   });
 
   it("skips greetings but keeps substantive preference turns", () => {

@@ -103,6 +103,34 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain("完成");
   });
 
+  it("groups duplicate displayed knowledge sources while retaining citation anchors", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        messageId: "msg-weather",
+        role: "assistant",
+        text: "天气结果不应依赖这些资料。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:01",
+        knowledgeSources: [1, 2, 3, 4].map((index) => ({
+          index,
+          knowledgeBaseId: `kb-${index}`,
+          knowledgeBaseName: "企业知识",
+          documentId: `doc-${index}`,
+          documentName: "SOURCES.md",
+          position: "正文",
+        })),
+      }),
+    );
+
+    expect((html.match(/SOURCES\.md/g) || [])).toHaveLength(2);
+    expect(html).toContain("正文 · 4 处");
+    expect(html).toContain('id="ea-knowledge-source-msg-weather-4"');
+  });
+
   it("shows execution evidence only when the runtime provides it", () => {
     const withEvidence = renderToStaticMarkup(
       React.createElement(ToolExecutionReceipt, { toolCalls: [{

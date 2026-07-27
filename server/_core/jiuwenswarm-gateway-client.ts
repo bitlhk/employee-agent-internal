@@ -302,6 +302,7 @@ export async function forwardToJiuwenGateway(
 
 
   if (opts.model) writeSseData(res, { __model_selected: opts.model });
+  if (opts.knowledgeSources?.length) writeSseData(res, { __knowledge_sources: opts.knowledgeSources });
 
   const wsUrl = gatewayWsUrl();
   const serviceId = buildJiuwenServiceId();

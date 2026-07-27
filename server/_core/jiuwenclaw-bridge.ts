@@ -50,6 +50,7 @@ export type JiuwenForwardOptions = {
   runtimeMode?: unknown;
   cancelPendingPermission?: unknown;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
+  knowledgeSources?: Array<Record<string, unknown>>;
   memoryUserMessage?: string;
 };
 
@@ -957,6 +958,7 @@ export async function forwardToJiuwenClaw(
   }
 
   if (opts.model) writeData({ __model_selected: opts.model });
+  if (opts.knowledgeSources?.length) writeData({ __knowledge_sources: opts.knowledgeSources });
 
   const wsUrl = String(process.env.JIUWENCLAW_AGENTSERVER_WS_URL || DEFAULT_AGENTSERVER_WS_URL);
   const serviceId = buildJiuwenServiceId();

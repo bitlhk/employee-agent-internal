@@ -17,3 +17,4 @@ export * from "./message-feedback";
 export * from "./agent-memory";
 export * from "./agent-mcp-preferences";
 export * from "./custom-mcp-connections";
+export * from "./knowledge";

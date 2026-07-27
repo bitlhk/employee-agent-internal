@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 type RootProps = React.ComponentProps<typeof RadixSelect.Root>;
 type TriggerProps = React.ComponentProps<typeof RadixSelect.Trigger> & {
   size?: "sm" | "default";
+  showIcon?: boolean;
 };
 type ContentProps = React.ComponentProps<typeof RadixSelect.Content>;
 
@@ -32,6 +33,7 @@ function SelectTrigger({
   className,
   children,
   size = "default",
+  showIcon = true,
   ...props
 }: TriggerProps) {
   return (
@@ -41,9 +43,11 @@ function SelectTrigger({
       className={cn(triggerStyle, className)}
     >
       {children}
-      <RadixSelect.Icon className="ml-auto text-muted-foreground">
-        <ChevronDown aria-hidden="true" className="size-4" />
-      </RadixSelect.Icon>
+      {showIcon ? (
+        <RadixSelect.Icon className="ml-auto text-muted-foreground">
+          <ChevronDown aria-hidden="true" className="size-4" />
+        </RadixSelect.Icon>
+      ) : null}
     </RadixSelect.Trigger>
   );
 }
@@ -162,7 +166,7 @@ function SelectItem({
       )}
     >
       <RadixSelect.ItemText>{children}</RadixSelect.ItemText>
-      <RadixSelect.ItemIndicator className="absolute right-2 inline-flex size-4 items-center justify-center">
+      <RadixSelect.ItemIndicator className="select-item-indicator absolute right-2 inline-flex size-4 items-center justify-center">
         <Check aria-hidden="true" className="size-4" />
       </RadixSelect.ItemIndicator>
     </RadixSelect.Item>

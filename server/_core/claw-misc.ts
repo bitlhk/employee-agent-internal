@@ -3,6 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
 import { stripExpertHandoffRuntimeMessage } from "@shared/expert-handoff-context";
+import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, rmSync, statSync } from "fs";
 import { execSync } from "child_process";
 import path from "path";
@@ -137,17 +138,8 @@ function stripEaJiuwenConversationContext(text: string): string {
     .trim();
 }
 
-function stripEaSelectedSkillContext(text: string): string {
-  const value = String(text || "").trim();
-  if (!value.startsWith("【本轮已由用户在输入框选择技能 Chip】")) return value;
-  const marker = "\n用户问题：";
-  const idx = value.lastIndexOf(marker);
-  if (idx < 0) return value;
-  return value.slice(idx + marker.length).trim();
-}
-
 function stripEaJiuwenUserInternalContext(text: string): string {
-  return stripEaSelectedSkillContext(stripEaJiuwenConversationContext(text));
+  return stripEaInternalRuntimeContext(stripEaJiuwenConversationContext(text));
 }
 
 function textFromOpenClawContent(content: unknown, role: string): string {

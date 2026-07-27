@@ -1085,6 +1085,103 @@ export const agentMemoryEvidence = mysqlTable("agent_memory_evidence", {
 export type AgentMemoryEvidence = typeof agentMemoryEvidence.$inferSelect;
 export type InsertAgentMemoryEvidence = typeof agentMemoryEvidence.$inferInsert;
 
+export const agentMemorySyntheses = mysqlTable("agent_memory_syntheses", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  slot:                mysqlEnum("slot", ["profile", "recent", "playbook"]).notNull(),
+  canonicalKey:        varchar("canonical_key", { length: 191 }).notNull(),
+  content:             text("content").notNull(),
+  memoryIdsJson:       json("memory_ids_json").$type<number[]>().notNull(),
+  sourceSignature:     varchar("source_signature", { length: 64 }).notNull(),
+  confidence:          int("confidence").default(70).notNull(),
+  model:               varchar("model", { length: 160 }).default("").notNull(),
+  generatedAt:         timestamp("generated_at").defaultNow().notNull(),
+  createdAt:           timestamp("created_at").defaultNow().notNull(),
+  updatedAt:           timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqueScopeKey: uniqueIndex("uk_agent_memory_synthesis_key").on(table.userId, table.adoptId, table.canonicalKey),
+  adoptSlotIdx: index("idx_agent_memory_synthesis_slot").on(table.adoptId, table.slot, table.updatedAt),
+  signatureIdx: index("idx_agent_memory_synthesis_signature").on(table.adoptId, table.sourceSignature),
+}));
+
+export type AgentMemorySynthesis = typeof agentMemorySyntheses.$inferSelect;
+export type InsertAgentMemorySynthesis = typeof agentMemorySyntheses.$inferInsert;
+
+export const agentMemorySynthesisState = mysqlTable("agent_memory_synthesis_state", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  desiredSignature:   varchar("desired_signature", { length: 64 }).default("").notNull(),
+  completedSignature: varchar("completed_signature", { length: 64 }).default("").notNull(),
+  status:             mysqlEnum("status", ["pending", "running", "ready", "failed"]).default("pending").notNull(),
+  model:              varchar("model", { length: 160 }).default("").notNull(),
+  errorMessage:       varchar("error_message", { length: 1000 }),
+  startedAt:          timestamp("started_at"),
+  completedAt:        timestamp("completed_at"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqueScope: uniqueIndex("uk_agent_memory_synthesis_state").on(table.userId, table.adoptId),
+  statusIdx: index("idx_agent_memory_synthesis_state_status").on(table.status, table.updatedAt),
+}));
+
+export type AgentMemorySynthesisState = typeof agentMemorySynthesisState.$inferSelect;
+export type InsertAgentMemorySynthesisState = typeof agentMemorySynthesisState.$inferInsert;
+
+// ── Knowledge Center: durable documents and retrieval status ──
+export const knowledgeBases = mysqlTable("knowledge_bases", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  publicId:           varchar("public_id", { length: 64 }).notNull(),
+  ownerUserId:        int("owner_user_id").notNull(),
+  ownerGroupId:       int("owner_group_id").default(0).notNull(),
+  scope:              mysqlEnum("scope", ["personal", "role", "enterprise"]).default("personal").notNull(),
+  isGlobal:           boolean("is_global").default(false).notNull(),
+  roleTemplate:       varchar("role_template", { length: 64 }),
+  name:               varchar("name", { length: 120 }).notNull(),
+  description:        varchar("description", { length: 500 }).default("").notNull(),
+  status:             mysqlEnum("status", ["empty", "indexing", "ready", "failed"]).default("empty").notNull(),
+  documentCount:      int("document_count").default(0).notNull(),
+  chunkCount:         int("chunk_count").default(0).notNull(),
+  lastError:          varchar("last_error", { length: 1000 }),
+  indexedAt:          timestamp("indexed_at"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  publicIdUnique: uniqueIndex("uk_knowledge_bases_public_id").on(table.publicId),
+  ownerUpdatedIdx: index("idx_knowledge_bases_owner_updated").on(table.ownerUserId, table.updatedAt),
+  groupScopeIdx: index("idx_knowledge_bases_group_scope").on(table.ownerGroupId, table.scope, table.updatedAt),
+  globalScopeIdx: index("idx_knowledge_bases_global_scope").on(table.isGlobal, table.scope, table.updatedAt),
+  roleScopeIdx: index("idx_knowledge_bases_role_scope").on(table.roleTemplate, table.scope, table.updatedAt),
+}));
+
+export type KnowledgeBase = typeof knowledgeBases.$inferSelect;
+export type InsertKnowledgeBase = typeof knowledgeBases.$inferInsert;
+
+export const knowledgeDocuments = mysqlTable("knowledge_documents", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  publicId:           varchar("public_id", { length: 64 }).notNull(),
+  knowledgeBaseId:    bigint("knowledge_base_id", { mode: "number" }).notNull(),
+  name:               varchar("name", { length: 240 }).notNull(),
+  extension:          varchar("extension", { length: 16 }).notNull(),
+  mimeType:           varchar("mime_type", { length: 160 }).default("application/octet-stream").notNull(),
+  storagePath:        varchar("storage_path", { length: 700 }).notNull(),
+  sizeBytes:          bigint("size_bytes", { mode: "number" }).default(0).notNull(),
+  sha256:             varchar("sha256", { length: 64 }).notNull(),
+  status:             mysqlEnum("status", ["uploaded", "indexing", "ready", "failed"]).default("uploaded").notNull(),
+  chunkCount:         int("chunk_count").default(0).notNull(),
+  lastError:          varchar("last_error", { length: 1000 }),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  publicIdUnique: uniqueIndex("uk_knowledge_documents_public_id").on(table.publicId),
+  baseUpdatedIdx: index("idx_knowledge_documents_base_updated").on(table.knowledgeBaseId, table.updatedAt),
+  baseShaIdx: index("idx_knowledge_documents_base_sha").on(table.knowledgeBaseId, table.sha256),
+}));
+
+export type KnowledgeDocument = typeof knowledgeDocuments.$inferSelect;
+export type InsertKnowledgeDocument = typeof knowledgeDocuments.$inferInsert;
+
 export const agentMemoryJobs = mysqlTable("agent_memory_jobs", {
   id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   idempotencyKey:     varchar("idempotency_key", { length: 191 }).notNull(),

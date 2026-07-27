@@ -1,5 +1,7 @@
 import {
   Bot,
+  BookOpen,
+  Brain,
   Library,
   MessageCircle,
   Plug,
@@ -9,7 +11,7 @@ import {
 import type { ReactNode } from "react";
 import { SessionList, type SessionListConversation } from "./SessionList";
 
-export type PageKey = "chat" | "skills" | "experts" | "connectors" | "agent" | "workspace" | "schedule" | "collab" | "settings";
+export type PageKey = "chat" | "skills" | "experts" | "connectors" | "agent" | "knowledge" | "workspace" | "schedule" | "collab" | "settings";
 
 type NavItem = { key: PageKey; label: string; icon: any; adminOnly?: boolean };
 
@@ -24,7 +26,12 @@ const primaryItems: NavItem[] = [
   { key: "schedule", label: "定时任务", icon: Timer },
 ];
 
-const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "agent", "workspace", "schedule", "collab", "settings"]);
+const secondaryItems: NavItem[] = [
+  { key: "agent", label: "记忆", icon: Brain },
+  { key: "knowledge", label: "知识", icon: BookOpen },
+];
+
+const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "agent", "knowledge", "workspace", "schedule", "collab", "settings"]);
 
 export function isPageKey(value: unknown): value is PageKey {
   return PAGE_KEYS.has(String(value || "") as PageKey);
@@ -92,7 +99,7 @@ export function Sidebar({
   };
 
   return (
-    <div className="px-2 py-2 flex flex-col flex-1 min-h-0">
+    <div className={`workbench-sidebar-content px-2 py-2 flex flex-col flex-1 min-h-0 ${collapsed ? "is-collapsed" : ""}`}>
       <div className="flex shrink-0 flex-col gap-0">
         {primaryItems.map((item) => renderItem(item))}
       </div>
@@ -119,6 +126,9 @@ export function Sidebar({
       )}
 
       <div className="shrink-0 pt-2" style={{ borderTop: "1px solid var(--oc-border-subtle)" }}>
+        <div className="flex flex-col gap-0 pb-2">
+          {secondaryItems.map((item) => renderItem(item))}
+        </div>
         {footer ? <div className="min-w-0">{footer}</div> : null}
       </div>
     </div>

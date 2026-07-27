@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, useState, isValidElement } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState, isValidElement } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -104,12 +104,73 @@ function FencedCodeBlock({ code, className }: { code: string; className?: string
   );
 }
 
-type Props = { content: string; phase?: "streaming" | "final" };
+type Props = {
+  content: string;
+  phase?: "streaming" | "final";
+  knowledgeSourceIndexes?: number[];
+  knowledgeCitationScope?: string;
+};
 
-function ChatMarkdownInner({ content, phase = "final" }: Props) {
+function normalizeCitationScope(value: string): string {
+  return String(value || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message";
+}
+
+function createKnowledgeCitationPlugin(indexes: number[], scope: string) {
+  const available = new Set(indexes.filter((index) => Number.isInteger(index) && index > 0));
+  const anchorScope = normalizeCitationScope(scope);
+  return () => (tree: any) => {
+    if (available.size === 0) return;
+    const walk = (node: any) => {
+      if (!node || !Array.isArray(node.children)) return;
+      if (["code", "inlineCode", "link", "linkReference", "definition"].includes(node.type)) return;
+      const next: any[] = [];
+      for (const child of node.children) {
+        if (child?.type !== "text" || typeof child.value !== "string") {
+          walk(child);
+          next.push(child);
+          continue;
+        }
+        const pattern = /\[知识(\d+)\]/g;
+        let cursor = 0;
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(child.value))) {
+          const index = Number(match[1]);
+          if (!available.has(index)) continue;
+          if (match.index > cursor) next.push({ type: "text", value: child.value.slice(cursor, match.index) });
+          next.push({
+            type: "link",
+            url: `#ea-knowledge-source-${anchorScope}-${index}`,
+            children: [{ type: "text", value: `[${index}]` }],
+          });
+          cursor = match.index + match[0].length;
+        }
+        if (cursor === 0) next.push(child);
+        else if (cursor < child.value.length) next.push({ type: "text", value: child.value.slice(cursor) });
+      }
+      node.children = next;
+    };
+    walk(tree);
+  };
+}
+
+function ChatMarkdownInner({
+  content,
+  phase = "final",
+  knowledgeSourceIndexes = [],
+  knowledgeCitationScope = "message",
+}: Props) {
   const renderStartRef = useRef(0);
   if (typeof performance !== "undefined") renderStartRef.current = performance.now();
   const markdownSource = phase === "streaming" ? stabilizeStreamingMarkdown(content) : content;
+  const knowledgeSourceKey = knowledgeSourceIndexes.join(",");
+  const normalizedCitationScope = normalizeCitationScope(knowledgeCitationScope);
+  const knowledgeCitationPlugin = useMemo(
+    () => createKnowledgeCitationPlugin(
+      knowledgeSourceKey.split(",").map(Number).filter((index) => Number.isInteger(index) && index > 0),
+      normalizedCitationScope,
+    ),
+    [knowledgeSourceKey, normalizedCitationScope],
+  );
   useLayoutEffect(() => {
     try {
       if (localStorage.getItem("ea_markdown_perf") !== "1") return;
@@ -124,7 +185,7 @@ function ChatMarkdownInner({ content, phase = "final" }: Props) {
   return (
     <div className="lingxia-markdown">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, knowledgeCitationPlugin]}
         rehypePlugins={phase === "streaming" ? [] : [rehypeHighlight]}
         components={{
           code({ inline, className, children, ...props }: any) {
@@ -191,12 +252,13 @@ function ChatMarkdownInner({ content, phase = "final" }: Props) {
               return <span className="lingxia-md-link" title="链接协议不受支持">{children}</span>;
             }
             const isHash = safeHref.startsWith("#");
+            const isKnowledgeCitation = safeHref.startsWith("#ea-knowledge-source-");
             return (
               <a
                 href={safeHref}
                 target={isHash ? undefined : "_blank"}
                 rel={isHash ? undefined : "noopener noreferrer"}
-                className="lingxia-md-link"
+                className={isKnowledgeCitation ? "lingxia-md-citation" : "lingxia-md-link"}
               >
                 {children}
               </a>
@@ -230,4 +292,9 @@ function ChatMarkdownInner({ content, phase = "final" }: Props) {
   );
 }
 
-export const ChatMarkdown = memo(ChatMarkdownInner, (prev, next) => prev.content === next.content && prev.phase === next.phase);
+export const ChatMarkdown = memo(ChatMarkdownInner, (prev, next) => (
+  prev.content === next.content &&
+  prev.phase === next.phase &&
+  (prev.knowledgeSourceIndexes || []).join(",") === (next.knowledgeSourceIndexes || []).join(",") &&
+  prev.knowledgeCitationScope === next.knowledgeCitationScope
+));

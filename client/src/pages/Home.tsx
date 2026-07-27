@@ -22,7 +22,7 @@ import { ChatInput } from "@/components/ChatInput";
 import { CustomMcpDialog, type CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
 import { ExpertInteractionPrompt } from "@/components/ExpertInteractionPrompt";
-import { ChatMessage, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
+import { ChatMessage, type ChatKnowledgeSource, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
 import { ModelPicker } from "@/components/ModelPicker";
 import type { AgentTask } from "@/components/AgentTaskCard";
@@ -48,8 +48,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { BrainCircuit, ChevronRight, FolderOpen, History, Link2, LoaderCircle, Menu, Paperclip, Plus, Search, Settings2, Upload, Wand2, X } from "lucide-react";
+import { BookOpen, BrainCircuit, Check, ChevronRight, FolderOpen, History, Link2, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Search, Settings2, Upload, Wand2, X } from "lucide-react";
 import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
+import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import {
   buildExpertHandoffRuntimeMessage,
   stripExpertHandoffRuntimeMessage,
@@ -78,6 +79,7 @@ import {
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
+const MAX_COMPOSER_SKILLS = 3;
 const WORKSPACE_PANEL_WIDTH_KEY = "employee_agent_workspace_panel_width";
 const WORKSPACE_PANEL_DEFAULT_WIDTH = 400;
 const WORKSPACE_PANEL_MIN_WIDTH = 320;
@@ -151,6 +153,7 @@ const legacyWebMessagesStorageKeys = (userId: string, adoptId: string, conversat
 ];
 const webDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_draft_${userId}_${adoptId}_${conversationId}`;
 const webExpertModeStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_expert_${userId}_${adoptId}_${conversationId}`;
+const webKnowledgeStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_knowledge_${userId}_${adoptId}_${conversationId}`;
 const legacyWebDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `lingxia_web_draft_${userId}_${adoptId}_${conversationId}`;
 const webInputHistoryStorageKey = (userId: string, adoptId: string) => `agent_web_input_history_${userId}_${adoptId}`;
 const legacyWebInputHistoryStorageKey = (userId: string, adoptId: string) => `lingxia_web_input_history_${userId}_${adoptId}`;
@@ -444,7 +447,7 @@ type UploadedLingxiaAttachment = {
   runtime?: string;
 };
 
-type ComposerAddMenuView = "root" | "connectors" | "skills" | "experts";
+type ComposerAddMenuView = "root" | "knowledge" | "connectors" | "skills" | "experts";
 
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
@@ -550,9 +553,11 @@ type LxMsg = {
   model?: string;
   contextWindow?: number;
   contextPercent?: number;
+  selectedSkillIds?: string[];
   selectedSkillId?: string;
   agentTaskIds?: string[];
   attachments?: ChatMessageAttachment[];
+  knowledgeSources?: ChatKnowledgeSource[];
   toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   jiuwenPermission?: JiuwenPermissionRequestCard;
@@ -675,7 +680,9 @@ const backfillLxMsgIds = (raw: any): LxMsg[] => {
   if (!Array.isArray(raw)) return [];
   return raw.map((m: any) => {
     const parsed = extractJiuwenPermissionMarker(String(m?.text ?? ""));
-    const parsedAttachmentContext = parseUploadedAttachmentRuntimeMessage(stripExpertHandoffRuntimeMessage(parsed.text));
+    const parsedAttachmentContext = parseUploadedAttachmentRuntimeMessage(
+      stripExpertHandoffRuntimeMessage(stripEaInternalRuntimeContext(parsed.text)),
+    );
     const rawAttachments = Array.isArray(m?.attachments) && m.attachments.length > 0
       ? m.attachments
       : parsedAttachmentContext.attachments;
@@ -1245,7 +1252,11 @@ export default function Home() {
         comment: feedback?.rating === "negative" ? feedback.comment : undefined,
         selectedModelId: effectiveLingxiaModelId || undefined,
         actualModelId: actualModelId && actualModelId !== "__auto" ? actualModelId : undefined,
-        skillIds: message.selectedSkillId ? [message.selectedSkillId] : [],
+        skillIds: message.selectedSkillIds?.length
+          ? message.selectedSkillIds
+          : message.selectedSkillId
+            ? [message.selectedSkillId]
+            : [],
         tools,
         inputTokens: message.usage?.input,
         outputTokens: message.usage?.output,
@@ -2425,10 +2436,20 @@ export default function Home() {
     void refetchSkills();
   }, [activePage, refetchSkills, resolvedAdoptId]);
   const composerSkills = useMemo(() => flattenComposerSkills(lingxiaSkills), [lingxiaSkills]);
-  const [selectedComposerSkillId, setSelectedComposerSkillId] = useState<string>("");
+  const { data: knowledgeCatalog, refetch: refetchKnowledgeCatalog } = trpc.knowledge.list.useQuery(
+    { adoptId: resolvedAdoptId || "" },
+    { enabled: Boolean(resolvedAdoptId), retry: false, refetchOnWindowFocus: false },
+  );
+  const composerKnowledgeBases = useMemo(() => (
+    ((knowledgeCatalog?.items || []) as Array<any>).filter((base) => base.status === "ready")
+  ), [knowledgeCatalog]);
+  const [selectedComposerSkillIds, setSelectedComposerSkillIds] = useState<string[]>([]);
+  const [selectedComposerKnowledgeIds, setSelectedComposerKnowledgeIds] = useState<string[]>([]);
   const [composerAddMenuOpen, setComposerAddMenuOpen] = useState(false);
   const [composerAddMenuView, setComposerAddMenuView] = useState<ComposerAddMenuView>("root");
+  const [composerKnowledgeSearch, setComposerKnowledgeSearch] = useState("");
   const [composerSkillSearch, setComposerSkillSearch] = useState("");
+  const composerKnowledgeSearchRef = useRef<HTMLInputElement | null>(null);
   const composerSkillSearchRef = useRef<HTMLInputElement | null>(null);
   const skillPackageInputRef = useRef<HTMLInputElement | null>(null);
   const [skillPackageUploading, setSkillPackageUploading] = useState(false);
@@ -2438,10 +2459,18 @@ export default function Home() {
   const [personalExpertDialogOpen, setPersonalExpertDialogOpen] = useState(false);
   const [personalExpertDialogMode, setPersonalExpertDialogMode] = useState<"add" | "manage">("manage");
   const probeSkillReadinessMutation = trpc.claw.probeSkillReadiness.useMutation();
-  const selectedComposerSkill = useMemo(
-    () => composerSkills.find((skill) => skill.id === selectedComposerSkillId) || null,
-    [composerSkills, selectedComposerSkillId],
-  );
+  const selectedComposerSkills = useMemo(() => selectedComposerSkillIds
+    .map((skillId) => composerSkills.find((skill) => skill.id === skillId))
+    .filter((skill): skill is ComposerSkillOption => Boolean(skill)),
+  [composerSkills, selectedComposerSkillIds]);
+  const selectedComposerKnowledgeBases = useMemo(() => (
+    composerKnowledgeBases.filter((base) => selectedComposerKnowledgeIds.includes(String(base.publicId)))
+  ), [composerKnowledgeBases, selectedComposerKnowledgeIds]);
+  const filteredComposerKnowledgeBases = useMemo(() => {
+    const query = composerKnowledgeSearch.trim().toLocaleLowerCase("zh-CN");
+    if (!query) return composerKnowledgeBases;
+    return composerKnowledgeBases.filter((base) => `${base.name} ${base.description}`.toLocaleLowerCase("zh-CN").includes(query));
+  }, [composerKnowledgeBases, composerKnowledgeSearch]);
   const filteredComposerSkills = useMemo(() => {
     const query = composerSkillSearch.trim().toLocaleLowerCase();
     if (!query) return composerSkills;
@@ -2449,6 +2478,23 @@ export default function Home() {
       `${skill.label} ${skill.id} ${skill.desc}`.toLocaleLowerCase().includes(query)
     ));
   }, [composerSkillSearch, composerSkills]);
+
+  const knowledgeSelectionKey = resolvedAdoptId && userStorageId && webConversationId
+    ? webKnowledgeStorageKey(userStorageId, resolvedAdoptId, webConversationId)
+    : "";
+  useEffect(() => {
+    if (!knowledgeSelectionKey) { setSelectedComposerKnowledgeIds([]); return; }
+    try {
+      const parsed = JSON.parse(localStorage.getItem(knowledgeSelectionKey) || "[]");
+      setSelectedComposerKnowledgeIds(Array.isArray(parsed) ? parsed.map(String).filter(Boolean).slice(0, 8) : []);
+    } catch {
+      setSelectedComposerKnowledgeIds([]);
+    }
+  }, [knowledgeSelectionKey]);
+  useEffect(() => {
+    if (!knowledgeSelectionKey) return;
+    try { localStorage.setItem(knowledgeSelectionKey, JSON.stringify(selectedComposerKnowledgeIds.slice(0, 8))); } catch {}
+  }, [knowledgeSelectionKey, selectedComposerKnowledgeIds]);
   const [composerConnectors, setComposerConnectors] = useState<ComposerConnector[]>([]);
   const [composerConnectorSearch, setComposerConnectorSearch] = useState("");
   const [composerConnectorsLoading, setComposerConnectorsLoading] = useState(false);
@@ -2548,6 +2594,11 @@ export default function Home() {
     void loadComposerConnectors({ silent: composerConnectors.length > 0 });
     window.setTimeout(() => composerConnectorSearchRef.current?.focus(), 0);
   }, [composerConnectors.length, loadComposerConnectors]);
+  const showComposerKnowledgePanel = useCallback(() => {
+    setComposerAddMenuView("knowledge");
+    void refetchKnowledgeCatalog();
+    window.setTimeout(() => composerKnowledgeSearchRef.current?.focus(), 0);
+  }, [refetchKnowledgeCatalog]);
   const showComposerSkillPanel = useCallback(() => {
     setComposerAddMenuView("skills");
     window.setTimeout(() => composerSkillSearchRef.current?.focus(), 0);
@@ -2597,7 +2648,11 @@ export default function Home() {
         toast.warning(`技能已上传，静态扫描提示 ${warnings} 项，请在技能管理中确认。`);
       } else {
         const skillId = String(uploaded.item?.id || inspect.skill.skillId || "").trim();
-        if (skillId) setSelectedComposerSkillId(skillId);
+        if (skillId) {
+          setSelectedComposerSkillIds((current) => current.includes(skillId)
+            ? current
+            : [...current, skillId].slice(0, MAX_COMPOSER_SKILLS));
+        }
         toast.success("技能已上传并同步到运行环境");
       }
       setComposerAddMenuOpen(false);
@@ -2709,8 +2764,11 @@ export default function Home() {
           ? enabledServerIds.has(item.serverId)
           : item.serverId === connector.serverId ? nextEnabled : item.enabledForAgent,
       })));
-      if (!nextEnabled && selectedComposerSkill?.requiredMcpServers.includes(connector.serverId)) {
-        setSelectedComposerSkillId("");
+      if (!nextEnabled) {
+        const blockedSkillIds = new Set(composerSkills
+          .filter((skill) => skill.requiredMcpServers.includes(connector.serverId))
+          .map((skill) => skill.id));
+        setSelectedComposerSkillIds((current) => current.filter((skillId) => !blockedSkillIds.has(skillId)));
       }
       toast.success(`${connector.name}已${nextEnabled ? "启用" : "关闭"}，下一轮对话生效`);
     } catch (error) {
@@ -2718,7 +2776,7 @@ export default function Home() {
     } finally {
       setPendingConnectorId("");
     }
-  }, [activeLingxiaStreaming, pendingConnectorId, resolvedAdoptId, selectedComposerSkill]);
+  }, [activeLingxiaStreaming, composerSkills, pendingConnectorId, resolvedAdoptId]);
   const expertDraftKey = useCallback((expertId: string) => (
     EXPERT_MODE_KEY && expertId ? `${EXPERT_MODE_KEY}:draft:${expertId}` : ""
   ), [EXPERT_MODE_KEY]);
@@ -2754,16 +2812,22 @@ export default function Home() {
     setSelectedComposerExpertId(expert.id);
     setSelectedExpertScenarioId("");
     setDetachedExpertId((current) => current === expert.id ? "" : current);
-    setSelectedComposerSkillId("");
+    setSelectedComposerSkillIds([]);
     setComposerAddMenuView("root");
     setComposerAddMenuOpen(false);
   }, [expertDraftKey, lingxiaInput]);
   const selectComposerSkill = useCallback(async (skill: ComposerSkillOption) => {
+    if (selectedComposerSkillIds.includes(skill.id)) {
+      setSelectedComposerSkillIds((current) => current.filter((skillId) => skillId !== skill.id));
+      return;
+    }
+    if (selectedComposerSkillIds.length >= MAX_COMPOSER_SKILLS) {
+      toast.info(`每轮最多选择 ${MAX_COMPOSER_SKILLS} 个技能`);
+      return;
+    }
     if (skill.requiredMcpServers.length === 0 || !resolvedAdoptId) {
-      setSelectedComposerSkillId(skill.id);
+      setSelectedComposerSkillIds((current) => current.includes(skill.id) ? current : [...current, skill.id].slice(0, MAX_COMPOSER_SKILLS));
       exitComposerExpert(false);
-      setComposerAddMenuView("root");
-      setComposerAddMenuOpen(false);
       return;
     }
     try {
@@ -2779,11 +2843,9 @@ export default function Home() {
     } catch {
       toast.warning("暂时无法验证技能所需的业务工具，将在发送时再次检查");
     }
-    setSelectedComposerSkillId(skill.id);
+    setSelectedComposerSkillIds((current) => current.includes(skill.id) ? current : [...current, skill.id].slice(0, MAX_COMPOSER_SKILLS));
     exitComposerExpert(false);
-    setComposerAddMenuView("root");
-    setComposerAddMenuOpen(false);
-  }, [exitComposerExpert, probeSkillReadinessMutation, resolvedAdoptId]);
+  }, [exitComposerExpert, probeSkillReadinessMutation, resolvedAdoptId, selectedComposerSkillIds]);
   const selectComposerExpert = useCallback((expert: ExpertAgent) => {
     enterComposerExpert(expert);
   }, [enterComposerExpert]);
@@ -2798,10 +2860,12 @@ export default function Home() {
     setSelectedExpertInteractionOptionId("");
   }, [composerExperts, enterComposerExpert]);
   useEffect(() => {
-    if (selectedComposerSkillId && !composerSkills.some((skill) => skill.id === selectedComposerSkillId)) {
-      setSelectedComposerSkillId("");
-    }
-  }, [composerSkills, selectedComposerSkillId]);
+    const availableSkillIds = new Set(composerSkills.map((skill) => skill.id));
+    setSelectedComposerSkillIds((current) => {
+      const next = current.filter((skillId) => availableSkillIds.has(skillId));
+      return next.length === current.length ? current : next;
+    });
+  }, [composerSkills]);
   useEffect(() => {
     if (
       selectedComposerExpertId
@@ -3231,7 +3295,7 @@ export default function Home() {
   const sendLingxiaMessage = async (
     messageOverride?: string,
     opts?: {
-      selectedSkillId?: string;
+      selectedSkillIds?: string[];
       displayText?: string;
       attachments?: ChatMessageAttachment[];
     },
@@ -3323,7 +3387,7 @@ export default function Home() {
         status: "正在连接...",
         timeLabel: assistantTimeLabel,
         model: effectiveLingxiaModelId,
-        ...(opts?.selectedSkillId ? { selectedSkillId: opts.selectedSkillId } : {}),
+        ...(opts?.selectedSkillIds?.length ? { selectedSkillIds: opts.selectedSkillIds } : {}),
       },
     ]);
     clearLingxiaDraft();
@@ -3332,6 +3396,24 @@ export default function Home() {
     setClawHealthError("");
     updateLingxiaNearBottom(true);
     setLingxiaToolCalls([]);
+
+    const attachKnowledgeSources = (value: unknown) => {
+      if (!Array.isArray(value)) return;
+      const sources = value.map((source: any) => ({
+        index: Number(source?.index || 0),
+        knowledgeBaseId: String(source?.knowledgeBaseId || ""),
+        knowledgeBaseName: String(source?.knowledgeBaseName || ""),
+        documentId: String(source?.documentId || ""),
+        documentName: String(source?.documentName || ""),
+        position: String(source?.position || "正文"),
+      })).filter((source: ChatKnowledgeSource) => (
+        source.index > 0 && source.knowledgeBaseId && source.documentId && source.documentName
+      )).slice(0, 12);
+      if (!sources.length) return;
+      setLingxiaMsgs((previous) => previous.map((item) => (
+        item.id === assistantMessageId ? { ...item, knowledgeSources: sources } : item
+      )));
+    };
 
     let wsOk = false;
     let runtimeSessionKey = "";
@@ -3371,6 +3453,11 @@ export default function Home() {
               const runDescriptor = parseRuntimeRunDescriptor(chunk);
               if (runDescriptor) {
                 runtimeSessionKey = runDescriptor.sessionId;
+                return;
+              }
+
+              if (chunk.__knowledge_sources) {
+                attachKnowledgeSources(chunk.__knowledge_sources);
                 return;
               }
 
@@ -3646,7 +3733,8 @@ export default function Home() {
           conversationId: webConversationId,
           runtimeMode: chatRuntimeMode,
           ...(shouldCancelPendingJiuwenPermission ? { cancelPendingPermission: true } : {}),
-          ...(opts?.selectedSkillId ? { selectedSkillId: opts.selectedSkillId } : {}),
+          ...(opts?.selectedSkillIds?.length ? { selectedSkillIds: opts.selectedSkillIds } : {}),
+          ...(selectedComposerKnowledgeIds.length ? { knowledgeBaseIds: selectedComposerKnowledgeIds.slice(0, 8) } : {}),
         }),
       });
 
@@ -3741,6 +3829,10 @@ export default function Home() {
                 const last = prev[prev.length - 1];
                 return [...prev.slice(0, -1), { ...last, model: selectedModel }];
               });
+              continue;
+            }
+            if (chunk.__knowledge_sources) {
+              attachKnowledgeSources(chunk.__knowledge_sources);
               continue;
             }
             if (typeof chunk.__final_text === "string") {
@@ -4524,7 +4616,7 @@ export default function Home() {
           className="flex-1 min-h-0 flex overflow-hidden"
           style={
             {
-              "--lingxia-sidebar-width": `${effectiveSidebarCollapsed ? 72 : sidebarWidth}px`,
+              "--lingxia-sidebar-width": `${effectiveSidebarCollapsed ? 60 : sidebarWidth}px`,
               "--lingxia-topbar-height": "52px",
             } as CSSProperties
           }
@@ -4543,23 +4635,27 @@ export default function Home() {
           <aside
             id="workbench-navigation"
             aria-hidden={isMobileViewport && !mobileSidebarOpen ? true : undefined}
-            className={`lingxia-sidebar-panel relative flex-none flex flex-col overflow-hidden shrink-0 hide-all-scrollbars ${mobileSidebarOpen ? "is-mobile-open" : ""}`}
-            style={{ width: effectiveSidebarCollapsed ? 72 : sidebarWidth, transition: "width 0.2s ease, transform 0.2s ease" }}
+            className={`lingxia-sidebar-panel relative flex-none flex flex-col overflow-hidden shrink-0 hide-all-scrollbars ${effectiveSidebarCollapsed ? "is-collapsed" : ""} ${mobileSidebarOpen ? "is-mobile-open" : ""}`}
+            style={{ width: effectiveSidebarCollapsed ? 60 : sidebarWidth, transition: "width 0.2s ease, transform 0.2s ease" }}
           >
             <button
               type="button"
               title={effectiveSidebarCollapsed ? "展开侧栏" : "折叠侧栏"}
+              aria-label={effectiveSidebarCollapsed ? "展开侧栏" : "折叠侧栏"}
+              aria-controls="workbench-navigation"
+              aria-expanded={!effectiveSidebarCollapsed}
               onClick={() => setSidebarCollapsed(v => !v)}
-              className="workbench-sidebar-collapse absolute right-2 top-[20px] z-40 flex items-center justify-center rounded-md"
-              style={{ width: 22, height: 22, background: "transparent", border: "none", color: "var(--oc-text-tertiary)", fontSize: 16 }}
+              className="workbench-sidebar-collapse absolute right-2 top-[15px] z-40 flex h-8 w-8 items-center justify-center rounded-lg"
             >
-              {effectiveSidebarCollapsed ? "»" : "«"}
+              {effectiveSidebarCollapsed
+                ? <PanelLeftOpen size={17} strokeWidth={1.6} aria-hidden="true" />
+                : <PanelLeftClose size={17} strokeWidth={1.6} aria-hidden="true" />}
             </button>
 
             {/* 实例信息头 */}
-            <div className="shrink-0 flex items-center gap-2.5" style={{ padding: "10px 8px 14px", borderBottom: "1px solid var(--oc-border-subtle)" }}>
+            <div className="workbench-sidebar-header shrink-0 flex items-center gap-2.5" style={{ padding: "10px 8px 14px", borderBottom: "1px solid var(--oc-border-subtle)" }}>
               <div
-                className="rounded-full shrink-0 flex items-center justify-center relative"
+                className="workbench-sidebar-brand-avatar rounded-full shrink-0 flex items-center justify-center relative"
                 style={{ width: 38, height: 38, background: "var(--oc-sidebar-avatar-bg)", color: "var(--oc-sidebar-muted)" }}
               >
                 <WorkforceAgentIcon size={26} animate={false} breathe={false} />
@@ -4614,11 +4710,6 @@ export default function Home() {
                   userName={String((user as any)?.name || "")}
                   userEmail={String((user as any)?.email || "")}
                   collapsed={effectiveSidebarCollapsed}
-                  onOpenGrowth={() => {
-                    setSidebarSelection("navigation");
-                    setActivePage("agent");
-                    setMobileSidebarOpen(false);
-                  }}
                   onReturnHome={() => setLocationCoop("/")}
                   onLogout={() => void handleWorkbenchLogout()}
                 />
@@ -4788,6 +4879,7 @@ export default function Home() {
                     data-conversation-prompt={m.role === "user" ? m.id : undefined}
                   >
                   <ChatMessage
+                    messageId={m.id}
                     role={m.role as "user" | "assistant"}
                     text={m.text}
                     status={m.status}
@@ -4801,6 +4893,7 @@ export default function Home() {
                       ...file,
                       adoptId: file.adoptId || resolvedAdoptId,
                     }))}
+                    knowledgeSources={m.role === "assistant" ? m.knowledgeSources : undefined}
                     toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
                     messageEvents={m.role === "assistant" ? (m as LxMsg).messageEvents : undefined}
                     agentTasks={messageAgentTasks}
@@ -4896,8 +4989,8 @@ export default function Home() {
                     return false;
                   }
                 }
-                const selectedSkillId = selectedComposerSkill?.id;
-                setSelectedComposerSkillId("");
+                const selectedSkillIds = selectedComposerSkills.map((skill) => skill.id);
+                setSelectedComposerSkillIds([]);
                 if (selectedExpert) {
                   return submitExpertTask({
                     expert: selectedExpert,
@@ -4918,7 +5011,7 @@ export default function Home() {
                     : finalText;
                   if (includeExpertHandoff) setDetachedExpertId("");
                   void sendLingxiaMessage(runtimeText, {
-                    selectedSkillId,
+                    selectedSkillIds,
                     displayText: text || (messageAttachments.length > 0 ? "请查看我上传的附件。" : ""),
                     attachments: messageAttachments,
                   });
@@ -4998,6 +5091,7 @@ export default function Home() {
                     setComposerAddMenuOpen(open);
                     if (!open) {
                       setComposerAddMenuView("root");
+                      setComposerKnowledgeSearch("");
                       setComposerConnectorSearch("");
                       setComposerSkillSearch("");
                       setComposerExpertSearch("");
@@ -5030,6 +5124,23 @@ export default function Home() {
                       <span>上传附件</span>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator className="lingxia-composer-add-separator" />
+
+                    <DropdownMenuItem
+                      className="lingxia-composer-add-item"
+                      data-state={composerAddMenuView === "knowledge" ? "open" : "closed"}
+                      onPointerEnter={showComposerKnowledgePanel}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        showComposerKnowledgePanel();
+                      }}
+                    >
+                      <BookOpen aria-hidden="true" />
+                      <span>指定知识</span>
+                      {selectedComposerKnowledgeIds.length > 0 ? (
+                        <span className="lingxia-composer-add-item__meta">{selectedComposerKnowledgeIds.length}</span>
+                      ) : null}
+                      <ChevronRight className="lingxia-composer-add-item__chevron" aria-hidden="true" />
+                    </DropdownMenuItem>
 
                     <DropdownMenuItem
                       className="lingxia-composer-add-item"
@@ -5088,7 +5199,54 @@ export default function Home() {
                       <ChevronRight className="lingxia-composer-add-item__chevron" aria-hidden="true" />
                     </DropdownMenuItem>
 
-                    {composerAddMenuView === "connectors" ? (
+                    {composerAddMenuView === "knowledge" ? (
+                      <div
+                        key="knowledge"
+                        className="lingxia-skill-menu lingxia-composer-submenu lingxia-composer-side-panel lingxia-knowledge-menu"
+                        role="menu"
+                        aria-label="指定知识库"
+                      >
+                        <div className="lingxia-skill-menu__search" onKeyDown={(event) => { if (event.key !== "Escape") event.stopPropagation(); }}>
+                          <Search aria-hidden="true" />
+                          <input ref={composerKnowledgeSearchRef} value={composerKnowledgeSearch} onChange={(event) => setComposerKnowledgeSearch(event.target.value)} placeholder="搜索知识库" aria-label="搜索知识库" />
+                        </div>
+                        <div className="lingxia-skill-menu__results">
+                          {filteredComposerKnowledgeBases.length === 0 ? (
+                            <div className="lingxia-skill-menu__empty">还没有可检索的知识库</div>
+                          ) : filteredComposerKnowledgeBases.map((base) => {
+                            const selected = selectedComposerKnowledgeIds.includes(String(base.publicId));
+                            return (
+                              <DropdownMenuItem
+                                key={base.publicId}
+                                role="menuitemcheckbox"
+                                aria-checked={selected}
+                                className="lingxia-knowledge-select-item"
+                                data-selected={selected ? "true" : "false"}
+                                onSelect={(event) => {
+                                  event.preventDefault();
+                                  setSelectedComposerKnowledgeIds((current) => selected
+                                    ? current.filter((id) => id !== String(base.publicId))
+                                    : [...current, String(base.publicId)].slice(0, 8));
+                                }}
+                              >
+                                <span className="lingxia-knowledge-select-item__icon"><BookOpen /></span>
+                                <span className="lingxia-knowledge-select-item__main">
+                                  <strong>{base.name}</strong>
+                                  <small>
+                                    {base.documentCount} 份文档 · {base.scope === "personal" ? "我的知识" : base.scope === "role" ? "岗位知识" : "企业知识"}
+                                    {selected ? " · 已指定" : base.scope !== "personal" ? " · 自动匹配" : ""}
+                                  </small>
+                                </span>
+                                <span className="lingxia-knowledge-select-item__check">{selected ? "✓" : ""}</span>
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </div>
+                        <div className="lingxia-composer-submenu__footer">
+                          <button type="button" className="lingxia-composer-submenu__action" onClick={() => { setComposerAddMenuOpen(false); selectWorkbenchPage("knowledge"); }}><Settings2 /><span>管理知识</span></button>
+                        </div>
+                      </div>
+                    ) : composerAddMenuView === "connectors" ? (
                       <div
                         key="connectors"
                         className="lingxia-skill-menu lingxia-composer-submenu lingxia-composer-side-panel lingxia-connector-menu"
@@ -5198,10 +5356,12 @@ export default function Home() {
                             <DropdownMenuItem
                               key={skill.id}
                               className="lingxia-skill-select-item"
-                              data-selected={skill.id === selectedComposerSkillId ? "true" : "false"}
+                              data-selected={selectedComposerSkillIds.includes(skill.id) ? "true" : "false"}
+                              role="menuitemcheckbox"
+                              aria-checked={selectedComposerSkillIds.includes(skill.id)}
                               disabled={probeSkillReadinessMutation.isPending}
                               onSelect={(event) => {
-                                if (skill.requiredMcpServers.length > 0) event.preventDefault();
+                                event.preventDefault();
                                 void selectComposerSkill(skill);
                               }}
                             >
@@ -5214,8 +5374,23 @@ export default function Home() {
                                   {skill.desc ? <span className="lingxia-skill-select-item__desc">{skill.desc}</span> : null}
                                 </span>
                               </span>
+                              <span className="lingxia-skill-select-item__checkbox" aria-hidden="true">
+                                {selectedComposerSkillIds.includes(skill.id) ? <Check /> : null}
+                              </span>
                             </DropdownMenuItem>
                           ))}
+                        </div>
+                        <div className="lingxia-skill-menu__selection">
+                          <span>{selectedComposerSkillIds.length > 0 ? `已选 ${selectedComposerSkillIds.length}/${MAX_COMPOSER_SKILLS}` : `最多选择 ${MAX_COMPOSER_SKILLS} 个`}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComposerAddMenuView("root");
+                              setComposerAddMenuOpen(false);
+                            }}
+                          >
+                            完成
+                          </button>
                         </div>
                         <div className="lingxia-composer-submenu__footer">
                           <button
@@ -5307,7 +5482,16 @@ export default function Home() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              leftControls={selectedComposerExpert ? (
+              leftControls={(
+                <>
+                {selectedComposerKnowledgeBases.length > 0 && !selectedComposerExpert ? (
+                  <span className="lingxia-composer-skill-chip lingxia-composer-knowledge-chip" title={selectedComposerKnowledgeBases.map((base) => base.name).join("、")}>
+                    <BookOpen size={13} strokeWidth={1.8} />
+                    <span>{selectedComposerKnowledgeBases.length === 1 ? selectedComposerKnowledgeBases[0].name : `${selectedComposerKnowledgeBases[0].name} 等 ${selectedComposerKnowledgeBases.length} 个`}</span>
+                    <button type="button" aria-label="取消使用知识库" onClick={() => setSelectedComposerKnowledgeIds([])}><X size={12} strokeWidth={1.8} /></button>
+                  </span>
+                ) : null}
+                {selectedComposerExpert ? (
                 <span className="lingxia-composer-skill-chip lingxia-composer-expert-chip" title={`本轮咨询：${selectedComposerExpert.name}`}>
                   <span className="lingxia-composer-expert-chip__avatar" aria-hidden="true">
                     <ExpertAvatar agentId={selectedComposerExpert.id} agentName={selectedComposerExpert.name} />
@@ -5322,19 +5506,21 @@ export default function Home() {
                     <X size={12} strokeWidth={1.8} />
                   </button>
                 </span>
-              ) : selectedComposerSkill ? (
-                <span className="lingxia-composer-skill-chip" title={`本轮优先使用：${selectedComposerSkill.label}`}>
+              ) : selectedComposerSkills.map((skill) => (
+                <span key={skill.id} className="lingxia-composer-skill-chip" title={`本轮优先使用：${skill.label}`}>
                   <Wand2 size={13} strokeWidth={1.8} />
-                  <span>{selectedComposerSkill.label}</span>
+                  <span>{skill.label}</span>
                   <button
                     type="button"
-                    aria-label="取消选择技能"
-                    onClick={() => setSelectedComposerSkillId("")}
+                    aria-label={`取消选择技能：${skill.label}`}
+                    onClick={() => setSelectedComposerSkillIds((current) => current.filter((skillId) => skillId !== skill.id))}
                   >
                     <X size={12} strokeWidth={1.8} />
                   </button>
                 </span>
-              ) : null}
+              ))}
+                </>
+              )}
               rightControls={(
                 <ModelPicker
                   models={availableModels || []}
@@ -5373,7 +5559,7 @@ export default function Home() {
                 setSelectedComposerExpertId(expertId);
                 setSelectedExpertScenarioId(scenarioId || "");
                 setDetachedExpertId((current) => current === expertId ? "" : current);
-                setSelectedComposerSkillId("");
+                setSelectedComposerSkillIds([]);
                 if (initialPrompt) setLingxiaInput(initialPrompt);
                 setSidebarSelection("navigation");
                 setActivePage("chat");

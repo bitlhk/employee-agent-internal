@@ -607,6 +607,9 @@ start_app() {
     echo "[dry-run] would start PM2 with ecosystem.config.cjs after setup generates it"
   elif [[ -f "$INSTALL_DIR/ecosystem.config.cjs" ]]; then
     run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.config.cjs --update-env || pm2 restart ecosystem.config.cjs --update-env"
+    if [[ -f "$INSTALL_DIR/ecosystem.knowledge.config.cjs" ]]; then
+      run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.knowledge.config.cjs --update-env || pm2 restart ecosystem.knowledge.config.cjs --update-env"
+    fi
     if [[ "$INSTALL_JIUWENSWARM" == "true" ]]; then
       run bash -lc "cd '$INSTALL_DIR' && HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' JIUWENSWARM_MANAGED_MEMORY=true pm2 start ecosystem.jiuwenswarm.config.cjs --update-env || HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' JIUWENSWARM_MANAGED_MEMORY=true pm2 restart ecosystem.jiuwenswarm.config.cjs --update-env"
     fi

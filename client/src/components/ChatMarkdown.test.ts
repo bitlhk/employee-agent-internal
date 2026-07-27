@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 Object.assign(globalThis, { React });
 const { ChatMarkdown } = await import("./ChatMarkdown");
 
-function render(content: string, phase: "streaming" | "final" = "final") {
-  return renderToStaticMarkup(React.createElement(ChatMarkdown, { content, phase }));
+function render(content: string, phase: "streaming" | "final" = "final", knowledgeSourceIndexes: number[] = []) {
+  return renderToStaticMarkup(React.createElement(ChatMarkdown, { content, phase, knowledgeSourceIndexes }));
 }
 
 describe("ChatMarkdown", () => {
@@ -34,5 +34,12 @@ describe("ChatMarkdown", () => {
     const html = render("```markdown\n## 示例\n```");
     expect(html).toContain("lingxia-codeblock");
     expect(html).not.toContain('<h2 id="示例"');
+  });
+
+  it("links known knowledge citations without rewriting code", () => {
+    const html = render("住宿标准为 600 元[知识1]。`[知识1]`", "final", [1]);
+    expect(html).toContain('href="#ea-knowledge-source-message-1"');
+    expect(html).toContain('class="lingxia-md-citation"');
+    expect(html).toContain("[知识1]</code>");
   });
 });

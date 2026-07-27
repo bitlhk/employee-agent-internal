@@ -1,6 +1,7 @@
 import { SkillsPage } from "@/components/pages/SkillsPage";
 import { GrowthPage } from "@/components/pages/GrowthPage";
 import { WorkspacePage } from "@/components/pages/WorkspacePage";
+import { KnowledgePage } from "@/components/pages/KnowledgePage";
 import { SchedulePageV2 } from "@/components/pages/SchedulePageV2";
 import { SettingsPage } from "@/components/pages/SettingsPage";
 import { CollabPage } from "@/components/pages/CollabPage";
@@ -16,6 +17,7 @@ type CapabilityPageKey = "skills" | "experts" | "connectors";
 const PANEL_PAGE_ORDER: PanelPageKey[] = [
   "skills",
   "agent",
+  "knowledge",
   "workspace",
   "schedule",
   "collab",
@@ -97,6 +99,7 @@ export function MainPanel({
       return <SkillsPage section={capabilitySection(activePage)} skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
     }
     if (page === "agent") return <GrowthPage adoptId={adoptId || ""} />;
+    if (page === "knowledge") return <KnowledgePage adoptId={adoptId || ""} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;
     if (page === "schedule") return <SchedulePageV2 adoptId={adoptId || ""} />;
     if (page === "collab") return <CollabPage adoptId={adoptId || ""} active={activePage === "collab"} />;

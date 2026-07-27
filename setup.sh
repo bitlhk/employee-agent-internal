@@ -27,6 +27,7 @@ DB_NAME_VALUE="${WORKFORCE_AGENT_DB_NAME:-${LINGXIA_DB_NAME:-employee_agent}}"
 JIUWEN_RUNTIME_ENABLED_VALUE="${JIUWENSWARM_PROVISION_ENABLED:-${JIUWENCLAW_PROVISION_ENABLED:-}}"
 JIUWENSWARM_HOME_VALUE="${JIUWENCLAW_HOME:-$HOME/.jiuwenswarm}"
 JIUWENSWARM_PYTHON_VALUE="${JIUWENSWARM_PYTHON:-$HOME/.venvs/employee-agent-jiuwenswarm/bin/python}"
+KNOWLEDGE_VENV_VALUE="${KNOWLEDGE_VENV:-$HOME/.venvs/employee-agent-knowledge}"
 
 usage() {
   cat <<'EOF'
@@ -386,6 +387,10 @@ SQL
     echo "# 岗位智能体持续学习（EA 托管，失败不影响主对话）"
     echo "EA_MANAGED_MEMORY_ENABLED=true"
     echo ""
+    echo "# 本机知识检索服务（仅监听回环地址）"
+    echo "KNOWLEDGE_SERVICE_URL=http://127.0.0.1:5191"
+    echo "KNOWLEDGE_SERVICE_PORT=5191"
+    echo ""
     echo "# 沙箱"
     echo "SANDBOX_IMAGE=python:3.11-slim"
     echo "SANDBOX_MEMORY=256m"
@@ -414,6 +419,12 @@ else
     echo "  依赖安装失败，请检查 Node.js / pnpm。"
     exit 1
   fi
+
+  echo "  正在准备知识检索环境..."
+  python3 -m venv "$KNOWLEDGE_VENV_VALUE"
+  "$KNOWLEDGE_VENV_VALUE/bin/python" -m pip install --disable-pip-version-check --upgrade pip wheel
+  "$KNOWLEDGE_VENV_VALUE/bin/python" -m pip install --disable-pip-version-check -r server/knowledge/requirements.txt
+  echo "  知识检索环境已准备。"
 fi
 
 if [[ ! -f "ecosystem.config.cjs" && -f "ecosystem.config.cjs.example" ]]; then
@@ -423,6 +434,10 @@ fi
 if [[ ! -f "ecosystem.jiuwenswarm.config.cjs" && -f "ecosystem.jiuwenswarm.config.cjs.example" ]]; then
   cp ecosystem.jiuwenswarm.config.cjs.example ecosystem.jiuwenswarm.config.cjs
   echo "  已生成 JiuwenSwarm PM2 配置 ecosystem.jiuwenswarm.config.cjs"
+fi
+if [[ ! -f "ecosystem.knowledge.config.cjs" && -f "ecosystem.knowledge.config.cjs.example" ]]; then
+  cp ecosystem.knowledge.config.cjs.example ecosystem.knowledge.config.cjs
+  echo "  已生成知识检索 PM2 配置 ecosystem.knowledge.config.cjs"
 fi
 
 echo ""
@@ -450,6 +465,7 @@ echo ""
 echo "  启动方式："
 echo "    pnpm build && pnpm start"
 echo "    pm2 start ecosystem.config.cjs"
+echo "    pm2 start ecosystem.knowledge.config.cjs"
 echo ""
 echo "  配置的前端 URL: $(grep '^FRONTEND_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo 'http://localhost:5180')"
 echo "  本机监听: http://127.0.0.1:${PORT_VALUE}（对外访问请配置 HTTPS 反向代理）"

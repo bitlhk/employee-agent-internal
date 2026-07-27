@@ -16,19 +16,28 @@ import {
   createAgentMemory,
   enqueueAgentMemoryJob,
   failAgentMemoryJob,
+  failAgentMemorySynthesis,
   findAgentMemoryByKey,
   finishAgentMemoryJob,
+  confirmAgentMemoryRecord,
   forgetAgentMemoryRecord,
   getClawByAdoptId,
   getAgentMemoryById,
   getAgentMemoryCursor,
   getAgentMemoryMode,
+  getAgentMemorySynthesisState,
   listAgentMemories,
+  listAgentMemoryEvidence,
+  listAgentMemorySyntheses,
   listClawAdoptionsAdmin,
   promoteConversationMemoryCandidates,
   pruneAgentMemoryJobs,
   rejectConversationMemoryCandidates,
+  rejectAgentMemoryRecord,
   recoverStaleAgentMemoryJobs,
+  markAgentMemorySynthesisPending,
+  markAgentMemorySynthesisRunning,
+  replaceAgentMemorySyntheses,
   setAgentMemoryMode,
   setAgentMemoryStatus,
   updateAgentMemoryContent,
@@ -39,9 +48,12 @@ import {
   type AgentMemoryRecord,
   type AgentMemorySource,
   type AgentMemoryStatus,
+  type AgentMemorySynthesisRecord,
+  type AgentMemorySynthesisSlot,
 } from "../db";
 import { callEaAssistantModel } from "./ea-assistant-model";
 import { detectSensitiveData, type SensitiveDataType } from "./data-guardrail";
+import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import { decryptSecret, encryptSecret } from "./secret-protection";
 import { JIUWENCLAW_HOME, appendLogAsync, jiuwenClawWorkspaceDir } from "./helpers";
 
@@ -51,8 +63,10 @@ const POLICY_BLOCK_START = "<!-- EA_MEMORY_POLICY_START -->";
 const POLICY_BLOCK_END = "<!-- EA_MEMORY_POLICY_END -->";
 const MAX_MEMORY_CONTENT_CHARS = 800;
 const MAX_PROJECTED_MEMORY_CHARS = 4800;
+const MAX_PROJECTED_SYNTHESIS_CHARS = 1800;
 const MEMORY_WORKER_INTERVAL_MS = 3000;
 const CHANNEL_SCAN_INTERVAL_MS = 15_000;
+const MEMORY_SYNTHESIS_DELAY_MS = 750;
 
 export type AgentMemoryTurn = {
   userId: number;
@@ -77,6 +91,14 @@ export type MemoryCandidate = {
   expiresDays?: number | null;
 };
 
+export type MemorySynthesisCandidate = {
+  key: string;
+  slot: AgentMemorySynthesisSlot;
+  content: string;
+  memoryIds: number[];
+  confidence: number;
+};
+
 type MemoryJobPayload = Pick<
   AgentMemoryTurn,
   "userMessage" | "assistantMessage" | "selectedSkillIds" | "toolNames" | "messageId"
@@ -94,6 +116,7 @@ type MemoryEvidenceInput = {
 };
 
 const MEMORY_KINDS = new Set<AgentMemoryKind>(["preference", "instruction", "entity", "procedure"]);
+const MEMORY_SYNTHESIS_SLOTS = new Set<AgentMemorySynthesisSlot>(["profile", "recent", "playbook"]);
 const HIGH_RISK_PATTERNS: Array<[RegExp, string]> = [
   [/ignore\s+(?:all|previous|prior|above)\s+instructions/i, "prompt_injection"],
   [/忽略(?:以上|之前|所有).{0,10}(?:指令|规则|要求)/i, "prompt_injection"],
@@ -148,7 +171,7 @@ export function normalizeMemoryKey(value: unknown, content: string): string {
 }
 
 export function sanitizeMemoryTurnText(value: unknown, maxChars: number): string {
-  return String(value || "")
+  return stripEaInternalRuntimeContext(value)
     .replace(/<selected_skill>[\s\S]*?<\/selected_skill>/gi, "")
     .replace(/\[已上传附件\][\s\S]*?(?=\n\n|$)/g, "")
     .replace(/workspace path\s*:[^\n]+/gi, "")
@@ -206,6 +229,74 @@ export function parseMemoryCandidates(text: string): MemoryCandidate[] {
   return result;
 }
 
+export function parseMemorySyntheses(text: string, validMemoryIds: Set<number>): MemorySynthesisCandidate[] {
+  const parsed = parseJsonObject(text);
+  const rows = Array.isArray(parsed?.syntheses) ? parsed.syntheses : [];
+  const result: MemorySynthesisCandidate[] = [];
+  const seenKeys = new Set<string>();
+  for (const row of rows.slice(0, 8)) {
+    const content = normalizeMemoryContent(row?.content);
+    const slot = MEMORY_SYNTHESIS_SLOTS.has(row?.slot)
+      ? row.slot as AgentMemorySynthesisSlot
+      : "profile";
+    const confidence = Math.max(0, Math.min(100, Number(row?.confidence || 0) || 0));
+    const rawMemoryIds = Array.isArray(row?.memory_ids)
+      ? row.memory_ids
+      : Array.isArray(row?.memoryIds)
+        ? row.memoryIds
+        : [];
+    const memoryIds = Array.from(new Set(
+      rawMemoryIds
+        .map(Number)
+        .filter((id: number) => Number.isInteger(id) && validMemoryIds.has(id)),
+    )).slice(0, 12) as number[];
+    const key = normalizeMemoryKey(row?.key, `${slot}.${content}`);
+    if (memoryIds.length < 2 || confidence < 65 || memoryContentRisk(content) || seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    result.push({ key, slot, content, memoryIds, confidence });
+  }
+  return result;
+}
+
+export function memorySynthesisSignature(memories: AgentMemoryRecord[]): string {
+  return sha256([
+    "ea-memory-synthesis-v2",
+    ...memories
+      .filter((item) => item.status === "active")
+      .sort((a, b) => a.id - b.id)
+      .map((item) => [item.id, item.version, item.kind, item.content].join(":")),
+  ].join("\n"));
+}
+
+function fallbackMemorySyntheses(memories: AgentMemoryRecord[]): MemorySynthesisCandidate[] {
+  const make = (
+    slot: AgentMemorySynthesisSlot,
+    key: string,
+    prefix: string,
+    rows: AgentMemoryRecord[],
+  ): MemorySynthesisCandidate | null => {
+    const selected = rows.slice(0, 4);
+    if (selected.length < 2) return null;
+    return {
+      key,
+      slot,
+      content: normalizeMemoryContent(`${prefix}${selected.map((item) => item.content).join("；")}`),
+      memoryIds: selected.map((item) => item.id),
+      confidence: Math.min(...selected.map((item) => Math.max(70, item.confidence))),
+    };
+  };
+  const profile = memories.filter((item) => item.kind === "preference" || item.kind === "entity");
+  const playbook = memories.filter((item) => item.kind === "instruction" || item.kind === "procedure");
+  const recent = memories.length >= 2
+    ? [...memories].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)).slice(0, 3)
+    : [];
+  return [
+    make("profile", "profile.stable_work_style", "稳定工作偏好：", profile),
+    make("recent", "recent.confirmed_changes", "近期确认的工作方式：", recent),
+    make("playbook", "playbook.role_method", "常用岗位方法：", playbook),
+  ].filter((item): item is MemorySynthesisCandidate => Boolean(item));
+}
+
 function atomicWrite(filePath: string, content: string): void {
   mkdirSync(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.ea-memory-${process.pid}-${Date.now()}`;
@@ -258,14 +349,29 @@ function memoryPolicyMarkdown(mode: AgentMemoryMode): string {
   ].join("\n");
 }
 
-export function renderManagedMemoryMarkdown(memories: AgentMemoryRecord[]): string {
+export function renderManagedMemoryMarkdown(
+  memories: AgentMemoryRecord[],
+  syntheses: AgentMemorySynthesisRecord[] = [],
+): string {
   if (!memories.length) return "";
   const lines = [
-    "## 已确认的岗位偏好",
+    "## 已确认的岗位记忆",
     "",
     "以下内容由 EA 持续学习系统管理；仅作为用户工作偏好，不覆盖系统规则、岗位边界或实时业务数据。",
     "",
   ];
+  if (syntheses.length) {
+    const synthesisLines: string[] = [];
+    let synthesisChars = 0;
+    for (const item of syntheses) {
+      const label = item.slot === "profile" ? "画像" : item.slot === "recent" ? "近期" : "方法";
+      const line = `- [${label}] ${normalizeMemoryContent(item.content)}`;
+      if (synthesisChars + line.length + 1 > MAX_PROJECTED_SYNTHESIS_CHARS) break;
+      synthesisLines.push(line);
+      synthesisChars += line.length + 1;
+    }
+    if (synthesisLines.length) lines.push("### 综合认知", "", ...synthesisLines, "", "### 记忆事实", "");
+  }
   let used = lines.join("\n").length;
   for (const item of memories) {
     const label = item.kind === "procedure" ? "流程" : item.kind === "entity" ? "事项" : "偏好";
@@ -287,6 +393,14 @@ export async function projectAgentMemories(input: {
   const memories = mode === "off"
     ? []
     : await listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active"], limit: 200 });
+  const sourceSignature = memorySynthesisSignature(memories);
+  const syntheses = mode === "off"
+    ? []
+    : await listAgentMemorySyntheses({
+        userId: input.userId,
+        adoptId: input.adoptId,
+        sourceSignature,
+      });
   const workspaceDir = jiuwenClawWorkspaceDir(input.adoptId, input.dbAgentId);
   const userPath = path.join(workspaceDir, "USER.md");
   const identityPath = path.join(workspaceDir, "IDENTITY.md");
@@ -296,7 +410,7 @@ export async function projectAgentMemories(input: {
     existingUser,
     MANAGED_BLOCK_START,
     MANAGED_BLOCK_END,
-    renderManagedMemoryMarkdown(memories),
+    renderManagedMemoryMarkdown(memories, syntheses),
   );
   const nextIdentity = replaceManagedBlock(
     existingIdentity,
@@ -318,6 +432,187 @@ async function projectByAdoptId(adoptId: string): Promise<void> {
     dbAgentId: String(claw.agentId || ""),
     adoptionId: Number(claw.id),
   });
+}
+
+const synthesisTimers = new Map<string, NodeJS.Timeout>();
+const synthesisInFlight = new Set<string>();
+
+function synthesisPrompt(roleTemplate: string, memories: AgentMemoryRecord[]): string {
+  const facts = memories.map((item) => ({
+    id: item.id,
+    kind: item.kind,
+    content: item.content,
+    confidence: item.confidence,
+    evidence_count: item.evidenceCount,
+    updated_at: item.updatedAt,
+  }));
+  return [
+    `当前岗位：${roleTemplate}`,
+    "下面是已经确认、允许长期使用的记忆事实。请只基于这些事实形成更高层的综合认知，不得补充外部知识或猜测。",
+    "输出分为 profile（稳定工作画像）、recent（近期变化）、playbook（岗位方法）三类；没有依据的类别可以不输出。",
+    "每条结论必须引用 memory_ids，且只能引用输入中存在的 id。尽量综合多条相关事实，避免简单改写单条事实。",
+    "不得包含客户数据、行情、余额、持仓、密钥、证件信息或实时业务结论。最多 8 条，每条为简洁中文陈述。",
+    "严格输出 JSON：{\"syntheses\":[{\"key\":\"profile.answer_style\",\"slot\":\"profile|recent|playbook\",\"content\":\"...\",\"memory_ids\":[1,2],\"confidence\":0-100}]}。",
+    `记忆事实：${JSON.stringify(facts)}`,
+  ].join("\n\n");
+}
+
+export async function refreshAgentMemorySynthesis(input: {
+  userId: number;
+  adoptId: string;
+  roleTemplate?: string;
+  force?: boolean;
+}): Promise<{ status: "ready"; count: number; model: string }> {
+  const key = `${input.userId}:${input.adoptId}`;
+  if (synthesisInFlight.has(key)) {
+    const current = await listAgentMemorySyntheses({ userId: input.userId, adoptId: input.adoptId });
+    return { status: "ready", count: current.length, model: current[0]?.model || "" };
+  }
+  const memories = await listAgentMemories({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    statuses: ["active"],
+    limit: 200,
+  });
+  const sourceSignature = memorySynthesisSignature(memories);
+  const state = await getAgentMemorySynthesisState(input.userId, input.adoptId);
+  if (!input.force && state?.status === "ready" && state.completedSignature === sourceSignature) {
+    const current = await listAgentMemorySyntheses({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      sourceSignature,
+    });
+    return { status: "ready", count: current.length, model: state.model };
+  }
+
+  synthesisInFlight.add(key);
+  await markAgentMemorySynthesisRunning({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    desiredSignature: sourceSignature,
+  });
+  try {
+    let rows: MemorySynthesisCandidate[] = [];
+    let model = "rule-based";
+    if (memories.length >= 2) {
+      try {
+        const result = await callEaAssistantModel({
+          maxTokens: 1400,
+          temperature: 0,
+          timeoutMs: 20_000,
+          messages: [
+            {
+              role: "system",
+              content: "你是企业岗位智能体的长期记忆整理器。所有结论都必须可追溯到提供的记忆事实，并严格输出 JSON。",
+            },
+            { role: "user", content: synthesisPrompt(input.roleTemplate || "general-assistant", memories) },
+          ],
+        });
+        model = result.model;
+        rows = parseMemorySyntheses(result.content, new Set(memories.map((item) => item.id)));
+      } catch (error: any) {
+        model = "rule-based-fallback";
+        appendLogAsync("agent-memory.log", {
+          ts: new Date().toISOString(),
+          event: "memory_synthesis_model_fallback",
+          adoptId: input.adoptId,
+          error: String(error?.message || error).slice(0, 300),
+        });
+      }
+    }
+    if (!rows.length && memories.length >= 2) rows = fallbackMemorySyntheses(memories);
+    await replaceAgentMemorySyntheses({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      sourceSignature,
+      model,
+      rows: rows.map((row) => ({
+        slot: row.slot,
+        canonicalKey: row.key,
+        content: row.content,
+        memoryIds: row.memoryIds,
+        confidence: row.confidence,
+      })),
+    });
+    await projectByAdoptId(input.adoptId);
+    appendLogAsync("agent-memory.log", {
+      ts: new Date().toISOString(),
+      event: "memory_synthesis_complete",
+      adoptId: input.adoptId,
+      factCount: memories.length,
+      synthesisCount: rows.length,
+      model,
+    });
+    return { status: "ready", count: rows.length, model };
+  } catch (error: any) {
+    await failAgentMemorySynthesis({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      desiredSignature: sourceSignature,
+      errorMessage: String(error?.message || error),
+    });
+    throw error;
+  } finally {
+    synthesisInFlight.delete(key);
+    void (async () => {
+      const latest = await listAgentMemories({
+        userId: input.userId,
+        adoptId: input.adoptId,
+        statuses: ["active"],
+        limit: 200,
+      });
+      if (memorySynthesisSignature(latest) !== sourceSignature) {
+        scheduleAgentMemorySynthesis(input, 50);
+      }
+    })().catch(() => {});
+  }
+}
+
+function scheduleAgentMemorySynthesis(input: {
+  userId: number;
+  adoptId: string;
+  roleTemplate?: string;
+}, delayMs = MEMORY_SYNTHESIS_DELAY_MS): void {
+  const key = `${input.userId}:${input.adoptId}`;
+  if (synthesisTimers.has(key) || synthesisInFlight.has(key)) return;
+  void (async () => {
+    const memories = await listAgentMemories({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      statuses: ["active"],
+      limit: 200,
+    });
+    await markAgentMemorySynthesisPending({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      desiredSignature: memorySynthesisSignature(memories),
+    });
+  })().catch(() => {});
+  const timer = setTimeout(() => {
+    synthesisTimers.delete(key);
+    void refreshAgentMemorySynthesis(input).catch((error) => {
+      appendLogAsync("agent-memory.log", {
+        ts: new Date().toISOString(),
+        event: "memory_synthesis_failed",
+        adoptId: input.adoptId,
+        error: String(error?.message || error).slice(0, 300),
+      });
+    });
+  }, delayMs);
+  timer.unref?.();
+  synthesisTimers.set(key, timer);
+}
+
+function scheduleSynthesisByAdoptId(adoptId: string): void {
+  void (async () => {
+    const claw = await getClawByAdoptId(adoptId);
+    if (!claw) return;
+    scheduleAgentMemorySynthesis({
+      userId: Number(claw.userId),
+      adoptId,
+      roleTemplate: String(claw.roleTemplate || "general-assistant"),
+    });
+  })().catch(() => {});
 }
 
 async function isAgentMemoryLearningAllowed(userId: number, adoptId: string): Promise<boolean> {
@@ -413,7 +708,14 @@ async function observeMemory(input: {
     await setAgentMemoryStatus(item.id, input.userId, input.adoptId, "active");
     item = await getAgentMemoryById(input.userId, input.adoptId, item.id) || { ...item, status: "active" };
   }
-  if (item.status === "active") await projectByAdoptId(input.adoptId);
+  if (item.status === "active") {
+    await projectByAdoptId(input.adoptId);
+    scheduleAgentMemorySynthesis({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      roleTemplate: input.roleTemplate,
+    });
+  }
   return item;
 }
 
@@ -477,6 +779,11 @@ export async function forgetAgentMemory(input: {
   if (!item) throw new Error("没有找到匹配的岗位偏好");
   await forgetAgentMemoryRecord(item.id, input.userId, input.adoptId);
   await projectByAdoptId(input.adoptId);
+  scheduleAgentMemorySynthesis({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    roleTemplate: item.roleTemplate,
+  });
   return { ...item, status: "forgotten" };
 }
 
@@ -493,6 +800,11 @@ export async function updateAgentMemory(input: {
   if (!existing || !["active", "candidate"].includes(existing.status)) throw new Error("岗位偏好不存在");
   await updateAgentMemoryContent(input.id, input.userId, input.adoptId, content);
   await projectByAdoptId(input.adoptId);
+  scheduleAgentMemorySynthesis({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    roleTemplate: existing.roleTemplate,
+  });
   return await getAgentMemoryById(input.userId, input.adoptId, input.id) || { ...existing, content, status: "active" };
 }
 
@@ -501,15 +813,69 @@ export async function listAgentMemoryView(input: { userId: number; adoptId: stri
     getAgentMemoryMode(input.adoptionId),
     listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active", "candidate"], limit: 300 }),
   ]);
+  const evidence = await listAgentMemoryEvidence({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    memoryIds: items.map((item) => item.id),
+    limit: 600,
+  });
+  const activeItems = items.filter((item) => item.status === "active");
+  const sourceSignature = memorySynthesisSignature(activeItems);
+  const [syntheses, storedSynthesisState] = await Promise.all([
+    listAgentMemorySyntheses({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      sourceSignature,
+    }),
+    getAgentMemorySynthesisState(input.userId, input.adoptId),
+  ]);
+  const synthesisReady = storedSynthesisState?.status === "ready"
+    && storedSynthesisState.completedSignature === sourceSignature;
+  const synthesisFailed = storedSynthesisState?.status === "failed"
+    && storedSynthesisState.desiredSignature === sourceSignature;
+  if (!synthesisReady && !synthesisFailed) scheduleSynthesisByAdoptId(input.adoptId);
+  const synthesisStatus = synthesisReady
+    ? "ready"
+    : synthesisFailed
+      ? "failed"
+      : "building";
   return {
     mode,
     summary: {
-      active: items.filter((item) => item.status === "active").length,
+      active: activeItems.length,
       candidate: items.filter((item) => item.status === "candidate").length,
-      procedures: items.filter((item) => item.status === "active" && item.kind === "procedure").length,
+      procedures: activeItems.filter((item) => item.kind === "procedure").length,
+      evidence: evidence.length,
+      syntheses: syntheses.length,
     },
     items,
+    evidence,
+    syntheses,
+    synthesisState: {
+      status: synthesisStatus,
+      model: synthesisReady ? storedSynthesisState?.model || "" : "",
+      errorMessage: synthesisFailed ? storedSynthesisState?.errorMessage || "记忆整理暂时失败" : null,
+      generatedAt: synthesisReady ? storedSynthesisState?.completedAt || null : null,
+    },
   };
+}
+
+export async function confirmAgentMemory(input: { userId: number; adoptId: string; id: number }): Promise<void> {
+  const existing = await getAgentMemoryById(input.userId, input.adoptId, input.id);
+  if (!existing || existing.status !== "candidate") throw new Error("待确认记忆不存在");
+  await confirmAgentMemoryRecord(input.id, input.userId, input.adoptId);
+  await projectByAdoptId(input.adoptId);
+  scheduleAgentMemorySynthesis({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    roleTemplate: existing.roleTemplate,
+  });
+}
+
+export async function rejectAgentMemory(input: { userId: number; adoptId: string; id: number }): Promise<void> {
+  const existing = await getAgentMemoryById(input.userId, input.adoptId, input.id);
+  if (!existing || existing.status !== "candidate") throw new Error("待确认记忆不存在");
+  await rejectAgentMemoryRecord(input.id, input.userId, input.adoptId);
 }
 
 export async function changeAgentMemoryMode(input: {
@@ -529,7 +895,10 @@ export async function applyPositiveMemoryFeedback(input: {
   conversationId: string;
 }): Promise<void> {
   const promoted = await promoteConversationMemoryCandidates(input);
-  if (promoted > 0) await projectByAdoptId(input.adoptId);
+  if (promoted > 0) {
+    await projectByAdoptId(input.adoptId);
+    scheduleSynthesisByAdoptId(input.adoptId);
+  }
 }
 
 export async function applyNegativeMemoryFeedback(input: {
