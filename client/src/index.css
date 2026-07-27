@@ -8442,6 +8442,33 @@ input.session-searchbar__input:focus-visible,
   background: var(--oc-bg-surface) !important;
   color: var(--oc-text-primary) !important;
 }
+.lingxia-attachment-preview > button[data-slot="dialog-close"] {
+  top: 15px;
+  right: 15px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 0 !important;
+  border-radius: 7px;
+  background: transparent !important;
+  color: var(--oc-text-secondary) !important;
+  box-shadow: none !important;
+  opacity: 1;
+}
+.lingxia-attachment-preview > button[data-slot="dialog-close"]:hover {
+  background: var(--oc-bg-hover) !important;
+  color: var(--oc-text-primary) !important;
+}
+.lingxia-attachment-preview > button[data-slot="dialog-close"]:focus {
+  outline: none;
+  box-shadow: none !important;
+}
+.lingxia-attachment-preview > button[data-slot="dialog-close"]:focus-visible {
+  background: var(--oc-bg-hover) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--oc-border-strong) 72%, transparent) !important;
+}
 .lingxia-attachment-preview__header {
   display: flex;
   min-height: 58px;

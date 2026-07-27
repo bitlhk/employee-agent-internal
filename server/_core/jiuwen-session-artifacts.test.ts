@@ -49,6 +49,25 @@ describe("Jiuwen session artifacts", () => {
     ]);
   });
 
+  it("rejects shell redirection files created by unquoted dependency versions", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-artifacts-shell-redirection-"));
+    roots.push(root);
+    const historyFile = path.join(root, "history.jsonl");
+    writeJiuwenSessionArtifacts({
+      sessionDir: root,
+      adoptId: "lgj-test",
+      requestId: "request-shell-redirection",
+      files: [
+        { name: "=3.0.0", size: 0, path: "=3.0.0" },
+        { name: "fund-report.txt", size: 12, path: "output/fund-report.txt" },
+      ],
+    });
+
+    expect(readJiuwenSessionArtifacts(historyFile).get("request-shell-redirection")?.files).toEqual([
+      { name: "fund-report.txt", size: 12, path: "output/fund-report.txt" },
+    ]);
+  });
+
   it("hides internal context files from manifests written by older versions", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-artifacts-legacy-"));
     roots.push(root);
@@ -62,6 +81,7 @@ describe("Jiuwen session artifacts", () => {
           updatedAt: "2026-07-17T00:00:00.000Z",
           files: [
             { name: "MessageSummaryOffloader.json", size: 2, path: "context/session/offload/MessageSummaryOffloader.json" },
+            { name: "=0.24.0", size: 0, path: "=0.24.0" },
             { name: "report.md", size: 6, path: "report.md" },
           ],
         },

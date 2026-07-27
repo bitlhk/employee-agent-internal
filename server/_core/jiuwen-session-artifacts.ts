@@ -33,6 +33,7 @@ const INTERNAL_WORKSPACE_ROOTS = new Set([
   ".openclaw",
   ".agent_history",
 ]);
+const SHELL_REDIRECTION_VERSION_FILE = /^=[0-9]+(?:\.[0-9A-Za-z_+-]+)+$/;
 
 function emptyRegistry(): ArtifactRegistry {
   return { version: 1, runs: {} };
@@ -45,10 +46,12 @@ function safeRequestId(value: unknown): string {
 export function isUserVisibleJiuwenArtifactPath(value: unknown): boolean {
   const rel = String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "");
   const parts = rel.split("/").filter(Boolean);
+  const name = parts.at(-1) || "";
   return Boolean(
     parts.length
     && !parts.some((part) => part === "." || part === "..")
-    && !INTERNAL_WORKSPACE_ROOTS.has(parts[0]),
+    && !INTERNAL_WORKSPACE_ROOTS.has(parts[0])
+    && !SHELL_REDIRECTION_VERSION_FILE.test(name)
   );
 }
 

@@ -78,10 +78,13 @@ describe("jiuwenclaw bridge audit helpers", () => {
       const cutoff = Date.now();
       const uploaded = path.join(root, "uploaded.txt");
       const generated = path.join(root, "generated.txt");
+      const redirectedVersion = path.join(root, "=3.0.0");
       writeFileSync(uploaded, "input", "utf8");
       utimesSync(uploaded, new Date(cutoff - 5000), new Date(cutoff - 5000));
       writeFileSync(generated, "output", "utf8");
       utimesSync(generated, new Date(cutoff + 1000), new Date(cutoff + 1000));
+      writeFileSync(redirectedVersion, "", "utf8");
+      utimesSync(redirectedVersion, new Date(cutoff + 1000), new Date(cutoff + 1000));
 
       expect(collectRecentWorkspaceFiles(root, cutoff).map((file) => file.name)).toEqual(["generated.txt"]);
     } finally {
