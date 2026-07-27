@@ -249,7 +249,15 @@ export async function listSkillMarketItems(status?: string): Promise<any[]> {
 export async function listApprovedSkillMarketItems(): Promise<any[]> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  return db.select().from(skillMarketplace).where(eq(skillMarketplace.status, "approved")).orderBy(skillMarketplace.downloadCount);
+  return db
+    .select()
+    .from(skillMarketplace)
+    .where(eq(skillMarketplace.status, "approved"))
+    .orderBy(
+      desc(skillMarketplace.downloadCount),
+      desc(skillMarketplace.updatedAt),
+      asc(skillMarketplace.skillId),
+    );
 }
 
 export async function getSkillMarketItem(id: number): Promise<any | undefined> {
