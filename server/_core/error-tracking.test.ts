@@ -49,4 +49,10 @@ describe("4xx error tracking", () => {
     for (let i = 0; i < 25; i++) await track4xxError(req, {} as express.Response, 400);
     expect(shouldBlockIp("203.0.113.10")).toBe(false);
   });
+
+  it("does not block a desktop client when its session expires", async () => {
+    const req = { path: "/api/desktop/capabilities", ip: "203.0.113.11" } as express.Request;
+    for (let i = 0; i < 25; i++) await track4xxError(req, {} as express.Response, 401);
+    expect(shouldBlockIp("203.0.113.11")).toBe(false);
+  });
 });

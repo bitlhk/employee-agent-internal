@@ -68,6 +68,7 @@ import {
   listClawChatHistorySessionRecords,
   readModernChatHistorySessionMessages,
 } from "./claw-misc";
+import { authLimiter } from "./security";
 
 type DesktopUser = {
   id: string;
@@ -1331,7 +1332,7 @@ function sharedJobToDesktopFmt(j: any): object {
 // ── Desktop Cron Route Registration ─────────────────────────────────────────
 
 export function registerDesktopRoutes(app: express.Express) {
-  app.post("/api/desktop/login", express.json(), async (req, res) => {
+  app.post("/api/desktop/login", authLimiter, express.json(), async (req, res) => {
     try {
       const email = String(req.body?.email || "")
         .trim()

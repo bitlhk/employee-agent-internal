@@ -45,6 +45,10 @@ function isErrorTrackingExemptPath(req: Request): boolean {
   if (path === "/api/claw/skills/registry") return true;
   if (path === "/api/embed/auth-check") return true;
   if (path.startsWith("/api/ea/session-view/")) return true;
+  // Desktop clients may issue several authenticated bootstrap requests in
+  // parallel. An expired session should return to login, not block every user
+  // behind the same office/NAT address. The login endpoint has authLimiter.
+  if (path.startsWith("/api/desktop/") && path !== "/api/desktop/login") return true;
   if (path === "/api/trpc/coop.iswhitelisted") return true;
   if (path === "/api/trpc/ipaccesslogs.getmytodaycount") return true;
   if (path.startsWith("/claw/")) return true;
