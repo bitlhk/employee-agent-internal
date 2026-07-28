@@ -20,7 +20,6 @@ export type SessionGroup = "pinned" | "today" | "week" | "earlier";
 type SessionListProps = {
   sessions?: SessionListConversation[];
   currentConversationId?: string;
-  sessionSwitchingId?: string | null;
   messageSearchProvider?: (conversationId: string, query: string) => string;
   onSwitchConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
@@ -105,7 +104,6 @@ export function groupSessionConversations(
 export function SessionList({
   sessions = [],
   currentConversationId,
-  sessionSwitchingId,
   onSwitchConversation,
   onDeleteConversation,
   onRenameConversation,
@@ -222,7 +220,6 @@ export function SessionList({
             title="新建会话"
             aria-label="新建会话"
             onClick={onNewConversation}
-            disabled={!!sessionSwitchingId}
             className="session-list-new-button"
           >
             <SquarePen aria-hidden="true" />
@@ -231,7 +228,7 @@ export function SessionList({
       </div>
 
       {!historyCollapsed ? (
-      <div className="min-h-0 flex-1 overflow-y-auto stealth-scrollbar pr-1">
+      <div className="session-list-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
         {loading ? (
           <div className="space-y-2 px-2 py-2" aria-label="正在加载会话">
             {Array.from({ length: skeletonRows }).map((_, index) => (
@@ -257,8 +254,6 @@ export function SessionList({
                 <div className="session-list-group-label">{GROUP_LABELS[group.key]}</div>
                 {group.sessions.map((session) => {
                   const active = session.conversationId === currentConversationId;
-                  const switching = sessionSwitchingId === session.conversationId;
-                  const disabled = !!sessionSwitchingId;
                   const editing = editingId === session.conversationId;
                   const menuOpen = menuId === session.conversationId;
                   const pinned = Boolean(session.pinnedAt);
@@ -270,11 +265,9 @@ export function SessionList({
                       role="button"
                       tabIndex={0}
                       title={shortTitle(session)}
-                      onClick={() => {
-                        if (!disabled) onSwitchConversation?.(session.conversationId);
-                      }}
+                      onClick={() => onSwitchConversation?.(session.conversationId)}
                       onKeyDown={(event) => {
-                        if ((event.key === "Enter" || event.key === " ") && !disabled) {
+                        if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           onSwitchConversation?.(session.conversationId);
                         }
@@ -285,8 +278,7 @@ export function SessionList({
                         padding: isMobile ? "8px 10px" : undefined,
                         minHeight: isMobile ? 44 : undefined,
                         borderRadius: isMobile ? 8 : undefined,
-                        opacity: sessionSwitchingId && !switching ? 0.52 : 1,
-                        cursor: sessionSwitchingId ? "wait" : "pointer",
+                        cursor: "pointer",
                       }}
                     >
                       {active && !isMobile ? <span className="sidebar-item-indicator" /> : null}
@@ -328,7 +320,7 @@ export function SessionList({
                           </div>
                         ) : (
                           <div className="sidebar-item-label truncate" style={{ fontSize: 14, fontWeight: 400, color: isMobile ? "var(--oc-text-primary)" : undefined }}>
-                            {switching ? "正在切换..." : shortTitle(session)}
+                            {shortTitle(session)}
                           </div>
                         )}
                         {isMobile && previewText ? (
@@ -351,7 +343,6 @@ export function SessionList({
                             type="button"
                             title="会话操作"
                             aria-label="会话操作"
-                            disabled={disabled}
                             onClick={(event) => toggleRowMenu(session.conversationId, event)}
                             className="session-list-menu-trigger"
                           >

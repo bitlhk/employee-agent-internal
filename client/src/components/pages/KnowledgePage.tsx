@@ -52,15 +52,40 @@ type KnowledgeDocument = {
   extension: string;
   mimeType: string;
   sizeBytes: number;
+  versionLabel: string;
+  lifecycle: "draft" | "active" | "expired" | "archived";
+  sourceDepartment: string;
+  classification: "public" | "internal" | "sensitive" | "restricted";
+  authority: "official" | "approved" | "reference" | "personal";
+  effectiveAt?: string | null;
+  expiresAt?: string | null;
   status: "uploaded" | "indexing" | "ready" | "failed";
   chunkCount: number;
   lastError?: string | null;
   updatedAt: string;
+  source?: {
+    type: "upload" | "chat" | "workspace";
+    capturedAt: string;
+    workspacePath?: string;
+    captureMode?: "answer" | "turn";
+  } | null;
 };
 
 const SCOPE_LABELS: Record<Scope, string> = { personal: "我的知识", role: "岗位知识", enterprise: "企业知识" };
 const STATUS_LABELS: Record<BaseStatus, string> = { empty: "等待文档", indexing: "正在解析", ready: "可检索", failed: "处理失败" };
+const DOCUMENT_LIFECYCLE_LABELS: Record<KnowledgeDocument["lifecycle"], string> = {
+  draft: "草稿",
+  active: "有效",
+  expired: "已失效",
+  archived: "已归档",
+};
 const SUPPORTED_EXTENSIONS = new Set(["md", "txt", "csv", "json", "yaml", "yml", "pdf", "docx", "xlsx", "pptx"]);
+
+function documentSourceLabel(document: KnowledgeDocument): string {
+  if (document.source?.type === "chat") return document.source.captureMode === "turn" ? "对话问答" : "智能体回复";
+  if (document.source?.type === "workspace") return "工作空间产物";
+  return "上传文档";
+}
 
 function formatTime(value: string): string {
   const date = new Date(value);
@@ -225,7 +250,7 @@ export function KnowledgePage({ adoptId }: { adoptId: string }) {
                 <div className="knowledge-search-results__head"><span>“{searchQuery}”的相关内容</span><button type="button" onClick={() => { setSearchQuery(""); setSearchInput(""); }}>关闭</button></div>
                 {searchResult.isLoading ? <div className="knowledge-search-empty"><LoaderCircle className="is-spinning" />正在检索资料...</div> : searchResult.error ? <div className="knowledge-search-empty is-error">{searchResult.error.message}</div> : (searchResult.data?.results || []).length ? (searchResult.data?.results || []).map((result: any) => (
                   <button key={result.chunkId} type="button" className="knowledge-search-hit" onClick={() => setSelectedDocument(documents.find((doc) => doc.publicId === result.documentId) || null)}>
-                    <span><strong>{result.documentName}</strong><small>{result.position}</small></span>
+                    <span><strong>{result.documentName}{result.documentVersion && result.documentVersion !== "1.0" ? ` · ${result.documentVersion}` : ""}</strong><small>{result.headingPath?.length ? result.headingPath.join(" / ") : result.position}</small></span>
                     <p>{result.text}</p>
                   </button>
                 )) : <div className="knowledge-search-empty">没有找到相关内容</div>}
@@ -239,7 +264,7 @@ export function KnowledgePage({ adoptId }: { adoptId: string }) {
               {detail.isLoading ? <div className="knowledge-document-empty"><LoaderCircle className="is-spinning" />正在加载文档...</div> : documents.length ? documents.map((document) => (
                 <div key={document.publicId} role="button" tabIndex={0} className="knowledge-document-row" data-active={selectedDocument?.publicId === document.publicId} onClick={() => setSelectedDocument(document)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedDocument(document); } }}>
                   <span className="knowledge-document-row__icon"><FileTypeIcon name={document.name} /></span>
-                  <span className="knowledge-document-row__body"><strong title={document.name}>{document.name}</strong><small>{formatSize(document.sizeBytes)} · {document.status === "ready" ? `${document.chunkCount} 个知识片段` : document.status === "failed" ? "处理失败" : "正在处理"}</small></span>
+                  <span className="knowledge-document-row__body"><strong title={document.name}>{document.name}</strong><small>{documentSourceLabel(document)} · {document.versionLabel && document.versionLabel !== "1.0" ? `${document.versionLabel} · ` : ""}{DOCUMENT_LIFECYCLE_LABELS[document.lifecycle] || "有效"} · {formatSize(document.sizeBytes)} · {document.status === "ready" ? `${document.chunkCount} 个知识片段` : document.status === "failed" ? "处理失败" : "正在处理"}</small></span>
                   {canEdit ? <span className="knowledge-document-row__actions"><button type="button" title="删除" onClick={(event) => { event.stopPropagation(); void deleteDocument(document); }}><Trash2 /></button></span> : null}
                 </div>
               )) : <div className="knowledge-document-empty"><FolderOpen /><strong>还没有文档</strong><span>上传资料后会自动解析并建立索引。</span></div>}

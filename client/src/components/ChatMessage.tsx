@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import {
   Bot,
   BookOpen,
+  BookPlus,
   Brain,
   Check,
   ChevronDown,
@@ -82,7 +83,12 @@ export type ChatKnowledgeSource = {
   knowledgeBaseName: string;
   documentId: string;
   documentName: string;
+  documentVersion?: string;
   position: string;
+  headingPath?: string[];
+  page?: number | null;
+  sourceDepartment?: string;
+  authority?: string;
 };
 
 export type MessageEventEntry =
@@ -170,6 +176,7 @@ type ChatMessageProps = {
   feedbackPending?: boolean;
   onFeedback?: (feedback: MessageFeedbackValue | null) => void | Promise<void>;
   onForgetMemory?: (memoryId: number) => void | Promise<void>;
+  onCaptureKnowledge?: (input: { messageId?: string; text: string; modelId: string }) => void;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "reject") => void;
   onOpenAgentArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
@@ -1026,6 +1033,7 @@ function ChatMessageInner({
   isLast,
   isPlaceholder,
   streaming,
+  modelId,
   timeLabel,
   attachments,
   knowledgeSources,
@@ -1038,6 +1046,7 @@ function ChatMessageInner({
   feedbackPending = false,
   onFeedback,
   onForgetMemory,
+  onCaptureKnowledge,
   jiuwenPermission,
   onJiuwenPermissionAnswer,
   onOpenAgentArtifact,
@@ -1224,7 +1233,7 @@ function ChatMessageInner({
                 id={`ea-knowledge-source-${String(messageId || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message"}-${source.index}`}
                 key={`${source.knowledgeBaseId}:${source.documentId}:${source.index}`}
                 className="lingxia-knowledge-source"
-                title={`${knowledgeBaseNames.join("、")} · ${source.documentName} · ${source.position}`}
+                title={`${knowledgeBaseNames.join("、")} · ${source.documentName}${source.documentVersion && source.documentVersion !== "1.0" ? ` · ${source.documentVersion}` : ""} · ${source.headingPath?.length ? source.headingPath.join(" / ") : source.position}`}
               >
                 {indexes.slice(1).map((index) => (
                   <i
@@ -1235,8 +1244,8 @@ function ChatMessageInner({
                   />
                 ))}
                 <b>{indexes.length > 1 ? `${source.index}+` : source.index}</b>
-                <span>{source.documentName}</span>
-                <small>{source.position}{indexes.length > 1 ? ` · ${indexes.length} 处` : ""}</small>
+                <span>{source.documentName}{source.documentVersion && source.documentVersion !== "1.0" ? ` · ${source.documentVersion}` : ""}</span>
+                <small>{source.headingPath?.length ? source.headingPath.join(" / ") : source.position}{source.page && source.headingPath?.length ? ` · 第 ${source.page} 页` : ""}{indexes.length > 1 ? ` · ${indexes.length} 处` : ""}</small>
               </span>
             ))}
           </div>
@@ -1375,6 +1384,16 @@ function ChatMessageInner({
               >
                 {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
               </button>
+              {onCaptureKnowledge ? (
+                <button
+                  onClick={() => onCaptureKnowledge({ messageId, text: displayText, modelId })}
+                  type="button"
+                  title="沉淀为知识"
+                  className="lingxia-msg-footer-action"
+                >
+                  <BookPlus aria-hidden="true" />
+                </button>
+              ) : null}
               <button
                 onClick={async () => {
                   if (ttsPlaying) { ttsAudioRef.current?.pause(); setTtsPlaying(false); return; }
@@ -1554,6 +1573,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.onOpenAgentArtifact === next.onOpenAgentArtifact &&
     prev.onResumeExpert === next.onResumeExpert &&
     prev.onCancelExpert === next.onCancelExpert &&
+    prev.onCaptureKnowledge === next.onCaptureKnowledge &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&
     prev.usage?.input === next.usage?.input &&
     prev.usage?.output === next.usage?.output &&

@@ -31,6 +31,20 @@ export function resolveExistingWorkspacePath(
   }
 }
 
+export function resolveExistingRegularFile(root: string, relPath: string): string | null {
+  const candidate = lexicalWorkspacePath(root, relPath);
+  if (!candidate || !existsSync(candidate)) return null;
+  try {
+    const rootReal = realpathSync(root);
+    const entry = lstatSync(candidate);
+    if (entry.isSymbolicLink() || !entry.isFile()) return null;
+    const candidateReal = realpathSync(candidate);
+    return isWithin(candidateReal, rootReal) ? candidateReal : null;
+  } catch {
+    return null;
+  }
+}
+
 export function resolveWorkspaceWritePath(workspace: string, relPath: string): string | null {
   const candidate = lexicalWorkspacePath(workspace, relPath);
   if (!candidate) return null;

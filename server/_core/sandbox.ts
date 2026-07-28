@@ -16,8 +16,9 @@
  */
 
 import { execSync, spawnSync, spawn } from "child_process";
-import { appendFileSync, mkdirSync } from "fs";
+import { appendFileSync, chmodSync, chownSync, lstatSync, mkdirSync, readdirSync, realpathSync } from "fs";
 import path from "path";
+import { resolveExistingRegularFile } from "./file-path-security";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 
@@ -33,6 +34,47 @@ const SANDBOX_MAX_OUTPUT = parseInt(process.env.SANDBOX_MAX_OUTPUT_BYTES || Stri
 // 并发控制
 const SANDBOX_MAX_GLOBAL = parseInt(process.env.SANDBOX_MAX_GLOBAL || "5");
 const SANDBOX_MAX_PER_USER = parseInt(process.env.SANDBOX_MAX_PER_USER || "2");
+
+export type SandboxContainerIdentity = { uid: number; gid: number; value: string };
+
+export function resolveSandboxContainerIdentity(
+  configured = process.env.SANDBOX_USER,
+  hostUid = typeof process.getuid === "function" ? process.getuid() : 0,
+  hostGid = typeof process.getgid === "function" ? process.getgid() : 0,
+): SandboxContainerIdentity {
+  const fallbackUid = hostUid > 0 ? hostUid : 65534;
+  const fallbackGid = hostGid > 0 ? hostGid : 65534;
+  const match = String(configured || "").trim().match(/^(\d+)(?::(\d+))?$/);
+  const requestedUid = match ? Number(match[1]) : fallbackUid;
+  const requestedGid = match ? Number(match[2] || match[1]) : fallbackGid;
+  const uid = Number.isSafeInteger(requestedUid) && requestedUid > 0 ? requestedUid : fallbackUid;
+  const gid = Number.isSafeInteger(requestedGid) && requestedGid > 0 ? requestedGid : fallbackGid;
+  return { uid, gid, value: `${uid}:${gid}` };
+}
+
+export function collectSafeSandboxOutputFiles(outputDir: string): Array<{ name: string; size: number }> {
+  const root = realpathSync(outputDir);
+  return readdirSync(root).flatMap((name) => {
+    const safePath = resolveExistingRegularFile(root, name);
+    if (!safePath) return [];
+    const stats = lstatSync(safePath);
+    return [{ name, size: stats.size }];
+  });
+}
+
+function prepareSandboxOutputDirectory(outputDir: string, identity: SandboxContainerIdentity): string {
+  const entry = lstatSync(outputDir);
+  if (entry.isSymbolicLink() || !entry.isDirectory()) throw new Error("sandbox output directory is invalid");
+  const real = realpathSync(outputDir);
+  const hostUid = typeof process.getuid === "function" ? process.getuid() : 0;
+  if (hostUid === 0) {
+    chownSync(real, identity.uid, identity.gid);
+  } else if (identity.uid !== hostUid) {
+    throw new Error("SANDBOX_USER must match the non-root service uid");
+  }
+  chmodSync(real, 0o700);
+  return real;
+}
 
 // ── 状态追踪 ─────────────────────────────────────────────────────────
 const activeByUser = new Map<string, number>(); // adoptId -> count
@@ -120,6 +162,7 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
     const containerName = `sb-${adoptId.replace(/[^a-z0-9]/gi, "")}-${Date.now()}`;
 
     // 构建 docker run 命令
+    const sandboxIdentity = resolveSandboxContainerIdentity();
     const dockerArgs = [
       "run",
       "--rm",
@@ -133,6 +176,8 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
       `--pids-limit=${SANDBOX_PIDS_LIMIT}`,
       "--cap-drop=ALL",
       "--security-opt=no-new-privileges",
+      `--user=${sandboxIdentity.value}`,
+      "--env=HOME=/tmp",
     ];
 
     // 用户自定义环境变量（过滤危险 key）
@@ -146,7 +191,8 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
 
     // 挂载输出目录（宿主机目录 → 容器 /output，可写）
     if (opts.outputDir) {
-      dockerArgs.push(`-v`, `${opts.outputDir}:/output`);
+      const outputDir = prepareSandboxOutputDirectory(opts.outputDir, sandboxIdentity);
+      dockerArgs.push(`-v`, `${outputDir}:/output`);
     }
 
     dockerArgs.push(SANDBOX_IMAGE, "sh", "-c", "sleep 30");
@@ -233,20 +279,8 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
     let outputFiles: Array<{ name: string; size: number }> | undefined;
     if (opts.outputDir) {
       try {
-        const { readdirSync, statSync } = await import("fs");
-        const entries = readdirSync(opts.outputDir);
-        if (entries.length > 0) {
-          outputFiles = entries
-            .filter(f => {
-              try { return statSync(`${opts.outputDir!}/${f}`).isFile(); } catch { return false; }
-            })
-            .map(f => {
-              try {
-                const s = statSync(`${opts.outputDir!}/${f}`);
-                return { name: f, size: s.size };
-              } catch { return { name: f, size: 0 }; }
-            });
-        }
+        const entries = collectSafeSandboxOutputFiles(opts.outputDir);
+        if (entries.length > 0) outputFiles = entries;
       } catch {}
     }
 

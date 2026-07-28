@@ -1,0 +1,123 @@
+import hashlib
+import os
+from pathlib import Path
+import tempfile
+import unittest
+
+import service
+
+
+class KnowledgeServiceTest(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.original_data_root = service.DATA_ROOT
+        self.original_index_root = service.INDEX_ROOT
+        self.original_embedding = {
+            key: os.environ.get(key)
+            for key in ("KNOWLEDGE_EMBED_API_KEY", "KNOWLEDGE_EMBED_API_BASE", "KNOWLEDGE_EMBED_MODEL")
+        }
+        service.DATA_ROOT = Path(self.directory.name) / "knowledge"
+        service.INDEX_ROOT = service.DATA_ROOT / "indexes"
+        for key in self.original_embedding:
+            os.environ[key] = ""
+        service._embedding_model.cache_clear()
+        service._runtime_index.cache_clear()
+        service._query_cache.clear()
+
+    def tearDown(self):
+        service.DATA_ROOT = self.original_data_root
+        service.INDEX_ROOT = self.original_index_root
+        for key, value in self.original_embedding.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        service._embedding_model.cache_clear()
+        service._runtime_index.cache_clear()
+        service._query_cache.clear()
+        self.directory.cleanup()
+
+    def document(self) -> service.SourceDocument:
+        source = service.DATA_ROOT / "documents" / "kb_testbase1" / "doc_policy001" / "policy.md"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(
+            "# 差旅制度\n\n## 住宿标准\n\n北京住宿标准为每晚 800 元，超过标准须提前审批。\n\n"
+            "## 交通标准\n\n员工优先乘坐高铁二等座。",
+            "utf-8",
+        )
+        return service.SourceDocument(
+            id="doc_policy001",
+            name="差旅制度.md",
+            path=str(source),
+            sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            version_label="2026.1",
+            authority="official",
+        )
+
+    def test_parent_child_index_returns_structured_citation(self):
+        document = self.document()
+        built = service._build_index(service.IndexRequest(knowledge_base_id="kb_testbase1", documents=[document]))
+        result = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"],
+            query="北京住宿标准是多少",
+            top_k=3,
+            mode="forced",
+        ))
+        hit = result["results"][0]
+        self.assertEqual(built["index_schema_version"], 2)
+        self.assertEqual(hit["heading_path"], ["差旅制度", "住宿标准"])
+        self.assertEqual(hit["document_version"], "2026.1")
+        self.assertEqual(hit["authority"], "official")
+        self.assertIn("800", hit["text"])
+
+    def test_version_switch_keeps_two_rollback_indexes(self):
+        document = self.document()
+        first = service._build_index(service.IndexRequest(knowledge_base_id="kb_testbase1", documents=[document]))
+        second = service._build_index(service.IndexRequest(knowledge_base_id="kb_testbase1", documents=[document]))
+        versions = [item for item in (service.INDEX_ROOT / "kb_testbase1" / "versions").iterdir() if item.is_dir()]
+        self.assertNotEqual(first["index_version"], second["index_version"])
+        self.assertEqual(len(versions), 2)
+        self.assertEqual(service._current_index_version("kb_testbase1"), second["index_version"])
+        self.assertEqual(
+            service._runtime_index("kb_testbase1", first["index_version"]).target.name,
+            first["index_version"],
+        )
+
+    def test_governance_metadata_changes_document_cache_fingerprint(self):
+        document = self.document()
+        baseline = service._document_fingerprint(document)
+        changed = document.model_copy(update={
+            "source_department": "风险管理部",
+            "effective_at": "2026-07-01T00:00:00Z",
+        })
+        self.assertNotEqual(baseline, service._document_fingerprint(changed))
+
+    def test_document_id_cannot_escape_cache_root(self):
+        with self.assertRaises(ValueError):
+            service.SourceDocument(
+                id="../outside",
+                name="unsafe.md",
+                path=self.document().path,
+            )
+
+    def test_reranker_fails_closed_for_restricted_candidates(self):
+        node = service.TextNode(
+            id_="doc_policy001:c1",
+            text="敏感资料",
+            metadata={"external_processing_allowed": False},
+        )
+        original_url = service._rerank_url
+        service._rerank_url = lambda: "https://rerank.example/v1/rerank"
+        os.environ["KNOWLEDGE_RERANK_API_KEY"] = "test"
+        os.environ["KNOWLEDGE_RERANK_MODEL"] = "test"
+        try:
+            _, status = service._rerank_candidates("测试", [(node, 0.1), (node, 0.05)])
+            self.assertEqual(status, "skipped_policy")
+        finally:
+            service._rerank_url = original_url
+            os.environ.pop("KNOWLEDGE_RERANK_API_KEY", None)
+            os.environ.pop("KNOWLEDGE_RERANK_MODEL", None)
+
+
+if __name__ == "__main__":
+    unittest.main()

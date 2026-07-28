@@ -2,7 +2,12 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveExistingWorkspacePath, resolveWorkspaceDeletePath, resolveWorkspaceWritePath } from "./file-path-security";
+import {
+  resolveExistingRegularFile,
+  resolveExistingWorkspacePath,
+  resolveWorkspaceDeletePath,
+  resolveWorkspaceWritePath,
+} from "./file-path-security";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
@@ -54,5 +59,20 @@ describe("workspace path boundaries", () => {
       "skills/private-skill/SKILL.md",
       [currentAgent],
     )).toBeNull();
+  });
+
+  it("accepts only non-symlink regular files inside the requested root", () => {
+    const { workspace, secret } = fixture();
+    const regularFile = path.join(workspace, "result.txt");
+    writeFileSync(regularFile, "safe");
+    mkdirSync(path.join(workspace, "folder"));
+    symlinkSync(path.join(secret, "secret.txt"), path.join(workspace, "external-link.txt"));
+    symlinkSync(regularFile, path.join(workspace, "internal-link.txt"));
+
+    expect(resolveExistingRegularFile(workspace, "result.txt")).toBe(regularFile);
+    expect(resolveExistingRegularFile(workspace, "folder")).toBeNull();
+    expect(resolveExistingRegularFile(workspace, "external-link.txt")).toBeNull();
+    expect(resolveExistingRegularFile(workspace, "internal-link.txt")).toBeNull();
+    expect(resolveExistingRegularFile(workspace, "../secret/secret.txt")).toBeNull();
   });
 });

@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listKnowledgeDocuments: vi.fn(),
+  createKnowledgeIndexJob: vi.fn(),
+  getKnowledgeBaseById: vi.fn(),
+  setKnowledgeIndexJobState: vi.fn(),
   setKnowledgeBaseIndexState: vi.fn(),
   setKnowledgeDocumentState: vi.fn(),
   resolveKnowledgeStoragePath: vi.fn(),
@@ -9,6 +12,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../db", () => ({
   listKnowledgeDocuments: mocks.listKnowledgeDocuments,
+  createKnowledgeIndexJob: mocks.createKnowledgeIndexJob,
+  getKnowledgeBaseById: mocks.getKnowledgeBaseById,
+  isKnowledgeDocumentCurrentlyActive: () => true,
+  listRecoverableKnowledgeIndexJobs: vi.fn(async () => []),
+  pruneKnowledgeIndexJobs: vi.fn(async () => {}),
+  setKnowledgeIndexJobState: mocks.setKnowledgeIndexJobState,
   setKnowledgeBaseIndexState: mocks.setKnowledgeBaseIndexState,
   setKnowledgeDocumentState: mocks.setKnowledgeDocumentState,
 }));
@@ -62,6 +71,11 @@ describe("knowledge indexing queue", () => {
       updatedAt: new Date(0).toISOString(),
     };
     mocks.listKnowledgeDocuments.mockResolvedValue([document]);
+    mocks.getKnowledgeBaseById.mockResolvedValue(base);
+    mocks.setKnowledgeIndexJobState.mockResolvedValue(undefined);
+    mocks.createKnowledgeIndexJob
+      .mockResolvedValueOnce({ id: 1 })
+      .mockResolvedValueOnce({ id: 2 });
     mocks.resolveKnowledgeStoragePath.mockReturnValue("/safe/documents/test.txt");
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
       ok: true,

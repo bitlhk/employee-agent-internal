@@ -175,7 +175,12 @@ describe("knowledge chat context", () => {
       knowledgeBaseName: "制度库",
       documentId: "doc_policy001",
       documentName: "差旅制度.pdf",
+      documentVersion: "1.0",
       position: "第 3 页",
+      headingPath: [],
+      page: null,
+      sourceDepartment: "",
+      authority: "reference",
     }]);
   });
 });

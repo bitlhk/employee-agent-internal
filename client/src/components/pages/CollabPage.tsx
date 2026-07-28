@@ -222,6 +222,11 @@ export function CollabPage({ adoptId: _adoptId, active }: { adoptId: string; act
   return (
     <PageContainer title="协作工作台" icon={<Users size={18} />}>
       <div className="coop-workbench">
+        <div className="coop-page-toolbar">
+          <div className="console-section-tabs" role="tablist" aria-label="协作分栏">
+            <button type="button" role="tab" aria-selected="true" data-active="true">协作任务</button>
+          </div>
+        </div>
         <CoopWorkbenchDashboard
           adoptId={_adoptId}
           active={active}
@@ -584,12 +589,14 @@ function CoopSessionsWorkbench({ adoptId, active }: { adoptId?: string; active: 
       <>
         {dialog}
         <div className="coop-workbench__list-head">
-          <div className="coop-filter-tabs" role="tablist" aria-label="协作任务筛选">
+          <div className="coop-filter-tabs skills-mcp-filters" role="tablist" aria-label="协作任务筛选">
             {filters.map((filter) => (
               <button
                 key={filter.key}
                 type="button"
-                className="coop-filter-tab"
+                className="coop-filter-tab skills-mcp-filter"
+                role="tab"
+                aria-selected={activeFilter === filter.key}
                 data-active={activeFilter === filter.key}
                 onClick={() => setActiveFilter(filter.key)}
               >
@@ -621,12 +628,14 @@ function CoopSessionsWorkbench({ adoptId, active }: { adoptId?: string; active: 
     <>
       {dialog}
       <div className="coop-workbench__list-head">
-        <div className="coop-filter-tabs" role="tablist" aria-label="协作任务筛选">
+        <div className="coop-filter-tabs skills-mcp-filters" role="tablist" aria-label="协作任务筛选">
           {filters.map((filter) => (
             <button
               key={filter.key}
               type="button"
-              className="coop-filter-tab"
+              className="coop-filter-tab skills-mcp-filter"
+              role="tab"
+              aria-selected={activeFilter === filter.key}
               data-active={activeFilter === filter.key}
               onClick={() => setActiveFilter(filter.key)}
             >

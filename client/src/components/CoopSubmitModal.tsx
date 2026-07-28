@@ -253,7 +253,9 @@ export function CoopSubmitModal({
           <button
             onClick={onClose}
             disabled={submitting}
-            className="p-1.5 rounded transition-colors"
+            type="button"
+            aria-label="关闭提交窗口"
+            className="coop-submit-close p-1.5 rounded transition-colors"
             style={{ background: "transparent" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--oc-bg-hover, rgba(0,0,0,0.05))")}
             onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}

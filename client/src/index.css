@@ -215,8 +215,24 @@
 /* ── 协作工作台 ───────────────────────────────────────── */
 .coop-workbench {
   width: 100%;
-  max-width: none;
-  margin: 0;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: 40px;
+  box-sizing: border-box;
+}
+
+.coop-page-toolbar {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin-bottom: 10px;
+}
+
+.coop-page-toolbar > .console-section-tabs,
+.schedule-v2-toolbar > .console-section-tabs {
+  flex-shrink: 0;
+  margin-top: 0;
+  margin-left: 4px;
 }
 
 .coop-dashboard-layout {
@@ -971,6 +987,7 @@
 }
 
 .workbench-primary-pane {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -1783,6 +1800,42 @@
 .knowledge-dialog__secondary { min-width: 70px; height: 32px; padding: 0 12px; font-size: 12px; font-weight: 600; border-radius: 7px; }
 .knowledge-dialog__primary { color: #fff; background: var(--primary); border: 1px solid var(--primary); }
 .knowledge-dialog__secondary { color: var(--oc-text-secondary); background: transparent; border: 1px solid var(--oc-border); }
+
+.knowledge-capture-dialog { color: var(--oc-text-primary); background: var(--oc-bg-surface); border-color: var(--oc-border); }
+.knowledge-capture-dialog__heading { display: flex; align-items: flex-start; gap: 11px; }
+.knowledge-capture-dialog__heading > span { display: inline-flex; width: 34px; height: 34px; flex: 0 0 34px; align-items: center; justify-content: center; color: var(--primary); background: color-mix(in oklab, var(--primary) 8%, transparent); border: 1px solid color-mix(in oklab, var(--primary) 14%, var(--oc-border)); border-radius: 8px; }
+.knowledge-capture-dialog__heading > span svg { width: 17px; height: 17px; stroke-width: 1.7; }
+.knowledge-capture-dialog__heading > div { display: grid; gap: 4px; min-width: 0; }
+.knowledge-capture-dialog [data-slot="dialog-title"] { color: var(--oc-text-primary); font-size: 15px; }
+.knowledge-capture-dialog [data-slot="dialog-description"] { color: var(--oc-text-secondary); font-size: 12px; }
+.knowledge-capture-field { display: grid; gap: 6px; color: var(--oc-text-secondary); font-size: 11px; }
+.knowledge-capture-field > input,
+.knowledge-capture-field > select { width: 100%; height: 36px; padding: 0 10px; color: var(--oc-text-primary); font-size: 13px; background: var(--oc-bg-surface); border: 1px solid var(--oc-border); border-radius: 8px; outline: none; }
+.knowledge-capture-field > input:focus,
+.knowledge-capture-field > select:focus { border-color: color-mix(in oklab, var(--primary) 36%, var(--oc-border)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--primary) 7%, transparent); }
+.knowledge-capture-field > small { color: var(--oc-text-tertiary); font-size: 10.5px; }
+.knowledge-capture-modes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.knowledge-capture-modes > button { display: flex; min-height: 58px; align-items: flex-start; gap: 8px; padding: 9px 10px; text-align: left; color: var(--oc-text-secondary); background: transparent; border: 1px solid var(--oc-border); border-radius: 8px; }
+.knowledge-capture-modes > button:hover { background: var(--oc-bg-hover); }
+.knowledge-capture-modes > button[data-active="true"] { color: var(--oc-text-primary); background: color-mix(in oklab, var(--oc-text-primary) 4%, transparent); border-color: var(--oc-border-strong); }
+.knowledge-capture-modes > button > svg { width: 15px; height: 15px; flex: 0 0 15px; margin-top: 1px; color: var(--oc-text-tertiary); stroke-width: 1.7; }
+.knowledge-capture-modes > button[data-active="true"] > svg { color: var(--primary); }
+.knowledge-capture-modes > button > span { display: grid; gap: 3px; min-width: 0; }
+.knowledge-capture-modes strong { color: inherit; font-size: 12px; font-weight: 600; }
+.knowledge-capture-modes small { color: var(--oc-text-tertiary); font-size: 10.5px; line-height: 1.45; }
+.knowledge-capture-source { display: flex; align-items: center; gap: 9px; padding: 10px 11px; background: color-mix(in oklab, var(--oc-text-primary) 3%, transparent); border: 1px solid var(--oc-border); border-radius: 8px; }
+.knowledge-capture-source > svg { width: 17px; height: 17px; flex: 0 0 17px; color: var(--oc-text-tertiary); stroke-width: 1.6; }
+.knowledge-capture-source > span { display: grid; gap: 2px; min-width: 0; }
+.knowledge-capture-source strong,
+.knowledge-capture-source small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.knowledge-capture-source strong { color: var(--oc-text-primary); font-size: 12px; font-weight: 600; }
+.knowledge-capture-source small { color: var(--oc-text-tertiary); font-size: 10.5px; }
+.knowledge-capture-note { display: flex; align-items: flex-start; gap: 7px; color: var(--oc-text-tertiary); font-size: 10.5px; line-height: 1.5; }
+.knowledge-capture-note svg { width: 14px; height: 14px; flex: 0 0 14px; margin-top: 1px; stroke-width: 1.6; }
+.knowledge-capture-dialog .knowledge-dialog__primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.knowledge-capture-dialog .knowledge-dialog__primary svg { width: 14px; height: 14px; }
+.knowledge-capture-dialog .knowledge-dialog__primary:disabled { cursor: default; opacity: .55; }
+.knowledge-capture-dialog .knowledge-dialog__secondary:hover { background: var(--oc-bg-hover); color: var(--oc-text-primary); }
 
 .knowledge-detail__header { position: relative; padding-bottom: 18px; border-bottom: 1px solid var(--oc-border-subtle); }
 .knowledge-back { display: inline-flex; align-items: center; gap: 5px; padding: 0; color: var(--oc-text-tertiary); font-size: 11px; background: transparent; border: 0; }
@@ -3436,6 +3489,15 @@
   font-size: 14px;
   font-weight: 400;
 }
+.session-list-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.session-list-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
 .session-list-item .sidebar-item-label {
   font-size: 14px;
   font-weight: 400;
@@ -3784,8 +3846,7 @@ select.settings-input {
   border-color: transparent;
   background: color-mix(in oklab, var(--oc-text-primary) 4%, transparent);
 }
-.sidebar-footer-account:focus-visible,
-.sidebar-footer-help:focus-visible {
+.sidebar-footer-account:focus-visible {
   border-color: transparent;
   box-shadow: 0 0 0 2px color-mix(in oklab, var(--oc-sidebar-text) 16%, transparent);
 }
@@ -3810,7 +3871,10 @@ select.settings-input {
   min-width: 0;
   display: flex;
   flex: 1;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
 }
 .sidebar-footer-identity strong {
   overflow: hidden;
@@ -3821,7 +3885,24 @@ select.settings-input {
   font-weight: 600;
   line-height: 20px;
 }
-.sidebar-footer-help {
+.sidebar-footer-runtime {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--oc-sidebar-subtle);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 9px;
+  font-weight: 400;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-footer-repositories {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.sidebar-footer-repositories a {
   width: 28px;
   height: 28px;
   flex: 0 0 28px;
@@ -3833,30 +3914,35 @@ select.settings-input {
   border-radius: 7px;
   background: transparent;
   color: var(--oc-sidebar-subtle);
-  transition: color 140ms ease, background-color 140ms ease, border-color 140ms ease;
+  transition: background-color 140ms ease;
 }
-.sidebar-footer-help:hover,
-.sidebar-footer-help[data-state="open"] {
-  border-color: var(--oc-border-subtle);
+.sidebar-footer-repositories a:hover {
+  border-color: transparent;
   background: var(--oc-sidebar-item-hover);
-  color: var(--oc-sidebar-text);
 }
-.sidebar-footer-version {
-  display: grid;
-  gap: 3px;
-  padding: 7px 8px !important;
+.sidebar-footer-repositories a:focus-visible {
+  border-color: transparent;
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--oc-sidebar-text) 16%, transparent);
 }
-.sidebar-footer-version span {
-  color: var(--oc-text-tertiary);
-  font-size: 10px;
-  font-weight: 400;
+.sidebar-footer-repositories img {
+  display: block;
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
 }
-.sidebar-footer-version strong {
-  color: var(--oc-text-primary);
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 17px;
+.sidebar-footer.is-collapsed .sidebar-footer-repositories {
+  justify-content: center;
+  gap: 0;
+}
+.sidebar-footer.is-collapsed .sidebar-footer-repositories a {
+  width: 23px;
+  height: 23px;
+  flex-basis: 23px;
+}
+.sidebar-footer.is-collapsed .sidebar-footer-repositories img {
+  width: 13px;
+  height: 13px;
 }
 .sidebar-footer-account-details {
   display: flex !important;
@@ -4052,7 +4138,8 @@ select.settings-input {
   cursor: not-allowed;
   opacity: .48;
 }
-.skills-secondary-tabs {
+.skills-secondary-tabs,
+.console-section-tabs {
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
@@ -4065,7 +4152,8 @@ select.settings-input {
   margin-left: 4px;
   flex-shrink: 0;
 }
-.skills-secondary-tabs button {
+.skills-secondary-tabs button,
+.console-section-tabs button {
   height: 30px;
   padding: 0;
   border: 0;
@@ -4078,17 +4166,20 @@ select.settings-input {
   white-space: nowrap;
   transition: color .14s ease;
 }
-.skills-secondary-tabs button:hover {
+.skills-secondary-tabs button:hover,
+.console-section-tabs button:hover {
   background: transparent;
   color: var(--oc-text-primary);
 }
-.skills-secondary-tabs button[data-active="true"] {
+.skills-secondary-tabs button[data-active="true"],
+.console-section-tabs button[data-active="true"] {
   background: transparent;
   color: var(--oc-text-primary);
   font-weight: 600;
   box-shadow: none;
 }
-.skills-secondary-tabs button:focus-visible {
+.skills-secondary-tabs button:focus-visible,
+.console-section-tabs button:focus-visible {
   outline: 2px solid color-mix(in oklab, var(--oc-accent) 32%, transparent);
   outline-offset: 1px;
 }
@@ -4405,6 +4496,37 @@ input.session-searchbar__input:focus-visible,
 .skills-row-main { display: flex; align-items: flex-start; gap: 10px; min-width: 0; flex: 1; cursor: pointer; }
 .skills-row > .flex { flex-shrink: 0; }
 .skills-icon { width: 24px; height: 24px; display:flex; align-items:center; justify-content:center; flex-shrink: 0; color: var(--banking-brand-red); }
+.skills-icon-btn {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  outline: none;
+  background: transparent;
+  color: var(--oc-text-secondary);
+  box-shadow: none;
+}
+.skills-icon-btn:hover {
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-primary);
+}
+.skills-icon-btn:focus-visible {
+  background: var(--oc-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--oc-border);
+}
+.coop-submit-close:focus {
+  outline: none;
+  box-shadow: none;
+}
+.coop-submit-close:focus-visible {
+  background: var(--oc-bg-hover) !important;
+  box-shadow: inset 0 0 0 1px var(--oc-border);
+}
 .skills-name { font-size: 13px; color: var(--text); line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .skills-desc {
   font-size: 12px;
@@ -6129,7 +6251,8 @@ input.session-searchbar__input:focus-visible,
   .skills-mcp-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .skills-page {
+  .skills-page,
+  .coop-workbench {
     padding-inline: 20px;
   }
   .skills-mcp-grid {
@@ -6171,7 +6294,8 @@ input.session-searchbar__input:focus-visible,
   .skills-expert-card[data-team="true"] .skills-catalog-card__capabilities {
     flex-wrap: wrap;
   }
-  .skills-page {
+  .skills-page,
+  .coop-workbench {
     padding-inline: 0;
   }
   .skills-mcp-toolbar {
@@ -8329,6 +8453,14 @@ input.session-searchbar__input:focus-visible,
   background: var(--oc-bg-hover);
   color: var(--oc-text-primary);
 }
+.agent-artifact-panel__header button:focus {
+  outline: none;
+  box-shadow: none;
+}
+.agent-artifact-panel__header button:focus-visible {
+  background: var(--oc-bg-hover);
+  box-shadow: inset 0 0 0 1px var(--oc-border);
+}
 .agent-artifact-panel__tabs {
   display: flex;
   flex: 0 0 auto;
@@ -10364,6 +10496,14 @@ html:has(:root[data-theme-mode="light"]) body {
   transform: scaleY(0.7) !important;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .workforce-agent-icon,
+  .workforce-agent-icon * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 /* ============================================================
    背景统一 + 工具栏图标按钮 v2
    ============================================================ */
@@ -12076,6 +12216,13 @@ button[data-selected="true"] .expert-interaction__radio {
   border-radius: 7px;
 }
 
+.workbench-workspace-trigger--floating {
+  position: absolute;
+  z-index: 26;
+  top: 12px;
+  right: 18px;
+}
+
 .workbench-workspace-trigger:hover,
 .workbench-workspace-trigger.is-active,
 .workbench-mobile-menu-trigger:hover {
@@ -12212,10 +12359,30 @@ button[data-selected="true"] .expert-interaction__radio {
   cursor: wait;
   opacity: 0.45;
 }
+.lingxia-msg-footer-action[data-feedback]:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
 
 .lingxia-feedback-dialog {
   border-color: color-mix(in oklab, var(--oc-border) 86%, transparent);
   background: var(--oc-card);
+}
+.lingxia-feedback-dialog > [data-slot="dialog-close"] {
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--oc-text-tertiary);
+  box-shadow: none;
+}
+.lingxia-feedback-dialog > [data-slot="dialog-close"]:hover,
+.lingxia-feedback-dialog > [data-slot="dialog-close"]:focus,
+.lingxia-feedback-dialog > [data-slot="dialog-close"]:focus-visible,
+.lingxia-feedback-dialog > [data-slot="dialog-close"][data-state="open"] {
+  outline: none;
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-primary);
+  box-shadow: none;
 }
 .lingxia-feedback-reasons {
   display: flex;
@@ -14481,6 +14648,7 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 
 /* ═══ 移动端适配 ═══ */
 @media (max-width: 768px) {
+  .knowledge-capture-modes { grid-template-columns: 1fr; }
   .lingxia-sidebar-panel {
     position: fixed !important;
     inset: 0 auto 0 0;
@@ -14517,6 +14685,7 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
     border-radius: 7px;
   }
   .lingxia-topbar {
+    height: 44px;
     padding: 0 12px;
   }
   .lingxia-topbar__left {
@@ -15351,15 +15520,32 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 
 /* Schedule V2 canary: dense enterprise task list. */
 .schedule-v2 {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: 40px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
+@media (max-width: 900px) {
+  .schedule-v2 {
+    padding-inline: 20px;
+  }
+}
+
+@media (max-width: 680px) {
+  .schedule-v2 {
+    padding-inline: 0;
+  }
+}
+
 .schedule-v2-toolbar {
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
   padding: 0;
 }

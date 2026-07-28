@@ -7,6 +7,18 @@ export const KNOWLEDGE_DOCUMENT_ROOT = path.join(KNOWLEDGE_ROOT, "documents");
 export const KNOWLEDGE_TOKEN_PATH = path.join(KNOWLEDGE_ROOT, ".service-token");
 
 const SAFE_ID_RE = /^(?:kb|doc)_[A-Za-z0-9_-]{8,56}$/;
+const KNOWLEDGE_SOURCE_METADATA_FILE = ".source.json";
+
+export type KnowledgeDocumentSourceMetadata = {
+  type: "upload" | "chat" | "workspace";
+  capturedAt: string;
+  adoptId?: string;
+  conversationId?: string;
+  messageId?: string;
+  modelId?: string;
+  workspacePath?: string;
+  captureMode?: "answer" | "turn";
+};
 
 export const KNOWLEDGE_EXTENSIONS = new Set(["md", "txt", "csv", "json", "yaml", "yml", "pdf", "docx", "xlsx", "pptx"]);
 
@@ -67,6 +79,39 @@ export function knowledgeDocumentStoragePath(knowledgeBasePublicId: string, docu
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const absolute = path.join(directory, safeName);
   return { absolute, relative: path.relative(KNOWLEDGE_ROOT, absolute).replace(/\\/g, "/") };
+}
+
+function knowledgeDocumentDirectory(knowledgeBasePublicId: string, documentPublicId: string): string | null {
+  if (!SAFE_ID_RE.test(knowledgeBasePublicId) || !SAFE_ID_RE.test(documentPublicId)) return null;
+  return path.join(KNOWLEDGE_DOCUMENT_ROOT, knowledgeBasePublicId, documentPublicId);
+}
+
+export function writeKnowledgeDocumentSourceMetadata(
+  knowledgeBasePublicId: string,
+  documentPublicId: string,
+  metadata: KnowledgeDocumentSourceMetadata,
+): void {
+  const directory = knowledgeDocumentDirectory(knowledgeBasePublicId, documentPublicId);
+  if (!directory) throw new Error("invalid knowledge storage id");
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(directory, KNOWLEDGE_SOURCE_METADATA_FILE), `${JSON.stringify(metadata, null, 2)}\n`, { mode: 0o600 });
+}
+
+export function readKnowledgeDocumentSourceMetadata(
+  knowledgeBasePublicId: string,
+  documentPublicId: string,
+): KnowledgeDocumentSourceMetadata | null {
+  const directory = knowledgeDocumentDirectory(knowledgeBasePublicId, documentPublicId);
+  if (!directory) return null;
+  const metadataPath = path.join(directory, KNOWLEDGE_SOURCE_METADATA_FILE);
+  if (!existsSync(metadataPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(metadataPath, "utf8"));
+    if (!parsed || !["upload", "chat", "workspace"].includes(String(parsed.type || ""))) return null;
+    return parsed as KnowledgeDocumentSourceMetadata;
+  } catch {
+    return null;
+  }
 }
 
 export function resolveKnowledgeStoragePath(relativePath: string): string | null {

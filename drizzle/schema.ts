@@ -1140,10 +1140,14 @@ export const knowledgeBases = mysqlTable("knowledge_bases", {
   roleTemplate:       varchar("role_template", { length: 64 }),
   name:               varchar("name", { length: 120 }).notNull(),
   description:        varchar("description", { length: 500 }).default("").notNull(),
+  classification:     mysqlEnum("classification", ["public", "internal", "sensitive", "restricted"]).default("internal").notNull(),
+  externalProcessingAllowed: boolean("external_processing_allowed").default(true).notNull(),
   status:             mysqlEnum("status", ["empty", "indexing", "ready", "failed"]).default("empty").notNull(),
   documentCount:      int("document_count").default(0).notNull(),
   chunkCount:         int("chunk_count").default(0).notNull(),
   lastError:          varchar("last_error", { length: 1000 }),
+  indexVersion:       varchar("index_version", { length: 96 }),
+  indexSchemaVersion: int("index_schema_version").default(1).notNull(),
   indexedAt:          timestamp("indexed_at"),
   createdAt:          timestamp("created_at").defaultNow().notNull(),
   updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
@@ -1168,19 +1172,48 @@ export const knowledgeDocuments = mysqlTable("knowledge_documents", {
   storagePath:        varchar("storage_path", { length: 700 }).notNull(),
   sizeBytes:          bigint("size_bytes", { mode: "number" }).default(0).notNull(),
   sha256:             varchar("sha256", { length: 64 }).notNull(),
+  versionLabel:       varchar("version_label", { length: 64 }).default("1.0").notNull(),
+  lifecycle:          mysqlEnum("lifecycle", ["draft", "active", "expired", "archived"]).default("active").notNull(),
+  sourceDepartment:   varchar("source_department", { length: 120 }).default("").notNull(),
+  classification:     mysqlEnum("classification", ["public", "internal", "sensitive", "restricted"]).default("internal").notNull(),
+  authority:          mysqlEnum("authority", ["official", "approved", "reference", "personal"]).default("reference").notNull(),
+  externalProcessingAllowed: boolean("external_processing_allowed").default(true).notNull(),
+  effectiveAt:        timestamp("effective_at"),
+  expiresAt:          timestamp("expires_at"),
   status:             mysqlEnum("status", ["uploaded", "indexing", "ready", "failed"]).default("uploaded").notNull(),
   chunkCount:         int("chunk_count").default(0).notNull(),
   lastError:          varchar("last_error", { length: 1000 }),
+  parserVersion:      varchar("parser_version", { length: 32 }),
+  indexVersion:       varchar("index_version", { length: 96 }),
   createdAt:          timestamp("created_at").defaultNow().notNull(),
   updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({
   publicIdUnique: uniqueIndex("uk_knowledge_documents_public_id").on(table.publicId),
   baseUpdatedIdx: index("idx_knowledge_documents_base_updated").on(table.knowledgeBaseId, table.updatedAt),
   baseShaIdx: index("idx_knowledge_documents_base_sha").on(table.knowledgeBaseId, table.sha256),
+  baseLifecycleIdx: index("idx_knowledge_documents_base_lifecycle").on(table.knowledgeBaseId, table.lifecycle, table.updatedAt),
 }));
 
 export type KnowledgeDocument = typeof knowledgeDocuments.$inferSelect;
 export type InsertKnowledgeDocument = typeof knowledgeDocuments.$inferInsert;
+
+export const knowledgeIndexJobs = mysqlTable("knowledge_index_jobs", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  knowledgeBaseId:    bigint("knowledge_base_id", { mode: "number" }).notNull(),
+  reason:             varchar("reason", { length: 64 }).default("content_changed").notNull(),
+  status:             mysqlEnum("status", ["queued", "running", "succeeded", "failed"]).default("queued").notNull(),
+  attempts:           int("attempts").default(0).notNull(),
+  lastError:          varchar("last_error", { length: 1000 }),
+  lockedAt:           timestamp("locked_at"),
+  finishedAt:         timestamp("finished_at"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  statusCreatedIdx: index("idx_knowledge_index_jobs_status_created").on(table.status, table.createdAt),
+  baseCreatedIdx: index("idx_knowledge_index_jobs_base_created").on(table.knowledgeBaseId, table.createdAt),
+}));
+
+export type KnowledgeIndexJob = typeof knowledgeIndexJobs.$inferSelect;
 
 export const agentMemoryJobs = mysqlTable("agent_memory_jobs", {
   id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),

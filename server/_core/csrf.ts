@@ -28,6 +28,14 @@ export function csrfAllowedOrigins(corsOrigins: string[]): Set<string> {
     .filter((value): value is string => Boolean(value)));
 }
 
+export function assertCredentialedCorsOrigins(origins: string[]): string[] {
+  const normalized = origins.map((origin) => origin.trim()).filter(Boolean);
+  if (normalized.includes("*")) {
+    throw new Error("CORS_ORIGIN=* is not supported when cookie credentials are enabled; configure explicit origins");
+  }
+  return normalized;
+}
+
 function hasSessionCookie(req: Request): boolean {
   try { return Boolean(parseCookieHeader(req.headers.cookie || "")[COOKIE_NAME]); }
   catch { return false; }

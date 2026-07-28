@@ -109,6 +109,8 @@ async function main() {
       roleTemplate: collection.roleTemplate,
       name: collection.name,
       description: collection.description,
+      classification: "internal",
+      externalProcessingAllowed: true,
     });
     for (const sourcePath of files) {
       const filename = path.basename(sourcePath);
@@ -127,9 +129,15 @@ async function main() {
         storagePath: storage.relative,
         sizeBytes: content.length,
         sha256: createHash("sha256").update(content).digest("hex"),
+        versionLabel: "2026.1",
+        lifecycle: "active",
+        sourceDepartment: "岗位智能体平台示例",
+        classification: "internal",
+        authority: "approved",
+        externalProcessingAllowed: true,
       });
     }
-    await queueKnowledgeIndex({ ...base, documentCount: files.length, status: "indexing" });
+    await queueKnowledgeIndex({ ...base, documentCount: files.length, status: "indexing" }, "demo_import");
     imported.push({ knowledgeBaseId: base.publicId, name: base.name, scope: base.scope, roleTemplate: base.roleTemplate, documents: files.length });
   }
 

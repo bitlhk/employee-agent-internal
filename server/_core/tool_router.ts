@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { sandboxExec } from "./sandbox";
 import { appendFileSync, mkdirSync, mkdtempSync, renameSync, readdirSync, unlinkSync, rmdirSync } from "fs";
+import { resolveExistingRegularFile, resolveWorkspaceWritePath } from "./file-path-security";
 import os from "os";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -869,8 +870,16 @@ export async function routeTool(
             mkdirSync(filesDir, { recursive: true });
             outputFiles = [];
             for (const f of raw.outputFiles) {
-              const src = `${tmpOutputDir}/${f.name}`;
-              const dest = `${filesDir}/${f.name}`;
+              const src = resolveExistingRegularFile(tmpOutputDir, f.name);
+              if (!src) {
+                auditLog({ event: "sandbox_output_rejected", adoptId: ctx.adoptId, name: f.name, reason: "not_regular_file" });
+                continue;
+              }
+              const dest = resolveWorkspaceWritePath(workspaceDir, `sandbox-files/${f.name}`);
+              if (!dest) {
+                auditLog({ event: "sandbox_output_rejected", adoptId: ctx.adoptId, name: f.name, reason: "invalid_destination" });
+                continue;
+              }
               try {
                 renameSync(src, dest);
                 outputFiles.push({ name: f.name, size: f.size, workspacePath: dest });

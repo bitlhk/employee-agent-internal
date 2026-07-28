@@ -17,6 +17,8 @@
     "lint:report": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "knowledge:test": "bash -lc '\"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" -m unittest discover -s server/knowledge -p \"test_*.py\" -v'",
+    "knowledge:evaluate": "bash -lc '[[ \"$1\" == \"--\" ]] && shift; \"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" server/knowledge/evaluate.py \"$@\"' knowledge-evaluate",
     "db:push": "drizzle-kit push",
     "db:reset": "tsx scripts/reset-db.ts && pnpm exec drizzle-kit push",
     "db:add-blocked-enum": "tsx scripts/add-blocked-to-ip-management-enum.ts",

@@ -11,6 +11,8 @@ type WorkforceAgentIconProps = {
   animate?: boolean;
   /** 是否在 idle 状态下轻微呼吸，默认 true */
   breathe?: boolean;
+  /** 是否显示图标自带的淡色背景，默认 true */
+  showBackground?: boolean;
   /** 自定义 className */
   className?: string;
 };
@@ -19,6 +21,7 @@ export function WorkforceAgentIcon({
   size = 22,
   animate = true,
   breathe = true,
+  showBackground = true,
   className = "",
 }: WorkforceAgentIconProps) {
   const [mounted, setMounted] = useState(!animate);
@@ -48,18 +51,19 @@ export function WorkforceAgentIcon({
         </linearGradient>
       </defs>
 
-      {/* 背景 */}
-      <rect
-        x="8" y="8" width="112" height="112" rx="24"
-        fill="#fff5f5"
-        className="workforce-agent-icon__bg"
-        style={{
-          opacity: mounted ? 1 : 0,
-          transform: mounted ? "scale(1)" : "scale(0.6)",
-          transformOrigin: "64px 64px",
-          transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.34,1.56,0.64,1)",
-        }}
-      />
+      {showBackground ? (
+        <rect
+          x="8" y="8" width="112" height="112" rx="24"
+          fill="#fff5f5"
+          className="workforce-agent-icon__bg"
+          style={{
+            opacity: mounted ? 1 : 0,
+            transform: mounted ? "scale(1)" : "scale(0.6)",
+            transformOrigin: "64px 64px",
+            transition: "opacity 0.3s ease, transform 0.35s cubic-bezier(0.34,1.56,0.64,1)",
+          }}
+        />
+      ) : null}
 
       {/* 身体弧线 */}
       <path

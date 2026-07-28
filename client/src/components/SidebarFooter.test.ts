@@ -23,14 +23,20 @@ describe("SidebarFooter", () => {
     expect(html).toContain("测试用户");
     expect(html).not.toContain("user@example.com");
     expect(html).toContain('aria-label="打开账号菜单"');
-    expect(html).toContain('aria-label="查看运行时版本"');
+    expect(html).toContain("v0.2.3+ea.6");
+    expect(html).not.toContain("JiuwenSwarm v0.2.3+ea.6");
+    expect(html).not.toContain("运行时 ·");
+    expect(html).toContain('aria-label="访问 openJiuwen 开源社区"');
+    expect(html).toContain('aria-label="访问 Employee Agent 代码仓"');
   });
 
-  it("keeps account and version menus reachable when the sidebar is collapsed", () => {
+  it("keeps the account and repository links reachable when the sidebar is collapsed", () => {
     const html = renderFooter(true);
 
     expect(html).not.toContain("user@example.com");
+    expect(html).not.toContain("v0.2.3+ea.6");
     expect(html).toContain('aria-label="打开账号菜单"');
-    expect(html).toContain('aria-label="查看运行时版本"');
+    expect(html).toContain('aria-label="访问 openJiuwen 开源社区"');
+    expect(html).toContain('aria-label="访问 Employee Agent 代码仓"');
   });
 });

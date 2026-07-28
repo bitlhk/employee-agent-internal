@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "name": "金融企业知识演示库检索基线",
+  "cases": [
+    {
+      "id": "travel-hotel-limit",
+      "query": "普通员工去上海出差，酒店每晚上限是多少？",
+      "expectedDocuments": ["02-差旅住宿与交通标准.csv"],
+      "tags": ["table", "exact_rule"]
+    },
+    {
+      "id": "travel-approval",
+      "query": "未经事前审批的临时出差费用还能报销吗？",
+      "expectedDocuments": ["01-差旅与费用报销管理办法.md"],
+      "tags": ["policy", "exception"]
+    },
+    {
+      "id": "invoice-original",
+      "query": "电子发票打印后还需要保存原始电子文件吗？",
+      "expectedDocuments": ["03-电子发票与报销附件指引.md"],
+      "tags": ["exact_rule"]
+    },
+    {
+      "id": "wealth-suitability",
+      "query": "C2 客户坚持购买 R4 产品时能否继续交易？",
+      "expectedDocuments": ["04-财富客户适当性与产品销售指引.md"],
+      "tags": ["financial", "exact_rule"]
+    },
+    {
+      "id": "aml-confidentiality",
+      "query": "能否告诉客户已经提交了可疑交易报告？",
+      "expectedDocuments": ["05-反洗钱客户尽职调查操作指引.md"],
+      "tags": ["financial", "compliance"]
+    },
+    {
+      "id": "data-egress",
+      "query": "客户身份证照片可以发到个人邮箱让供应商处理吗？",
+      "expectedDocuments": ["06-客户信息保护与数据外发规范.md"],
+      "tags": ["security", "compliance"]
+    },
+    {
+      "id": "risk-alert",
+      "query": "贷款客户连续两期经营现金流为负，应触发什么级别的预警？",
+      "expectedDocuments": ["07-贷后风险预警与升级处置.md"],
+      "tags": ["risk", "exact_rule"]
+    },
+    {
+      "id": "bond-quote",
+      "query": "来源不明的群聊债券报价能否作为确定市场价格转发？",
+      "expectedDocuments": ["08-债券报价与投资研究合规规范.md"],
+      "tags": ["investment", "compliance"]
+    },
+    {
+      "id": "employee-trading",
+      "query": "员工获批买入证券后应在多少个交易日内执行？",
+      "expectedDocuments": ["09-员工利益冲突与证券投资申报.md"],
+      "tags": ["exact_rule"]
+    },
+    {
+      "id": "approval-directory",
+      "query": "超过一万元的差旅需要哪些岗位审批？",
+      "expectedDocuments": ["10-审批职责与内部服务目录.md", "01-差旅与费用报销管理办法.md"],
+      "tags": ["table", "cross_document"]
+    }
+  ]
+}

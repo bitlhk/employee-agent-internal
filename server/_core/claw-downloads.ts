@@ -12,7 +12,7 @@ import {
   streamFileDownload,
   sanitizeRelPath,
 } from "./helpers";
-import { resolveExistingWorkspacePath } from "./file-path-security";
+import { resolveExistingRegularFile, resolveExistingWorkspacePath } from "./file-path-security";
 
 const HTML_PREVIEW_CSP = [
   "default-src 'none'",
@@ -88,9 +88,11 @@ export function registerDownloadRoutes(app: express.Express) {
 
       let files: Array<{ name: string; size: number; mtime: string }> = [];
       try {
-        files = readdirSync(filesDir).map(f => {
-          const st = statSync(`${filesDir}/${f}`);
-          return { name: f, size: st.size, mtime: st.mtime.toISOString() };
+        files = readdirSync(filesDir).flatMap(f => {
+          const safePath = resolveExistingRegularFile(filesDir, f);
+          if (!safePath) return [];
+          const st = statSync(safePath);
+          return [{ name: f, size: st.size, mtime: st.mtime.toISOString() }];
         }).sort((a, b) => b.mtime.localeCompare(a.mtime));
       } catch {}
       return res.json({ files });
@@ -108,9 +110,10 @@ export function registerDownloadRoutes(app: express.Express) {
       if (!claw) return;
 
       const runtimeAgentId = resolveRuntimeAgentId(adoptId, String((claw as any).agentId || ""));
-      const filePath = `${openClawWorkspaceDir(runtimeAgentId)}/sandbox-files/${fileName}`;
+      const filesDir = `${openClawWorkspaceDir(runtimeAgentId)}/sandbox-files`;
+      const filePath = resolveExistingRegularFile(filesDir, fileName);
 
-      if (!existsSync(filePath)) return sendError(res, "NOT_FOUND", "file not found");
+      if (!filePath) return sendError(res, "NOT_FOUND", "file not found");
 
 
       streamFileDownload(res, filePath, fileName);

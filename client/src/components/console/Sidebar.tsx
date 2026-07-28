@@ -53,7 +53,6 @@ export function Sidebar({
   coopBadge,
   sessions = [],
   currentConversationId,
-  sessionSwitchingId,
   messageSearchProvider,
   onSwitchConversation,
   onDeleteConversation,
@@ -70,7 +69,6 @@ export function Sidebar({
   coopBadge?: number;
   sessions?: SidebarConversation[];
   currentConversationId?: string;
-  sessionSwitchingId?: string | null;
   messageSearchProvider?: (conversationId: string, query: string) => string;
   onSwitchConversation?: (conversationId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
@@ -109,7 +107,6 @@ export function Sidebar({
           <SessionList
             sessions={sessions}
             currentConversationId={currentConversationId}
-            sessionSwitchingId={sessionSwitchingId}
             messageSearchProvider={messageSearchProvider}
             onSwitchConversation={onSwitchConversation}
             onDeleteConversation={onDeleteConversation}

@@ -61,7 +61,7 @@ export const SheetContent = forwardRef<
       >
         {children}
         <DrawerPrimitive.Close
-          className="absolute right-4 top-4 rounded-sm p-1 text-muted-foreground transition-colors hover:bg-[var(--oc-bg-hover)] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none"
+          className="absolute right-4 top-4 rounded-sm border-0 bg-transparent p-1 text-muted-foreground shadow-none outline-none transition-[color,background-color,box-shadow] hover:bg-[var(--oc-bg-hover)] hover:text-foreground focus:outline-none focus-visible:bg-[var(--oc-bg-hover)] focus-visible:text-foreground focus-visible:ring-0 focus-visible:shadow-[inset_0_0_0_1px_var(--oc-border)] disabled:pointer-events-none"
         >
           <X className="h-4 w-4" aria-hidden="true" />
           <span className="sr-only">关闭</span>

@@ -4,7 +4,7 @@
  * The linggan homepage code has been removed (dead code on this server).
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { RuntimeWSClient } from "@/lib/runtime-ws";
 import {
@@ -21,6 +21,7 @@ import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
 import { CustomMcpDialog, type CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
+import { KnowledgeCaptureDialog, type KnowledgeCaptureSource } from "@/components/KnowledgeCaptureDialog";
 import { ExpertInteractionPrompt } from "@/components/ExpertInteractionPrompt";
 import { ChatMessage, type ChatKnowledgeSource, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
@@ -108,6 +109,17 @@ function roleDisplayName(roleTemplate: unknown, roleName?: unknown) {
   if (name) return name;
   const role = String(roleTemplate || "").trim();
   return ROLE_DISPLAY_NAMES[role] || "通用助手";
+}
+
+function inferKnowledgeCaptureTitle(text: string): string {
+  const normalized = stripEaInternalRuntimeContext(String(text || ""))
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1")
+    .replace(/[*_`~>|]/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || "对话沉淀";
+  return normalized.slice(0, 60);
 }
 
 // reasoning_content 是模型内部推理流。当前产品不直接展示原始推理内容，避免和真实工具调用卡片混淆。
@@ -1743,7 +1755,7 @@ export default function Home() {
   }, [SESSION_INDEX_KEY, HIDDEN_SESSION_KEY, isJiuwenRuntime, refreshBackendWebSessions]);
 
   useEffect(() => {
-    if (isLegacyArchivedRuntime || activeLingxiaStreaming || !webConversationId || activeLingxiaMsgs.length === 0) return;
+    if (isLegacyArchivedRuntime || activeLingxiaStreaming || sessionSwitchingId || !webConversationId || activeLingxiaMsgs.length === 0) return;
     const meaningfulMessages = activeLingxiaMsgs.filter((m: any) => normalizeSessionText(m.text || ""));
     if (meaningfulMessages.length === 0) return;
     const refreshKey = `${webConversationId}:${meaningfulMessages.length}`;
@@ -1753,10 +1765,11 @@ export default function Home() {
       void refreshBackendWebSessions().catch(() => {});
     }, 800);
     return () => window.clearTimeout(timer);
-  }, [activeLingxiaMsgs, activeLingxiaStreaming, isLegacyArchivedRuntime, refreshBackendWebSessions, webConversationId]);
+  }, [activeLingxiaMsgs, activeLingxiaStreaming, isLegacyArchivedRuntime, refreshBackendWebSessions, sessionSwitchingId, webConversationId]);
 
   useEffect(() => {
     if (!isDirectHttpRuntime) return;
+    if (sessionSwitchingId) return;
     if (!SESSION_INDEX_KEY || !webConversationId || activeLingxiaMsgs.length === 0) return;
     if (suppressSessionPersistRef.current === webConversationId) return;
     const meaningfulMessages = activeLingxiaMsgs.filter((m: any) => normalizeSessionText(m.text || ""));
@@ -1799,7 +1812,7 @@ export default function Home() {
     const sorted = sortWebSessionRecords(next).slice(0, 100);
     writeWebSessionIndex(SESSION_INDEX_KEY, sorted);
     setWebSessions(sorted);
-  }, [SESSION_INDEX_KEY, webConversationId, activeLingxiaMsgs, isDirectHttpRuntime]);
+  }, [SESSION_INDEX_KEY, webConversationId, activeLingxiaMsgs, isDirectHttpRuntime, sessionSwitchingId]);
 
   useEffect(() => {
     if (!webConversationId || suppressSessionPersistRef.current !== webConversationId) return;
@@ -1952,6 +1965,7 @@ export default function Home() {
     if (!resolvedAdoptId || !userStorageId) return;
     const nextMessages = restoredMessages ? restoredMessages.slice(-100) : [];
     const hasRestoredMessages = Array.isArray(restoredMessages);
+    const isAlreadyActive = conversationId === webConversationIdRef.current;
     restoreConversationRequestSeqRef.current += 1;
     restoredSessionKeyRef.current = hasRestoredMessages ? restoredSessionKeyRef.current : "";
     if (hasRestoredMessages) {
@@ -1972,13 +1986,14 @@ export default function Home() {
         ]);
       }
     } catch {}
-    if (conversationId === webConversationId) {
+    if (isAlreadyActive) {
       pendingConversationRestoreRef.current = null;
       restoreLingxiaMessages(nextMessages);
       if (nextMessages.length === 0) suppressSessionPersistRef.current = "";
     } else {
       pendingConversationRestoreRef.current = { conversationId, messages: nextMessages };
     }
+    webConversationIdRef.current = conversationId;
     setWebConversationId(conversationId);
     setLingxiaInput("");
     setMentionedUsers([]);
@@ -2120,7 +2135,7 @@ export default function Home() {
     }
   }, [applyCanonicalConversationText, isDirectHttpRuntime, refreshBackendWebSessions, resolvedAdoptId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const pending = pendingConversationRestoreRef.current;
     if (!pending || pending.conversationId !== webConversationId) return;
     pendingConversationRestoreRef.current = null;
@@ -2210,7 +2225,7 @@ export default function Home() {
       toast.error("请先停止当前回复");
       return;
     }
-    if (sessionSwitchingId) return;
+    setSessionSwitchingId(null);
     setSidebarSelection("session");
     setActivePage("chat");
     setMobileSidebarOpen(false);
@@ -2221,16 +2236,14 @@ export default function Home() {
   };
 
   const switchLingxiaConversation = async (conversationId: string) => {
-    if (sessionSwitchingId) return;
     if (activeLingxiaStreaming) {
       toast.error("请先停止当前回复");
       return;
     }
+    if (conversationId === webConversationIdRef.current && !sessionSwitchingId) return;
     const session = webSessions.find((item) => item.conversationId === conversationId);
     const cachedMessages = readCachedWebConversationMessages(conversationId);
-    const hasCachedMessages = !isJiuwenRuntime && cachedMessages.length > 0;
-    const switchRequestSeq = restoreConversationRequestSeqRef.current + 1;
-    restoreConversationRequestSeqRef.current = switchRequestSeq;
+    const hasCachedMessages = cachedMessages.length > 0;
 
     if (!session?.sessionKey || !resolvedAdoptId) {
       activateWebConversation(conversationId, hasCachedMessages ? cachedMessages : undefined);
@@ -2239,14 +2252,14 @@ export default function Home() {
       return;
     }
 
-    if (hasCachedMessages) {
-      restoredSessionKeyRef.current = session.sessionKey;
-      activateWebConversation(conversationId, cachedMessages);
-      setSessionMenuOpen(false);
-      setSessionSwitchingId(null);
-    } else {
-      setSessionSwitchingId(conversationId);
-    }
+    setSessionSwitchingId(conversationId);
+    restoredSessionKeyRef.current = session.sessionKey;
+    activateWebConversation(conversationId, hasCachedMessages ? cachedMessages : []);
+    setSessionMenuOpen(false);
+
+    // activateWebConversation 会使旧恢复请求失效；随后领取本次请求序号。
+    const switchRequestSeq = restoreConversationRequestSeqRef.current + 1;
+    restoreConversationRequestSeqRef.current = switchRequestSeq;
 
     const apiBase = import.meta.env.VITE_API_URL || "";
     try {
@@ -2279,7 +2292,6 @@ export default function Home() {
   };
 
   const deleteLingxiaConversation = async (conversationId: string) => {
-    if (sessionSwitchingId) return;
     if (!SESSION_INDEX_KEY || !resolvedAdoptId || !userStorageId) return;
     if (activeLingxiaStreaming) {
       toast.error("请先停止当前回复");
@@ -2293,6 +2305,10 @@ export default function Home() {
       variant: "danger",
     });
     if (!ok) return;
+    if (sessionSwitchingId) {
+      restoreConversationRequestSeqRef.current += 1;
+      setSessionSwitchingId(null);
+    }
     setSessionMenuOpen(false);
 
     const next = webSessions.filter((item) => item.conversationId !== conversationId);
@@ -2458,6 +2474,7 @@ export default function Home() {
   const [customMcpTemplate, setCustomMcpTemplate] = useState<CustomMcpTemplate | null>(null);
   const [personalExpertDialogOpen, setPersonalExpertDialogOpen] = useState(false);
   const [personalExpertDialogMode, setPersonalExpertDialogMode] = useState<"add" | "manage">("manage");
+  const [knowledgeCaptureSource, setKnowledgeCaptureSource] = useState<KnowledgeCaptureSource | null>(null);
   const probeSkillReadinessMutation = trpc.claw.probeSkillReadiness.useMutation();
   const selectedComposerSkills = useMemo(() => selectedComposerSkillIds
     .map((skillId) => composerSkills.find((skill) => skill.id === skillId))
@@ -2620,6 +2637,24 @@ export default function Home() {
     setComposerAddMenuView("root");
     setPersonalExpertDialogMode(mode);
     setPersonalExpertDialogOpen(true);
+  }, []);
+  const openChatKnowledgeCapture = useCallback((input: { messageId?: string; text: string; modelId: string }) => {
+    const messages = activeLingxiaMsgsRef.current || [];
+    const messageIndex = input.messageId
+      ? messages.findIndex((message) => message.id === input.messageId)
+      : messages.length - 1;
+    const question = messageIndex > 0
+      ? [...messages.slice(0, messageIndex)].reverse().find((message) => message.role === "user")?.text || ""
+      : "";
+    setKnowledgeCaptureSource({
+      type: "chat",
+      title: inferKnowledgeCaptureTitle(input.text),
+      answer: input.text,
+      question,
+      conversationId: webConversationIdRef.current || undefined,
+      messageId: input.messageId,
+      modelId: input.modelId,
+    });
   }, []);
   const openSkillManager = useCallback(() => {
     try { window.localStorage.setItem("employee-agent:skills:last-tab", "mine"); } catch {}
@@ -4599,6 +4634,12 @@ export default function Home() {
         onOpenChange={setPersonalExpertDialogOpen}
         onChanged={() => loadComposerExperts({ silent: true })}
       />
+      <KnowledgeCaptureDialog
+        open={Boolean(knowledgeCaptureSource)}
+        adoptId={resolvedAdoptId || ""}
+        source={knowledgeCaptureSource}
+        onOpenChange={(open) => { if (!open) setKnowledgeCaptureSource(null); }}
+      />
       <input
         ref={skillPackageInputRef}
         type="file"
@@ -4617,7 +4658,6 @@ export default function Home() {
           style={
             {
               "--lingxia-sidebar-width": `${effectiveSidebarCollapsed ? 60 : sidebarWidth}px`,
-              "--lingxia-topbar-height": "52px",
             } as CSSProperties
           }
         >
@@ -4656,9 +4696,9 @@ export default function Home() {
             <div className="workbench-sidebar-header shrink-0 flex items-center gap-2.5" style={{ padding: "10px 8px 14px", borderBottom: "1px solid var(--oc-border-subtle)" }}>
               <div
                 className="workbench-sidebar-brand-avatar rounded-full shrink-0 flex items-center justify-center relative"
-                style={{ width: 38, height: 38, background: "var(--oc-sidebar-avatar-bg)", color: "var(--oc-sidebar-muted)" }}
+                style={{ width: 38, height: 38, background: "transparent", color: "var(--oc-sidebar-muted)" }}
               >
-                <WorkforceAgentIcon size={26} animate={false} breathe={false} />
+                <WorkforceAgentIcon size={30} animate breathe={false} showBackground={false} />
                 {sidebarClawOnline ? (
                   <span
                     aria-hidden="true"
@@ -4691,7 +4731,6 @@ export default function Home() {
                 coopBadge={coopBadgeCount}
                 sessions={webSessions}
               currentConversationId={sidebarSelection === "session" ? webConversationId : undefined}
-              sessionSwitchingId={sessionSwitchingId}
               messageSearchProvider={findCachedConversationSnippet}
               onSwitchConversation={(conversationId) => {
                 setSidebarSelection("session");
@@ -4742,41 +4781,41 @@ export default function Home() {
 
           {/* ── 右侧主面板 ── */}
           <div className="lingxia-main-panel flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* 全局顶部栏 */}
-          <TopBar
-            activePage={activePage}
-            leading={isMobileViewport ? (
-              <button
-                type="button"
-                className="workbench-mobile-menu-trigger"
-                aria-label="打开导航"
-                aria-controls="workbench-navigation"
-                aria-expanded={mobileSidebarOpen}
-                onClick={() => setMobileSidebarOpen(true)}
-              >
-                <Menu size={18} />
-              </button>
-            ) : undefined}
-            right={isLingxiaSubdomain ? (
-              <div className="workbench-topbar-actions">
-              {activePage === "chat" && resolvedAdoptId ? (
+          {/* 移动端保留紧凑导航；桌面端由侧栏承担页面定位。 */}
+          {isMobileViewport ? (
+            <TopBar
+              activePage={activePage}
+              leading={
                 <button
                   type="button"
-                  className={`workbench-workspace-trigger ${workspacePanelOpen ? "is-active" : ""}`}
-                  onClick={() => {
-                    setArtifactPanel(null);
-                    setWorkspacePanelOpen((open) => !open);
-                  }}
-                  title={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
-                  aria-label={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
-                  aria-expanded={workspacePanelOpen}
+                  className="workbench-mobile-menu-trigger"
+                  aria-label="打开导航"
+                  aria-controls="workbench-navigation"
+                  aria-expanded={mobileSidebarOpen}
+                  onClick={() => setMobileSidebarOpen(true)}
                 >
-                  <FolderOpen size={16} />
+                  <Menu size={18} />
                 </button>
-              ) : null}
-              </div>
-            ) : undefined}
-          />
+              }
+              right={activePage === "chat" && resolvedAdoptId ? (
+                <div className="workbench-topbar-actions">
+                  <button
+                    type="button"
+                    className={`workbench-workspace-trigger ${workspacePanelOpen ? "is-active" : ""}`}
+                    onClick={() => {
+                      setArtifactPanel(null);
+                      setWorkspacePanelOpen((open) => !open);
+                    }}
+                    title={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
+                    aria-label={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
+                    aria-expanded={workspacePanelOpen}
+                  >
+                    <FolderOpen size={16} />
+                  </button>
+                </div>
+              ) : undefined}
+            />
+          ) : null}
 
           <div
             ref={workbenchContentRef}
@@ -4784,6 +4823,21 @@ export default function Home() {
             data-workspace-open={sidePanelOpen ? "true" : "false"}
           >
           <div className="workbench-primary-pane">
+          {!isMobileViewport && activePage === "chat" && resolvedAdoptId ? (
+            <button
+              type="button"
+              className={`workbench-workspace-trigger workbench-workspace-trigger--floating ${workspacePanelOpen ? "is-active" : ""}`}
+              onClick={() => {
+                setArtifactPanel(null);
+                setWorkspacePanelOpen((open) => !open);
+              }}
+              title={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
+              aria-label={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
+              aria-expanded={workspacePanelOpen}
+            >
+              <FolderOpen size={16} />
+            </button>
+          ) : null}
           {activePage === "chat" ? (
           <ChatPage>
           <PanelErrorBoundary
@@ -4822,7 +4876,6 @@ export default function Home() {
                     <SessionList
                       sessions={webSessions}
                       currentConversationId={sidebarSelection === "session" ? webConversationId : undefined}
-                      sessionSwitchingId={sessionSwitchingId}
                       messageSearchProvider={findCachedConversationSnippet}
                       onSwitchConversation={(conversationId) => {
                         setSidebarSelection("session");
@@ -4846,11 +4899,15 @@ export default function Home() {
             {/* 消息区 */}
             <div
               ref={lingxiaMsgViewportRef}
-              className="flex-1 min-h-0 overflow-y-auto pt-6 stealth-scrollbar" style={{ paddingBottom: 100 }}
+              className="flex-1 min-h-0 overflow-y-auto pt-6 stealth-scrollbar"
+              style={{ paddingBottom: 100 }}
+              aria-busy={Boolean(sessionSwitchingId)}
             >
               <div ref={lingxiaMsgContentRef} className="mx-auto w-full max-w-[880px] px-6 space-y-5">
 
-              {clawByAdoptLoading && activeLingxiaMsgs.length === 0 ? <ChatStartupSkeleton /> : null}
+              {sessionSwitchingId && activeLingxiaMsgs.length === 0 ? <ChatStartupSkeleton /> : null}
+
+              {!sessionSwitchingId && clawByAdoptLoading && activeLingxiaMsgs.length === 0 ? <ChatStartupSkeleton /> : null}
 
               {!clawByAdoptLoading && !clawByAdoptId && (
                 <div className="max-w-4xl rounded-xl p-4 text-sm" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", color: "#d4a030" }}>
@@ -4858,7 +4915,7 @@ export default function Home() {
                 </div>
               )}
 
-              {!clawByAdoptLoading && clawByAdoptId && activeLingxiaMsgs.length === 0 && (
+              {!sessionSwitchingId && !clawByAdoptLoading && clawByAdoptId && activeLingxiaMsgs.length === 0 && (
                 <div className="max-w-4xl py-2 lingxia-msg-fade lingxia-welcome-message">
                   你好，我是 <span>{lingxiaDisplayName || brand.name}</span>，有什么想聊的？
                 </div>
@@ -4906,6 +4963,7 @@ export default function Home() {
                     onForgetMemory={m.role === "assistant" && resolvedAdoptId
                       ? (memoryId) => forgetMemoryMutation.mutateAsync({ adoptId: resolvedAdoptId, id: memoryId }).then(() => undefined)
                       : undefined}
+                    onCaptureKnowledge={m.role === "assistant" ? openChatKnowledgeCapture : undefined}
                     jiuwenPermission={m.role === "assistant" ? (m as LxMsg).jiuwenPermission : undefined}
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
                     onOpenAgentArtifact={openAgentArtifactPanel}

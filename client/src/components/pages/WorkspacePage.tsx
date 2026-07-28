@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { PageContainer } from "@/components/console/PageContainer";
 import { FileTypeIcon, fileTypeIconKind, type FileTypeIconKind } from "@/components/FileTypeIcon";
-import { Folder, FileText, Download, Eye, ChevronRight, Loader2, Search, Trash2 } from "lucide-react";
+import { KnowledgeCaptureDialog } from "@/components/KnowledgeCaptureDialog";
+import { Folder, FileText, Download, Eye, ChevronRight, Loader2, Search, Trash2, BookPlus } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,6 +35,13 @@ const PROTECTED_ROOT_FILES = new Set([
   "HEARTBEAT.md",
   "USER.md",
 ]);
+const KNOWLEDGE_CAPTURE_EXTENSIONS = new Set(["md", "txt", "csv", "json", "yaml", "yml", "pdf", "docx", "xlsx", "pptx"]);
+
+function canCaptureAsKnowledge(file: FileNode): boolean {
+  if (file.type !== "file") return false;
+  const extension = file.name.split(".").pop()?.toLowerCase() || "";
+  return KNOWLEDGE_CAPTURE_EXTENSIONS.has(extension) && !isProtectedRootFile(file) && !isManagedSkillsPath(file.path);
+}
 
 // Parse response safely: 当上游反代（nginx 413/502 等）返回 HTML 错误页时，
 // 避免 r.json() 抛 "Unexpected token '<'"，改为提取可读信息。
@@ -199,6 +207,7 @@ export function WorkspaceBrowser({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState<string>("");  // workspace-relative current dir, "" = root
   const [deleteTarget, setDeleteTarget] = useState<FileNode | null>(null);
+  const [knowledgeCaptureFile, setKnowledgeCaptureFile] = useState<FileNode | null>(null);
   const [fileFilter, setFileFilter] = useState("");
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => new Set());
   const inManagedSkillsDir = isManagedSkillsPath(currentPath);
@@ -426,6 +435,11 @@ export function WorkspaceBrowser({
                   <span className="workspace-tree-name">{file.name}</span>
                 </button>
                 <div className="workspace-tree-actions">
+                  {canCaptureAsKnowledge(file) && (
+                    <button type="button" onClick={() => setKnowledgeCaptureFile(file)} title="加入知识库" aria-label={`将 ${file.name} 加入知识库`}>
+                      <BookPlus />
+                    </button>
+                  )}
                   {file.type === "file" && isPreviewable(file.name) && caps?.supportsRead && (
                     <button type="button" onClick={() => void previewFile(file)} title="预览" aria-label={`预览 ${file.name}`}>
                       <Eye />
@@ -499,6 +513,11 @@ export function WorkspaceBrowser({
                 <span className="workspace-source-pill">{fileSourceHint(f)}</span>
               </div>
               <div className="ea-data-actions">
+                {canCaptureAsKnowledge(f) && (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setKnowledgeCaptureFile(f); }} className="ea-data-icon-btn" title="加入知识库" aria-label={`将 ${f.name} 加入知识库`}>
+                    <BookPlus className="w-3 h-3" /> 加入知识
+                  </button>
+                )}
                 {f.type === "file" && isPreviewable(f.name) && caps?.supportsRead && (
                   <button type="button" onClick={(e) => { e.stopPropagation(); previewFile(f); }} className="ea-data-icon-btn" title="预览" aria-label={`预览 ${f.name}`}>
                     <Eye className="w-3 h-3" /> 预览
@@ -539,6 +558,16 @@ export function WorkspaceBrowser({
                 {previewing.modifiedAt && <small>· {formatTime(previewing.modifiedAt)}</small>}
               </div>
               <div className="workspace-preview-actions">
+                {canCaptureAsKnowledge({ name: previewing.name, path: previewing.path, type: "file" }) && (
+                  <button
+                    type="button"
+                    className="workspace-preview-action"
+                    onClick={() => setKnowledgeCaptureFile({ name: previewing.name, path: previewing.path, type: "file", modifiedAt: previewing.modifiedAt })}
+                  >
+                    <BookPlus />
+                    加入知识库
+                  </button>
+                )}
                 <a
                   className="workspace-preview-action"
                   href={downloadUrl({ name: previewing.name, path: previewing.path, type: "file" })}
@@ -575,6 +604,17 @@ export function WorkspaceBrowser({
           <Loader2 className="w-8 h-8 animate-spin text-white" />
         </div>
       )}
+
+      <KnowledgeCaptureDialog
+        open={Boolean(knowledgeCaptureFile)}
+        adoptId={adoptId}
+        source={knowledgeCaptureFile ? {
+          type: "workspace",
+          title: knowledgeCaptureFile.name,
+          workspacePath: knowledgeCaptureFile.path,
+        } : null}
+        onOpenChange={(open) => { if (!open) setKnowledgeCaptureFile(null); }}
+      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent

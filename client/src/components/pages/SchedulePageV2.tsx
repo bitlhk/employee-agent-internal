@@ -574,6 +574,9 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
       {dialog}
       <div className="schedule-v2 ea-data-page">
         <div className="schedule-v2-toolbar ea-data-toolbar">
+          <div className="console-section-tabs" role="tablist" aria-label="定时任务分栏">
+            <button type="button" role="tab" aria-selected="true" data-active="true">定时任务</button>
+          </div>
           <div className="schedule-v2-toolbar-actions ea-data-toolbar__actions">
             <button className="schedule-v2-btn schedule-v2-btn--primary ea-data-btn ea-data-btn--primary" onClick={() => setCreateOpen((v) => !v)} disabled={!aid}>
               <Plus size={14} /> {createOpen ? T.collapseCreate : T.createTask}

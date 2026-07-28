@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { CircleHelp, Home, LogOut, Moon, Palette, Sun } from "lucide-react";
+import { Home, LogOut, Moon, Palette, Sun } from "lucide-react";
 import { applySettings, getSettings, subscribeSettings } from "@/lib/settings";
 import type { ThemeMode } from "@/types/settings";
 
@@ -22,11 +22,12 @@ type SidebarFooterProps = {
 };
 
 function normalizeVersion(version: string) {
-  return (
-    String(version || "")
-      .replace(/\s*\(.*\)\s*$/, "")
-      .trim() || "unknown"
-  );
+  const normalized = String(version || "")
+    .replace(/\s*\(.*\)\s*$/, "")
+    .trim();
+  const versionNumber = normalized.match(/\bv?\d+(?:\.\d+)+(?:[-+][A-Za-z0-9.-]+)?\b/i)?.[0];
+  if (versionNumber) return versionNumber.startsWith("v") ? versionNumber : `v${versionNumber}`;
+  return normalized || "unknown";
 }
 
 export function SidebarFooter({
@@ -82,6 +83,7 @@ export function SidebarFooter({
             {!collapsed ? (
               <div className="sidebar-footer-identity">
                 <strong title={accountName}>{accountName}</strong>
+                <span className="sidebar-footer-runtime" title={cleanVersion}>{cleanVersion}</span>
               </div>
             ) : null}
           </button>
@@ -151,29 +153,26 @@ export function SidebarFooter({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="sidebar-footer-help"
-            aria-label="查看运行时版本"
-            title="关于"
-          >
-            <CircleHelp size={17} strokeWidth={1.8} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          side={collapsed ? "right" : "top"}
-          align={collapsed ? "start" : "end"}
-          sideOffset={8}
-          className="workbench-account-menu min-w-48"
+      <nav className="sidebar-footer-repositories" aria-label="开源代码仓">
+        <a
+          href="https://atomgit.com/openJiuwen"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="访问 openJiuwen 开源社区"
+          title="openJiuwen 开源社区"
         >
-          <DropdownMenuLabel className="sidebar-footer-version">
-            <span>运行时版本</span>
-            <strong>{cleanVersion}</strong>
-          </DropdownMenuLabel>
-        </DropdownMenuContent>
-      </DropdownMenu>
+          <img src="/images/jiuwen-logo.png" alt="" aria-hidden="true" />
+        </a>
+        <a
+          href="https://atomgit.com/linggan_ai/employee-agent"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="访问 Employee Agent 代码仓"
+          title="Employee Agent 代码仓"
+        >
+          <img src="/images/atomgit.png" alt="" aria-hidden="true" />
+        </a>
+      </nav>
     </div>
   );
 }

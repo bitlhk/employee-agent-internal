@@ -1,6 +1,6 @@
 import type { Request } from "express";
 import { afterEach, describe, expect, it } from "vitest";
-import { csrfAllowedOrigins, isCookieMutationAllowed } from "./csrf";
+import { assertCredentialedCorsOrigins, csrfAllowedOrigins, isCookieMutationAllowed } from "./csrf";
 import { COOKIE_NAME } from "@shared/const";
 
 const originalEnv = { ...process.env };
@@ -32,5 +32,10 @@ describe("cookie CSRF protection", () => {
 
   it("keeps legacy non-browser cookie clients compatible when browser metadata is absent", () => {
     expect(isCookieMutationAllowed(request({ cookie }), csrfAllowedOrigins([]))).toBe(true);
+  });
+
+  it("fails closed when credentialed CORS is configured with a wildcard", () => {
+    expect(assertCredentialedCorsOrigins([" https://app.example.com ", ""])).toEqual(["https://app.example.com"]);
+    expect(() => assertCredentialedCorsOrigins(["*"])).toThrow(/explicit origins/i);
   });
 });

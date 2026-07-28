@@ -62,7 +62,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { getClawByAdoptId, getDb } from "../db";
 import { getClientIp } from "./ip-utils";
-import { cookieCsrfProtection } from "./csrf";
+import { assertCredentialedCorsOrigins, cookieCsrfProtection } from "./csrf";
 import {
   injectInstallerTelemetry,
   INSTALLER_VERSION,
@@ -73,6 +73,7 @@ import { recordInstallEvent } from "../db/install-telemetry";
 import { startAgentMemoryRuntime } from "./agent-memory";
 import { registerLocalProfileA2AProxy } from "./local-profile-a2a-proxy";
 import { startAgentHealthMonitor } from "./agent-health";
+import { startKnowledgeIndexRecovery } from "./knowledge-service";
 import { centralAuthConfigFromEnv, centralAuthRedirectUrl } from "./central-auth";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -312,9 +313,9 @@ async function startServer() {
   
   // Configure CORS for frontend-backend separation
   // 支持多个 origin，用逗号分隔
-  const allowedOrigins = process.env.CORS_ORIGIN 
+  const allowedOrigins = assertCredentialedCorsOrigins(process.env.CORS_ORIGIN
     ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175'];
+    : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175']);
 
   app.use(cookieCsrfProtection(allowedOrigins));
   
@@ -324,9 +325,6 @@ async function startServer() {
     // 如果请求有 origin 头，且在我们的允许列表中，则允许
     if (origin && allowedOrigins.includes(origin)) {
       res.header("Access-Control-Allow-Origin", origin);
-    } else if (allowedOrigins.length === 1 && allowedOrigins[0] === '*') {
-      // 只有在明确设置为 '*' 时才使用通配符（不推荐，因为不支持 credentials）
-      res.header("Access-Control-Allow-Origin", "*");
     }
     
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -785,7 +783,10 @@ async function startServer() {
           ok: Boolean(db),
           ms: Date.now() - dbWarmupStartedAt,
         });
-        if (db) startAgentMemoryRuntime();
+        if (db) {
+          startAgentMemoryRuntime();
+          startKnowledgeIndexRecovery();
+        }
       })
       .catch((error) => {
         console.warn("[Database] Warmup failed:", (error as any)?.message || error);

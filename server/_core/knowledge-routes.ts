@@ -20,6 +20,7 @@ import {
   removeKnowledgeDocumentFiles,
   resolveKnowledgeStoragePath,
   safeKnowledgeFilename,
+  writeKnowledgeDocumentSourceMetadata,
 } from "./knowledge-storage";
 import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
 import { queueKnowledgeIndex } from "./knowledge-service";
@@ -83,6 +84,11 @@ export function registerKnowledgeRoutes(app: express.Express): void {
       writeFileSync(temporaryPath, buffer, { mode: 0o600 });
       renameSync(temporaryPath, storage.absolute);
       temporaryPath = "";
+      writeKnowledgeDocumentSourceMetadata(access.base.publicId, documentPublicId, {
+        type: "upload",
+        capturedAt: new Date().toISOString(),
+        adoptId,
+      });
       const document = await createKnowledgeDocumentRecord({
         publicId: documentPublicId,
         knowledgeBaseId: access.base.id,
@@ -92,8 +98,11 @@ export function registerKnowledgeRoutes(app: express.Express): void {
         storagePath: storage.relative,
         sizeBytes: buffer.length,
         sha256,
+        classification: access.base.classification,
+        authority: access.base.scope === "personal" ? "personal" : "reference",
+        externalProcessingAllowed: access.base.externalProcessingAllowed,
       });
-      void queueKnowledgeIndex({ ...access.base, documentCount: access.base.documentCount + 1, status: "indexing" }).catch(() => {});
+      void queueKnowledgeIndex({ ...access.base, documentCount: access.base.documentCount + 1, status: "indexing" }, "document_uploaded").catch(() => {});
       return res.json({ ok: true, document: { ...document, storagePath: undefined, sha256: undefined } });
     } catch (error) {
       if (temporaryPath && existsSync(temporaryPath)) try { unlinkSync(temporaryPath); } catch {}
@@ -133,7 +142,7 @@ export function registerKnowledgeRoutes(app: express.Express): void {
       if (!document || document.knowledgeBaseId !== access.base.id) return res.status(404).json({ error: "document not found" });
       await deleteKnowledgeDocumentRecord(document.id, access.base.id);
       removeKnowledgeDocumentFiles(access.base.publicId, document.publicId);
-      void queueKnowledgeIndex(access.base).catch(() => {});
+      void queueKnowledgeIndex(access.base, "document_deleted").catch(() => {});
       return res.json({ ok: true });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "document delete failed" });
