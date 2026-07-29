@@ -22,6 +22,7 @@
     "knowledge:evaluate": "bash -lc '[[ \"$1\" == \"--\" ]] && shift; \"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" server/knowledge/evaluate.py \"$@\"' knowledge-evaluate",
     "db:push": "drizzle-kit push",
     "db:deploy": "tsx scripts/db-deploy.ts",
+    "db:baseline:repair": "tsx scripts/db-baseline-repair.ts",
     "db:migrate": "tsx scripts/db-migrate.ts apply",
     "db:migrate:check": "tsx scripts/db-migrate.ts check",
     "db:migrate:status": "tsx scripts/db-migrate.ts status",

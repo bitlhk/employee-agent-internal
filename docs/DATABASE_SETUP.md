@@ -56,6 +56,8 @@ pnpm db:migrate:status  # 查看状态
 
 `pnpm db:push` 只用于尚未建立受管基线的本地开发数据库。生产发布不得使用 `drizzle-kit push`。
 
+从早期版本升级时，如果基线检查只报告 `lx_coop_user_hidden.created_at` 缺失，可在备份后使用 DDL 账号显式执行 `pnpm db:baseline:repair`。该命令只修复这一条已知历史漂移；出现任何其他缺表或缺列都会失败关闭，禁止自动猜测结构。
+
 ### 4. 验证数据库连接
 
 重启后端服务器后，查看日志应该显示：

@@ -83,6 +83,23 @@ jobs:
             exit 1
           fi
           grep -F "database does not match baseline-v1; missing users.name" /tmp/db-migrate-incompatible.log
+          if pnpm db:baseline:repair > /tmp/db-repair-incompatible.log 2>&1; then
+            echo "unsupported baseline drift was repaired" >&2
+            exit 1
+          fi
+          grep -F "baseline repair refused unsupported drift: users.name" /tmp/db-repair-incompatible.log
+
+      - name: Repair supported legacy database drift
+        env:
+          DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_legacy
+          DATABASE_MIGRATION_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_legacy
+        run: |
+          node -e "require('mysql2/promise').createConnection('mysql://root:ci-root-password@127.0.0.1:3306/mysql').then(async c => { await c.query('CREATE DATABASE employee_agent_legacy CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'); await c.end(); })"
+          pnpm exec drizzle-kit push --force
+          node -e "require('mysql2/promise').createConnection(process.env.DATABASE_URL).then(async c => { await c.query('ALTER TABLE lx_coop_user_hidden DROP COLUMN created_at'); await c.end(); })"
+          pnpm db:baseline:repair
+          pnpm db:migrate
+          pnpm db:migrate:check
 
       - name: Release and rollback flow
         run: pnpm release:test
