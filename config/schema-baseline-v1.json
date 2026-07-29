@@ -1,0 +1,989 @@
+{
+  "id": "baseline-v1",
+  "tables": [
+    {
+      "name": "admin_mfa_credentials",
+      "columns": [
+        "created_at",
+        "enabled",
+        "enabled_at",
+        "last_used_step",
+        "recovery_code_digests",
+        "secret_encrypted",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "agent_call_logs",
+      "columns": [
+        "adopt_id",
+        "agent_id",
+        "created_at",
+        "duration_ms",
+        "error_message",
+        "id",
+        "status",
+        "user_id"
+      ]
+    },
+    {
+      "name": "agent_mcp_preferences",
+      "columns": [
+        "adopt_id",
+        "created_at",
+        "enabled",
+        "id",
+        "server_id",
+        "updated_at",
+        "updated_by"
+      ]
+    },
+    {
+      "name": "agent_memory_cursors",
+      "columns": [
+        "channel",
+        "created_at",
+        "last_fingerprint",
+        "last_timestamp_ms",
+        "source_key",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "agent_memory_evidence",
+      "columns": [
+        "adopt_id",
+        "channel",
+        "conversation_id",
+        "id",
+        "memory_id",
+        "message_id",
+        "metadata_json",
+        "observed_at",
+        "request_id",
+        "session_id",
+        "snippet",
+        "source_hash",
+        "source_type",
+        "user_id"
+      ]
+    },
+    {
+      "name": "agent_memory_items",
+      "columns": [
+        "adopt_id",
+        "canonical_key",
+        "confidence",
+        "content",
+        "created_at",
+        "evidence_count",
+        "expires_at",
+        "id",
+        "kind",
+        "last_observed_at",
+        "last_used_at",
+        "role_template",
+        "scope",
+        "source",
+        "status",
+        "superseded_by_id",
+        "updated_at",
+        "user_id",
+        "version"
+      ]
+    },
+    {
+      "name": "agent_memory_jobs",
+      "columns": [
+        "adopt_id",
+        "attempts",
+        "channel",
+        "completed_at",
+        "conversation_id",
+        "created_at",
+        "error_message",
+        "id",
+        "idempotency_key",
+        "next_attempt_at",
+        "payload_encrypted",
+        "request_id",
+        "role_template",
+        "session_id",
+        "started_at",
+        "status",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "agent_memory_syntheses",
+      "columns": [
+        "adopt_id",
+        "canonical_key",
+        "confidence",
+        "content",
+        "created_at",
+        "generated_at",
+        "id",
+        "memory_ids_json",
+        "model",
+        "slot",
+        "source_signature",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "agent_memory_synthesis_state",
+      "columns": [
+        "adopt_id",
+        "completed_at",
+        "completed_signature",
+        "created_at",
+        "desired_signature",
+        "error_message",
+        "id",
+        "model",
+        "started_at",
+        "status",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "agent_tasks",
+      "columns": [
+        "adapter_protocol",
+        "adopt_id",
+        "agent_id",
+        "artifacts_json",
+        "completed_at",
+        "created_at",
+        "error_message",
+        "id",
+        "input",
+        "interaction_answered_at",
+        "interaction_json",
+        "interaction_response_json",
+        "interaction_status",
+        "parent_task_id",
+        "raw_events_json",
+        "remote_task_id",
+        "result_markdown",
+        "source_conversation_id",
+        "source_message_id",
+        "source_session_id",
+        "started_at",
+        "status",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "audit_events",
+      "columns": [
+        "action",
+        "actor_department_id",
+        "actor_email",
+        "actor_name",
+        "actor_org_id",
+        "actor_role",
+        "actor_type",
+        "actor_user_id",
+        "agent_instance_id",
+        "category",
+        "channel",
+        "correlation_id",
+        "created_at",
+        "detail_id",
+        "detail_type",
+        "environment",
+        "error_code",
+        "event_id",
+        "event_time",
+        "id",
+        "ip",
+        "metadata_json",
+        "metadata_original_bytes",
+        "metadata_truncated",
+        "policy_code",
+        "request_id",
+        "resource_id",
+        "resource_name",
+        "resource_type",
+        "result",
+        "risk_type",
+        "runtime_agent_id",
+        "runtime_type",
+        "session_id",
+        "severity",
+        "source",
+        "target_id",
+        "target_name",
+        "target_type",
+        "tool_name",
+        "user_agent",
+        "workspace_id"
+      ]
+    },
+    {
+      "name": "audit_exports",
+      "columns": [
+        "actor_email",
+        "actor_user_id",
+        "created_at",
+        "encrypted",
+        "expires_at",
+        "export_id",
+        "file_hash",
+        "file_size_bytes",
+        "filters_json",
+        "format",
+        "id",
+        "row_count",
+        "storage_key"
+      ]
+    },
+    {
+      "name": "audit_security_findings",
+      "columns": [
+        "created_at",
+        "description",
+        "event_id",
+        "evidence_json",
+        "finding_id",
+        "finding_type",
+        "handled_at",
+        "handled_by",
+        "handled_note",
+        "id",
+        "severity",
+        "status",
+        "target_id",
+        "target_type",
+        "title",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "audit_tool_events",
+      "columns": [
+        "args_json",
+        "command",
+        "created_at",
+        "cwd",
+        "deny_reason",
+        "duration_ms",
+        "event_id",
+        "executor",
+        "exit_code",
+        "id",
+        "metadata_json",
+        "method",
+        "original_tool_name",
+        "policy_decision",
+        "routed_tool_name",
+        "stderr_bytes",
+        "stdout_bytes",
+        "timeout_ms",
+        "tool_name",
+        "tool_type",
+        "truncated",
+        "url"
+      ]
+    },
+    {
+      "name": "business_agent_audit",
+      "columns": [
+        "action",
+        "agent_id",
+        "created_at",
+        "id",
+        "meta",
+        "session_key",
+        "tenant_token",
+        "user_id"
+      ]
+    },
+    {
+      "name": "business_agent_tenant_map",
+      "columns": [
+        "agent_id",
+        "first_used_at",
+        "last_used_at",
+        "message_count",
+        "tenant_token",
+        "user_id",
+        "workspace_path"
+      ]
+    },
+    {
+      "name": "business_agents",
+      "columns": [
+        "adapter_protocol",
+        "allowed_profiles",
+        "api_token",
+        "api_url",
+        "capabilities_json",
+        "created_at",
+        "deleted_at",
+        "description",
+        "enabled",
+        "endpoint_config_json",
+        "endpoint_digest",
+        "expires_at",
+        "health_status",
+        "icon",
+        "id",
+        "kind",
+        "last_health_check",
+        "local_agent_id",
+        "max_daily_requests",
+        "name",
+        "owner_adopt_id",
+        "owner_user_id",
+        "provider_type",
+        "remote_agent_id",
+        "skills",
+        "sort_order",
+        "system_prompt",
+        "tags",
+        "ui_config",
+        "updated_at",
+        "visibility"
+      ]
+    },
+    {
+      "name": "channel_bindings",
+      "columns": [
+        "adopt_id",
+        "bound_at",
+        "channel",
+        "created_at",
+        "external_channel_id",
+        "external_chat_id",
+        "external_user_id",
+        "id",
+        "metadata_json",
+        "source_message_id",
+        "status",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "claw_adoption_events",
+      "columns": [
+        "adoptionId",
+        "createdAt",
+        "detail",
+        "eventType",
+        "id",
+        "operatorId",
+        "operatorType"
+      ]
+    },
+    {
+      "name": "claw_adoptions",
+      "columns": [
+        "adoptId",
+        "agentId",
+        "createdAt",
+        "entryUrl",
+        "expiresAt",
+        "hermes_port",
+        "id",
+        "industry",
+        "lastActivityAt",
+        "lastError",
+        "permissionProfile",
+        "roleTemplate",
+        "runtime",
+        "status",
+        "ttlDays",
+        "updatedAt",
+        "userId"
+      ]
+    },
+    {
+      "name": "claw_collab_requests",
+      "columns": [
+        "approvalMode",
+        "approvedAt",
+        "approvedBy",
+        "completedAt",
+        "constraintsApplied",
+        "createdAt",
+        "executionScope",
+        "id",
+        "inputPayload",
+        "requesterAdoptId",
+        "requesterUserId",
+        "resultMeta",
+        "resultSummary",
+        "resultVisibleToAll",
+        "riskLevel",
+        "sessionId",
+        "status",
+        "subtaskIndex",
+        "targetAdoptId",
+        "targetUserId",
+        "taskSummary",
+        "taskType",
+        "updatedAt"
+      ]
+    },
+    {
+      "name": "claw_collab_settings",
+      "columns": [
+        "acceptDm",
+        "acceptTask",
+        "adoptionId",
+        "allowedTaskTypes",
+        "createdAt",
+        "displayName",
+        "headline",
+        "id",
+        "sharingPolicy",
+        "updatedAt",
+        "visibilityMode"
+      ]
+    },
+    {
+      "name": "claw_profile_settings",
+      "columns": [
+        "adoptionId",
+        "contextTurns",
+        "createdAt",
+        "crossSessionContext",
+        "displayName",
+        "id",
+        "memoryEnabled",
+        "memorySummary",
+        "memory_mode",
+        "model",
+        "personaPrompt",
+        "stylePreset",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    {
+      "name": "custom_mcp_connections",
+      "columns": [
+        "adopt_id",
+        "auth_header_name",
+        "auth_type",
+        "catalog_id",
+        "created_at",
+        "credential_encrypted",
+        "display_name",
+        "enabled",
+        "endpoint_digest",
+        "endpoint_url",
+        "health_status",
+        "id",
+        "last_error",
+        "last_tested_at",
+        "oauth_data_encrypted",
+        "selected_tool_names",
+        "tools_json",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "daily_insights",
+      "columns": [
+        "content",
+        "createdAt",
+        "date",
+        "id",
+        "source",
+        "summary",
+        "title",
+        "updatedAt"
+      ]
+    },
+    {
+      "name": "email_verification_codes",
+      "columns": [
+        "code",
+        "createdAt",
+        "email",
+        "expiresAt",
+        "id",
+        "used"
+      ]
+    },
+    {
+      "name": "experience_configs",
+      "columns": [
+        "createdAt",
+        "description",
+        "displayOrder",
+        "experienceId",
+        "features",
+        "icon",
+        "id",
+        "inToolbox",
+        "scenarioId",
+        "status",
+        "tag",
+        "title",
+        "updatedAt",
+        "updatedBy",
+        "url",
+        "visibility"
+      ]
+    },
+    {
+      "name": "feature_flags",
+      "columns": [
+        "description",
+        "enabled",
+        "id",
+        "key",
+        "name",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    {
+      "name": "install_events",
+      "columns": [
+        "arch",
+        "created_at",
+        "duration_ms",
+        "event_type",
+        "id",
+        "install_id",
+        "installer_version",
+        "mirror",
+        "os_type",
+        "source",
+        "stage"
+      ]
+    },
+    {
+      "name": "ip_access_logs",
+      "columns": [
+        "action",
+        "createdAt",
+        "id",
+        "ip",
+        "path",
+        "userAgent",
+        "userId"
+      ]
+    },
+    {
+      "name": "ip_management",
+      "columns": [
+        "createdAt",
+        "createdBy",
+        "expiresAt",
+        "id",
+        "ip",
+        "isActive",
+        "notes",
+        "reason",
+        "severity",
+        "type"
+      ]
+    },
+    {
+      "name": "knowledge_bases",
+      "columns": [
+        "chunk_count",
+        "classification",
+        "created_at",
+        "description",
+        "document_count",
+        "external_processing_allowed",
+        "id",
+        "index_schema_version",
+        "index_version",
+        "indexed_at",
+        "is_global",
+        "last_error",
+        "name",
+        "owner_group_id",
+        "owner_user_id",
+        "public_id",
+        "role_template",
+        "scope",
+        "status",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "knowledge_documents",
+      "columns": [
+        "authority",
+        "chunk_count",
+        "classification",
+        "created_at",
+        "effective_at",
+        "expires_at",
+        "extension",
+        "external_processing_allowed",
+        "id",
+        "index_version",
+        "knowledge_base_id",
+        "last_error",
+        "lifecycle",
+        "mime_type",
+        "name",
+        "parser_version",
+        "public_id",
+        "sha256",
+        "size_bytes",
+        "source_department",
+        "status",
+        "storage_path",
+        "updated_at",
+        "version_label"
+      ]
+    },
+    {
+      "name": "knowledge_index_jobs",
+      "columns": [
+        "attempts",
+        "created_at",
+        "finished_at",
+        "id",
+        "knowledge_base_id",
+        "last_error",
+        "locked_at",
+        "reason",
+        "status",
+        "updated_at"
+      ]
+    },
+    {
+      "name": "lx_collab_spaces",
+      "columns": [
+        "created_at",
+        "description",
+        "id",
+        "name",
+        "sort_order",
+        "status",
+        "updated_at",
+        "updated_by"
+      ]
+    },
+    {
+      "name": "lx_collab_user_profiles",
+      "columns": [
+        "created_at",
+        "department_name",
+        "notes",
+        "organization_name",
+        "real_name",
+        "space_id",
+        "status",
+        "team_name",
+        "updated_at",
+        "updated_by",
+        "user_id"
+      ]
+    },
+    {
+      "name": "lx_coop_events",
+      "columns": [
+        "actor_adopt_id",
+        "actor_user_id",
+        "created_at",
+        "event_type",
+        "id",
+        "payload",
+        "request_id",
+        "session_id"
+      ]
+    },
+    {
+      "name": "lx_coop_files",
+      "columns": [
+        "created_at",
+        "id",
+        "mime",
+        "name",
+        "owner_user_id",
+        "request_id",
+        "session_id",
+        "size",
+        "source_adopt_id",
+        "source_path",
+        "source_type",
+        "stored_path"
+      ]
+    },
+    {
+      "name": "lx_coop_sessions",
+      "columns": [
+        "closed_at",
+        "consolidation_prompt_preset",
+        "created_at",
+        "creator_adopt_id",
+        "creator_user_id",
+        "deleted_at",
+        "final_artifacts",
+        "final_summary",
+        "id",
+        "member_count",
+        "origin_message",
+        "published_at",
+        "space_id",
+        "status",
+        "title",
+        "visibility_mode"
+      ]
+    },
+    {
+      "name": "lx_coop_user_hidden",
+      "columns": [
+        "created_at",
+        "session_id",
+        "user_id"
+      ]
+    },
+    {
+      "name": "lx_groups",
+      "columns": [
+        "created_at",
+        "id",
+        "name",
+        "sort_order"
+      ]
+    },
+    {
+      "name": "message_feedback",
+      "columns": [
+        "actual_model_id",
+        "adopt_id",
+        "comment",
+        "conversation_id",
+        "created_at",
+        "duration_ms",
+        "id",
+        "input_tokens",
+        "message_id",
+        "output_tokens",
+        "rating",
+        "reason_codes_json",
+        "role_template",
+        "runtime_type",
+        "selected_model_id",
+        "skill_ids_json",
+        "tool_summary_json",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "password_reset_tokens",
+      "columns": [
+        "createdAt",
+        "email",
+        "expiresAt",
+        "id",
+        "token",
+        "used"
+      ]
+    },
+    {
+      "name": "registrations",
+      "columns": [
+        "company",
+        "createdAt",
+        "email",
+        "id",
+        "name",
+        "partner_type"
+      ]
+    },
+    {
+      "name": "role_asset_grants",
+      "columns": [
+        "asset_id",
+        "asset_type",
+        "created_at",
+        "created_by",
+        "enabled",
+        "grant_mode",
+        "id",
+        "role_key",
+        "source",
+        "updated_at",
+        "updated_by"
+      ]
+    },
+    {
+      "name": "scenarios",
+      "columns": [
+        "createdAt",
+        "description",
+        "displayOrder",
+        "icon",
+        "id",
+        "status",
+        "subtitle",
+        "title",
+        "updatedAt"
+      ]
+    },
+    {
+      "name": "security_logs",
+      "columns": [
+        "createdAt",
+        "details",
+        "handledAt",
+        "handledBy",
+        "handledNote",
+        "id",
+        "ip",
+        "method",
+        "path",
+        "reason",
+        "severity",
+        "status",
+        "userAgent"
+      ]
+    },
+    {
+      "name": "skill_marketplace",
+      "columns": [
+        "author",
+        "author_user_id",
+        "category",
+        "created_at",
+        "description",
+        "download_count",
+        "id",
+        "license",
+        "name",
+        "origin",
+        "package_path",
+        "provider",
+        "review_note",
+        "role_tag",
+        "skill_id",
+        "status",
+        "updated_at",
+        "version"
+      ]
+    },
+    {
+      "name": "smtp_config",
+      "columns": [
+        "enabled",
+        "from",
+        "host",
+        "id",
+        "password",
+        "port",
+        "updatedAt",
+        "updatedBy",
+        "user"
+      ]
+    },
+    {
+      "name": "system_configs",
+      "columns": [
+        "description",
+        "id",
+        "key",
+        "updatedAt",
+        "updatedBy",
+        "value"
+      ]
+    },
+    {
+      "name": "tool_execution_audits",
+      "columns": [
+        "agent_id",
+        "args",
+        "audit_id",
+        "command",
+        "created_at",
+        "cwd",
+        "denied_reason",
+        "deny_reason",
+        "duration_ms",
+        "executor",
+        "exit_code",
+        "original_tool_name",
+        "policy_decision",
+        "profile",
+        "request_id",
+        "routed_tool_name",
+        "stderr_bytes",
+        "stdout_bytes",
+        "timeout_ms",
+        "tool_call_id",
+        "truncated",
+        "user_id"
+      ]
+    },
+    {
+      "name": "user_memories",
+      "columns": [
+        "adopt_id",
+        "content",
+        "created_at",
+        "id",
+        "source_agent",
+        "target",
+        "updated_at",
+        "user_id"
+      ]
+    },
+    {
+      "name": "users",
+      "columns": [
+        "accessLevel",
+        "createdAt",
+        "email",
+        "groupId",
+        "id",
+        "lastSignedIn",
+        "loginMethod",
+        "name",
+        "openId",
+        "organization",
+        "password",
+        "role",
+        "updatedAt"
+      ]
+    },
+    {
+      "name": "visit_stats",
+      "columns": [
+        "clickedAt",
+        "createdAt",
+        "experienceId",
+        "experienceTitle",
+        "id",
+        "registrationId",
+        "scenarioId"
+      ]
+    },
+    {
+      "name": "visit_stats_daily",
+      "columns": [
+        "createdAt",
+        "experienceId",
+        "id",
+        "pv",
+        "scenarioId",
+        "statDate",
+        "updatedAt",
+        "userType",
+        "uv"
+      ]
+    }
+  ]
+}

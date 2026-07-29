@@ -36,10 +36,25 @@ CREATE DATABASE employee_agent CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 配置好 `DATABASE_URL` 后，运行迁移创建表结构：
 
 ```bash
-pnpm db:push
+pnpm db:deploy
 ```
 
-项目以 `drizzle/schema.ts` 为数据库结构的唯一来源，`pnpm db:push` 会比较目标数据库并应用所需变更。请勿直接运行 `drizzle-kit migrate`；仓库中的历史 SQL 文件不构成完整的 Drizzle journal。
+`db:deploy` 会区分两种情况：
+
+- 空数据库：先依据 `drizzle/schema.ts` 创建当前基线，再执行受管前向迁移。
+- 已有数据库：必须通过 `config/schema-baseline-v1.json` 的表和字段校验，才登记基线并执行前向迁移，不会重放历史 SQL。
+
+生产环境建议配置独立的 `DATABASE_MIGRATION_URL`，只在发布窗口提供 DDL 权限；应用运行时继续使用权限更小的 `DATABASE_URL`。
+
+日常命令：
+
+```bash
+pnpm db:migrate         # 应用待执行迁移
+pnpm db:migrate:check   # 确认基线、校验和及待执行状态
+pnpm db:migrate:status  # 查看状态
+```
+
+`pnpm db:push` 只用于尚未建立受管基线的本地开发数据库。生产发布不得使用 `drizzle-kit push`。
 
 ### 4. 验证数据库连接
 
@@ -63,7 +78,7 @@ pnpm db:push
 2. **registrations** - 注册用户表
 3. **visit_stats** - 访问统计表
 
-表结构定义在 `drizzle/schema.ts` 文件中。
+表结构定义在 `drizzle/schema.ts`，受管前向迁移位于 `drizzle/managed/`。`drizzle/migrations/` 仅保留旧版本变更记录。
 
 ## 开发环境建议
 

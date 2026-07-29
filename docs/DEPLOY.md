@@ -121,6 +121,8 @@ pm2 restart employee-agent
 
 `verify-production-release.sh` is a read-only release gate. It verifies required PM2 processes, liveness, dependency readiness, and the expected metrics surface. Set `REQUIRE_PROMETHEUS=true` after the local monitoring service has been enabled.
 
+Database releases use `pnpm db:deploy`. Configure `DATABASE_MIGRATION_URL` with a dedicated DDL-capable account in production; do not run `drizzle-kit push` against a baselined production database.
+
 ## 常见问题
 
 **首页或登录页仍是旧文案**

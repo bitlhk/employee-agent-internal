@@ -12,6 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
+    services:
+      mysql:
+        image: mysql:8.0.41
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_DATABASE: employee_agent_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root-password"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +50,39 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Empty database migration and idempotency
+        env:
+          DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_ci
+          DATABASE_MIGRATION_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_ci
+        run: |
+          pnpm db:deploy
+          pnpm db:migrate:check
+          pnpm db:deploy
+
+      - name: Existing database baseline adoption
+        env:
+          DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_upgrade
+          DATABASE_MIGRATION_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_upgrade
+        run: |
+          node -e "require('mysql2/promise').createConnection('mysql://root:ci-root-password@127.0.0.1:3306/mysql').then(async c => { await c.query('CREATE DATABASE employee_agent_upgrade CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'); await c.end(); })"
+          pnpm exec drizzle-kit push --force
+          pnpm db:migrate
+          pnpm db:migrate:check
+
+      - name: Reject incompatible existing database
+        env:
+          DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_incompatible
+          DATABASE_MIGRATION_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_incompatible
+        run: |
+          node -e "require('mysql2/promise').createConnection('mysql://root:ci-root-password@127.0.0.1:3306/mysql').then(async c => { await c.query('CREATE DATABASE employee_agent_incompatible CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'); await c.end(); })"
+          pnpm exec drizzle-kit push --force
+          node -e "require('mysql2/promise').createConnection(process.env.DATABASE_URL).then(async c => { await c.query('ALTER TABLE users DROP COLUMN name'); await c.end(); })"
+          if pnpm db:migrate > /tmp/db-migrate-incompatible.log 2>&1; then
+            echo "incompatible database was accepted" >&2
+            exit 1
+          fi
+          grep -F "database does not match baseline-v1; missing users.name" /tmp/db-migrate-incompatible.log
 
       - name: Lint
         run: pnpm run lint

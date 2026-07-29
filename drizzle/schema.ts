@@ -2,6 +2,14 @@ import { bigint, boolean, index, int, json, mysqlEnum, mysqlTable, text, timesta
 
 const LEGACY_RUNTIME_PORT_COLUMN = ["her", "mes_port"].join("");
 
+// Managed forward migrations use a separate journal so legacy Drizzle files
+// can remain historical evidence without being replayed against existing data.
+export const eaSchemaMigrations = mysqlTable("__ea_schema_migrations", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  hash: text("hash").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+});
+
 /**
  * Core user table backing auth flow.
  * Extend this file with additional tables as your product grows.
