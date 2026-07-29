@@ -44,6 +44,8 @@ import {
 } from "./chat-inflight";
 import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
 import { isAllowedWebSocketOrigin } from "./ws-origin";
+import { isServerDraining } from "./operational-lifecycle";
+import { tryAcquireCapacity } from "./operational-capacity";
 
 // ── Ed25519 设备身份（进程级复用）──
 const ED25519_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
@@ -99,6 +101,12 @@ export function registerWSProxy(server: Server) {
   server.on("upgrade", async (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url || "/", `http://${req.headers.host}`);
     if (url.pathname !== "/api/claw/ws") return;
+
+    if (isServerDraining()) {
+      socket.write("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
 
     const upgradeStart = Date.now();
     const logUpgradeTiming = (stage: string, extra?: Record<string, unknown>) => {
@@ -160,14 +168,27 @@ export function registerWSProxy(server: Server) {
         socket.write("HTTP/1.1 403 Forbidden\r\n\r\n"); socket.destroy(); return;
       }
 
+      const releaseCapacity = tryAcquireCapacity("chat_ws");
+      if (!releaseCapacity) {
+        socket.write("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 2\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      socket.once("close", releaseCapacity);
+
       const dbAgent = String((claw as any).agentId || "").trim();
       const trialId = `trial_${adoptId}`;
       const agentId = existsSync(openClawAgentDir(trialId)) ? trialId : dbAgent;
       logUpgradeTiming("handle_upgrade", { agentId });
 
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit("connection", ws, req, { adoptId, agentId, userId: ctx.user!.id, channel, conversationId });
-      });
+      try {
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          wss.emit("connection", ws, req, { adoptId, agentId, userId: ctx.user!.id, channel, conversationId });
+        });
+      } catch (error) {
+        releaseCapacity();
+        throw error;
+      }
     } catch (err) {
       console.error("[WS] upgrade error:", err);
       socket.write("HTTP/1.1 500 Internal Server Error\r\n\r\n"); socket.destroy();

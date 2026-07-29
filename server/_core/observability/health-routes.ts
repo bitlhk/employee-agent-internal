@@ -6,6 +6,7 @@ import { getKnowledgeServiceHealth } from "../knowledge-service";
 import { isJiuwenClawRuntimeEnabled } from "../jiuwenclaw-bridge";
 import { logError } from "./logger";
 import { metricsRegistry, observeReadiness } from "./metrics";
+import { getServerLifecycleSnapshot } from "../operational-lifecycle";
 
 export type DependencyCheck = {
   name: "database" | "knowledge" | "jiuwenswarm";
@@ -131,9 +132,12 @@ export function registerOperationalRoutes(app: Express): void {
   app.get("/health/live", live);
   app.get("/health/ready", async (_req, res) => {
     const readiness = await evaluateReadiness();
-    res.status(readiness.ok ? 200 : 503).json({
-      status: readiness.ok ? "ready" : "not_ready",
+    const lifecycle = getServerLifecycleSnapshot();
+    const ready = readiness.ok && lifecycle.state === "ready";
+    res.status(ready ? 200 : 503).json({
+      status: ready ? "ready" : "not_ready",
       timestamp: new Date().toISOString(),
+      lifecycle,
       checks: readiness.checks,
     });
   });

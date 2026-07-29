@@ -79,6 +79,26 @@ groups:
           summary: Expert task concurrency is elevated
           description: At least 20 expert tasks have remained active for ten minutes.
 
+      - alert: EmployeeAgentCapacityLaneSaturated
+        expr: |
+          ea_capacity_limit > 0
+          and ea_capacity_active / ea_capacity_limit >= 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent capacity lane is nearly full
+          description: A bounded request lane has remained at or above 90% capacity for five minutes.
+
+      - alert: EmployeeAgentCapacityRejectingRequests
+        expr: increase(ea_capacity_rejections_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent is rejecting requests at its capacity guard
+          description: At least one request was rejected by a bounded capacity lane in the last five minutes.
+
   - name: employee-agent-recovery
     rules:
       - alert: EmployeeAgentBackupStale

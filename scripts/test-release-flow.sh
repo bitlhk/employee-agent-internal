@@ -16,7 +16,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$fake_bin/pm2"
 chmod +x "$fake_bin/pnpm" "$fake_bin/pm2"
 
 printf 'DATABASE_URL=mysql://unused\n' > "$shared_root/.env"
-printf 'module.exports={apps:[]};\n' > "$shared_root/ecosystem.config.cjs"
+printf 'module.exports={source:"shared",apps:[]};\n' > "$shared_root/ecosystem.config.cjs"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$shared_root/scripts/verify-production-release.sh"
 chmod +x "$shared_root/scripts/verify-production-release.sh"
 
@@ -26,6 +26,7 @@ make_bundle() {
   local source="$ROOT/source-$release_id"
   local bundle="$bundle_root/employee-agent-$release_id.tar.gz"
   mkdir -p "$source/scripts"
+  printf 'module.exports={source:"release",apps:[]};\n' > "$source/ecosystem.config.cjs.example"
   printf '{"schema":1,"releaseId":"%s","sourceCommit":"test","createdAt":"2026-01-01T00:00:00Z"}\n' "$release_id" > "$source/release-manifest.json"
   printf '#!/usr/bin/env bash\nexit %s\n' "$verify_exit" > "$source/scripts/verify-production-release.sh"
   chmod +x "$source/scripts/verify-production-release.sh"
@@ -55,6 +56,7 @@ PATH="$fake_bin:$PATH" DATABASE_MIGRATION_URL=mysql://unused "$SCRIPT_DIR/deploy
 [[ "$(readlink -f "$deploy_root/current")" == "$deploy_root/releases/release-v1" ]]
 [[ "$(readlink -f "$deploy_root/previous")" == "$shared_root" ]]
 [[ "$(readlink -f "$deploy_root/current/data")" == "$shared_root/data" ]]
+grep -F 'source:"release"' "$deploy_root/current/ecosystem.config.cjs" >/dev/null
 
 bundle_v2="$(make_bundle release-v2 1)"
 if PATH="$fake_bin:$PATH" DATABASE_MIGRATION_URL=mysql://unused "$SCRIPT_DIR/deploy-release.sh" \

@@ -49,6 +49,8 @@ Initial metrics:
 - readiness checks by dependency and outcome
 - application filesystem capacity and backup freshness
 - bounded knowledge search, knowledge indexing, and expert task outcomes and duration
+- server lifecycle state and requests tracked for graceful shutdown
+- active, configured limit, and rejection count for each bounded capacity lane
 
 Chat first-token latency, runtime calls, MCP calls, sandbox execution, and scheduled delivery will use the same registry in follow-up instrumentation.
 
@@ -59,6 +61,21 @@ Chat first-token latency, runtime calls, MCP calls, sandbox execution, and sched
 - administrator diagnostics remain separate and may perform slower checks.
 
 Readiness failures return HTTP 503 with dependency names and bounded error codes, not connection strings or credentials.
+
+During shutdown, readiness changes to `not_ready` before the listener stops accepting traffic. `EA_SHUTDOWN_QUIESCE_MS` leaves a short interval for the reverse proxy to observe that transition. New business requests receive a retryable HTTP 503, while existing HTTP, SSE, and WebSocket work receives up to `EA_SHUTDOWN_DRAIN_TIMEOUT_MS` to finish. PM2's kill timeout must be longer than the quiesce and drain windows combined.
+
+PM2 runs the Node process directly with the `tsx` import hook. Do not wrap the production process in `pnpm start` or a shell script, because an intermediate process can absorb termination signals and bypass application draining.
+
+## Capacity And Backpressure
+
+The single-node baseline rejects excess work instead of creating unbounded in-memory queues.
+
+- `EA_API_MAX_CONCURRENCY` bounds all API requests.
+- `EA_CHAT_HTTP_MAX_CONCURRENCY` independently bounds long-lived SSE chat requests.
+- `EA_CHAT_WS_MAX_CONNECTIONS` bounds legacy WebSocket chat connections.
+- `DB_QUEUE_LIMIT` bounds MySQL pool waiters; `DB_CONNECTION_LIMIT` controls actual database connections.
+
+Capacity errors return HTTP 503 with `Retry-After: 2`. Limits are deployment controls, not per-user quotas, and should be tuned from measured saturation and latency rather than raised automatically.
 
 ## Backup And Recovery
 

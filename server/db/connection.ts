@@ -3,6 +3,33 @@ import mysql from "mysql2/promise";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _connection: mysql.Pool | null = null;
+let _healthCheckTimer: NodeJS.Timeout | null = null;
+
+function boundedInteger(
+  value: string | undefined,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(maximum, Math.max(minimum, parsed));
+}
+
+export function resolveDbPoolConfig(env: NodeJS.ProcessEnv = process.env): {
+  connectionLimit: number;
+  maxIdle: number;
+  queueLimit: number;
+  connectTimeout: number;
+} {
+  const connectionLimit = boundedInteger(env.DB_CONNECTION_LIMIT, 10, 2, 100);
+  return {
+    connectionLimit,
+    maxIdle: Math.min(connectionLimit, boundedInteger(env.DB_MAX_IDLE, 2, 0, 100)),
+    queueLimit: boundedInteger(env.DB_QUEUE_LIMIT, 100, 1, 10_000),
+    connectTimeout: boundedInteger(env.DB_CONNECT_TIMEOUT_MS, 10_000, 1_000, 60_000),
+  };
+}
 
 // Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
@@ -15,6 +42,7 @@ export async function getDb() {
 
   if (!_db) {
     try {
+      const poolConfig = resolveDbPoolConfig();
       // 创建连接池
       const connection = mysql.createPool({
         uri: databaseUrl,
@@ -23,12 +51,12 @@ export async function getDb() {
         // timezone a second time.
         timezone: "Z",
         waitForConnections: true,
-        connectionLimit: 10,
-        maxIdle: 2,
+        connectionLimit: poolConfig.connectionLimit,
+        maxIdle: poolConfig.maxIdle,
         idleTimeout: 45_000,
-        queueLimit: 0,
+        queueLimit: poolConfig.queueLimit,
         // 连接超时设置
-        connectTimeout: 10_000,
+        connectTimeout: poolConfig.connectTimeout,
         // 启用 TCP keepalive 以保持连接活跃
         enableKeepAlive: true,
         keepAliveInitialDelay: 10_000,
@@ -62,20 +90,34 @@ export async function getDb() {
 
       // 定期检查连接健康。连接池空闲连接会在 idleTimeout 后主动释放；
       // 这里主要用于尽早发现数据库不可达，不依赖它保持所有池连接存活。
-      setInterval(async () => {
+      _healthCheckTimer = setInterval(async () => {
         try {
           await connection.query("SELECT 1");
         } catch (error) {
           console.error("[Database] Health check failed:", error);
         }
       }, 60 * 1000);
+      _healthCheckTimer.unref();
     } catch (error) {
       console.error("[Database] Failed to connect:", error);
+      if (_healthCheckTimer) clearInterval(_healthCheckTimer);
+      _healthCheckTimer = null;
+      const failedConnection = _connection;
       _db = null;
       _connection = null;
+      await failedConnection?.end().catch(() => undefined);
       // 不抛出错误，让调用者处理
     }
   }
 
   return _db;
+}
+
+export async function closeDbConnection(): Promise<void> {
+  if (_healthCheckTimer) clearInterval(_healthCheckTimer);
+  _healthCheckTimer = null;
+  const connection = _connection;
+  _db = null;
+  _connection = null;
+  await connection?.end();
 }

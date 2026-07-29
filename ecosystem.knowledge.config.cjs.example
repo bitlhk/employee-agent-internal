@@ -24,7 +24,7 @@ module.exports = {
       error_file: path.join(appRoot, "logs", "pm2-knowledge-error.log"),
       out_file: path.join(appRoot, "logs", "pm2-knowledge-out.log"),
       merge_logs: true,
-      kill_timeout: 5000,
+      kill_timeout: Number(process.env.PM2_KNOWLEDGE_KILL_TIMEOUT || 30000),
       listen_timeout: 10000,
       watch: false,
     },

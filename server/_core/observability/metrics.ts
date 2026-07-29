@@ -30,6 +30,47 @@ const httpInflight = new Gauge({
   registers: [metricsRegistry],
 });
 
+const serverLifecycleState = new Gauge({
+  name: "ea_server_lifecycle_state",
+  help: "Current server lifecycle state as a one-hot gauge.",
+  labelNames: ["state"] as const,
+  registers: [metricsRegistry],
+});
+
+const serverTrackedRequests = new Gauge({
+  name: "ea_server_tracked_requests",
+  help: "Non-operational HTTP requests tracked for graceful shutdown.",
+  registers: [metricsRegistry],
+});
+
+const serverDrainTotal = new Counter({
+  name: "ea_server_drain_total",
+  help: "Graceful server drain attempts by outcome.",
+  labelNames: ["outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const capacityActive = new Gauge({
+  name: "ea_capacity_active",
+  help: "Active work held in each bounded capacity lane.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
+const capacityLimit = new Gauge({
+  name: "ea_capacity_limit",
+  help: "Configured limit for each bounded capacity lane.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
+const capacityRejections = new Counter({
+  name: "ea_capacity_rejections_total",
+  help: "Requests rejected because a bounded capacity lane was full.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
 const readinessChecks = new Counter({
   name: "ea_readiness_checks_total",
   help: "Readiness dependency check outcomes.",
@@ -163,6 +204,32 @@ export function observeReadiness(dependency: string, ok: boolean, durationMs: nu
   const boundedDependency = dependency.slice(0, 32);
   readinessChecks.inc({ dependency: boundedDependency, outcome: ok ? "ok" : "failed" });
   readinessDuration.observe({ dependency: boundedDependency }, Math.max(0, durationMs) / 1000);
+}
+
+export type ServerLifecycleState = "starting" | "ready" | "draining";
+
+export function setServerLifecycleState(state: ServerLifecycleState): void {
+  for (const candidate of ["starting", "ready", "draining"] as const) {
+    serverLifecycleState.set({ state: candidate }, candidate === state ? 1 : 0);
+  }
+}
+
+export function setServerTrackedRequests(active: number): void {
+  serverTrackedRequests.set(Math.max(0, active));
+}
+
+export function observeServerDrain(outcome: "completed" | "timed_out"): void {
+  serverDrainTotal.inc({ outcome });
+}
+
+export function setCapacityLane(lane: string, active: number, limit: number): void {
+  const boundedLane = lane.slice(0, 32);
+  capacityActive.set({ lane: boundedLane }, Math.max(0, active));
+  capacityLimit.set({ lane: boundedLane }, Math.max(0, limit));
+}
+
+export function observeCapacityRejection(lane: string): void {
+  capacityRejections.inc({ lane: lane.slice(0, 32) });
 }
 
 export function beginOperationalActivity(activity: OperationalActivity): () => void {

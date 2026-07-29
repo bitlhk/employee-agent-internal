@@ -95,7 +95,14 @@ for optional in .bootstrap-admin-password .monitor.env monitor.env; do
     ln -s "$SHARED_APP_ROOT/$optional" "$staging/$optional"
   fi
 done
-for config in ecosystem.config.cjs ecosystem.knowledge.config.cjs ecosystem.jiuwenswarm.config.cjs; do
+for config in ecosystem.config.cjs ecosystem.knowledge.config.cjs; do
+  if [[ -f "$staging/$config.example" ]]; then
+    cp "$staging/$config.example" "$staging/$config"
+  elif [[ -f "$SHARED_APP_ROOT/$config" ]]; then
+    cp "$SHARED_APP_ROOT/$config" "$staging/$config"
+  fi
+done
+for config in ecosystem.jiuwenswarm.config.cjs; do
   if [[ -f "$SHARED_APP_ROOT/$config" ]]; then
     cp "$SHARED_APP_ROOT/$config" "$staging/$config"
   elif [[ -f "$staging/$config.example" ]]; then

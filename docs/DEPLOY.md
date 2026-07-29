@@ -123,6 +123,8 @@ pm2 restart employee-agent
 
 Database releases use `pnpm db:deploy`. Configure `DATABASE_MIGRATION_URL` with a dedicated DDL-capable account in production; do not run `drizzle-kit push` against a baselined production database.
 
+The application switches readiness off, waits one second for proxy traffic removal, and drains existing requests for up to 20 seconds before a PM2 restart. Keep `PM2_KILL_TIMEOUT` above `EA_SHUTDOWN_QUIESCE_MS + EA_SHUTDOWN_DRAIN_TIMEOUT_MS`. Capacity is bounded by the `EA_*_MAX_*` settings and MySQL's `DB_QUEUE_LIMIT`; saturation returns a retryable 503 instead of accumulating an unbounded process queue.
+
 ## Versioned production releases
 
 Production upgrades should deploy an immutable bundle and atomically switch the active release instead of modifying the live directory in place:

@@ -13,8 +13,8 @@ module.exports = {
     {
       name: process.env.PM2_APP_NAME || "employee-agent",
       cwd: appRoot,
-      script: "pnpm",
-      args: "start",
+      script: process.execPath,
+      args: ["--import", "tsx", path.join(appRoot, "server", "_core", "index.ts")],
       interpreter: "none",
       env: {
         NODE_ENV: "production",
@@ -29,7 +29,7 @@ module.exports = {
       error_file: path.join(appRoot, "logs", "pm2-error.log"),
       out_file: path.join(appRoot, "logs", "pm2-out.log"),
       merge_logs: true,
-      kill_timeout: 5000,
+      kill_timeout: Number(process.env.PM2_KILL_TIMEOUT || 30000),
       listen_timeout: 10000,
       watch: false,
     },

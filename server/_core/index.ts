@@ -1,16 +1,39 @@
 import "dotenv/config";
 import "./runtime-permissions";
-import { logError, logFatal, logInfo, logWarn } from "./observability/logger";
+import { flushApplicationLogs, logError, logFatal, logInfo, logWarn } from "./observability/logger";
 import { requestObservabilityMiddleware } from "./observability/http-middleware";
 import { registerOperationalRoutes } from "./observability/health-routes";
+import {
+  beginServerDrain,
+  markServerReady,
+  trackedRequestMiddleware,
+  waitForRequestsToDrain,
+} from "./operational-lifecycle";
+import {
+  capacityGuard,
+  waitForCapacityToDrain,
+} from "./operational-capacity";
+import { closeDbConnection } from "../db/connection";
+
+type ProcessShutdownHandler = (reason: string, exitCode: number, error?: unknown) => Promise<void>;
+
+let processShutdownHandler: ProcessShutdownHandler = async (reason, exitCode, error) => {
+  if (error) logFatal("process.uncaught_exception", error, { reason });
+  process.exit(exitCode);
+};
+
 // 全局异常捕获：防止 uncaught exception 导致服务崩溃，并打印完整 stack 方便排查
 process.on("uncaughtException", (err: Error) => {
-  logFatal("process.uncaught_exception", err, {}, "Uncaught exception; shutting down gracefully");
-  // 给 PM2/systemd 5 秒优雅退出，然后重启干净的进程
-  setTimeout(() => process.exit(1), 5000);
+  void processShutdownHandler("uncaught_exception", 1, err);
 });
 process.on("unhandledRejection", (reason: unknown) => {
   logError("process.unhandled_rejection", reason);
+});
+process.on("SIGTERM", () => {
+  void processShutdownHandler("SIGTERM", 0);
+});
+process.on("SIGINT", () => {
+  void processShutdownHandler("SIGINT", 0);
 });
 import express, { type Request, type Response, type NextFunction } from "express";
 import { createServer } from "http";
@@ -252,6 +275,59 @@ async function checkPortAvailable(port: number, bindIp: string): Promise<void> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  let shutdownPromise: Promise<void> | null = null;
+
+  processShutdownHandler = (reason, exitCode, error) => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
+      if (error) {
+        logFatal("process.uncaught_exception", error, { reason }, "Uncaught exception; draining before exit");
+      }
+      beginServerDrain(reason);
+      const drainTimeoutMs = Math.min(
+        120_000,
+        Math.max(1_000, Number.parseInt(process.env.EA_SHUTDOWN_DRAIN_TIMEOUT_MS || "20000", 10) || 20_000),
+      );
+      const quiesceMs = Math.min(
+        10_000,
+        Math.max(0, Number.parseInt(process.env.EA_SHUTDOWN_QUIESCE_MS || "1000", 10) || 0),
+      );
+      logInfo("server.drain_started", { reason, drainTimeoutMs, quiesceMs });
+
+      // Give a reverse proxy or load balancer one readiness interval to stop
+      // routing new traffic before the listening socket is closed.
+      if (quiesceMs > 0) {
+        await new Promise<void>((resolve) => setTimeout(resolve, quiesceMs));
+      }
+
+      const listenerClosed = server.listening
+        ? new Promise<void>((resolve) => server.close(() => resolve()))
+        : Promise.resolve();
+      server.closeIdleConnections?.();
+
+      const [requestsDrained, capacityDrained] = await Promise.all([
+        waitForRequestsToDrain(drainTimeoutMs),
+        waitForCapacityToDrain(drainTimeoutMs),
+      ]);
+      if (!requestsDrained || !capacityDrained) {
+        logWarn("server.drain_timed_out", { reason, requestsDrained, capacityDrained });
+        server.closeAllConnections?.();
+      }
+
+      await Promise.race([
+        listenerClosed,
+        new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
+      ]);
+      await closeDbConnection().catch((dbError) => {
+        logError("database.close_failed", dbError);
+      });
+      logInfo("server.drain_completed", { reason, requestsDrained, capacityDrained, exitCode });
+      flushApplicationLogs();
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      process.exit(exitCode);
+    })();
+    return shutdownPromise;
+  };
   
   // ========== 信任代理配置 ==========
   // 如果应用部署在代理服务器（如 nginx）后面，需要信任代理以正确获取客户端IP
@@ -300,6 +376,11 @@ async function startServer() {
   // Liveness stays available during incidents. Metrics enforce their own
   // loopback-or-token access rule and do not expose request-level labels.
   registerOperationalRoutes(app);
+
+  // Readiness switches off before business traffic is drained. Operational
+  // routes remain available so the process can still be observed while exiting.
+  app.use(trackedRequestMiddleware);
+  app.use("/api", capacityGuard("api"));
   
   // 2. IP 黑名单检查（最优先，在所有其他检查之前）
   app.use(ipBlacklistMiddleware());
@@ -773,6 +854,7 @@ async function startServer() {
   }
 
   server.listen(port, bindIp, () => {
+    markServerReady();
     const displayHost = bindIp.includes(":") ? `[${bindIp}]` : bindIp;
     logInfo("server.started", {
       bindIp: displayHost,

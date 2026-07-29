@@ -34,6 +34,7 @@ import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { privateMessageLogFields } from "./log-privacy";
 import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
+import { capacityGuard } from "./operational-capacity";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -269,7 +270,7 @@ export function registerChatStreamRoutes(app: express.Express) {
 
   // POST /api/claw/chat-stream  { adoptId, message }
   // 直连 Gateway /v1/chat/completions SSE，用 Node http 模块透传（避免 fetch 缓冲问题）
-  app.post("/api/claw/chat-stream", clawChatLimiter, async (req, res) => {
+  app.post("/api/claw/chat-stream", clawChatLimiter, capacityGuard("chat_http"), async (req, res) => {
     const routeEnterMs = Date.now();
     let { adoptId, message, model, pendingToolContext, epochLabel, channel, conversationId, runtimeMode, selectedSkillId, selectedSkillIds, knowledgeBaseIds, cancelPendingPermission } = req.body || {};
     const clientRunId = normalizeClientRunId(req.body?.clientRunId);

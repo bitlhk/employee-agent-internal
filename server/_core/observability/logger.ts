@@ -82,3 +82,7 @@ export function logError(event: string, error: unknown, fields: LogFields = {}, 
 export function logFatal(event: string, error: unknown, fields: LogFields = {}, message = event): void {
   logger.fatal(payload(event, { ...fields, ...safeErrorFields(error) }), message);
 }
+
+export function flushApplicationLogs(): void {
+  logger.flush();
+}
