@@ -36,11 +36,26 @@ release_pm2_reload() {
   local app_root="$1"
   local app_name="${PM2_APP_NAME:-employee-agent}"
   local knowledge_name="${PM2_KNOWLEDGE_APP_NAME:-employee-agent-knowledge}"
+  local target_root pid actual_cwd
+  target_root="$(release_realpath "$app_root")"
 
+  release_pm2_reset_if_stale() {
+    local process_name="$1"
+    pid="$(pm2 pid "$process_name" 2>/dev/null | tail -n 1)"
+    if [[ "$pid" =~ ^[1-9][0-9]*$ && -e "/proc/$pid/cwd" ]]; then
+      actual_cwd="$(readlink -f "/proc/$pid/cwd" 2>/dev/null || true)"
+      if [[ "$actual_cwd" != "$target_root" ]]; then
+        pm2 delete "$process_name" >/dev/null
+      fi
+    fi
+  }
+
+  release_pm2_reset_if_stale "$app_name"
   APP_ROOT="$app_root" PM2_APP_NAME="$app_name" \
     pm2 startOrReload "$app_root/ecosystem.config.cjs" --only "$app_name" --update-env
 
   if [[ -f "$app_root/ecosystem.knowledge.config.cjs" ]]; then
+    release_pm2_reset_if_stale "$knowledge_name"
     APP_ROOT="$app_root" PM2_KNOWLEDGE_APP_NAME="$knowledge_name" \
       pm2 startOrReload "$app_root/ecosystem.knowledge.config.cjs" --only "$knowledge_name" --update-env
   fi
