@@ -79,7 +79,8 @@ EXCLUDES
 # Most CJS files are generated deployment artifacts and remain excluded. This
 # reviewed PM2 definition is source-controlled operational configuration.
 mkdir -p "$OUT_DIR/ops/monitoring"
-cp "$SRC_DIR/ops/monitoring/alert-dispatcher.pm2.cjs" "$OUT_DIR/ops/monitoring/alert-dispatcher.pm2.cjs"
+cp "$SRC_DIR/ops/monitoring/ecosystem.alert-dispatcher.config.cjs" \
+  "$OUT_DIR/ops/monitoring/ecosystem.alert-dispatcher.config.cjs"
 
 # ── 2. 确保 .env.example 存在 ──
 if [[ ! -f "$OUT_DIR/.env.example" ]]; then

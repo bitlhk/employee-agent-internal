@@ -42,7 +42,8 @@ Set `EA_ALERT_FEISHU_WEBHOOK_URL` in the deployment environment and start the
 standalone dispatcher. The URL is never returned by the administrator API.
 
 ```bash
-pm2 start ops/monitoring/alert-dispatcher.pm2.cjs
+pm2 startOrReload ops/monitoring/ecosystem.alert-dispatcher.config.cjs \
+  --only employee-agent-alerts --update-env
 pm2 save
 ```
 

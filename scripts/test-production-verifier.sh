@@ -9,6 +9,16 @@ fake_bin="$ROOT/bin"
 app_root="$ROOT/app"
 mkdir -p "$fake_bin" "$app_root"
 touch "$app_root/ecosystem.jiuwenswarm.config.cjs"
+mkdir -p "$app_root/ops/monitoring"
+cp "$SCRIPT_DIR/../ops/monitoring/ecosystem.alert-dispatcher.config.cjs" \
+  "$app_root/ops/monitoring/ecosystem.alert-dispatcher.config.cjs"
+
+node - "$SCRIPT_DIR/../ops/monitoring/ecosystem.alert-dispatcher.config.cjs" <<'NODE'
+const config = require(process.argv[2]);
+if (!Array.isArray(config.apps) || config.apps.length !== 1) process.exit(1);
+if (config.apps[0].name !== "employee-agent-alerts") process.exit(1);
+if (config.apps[0].script !== "scripts/feishu-alert-dispatcher.mjs") process.exit(1);
+NODE
 
 cat > "$fake_bin/pm2" <<'EOF'
 #!/usr/bin/env bash
@@ -66,6 +76,14 @@ run_verifier
 ! grep -q 'jiuwenswarm-agentserver' "$FAKE_PM2_LOG"
 grep -q 'is-active --quiet jiuwenswarm.service' "$FAKE_SYSTEMD_LOG"
 grep -q 'is-active --quiet jiuwenbox.service' "$FAKE_SYSTEMD_LOG"
+
+printf '%s\n' \
+  'EA_ALERT_FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/test' \
+  > "$app_root/.env"
+: > "$FAKE_PM2_LOG"
+run_verifier
+grep -q 'pid employee-agent-alerts' "$FAKE_PM2_LOG"
+rm -f "$app_root/.env"
 
 export FAKE_SYSTEMD_MODE=absent
 : > "$FAKE_PM2_LOG"

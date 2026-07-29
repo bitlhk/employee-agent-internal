@@ -13,7 +13,7 @@ required_processes=(
   "${PM2_APP_NAME:-employee-agent}"
   "${PM2_KNOWLEDGE_APP_NAME:-employee-agent-knowledge}"
 )
-if [[ -f "$APP_ROOT/ops/monitoring/alert-dispatcher.pm2.cjs" ]] \
+if [[ -f "$APP_ROOT/ops/monitoring/ecosystem.alert-dispatcher.config.cjs" ]] \
   && grep -Eq '^EA_ALERT_FEISHU_WEBHOOK_URL=https://open\.feishu\.cn/' "$APP_ROOT/.env" 2>/dev/null; then
   required_processes+=("${PM2_ALERT_APP_NAME:-employee-agent-alerts}")
 fi
