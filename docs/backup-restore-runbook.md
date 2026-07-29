@@ -22,8 +22,8 @@ Store the following as root-readable files with mode `600`:
 Example `backup.env`:
 
 ```bash
-APP_DIR=/root/linggan-platform
-DB_NAME=finance_ai
+APP_DIR=/root/employee-agent
+DB_NAME=employee_agent
 BACKUP_DIR=/root/backups/employee-agent
 KEEP_DAYS=30
 JIUWENSWARM_HOME=/root/.jiuwenswarm
@@ -40,7 +40,7 @@ Run an inventory before enabling the schedule:
 
 ```bash
 sudo EMPLOYEE_AGENT_BACKUP_CONFIG_DIR=/root/.config/employee-agent \
-  /root/linggan-platform/scripts/backup-production.sh --inventory
+  /root/employee-agent/scripts/backup-production.sh --inventory
 ```
 
 Run daily through a systemd timer or cron. Do not overlap runs.

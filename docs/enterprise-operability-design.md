@@ -83,6 +83,6 @@ The backup process must not include caches, dependency directories, transient sa
 
 1. Land request context, logger, metrics, and health routes.
 2. Validate locally with existing tests and a production build.
-3. Enable JSON logs and loopback metrics in Shanghai.
+3. Enable JSON logs and loopback metrics in the production environment.
 4. Extend backup coverage and perform an isolated restore.
 5. Add alerts only after one week of baseline data is available.
