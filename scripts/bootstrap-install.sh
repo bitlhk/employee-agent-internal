@@ -658,6 +658,11 @@ for port in (18092, 19000):
         raise SystemExit(f"JiuwenSwarm port {port} did not become ready")
 PY
   fi
+  for attempt in $(seq 1 30); do
+    if curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health/ready" >/dev/null 2>&1; then break; fi
+    sleep 2
+  done
+  curl -fsS --max-time 5 "http://127.0.0.1:${PORT}/health/ready" >/dev/null
 }
 
 create_default_admin() {

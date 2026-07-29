@@ -13,6 +13,7 @@ import {
 } from "../db";
 import { knowledgeServiceToken, resolveKnowledgeStoragePath } from "./knowledge-storage";
 import { planKnowledgeQueries, type KnowledgeQueryPlan } from "./knowledge-query-planner";
+import { beginOperationalActivity, observeOperationalActivity } from "./observability/metrics";
 
 const SERVICE_URL = String(process.env.KNOWLEDGE_SERVICE_URL || "http://127.0.0.1:5191").replace(/\/$/, "");
 const SERVICE_TIMEOUT_MS = Math.max(5_000, Number(process.env.KNOWLEDGE_SERVICE_TIMEOUT_MS || 180_000) || 180_000);
@@ -235,14 +236,28 @@ function queueKnowledgeIndexWithJob(base: KnowledgeBaseRecord, jobId: Promise<nu
       state.rerun = false;
       const jobIds = (await Promise.all(state.pendingJobIds.splice(0))).filter((id) => id > 0);
       for (const id of jobIds) await setKnowledgeIndexJobState({ id, status: "running", error: null }).catch(() => {});
+      const indexingStartedAt = Date.now();
+      const finishIndexingMetric = beginOperationalActivity("knowledge_index");
       try {
         const latestBase = await getKnowledgeBaseById(base.id) || base;
         await runKnowledgeIndex(latestBase);
         for (const id of jobIds) await setKnowledgeIndexJobState({ id, status: "succeeded", error: null }).catch(() => {});
+        observeOperationalActivity({
+          activity: "knowledge_index",
+          outcome: "success",
+          durationMs: Date.now() - indexingStartedAt,
+        });
       } catch (error) {
         const message = (error instanceof Error ? error.message : String(error)).slice(0, 900);
         for (const id of jobIds) await setKnowledgeIndexJobState({ id, status: "failed", error: message }).catch(() => {});
+        observeOperationalActivity({
+          activity: "knowledge_index",
+          outcome: "error",
+          durationMs: Date.now() - indexingStartedAt,
+        });
         throw error;
+      } finally {
+        finishIndexingMetric();
       }
     } while (state.rerun);
   })().finally(() => indexing.delete(base.id));
@@ -302,12 +317,30 @@ function mapKnowledgeSearchItem(item: any): KnowledgeSearchResult {
 
 export async function searchKnowledgeBase(base: KnowledgeBaseRecord, query: string, topK = 6): Promise<{ retrieval: string; results: KnowledgeSearchResult[] }> {
   if (base.status !== "ready") return { retrieval: "unavailable", results: [] };
-  const payload = await serviceRequest("/search", {
-    method: "POST",
-    body: JSON.stringify({ knowledge_base_id: base.publicId, query, top_k: Math.max(1, Math.min(topK, 20)) }),
-  }, 30_000);
-  const results = Array.isArray(payload?.results) ? payload.results.map(mapKnowledgeSearchItem) : [];
-  return { retrieval: String(payload?.retrieval || "bm25"), results };
+  const startedAt = Date.now();
+  const finishMetric = beginOperationalActivity("knowledge_search");
+  try {
+    const payload = await serviceRequest("/search", {
+      method: "POST",
+      body: JSON.stringify({ knowledge_base_id: base.publicId, query, top_k: Math.max(1, Math.min(topK, 20)) }),
+    }, 30_000);
+    const results = Array.isArray(payload?.results) ? payload.results.map(mapKnowledgeSearchItem) : [];
+    observeOperationalActivity({
+      activity: "knowledge_search",
+      outcome: results.length > 0 ? "success" : "empty",
+      durationMs: Date.now() - startedAt,
+    });
+    return { retrieval: String(payload?.retrieval || "bm25"), results };
+  } catch (error) {
+    observeOperationalActivity({
+      activity: "knowledge_search",
+      outcome: "error",
+      durationMs: Date.now() - startedAt,
+    });
+    throw error;
+  } finally {
+    finishMetric();
+  }
 }
 
 export async function searchAcrossKnowledgeBases(bases: KnowledgeBaseRecord[], query: string, totalLimit = 8): Promise<Array<KnowledgeSearchResult & { knowledgeBaseId: string; knowledgeBaseName: string }>> {

@@ -105,6 +105,7 @@ WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:5180
 pm2 status employee-agent
 pm2 logs employee-agent
 curl http://127.0.0.1:5180/health
+curl http://127.0.0.1:5180/health/ready
 curl http://127.0.0.1:5180/api/brand
 ```
 
@@ -115,7 +116,10 @@ cd ~/employee-agent
 corepack pnpm check
 corepack pnpm build
 pm2 restart employee-agent
+./scripts/verify-production-release.sh
 ```
+
+`verify-production-release.sh` is a read-only release gate. It verifies required PM2 processes, liveness, dependency readiness, and the expected metrics surface. Set `REQUIRE_PROMETHEUS=true` after the local monitoring service has been enabled.
 
 ## 常见问题
 

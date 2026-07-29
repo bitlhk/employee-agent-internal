@@ -39,6 +39,11 @@ import {
   listEnabledBusinessAgentsForContext,
   updateActiveAgentTask,
 } from "../db/agents";
+import {
+  beginOperationalActivity,
+  observeOperationalActivity,
+  type OperationalOutcome,
+} from "./observability/metrics";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -46,6 +51,10 @@ const AGENT_TASK_TEXT_LIMIT_BYTES = 60_000;
 const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
 const AGENT_TASK_RAW_EVENTS_LIMIT_BYTES = 40_000;
 const activeAgentTaskControllers = new Map<string, AbortController>();
+
+export function isCancelledAgentTaskStatus(status: unknown): boolean {
+  return ["cancelled", "canceled"].includes(String(status || "").trim().toLowerCase());
+}
 
 function truncateUtf8(value: unknown, maxBytes: number): string {
   const text = String(value ?? "");
@@ -278,13 +287,18 @@ async function runAgentTaskInBackground(
   } = {},
 ) {
   const startedAt = Date.now();
+  const finishMetric = beginOperationalActivity("expert_task");
+  let metricOutcome: OperationalOutcome = "error";
   const controller = new AbortController();
   let progressWrites = Promise.resolve();
   activeAgentTaskControllers.set(taskId, controller);
-  await updateActiveAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
   try {
+    await updateActiveAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
     const startingTask = await getAgentTask(taskId);
-    if (String(startingTask?.status || "") !== "running") return;
+    if (String(startingTask?.status || "") !== "running") {
+      metricOutcome = isCancelledAgentTaskStatus(startingTask?.status) ? "cancelled" : "error";
+      return;
+    }
     const adapterProtocol = String(agent.adapterProtocol || "").trim();
     if (!agent.apiUrl) throw new Error("Agent endpoint is not configured");
     if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
@@ -350,16 +364,22 @@ async function runAgentTaskInBackground(
       status: "success",
       durationMs: Date.now() - startedAt,
     }).catch(() => undefined);
+    metricOutcome = "success";
   } catch (error: any) {
     const timedOut = error?.name === "AbortError" || /abort|timeout/i.test(String(error?.message || ""));
+    const cancelled = /cancelled|canceled/i.test(String(error?.message || ""));
+    metricOutcome = cancelled ? "cancelled" : timedOut ? "timeout" : "error";
+    const currentTask = await getAgentTask(taskId).catch(() => null);
+    if (isCancelledAgentTaskStatus(currentTask?.status)) {
+      metricOutcome = "cancelled";
+      return;
+    }
     const displayError = friendlyAgentTaskError(error, String(agent.name || "专家"));
     await updateActiveAgentTask(taskId, {
       status: "failed" as AgentTaskStatus,
       errorMessage: truncateUtf8(displayError, AGENT_TASK_ERROR_LIMIT_BYTES),
       completedAt: sql`CURRENT_TIMESTAMP`,
     });
-    const failedTask = await getAgentTask(taskId);
-    if (String(failedTask?.status || "") === "cancelled") return;
     await markAgentTaskFailed(agent, error).catch(() => undefined);
     await insertCallLog({
       agentId: String(agent.id),
@@ -373,6 +393,12 @@ async function runAgentTaskInBackground(
     if (activeAgentTaskControllers.get(taskId) === controller) {
       activeAgentTaskControllers.delete(taskId);
     }
+    finishMetric();
+    observeOperationalActivity({
+      activity: "expert_task",
+      outcome: metricOutcome,
+      durationMs: Date.now() - startedAt,
+    });
   }
 }
 

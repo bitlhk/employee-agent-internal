@@ -5,6 +5,7 @@ import {
   a2aRuntimeContextId,
   agentDailyRequestLimit,
   cleanA2AText,
+  isCancelledAgentTaskStatus,
 } from "./claw-agent-tasks";
 
 describe("cleanA2AText", () => {
@@ -80,5 +81,13 @@ describe("agentDailyRequestLimit", () => {
   it("does not interrupt multi-turn personal experts with a daily call limit", () => {
     expect(agentDailyRequestLimit({ visibility: "personal", maxDailyRequests: 20 })).toBe(0);
     expect(agentDailyRequestLimit({ visibility: "platform", maxDailyRequests: 20 })).toBe(20);
+  });
+});
+
+describe("isCancelledAgentTaskStatus", () => {
+  it("preserves terminal cancellation across spelling variants", () => {
+    expect(isCancelledAgentTaskStatus("cancelled")).toBe(true);
+    expect(isCancelledAgentTaskStatus("CANCELED")).toBe(true);
+    expect(isCancelledAgentTaskStatus("failed")).toBe(false);
   });
 });

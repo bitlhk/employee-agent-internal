@@ -1,0 +1,120 @@
+groups:
+  - name: employee-agent-availability
+    rules:
+      - alert: EmployeeAgentUnavailable
+        expr: up{job="employee-agent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent metrics endpoint is unavailable
+          description: Prometheus has been unable to scrape Employee Agent for more than two minutes.
+
+      - alert: EmployeeAgentReadinessFailing
+        expr: increase(ea_readiness_checks_total{outcome="failed"}[5m]) >= 3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent readiness checks are failing
+          description: A required dependency has failed at least three readiness checks in five minutes.
+
+      - alert: EmployeeAgentHighServerErrorRate
+        expr: |
+          (
+            sum(rate(ea_http_requests_total{status_class="5xx"}[5m]))
+            /
+            clamp_min(sum(rate(ea_http_requests_total[5m])), 0.001)
+          ) > 0.05
+          and sum(rate(ea_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent server error rate is elevated
+          description: More than 5% of HTTP requests have returned 5xx responses for five minutes.
+
+      - alert: EmployeeAgentSlowResponses
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ea_http_request_duration_seconds_bucket[10m]))
+          ) > 5
+          and sum(rate(ea_http_request_duration_seconds_count[10m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent HTTP p95 latency is elevated
+          description: The aggregate HTTP p95 latency has exceeded five seconds for ten minutes.
+
+  - name: employee-agent-capacity
+    rules:
+      - alert: EmployeeAgentLowDiskSpace
+        expr: |
+          ea_filesystem_size_bytes > 0
+          and ea_filesystem_free_bytes / ea_filesystem_size_bytes < 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent host filesystem is running low on space
+          description: Less than 15% of the application filesystem remains available.
+
+      - alert: EmployeeAgentHighResidentMemory
+        expr: ea_process_resident_memory_bytes > 1073741824
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent process memory is elevated
+          description: The Node.js process has used more than 1 GiB of resident memory for 15 minutes.
+
+      - alert: EmployeeAgentExpertQueueSaturated
+        expr: ea_operational_activity_active{activity="expert_task"} >= 20
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Expert task concurrency is elevated
+          description: At least 20 expert tasks have remained active for ten minutes.
+
+  - name: employee-agent-recovery
+    rules:
+      - alert: EmployeeAgentBackupStale
+        expr: time() - ea_backup_last_success_timestamp_seconds > 93600
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent backup is stale or missing
+          description: No successful local backup has been recorded within 26 hours.
+
+      - alert: EmployeeAgentBackupValidationStale
+        expr: time() - ea_backup_last_validation_timestamp_seconds > 93600
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent backup validation is stale or missing
+          description: No checksum and decryption validation has passed within 26 hours.
+
+  - name: employee-agent-workloads
+    rules:
+      - alert: EmployeeAgentExpertTasksFailing
+        expr: increase(ea_operational_activity_total{activity="expert_task",outcome=~"error|timeout"}[15m]) >= 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Multiple expert tasks have failed
+          description: At least three expert tasks failed or timed out in the last 15 minutes.
+
+      - alert: EmployeeAgentKnowledgeIndexFailed
+        expr: increase(ea_operational_activity_total{activity="knowledge_index",outcome="error"}[30m]) >= 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: A knowledge indexing job failed
+          description: At least one knowledge indexing job failed in the last 30 minutes.

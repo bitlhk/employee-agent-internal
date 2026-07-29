@@ -47,8 +47,10 @@ Initial metrics:
 - in-flight HTTP requests
 - Node.js process, event-loop, and memory defaults
 - readiness checks by dependency and outcome
+- application filesystem capacity and backup freshness
+- bounded knowledge search, knowledge indexing, and expert task outcomes and duration
 
-Chat first-token latency, runtime calls, MCP/A2A calls, knowledge retrieval, and background jobs will use the same registry in follow-up instrumentation.
+Chat first-token latency, runtime calls, MCP calls, sandbox execution, and scheduled delivery will use the same registry in follow-up instrumentation.
 
 ## Health Endpoints
 
@@ -85,4 +87,4 @@ The backup process must not include caches, dependency directories, transient sa
 2. Validate locally with existing tests and a production build.
 3. Enable JSON logs and loopback metrics in the production environment.
 4. Extend backup coverage and perform an isolated restore.
-5. Add alerts only after one week of baseline data is available.
+5. Evaluate the conservative baseline alert rules locally, then connect an approved enterprise notification receiver after observing normal production ranges.

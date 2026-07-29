@@ -19,10 +19,35 @@ ENCRYPTION_KEY_FILE="$CONFIG_DIR/backup-encryption.key"
 : "${REMOTE_USER:=ea-backup}"
 : "${REMOTE_DIR:=/opt/backups/employee-agent}"
 : "${REMOTE_KEY:=$CONFIG_DIR/offsite-backup-key}"
+: "${MYSQL_CORE_EXCLUDE_TABLES:=}"
+: "${MYSQL_INCLUDE_EVENTS:=false}"
+
+BACKUP_PROFILE="${BACKUP_PROFILE:-core}"
+case "${1:-}" in
+  --inventory)
+    inventory_requested=true
+    ;;
+  --core)
+    inventory_requested=false
+    BACKUP_PROFILE=core
+    ;;
+  --full)
+    inventory_requested=false
+    BACKUP_PROFILE=full
+    ;;
+  "")
+    inventory_requested=false
+    ;;
+  *)
+    echo "usage: $0 [--inventory|--core|--full]" >&2
+    exit 2
+    ;;
+esac
 
 DATE="$(date +%Y%m%d-%H%M%S)"
 DAY_OF_WEEK="$(date +%u)"
-SNAPSHOT_DIR="$BACKUP_DIR/$DATE"
+FINAL_SNAPSHOT_DIR="$BACKUP_DIR/$DATE"
+SNAPSHOT_DIR="$BACKUP_DIR/.incomplete-$DATE"
 
 inventory() {
   for target in "$APP_DIR/data" "$SKILL_STORE" "$JIUWENSWARM_HOME"; do
@@ -34,13 +59,19 @@ inventory() {
   done
 }
 
-if [[ "${1:-}" == "--inventory" ]]; then
+if [[ "$inventory_requested" == "true" ]]; then
   inventory
   exit 0
 fi
 
+[[ "$BACKUP_PROFILE" == "core" || "$BACKUP_PROFILE" == "full" ]] || {
+  echo "BACKUP_PROFILE must be core or full" >&2
+  exit 2
+}
+
 [[ -r "$DB_CNF" ]] || { echo "missing $DB_CNF" >&2; exit 1; }
 [[ -r "$ENCRYPTION_KEY_FILE" ]] || { echo "missing $ENCRYPTION_KEY_FILE" >&2; exit 1; }
+[[ ! -e "$SNAPSHOT_DIR" && ! -e "$FINAL_SNAPSHOT_DIR" ]] || { echo "backup snapshot already exists: $DATE" >&2; exit 1; }
 mkdir -p "$SNAPSHOT_DIR"
 chmod 700 "$BACKUP_DIR" "$SNAPSHOT_DIR"
 
@@ -111,9 +142,33 @@ archive_configuration() {
 
 echo "[$(date --iso-8601=seconds)] backup started"
 
-mysqldump --defaults-extra-file="$DB_CNF" \
-  --single-transaction --skip-lock-tables --no-tablespaces --set-gtid-purged=OFF --triggers "$DB_NAME" \
-  | gzip -9 \
+PORTABLE_AUDIT_ATTESTATION_SQL="$APP_DIR/scripts/sql/audit-attestation-portable.sql"
+[[ -r "$PORTABLE_AUDIT_ATTESTATION_SQL" ]] || { echo "missing $PORTABLE_AUDIT_ATTESTATION_SQL" >&2; exit 1; }
+mysql_dump_args=(
+  --defaults-extra-file="$DB_CNF"
+  --single-transaction
+  --quick
+  --skip-lock-tables
+  --no-tablespaces
+  --set-gtid-purged=OFF
+  --default-character-set=utf8mb4
+  --hex-blob
+  --triggers
+  --ignore-table="$DB_NAME.audit_worm_trigger_status"
+)
+if [[ "$MYSQL_INCLUDE_EVENTS" == "true" ]]; then
+  mysql_dump_args+=(--events)
+fi
+if [[ "$BACKUP_PROFILE" == "core" ]]; then
+  for table in $MYSQL_CORE_EXCLUDE_TABLES; do
+    [[ "$table" =~ ^[A-Za-z0-9_]+$ ]] || { echo "invalid MySQL excluded table: $table" >&2; exit 1; }
+    mysql_dump_args+=(--ignore-table="$DB_NAME.$table")
+  done
+fi
+{
+  mysqldump "${mysql_dump_args[@]}" "$DB_NAME"
+  cat "$PORTABLE_AUDIT_ATTESTATION_SQL"
+} | gzip -9 \
   | encrypt_stream \
   | write_atomic "$SNAPSHOT_DIR/mysql.sql.gz.enc"
 
@@ -131,19 +186,33 @@ archive_configuration
 cat > "$SNAPSHOT_DIR/MANIFEST" <<EOF
 created_at=$(date --iso-8601=seconds)
 source_host=$(hostname -f 2>/dev/null || hostname)
+source_commit=$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || printf 'unknown')
 database=$DB_NAME
+database_profile=$BACKUP_PROFILE
+database_excluded_tables=$([[ "$BACKUP_PROFILE" == "core" ]] && printf '%s' "$MYSQL_CORE_EXCLUDE_TABLES" || printf '')
+database_events_included=$MYSQL_INCLUDE_EVENTS
 application_data=$APP_DIR/data
 skill_store=$SKILL_STORE
 jiuwenswarm_home=$JIUWENSWARM_HOME
 knowledge_indexes_included=$INCLUDE_KNOWLEDGE_INDEXES
+mysql_archive=true
+application_data_archive=$([[ -f "$SNAPSHOT_DIR/application-data.tar.gz.enc" ]] && printf 'true' || printf 'false')
+skill_store_archive=$([[ -f "$SNAPSHOT_DIR/skill-store.tar.gz.enc" ]] && printf 'true' || printf 'false')
+jiuwenswarm_state_archive=$([[ -f "$SNAPSHOT_DIR/jiuwenswarm-state.tar.gz.enc" ]] && printf 'true' || printf 'false')
+platform_config_archive=$([[ -f "$SNAPSHOT_DIR/platform-config.tar.gz.enc" ]] && printf 'true' || printf 'false')
 EOF
 chmod 600 "$SNAPSHOT_DIR/MANIFEST"
+
+mv "$SNAPSHOT_DIR" "$FINAL_SNAPSHOT_DIR"
+SNAPSHOT_DIR="$FINAL_SNAPSHOT_DIR"
 
 find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -mtime "+$KEEP_DAYS" -exec rm -rf -- {} +
 date --iso-8601=seconds > "$BACKUP_DIR/.last-local-success"
 
 if [[ "$DAY_OF_WEEK" == "7" && -n "$REMOTE_HOST" ]]; then
   [[ -r "$REMOTE_KEY" ]] || { echo "missing $REMOTE_KEY" >&2; exit 1; }
+  EMPLOYEE_AGENT_BACKUP_CONFIG_DIR="$CONFIG_DIR" \
+    "$APP_DIR/scripts/validate-production-backup.sh" "$SNAPSHOT_DIR"
   ssh -i "$REMOTE_KEY" -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_HOST" "mkdir -p '$REMOTE_DIR'"
   rsync -az --timeout=180 -e "ssh -i $REMOTE_KEY -o BatchMode=yes -o StrictHostKeyChecking=yes" \
     "$SNAPSHOT_DIR/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/$DATE/"

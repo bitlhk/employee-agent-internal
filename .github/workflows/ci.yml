@@ -27,6 +27,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: server/knowledge/requirements.txt
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -41,3 +48,14 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+      - name: Knowledge service dependencies
+        run: pip install -r server/knowledge/requirements.txt
+
+      - name: Knowledge service tests
+        env:
+          KNOWLEDGE_PYTHON: python
+        run: pnpm run knowledge:test
+
+      - name: Production build
+        run: pnpm run build
