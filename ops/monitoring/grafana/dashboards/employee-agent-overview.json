@@ -168,10 +168,10 @@
           "color": {
             "mode": "thresholds"
           },
-      "decimals": 1,
-      "max": 100,
-      "min": 0,
-      "noValue": "暂无对话",
+          "decimals": 1,
+          "max": 100,
+          "min": 0,
+          "noValue": "暂无对话",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -220,7 +220,7 @@
       "targets": [
         {
           "editorMode": "code",
-      "expr": "(100 * sum(rate(ea_chat_requests_total{outcome=\"success\"}[$__rate_interval])) / clamp_min(sum(rate(ea_chat_requests_total[$__rate_interval])), 0.001)) and (sum(rate(ea_chat_requests_total[$__rate_interval])) > 0)",
+          "expr": "(100 * sum(rate(ea_chat_requests_total{outcome=\"success\"}[$__rate_interval])) / clamp_min(sum(rate(ea_chat_requests_total[$__rate_interval])), 0.001)) and (sum(rate(ea_chat_requests_total[$__rate_interval])) > 0)",
           "legendFormat": "成功率",
           "range": true,
           "refId": "A"
