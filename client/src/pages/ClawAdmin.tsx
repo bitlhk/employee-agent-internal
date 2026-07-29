@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/confirmation-dialog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText, Gauge } from "lucide-react";
 import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
 import { CollaborationTab } from "@/components/pages/CollaborationTab";
 import { toast } from "sonner";
@@ -43,6 +43,7 @@ import { useConfirmDialog } from "@/components/ui/confirm-dialog";
 import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
 import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
 import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
+import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/MonitoringPanel";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
@@ -728,6 +729,11 @@ export default function ClawAdmin() {
     retry: false,
     refetchInterval: activeTab === "health" ? 30000 : false,
   });
+  const {
+    status: monitoringStatus,
+    loading: monitoringStatusLoading,
+    refetch: refetchMonitoringStatus,
+  } = useMonitoringStatus(Boolean(user?.role === "admin"), activeTab === "monitoring");
   const authUsers = Array.isArray(authUsersData) ? authUsersData : [];
   const auditQueryInput = {
     page: auditPage,
@@ -882,6 +888,9 @@ export default function ClawAdmin() {
     { value: "feedback", label: "质量反馈", description: "满意度与问题归因", icon: MessageSquareText },
     { value: "accounts", label: "账号管理", description: "管理员与登录密码", icon: UserCog },
     { value: "health", label: "系统健康", description: "平台、Runtime 与连接状态", icon: Activity },
+    ...(monitoringStatus?.configured
+      ? [{ value: "monitoring", label: "运行监控", description: "性能、容量与趋势", icon: Gauge }]
+      : []),
     { value: "security-audit", label: "安全审计", description: "Ledger 查询与导出", icon: ShieldCheck },
     { value: "settings", label: "系统设置", description: "智能体运行配置", icon: Settings },
     { value: "brand", label: "品牌设置", description: "名称、视觉与身份", icon: Sparkles },
@@ -1697,6 +1706,13 @@ export default function ClawAdmin() {
                 <div className="rounded-lg bg-gray-50 px-4 py-8 text-center text-sm text-muted-foreground">暂无健康数据</div>
               )}
             </Card>
+          </TabsContent>
+          <TabsContent value="monitoring" className="space-y-4">
+            <MonitoringPanel
+              status={monitoringStatus}
+              loading={monitoringStatusLoading}
+              onRefresh={() => void refetchMonitoringStatus()}
+            />
           </TabsContent>
           <TabsContent value="security-audit" className="space-y-4">
             <Card className="admin-panel-card p-6">

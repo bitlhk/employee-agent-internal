@@ -4,7 +4,7 @@ set -euo pipefail
 # Bootstrap installer for Workforce Agent Platform.
 # Intended audited usage from a checked-out release:
 #   bash scripts/bootstrap-install.sh --local-source
-INSTALLER_VERSION="2026.07.24.1"
+INSTALLER_VERSION="2026.07.29.1"
 INSTALL_ID="${EMPLOYEE_AGENT_INSTALL_ID:-}"
 TELEMETRY_ENDPOINT="${EMPLOYEE_AGENT_INSTALL_TELEMETRY_ENDPOINT:-}"
 TELEMETRY_SOURCE="${EMPLOYEE_AGENT_INSTALL_SOURCE:-bootstrap}"
@@ -32,6 +32,7 @@ START_SERVICE=true
 INSTALL_MYSQL=true
 INSTALL_DOCKER=true
 INSTALL_JIUWENSWARM=true
+INSTALL_MONITORING="${EMPLOYEE_AGENT_MONITORING:-0}"
 DRY_RUN=false
 OVERWRITE_ENV=false
 CREATE_ADMIN=true
@@ -66,6 +67,7 @@ Options:
   --skip-mysql             Do not install mysql-server.
   --skip-docker            Do not install docker.io for the optional sandbox.
   --skip-jiuwenswarm       Install EA without the bundled JiuwenSwarm runtime.
+  --with-monitoring        Install optional Prometheus and Grafana operations monitoring.
   --jiuwenswarm-ref <ref>  JiuwenSwarm EA runtime tag or commit.
   --skip-start             Do not build/start PM2 service.
   --skip-admin             Do not create the default admin account.
@@ -95,6 +97,7 @@ while [[ $# -gt 0 ]]; do
     --skip-mysql) INSTALL_MYSQL=false; shift ;;
     --skip-docker) INSTALL_DOCKER=false; shift ;;
     --skip-jiuwenswarm) INSTALL_JIUWENSWARM=false; shift ;;
+    --with-monitoring) INSTALL_MONITORING=true; shift ;;
     --jiuwenswarm-ref) JIUWENSWARM_REF="${2:?missing --jiuwenswarm-ref value}"; shift 2 ;;
     --skip-start) START_SERVICE=false; shift ;;
     --skip-admin) CREATE_ADMIN=false; shift ;;
@@ -115,6 +118,12 @@ if [[ -z "$EXPECTED_REPO_COMMIT" && "$REPO_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
 fi
 
 log() { printf "\n==> %s\n" "$*"; }
+monitoring_requested() {
+  case "${INSTALL_MONITORING,,}" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 run() {
   if [[ "$DRY_RUN" == "true" ]]; then
     printf "[dry-run] %q" "$1"
@@ -582,6 +591,50 @@ run_setup() {
   fi
 }
 
+upsert_env_value() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  local tmp
+  tmp=$(mktemp)
+  awk -v key="$key" -v value="$value" '
+    BEGIN { replaced = 0 }
+    index($0, key "=") == 1 {
+      if (!replaced) print key "=" value
+      replaced = 1
+      next
+    }
+    { print }
+    END {
+      if (!replaced) print key "=" value
+    }
+  ' "$file" > "$tmp"
+  chmod --reference="$file" "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+}
+
+configure_monitoring_env() {
+  if ! monitoring_requested; then return; fi
+  log "Configuring optional operations monitoring"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] enable EA_MONITORING_ENABLED with loopback Prometheus and Grafana URLs"
+    return
+  fi
+  upsert_env_value "$INSTALL_DIR/.env" "EA_MONITORING_ENABLED" "true"
+  upsert_env_value "$INSTALL_DIR/.env" "PROMETHEUS_URL" "http://127.0.0.1:9090"
+  upsert_env_value "$INSTALL_DIR/.env" "GRAFANA_INTERNAL_URL" "http://127.0.0.1:3000"
+}
+
+install_monitoring_stack() {
+  if ! monitoring_requested; then return; fi
+  log "Installing optional Prometheus and Grafana monitoring"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] APP_ROOT=$INSTALL_DIR scripts/install-observability-stack.sh"
+    return
+  fi
+  APP_ROOT="$INSTALL_DIR" "$INSTALL_DIR/scripts/install-observability-stack.sh"
+}
+
 configure_jiuwenswarm() {
   if [[ "$INSTALL_JIUWENSWARM" != "true" ]]; then return; fi
   log "Configuring JiuwenSwarm for Workforce Agent Platform"
@@ -740,6 +793,9 @@ Health checks:
   curl http://127.0.0.1:${PORT}/health
   curl http://127.0.0.1:${PORT}/api/brand
 
+Monitoring:
+  $(monitoring_requested && echo "enabled (administrator tab: 运行监控)" || echo "not installed")
+
 JiuwenSwarm runtime:
   Version:  ${JIUWENSWARM_VERSION}
   Home:     ${JIUWENSWARM_HOME}
@@ -770,6 +826,8 @@ main() {
   install_jiuwenswarm
   INSTALL_STAGE="application-setup"
   run_setup
+  INSTALL_STAGE="monitoring-config"
+  configure_monitoring_env
   INSTALL_STAGE="jiuwenswarm-config"
   configure_jiuwenswarm
   INSTALL_STAGE="admin-account"
@@ -780,6 +838,8 @@ main() {
   enable_pm2_startup
   INSTALL_STAGE="health-check"
   wait_for_runtime
+  INSTALL_STAGE="monitoring"
+  install_monitoring_stack
   INSTALL_STAGE="summary"
   print_summary
 }

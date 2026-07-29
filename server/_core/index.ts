@@ -78,6 +78,7 @@ import { registerAuditExportRoutes } from "./audit-export-routes";
 import { registerAuditIngestRoutes } from "./claw-audit-ingest";
 import { registerDesktopRoutes, registerDesktopWSProxy } from "./desktop";
 import { registerKnowledgeRoutes } from "./knowledge-routes";
+import { registerMonitoringRoutes } from "./monitoring-routes";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
 import { getRoleSkillMcpBaseline, listAgentRoleTemplates } from "./role-templates";
 import { sdk } from "./sdk";
@@ -481,6 +482,7 @@ async function startServer() {
   registerAuditIngestRoutes(app);
   registerDesktopRoutes(app);
   registerKnowledgeRoutes(app);
+  registerMonitoringRoutes(app);
 
   // ── 岗位智能体平台流式聊天 SSE 端点 ──
   // Session/auth helpers extracted to ./helpers.ts

@@ -13,9 +13,9 @@ monitoring_dir="$APP_ROOT/ops/monitoring"
 [[ -r "$monitoring_dir/rules/employee-agent-alerts.yml" ]] || { echo "missing Prometheus alert rules" >&2; exit 1; }
 
 if docker compose version >/dev/null 2>&1; then
-  docker compose -p employee-agent-monitoring -f "$monitoring_dir/docker-compose.yml" up -d
+  docker compose -p employee-agent-monitoring -f "$monitoring_dir/docker-compose.yml" up -d prometheus
 elif command -v docker-compose >/dev/null 2>&1; then
-  docker-compose -p employee-agent-monitoring -f "$monitoring_dir/docker-compose.yml" up -d
+  docker-compose -p employee-agent-monitoring -f "$monitoring_dir/docker-compose.yml" up -d prometheus
 else
   docker volume inspect "$PROMETHEUS_VOLUME" >/dev/null 2>&1 || docker volume create "$PROMETHEUS_VOLUME" >/dev/null
   if docker container inspect "$PROMETHEUS_CONTAINER" >/dev/null 2>&1; then
