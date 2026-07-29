@@ -6,9 +6,12 @@ CONFIG_DIR="${EMPLOYEE_AGENT_BACKUP_CONFIG_DIR:-/root/.config/employee-agent}"
 CONFIG_FILE="$CONFIG_DIR/backup.env"
 DB_CNF="$CONFIG_DIR/backup.cnf"
 ENCRYPTION_KEY_FILE="$CONFIG_DIR/backup-encryption.key"
+SCRIPT_APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 [[ -r "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 : "${APP_DIR:=/root/employee-agent}"
+: "${BACKUP_SOURCE_ROOT:=$SCRIPT_APP_ROOT}"
+: "${BACKUP_SOURCE_COMMIT:=}"
 : "${DB_NAME:=employee_agent}"
 : "${BACKUP_DIR:=/root/backups/employee-agent}"
 : "${KEEP_DAYS:=30}"
@@ -21,6 +24,7 @@ ENCRYPTION_KEY_FILE="$CONFIG_DIR/backup-encryption.key"
 : "${REMOTE_KEY:=$CONFIG_DIR/offsite-backup-key}"
 : "${MYSQL_CORE_EXCLUDE_TABLES:=}"
 : "${MYSQL_INCLUDE_EVENTS:=false}"
+: "${MYSQL_DUMP_COMPRESS:=true}"
 
 BACKUP_PROFILE="${BACKUP_PROFILE:-core}"
 case "${1:-}" in
@@ -95,6 +99,7 @@ archive_application_data() {
     --exclude='data/**/tmp'
     --exclude='data/**/cache'
     --exclude='data/**/__pycache__'
+    --exclude='data/generated-skills'
   )
   if [[ "$INCLUDE_KNOWLEDGE_INDEXES" != "true" ]]; then
     excludes+=(--exclude='data/knowledge/indexes')
@@ -122,6 +127,9 @@ archive_jiuwenswarm() {
     --exclude="$runtime_name/**/__pycache__" \
     --exclude="$runtime_name/**/node_modules" \
     --exclude="$runtime_name/**/.venv" \
+    --exclude="$runtime_name/**/venv" \
+    --exclude="$runtime_name/**/.ea-dependency-smoke" \
+    --exclude="$runtime_name/**/jiuwenclaw_workspace/skills" \
     --exclude="$runtime_name/run" \
     --exclude="$runtime_name/auto-harness/temp" \
     -czf - "$runtime_name" \
@@ -142,7 +150,7 @@ archive_configuration() {
 
 echo "[$(date --iso-8601=seconds)] backup started"
 
-PORTABLE_AUDIT_ATTESTATION_SQL="$APP_DIR/scripts/sql/audit-attestation-portable.sql"
+PORTABLE_AUDIT_ATTESTATION_SQL="$BACKUP_SOURCE_ROOT/scripts/sql/audit-attestation-portable.sql"
 [[ -r "$PORTABLE_AUDIT_ATTESTATION_SQL" ]] || { echo "missing $PORTABLE_AUDIT_ATTESTATION_SQL" >&2; exit 1; }
 mysql_dump_args=(
   --defaults-extra-file="$DB_CNF"
@@ -156,6 +164,9 @@ mysql_dump_args=(
   --triggers
   --ignore-table="$DB_NAME.audit_worm_trigger_status"
 )
+if [[ "$MYSQL_DUMP_COMPRESS" == "true" ]]; then
+  mysql_dump_args+=(--compression-algorithms=zlib)
+fi
 if [[ "$MYSQL_INCLUDE_EVENTS" == "true" ]]; then
   mysql_dump_args+=(--events)
 fi
@@ -186,11 +197,23 @@ archive_configuration
 cat > "$SNAPSHOT_DIR/MANIFEST" <<EOF
 created_at=$(date --iso-8601=seconds)
 source_host=$(hostname -f 2>/dev/null || hostname)
-source_commit=$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || printf 'unknown')
+source_commit=$(
+  if [[ -n "$BACKUP_SOURCE_COMMIT" ]]; then
+    printf '%s' "$BACKUP_SOURCE_COMMIT"
+  elif [[ -r "$BACKUP_SOURCE_ROOT/release-manifest.json" ]]; then
+    node -e 'const m=require(process.argv[1]); process.stdout.write(String(m.sourceCommit || "unknown"))' \
+      "$BACKUP_SOURCE_ROOT/release-manifest.json"
+  else
+    git -C "$BACKUP_SOURCE_ROOT" rev-parse HEAD 2>/dev/null \
+      || git -C "$APP_DIR" rev-parse HEAD 2>/dev/null \
+      || printf 'unknown'
+  fi
+)
 database=$DB_NAME
 database_profile=$BACKUP_PROFILE
 database_excluded_tables=$([[ "$BACKUP_PROFILE" == "core" ]] && printf '%s' "$MYSQL_CORE_EXCLUDE_TABLES" || printf '')
 database_events_included=$MYSQL_INCLUDE_EVENTS
+database_transport_compressed=$MYSQL_DUMP_COMPRESS
 application_data=$APP_DIR/data
 skill_store=$SKILL_STORE
 jiuwenswarm_home=$JIUWENSWARM_HOME
@@ -212,7 +235,7 @@ date --iso-8601=seconds > "$BACKUP_DIR/.last-local-success"
 if [[ "$DAY_OF_WEEK" == "7" && -n "$REMOTE_HOST" ]]; then
   [[ -r "$REMOTE_KEY" ]] || { echo "missing $REMOTE_KEY" >&2; exit 1; }
   EMPLOYEE_AGENT_BACKUP_CONFIG_DIR="$CONFIG_DIR" \
-    "$APP_DIR/scripts/validate-production-backup.sh" "$SNAPSHOT_DIR"
+    "$BACKUP_SOURCE_ROOT/scripts/validate-production-backup.sh" "$SNAPSHOT_DIR"
   ssh -i "$REMOTE_KEY" -o BatchMode=yes -o StrictHostKeyChecking=yes "$REMOTE_USER@$REMOTE_HOST" "mkdir -p '$REMOTE_DIR'"
   rsync -az --timeout=180 -e "ssh -i $REMOTE_KEY -o BatchMode=yes -o StrictHostKeyChecking=yes" \
     "$SNAPSHOT_DIR/" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/$DATE/"

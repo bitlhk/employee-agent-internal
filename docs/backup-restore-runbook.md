@@ -79,6 +79,37 @@ The Sunday off-site copy runs only after the full local snapshot passes checksum
 
 Never test a restore over the production directories.
 
+The backup command enables MySQL protocol compression by default, preventing a
+remote database from sending the uncompressed dump over the network. Set
+`MYSQL_DUMP_COMPRESS=false` only for an older client or server that does not
+support compression.
+
+Runtime skill projections, generated-skill links, dependency smoke virtual
+environments, caches, and `node_modules` are excluded. Their authoritative
+packages are held in the separately encrypted skill store and are reconciled
+back into each Agent after recovery. This keeps snapshots portable and prevents
+legacy absolute links from crossing the restore boundary.
+
+The repository includes a data-layer restore drill that validates and decrypts
+the selected snapshot, restores all durable archives to an isolated directory,
+imports MySQL into a temporary network-disabled container, verifies critical
+tables and audit triggers, and writes an RPO/RTO report:
+
+```bash
+sudo EMPLOYEE_AGENT_BACKUP_CONFIG_DIR=/root/.config/employee-agent \
+  /root/employee-agent/scripts/run-restore-drill.sh latest
+```
+
+The temporary MySQL container has no published port and is deleted when the
+drill exits. Restored files are also removed by default; set
+`RESTORE_DRILL_KEEP_DATA=true` only on an approved isolated host when manual
+inspection is required. The generated `REPORT` contains counts and operational
+timings, not row contents.
+
+The default drill budget is 3 GB memory, 2 CPU, and a 4 GB tmpfs. Override
+`RESTORE_DRILL_MYSQL_MEMORY`, `RESTORE_DRILL_MYSQL_CPUS`, or
+`RESTORE_DRILL_MYSQL_TMPFS_SIZE` on a smaller dedicated recovery host.
+
 1. Provision an isolated host with matching MySQL, Node.js, Python, JiuwenSwarm, and EA versions.
 2. Verify checksums before decrypting.
 3. Restore MySQL into an empty database using a dedicated migration-capable account.

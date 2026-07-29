@@ -65,6 +65,15 @@ availability.
 The administrator health page reports whether metrics, alerting, and workers are
 ready. It does not expose Prometheus credentials or webhook addresses.
 
+The release manager starts `employee-agent-alerts` only when `.env` contains an
+official `https://open.feishu.cn` webhook. Validate a new channel before enabling
+the long-running process:
+
+```bash
+node scripts/feishu-alert-dispatcher.mjs --test
+node scripts/feishu-alert-dispatcher.mjs --once
+```
+
 ## Capacity Calibration
 
 The default load test exercises liveness, readiness, branding, and the built web
@@ -74,6 +83,13 @@ error rate, and p50/p95/p99 latency without consuming model tokens.
 Authenticated chat, MCP, and sandbox scenarios are opt-in and require explicit
 credentials. They are run with small samples in local or dedicated test
 environments, not as a 50-user production model storm.
+
+Use `pnpm load:business` with `EA_BUSINESS_LOAD_TEST_COOKIE` and
+`EA_BUSINESS_LOAD_TEST_ADOPT_ID` to calibrate authenticated health summary,
+history, runtime, skill, and MCP reads. Model smoke requests are disabled by
+default; enabling `EA_BUSINESS_LOAD_TEST_ENABLE_CHAT=1` and setting
+`EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS` sends at most five sequential prompts.
+Reports are mode `0600` and never contain the supplied cookie or internal key.
 
 Initial acceptance targets for the read-only platform scenario:
 

@@ -116,12 +116,21 @@ release_log "Installing dependencies for $release_id"
 (cd "$release_dir" && pnpm install --frozen-lockfile)
 (cd "$release_dir" && pnpm build)
 
-if [[ "$SKIP_BACKUP" != true && -x "$SHARED_APP_ROOT/scripts/backup-production.sh" ]]; then
+if [[ "$SKIP_BACKUP" != true && -x "$release_dir/scripts/backup-production.sh" ]]; then
   backup_config_dir="${EMPLOYEE_AGENT_BACKUP_CONFIG_DIR:-/root/.config/employee-agent}"
   if [[ -r "$backup_config_dir/backup.env" && -r "$backup_config_dir/backup.cnf" && -r "$backup_config_dir/backup-encryption.key" ]]; then
     release_log "Creating pre-migration backup"
-    APP_DIR="$SHARED_APP_ROOT" "$SHARED_APP_ROOT/scripts/backup-production.sh" --core
-    "$SHARED_APP_ROOT/scripts/validate-production-backup.sh" latest
+    backup_source_commit="$(
+      if [[ -r "$DEPLOY_ROOT/current/release-manifest.json" ]]; then
+        node -e 'const m=require(process.argv[1]); process.stdout.write(String(m.sourceCommit || "unknown"))' \
+          "$DEPLOY_ROOT/current/release-manifest.json"
+      else
+        printf 'unknown'
+      fi
+    )"
+    APP_DIR="$SHARED_APP_ROOT" BACKUP_SOURCE_ROOT="$release_dir" BACKUP_SOURCE_COMMIT="$backup_source_commit" \
+      "$release_dir/scripts/backup-production.sh" --core
+    "$release_dir/scripts/validate-production-backup.sh" latest
   elif [[ "${RELEASE_REQUIRE_BACKUP:-false}" == true ]]; then
     release_die "production backup is required but not configured"
   else

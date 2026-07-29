@@ -7,16 +7,47 @@ set -Eeuo pipefail
 : "${VERIFY_INTERVAL_SECONDS:=2}"
 : "${REQUIRE_PROMETHEUS:=false}"
 : "${PROMETHEUS_URL:=http://127.0.0.1:9090}"
+: "${JIUWENSWARM_SERVICE_MANAGER:=auto}"
 
 required_processes=(
   "${PM2_APP_NAME:-employee-agent}"
   "${PM2_KNOWLEDGE_APP_NAME:-employee-agent-knowledge}"
 )
-if [[ -f "$APP_ROOT/ecosystem.jiuwenswarm.config.cjs" ]]; then
-  required_processes+=(jiuwenswarm-agentserver jiuwenswarm-gateway)
+if [[ -f "$APP_ROOT/ops/monitoring/alert-dispatcher.pm2.cjs" ]] \
+  && grep -Eq '^EA_ALERT_FEISHU_WEBHOOK_URL=https://open\.feishu\.cn/' "$APP_ROOT/.env" 2>/dev/null; then
+  required_processes+=("${PM2_ALERT_APP_NAME:-employee-agent-alerts}")
 fi
+required_systemd_services=()
 if [[ -n "${REQUIRED_PM2_PROCESSES:-}" ]]; then
   read -r -a required_processes <<< "$REQUIRED_PM2_PROCESSES"
+elif [[ -f "$APP_ROOT/ecosystem.jiuwenswarm.config.cjs" ]]; then
+  case "$JIUWENSWARM_SERVICE_MANAGER" in
+    auto)
+      if command -v systemctl >/dev/null 2>&1 \
+        && [[ "$(systemctl show jiuwenswarm.service --property=LoadState --value 2>/dev/null || true)" == "loaded" ]]; then
+        JIUWENSWARM_SERVICE_MANAGER=systemd
+      else
+        JIUWENSWARM_SERVICE_MANAGER=pm2
+      fi
+      ;;
+    systemd|pm2) ;;
+    *)
+      echo "invalid JIUWENSWARM_SERVICE_MANAGER: $JIUWENSWARM_SERVICE_MANAGER" >&2
+      exit 2
+      ;;
+  esac
+
+  if [[ "$JIUWENSWARM_SERVICE_MANAGER" == "systemd" ]]; then
+    required_systemd_services+=(jiuwenswarm.service)
+    if [[ "$(systemctl show jiuwenbox.service --property=LoadState --value 2>/dev/null || true)" == "loaded" ]]; then
+      required_systemd_services+=(jiuwenbox.service)
+    fi
+  else
+    required_processes+=(jiuwenswarm-agentserver jiuwenswarm-gateway)
+  fi
+fi
+if [[ -n "${REQUIRED_SYSTEMD_SERVICES:-}" ]]; then
+  read -r -a required_systemd_services <<< "$REQUIRED_SYSTEMD_SERVICES"
 fi
 
 command -v curl >/dev/null || { echo "curl is required" >&2; exit 1; }
@@ -26,6 +57,13 @@ for process_name in "${required_processes[@]}"; do
   pid="$(pm2 pid "$process_name" 2>/dev/null | tail -n 1)"
   if [[ ! "$pid" =~ ^[1-9][0-9]*$ ]]; then
     echo "required PM2 process is not online: $process_name" >&2
+    exit 1
+  fi
+done
+
+for service_name in "${required_systemd_services[@]}"; do
+  if ! systemctl is-active --quiet "$service_name"; then
+    echo "required systemd service is not active: $service_name" >&2
     exit 1
   fi
 done

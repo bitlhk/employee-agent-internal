@@ -18,8 +18,30 @@
 
 The 50-user read-only stage produced 12 database pool queue events and no request
 errors. The queue absorbed the short burst without visible latency degradation,
-so the current pool limit remains unchanged until authenticated workload data
+so the default pool limit remains conservative until authenticated workload data
 shows sustained pressure.
+
+## Shanghai Authenticated Business Paths
+
+The production calibration exercised Agent health summary, history, runtime
+information, Skill registry, and MCP status using a 15-minute test session.
+
+| Concurrency | Requests | Throughput | Errors | p95 | p99 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 5 | 182 | 18.2 req/s | 0 | 300.4 ms | 316.0 ms |
+| 10 | 357 | 35.7 req/s | 0 | 315.0 ms | 428.1 ms |
+| 20 | 468 | 46.8 req/s | 0 | 568.1 ms | 2,125.8 ms |
+
+At the original 10-connection pool, the 20-user continuous-request stage showed
+sustained pool queuing. Shanghai was tuned to 20 connections and 5 idle
+connections; the same 20-user stage then completed 515 requests at 51.5 req/s
+with zero errors, only two queue events, p95 640.9 ms, and p99 1,309.4 ms.
+The open-source default remains 10 because smaller self-hosted databases may
+have tighter connection budgets.
+
+One sequential JiuwenSwarm chat smoke request completed successfully with HTTP
+200 in 7.8 seconds. This is an end-to-end completion time, not first-token
+latency.
 
 ## Interpretation
 

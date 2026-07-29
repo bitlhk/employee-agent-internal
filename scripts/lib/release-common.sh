@@ -36,6 +36,7 @@ release_pm2_reload() {
   local app_root="$1"
   local app_name="${PM2_APP_NAME:-employee-agent}"
   local knowledge_name="${PM2_KNOWLEDGE_APP_NAME:-employee-agent-knowledge}"
+  local alert_name="${PM2_ALERT_APP_NAME:-employee-agent-alerts}"
   local target_root pid actual_cwd
   target_root="$(release_realpath "$app_root")"
 
@@ -58,6 +59,15 @@ release_pm2_reload() {
     release_pm2_reset_if_stale "$knowledge_name"
     APP_ROOT="$app_root" PM2_KNOWLEDGE_APP_NAME="$knowledge_name" \
       pm2 startOrReload "$app_root/ecosystem.knowledge.config.cjs" --only "$knowledge_name" --update-env
+  fi
+
+  if [[ -f "$app_root/ops/monitoring/alert-dispatcher.pm2.cjs" ]] \
+    && grep -Eq '^EA_ALERT_FEISHU_WEBHOOK_URL=https://open\.feishu\.cn/' "$app_root/.env" 2>/dev/null; then
+    release_pm2_reset_if_stale "$alert_name"
+    APP_ROOT="$app_root" PM2_ALERT_APP_NAME="$alert_name" \
+      pm2 startOrReload "$app_root/ops/monitoring/alert-dispatcher.pm2.cjs" --only "$alert_name" --update-env
+  elif pm2 describe "$alert_name" >/dev/null 2>&1; then
+    pm2 delete "$alert_name" >/dev/null
   fi
 }
 

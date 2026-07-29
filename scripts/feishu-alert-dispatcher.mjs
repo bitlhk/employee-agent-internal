@@ -9,6 +9,8 @@ const prometheusUrl = String(process.env.PROMETHEUS_URL || "http://127.0.0.1:909
 const webhookUrl = String(process.env.EA_ALERT_FEISHU_WEBHOOK_URL || "").trim();
 const intervalMs = Math.max(15_000, Number(process.env.EA_ALERT_POLL_INTERVAL_MS || 60_000));
 const statePath = path.resolve(process.env.EA_ALERT_STATE_FILE || "data/ops-alert-state.json");
+const once = process.argv.includes("--once");
+const testMessage = process.argv.includes("--test");
 
 function validateWebhook(value) {
   if (!value) throw new Error("EA_ALERT_FEISHU_WEBHOOK_URL is not configured");
@@ -74,7 +76,7 @@ let running = false;
 let previous = await loadState();
 
 async function poll() {
-  if (stopped || running) return;
+  if (stopped || running) return false;
   running = true;
   try {
     const alerts = await fetchFiringAlerts();
@@ -93,24 +95,27 @@ async function poll() {
     previous = current;
     await saveState(current);
     console.log(JSON.stringify({ ts: new Date().toISOString(), event: "alert_poll", firing: current.size, opened: opened.length, recovered: recovered.length }));
+    return true;
   } catch (error) {
     console.error(JSON.stringify({ ts: new Date().toISOString(), event: "alert_poll_failed", error: String(error?.message || error).slice(0, 240) }));
+    return false;
   } finally {
     running = false;
   }
 }
 
-const timer = setInterval(() => void poll(), intervalMs);
-timer.unref?.();
-process.on("SIGTERM", () => { stopped = true; clearInterval(timer); });
-process.on("SIGINT", () => { stopped = true; clearInterval(timer); });
-
 if (!webhookUrl) {
   console.error("EA alert dispatcher disabled: EA_ALERT_FEISHU_WEBHOOK_URL is not configured");
   process.exitCode = 2;
+} else if (testMessage) {
+  await sendFeishu(`[EA 告警测试] ${new Date().toISOString()}\n状态：告警通道可用`);
+  console.log(JSON.stringify({ ts: new Date().toISOString(), event: "alert_test_sent" }));
+} else if (once) {
+  if (!await poll()) process.exitCode = 1;
 } else {
   await poll();
-  // Keep the process referenced; the polling timer itself is intentionally unref'd
-  // so tests and one-shot validation can terminate cleanly.
+  const timer = setInterval(() => void poll(), intervalMs);
+  process.on("SIGTERM", () => { stopped = true; clearInterval(timer); });
+  process.on("SIGINT", () => { stopped = true; clearInterval(timer); });
   process.stdin.resume();
 }
