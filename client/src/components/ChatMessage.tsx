@@ -11,6 +11,7 @@ import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
+import { formatKnowledgeCitations } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import { EA_ARTIFACT_SCHEMA } from "@shared/agent-artifact";
 import {
@@ -79,6 +80,8 @@ export type ChatMessageAttachment = {
 
 export type ChatKnowledgeSource = {
   index: number;
+  chunkId: string;
+  parentId: string;
   knowledgeBaseId: string;
   knowledgeBaseName: string;
   documentId: string;
@@ -154,6 +157,7 @@ function ToolTypeIcon({ name, className = "" }: { name: string; className?: stri
 
 type ChatMessageProps = {
   messageId?: string;
+  adoptId?: string;
   role: "user" | "assistant";
   text: string;
   status?: string;
@@ -177,6 +181,7 @@ type ChatMessageProps = {
   onFeedback?: (feedback: MessageFeedbackValue | null) => void | Promise<void>;
   onForgetMemory?: (memoryId: number) => void | Promise<void>;
   onCaptureKnowledge?: (input: { messageId?: string; text: string; modelId: string }) => void;
+  onOpenKnowledgeSource?: (source: ChatKnowledgeSource) => void;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "reject") => void;
   onOpenAgentArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
@@ -1027,6 +1032,7 @@ function agentTasksRenderSignature(tasks?: AgentTask[]): string {
 
 function ChatMessageInner({
   messageId,
+  adoptId,
   role,
   text,
   status,
@@ -1047,6 +1053,7 @@ function ChatMessageInner({
   onFeedback,
   onForgetMemory,
   onCaptureKnowledge,
+  onOpenKnowledgeSource,
   jiuwenPermission,
   onJiuwenPermissionAnswer,
   onOpenAgentArtifact,
@@ -1107,9 +1114,36 @@ function ChatMessageInner({
     }
     return Array.from(groups.values());
   }, [knowledgeSources]);
+  const knowledgeCitationLabels = useMemo(() => {
+    const labels: Record<number, string> = {};
+    for (const source of knowledgeSources || []) {
+      if (!Number.isInteger(source.index) || source.index < 1) continue;
+      if (source.page && source.page > 0) labels[source.index] = `第 ${source.page} 页`;
+      else if (source.position && source.position !== "正文") labels[source.index] = source.position.slice(0, 32);
+    }
+    return labels;
+  }, [knowledgeSources]);
+  const knowledgeCitationUrls = useMemo(() => {
+    const urls: Record<number, string> = {};
+    if (!adoptId) return urls;
+    for (const source of knowledgeSources || []) {
+      if (!Number.isInteger(source.index) || source.index < 1) continue;
+      if (!source.knowledgeBaseId || !source.documentId) continue;
+      const query = new URLSearchParams({
+        adoptId,
+        knowledgeBaseId: source.knowledgeBaseId,
+      });
+      const fragment = new URLSearchParams();
+      if (source.page && source.page > 0) fragment.set("page", String(source.page));
+      const searchText = (source.headingPath?.at(-1) || source.position || "").trim();
+      if (searchText && searchText !== "正文") fragment.set("search", searchText.slice(0, 80));
+      urls[source.index] = `/api/knowledge/documents/${encodeURIComponent(source.documentId)}/content?${query.toString()}${fragment.size ? `#${fragment.toString()}` : ""}`;
+    }
+    return urls;
+  }, [adoptId, knowledgeSources]);
   const onCopyMarkdown = async () => {
     try {
-      await navigator.clipboard.writeText(displayText);
+      await navigator.clipboard.writeText(formatKnowledgeCitations(displayText, knowledgeCitationLabels));
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {}
@@ -1215,7 +1249,13 @@ function ChatMessageInner({
               content={displayText}
               phase={isLast && streaming ? "streaming" : "final"}
               knowledgeSourceIndexes={(knowledgeSources || []).map((source) => source.index)}
+              knowledgeCitationLabels={knowledgeCitationLabels}
+              knowledgeCitationUrls={knowledgeCitationUrls}
               knowledgeCitationScope={messageId}
+              onOpenKnowledgeCitation={onOpenKnowledgeSource ? (index) => {
+                const source = (knowledgeSources || []).find((item) => item.index === index);
+                if (source?.chunkId && source.parentId) onOpenKnowledgeSource(source);
+              } : undefined}
             />
             {isLast && streaming && <span className="animate-pulse ml-0.5" style={{ color: "var(--oc-text-tertiary)" }}>▌</span>}
           </div>
@@ -1229,10 +1269,17 @@ function ChatMessageInner({
           <div className="lingxia-knowledge-sources" aria-label="知识来源">
             <span className="lingxia-knowledge-sources__label"><BookOpen />参考资料</span>
             {knowledgeSourceGroups.map(({ source, indexes, knowledgeBaseNames }) => (
-              <span
+              <a
                 id={`ea-knowledge-source-${String(messageId || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message"}-${source.index}`}
                 key={`${source.knowledgeBaseId}:${source.documentId}:${source.index}`}
                 className="lingxia-knowledge-source"
+                href={knowledgeCitationUrls[source.index] || `#ea-knowledge-source-${String(messageId || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message"}-${source.index}`}
+                target={knowledgeCitationUrls[source.index] && !(onOpenKnowledgeSource && source.chunkId && source.parentId) ? "_blank" : undefined}
+                rel={knowledgeCitationUrls[source.index] && !(onOpenKnowledgeSource && source.chunkId && source.parentId) ? "noopener noreferrer" : undefined}
+                onClick={onOpenKnowledgeSource && source.chunkId && source.parentId ? (event) => {
+                  event.preventDefault();
+                  onOpenKnowledgeSource(source);
+                } : undefined}
                 title={`${knowledgeBaseNames.join("、")} · ${source.documentName}${source.documentVersion && source.documentVersion !== "1.0" ? ` · ${source.documentVersion}` : ""} · ${source.headingPath?.length ? source.headingPath.join(" / ") : source.position}`}
               >
                 {indexes.slice(1).map((index) => (
@@ -1246,7 +1293,7 @@ function ChatMessageInner({
                 <b>{indexes.length > 1 ? `${source.index}+` : source.index}</b>
                 <span>{source.documentName}{source.documentVersion && source.documentVersion !== "1.0" ? ` · ${source.documentVersion}` : ""}</span>
                 <small>{source.headingPath?.length ? source.headingPath.join(" / ") : source.position}{source.page && source.headingPath?.length ? ` · 第 ${source.page} 页` : ""}{indexes.length > 1 ? ` · ${indexes.length} 处` : ""}</small>
-              </span>
+              </a>
             ))}
           </div>
         ) : null}
@@ -1556,6 +1603,7 @@ function ChatMessageInner({
 export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
   return (
     prev.messageId === next.messageId &&
+    prev.adoptId === next.adoptId &&
     prev.role === next.role &&
     prev.text === next.text &&
     prev.status === next.status &&
@@ -1566,6 +1614,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.modelId === next.modelId &&
     prev.timeLabel === next.timeLabel &&
     JSON.stringify(prev.attachments || []) === JSON.stringify(next.attachments || []) &&
+    JSON.stringify(prev.knowledgeSources || []) === JSON.stringify(next.knowledgeSources || []) &&
     prev.showToolCalls === next.showToolCalls &&
     toolCallsRenderSignature(prev.toolCalls) === toolCallsRenderSignature(next.toolCalls) &&
     messageEventsRenderSignature(prev.messageEvents) === messageEventsRenderSignature(next.messageEvents) &&
@@ -1574,6 +1623,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.onResumeExpert === next.onResumeExpert &&
     prev.onCancelExpert === next.onCancelExpert &&
     prev.onCaptureKnowledge === next.onCaptureKnowledge &&
+    prev.onOpenKnowledgeSource === next.onOpenKnowledgeSource &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&
     prev.usage?.input === next.usage?.input &&
     prev.usage?.output === next.usage?.output &&

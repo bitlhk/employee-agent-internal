@@ -12,6 +12,7 @@ import {
   type KnowledgeDocumentRecord,
 } from "../db";
 import { knowledgeServiceToken, resolveKnowledgeStoragePath } from "./knowledge-storage";
+import { planKnowledgeQueries, type KnowledgeQueryPlan } from "./knowledge-query-planner";
 
 const SERVICE_URL = String(process.env.KNOWLEDGE_SERVICE_URL || "http://127.0.0.1:5191").replace(/\/$/, "");
 const SERVICE_TIMEOUT_MS = Math.max(5_000, Number(process.env.KNOWLEDGE_SERVICE_TIMEOUT_MS || 180_000) || 180_000);
@@ -52,7 +53,19 @@ export type KnowledgeRetrievalResult = {
     reranker: string;
     cacheHit: boolean;
     externalQueryAllowed: boolean;
+    queryCount: number;
+    queryExpansion: KnowledgeQueryPlan["expansion"];
   };
+};
+
+export type KnowledgeCitationLocator = {
+  documentId: string;
+  parentId: string;
+  chunkId: string;
+  page: number | null;
+  position: string;
+  headingPath: string[];
+  matchedText: string;
 };
 
 async function serviceRequest(pathname: string, init: RequestInit, timeoutMs = SERVICE_TIMEOUT_MS): Promise<any> {
@@ -74,6 +87,32 @@ async function serviceRequest(pathname: string, init: RequestInit, timeoutMs = S
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function getKnowledgeCitationLocator(input: {
+  knowledgeBaseId: string;
+  documentId: string;
+  parentId: string;
+  chunkId: string;
+}): Promise<KnowledgeCitationLocator> {
+  const payload = await serviceRequest("/citation", {
+    method: "POST",
+    body: JSON.stringify({
+      knowledge_base_id: input.knowledgeBaseId,
+      document_id: input.documentId,
+      parent_id: input.parentId,
+      chunk_id: input.chunkId,
+    }),
+  }, 10_000);
+  return {
+    documentId: String(payload?.document_id || input.documentId),
+    parentId: String(payload?.parent_id || input.parentId),
+    chunkId: String(payload?.chunk_id || input.chunkId),
+    page: payload?.page == null ? null : Number(payload.page),
+    position: String(payload?.position || "正文"),
+    headingPath: Array.isArray(payload?.heading_path) ? payload.heading_path.map(String) : [],
+    matchedText: String(payload?.matched_text || "").slice(0, 1600),
+  };
 }
 
 export async function getKnowledgeServiceHealth(): Promise<{
@@ -288,40 +327,115 @@ export async function retrieveAcrossKnowledgeBases(
       triggered: false,
       retrieval: "unavailable",
       results: [],
-      metrics: { knowledgeBaseCount: 0, bm25MaxScore: 0, vectorMinDistance: null, reranker: "disabled", cacheHit: false, externalQueryAllowed: false },
+      metrics: {
+        knowledgeBaseCount: 0,
+        bm25MaxScore: 0,
+        vectorMinDistance: null,
+        reranker: "disabled",
+        cacheHit: false,
+        externalQueryAllowed: false,
+        queryCount: 0,
+        queryExpansion: "skipped",
+      },
     };
   }
-  const payload = await serviceRequest("/search-multi", {
-    method: "POST",
-    body: JSON.stringify({
-      knowledge_base_ids: available.map((base) => base.publicId),
-      query,
-      top_k: Math.max(1, Math.min(totalLimit, 12)),
-      mode,
-    }),
-  }, 30_000);
   const basesById = new Map(available.map((base) => [base.publicId, base]));
-  const results = Array.isArray(payload?.results) ? payload.results.map((item: any) => {
-    const knowledgeBaseId = String(item.knowledge_base_id || "");
-    const base = basesById.get(knowledgeBaseId);
-    if (!base) return null;
-    return {
-      ...mapKnowledgeSearchItem(item),
-      knowledgeBaseId,
-      knowledgeBaseName: base.name,
-    };
-  }).filter(Boolean) as Array<KnowledgeSearchResult & { knowledgeBaseId: string; knowledgeBaseName: string }> : [];
+  const queryPlan = await planKnowledgeQueries(query);
+  const searches = await Promise.allSettled(queryPlan.queries.map(async (plannedQuery, queryIndex) => {
+    const payload = await serviceRequest("/search-multi", {
+      method: "POST",
+      body: JSON.stringify({
+        knowledge_base_ids: available.map((base) => base.publicId),
+        query: plannedQuery,
+        top_k: Math.max(1, Math.min(totalLimit, 12)),
+        mode,
+      }),
+    }, 30_000);
+    const results = Array.isArray(payload?.results) ? payload.results.map((item: any) => {
+      const knowledgeBaseId = String(item.knowledge_base_id || "");
+      const base = basesById.get(knowledgeBaseId);
+      if (!base) return null;
+      return {
+        ...mapKnowledgeSearchItem(item),
+        knowledgeBaseId,
+        knowledgeBaseName: base.name,
+      };
+    }).filter(Boolean) as Array<KnowledgeSearchResult & { knowledgeBaseId: string; knowledgeBaseName: string }> : [];
+    return { payload, results, queryIndex };
+  }));
+  const successful = searches.flatMap((search) => search.status === "fulfilled" ? [search.value] : []);
+  if (!successful.length) {
+    const failure = searches.find((search) => search.status === "rejected");
+    throw failure && failure.status === "rejected" ? failure.reason : new Error("knowledge retrieval failed");
+  }
+
+  type Result = KnowledgeSearchResult & { knowledgeBaseId: string; knowledgeBaseName: string };
+  let results: Result[];
+  if (successful.length === 1) {
+    results = successful[0].results.slice(0, totalLimit);
+  } else {
+    const fused = new Map<string, { result: Result; score: number }>();
+    successful.forEach(({ results: queryResults, queryIndex }) => {
+      queryResults.forEach((result, rankIndex) => {
+        const key = `${result.knowledgeBaseId}:${result.parentId || result.chunkId}`;
+        const rankScore = (queryIndex === 0 ? 1.1 : 1) / (60 + rankIndex + 1);
+        const existing = fused.get(key);
+        if (existing) {
+          existing.score += rankScore;
+          if (result.score > existing.result.score) existing.result = result;
+        } else {
+          fused.set(key, { result, score: rankScore });
+        }
+      });
+    });
+    const orderedKeys: string[] = [];
+    const selected = new Set<string>();
+    const expandedRankedKeys = successful
+      .filter((search) => search.queryIndex > 0)
+      .map((search) => search.results.map((result) => `${result.knowledgeBaseId}:${result.parentId || result.chunkId}`));
+    for (let depth = 0; depth < 2 && orderedKeys.length < totalLimit; depth += 1) {
+      const queryOrder = depth === 0 ? expandedRankedKeys : [...expandedRankedKeys].reverse();
+      for (const keys of queryOrder) {
+        const representative = keys.slice(depth).find((key) => !selected.has(key));
+        if (!representative) continue;
+        selected.add(representative);
+        orderedKeys.push(representative);
+        if (orderedKeys.length >= totalLimit) break;
+      }
+    }
+    for (const [key] of Array.from(fused.entries()).sort((left, right) => right[1].score - left[1].score)) {
+      if (selected.has(key)) continue;
+      selected.add(key);
+      orderedKeys.push(key);
+    }
+    results = orderedKeys.slice(0, totalLimit).flatMap((key) => {
+      const item = fused.get(key);
+      return item ? [{ ...item.result, score: item.score }] : [];
+    });
+  }
+
+  const payloads = successful.map((item) => item.payload);
+  const retrievalKinds = Array.from(new Set(payloads.map((payload) => String(payload?.retrieval || "bm25"))));
+  const rerankerStatuses = payloads.map((payload) => String(payload?.metrics?.reranker || "disabled"));
+  const reranker = ["applied", "fallback", "skipped_policy", "disabled"].find((status) => rerankerStatuses.includes(status)) || "disabled";
+  const vectorDistances = payloads
+    .map((payload) => payload?.metrics?.vector_min_distance)
+    .filter((value) => value != null)
+    .map(Number)
+    .filter(Number.isFinite);
   return {
-    triggered: Boolean(payload?.triggered && results.length),
-    retrieval: String(payload?.retrieval || "bm25"),
+    triggered: Boolean(results.length && successful.some(({ payload }) => payload?.triggered)),
+    retrieval: `${retrievalKinds.join("+")}${successful.length > 1 ? "+multi_query" : ""}`,
     results,
     metrics: {
-      knowledgeBaseCount: Number(payload?.metrics?.knowledge_base_count || available.length),
-      bm25MaxScore: Number(payload?.metrics?.bm25_max_score || 0),
-      vectorMinDistance: payload?.metrics?.vector_min_distance == null ? null : Number(payload.metrics.vector_min_distance),
-      reranker: String(payload?.metrics?.reranker || "disabled"),
-      cacheHit: Boolean(payload?.metrics?.cache_hit),
-      externalQueryAllowed: Boolean(payload?.metrics?.external_query_allowed),
+      knowledgeBaseCount: Math.max(...payloads.map((payload) => Number(payload?.metrics?.knowledge_base_count || 0)), available.length),
+      bm25MaxScore: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.bm25_max_score || 0))),
+      vectorMinDistance: vectorDistances.length ? Math.min(...vectorDistances) : null,
+      reranker,
+      cacheHit: payloads.every((payload) => Boolean(payload?.metrics?.cache_hit)),
+      externalQueryAllowed: payloads.every((payload) => Boolean(payload?.metrics?.external_query_allowed)),
+      queryCount: successful.length,
+      queryExpansion: queryPlan.expansion,
     },
   };
 }

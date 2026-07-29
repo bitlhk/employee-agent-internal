@@ -23,7 +23,7 @@ import {
   writeKnowledgeDocumentSourceMetadata,
 } from "./knowledge-storage";
 import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
-import { queueKnowledgeIndex } from "./knowledge-service";
+import { getKnowledgeCitationLocator, queueKnowledgeIndex } from "./knowledge-service";
 
 const MAX_UPLOAD_BYTES = Math.max(1, Math.min(Number(process.env.KNOWLEDGE_MAX_UPLOAD_BYTES || 50 * 1024 * 1024), 50 * 1024 * 1024));
 
@@ -122,12 +122,44 @@ export function registerKnowledgeRoutes(app: express.Express): void {
       if (!absolute || !statSync(absolute).isFile()) return res.status(404).json({ error: "document file not found" });
       const download = String(req.query.download || "") === "1";
       res.setHeader("Content-Type", knowledgeMimeType(document.extension));
-      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'");
+      // Chrome's built-in PDF viewer cannot run inside an empty CSP sandbox.
+      // PDFs are passive, MIME-locked content; keep them same-origin embeddable
+      // while retaining the stricter sandbox for text and downloaded files.
+      res.setHeader(
+        "Content-Security-Policy",
+        !download && document.extension === "pdf"
+          ? "frame-ancestors 'self'"
+          : "sandbox; default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'self'",
+      );
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Disposition", `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(path.basename(document.name))}`);
       createReadStream(absolute).pipe(res);
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "document read failed" });
+    }
+  });
+
+  app.get("/api/knowledge/documents/:documentId/citation", async (req, res) => {
+    try {
+      const adoptId = String(req.query.adoptId || "").trim();
+      const knowledgeBaseId = String(req.query.knowledgeBaseId || "").trim();
+      const chunkId = String(req.query.chunkId || "").trim();
+      const parentId = String(req.query.parentId || "").trim();
+      if (!chunkId || !parentId) return res.status(400).json({ error: "missing citation locator" });
+      const access = await routeBase(req, res, adoptId, knowledgeBaseId);
+      if (!access) return;
+      const document = await getKnowledgeDocumentByPublicId(String(req.params.documentId || ""));
+      if (!document || document.knowledgeBaseId !== access.base.id) return res.status(404).json({ error: "document not found" });
+      const locator = await getKnowledgeCitationLocator({
+        knowledgeBaseId: access.base.publicId,
+        documentId: document.publicId,
+        chunkId,
+        parentId,
+      });
+      res.setHeader("Cache-Control", "private, max-age=60");
+      return res.json({ ok: true, locator });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "citation lookup failed" });
     }
   });
 

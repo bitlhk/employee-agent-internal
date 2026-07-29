@@ -382,7 +382,8 @@ ensure_base_packages() {
       sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 update
     run_with_log "Install base packages" "/tmp/employee-agent-apt-base.log" \
       sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 install -y \
-      git curl ca-certificates openssl python3 python3-venv python3-pip build-essential
+      git curl ca-certificates openssl python3 python3-venv python3-pip build-essential \
+      poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim
     if [[ "$INSTALL_MYSQL" == "true" && "$DB_MODE" == "mysql-auto" ]]; then
       run_with_log "Install MySQL" "/tmp/employee-agent-apt-mysql.log" \
         sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 install -y mysql-server

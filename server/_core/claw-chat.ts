@@ -395,6 +395,9 @@ export function registerChatStreamRoutes(app: express.Express) {
           retrievalMs: Date.now() - knowledgeStartedAt,
           bm25MaxScore: knowledge.metrics.bm25MaxScore,
           vectorMinDistance: knowledge.metrics.vectorMinDistance,
+          queryCount: knowledge.metrics.queryCount,
+          queryExpansion: knowledge.metrics.queryExpansion,
+          reranker: knowledge.metrics.reranker,
         });
       } catch (error) {
         appendLogAsync("jiuwenclaw-exec.log", {

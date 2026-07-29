@@ -5,9 +5,13 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 import json
+import math
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
 import zipfile
 
 
@@ -17,6 +21,11 @@ MAX_SHEET_ROWS = int(os.environ.get("KNOWLEDGE_MAX_SHEET_ROWS", "20000"))
 MAX_ARCHIVE_ENTRIES = int(os.environ.get("KNOWLEDGE_MAX_ARCHIVE_ENTRIES", "10000"))
 MAX_EXPANDED_BYTES = int(os.environ.get("KNOWLEDGE_MAX_EXPANDED_BYTES", str(200 * 1024 * 1024)))
 MAX_ARCHIVE_RATIO = float(os.environ.get("KNOWLEDGE_MAX_ARCHIVE_RATIO", "120"))
+PDF_OCR_MODE = os.environ.get("KNOWLEDGE_PDF_OCR", "auto").strip().lower()
+PDF_OCR_MIN_CHARS = max(0, int(os.environ.get("KNOWLEDGE_PDF_OCR_MIN_CHARS", "24")))
+PDF_OCR_MAX_PAGES = max(0, int(os.environ.get("KNOWLEDGE_PDF_OCR_MAX_PAGES", "80")))
+PDF_OCR_TIMEOUT_SECONDS = max(10, int(os.environ.get("KNOWLEDGE_PDF_OCR_TIMEOUT_SECONDS", "60")))
+PDF_OCR_LANG = os.environ.get("KNOWLEDGE_PDF_OCR_LANG", "chi_sim+eng").strip() or "chi_sim+eng"
 
 _HEADING_RE = re.compile(
     r"^(?:第[一二三四五六七八九十百千万0-9]+[编章节条款]|"
@@ -132,6 +141,155 @@ def _read_csv(source: Path) -> list[ParsedSegment]:
     return segments
 
 
+def _pdf_boundary_key(value: str) -> str:
+    compact = clean_text(value).lower()
+    compact = re.sub(r"\d+", "#", compact)
+    return re.sub(r"\s+", "", compact)[:160]
+
+
+def _pdf_repeated_boundary_lines(pages: list[list[str]]) -> set[str]:
+    counts: dict[str, int] = {}
+    for lines in pages:
+        nonempty = [line for line in lines if clean_text(line)]
+        candidates = {_pdf_boundary_key(line) for line in [*nonempty[:2], *nonempty[-2:]]}
+        for key in candidates:
+            if key:
+                counts[key] = counts.get(key, 0) + 1
+    threshold = max(3, math.ceil(len(pages) * 0.35))
+    return {key for key, count in counts.items() if count >= threshold}
+
+
+def _pdf_heading_level(value: str) -> int | None:
+    line = clean_text(value)
+    if not line or len(line) > 90 or not _HEADING_RE.match(line):
+        return None
+    if re.match(r"^第.+编", line):
+        return 1
+    if re.match(r"^第.+章", line):
+        return 2
+    if re.match(r"^第.+节", line):
+        return 3
+    if re.match(r"^[一二三四五六七八九十]+[、.]", line):
+        return 4
+    if re.match(r"^[（(][一二三四五六七八九十0-9]+[）)]", line):
+        return 5
+    return 6
+
+
+def _pdf_table_row(value: str) -> str | None:
+    line = value.strip()
+    if not line or len(line) > 220 or re.search(r"[。！？；]", line):
+        return None
+    columns = [clean_text(item) for item in re.split(r"\s{2,}", line) if clean_text(item)]
+    short_columns = sum(1 for item in columns if len(item) <= 28)
+    if len(columns) >= 3 and short_columns >= 2:
+        return " | ".join(columns)
+    return None
+
+
+def _pdf_segments_from_pages(raw_pages: list[str]) -> list[ParsedSegment]:
+    page_lines = [page.splitlines() for page in raw_pages]
+    repeated = _pdf_repeated_boundary_lines(page_lines)
+    heading_stack: list[tuple[int, str]] = []
+    segments: list[ParsedSegment] = []
+
+    for page_number, lines in enumerate(page_lines, start=1):
+        nonempty_indexes = [index for index, line in enumerate(lines) if clean_text(line)]
+        boundary_indexes = set(nonempty_indexes[:3] + nonempty_indexes[-3:])
+        filtered: list[str] = []
+        for index, line in enumerate(lines):
+            stripped = line.strip()
+            if index in boundary_indexes and _pdf_boundary_key(stripped) in repeated:
+                continue
+            if index in boundary_indexes and re.fullmatch(r"(?:第\s*)?\d+(?:[-–—]\d+)*(?:\s*页)?", stripped):
+                continue
+            filtered.append(line.rstrip())
+
+        text_buffer: list[str] = []
+        table_buffer: list[tuple[str, str]] = []
+        table_index = 0
+
+        def headings() -> list[str]:
+            return [title for _level, title in heading_stack]
+
+        def position(suffix: str = "") -> str:
+            base = _position(headings(), f"第 {page_number} 页")
+            return f"{base}{suffix}"
+
+        def flush_text() -> None:
+            body = clean_text("\n".join(text_buffer))
+            text_buffer.clear()
+            if body:
+                segments.append(ParsedSegment(
+                    position=position(),
+                    heading_path=tuple(headings()),
+                    text=body,
+                    page=page_number,
+                ))
+
+        def flush_table() -> None:
+            nonlocal table_index
+            if not table_buffer:
+                return
+            rows = list(table_buffer)
+            table_buffer.clear()
+            if len(rows) < 2:
+                text_buffer.extend(original for original, _converted in rows)
+                return
+            table_index += 1
+            segments.append(ParsedSegment(
+                position=position(f" · 表格 {table_index}"),
+                heading_path=tuple(headings()),
+                text=clean_text("\n".join(converted for _original, converted in rows)),
+                page=page_number,
+                content_type="table",
+            ))
+
+        for raw_line in filtered:
+            line = raw_line.strip()
+            if not line:
+                flush_table()
+                text_buffer.append("")
+                continue
+            heading_level = _pdf_heading_level(line)
+            if heading_level is not None:
+                flush_table()
+                flush_text()
+                heading_stack[:] = [item for item in heading_stack if item[0] < heading_level]
+                heading_stack.append((heading_level, clean_text(line)[:160]))
+                continue
+            table_row = _pdf_table_row(raw_line)
+            if table_row:
+                flush_text()
+                table_buffer.append((line, table_row))
+                continue
+            flush_table()
+            text_buffer.append(line)
+        flush_table()
+        flush_text()
+    return segments
+
+
+def _ocr_pdf_page(source: Path, page_number: int) -> str:
+    if PDF_OCR_MODE in {"0", "false", "off", "disabled"}:
+        return ""
+    pdftoppm = shutil.which("pdftoppm")
+    tesseract = shutil.which("tesseract")
+    if not pdftoppm or not tesseract:
+        return ""
+    with tempfile.TemporaryDirectory(prefix="ea-knowledge-ocr-") as directory:
+        prefix = Path(directory) / "page"
+        subprocess.run([
+            pdftoppm, "-f", str(page_number), "-l", str(page_number), "-singlefile",
+            "-r", "180", "-png", str(source), str(prefix),
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=PDF_OCR_TIMEOUT_SECONDS)
+        image = prefix.with_suffix(".png")
+        completed = subprocess.run([
+            tesseract, str(image), "stdout", "-l", PDF_OCR_LANG, "--psm", "6",
+        ], check=True, capture_output=True, text=True, timeout=PDF_OCR_TIMEOUT_SECONDS)
+        return clean_text(completed.stdout)
+
+
 def _read_pdf(source: Path) -> list[ParsedSegment]:
     from pypdf import PdfReader
 
@@ -144,15 +302,31 @@ def _read_pdf(source: Path) -> list[ParsedSegment]:
             raise ValueError("encrypted PDF is not supported") from exc
     if len(reader.pages) > MAX_PDF_PAGES:
         raise ValueError("PDF page count exceeds safety limit")
-    segments: list[ParsedSegment] = []
+    raw_pages: list[str] = []
     total = 0
+    ocr_pages = 0
     for index, page in enumerate(reader.pages, start=1):
-        text = clean_text(page.extract_text() or "")
+        try:
+            extracted = page.extract_text(extraction_mode="layout") or ""
+        except (TypeError, ValueError):
+            extracted = page.extract_text() or ""
+        text = clean_text(extracted)
+        if len(text) < PDF_OCR_MIN_CHARS and ocr_pages < PDF_OCR_MAX_PAGES:
+            try:
+                ocr_text = _ocr_pdf_page(source, index)
+                if len(ocr_text) > len(text):
+                    extracted = ocr_text
+                    text = ocr_text
+                    ocr_pages += 1
+            except (OSError, subprocess.SubprocessError):
+                pass
         total += len(text)
         if total > MAX_DOCUMENT_CHARS:
             raise ValueError("PDF extracted text exceeds safety limit")
-        if text:
-            segments.append(ParsedSegment(position=f"第 {index} 页", text=text, page=index))
+        raw_pages.append(extracted if text else "")
+    segments = _pdf_segments_from_pages(raw_pages)
+    if not segments:
+        raise ValueError("PDF contains no extractable text; OCR support is required for scanned documents")
     return segments
 
 

@@ -120,6 +120,10 @@ export default defineConfig(({ mode }) => {
           manualChunks: (id) => {
             // node_modules 单独打包
             if (id.includes("node_modules")) {
+              // PDF.js 仅在用户打开知识引用时加载，避免进入主对话首屏依赖。
+              if (id.includes("pdfjs-dist")) {
+                return "vendor-pdfjs";
+              }
               // React 相关库
               if (id.includes("react") || id.includes("react-dom")) {
                 return "vendor-react";

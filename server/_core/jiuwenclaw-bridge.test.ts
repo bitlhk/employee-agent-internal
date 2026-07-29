@@ -65,6 +65,12 @@ describe("jiuwenclaw bridge audit helpers", () => {
     });
   });
 
+  it("publishes only whitelisted knowledge citations in the final snapshot", () => {
+    expect(buildJiuwenFinalSnapshot("依据[知识1 第 27 页]，未知[知识8]。", "/tmp/workspace", [1, 2])).toEqual({
+      __final_text: "依据[知识1]，未知。",
+    });
+  });
+
   it("labels streamed text as a delta instead of guessing from its prefix", () => {
     expect(buildJiuwenTextDelta("#")).toEqual({
       __text_mode: "delta",

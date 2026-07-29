@@ -29,6 +29,7 @@ import {
   type JiuwenSessionArtifactFile,
 } from "./jiuwen-session-artifacts";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
+import { validateKnowledgeCitations } from "@shared/knowledge-citations";
 
 export { bumpSessionEpoch } from "./helpers";
 export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
@@ -959,6 +960,9 @@ export async function forwardToJiuwenClaw(
 
   if (opts.model) writeData({ __model_selected: opts.model });
   if (opts.knowledgeSources?.length) writeData({ __knowledge_sources: opts.knowledgeSources });
+  const knowledgeCitationIndexes = (opts.knowledgeSources || [])
+    .map((source) => Number(source?.index || 0))
+    .filter((index) => Number.isInteger(index) && index > 0);
 
   const wsUrl = String(process.env.JIUWENCLAW_AGENTSERVER_WS_URL || DEFAULT_AGENTSERVER_WS_URL);
   const serviceId = buildJiuwenServiceId();
@@ -1136,6 +1140,11 @@ export async function forwardToJiuwenClaw(
           logEnd("chat_stream_artifact_manifest_failed", { error: String(error?.message || error).slice(0, 500) });
         }
       }
+      const validatedAssistantText = validateKnowledgeCitations(memoryAssistantText, knowledgeCitationIndexes).text;
+      if (validatedAssistantText && validatedAssistantText !== memoryAssistantText) {
+        writeData({ __final_text: validatedAssistantText });
+      }
+      memoryAssistantText = validatedAssistantText;
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
       if (sawText && memoryAssistantText.trim()) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
@@ -1259,7 +1268,7 @@ export async function forwardToJiuwenClaw(
             if (text && !sawText) {
               writeTextDelta(text);
             }
-            const finalSnapshot = buildJiuwenFinalSnapshot(text, workspaceDir);
+            const finalSnapshot = buildJiuwenFinalSnapshot(text, workspaceDir, knowledgeCitationIndexes);
             if (finalSnapshot) writeData(finalSnapshot);
             completeSoon(ws);
             return;

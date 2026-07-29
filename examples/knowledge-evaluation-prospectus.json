@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "name": "长文档页码检索基线",
+  "cases": [
+    {
+      "id": "prospectus-core-business",
+      "query": "长鑫科技的主营业务和业务定位是什么？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [117],
+      "expectedPositions": ["主营业务"],
+      "tags": ["long_document", "business"]
+    },
+    {
+      "id": "prospectus-products",
+      "query": "长鑫科技有哪些主要产品系列和产品形态？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [25, 117, 118],
+      "expectedPositions": ["主要产品"],
+      "tags": ["long_document", "product"]
+    },
+    {
+      "id": "prospectus-market-share",
+      "query": "长鑫科技在全球 DRAM 市场的竞争地位和市场份额是多少？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [27, 139, 148],
+      "expectedPositions": ["竞争情况", "行业地位"],
+      "tags": ["long_document", "market"]
+    },
+    {
+      "id": "prospectus-risk-overview",
+      "query": "招股书披露了哪些与发行人相关的主要风险？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [32],
+      "expectedPositions": ["风险因素"],
+      "tags": ["long_document", "risk"]
+    },
+    {
+      "id": "prospectus-talent-risk",
+      "query": "长鑫科技为什么存在人才短缺或流失风险？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [32],
+      "expectedPositions": ["人才短缺或流失"],
+      "tags": ["long_document", "risk"]
+    },
+    {
+      "id": "prospectus-idm",
+      "query": "长鑫科技采用什么经营模式，IDM 模式有哪些特点？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [125],
+      "expectedPositions": ["主要经营模式"],
+      "tags": ["long_document", "business"]
+    },
+    {
+      "id": "prospectus-customer-ecosystem",
+      "query": "长鑫科技与哪些核心客户和产业链伙伴合作？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [117, 118, 151],
+      "tags": ["long_document", "customer"]
+    },
+    {
+      "id": "prospectus-capacity",
+      "query": "长鑫科技的晶圆厂分布和产能排名如何？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [5, 27, 117],
+      "tags": ["long_document", "capacity"]
+    },
+    {
+      "id": "prospectus-profit-sensitivity",
+      "query": "长鑫科技盈利年度的敏感性分析考虑了哪些因素？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [235],
+      "expectedPositions": ["敏感性分析"],
+      "tags": ["long_document", "financial"]
+    },
+    {
+      "id": "prospectus-intellectual-property",
+      "query": "长鑫科技的专利和知识产权储备情况如何？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [117, 118, 352, 355],
+      "matchMode": "any",
+      "tags": ["long_document", "technology"]
+    },
+    {
+      "id": "prospectus-governance",
+      "query": "长鑫科技是否存在控股股东或实际控制人？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [20, 82, 281],
+      "tags": ["long_document", "governance"]
+    },
+    {
+      "id": "prospectus-technology-evolution",
+      "query": "长鑫科技的工艺平台和 DRAM 产品如何迭代？",
+      "expectedDocuments": ["长鑫科技招股书.pdf"],
+      "expectedPages": [117],
+      "tags": ["long_document", "technology"]
+    }
+  ]
+}

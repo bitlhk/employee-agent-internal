@@ -5,8 +5,20 @@ import { describe, expect, it } from "vitest";
 Object.assign(globalThis, { React });
 const { ChatMarkdown } = await import("./ChatMarkdown");
 
-function render(content: string, phase: "streaming" | "final" = "final", knowledgeSourceIndexes: number[] = []) {
-  return renderToStaticMarkup(React.createElement(ChatMarkdown, { content, phase, knowledgeSourceIndexes }));
+function render(
+  content: string,
+  phase: "streaming" | "final" = "final",
+  knowledgeSourceIndexes: number[] = [],
+  knowledgeCitationLabels: Record<number, string> = {},
+  knowledgeCitationUrls: Record<number, string> = {},
+) {
+  return renderToStaticMarkup(React.createElement(ChatMarkdown, {
+    content,
+    phase,
+    knowledgeSourceIndexes,
+    knowledgeCitationLabels,
+    knowledgeCitationUrls,
+  }));
 }
 
 describe("ChatMarkdown", () => {
@@ -41,5 +53,25 @@ describe("ChatMarkdown", () => {
     expect(html).toContain('href="#ea-knowledge-source-message-1"');
     expect(html).toContain('class="lingxia-md-citation"');
     expect(html).toContain("[知识1]</code>");
+  });
+
+  it("renders citation pages from trusted source metadata", () => {
+    const html = render("市场份额为 7.67%[知识2]。", "final", [2], { 2: "第 27 页" });
+    expect(html).toContain("[2 · 第 27 页]");
+    expect(html).toContain('href="#ea-knowledge-source-message-2"');
+  });
+
+  it("opens a trusted knowledge citation at its original document page", () => {
+    const href = "/api/knowledge/documents/doc_123/content?adoptId=lgj_test&knowledgeBaseId=kb_test#page=27";
+    const html = render("市场份额为 7.67%[知识2]。", "final", [2], { 2: "第 27 页" }, { 2: href });
+    expect(html).toContain(`href="${href.replaceAll("&", "&amp;")}"`);
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('class="lingxia-md-citation"');
+  });
+
+  it("normalizes an unbracketed table source into a clickable citation", () => {
+    const html = render("| 风险 | 来源 |\n|---|---|\n| 毛利率波动 | 知识3 |", "final", [3], { 3: "第 33 页" });
+    expect(html).toContain("[3 · 第 33 页]");
+    expect(html).toContain('href="#ea-knowledge-source-message-3"');
   });
 });

@@ -32,7 +32,8 @@ function normalizeSafeHref(href?: string): string | undefined {
   if (!href) return undefined;
   if (href.startsWith("#")) return href;
   try {
-    const parsed = new URL(href, window.location.origin);
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://localhost";
+    const parsed = new URL(href, origin);
     if (parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "mailto:") {
       return href;
     }
@@ -108,14 +109,29 @@ type Props = {
   content: string;
   phase?: "streaming" | "final";
   knowledgeSourceIndexes?: number[];
+  knowledgeCitationLabels?: Record<number, string>;
+  knowledgeCitationUrls?: Record<number, string>;
   knowledgeCitationScope?: string;
+  onOpenKnowledgeCitation?: (index: number) => void;
 };
 
 function normalizeCitationScope(value: string): string {
   return String(value || "message").replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 80) || "message";
 }
 
-function createKnowledgeCitationPlugin(indexes: number[], scope: string) {
+function citationLabelKey(labels: Record<number, string> | undefined): string {
+  return Object.entries(labels || {})
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([index, label]) => `${index}:${label}`)
+    .join("|");
+}
+
+function createKnowledgeCitationPlugin(
+  indexes: number[],
+  labels: Record<number, string>,
+  urls: Record<number, string>,
+  scope: string,
+) {
   const available = new Set(indexes.filter((index) => Number.isInteger(index) && index > 0));
   const anchorScope = normalizeCitationScope(scope);
   return () => (tree: any) => {
@@ -130,17 +146,17 @@ function createKnowledgeCitationPlugin(indexes: number[], scope: string) {
           next.push(child);
           continue;
         }
-        const pattern = /\[知识(\d+)\]/g;
+        const pattern = /\[知识(\d+)\]|知识(\d+)/g;
         let cursor = 0;
         let match: RegExpExecArray | null;
         while ((match = pattern.exec(child.value))) {
-          const index = Number(match[1]);
+          const index = Number(match[1] || match[2]);
           if (!available.has(index)) continue;
           if (match.index > cursor) next.push({ type: "text", value: child.value.slice(cursor, match.index) });
           next.push({
             type: "link",
-            url: `#ea-knowledge-source-${anchorScope}-${index}`,
-            children: [{ type: "text", value: `[${index}]` }],
+            url: urls[index] || `#ea-knowledge-source-${anchorScope}-${index}`,
+            children: [{ type: "text", value: `[${index}${labels[index] ? ` · ${labels[index]}` : ""}]` }],
           });
           cursor = match.index + match[0].length;
         }
@@ -157,19 +173,26 @@ function ChatMarkdownInner({
   content,
   phase = "final",
   knowledgeSourceIndexes = [],
+  knowledgeCitationLabels = {},
+  knowledgeCitationUrls = {},
   knowledgeCitationScope = "message",
+  onOpenKnowledgeCitation,
 }: Props) {
   const renderStartRef = useRef(0);
   if (typeof performance !== "undefined") renderStartRef.current = performance.now();
   const markdownSource = phase === "streaming" ? stabilizeStreamingMarkdown(content) : content;
   const knowledgeSourceKey = knowledgeSourceIndexes.join(",");
+  const knowledgeLabelKey = citationLabelKey(knowledgeCitationLabels);
+  const knowledgeUrlKey = citationLabelKey(knowledgeCitationUrls);
   const normalizedCitationScope = normalizeCitationScope(knowledgeCitationScope);
   const knowledgeCitationPlugin = useMemo(
     () => createKnowledgeCitationPlugin(
       knowledgeSourceKey.split(",").map(Number).filter((index) => Number.isInteger(index) && index > 0),
+      knowledgeCitationLabels,
+      knowledgeCitationUrls,
       normalizedCitationScope,
     ),
-    [knowledgeSourceKey, normalizedCitationScope],
+    [knowledgeSourceKey, knowledgeLabelKey, knowledgeUrlKey, normalizedCitationScope],
   );
   useLayoutEffect(() => {
     try {
@@ -252,13 +275,24 @@ function ChatMarkdownInner({
               return <span className="lingxia-md-link" title="链接协议不受支持">{children}</span>;
             }
             const isHash = safeHref.startsWith("#");
-            const isKnowledgeCitation = safeHref.startsWith("#ea-knowledge-source-");
+            const isKnowledgeCitation = safeHref.startsWith("#ea-knowledge-source-")
+              || safeHref.startsWith("/api/knowledge/documents/");
+            const citationIndex = isKnowledgeCitation
+              ? Number(Object.entries(knowledgeCitationUrls).find(([, url]) => url === safeHref)?.[0]
+                || safeHref.match(/-(\d+)$/)?.[1]
+                || 0)
+              : 0;
+            const opensCitationPanel = citationIndex > 0 && Boolean(onOpenKnowledgeCitation);
             return (
               <a
                 href={safeHref}
-                target={isHash ? undefined : "_blank"}
-                rel={isHash ? undefined : "noopener noreferrer"}
+                target={isHash || opensCitationPanel ? undefined : "_blank"}
+                rel={isHash || opensCitationPanel ? undefined : "noopener noreferrer"}
                 className={isKnowledgeCitation ? "lingxia-md-citation" : "lingxia-md-link"}
+                onClick={opensCitationPanel ? (event) => {
+                  event.preventDefault();
+                  onOpenKnowledgeCitation?.(citationIndex);
+                } : undefined}
               >
                 {children}
               </a>
@@ -296,5 +330,8 @@ export const ChatMarkdown = memo(ChatMarkdownInner, (prev, next) => (
   prev.content === next.content &&
   prev.phase === next.phase &&
   (prev.knowledgeSourceIndexes || []).join(",") === (next.knowledgeSourceIndexes || []).join(",") &&
-  prev.knowledgeCitationScope === next.knowledgeCitationScope
+  citationLabelKey(prev.knowledgeCitationLabels) === citationLabelKey(next.knowledgeCitationLabels) &&
+  citationLabelKey(prev.knowledgeCitationUrls) === citationLabelKey(next.knowledgeCitationUrls) &&
+  prev.knowledgeCitationScope === next.knowledgeCitationScope &&
+  prev.onOpenKnowledgeCitation === next.onOpenKnowledgeCitation
 ));

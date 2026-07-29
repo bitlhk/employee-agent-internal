@@ -70,6 +70,15 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual(hit["authority"], "official")
         self.assertIn("800", hit["text"])
 
+        locator = service._citation_locator(service.CitationRequest(
+            knowledge_base_id="kb_testbase1",
+            document_id=hit["document_id"],
+            chunk_id=hit["chunk_id"],
+            parent_id=hit["parent_id"],
+        ))
+        self.assertEqual(locator["heading_path"], ["差旅制度", "住宿标准"])
+        self.assertIn("800", locator["matched_text"])
+
     def test_version_switch_keeps_two_rollback_indexes(self):
         document = self.document()
         first = service._build_index(service.IndexRequest(knowledge_base_id="kb_testbase1", documents=[document]))
@@ -117,6 +126,34 @@ class KnowledgeServiceTest(unittest.TestCase):
             service._rerank_url = original_url
             os.environ.pop("KNOWLEDGE_RERANK_API_KEY", None)
             os.environ.pop("KNOWLEDGE_RERANK_MODEL", None)
+
+    def test_navigation_only_text_does_not_hide_substantive_paragraphs(self):
+        self.assertTrue(service._navigation_only_text(
+            "详见本招股说明书第二节概览之重大事项提示。"
+        ))
+        self.assertTrue(service._navigation_only_text(
+            "公司提醒投资者特别关注下列风险，并认真阅读第三节风险因素中的全部内容。"
+        ))
+        self.assertTrue(service._navigation_only_text(
+            "投资者在评价公司股票价值时，应该特别关注下述各项风险因素。"
+        ))
+        self.assertFalse(service._navigation_only_text(
+            "报告期毛利率分别为 5% 和 12%，价格波动可能影响盈利能力，具体参见财务章节。"
+        ))
+
+    def test_query_heading_anchor_prefers_the_requested_section(self):
+        self.assertFalse(service._heading_anchor_mismatch(
+            "某公司 风险因素 主要经营风险",
+            {"heading_path": ["第三节 风险因素", "人才流失风险"], "position": "第 32 页"},
+        ))
+        self.assertTrue(service._heading_anchor_mismatch(
+            "某公司 风险因素 主要经营风险",
+            {"heading_path": ["第一节 释义"], "position": "一般释义"},
+        ))
+        self.assertFalse(service._heading_anchor_mismatch(
+            "某制度 风险因素",
+            {"heading_path": [], "position": "正文"},
+        ))
 
 
 if __name__ == "__main__":

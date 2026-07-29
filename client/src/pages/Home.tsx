@@ -38,6 +38,7 @@ import { TopBar } from "@/components/console/TopBar";
 import { MainPanel } from "@/components/console/MainPanel";
 import { ChatPage } from "@/components/pages/ChatPage";
 import { WorkspaceBrowser } from "@/components/pages/WorkspacePage";
+import { KnowledgeCitationPanel } from "@/components/KnowledgeCitationPanel";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
 import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
@@ -872,6 +873,7 @@ export default function Home() {
     artifacts: AgentArtifactView[];
     initialArtifactId?: string;
   } | null>(null);
+  const [knowledgeCitationPanel, setKnowledgeCitationPanel] = useState<ChatKnowledgeSource | null>(null);
   const [workspacePanelWidth, setWorkspacePanelWidth] = useState(initialWorkspacePanelWidth);
   const [workspacePanelResizing, setWorkspacePanelResizing] = useState(false);
   const workbenchContentRef = useRef<HTMLDivElement | null>(null);
@@ -999,18 +1001,19 @@ export default function Home() {
     } catch {}
   }, [workspacePanelWidth]);
 
-  const sidePanelOpen = activePage === "chat" && (workspacePanelOpen || Boolean(artifactPanel));
+  const sidePanelOpen = activePage === "chat" && (workspacePanelOpen || Boolean(artifactPanel) || Boolean(knowledgeCitationPanel));
 
   useEffect(() => {
     if (!sidePanelOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       if (artifactPanel) setArtifactPanel(null);
+      else if (knowledgeCitationPanel) setKnowledgeCitationPanel(null);
       else setWorkspacePanelOpen(false);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [artifactPanel, sidePanelOpen]);
+  }, [artifactPanel, knowledgeCitationPanel, sidePanelOpen]);
 
   useEffect(() => {
     const media = window.matchMedia("(max-width: 768px)");
@@ -1081,7 +1084,15 @@ export default function Home() {
   const openAgentArtifactPanel = useCallback((artifacts: AgentArtifactView[], initialArtifactId?: string) => {
     if (artifacts.length === 0) return;
     setWorkspacePanelOpen(false);
+    setKnowledgeCitationPanel(null);
     setArtifactPanel({ artifacts, initialArtifactId });
+  }, []);
+
+  const openKnowledgeCitationPanel = useCallback((source: ChatKnowledgeSource) => {
+    if (!source.chunkId || !source.parentId) return;
+    setWorkspacePanelOpen(false);
+    setArtifactPanel(null);
+    setKnowledgeCitationPanel(source);
   }, []);
 
   const selectWorkbenchPage = (page: PageKey) => {
@@ -1091,6 +1102,7 @@ export default function Home() {
     if (page !== "chat") {
       setWorkspacePanelOpen(false);
       setArtifactPanel(null);
+      setKnowledgeCitationPanel(null);
     }
   };
   const handleWorkbenchLogout = async () => {
@@ -3436,11 +3448,18 @@ export default function Home() {
       if (!Array.isArray(value)) return;
       const sources = value.map((source: any) => ({
         index: Number(source?.index || 0),
+        chunkId: String(source?.chunkId || ""),
+        parentId: String(source?.parentId || ""),
         knowledgeBaseId: String(source?.knowledgeBaseId || ""),
         knowledgeBaseName: String(source?.knowledgeBaseName || ""),
         documentId: String(source?.documentId || ""),
         documentName: String(source?.documentName || ""),
+        documentVersion: String(source?.documentVersion || "1.0"),
         position: String(source?.position || "正文"),
+        headingPath: Array.isArray(source?.headingPath) ? source.headingPath.map(String) : [],
+        page: source?.page == null ? null : Number(source.page),
+        sourceDepartment: String(source?.sourceDepartment || ""),
+        authority: String(source?.authority || "reference"),
       })).filter((source: ChatKnowledgeSource) => (
         source.index > 0 && source.knowledgeBaseId && source.documentId && source.documentName
       )).slice(0, 12);
@@ -4804,6 +4823,7 @@ export default function Home() {
                     className={`workbench-workspace-trigger ${workspacePanelOpen ? "is-active" : ""}`}
                     onClick={() => {
                       setArtifactPanel(null);
+                      setKnowledgeCitationPanel(null);
                       setWorkspacePanelOpen((open) => !open);
                     }}
                     title={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
@@ -4829,6 +4849,7 @@ export default function Home() {
               className={`workbench-workspace-trigger workbench-workspace-trigger--floating ${workspacePanelOpen ? "is-active" : ""}`}
               onClick={() => {
                 setArtifactPanel(null);
+                setKnowledgeCitationPanel(null);
                 setWorkspacePanelOpen((open) => !open);
               }}
               title={workspacePanelOpen ? "关闭工作空间" : "打开工作空间"}
@@ -4937,6 +4958,7 @@ export default function Home() {
                   >
                   <ChatMessage
                     messageId={m.id}
+                    adoptId={resolvedAdoptId}
                     role={m.role as "user" | "assistant"}
                     text={m.text}
                     status={m.status}
@@ -4964,6 +4986,7 @@ export default function Home() {
                       ? (memoryId) => forgetMemoryMutation.mutateAsync({ adoptId: resolvedAdoptId, id: memoryId }).then(() => undefined)
                       : undefined}
                     onCaptureKnowledge={m.role === "assistant" ? openChatKnowledgeCapture : undefined}
+                    onOpenKnowledgeSource={m.role === "assistant" ? openKnowledgeCitationPanel : undefined}
                     jiuwenPermission={m.role === "assistant" ? (m as LxMsg).jiuwenPermission : undefined}
                     onJiuwenPermissionAnswer={(permission, action) => void handleJiuwenPermissionAnswer(m.id, permission, action)}
                     onOpenAgentArtifact={openAgentArtifactPanel}
@@ -5675,6 +5698,12 @@ export default function Home() {
                 artifacts={artifactPanel.artifacts}
                 initialArtifactId={artifactPanel.initialArtifactId}
                 onClose={() => setArtifactPanel(null)}
+              />
+            ) : knowledgeCitationPanel ? (
+              <KnowledgeCitationPanel
+                adoptId={resolvedAdoptId || ""}
+                source={knowledgeCitationPanel}
+                onClose={() => setKnowledgeCitationPanel(null)}
               />
             ) : (
               <WorkspaceBrowser

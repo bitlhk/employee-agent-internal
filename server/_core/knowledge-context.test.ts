@@ -76,6 +76,14 @@ describe("knowledge chat context", () => {
     expect(result.context).toContain("不可信数据");
     expect(result.context).toContain("[知识1]");
     expect(result.context).toContain("差旅制度.pdf · 第 3 页");
+    expect(result.context).toContain("统计期间、单位和口径");
+    expect(result.context).toContain("资料发布方预计");
+    expect(result.context).toContain("不得扩写成资料未提供");
+    expect(result.context).toContain("转换与创作任务");
+    expect(result.context).toContain("不强制在交付正文的每段插入引用");
+    expect(result.context).toContain("至少 3 个可按相同指标和口径比较");
+    expect(result.context).toContain("必须静默完成证据自检");
+    expect(result.context).toContain("至少两个可比期间");
     expect(result.sources[0].text).toContain("六百元");
   });
 
@@ -159,6 +167,7 @@ describe("knowledge chat context", () => {
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].text).toContain("第一段来源说明");
     expect(result.sources[0].text).toContain("第二段来源说明");
+    expect(result.context).toContain("不得引用“此前检索、先前回答、历史对话中看到过”的事实");
   });
 
   it("does not return retrieved passages to the browser source metadata", async () => {
@@ -171,6 +180,8 @@ describe("knowledge chat context", () => {
 
     expect(publicChatKnowledgeSources(result.sources)).toEqual([{
       index: 1,
+      chunkId: "doc_policy001:1",
+      parentId: "doc_policy001:1",
       knowledgeBaseId: readyBase.publicId,
       knowledgeBaseName: "制度库",
       documentId: "doc_policy001",

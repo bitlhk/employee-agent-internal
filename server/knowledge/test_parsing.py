@@ -3,7 +3,7 @@ import tempfile
 import unittest
 import zipfile
 
-from parsing import read_segments
+from parsing import _pdf_segments_from_pages, read_segments
 
 
 class KnowledgeParsingTest(unittest.TestCase):
@@ -40,6 +40,20 @@ class KnowledgeParsingTest(unittest.TestCase):
                 archive.writestr("../escape.xml", "unsafe")
             with self.assertRaisesRegex(ValueError, "unsafe path"):
                 read_segments(source)
+
+    def test_pdf_removes_repeated_boundaries_and_preserves_heading_and_table_structure(self):
+        pages = [
+            "公司名称  内部制度\n第一章 总则\n适用所有员工。\n城市    标准    币种\n上海    800     CNY\n1-1-1",
+            "公司名称  内部制度\n第二章 审批\n超出标准需要审批。\n岗位    一级    二级\n员工    经理    财务\n1-1-2",
+            "公司名称  内部制度\n第三章 附则\n本制度自发布日起实施。\n项目    时限    责任人\n报销    30天    员工\n1-1-3",
+        ]
+
+        segments = _pdf_segments_from_pages(pages)
+
+        self.assertFalse(any("公司名称" in segment.text for segment in segments))
+        self.assertFalse(any("1-1-" in segment.text for segment in segments))
+        self.assertTrue(any(segment.heading_path == ("第一章 总则",) for segment in segments))
+        self.assertTrue(any(segment.content_type == "table" and "城市 | 标准 | 币种" in segment.text for segment in segments))
 
 
 if __name__ == "__main__":

@@ -274,7 +274,7 @@ export function KnowledgePage({ adoptId }: { adoptId: string }) {
               {selectedDocument ? (
                 <>
                   <div className="knowledge-preview__head"><div><FileText /><span>{selectedDocument.name}</span></div><a href={`${contentUrl}&download=1`}><Download />下载</a></div>
-                  {previewable ? <iframe src={contentUrl} title={selectedDocument.name} sandbox="" /> : <div className="knowledge-preview__empty"><FileTypeIcon name={selectedDocument.name} /><strong>该格式暂不支持网页预览</strong><span>文档已经参与知识检索，可以下载后查看原文件。</span><a href={`${contentUrl}&download=1`}><Download />下载文档</a></div>}
+                  {previewable ? <iframe src={contentUrl} title={selectedDocument.name} sandbox={selectedDocument.extension === "pdf" ? undefined : ""} /> : <div className="knowledge-preview__empty"><FileTypeIcon name={selectedDocument.name} /><strong>该格式暂不支持网页预览</strong><span>文档已经参与知识检索，可以下载后查看原文件。</span><a href={`${contentUrl}&download=1`}><Download />下载文档</a></div>}
                 </>
               ) : <div className="knowledge-preview__empty"><FileText /><strong>选择一份文档</strong><span>可在这里预览原文和核对知识来源。</span></div>}
             </section>

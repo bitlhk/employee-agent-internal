@@ -1,4 +1,5 @@
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
+import { validateKnowledgeCitations } from "@shared/knowledge-citations";
 
 export function buildJiuwenTextDelta(content: string) {
   return {
@@ -7,7 +8,12 @@ export function buildJiuwenTextDelta(content: string) {
   };
 }
 
-export function buildJiuwenFinalSnapshot(text: string, workspaceDir: string): { __final_text: string } | null {
-  const finalText = sanitizePublicRuntimePaths(String(text || ""), workspaceDir);
+export function buildJiuwenFinalSnapshot(
+  text: string,
+  workspaceDir: string,
+  allowedKnowledgeIndexes: Iterable<number> = [],
+): { __final_text: string } | null {
+  const publicText = sanitizePublicRuntimePaths(String(text || ""), workspaceDir);
+  const finalText = validateKnowledgeCitations(publicText, allowedKnowledgeIndexes).text;
   return finalText ? { __final_text: finalText } : null;
 }

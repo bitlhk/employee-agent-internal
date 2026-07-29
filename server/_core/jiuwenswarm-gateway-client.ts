@@ -26,6 +26,7 @@ import { appendLogAsync, JIUWENCLAW_HOME, jiuwenClawSessionsDir, resolveRuntimeW
 import { privateMessageLogFields } from "./log-privacy";
 import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
+import { validateKnowledgeCitations } from "@shared/knowledge-citations";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
@@ -184,6 +185,7 @@ async function handleGatewayEvent(args: {
   workspaceDir: string;
   collectText?: (text: string) => void;
   collectFiles?: (files: JiuwenSessionArtifactFile[]) => void;
+  knowledgeCitationIndexes?: number[];
 }): Promise<"permission" | "done" | "continue"> {
   const { eventType, payload } = args;
   const text = gatewayEventToText(eventType, payload);
@@ -194,7 +196,11 @@ async function handleGatewayEvent(args: {
   }
 
   if (eventType === "chat.final") {
-    const finalSnapshot = buildJiuwenFinalSnapshot(String(payload.content || ""), args.workspaceDir);
+    const finalSnapshot = buildJiuwenFinalSnapshot(
+      String(payload.content || ""),
+      args.workspaceDir,
+      args.knowledgeCitationIndexes,
+    );
     if (finalSnapshot && args.res) writeSseData(args.res, finalSnapshot);
   }
 
@@ -322,6 +328,9 @@ export async function forwardToJiuwenGateway(
     runtimeMode: opts.runtimeMode,
     selectedSkills: opts.selectedSkills,
   });
+  const knowledgeCitationIndexes = (opts.knowledgeSources || [])
+    .map((source) => Number(source?.index || 0))
+    .filter((index) => Number.isInteger(index) && index > 0);
 
   writeSseData(res, {
     __run: buildJiuwenRunDescriptor({
@@ -395,7 +404,12 @@ export async function forwardToJiuwenGateway(
         requestId,
         reason,
       });
-      const assistantMessage = finalAssistantText.trim() || memoryAssistantText.trim();
+      const rawAssistantMessage = finalAssistantText.trim() || memoryAssistantText.trim();
+      const validatedAssistantMessage = validateKnowledgeCitations(rawAssistantMessage, knowledgeCitationIndexes).text;
+      if (reason === "done" && validatedAssistantMessage && validatedAssistantMessage !== rawAssistantMessage && !clientClosed) {
+        writeSseData(res, { __final_text: validatedAssistantMessage });
+      }
+      const assistantMessage = validatedAssistantMessage;
       if (reason === "done" && assistantMessage) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
           userId: claw.userId,
@@ -448,7 +462,10 @@ export async function forwardToJiuwenGateway(
         writeSseData(res, { __stream_error: true, error: String(payload.error || payload.message || "JiuwenSwarm gateway 返回错误") });
       }
       if (eventType === "chat.final" && String(payload.content || "").trim()) {
-        finalAssistantText = sanitizePublicRuntimePaths(String(payload.content || ""), workspaceDir);
+        finalAssistantText = validateKnowledgeCitations(
+          sanitizePublicRuntimePaths(String(payload.content || ""), workspaceDir),
+          knowledgeCitationIndexes,
+        ).text;
       }
       const memoryTool = normalizeJiuwenToolPayload(eventType, payload);
       if (memoryTool?.toolName) memoryToolNames.add(memoryTool.toolName);
@@ -472,6 +489,7 @@ export async function forwardToJiuwenGateway(
             emittedFilePaths.add(file.path);
           }
         },
+        knowledgeCitationIndexes,
       });
       if (action === "permission") {
         settle("permission-required");

@@ -1959,13 +1959,13 @@
 .lingxia-knowledge-select-item__check { color: var(--primary); font-size: 12px; font-weight: 700; text-align: center; }
 .lingxia-composer-knowledge-chip { max-width: 230px; }
 .lingxia-composer-knowledge-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lingxia-knowledge-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
+.lingxia-knowledge-sources { display: flex; min-width: 0; max-width: 100%; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
 .lingxia-knowledge-sources__label { display: inline-flex; align-items: center; gap: 5px; color: var(--oc-text-tertiary); font-size: 11px; }
 .lingxia-knowledge-sources__label svg { width: 13px; height: 13px; }
-.lingxia-knowledge-source { position: relative; display: inline-flex; max-width: 280px; height: 27px; align-items: center; gap: 6px; padding: 0 9px 0 6px; color: var(--oc-text-secondary); font-size: 11px; background: var(--oc-bg-soft); border: 1px solid var(--oc-border-subtle); border-radius: 7px; }
+.lingxia-knowledge-source { position: relative; display: inline-flex; min-width: 0; max-width: min(100%, 520px); height: 27px; align-items: center; gap: 6px; overflow: hidden; padding: 0 9px 0 6px; color: var(--oc-text-secondary); font-size: 11px; text-decoration: none; background: var(--oc-bg-soft); border: 1px solid var(--oc-border-subtle); border-radius: 7px; }
 .lingxia-knowledge-source b { display: inline-flex; min-width: 16px; height: 16px; align-items: center; justify-content: center; padding: 0 3px; color: var(--oc-text-primary); font-size: 9px; font-weight: 600; background: var(--oc-bg-surface); border: 1px solid var(--oc-border-subtle); border-radius: 5px; }
-.lingxia-knowledge-source span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lingxia-knowledge-source small { flex: none; color: var(--oc-text-tertiary); font-size: 10px; }
+.lingxia-knowledge-source span { min-width: 42px; max-width: 145px; overflow: hidden; flex: 0 1 auto; text-overflow: ellipsis; white-space: nowrap; }
+.lingxia-knowledge-source small { min-width: 0; overflow: hidden; flex: 1 1 auto; color: var(--oc-text-tertiary); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .lingxia-knowledge-source__anchor { position: absolute; top: 0; left: 0; width: 1px; height: 1px; pointer-events: none; scroll-margin-top: 72px; }
 
 .coop-refresh-button {
@@ -8584,6 +8584,223 @@ input.session-searchbar__input:focus-visible,
 .agent-artifact-panel__footer button:hover {
   border-color: var(--oc-border-strong);
   background: var(--oc-bg-hover);
+}
+
+/* ── Knowledge citation side panel ── */
+.knowledge-citation-panel {
+  display: flex;
+  width: 100%;
+  min-width: 320px;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--oc-bg-surface);
+}
+.knowledge-citation-panel__header {
+  display: flex;
+  min-height: 54px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px 9px 14px;
+  border-bottom: 1px solid var(--oc-border);
+}
+.knowledge-citation-panel__header > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.knowledge-citation-panel__header strong {
+  color: var(--oc-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.knowledge-citation-panel__header span {
+  overflow: hidden;
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.knowledge-citation-panel__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+.knowledge-citation-panel__actions a,
+.knowledge-citation-panel__actions button,
+.knowledge-citation-pdf__toolbar button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  outline: 0;
+  background: transparent;
+  color: var(--oc-text-secondary);
+  cursor: pointer;
+}
+.knowledge-citation-panel__actions a:hover,
+.knowledge-citation-panel__actions button:hover,
+.knowledge-citation-pdf__toolbar button:hover:not(:disabled) {
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-primary);
+}
+.knowledge-citation-panel__actions a:focus-visible,
+.knowledge-citation-panel__actions button:focus-visible,
+.knowledge-citation-pdf__toolbar button:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--oc-border);
+}
+.knowledge-citation-panel__actions svg,
+.knowledge-citation-pdf__toolbar svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.7;
+}
+.knowledge-citation-panel__meta {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  border-bottom: 1px solid var(--oc-border-subtle);
+}
+.knowledge-citation-panel__meta svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  stroke-width: 1.7;
+}
+.knowledge-citation-panel__meta span {
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.knowledge-citation-panel__meta b {
+  flex: 0 0 auto;
+  color: var(--oc-text-secondary);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.knowledge-citation-panel__state {
+  display: flex;
+  min-height: 160px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--oc-text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+.knowledge-citation-panel__state svg { width: 18px; height: 18px; }
+.knowledge-citation-panel__state.is-error { color: #b91c1c; }
+.knowledge-citation-pdf {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+.knowledge-citation-pdf__toolbar {
+  display: flex;
+  min-height: 38px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: color-mix(in oklab, var(--oc-bg-page) 72%, var(--oc-bg-surface));
+  border-bottom: 1px solid var(--oc-border-subtle);
+}
+.knowledge-citation-pdf__toolbar span {
+  min-width: 112px;
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  text-align: center;
+}
+.knowledge-citation-pdf__toolbar button:disabled { cursor: default; opacity: 0.35; }
+.knowledge-citation-pdf__scroll {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  padding: 14px;
+  background: color-mix(in oklab, var(--oc-bg-page) 88%, #d9d9d5);
+}
+.knowledge-citation-pdf__scroll > .knowledge-citation-panel__state {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  min-height: 0;
+  background: color-mix(in oklab, var(--oc-bg-page) 88%, transparent);
+}
+.knowledge-citation-pdf__page {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.11);
+}
+.knowledge-citation-pdf__page canvas { display: block; }
+.knowledge-citation-pdf__highlights {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+}
+.knowledge-citation-pdf__highlights i {
+  position: absolute;
+  display: block;
+  transform-origin: left bottom;
+  background: rgba(250, 204, 21, 0.34);
+  border: 1px solid rgba(202, 138, 4, 0.22);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+}
+.knowledge-citation-panel__text {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.knowledge-citation-panel__text blockquote {
+  margin: 12px;
+  padding: 10px 12px;
+  color: var(--oc-text-primary);
+  font-size: 12px;
+  line-height: 1.65;
+  background: color-mix(in oklab, #facc15 12%, var(--oc-bg-soft));
+  border-left: 3px solid color-mix(in oklab, #ca8a04 58%, transparent);
+  border-radius: 6px;
+}
+.knowledge-citation-panel__text pre {
+  min-height: 0;
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  color: var(--oc-text-primary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+@media (max-width: 1100px) {
+  .knowledge-citation-panel { min-width: 0; }
+}
+@media (max-width: 640px) {
+  .knowledge-citation-pdf__scroll { padding: 8px; }
 }
 
 /* ── Markdown Typography Final ── */

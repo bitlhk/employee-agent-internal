@@ -60,7 +60,131 @@
       "id": "approval-directory",
       "query": "超过一万元的差旅需要哪些岗位审批？",
       "expectedDocuments": ["10-审批职责与内部服务目录.md", "01-差旅与费用报销管理办法.md"],
-      "tags": ["table", "cross_document"]
+      "matchMode": "all",
+      "tags": ["table", "cross_document", "general_assistant"]
+    },
+    {
+      "id": "travel-long-rail",
+      "query": "部门负责人连续乘高铁超过六小时，可以申请一等座吗？",
+      "expectedDocuments": ["01-差旅与费用报销管理办法.md"],
+      "tags": ["policy", "exception", "general_assistant"]
+    },
+    {
+      "id": "travel-hosted-hotel",
+      "query": "会议主办方已经承担住宿费，员工还能再次报销酒店吗？",
+      "expectedDocuments": ["01-差旅与费用报销管理办法.md"],
+      "tags": ["policy", "exact_rule", "general_assistant"]
+    },
+    {
+      "id": "travel-manager-hangzhou",
+      "query": "部门负责人去杭州出差，住宿上限是多少？",
+      "expectedDocuments": ["02-差旅住宿与交通标准.csv"],
+      "tags": ["table", "exact_rule", "general_assistant"]
+    },
+    {
+      "id": "travel-meal-deduction",
+      "query": "接待单位提供午餐后，差旅伙食补助应扣减多少？",
+      "expectedDocuments": ["01-差旅与费用报销管理办法.md"],
+      "tags": ["policy", "exact_rule", "general_assistant"]
+    },
+    {
+      "id": "invoice-wrong-title",
+      "query": "电子发票抬头错误能否手工修改后报销？",
+      "expectedDocuments": ["03-电子发票与报销附件指引.md"],
+      "tags": ["policy", "exact_rule", "review_specialist"]
+    },
+    {
+      "id": "invoice-large-personal-payment",
+      "query": "超过五千元的非紧急采购可以由员工个人先付款吗？",
+      "expectedDocuments": ["03-电子发票与报销附件指引.md"],
+      "tags": ["policy", "exception", "review_specialist"]
+    },
+    {
+      "id": "wealth-assessment-validity",
+      "query": "财富客户风险测评的有效期是多久？",
+      "expectedDocuments": ["04-财富客户适当性与产品销售指引.md"],
+      "tags": ["financial", "exact_rule", "wealth_manager"]
+    },
+    {
+      "id": "wealth-enhanced-disclosure",
+      "query": "销售 R4、R5 产品需要完成哪些增强留痕？",
+      "expectedDocuments": ["04-财富客户适当性与产品销售指引.md", "10-审批职责与内部服务目录.md"],
+      "matchMode": "all",
+      "tags": ["financial", "cross_document", "wealth_manager"]
+    },
+    {
+      "id": "wealth-prohibited-wording",
+      "query": "向客户介绍产品时能否使用保本、零风险或稳赚？",
+      "expectedDocuments": ["04-财富客户适当性与产品销售指引.md"],
+      "tags": ["financial", "compliance", "wealth_manager"]
+    },
+    {
+      "id": "aml-enhanced-due-diligence",
+      "query": "高风险客户的强化尽调通常包括哪些措施？",
+      "expectedDocuments": ["05-反洗钱客户尽职调查操作指引.md"],
+      "tags": ["financial", "compliance", "review_specialist"]
+    },
+    {
+      "id": "aml-escalation-timing",
+      "query": "一线人员发现反洗钱风险信号后多久提交，主管多久复核？",
+      "expectedDocuments": ["05-反洗钱客户尽职调查操作指引.md"],
+      "tags": ["financial", "exact_rule", "review_specialist"]
+    },
+    {
+      "id": "aml-refused-identity",
+      "query": "客户拒绝提供必要身份材料时还能继续办理业务吗？",
+      "expectedDocuments": ["05-反洗钱客户尽职调查操作指引.md"],
+      "tags": ["financial", "compliance", "review_specialist"]
+    },
+    {
+      "id": "data-l4-egress",
+      "query": "严格机密 L4 客户数据确需交给受托方时需要哪些审批？",
+      "expectedDocuments": ["06-客户信息保护与数据外发规范.md", "10-审批职责与内部服务目录.md"],
+      "matchMode": "all",
+      "tags": ["security", "cross_document", "risk_manager"]
+    },
+    {
+      "id": "data-incident-report",
+      "query": "客户资料误发后应在多久内向谁报告？",
+      "expectedDocuments": ["06-客户信息保护与数据外发规范.md", "10-审批职责与内部服务目录.md"],
+      "matchMode": "all",
+      "tags": ["security", "cross_document", "risk_manager"]
+    },
+    {
+      "id": "risk-collateral-orange",
+      "query": "抵质押物估值下降 25% 以上应触发什么预警？",
+      "expectedDocuments": ["07-贷后风险预警与升级处置.md"],
+      "tags": ["risk", "exact_rule", "risk_manager"]
+    },
+    {
+      "id": "risk-red-meeting",
+      "query": "红色贷后预警要求多长时间内召开处置会议？",
+      "expectedDocuments": ["07-贷后风险预警与升级处置.md"],
+      "tags": ["risk", "exact_rule", "risk_manager"]
+    },
+    {
+      "id": "bond-model-review",
+      "query": "模型生成的债券研究内容可以不经研究人员复核直接发布吗？",
+      "expectedDocuments": ["08-债券报价与投资研究合规规范.md"],
+      "tags": ["investment", "compliance", "investment_analyst"]
+    },
+    {
+      "id": "bond-quote-fields",
+      "query": "对外展示债券报价时应注明哪些信息和报价属性？",
+      "expectedDocuments": ["08-债券报价与投资研究合规规范.md"],
+      "tags": ["investment", "exact_rule", "investment_analyst"]
+    },
+    {
+      "id": "employee-holding-period",
+      "query": "员工买入单只证券后原则上至少持有多少天？",
+      "expectedDocuments": ["09-员工利益冲突与证券投资申报.md"],
+      "tags": ["compliance", "exact_rule", "review_specialist"]
+    },
+    {
+      "id": "employee-gift-limit",
+      "query": "供应商赠送礼品达到什么金额应拒收或上交？",
+      "expectedDocuments": ["09-员工利益冲突与证券投资申报.md"],
+      "tags": ["compliance", "exact_rule", "review_specialist"]
     }
   ]
 }

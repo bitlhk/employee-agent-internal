@@ -117,6 +117,8 @@ describe("ChatMessage tool timeline", () => {
         timeLabel: "09:01",
         knowledgeSources: [1, 2, 3, 4].map((index) => ({
           index,
+          chunkId: `doc-${index}:c1`,
+          parentId: `doc-${index}:p1`,
           knowledgeBaseId: `kb-${index}`,
           knowledgeBaseName: "企业知识",
           documentId: `doc-${index}`,

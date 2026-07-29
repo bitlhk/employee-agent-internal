@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setKnowledgeBaseIndexState: vi.fn(),
   setKnowledgeDocumentState: vi.fn(),
   resolveKnowledgeStoragePath: vi.fn(),
+  callEaAssistantModel: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -25,6 +26,10 @@ vi.mock("../db", () => ({
 vi.mock("./knowledge-storage", () => ({
   knowledgeServiceToken: () => "test-token",
   resolveKnowledgeStoragePath: mocks.resolveKnowledgeStoragePath,
+}));
+
+vi.mock("./ea-assistant-model", () => ({
+  callEaAssistantModel: mocks.callEaAssistantModel,
 }));
 
 import { queueKnowledgeIndex, retrieveAcrossKnowledgeBases } from "./knowledge-service";
@@ -159,5 +164,121 @@ describe("knowledge indexing queue", () => {
       mode: "auto",
       top_k: 4,
     });
+  });
+
+  it("searches the original and decomposed questions in parallel and preserves coverage", async () => {
+    const bases = [{
+      id: 1,
+      publicId: "kb_prospectus1",
+      ownerUserId: 7,
+      ownerGroupId: 0,
+      scope: "personal" as const,
+      isGlobal: false,
+      roleTemplate: null,
+      name: "招股书",
+      description: "",
+      status: "ready" as const,
+      documentCount: 1,
+      chunkCount: 100,
+      lastError: null,
+      indexedAt: null,
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    }];
+    mocks.callEaAssistantModel.mockResolvedValue({
+      content: JSON.stringify({ queries: ["长鑫科技核心业务", "长鑫科技全球竞争地位", "长鑫科技主要经营风险"] }),
+    });
+    const pages = [162, 25, 27, 32];
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      const page = pages[Math.min(fetchMock.mock.calls.length - 1, pages.length - 1)];
+      return new Response(JSON.stringify({
+        ok: true,
+        triggered: true,
+        retrieval: "hybrid",
+        metrics: {
+          knowledge_base_count: 1,
+          bm25_max_score: 2,
+          vector_min_distance: 0.5,
+          reranker: "disabled",
+          cache_hit: false,
+          external_query_allowed: true,
+        },
+        results: [{
+          chunk_id: `doc_a:${page}`,
+          parent_id: `doc_a:page:${page}`,
+          score: 0.03,
+          text: `${body.query}的资料`,
+          knowledge_base_id: bases[0].publicId,
+          document_id: "doc_a",
+          document_name: "招股书.pdf",
+          position: `第 ${page} 页`,
+          page,
+          ordinal: page,
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await retrieveAcrossKnowledgeBases(
+      bases,
+      "综合说明长鑫科技的核心业务、全球竞争地位和主要经营风险，每项结论标注来源页",
+      6,
+      "forced",
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(result.results.map((item) => item.page)).toEqual([25, 27, 32, 162]);
+    expect(result.retrieval).toContain("multi_query");
+    expect(result.metrics).toMatchObject({ queryCount: 4, queryExpansion: "applied" });
+  });
+
+  it("keeps the original retrieval result when expanded searches fail", async () => {
+    const base = {
+      id: 3,
+      publicId: "kb_fallback001",
+      ownerUserId: 7,
+      ownerGroupId: 0,
+      scope: "personal" as const,
+      isGlobal: false,
+      roleTemplate: null,
+      name: "回退知识库",
+      description: "",
+      status: "ready" as const,
+      documentCount: 1,
+      chunkCount: 10,
+      lastError: null,
+      indexedAt: null,
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+    const original = "请分别说明产品范围、适用客户以及主要风险";
+    mocks.callEaAssistantModel.mockResolvedValue({ content: JSON.stringify({ queries: ["产品范围", "适用客户", "主要风险"] }) });
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      if (body.query !== original) throw new Error("expanded search unavailable");
+      return new Response(JSON.stringify({
+        ok: true,
+        triggered: true,
+        retrieval: "bm25",
+        metrics: { knowledge_base_count: 1, bm25_max_score: 2, reranker: "disabled" },
+        results: [{
+          chunk_id: "doc_fallback:1",
+          parent_id: "doc_fallback:page:1",
+          score: 0.1,
+          text: "原问题检索结果",
+          knowledge_base_id: base.publicId,
+          document_id: "doc_fallback",
+          document_name: "制度.md",
+          position: "正文",
+          ordinal: 1,
+        }],
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+
+    const result = await retrieveAcrossKnowledgeBases([base], original, 4, "forced");
+
+    expect(result.results.map((item) => item.text)).toEqual(["原问题检索结果"]);
+    expect(result.metrics.queryCount).toBe(1);
   });
 });

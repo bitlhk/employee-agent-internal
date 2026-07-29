@@ -37,8 +37,9 @@ MAX_TOTAL_CHARS = int(os.environ.get("KNOWLEDGE_MAX_TOTAL_CHARS", "8000000"))
 MAX_NODES = int(os.environ.get("KNOWLEDGE_MAX_NODES", "12000"))
 KB_ID_RE = re.compile(r"^kb_[A-Za-z0-9_-]{8,56}$")
 DOCUMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{3,64}$")
+LOCATOR_ID_RE = re.compile(r"^[A-Za-z0-9:_-]{3,128}$")
 INDEX_SCHEMA_VERSION = 2
-PARSER_VERSION = "2.0"
+PARSER_VERSION = "2.1"
 PARENT_CHUNK_SIZE = int(os.environ.get("KNOWLEDGE_PARENT_CHUNK_SIZE", "1400"))
 PARENT_CHUNK_OVERLAP = int(os.environ.get("KNOWLEDGE_PARENT_CHUNK_OVERLAP", "120"))
 CHILD_CHUNK_SIZE = int(os.environ.get("KNOWLEDGE_CHILD_CHUNK_SIZE", "420"))
@@ -81,6 +82,13 @@ class MultiSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=4, ge=1, le=12)
     mode: Literal["auto", "forced"] = "auto"
+
+
+class CitationRequest(BaseModel):
+    knowledge_base_id: str
+    document_id: str = Field(min_length=3, max_length=64)
+    chunk_id: str = Field(min_length=3, max_length=128)
+    parent_id: str = Field(min_length=3, max_length=128)
 
 
 def _token() -> str:
@@ -656,6 +664,42 @@ def _tag_node(node: TextNode, knowledge_base_id: str) -> TextNode:
     return node
 
 
+def _navigation_only_text(value: str) -> bool:
+    text = re.sub(r"\s+", " ", clean_text(value)).strip()
+    if not text or len(text) > 260:
+        return False
+    if re.match(r"^(?:详见|参见|请参阅|请查阅|具体(?:参)?见|见本)", text):
+        return True
+    if re.search(r"(?:应当|应该|请).{0,30}特别?关注下述(?:各项)?风险因素", text):
+        return True
+    return bool(re.fullmatch(
+        r".{0,40}(?:提醒|提示).{0,80}(?:阅读|参阅|查阅).{0,100}(?:全部)?内容[。.]?",
+        text,
+    ))
+
+
+def _query_heading_anchors(query: str) -> tuple[str, ...]:
+    compact = re.sub(r"\s+", "", query)
+    if "风险因素" in compact:
+        return ("风险",)
+    if "主营业务" in compact:
+        return ("业务", "产品")
+    if "竞争地位" in compact:
+        return ("竞争", "地位", "市场")
+    return ()
+
+
+def _heading_anchor_mismatch(query: str, metadata: dict[str, Any]) -> bool:
+    anchors = _query_heading_anchors(query)
+    if not anchors:
+        return False
+    headings = metadata.get("heading_path") or []
+    position = " / ".join([*map(str, headings), str(metadata.get("position") or "")])
+    if not position.strip() or position.strip() == "正文":
+        return False
+    return not any(anchor in position for anchor in anchors)
+
+
 def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     knowledge_base_ids = list(dict.fromkeys(_kb_id(value) for value in request.knowledge_base_ids))
     targets: list[tuple[str, RuntimeIndex]] = []
@@ -761,20 +805,28 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     fused = _rrf(result_sets, request.top_k * 6)
     reranked, reranker_status = _rerank_candidates(request.query, fused)
     runtimes = {knowledge_base_id: runtime for knowledge_base_id, runtime in targets}
+    prepared_candidates = []
     for node, score in reranked:
         knowledge_base_id = str(node.metadata.get("knowledge_base_id") or "")
         document_id = str(node.metadata.get("document_id") or "")
-        document_key = f"{knowledge_base_id}:{document_id}"
         parent_id = str(node.metadata.get("parent_id") or node.node_id)
+        runtime = runtimes.get(knowledge_base_id)
+        parent = runtime.parents.get(parent_id) if runtime else None
+        parent_metadata = dict(parent.get("metadata") or {}) if isinstance(parent, dict) else dict(node.metadata)
+        parent_text = str(parent.get("text") or "") if isinstance(parent, dict) else node.get_content()
+        prepared_candidates.append((
+            _navigation_only_text(parent_text), _heading_anchor_mismatch(request.query, parent_metadata),
+            node, score, knowledge_base_id, document_id,
+            parent_id, runtime, parent_metadata, parent_text,
+        ))
+    prepared_candidates.sort(key=lambda item: (item[0], item[1]))
+    for _navigation_only, _anchor_mismatch, node, score, knowledge_base_id, document_id, parent_id, runtime, parent_metadata, parent_text in prepared_candidates:
+        document_key = f"{knowledge_base_id}:{document_id}"
         parent_key = f"{knowledge_base_id}:{parent_id}"
         if parent_key in parent_counts:
             continue
         if document_counts.get(document_key, 0) >= 2:
             continue
-        runtime = runtimes.get(knowledge_base_id)
-        parent = runtime.parents.get(parent_id) if runtime else None
-        parent_metadata = dict(parent.get("metadata") or {}) if isinstance(parent, dict) else dict(node.metadata)
-        parent_text = str(parent.get("text") or "") if isinstance(parent, dict) else node.get_content()
         parent_counts.add(parent_key)
         document_counts[document_key] = document_counts.get(document_key, 0) + 1
         results.append({
@@ -831,6 +883,41 @@ def _search_index(request: SearchRequest) -> dict[str, Any]:
     return payload
 
 
+def _citation_locator(request: CitationRequest) -> dict[str, Any]:
+    knowledge_base_id = _kb_id(request.knowledge_base_id)
+    if not DOCUMENT_ID_RE.fullmatch(request.document_id):
+        raise ValueError("invalid document id")
+    if not LOCATOR_ID_RE.fullmatch(request.chunk_id) or not LOCATOR_ID_RE.fullmatch(request.parent_id):
+        raise ValueError("invalid citation locator")
+    version = _current_index_version(knowledge_base_id)
+    if not version:
+        raise FileNotFoundError("knowledge index not found")
+    runtime = _runtime_index(knowledge_base_id, version)
+    parent = runtime.parents.get(request.parent_id)
+    if not isinstance(parent, dict):
+        raise FileNotFoundError("citation parent not found")
+    metadata = dict(parent.get("metadata") or {})
+    if str(metadata.get("document_id") or "") != request.document_id:
+        raise FileNotFoundError("citation document mismatch")
+    matched = next((node for node in runtime.nodes if str(node.node_id) == request.chunk_id), None)
+    if matched is None or str(matched.metadata.get("parent_id") or "") != request.parent_id:
+        raise FileNotFoundError("citation chunk not found")
+    matched_text = clean_text(matched.get_content())
+    heading = " > ".join(map(str, metadata.get("heading_path") or []))
+    if heading and matched_text.startswith(heading):
+        matched_text = matched_text[len(heading):].lstrip()
+    return {
+        "ok": True,
+        "document_id": request.document_id,
+        "parent_id": request.parent_id,
+        "chunk_id": request.chunk_id,
+        "page": metadata.get("page"),
+        "position": str(metadata.get("position") or "正文"),
+        "heading_path": metadata.get("heading_path") or [],
+        "matched_text": matched_text[:1600],
+    }
+
+
 @app.get("/health")
 async def health(x_ea_knowledge_token: str | None = Header(default=None)):
     _authorize(x_ea_knowledge_token)
@@ -839,9 +926,13 @@ async def health(x_ea_knowledge_token: str | None = Header(default=None)):
         "engine": "llamaindex",
         "embedding_configured": _embedding_model() is not None,
         "reranker_configured": bool(_rerank_url() and os.environ.get("KNOWLEDGE_RERANK_API_KEY") and os.environ.get("KNOWLEDGE_RERANK_MODEL")),
+        "ocr_available": bool(shutil.which("pdftoppm") and shutil.which("tesseract")),
         "index_schema_version": INDEX_SCHEMA_VERSION,
         "parser_version": PARSER_VERSION,
-        "capabilities": ["bm25", "vector", "rrf", "parent_child", "metadata", "versioned_index", "optional_rerank"],
+        "capabilities": [
+            "bm25", "vector", "rrf", "parent_child", "metadata", "versioned_index",
+            "structured_pdf", "optional_ocr", "optional_rerank",
+        ],
     }
 
 
@@ -873,6 +964,17 @@ async def search_multi(request: MultiSearchRequest, x_ea_knowledge_token: str | 
     _authorize(x_ea_knowledge_token)
     try:
         return await asyncio.to_thread(_search_indexes, request)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)[:1000]) from exc
+
+
+@app.post("/citation")
+async def citation(request: CitationRequest, x_ea_knowledge_token: str | None = Header(default=None)):
+    _authorize(x_ea_knowledge_token)
+    try:
+        return await asyncio.to_thread(_citation_locator, request)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)[:1000]) from exc
 
