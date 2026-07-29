@@ -181,7 +181,6 @@ async function main(): Promise<void> {
   const connection = await mysql.createConnection({ uri: databaseUrl(), multipleStatements: false });
   try {
     await acquireLock(connection);
-    if (mode === "apply") await validateDdlPrivileges(connection);
     const tablePresent = await migrationTableExists(connection);
     if (!tablePresent && mode !== "apply") {
       await validateBaseline(connection, loadBaseline().contract);
@@ -189,7 +188,12 @@ async function main(): Promise<void> {
       console.log("schema matches baseline; managed migration baseline is not registered");
       return;
     }
-    if (!tablePresent) await ensureMigrationTable(connection);
+    let ddlPrivilegesValidated = false;
+    if (!tablePresent) {
+      await validateDdlPrivileges(connection);
+      ddlPrivilegesValidated = true;
+      await ensureMigrationTable(connection);
+    }
     const baselineReady = await ensureBaseline(connection, mode === "apply");
     if (!baselineReady) {
       if (mode === "check") throw new Error("managed migration baseline is not registered");
@@ -198,6 +202,7 @@ async function main(): Promise<void> {
     }
     const before = await inspectHistory(connection, false);
     if (mode === "apply" && before.pending > 0) {
+      if (!ddlPrivilegesValidated) await validateDdlPrivileges(connection);
       await migrate(drizzle(connection), { migrationsFolder, migrationsTable });
     }
     const after = await inspectHistory(connection, mode !== "status");
