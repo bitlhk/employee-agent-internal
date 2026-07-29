@@ -8,7 +8,10 @@ set -Eeuo pipefail
 : "${REQUIRE_PROMETHEUS:=false}"
 : "${PROMETHEUS_URL:=http://127.0.0.1:9090}"
 
-required_processes=(employee-agent employee-agent-knowledge)
+required_processes=(
+  "${PM2_APP_NAME:-employee-agent}"
+  "${PM2_KNOWLEDGE_APP_NAME:-employee-agent-knowledge}"
+)
 if [[ -f "$APP_ROOT/ecosystem.jiuwenswarm.config.cjs" ]]; then
   required_processes+=(jiuwenswarm-agentserver jiuwenswarm-gateway)
 fi
