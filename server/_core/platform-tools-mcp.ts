@@ -15,6 +15,7 @@ import {
   listAgentMemoryView,
   rememberExplicitPreference,
 } from "./agent-memory";
+import { beginMcpCall } from "./observability/metrics";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -417,8 +418,15 @@ async function handleMessage(req: Request, msg: any) {
     if (msg.method === "tools/list") return hasRequestId(id) ? ok(id, { tools: TOOLS }) : null;
     if (msg.method === "tools/call") {
       if (!hasRequestId(id)) return null;
-      const result = await callTool(req, String(msg.params?.name || ""), msg.params?.arguments || {});
-      return ok(id, result);
+      const finishMetric = beginMcpCall("platform");
+      try {
+        const result = await callTool(req, String(msg.params?.name || ""), msg.params?.arguments || {});
+        finishMetric((result as any)?.isError ? "error" : "success");
+        return ok(id, result);
+      } catch (error) {
+        finishMetric("error");
+        throw error;
+      }
     }
     return hasRequestId(id) ? err(id, -32601, `Method not found: ${msg.method}`) : null;
   } catch (error: any) {

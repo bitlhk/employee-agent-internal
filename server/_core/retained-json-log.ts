@@ -88,9 +88,14 @@ export async function pruneJsonLogDirectory(logDir: string): Promise<void> {
   await Promise.all(files.map((filePath) => enqueue(filePath, () => pruneJsonLogFile(filePath).catch(() => {}))));
 }
 
-export function startJsonLogRetention(logDir: string): void {
-  if (retentionTimer) return;
+export function startJsonLogRetention(logDir: string): () => void {
+  if (retentionTimer) return () => {};
   void pruneJsonLogDirectory(logDir);
   retentionTimer = setInterval(() => void pruneJsonLogDirectory(logDir), DAY_MS);
   retentionTimer.unref();
+  return () => {
+    if (!retentionTimer) return;
+    clearInterval(retentionTimer);
+    retentionTimer = null;
+  };
 }

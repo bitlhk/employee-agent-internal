@@ -38,6 +38,7 @@ import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { finishCustomMcpOAuth, startCustomMcpOAuth } from "./custom-mcp-oauth";
 import { resolvePublicBaseUrl } from "./public-base-url";
+import { beginMcpCall } from "./observability/metrics";
 
 const SERVICE_NAME = "custom-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -271,6 +272,8 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
   const current = activeCalls.get(adoptId) || 0;
   if (current >= 4) return textResult("当前自定义连接调用较多，请稍后重试。", true);
   activeCalls.set(adoptId, current + 1);
+  const finishMetric = beginMcpCall("custom");
+  let metricOutcome: "success" | "empty" | "error" = "empty";
   const startedAt = Date.now();
   try {
     const rows = await listCustomMcpConnections({ adoptId, enabledOnly: true });
@@ -280,6 +283,7 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
       if (!tool) continue;
       try {
         const result = await callCustomMcpTool(configFromRow(row), tool.name, args);
+        metricOutcome = (result as any)?.isError ? "error" : "success";
         await recordAuditBestEffort({
           action: "agent.custom_mcp.called",
           result: "success",
@@ -296,6 +300,7 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
         });
         return result;
       } catch (error) {
+        metricOutcome = "error";
         await recordAuditBestEffort({
           action: "agent.custom_mcp.called",
           result: "failed",
@@ -315,6 +320,7 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
     }
     return textResult("该工具已停用或不属于当前岗位智能体。", true);
   } finally {
+    finishMetric(metricOutcome);
     const next = (activeCalls.get(adoptId) || 1) - 1;
     if (next <= 0) activeCalls.delete(adoptId);
     else activeCalls.set(adoptId, next);

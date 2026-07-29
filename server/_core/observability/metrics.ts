@@ -180,6 +180,158 @@ const operationalActivityActive = new Gauge({
   registers: [metricsRegistry],
 });
 
+export type ChatRuntime = "jiuwenswarm" | "openclaw";
+export type ChatOutcome = "success" | "error" | "timeout" | "cancelled";
+export type McpKind = "platform" | "custom";
+export type BackgroundWorkerName =
+  | "log_retention"
+  | "cron_delivery"
+  | "agent_health"
+  | "agent_memory"
+  | "knowledge_recovery"
+  | "audit_dlq"
+  | "recycler";
+export type BackgroundWorkerState = "running" | "stopping" | "stopped" | "failed";
+
+const chatRequests = new Counter({
+  name: "ea_chat_requests_total",
+  help: "Completed chat requests by runtime and outcome.",
+  labelNames: ["runtime", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const chatDuration = new Histogram({
+  name: "ea_chat_request_duration_seconds",
+  help: "End-to-end chat request duration in seconds.",
+  labelNames: ["runtime", "outcome"] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 300],
+  registers: [metricsRegistry],
+});
+
+const chatFirstToken = new Histogram({
+  name: "ea_chat_first_token_duration_seconds",
+  help: "Chat time to first visible token in seconds.",
+  labelNames: ["runtime"] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120],
+  registers: [metricsRegistry],
+});
+
+const chatActive = new Gauge({
+  name: "ea_chat_active_requests",
+  help: "Chat requests currently in progress by runtime.",
+  labelNames: ["runtime"] as const,
+  registers: [metricsRegistry],
+});
+
+const runtimeCalls = new Counter({
+  name: "ea_runtime_calls_total",
+  help: "Completed Agent runtime calls by runtime and outcome.",
+  labelNames: ["runtime", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const runtimeDuration = new Histogram({
+  name: "ea_runtime_call_duration_seconds",
+  help: "Agent runtime call duration in seconds.",
+  labelNames: ["runtime", "outcome"] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 180, 300],
+  registers: [metricsRegistry],
+});
+
+const runtimeActive = new Gauge({
+  name: "ea_runtime_active_calls",
+  help: "Agent runtime calls currently in progress.",
+  labelNames: ["runtime"] as const,
+  registers: [metricsRegistry],
+});
+
+const mcpCalls = new Counter({
+  name: "ea_mcp_calls_total",
+  help: "Completed MCP tool calls by bounded MCP kind and outcome.",
+  labelNames: ["kind", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const mcpDuration = new Histogram({
+  name: "ea_mcp_call_duration_seconds",
+  help: "MCP tool call duration in seconds.",
+  labelNames: ["kind", "outcome"] as const,
+  buckets: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 15, 30, 60, 180, 300],
+  registers: [metricsRegistry],
+});
+
+const mcpActive = new Gauge({
+  name: "ea_mcp_active_calls",
+  help: "MCP tool calls currently in progress by bounded MCP kind.",
+  labelNames: ["kind"] as const,
+  registers: [metricsRegistry],
+});
+
+const sandboxExecutions = new Counter({
+  name: "ea_sandbox_executions_total",
+  help: "Completed sandbox executions by outcome.",
+  labelNames: ["outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const sandboxDuration = new Histogram({
+  name: "ea_sandbox_execution_duration_seconds",
+  help: "Sandbox execution duration in seconds.",
+  labelNames: ["outcome"] as const,
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300],
+  registers: [metricsRegistry],
+});
+
+const sandboxActive = new Gauge({
+  name: "ea_sandbox_active_executions",
+  help: "Sandbox executions currently in progress.",
+  registers: [metricsRegistry],
+});
+
+const dbPoolConnections = new Gauge({
+  name: "ea_db_pool_connections",
+  help: "Database pool connection counts by bounded state.",
+  labelNames: ["state"] as const,
+  registers: [metricsRegistry],
+});
+
+const dbPoolLimit = new Gauge({
+  name: "ea_db_pool_limit",
+  help: "Configured database pool limits.",
+  labelNames: ["kind"] as const,
+  registers: [metricsRegistry],
+});
+
+const dbPoolEvents = new Counter({
+  name: "ea_db_pool_events_total",
+  help: "Database pool pressure and error events.",
+  labelNames: ["event"] as const,
+  registers: [metricsRegistry],
+});
+let dbPoolActiveCount = 0;
+
+const backgroundWorkerState = new Gauge({
+  name: "ea_background_worker_state",
+  help: "Background worker state as a one-hot gauge.",
+  labelNames: ["worker", "state"] as const,
+  registers: [metricsRegistry],
+});
+
+const backgroundWorkerStops = new Counter({
+  name: "ea_background_worker_stops_total",
+  help: "Background worker stop attempts by outcome.",
+  labelNames: ["worker", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const backgroundWorkerStopDuration = new Histogram({
+  name: "ea_background_worker_stop_duration_seconds",
+  help: "Background worker stop duration in seconds.",
+  labelNames: ["worker", "outcome"] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [metricsRegistry],
+});
+
 export function beginHttpRequest(): void {
   httpInflight.inc();
 }
@@ -250,4 +402,108 @@ export function observeOperationalActivity(input: {
   const labels = { activity: input.activity, outcome: input.outcome };
   operationalActivityTotal.inc(labels);
   operationalActivityDuration.observe(labels, Math.max(0, input.durationMs) / 1000);
+}
+
+export function beginChatRequest(runtime: ChatRuntime): {
+  observeFirstToken: () => void;
+  finish: (outcome: ChatOutcome) => void;
+} {
+  const startedAt = Date.now();
+  let firstTokenObserved = false;
+  let finished = false;
+  chatActive.inc({ runtime });
+  return {
+    observeFirstToken() {
+      if (firstTokenObserved || finished) return;
+      firstTokenObserved = true;
+      chatFirstToken.observe({ runtime }, Math.max(0, Date.now() - startedAt) / 1000);
+    },
+    finish(outcome) {
+      if (finished) return;
+      finished = true;
+      chatActive.dec({ runtime });
+      const labels = { runtime, outcome };
+      chatRequests.inc(labels);
+      chatDuration.observe(labels, Math.max(0, Date.now() - startedAt) / 1000);
+    },
+  };
+}
+
+export function beginMcpCall(kind: McpKind): (outcome: OperationalOutcome) => void {
+  const startedAt = Date.now();
+  let finished = false;
+  mcpActive.inc({ kind });
+  return (outcome) => {
+    if (finished) return;
+    finished = true;
+    mcpActive.dec({ kind });
+    const labels = { kind, outcome };
+    mcpCalls.inc(labels);
+    mcpDuration.observe(labels, Math.max(0, Date.now() - startedAt) / 1000);
+  };
+}
+
+export function beginRuntimeCall(runtime: ChatRuntime): (outcome: ChatOutcome) => void {
+  const startedAt = Date.now();
+  let finished = false;
+  runtimeActive.inc({ runtime });
+  return (outcome) => {
+    if (finished) return;
+    finished = true;
+    runtimeActive.dec({ runtime });
+    const labels = { runtime, outcome };
+    runtimeCalls.inc(labels);
+    runtimeDuration.observe(labels, Math.max(0, Date.now() - startedAt) / 1000);
+  };
+}
+
+export function beginSandboxExecution(): (outcome: OperationalOutcome, durationMs?: number) => void {
+  const startedAt = Date.now();
+  let finished = false;
+  sandboxActive.inc();
+  return (outcome, durationMs) => {
+    if (finished) return;
+    finished = true;
+    sandboxActive.dec();
+    sandboxExecutions.inc({ outcome });
+    sandboxDuration.observe({ outcome }, Math.max(0, durationMs ?? Date.now() - startedAt) / 1000);
+  };
+}
+
+export function configureDbPoolMetrics(input: { connectionLimit: number; maxIdle: number; queueLimit: number }): void {
+  dbPoolLimit.set({ kind: "connections" }, Math.max(0, input.connectionLimit));
+  dbPoolLimit.set({ kind: "max_idle" }, Math.max(0, input.maxIdle));
+  dbPoolLimit.set({ kind: "queue" }, Math.max(0, input.queueLimit));
+  dbPoolActiveCount = 0;
+  dbPoolConnections.set({ state: "active" }, dbPoolActiveCount);
+}
+
+export function observeDbPoolEvent(event: "connection" | "acquire" | "release" | "enqueue" | "error"): void {
+  dbPoolEvents.inc({ event });
+  if (event === "acquire") dbPoolActiveCount += 1;
+  if (event === "release") dbPoolActiveCount = Math.max(0, dbPoolActiveCount - 1);
+  if (event === "acquire" || event === "release") {
+    dbPoolConnections.set({ state: "active" }, dbPoolActiveCount);
+  }
+}
+
+export function resetDbPoolMetrics(): void {
+  dbPoolActiveCount = 0;
+  dbPoolConnections.set({ state: "active" }, dbPoolActiveCount);
+}
+
+export function setBackgroundWorkerState(worker: BackgroundWorkerName, state: BackgroundWorkerState): void {
+  for (const candidate of ["running", "stopping", "stopped", "failed"] as const) {
+    backgroundWorkerState.set({ worker, state: candidate }, candidate === state ? 1 : 0);
+  }
+}
+
+export function observeBackgroundWorkerStop(
+  worker: BackgroundWorkerName,
+  outcome: "success" | "error",
+  durationMs: number,
+): void {
+  const labels = { worker, outcome };
+  backgroundWorkerStops.inc(labels);
+  backgroundWorkerStopDuration.observe(labels, Math.max(0, durationMs) / 1000);
 }

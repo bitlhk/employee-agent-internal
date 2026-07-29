@@ -1173,8 +1173,8 @@ async function scanJiuwenChannelSessions(): Promise<void> {
 
 let workerStarted = false;
 
-export function startAgentMemoryRuntime(): void {
-  if (workerStarted || !featureEnabled()) return;
+export function startAgentMemoryRuntime(): () => void {
+  if (workerStarted || !featureEnabled()) return () => {};
   workerStarted = true;
   void recoverStaleAgentMemoryJobs().catch(() => {});
   void pruneAgentMemoryJobs().catch(() => {});
@@ -1199,7 +1199,15 @@ export function startAgentMemoryRuntime(): void {
   scanner.unref?.();
   janitor.unref?.();
   queueMicrotask(() => void processNextMemoryJob());
-  setTimeout(() => void scanJiuwenChannelSessions().catch(() => {}), 5000).unref?.();
+  const initialScan = setTimeout(() => void scanJiuwenChannelSessions().catch(() => {}), 5000);
+  initialScan.unref?.();
+  return () => {
+    clearInterval(worker);
+    clearInterval(scanner);
+    clearInterval(janitor);
+    clearTimeout(initialScan);
+    workerStarted = false;
+  };
 }
 
 export const __agentMemoryTestables = {

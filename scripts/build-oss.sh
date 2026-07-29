@@ -76,6 +76,11 @@ docs/JIUWENSWARM_PATCHES.md
 docs/runtime-snapshots
 EXCLUDES
 
+# Most CJS files are generated deployment artifacts and remain excluded. This
+# reviewed PM2 definition is source-controlled operational configuration.
+mkdir -p "$OUT_DIR/ops/monitoring"
+cp "$SRC_DIR/ops/monitoring/alert-dispatcher.pm2.cjs" "$OUT_DIR/ops/monitoring/alert-dispatcher.pm2.cjs"
+
 # ── 2. 确保 .env.example 存在 ──
 if [[ ! -f "$OUT_DIR/.env.example" ]]; then
   cp "$SRC_DIR/.env.example" "$OUT_DIR/.env.example" 2>/dev/null || true

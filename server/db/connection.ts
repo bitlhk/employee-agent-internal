@@ -1,5 +1,10 @@
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
+import {
+  configureDbPoolMetrics,
+  observeDbPoolEvent,
+  resetDbPoolMetrics,
+} from "../_core/observability/metrics";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 let _connection: mysql.Pool | null = null;
@@ -43,6 +48,7 @@ export async function getDb() {
   if (!_db) {
     try {
       const poolConfig = resolveDbPoolConfig();
+      configureDbPoolMetrics(poolConfig);
       // 创建连接池
       const connection = mysql.createPool({
         uri: databaseUrl,
@@ -63,8 +69,10 @@ export async function getDb() {
       });
 
       connection.on('connection', (conn) => {
+        observeDbPoolEvent("connection");
         conn.on('error', (err) => {
           console.error('[Database] Connection error:', err);
+          observeDbPoolEvent("error");
           if (err.code === 'PROTOCOL_CONNECTION_LOST' || err.code === 'ECONNRESET') {
             console.warn('[Database] Connection lost, will reconnect on next query');
           }
@@ -76,8 +84,13 @@ export async function getDb() {
         });
       });
 
+      connection.on('acquire', () => observeDbPoolEvent("acquire"));
+      connection.on('release', () => observeDbPoolEvent("release"));
+      connection.on('enqueue', () => observeDbPoolEvent("enqueue"));
+
       // 监听连接池错误
       (connection as any).on('error', (err: any) => {
+        observeDbPoolEvent("error");
         console.error('[Database] Pool error:', err);
       });
 
@@ -119,5 +132,6 @@ export async function closeDbConnection(): Promise<void> {
   const connection = _connection;
   _db = null;
   _connection = null;
+  resetDbPoolMetrics();
   await connection?.end();
 }

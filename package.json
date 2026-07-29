@@ -20,6 +20,7 @@
     "test": "vitest run",
     "knowledge:test": "bash -lc '\"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" -m unittest discover -s server/knowledge -p \"test_*.py\" -v'",
     "knowledge:evaluate": "bash -lc '[[ \"$1\" == \"--\" ]] && shift; \"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" server/knowledge/evaluate.py \"$@\"' knowledge-evaluate",
+    "load:capacity": "node scripts/load-test-capacity.mjs",
     "db:push": "drizzle-kit push",
     "db:deploy": "tsx scripts/db-deploy.ts",
     "db:baseline:repair": "tsx scripts/db-baseline-repair.ts",

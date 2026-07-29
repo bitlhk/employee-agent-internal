@@ -136,6 +136,7 @@ logs/
 
 # 运行时临时脚本
 *.cjs
+!ops/monitoring/alert-dispatcher.pm2.cjs
 
 # 2026-04-18: 扩展 bak 模式，覆盖带时间戳/标签的变体
 *.bak-*

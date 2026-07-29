@@ -53,6 +53,7 @@ export type JiuwenForwardOptions = {
   selectedSkills?: JiuwenSelectedSkillMetadata[];
   knowledgeSources?: Array<Record<string, unknown>>;
   memoryUserMessage?: string;
+  onFirstToken?: () => void;
 };
 
 export type JiuwenSelectedSkillMetadata = {
@@ -1076,6 +1077,7 @@ export async function forwardToJiuwenClaw(
     const writeTextDelta = (value: string) => {
       const publicText = sanitizePublicRuntimePaths(value, workspaceDir);
       if (!publicText) return;
+      opts.onFirstToken?.();
       memoryAssistantText += publicText;
       const formattedText = formatJiuwenTextSectionDelta(publicText, sawText && needsTextSectionBreak);
       currentStatus = "正在生成回复...";

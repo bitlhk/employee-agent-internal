@@ -19,6 +19,7 @@ import { execSync, spawnSync, spawn } from "child_process";
 import { appendFileSync, chmodSync, chownSync, lstatSync, mkdirSync, readdirSync, realpathSync } from "fs";
 import path from "path";
 import { resolveExistingRegularFile } from "./file-path-security";
+import { beginSandboxExecution, type OperationalOutcome } from "./observability/metrics";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 
@@ -131,6 +132,8 @@ export interface SandboxExecResult {
 }
 
 export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecResult> {
+  const finishMetric = beginSandboxExecution();
+  let metricOutcome: OperationalOutcome = "error";
   const { adoptId, command, onProgress } = opts;
   const timeoutMs = opts.timeoutMs ?? SANDBOX_TIMEOUT_MS;
 
@@ -138,15 +141,18 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
   const blocked = isCommandBlocked(command);
   if (blocked) {
     auditLog({ event: "sandbox_blocked", adoptId, command, reason: blocked });
+    finishMetric("error", 0);
     return { exitCode: 1, stdout: "", stderr: `Command blocked: ${blocked}`, truncated: false, durationMs: 0 };
   }
 
   // 2. 并发限制
   const userActive = activeByUser.get(adoptId) || 0;
   if (userActive >= SANDBOX_MAX_PER_USER) {
+    finishMetric("error", 0);
     return { exitCode: 1, stdout: "", stderr: `Too many concurrent executions (max ${SANDBOX_MAX_PER_USER} per user)`, truncated: false, durationMs: 0 };
   }
   if (activeGlobal >= SANDBOX_MAX_GLOBAL) {
+    finishMetric("error", 0);
     return { exitCode: 1, stdout: "", stderr: `Sandbox busy, please retry later`, truncated: false, durationMs: 0 };
   }
 
@@ -273,7 +279,7 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
     });
 
     const durationMs = Date.now() - startMs;
-    const finalExitCode = exitCode ?? 1;
+    const finalExitCode = Number(exitCode ?? 1);
 
     // 扫描 /output 目录，返回文件列表（由 caller 负责移走）
     let outputFiles: Array<{ name: string; size: number }> | undefined;
@@ -295,6 +301,8 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
       outputFileCount: outputFiles?.length ?? 0,
     });
 
+    metricOutcome = timedOut ? "timeout" : finalExitCode === 0 ? "success" : "error";
+
     return { exitCode: finalExitCode, stdout, stderr, truncated, durationMs, outputFiles };
 
   } catch (err: any) {
@@ -307,6 +315,7 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
       durationMs: Date.now() - startMs,
     };
   } finally {
+    finishMetric(metricOutcome, Date.now() - startMs);
     // 6. 强制清理容器
     if (containerId) {
       try {

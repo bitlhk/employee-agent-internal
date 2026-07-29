@@ -261,15 +261,23 @@ async function pollAndDeliver() {
 }
 
 let pollInterval: ReturnType<typeof setInterval> | null = null;
+let initialPoll: ReturnType<typeof setTimeout> | null = null;
 
-export function startCronDeliveryPoller() {
-  if (pollInterval) return;
+export function startCronDeliveryPoller(): () => void {
+  if (pollInterval) return stopCronDeliveryPoller;
   console.log("[CRON-DELIVERY] poller started");
   pollInterval = setInterval(pollAndDeliver, POLL_INTERVAL_MS);
-  setTimeout(pollAndDeliver, 5000);
+  pollInterval.unref?.();
+  initialPoll = setTimeout(pollAndDeliver, 5000);
+  initialPoll.unref?.();
+  return stopCronDeliveryPoller;
 }
 
 export function stopCronDeliveryPoller() {
+  if (initialPoll) {
+    clearTimeout(initialPoll);
+    initialPoll = null;
+  }
   if (pollInterval) {
     clearInterval(pollInterval);
     pollInterval = null;

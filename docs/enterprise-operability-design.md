@@ -52,7 +52,9 @@ Initial metrics:
 - server lifecycle state and requests tracked for graceful shutdown
 - active, configured limit, and rejection count for each bounded capacity lane
 
-Chat first-token latency, runtime calls, MCP calls, sandbox execution, and scheduled delivery will use the same registry in follow-up instrumentation.
+Chat first-token latency, runtime calls, MCP calls, sandbox execution, database
+pool pressure, and managed background-worker state use the same registry. All
+labels remain bounded operational categories.
 
 ## Health Endpoints
 

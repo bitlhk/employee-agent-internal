@@ -3,9 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  beginChatRequest,
+  beginMcpCall,
   beginOperationalActivity,
+  beginRuntimeCall,
+  beginSandboxExecution,
+  configureDbPoolMetrics,
   metricsRegistry,
+  observeDbPoolEvent,
   observeOperationalActivity,
+  setBackgroundWorkerState,
 } from "./metrics";
 
 const temporaryDirectories: string[] = [];
@@ -39,5 +46,28 @@ describe("operational metrics", () => {
     expect(metrics).toContain("ea_backup_last_validation_timestamp_seconds");
     expect(metrics).toContain('ea_operational_activity_total{activity="knowledge_search",outcome="success"} 1');
     expect(metrics).toContain('ea_operational_activity_active{activity="knowledge_search"} 0');
+  });
+
+  it("records bounded runtime, MCP, sandbox, database, and worker dimensions", async () => {
+    const chat = beginChatRequest("jiuwenswarm");
+    chat.observeFirstToken();
+    chat.observeFirstToken();
+    chat.finish("success");
+    beginRuntimeCall("jiuwenswarm")("success");
+    beginMcpCall("platform")("error");
+    beginSandboxExecution()("timeout", 250);
+    configureDbPoolMetrics({ connectionLimit: 10, maxIdle: 2, queueLimit: 100 });
+    observeDbPoolEvent("acquire");
+    observeDbPoolEvent("release");
+    observeDbPoolEvent("release");
+    setBackgroundWorkerState("recycler", "running");
+
+    const output = await metricsRegistry.metrics();
+    expect(output).toContain('ea_chat_requests_total{runtime="jiuwenswarm",outcome="success"} 1');
+    expect(output).toContain('ea_runtime_calls_total{runtime="jiuwenswarm",outcome="success"} 1');
+    expect(output).toContain('ea_mcp_calls_total{kind="platform",outcome="error"} 1');
+    expect(output).toContain('ea_sandbox_executions_total{outcome="timeout"} 1');
+    expect(output).toContain('ea_db_pool_connections{state="active"} 0');
+    expect(output).toContain('ea_background_worker_state{worker="recycler",state="running"} 1');
   });
 });

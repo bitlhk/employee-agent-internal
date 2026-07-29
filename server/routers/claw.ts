@@ -88,6 +88,8 @@ import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skill
 import { MESSAGE_FEEDBACK_REASON_CODES } from "../../shared/message-feedback";
 import { resolvePublicBaseUrl } from "../_core/public-base-url";
 import { probeJiuwenSkillMcpReadiness } from "../_core/skill-mcp-readiness";
+import { getBackgroundWorkerSnapshot } from "../_core/background-workers";
+import { getCapacitySnapshot } from "../_core/operational-capacity";
 import {
   getEaAssistantModelAdminConfig,
   saveEaAssistantModelConfig,
@@ -1524,6 +1526,13 @@ export const clawRouter = router({
       const app = Array.isArray(pm2Rows)
         ? pm2Rows.find((row) => String(row?.name || "") === appName) || pm2Rows.find((row) => /employee-agent|linggan-claw/.test(String(row?.name || "")))
         : null;
+      const alertProcessName = process.env.EA_ALERT_PM2_NAME || "employee-agent-alerts";
+      const alertProcess = Array.isArray(pm2Rows)
+        ? pm2Rows.find((row) => String(row?.name || "") === alertProcessName)
+        : null;
+      const capacity = getCapacitySnapshot();
+      const workers = getBackgroundWorkerSnapshot();
+      const alertConfigured = Boolean(String(process.env.EA_ALERT_FEISHU_WEBHOOK_URL || "").trim());
 
       const openclawJson = openclawStatus.ok ? safeJson<any>(openclawStatus.output, null) : null;
       const config = existsSync(OPENCLAW_JSON_PATH) ? safeJson<any>(String(readFileSync(OPENCLAW_JSON_PATH, "utf8") || "{}"), {}) : {};
@@ -1587,7 +1596,7 @@ export const clawRouter = router({
       type HealthStatus = "ok" | "warning" | "error" | "disabled";
       type HealthCheck = {
         key: string;
-        group: "platform" | "runtime" | "database" | "channels" | "audit";
+        group: "platform" | "operations" | "runtime" | "database" | "channels" | "audit";
         label: string;
         provider?: string;
         status: HealthStatus;
@@ -1604,6 +1613,49 @@ export const clawRouter = router({
         provider: "ea",
         status: health.ok && appStatus === "online" ? "ok" : "error",
         detail: `${app?.name || appName} · ${appStatus || "unknown"} · CPU ${app?.monit?.cpu ?? "-"}% · 重启 ${app?.pm2_env?.restart_time ?? "-"} 次`,
+      });
+      const saturatedLanes = Object.entries(capacity).filter(([, lane]) => lane.limit > 0 && lane.active / lane.limit >= 0.8);
+      pushCheck({
+        key: "operations.capacity",
+        group: "operations",
+        label: "并发容量",
+        provider: "ea",
+        status: saturatedLanes.length > 0 ? "warning" : "ok",
+        detail: Object.entries(capacity).map(([lane, state]) => `${lane} ${state.active}/${state.limit}`).join(" · "),
+      });
+      const failedWorkers = workers.filter((worker) => worker.state === "failed");
+      const runningWorkers = workers.filter((worker) => worker.state === "running");
+      pushCheck({
+        key: "operations.workers",
+        group: "operations",
+        label: "后台任务",
+        provider: "ea",
+        status: failedWorkers.length > 0 ? "error" : workers.length > 0 ? "ok" : "warning",
+        detail: `${runningWorkers.length}/${workers.length} 运行${failedWorkers.length ? ` · ${failedWorkers.length} 异常` : ""}`,
+      });
+      pushCheck({
+        key: "operations.metrics",
+        group: "operations",
+        label: "监控指标",
+        provider: "prometheus",
+        status: "ok",
+        detail: "Prometheus 指标已通过受限内部端点提供",
+      });
+      pushCheck({
+        key: "operations.alerting",
+        group: "operations",
+        label: "飞书告警",
+        provider: "feishu",
+        status: !alertConfigured
+          ? "disabled"
+          : String(alertProcess?.pm2_env?.status || "") === "online"
+            ? "ok"
+            : "warning",
+        detail: !alertConfigured
+          ? "尚未配置告警机器人"
+          : String(alertProcess?.pm2_env?.status || "") === "online"
+            ? "告警分发进程运行中"
+            : "已配置，但告警分发进程未运行",
       });
 
       const jiuwenActive = Number(dbHealth.claws?.jiuwenActive || 0);
@@ -1755,6 +1807,16 @@ export const clawRouter = router({
           } : null,
           git: { branch: gitBranch.output || "", commit: gitCommit.output || "" },
           errors: [health.error, pm2.error].filter(Boolean),
+        },
+        operations: {
+          capacity,
+          workers,
+          metrics: { enabled: true, endpoint: "/internal/metrics" },
+          alerting: {
+            configured: alertConfigured,
+            processName: alertProcessName,
+            status: String(alertProcess?.pm2_env?.status || (alertConfigured ? "offline" : "disabled")),
+          },
         },
         openclaw: {
           reachable: Boolean(openclawJson?.gateway?.reachable),

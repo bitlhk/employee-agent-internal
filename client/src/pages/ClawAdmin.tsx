@@ -186,6 +186,7 @@ const healthStatusTone = (status: string) => ({
 
 const healthGroupLabel = (group: string) => {
   if (group === "platform") return "平台服务";
+  if (group === "operations") return "运营保障";
   if (group === "runtime") return "Runtime";
   if (group === "channels") return "频道连接";
   if (group === "database") return "数据库";
@@ -194,6 +195,7 @@ const healthGroupLabel = (group: string) => {
 };
 
 const healthGroupIcon = (group: string) => {
+  if (group === "operations") return BarChart3;
   if (group === "runtime") return Activity;
   if (group === "channels") return Radio;
   if (group === "database") return Database;
@@ -203,6 +205,7 @@ const healthGroupIcon = (group: string) => {
 
 const healthGroupHint = (group: string) => {
   if (group === "platform") return "平台进程、资源占用和发布版本。";
+  if (group === "operations") return "并发容量、后台任务、指标采集与告警投递。";
   if (group === "runtime") return "外部运行时是否启用、可用，以及近期调用是否正常。";
   if (group === "database") return "平台元数据连接、关键表完整性和查询延迟。";
   if (group === "channels") return "外部消息通道的连接和投递基础状态。";
@@ -813,7 +816,7 @@ export default function ClawAdmin() {
     acc[group].push(check);
     return acc;
   }, {});
-  const healthGroupOrder = ["platform", "runtime", "database", "channels", "audit"];
+  const healthGroupOrder = ["platform", "operations", "runtime", "database", "channels", "audit"];
   const healthGroups = healthGroupOrder.map((group) => ({
     group,
     checks: healthChecksByGroup[group] || [],
@@ -839,6 +842,12 @@ export default function ClawAdmin() {
       const jiuwen = healthData?.runtimes?.jiuwenswarm;
       const openclaw = healthData?.runtimes?.openclaw;
       return `${statusText} · JiuwenSwarm ${jiuwen?.active ?? 0} 个 · OpenClaw ${openclaw?.active ?? 0} 个 · 24h 请求 ${jiuwen?.recent?.requests24h ?? 0}`;
+    }
+    if (group === "operations") {
+      const capacity = healthData?.operations?.capacity || {};
+      const workers = healthData?.operations?.workers || [];
+      const running = workers.filter((worker: any) => worker.state === "running").length;
+      return `${statusText} · 并发 ${capacity.chat_http?.active ?? 0}/${capacity.chat_http?.limit ?? "-"} · 后台任务 ${running}/${workers.length} · 告警 ${healthData?.operations?.alerting?.status || "disabled"}`;
     }
     if (group === "database") {
       const tables = healthData?.database?.tables || [];
@@ -1522,7 +1531,7 @@ export default function ClawAdmin() {
               <div className="mb-5 flex items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900">系统健康</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">只读监测平台服务、Runtime、频道、模型配置和数据库关键表。</p>
+                  <p className="mt-1 text-xs text-muted-foreground">只读监测平台服务、并发容量、后台任务、Runtime、告警和数据库。</p>
                 </div>
                 <Button size="sm" variant="outline" className="admin-secondary-action" onClick={() => refetchSystemHealth()}>
                   <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
@@ -1548,6 +1557,25 @@ export default function ClawAdmin() {
                       <span>异常 <span className="font-mono text-red-600">{healthSummary.error ?? 0}</span></span>
                       <span>注意 <span className="font-mono text-yellow-700">{healthSummary.warning ?? 0}</span></span>
                       <span>未启用 <span className="font-mono text-gray-700">{healthSummary.disabled ?? 0}</span></span>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                      <div className="text-xs text-muted-foreground">聊天并发</div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).operations?.capacity?.chat_http?.active ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {(systemHealth as any).operations?.capacity?.chat_http?.limit ?? "-"}</span></div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                      <div className="text-xs text-muted-foreground">后台任务</div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{((systemHealth as any).operations?.workers || []).filter((worker: any) => worker.state === "running").length}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {((systemHealth as any).operations?.workers || []).length}</span></div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                      <div className="text-xs text-muted-foreground">数据库延迟</div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).database?.latencyMs ?? "-"}<span className="ml-1 text-xs font-normal text-muted-foreground">ms</span></div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                      <div className="text-xs text-muted-foreground">飞书告警</div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).operations?.alerting?.status === "online" ? "运行中" : (systemHealth as any).operations?.alerting?.configured ? "待启动" : "未配置"}</div>
                     </div>
                   </div>
 

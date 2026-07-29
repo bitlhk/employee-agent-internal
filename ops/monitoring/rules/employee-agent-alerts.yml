@@ -121,6 +121,56 @@ groups:
 
   - name: employee-agent-workloads
     rules:
+      - alert: EmployeeAgentChatFirstTokenSlow
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (runtime, le) (rate(ea_chat_first_token_duration_seconds_bucket[10m]))
+          ) > 20
+          and sum by (runtime) (rate(ea_chat_first_token_duration_seconds_count[10m])) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent chat first-token latency is elevated
+          description: Chat p95 time to first visible token has exceeded 20 seconds for ten minutes.
+
+      - alert: EmployeeAgentMcpCallsFailing
+        expr: increase(ea_mcp_calls_total{outcome=~"error|timeout"}[15m]) >= 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Multiple MCP tool calls have failed
+          description: At least three MCP calls failed or timed out in the last 15 minutes.
+
+      - alert: EmployeeAgentSandboxExecutionsFailing
+        expr: increase(ea_sandbox_executions_total{outcome=~"error|timeout"}[15m]) >= 3
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Multiple sandbox executions have failed
+          description: At least three sandbox executions failed or timed out in the last 15 minutes.
+
+      - alert: EmployeeAgentDatabasePoolQueued
+        expr: increase(ea_db_pool_events_total{event="enqueue"}[5m]) >= 5
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent database pool is queuing work
+          description: The database pool queued at least five connection requests in five minutes.
+
+      - alert: EmployeeAgentBackgroundWorkerFailed
+        expr: ea_background_worker_state{state="failed"} == 1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: An Employee Agent background worker failed
+          description: A managed background worker has remained failed for two minutes.
+
       - alert: EmployeeAgentExpertTasksFailing
         expr: increase(ea_operational_activity_total{activity="expert_task",outcome=~"error|timeout"}[15m]) >= 3
         for: 2m

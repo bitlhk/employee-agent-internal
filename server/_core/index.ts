@@ -99,6 +99,11 @@ import { registerLocalProfileA2AProxy } from "./local-profile-a2a-proxy";
 import { startAgentHealthMonitor } from "./agent-health";
 import { startKnowledgeIndexRecovery } from "./knowledge-service";
 import { centralAuthConfigFromEnv, centralAuthRedirectUrl } from "./central-auth";
+import {
+  startManagedWorker,
+  startManagedWorkerAsync,
+  stopManagedWorkers,
+} from "./background-workers";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -112,7 +117,6 @@ let runtimeVersionsCache: {
 } | null = null;
 const iosLoadDebugEnabled = process.env.IOS_LOAD_DEBUG === "1";
 const centralAuthConfig = centralAuthConfigFromEnv();
-startApplicationLogRetention();
 
 const roleBaseline = getRoleSkillMcpBaseline();
 logInfo("role_template.baseline_loaded", {
@@ -276,6 +280,7 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
   let shutdownPromise: Promise<void> | null = null;
+  startManagedWorker("log_retention", startApplicationLogRetention);
 
   processShutdownHandler = (reason, exitCode, error) => {
     if (shutdownPromise) return shutdownPromise;
@@ -284,6 +289,7 @@ async function startServer() {
         logFatal("process.uncaught_exception", error, { reason }, "Uncaught exception; draining before exit");
       }
       beginServerDrain(reason);
+      await stopManagedWorkers(5_000);
       const drainTimeoutMs = Math.min(
         120_000,
         Math.max(1_000, Number.parseInt(process.env.EA_SHUTDOWN_DRAIN_TIMEOUT_MS || "20000", 10) || 20_000),
@@ -322,7 +328,7 @@ async function startServer() {
         logError("database.close_failed", dbError);
       });
       logInfo("server.drain_completed", { reason, requestsDrained, capacityDrained, exitCode });
-      flushApplicationLogs();
+      await flushApplicationLogs();
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
       process.exit(exitCode);
     })();
@@ -444,12 +450,15 @@ async function startServer() {
   // 启动微信双向聊天桥
   import("./claw-weixin-bridge").then(m => m.startWeixinBridge()).catch(e => console.error("weixin bridge start failed:", e));
   // 启动 cron 结果投递轮询（岗位智能体平台侧，补充 Gateway 不支持的渠道）
-  import("./cron-delivery").then(m => m.startCronDeliveryPoller()).catch(e => console.error("cron delivery poller start failed:", e));
+  void startManagedWorkerAsync("cron_delivery", async () => {
+    const module = await import("./cron-delivery");
+    return module.startCronDeliveryPoller();
+  });
   registerSkillRoutes(app);
   registerCollabRoutes(app);
   registerPersonalExpertRoutes(app);
   registerAgentTaskRoutes(app);
-  startAgentHealthMonitor();
+  startManagedWorker("agent_health", startAgentHealthMonitor);
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);
   registerSkillConfigRoutes(app);
@@ -869,8 +878,8 @@ async function startServer() {
           ms: Date.now() - dbWarmupStartedAt,
         });
         if (db) {
-          startAgentMemoryRuntime();
-          startKnowledgeIndexRecovery();
+          startManagedWorker("agent_memory", startAgentMemoryRuntime);
+          startManagedWorker("knowledge_recovery", startKnowledgeIndexRecovery);
         }
       })
       .catch((error) => {
@@ -882,8 +891,8 @@ async function startServer() {
         });
       });
   });
-  startAuditDlqWorker();
-  startRecycler();
+  startManagedWorker("audit_dlq", startAuditDlqWorker);
+  startManagedWorker("recycler", startRecycler);
 }
 void startServer().catch((error) => {
   logFatal("server.start_failed", error);

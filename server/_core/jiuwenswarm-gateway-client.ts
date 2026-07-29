@@ -481,6 +481,7 @@ export async function forwardToJiuwenGateway(
         channelId,
         workspaceDir,
         collectText: (text) => {
+          if (text) opts.onFirstToken?.();
           memoryAssistantText += text;
         },
         collectFiles: (files) => {

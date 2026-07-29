@@ -1,6 +1,6 @@
 // ── 定时回收：每小时检查不活跃的岗位智能体实例 ──
-export function startRecycler() {
-  setInterval(async () => {
+export function startRecycler(): () => void {
+  const timer = setInterval(async () => {
     try {
       const { getDb } = await import("../db");
       const { clawAdoptions } = await import("../../drizzle/schema");
@@ -45,4 +45,6 @@ export function startRecycler() {
       console.error("[Claw Recycle] Error:", err);
     }
   }, 60 * 60 * 1000); // 每小时
+  timer.unref?.();
+  return () => clearInterval(timer);
 }

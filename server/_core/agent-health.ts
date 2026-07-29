@@ -203,13 +203,18 @@ async function runHealthMonitor(): Promise<void> {
   }
 }
 
-export function startAgentHealthMonitor(): void {
-  if (monitorStarted || process.env.NODE_ENV === "test") return;
+export function startAgentHealthMonitor(): () => void {
+  if (monitorStarted || process.env.NODE_ENV === "test") return () => {};
   monitorStarted = true;
   const first = setTimeout(() => void runHealthMonitor(), 10_000);
   const interval = setInterval(() => void runHealthMonitor(), AGENT_HEALTH_MONITOR_INTERVAL_MS);
   first.unref?.();
   interval.unref?.();
+  return () => {
+    clearTimeout(first);
+    clearInterval(interval);
+    monitorStarted = false;
+  };
 }
 
 export function resetAgentHealthStateForTests(): void {

@@ -268,8 +268,8 @@ export function queueKnowledgeIndex(base: KnowledgeBaseRecord, reason = "content
   return queueKnowledgeIndexWithJob(base, persistentJob(base, reason));
 }
 
-export function startKnowledgeIndexRecovery(): void {
-  if (recoveryStarted) return;
+export function startKnowledgeIndexRecovery(): () => void {
+  if (recoveryStarted) return () => {};
   recoveryStarted = true;
   const recover = async () => {
     await pruneKnowledgeIndexJobs(Number(process.env.KNOWLEDGE_INDEX_JOB_RETENTION_DAYS || 30)).catch(() => {});
@@ -290,6 +290,10 @@ export function startKnowledgeIndexRecovery(): void {
     void recover().catch((error) => console.warn("[KNOWLEDGE] index recovery failed", error));
   }, Math.max(15_000, Number(process.env.KNOWLEDGE_INDEX_RECOVERY_INTERVAL_MS || 60_000)));
   timer.unref?.();
+  return () => {
+    clearInterval(timer);
+    recoveryStarted = false;
+  };
 }
 
 function mapKnowledgeSearchItem(item: any): KnowledgeSearchResult {

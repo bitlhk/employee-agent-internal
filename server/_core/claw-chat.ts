@@ -35,6 +35,7 @@ import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { privateMessageLogFields } from "./log-privacy";
 import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
 import { capacityGuard } from "./operational-capacity";
+import { beginChatRequest, beginRuntimeCall, type ChatOutcome } from "./observability/metrics";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -295,6 +296,17 @@ export function registerChatStreamRoutes(app: express.Express) {
     // lgj-* is the JiuwenClaw lane. lgh-* remains reserved for legacy
     // archived instances; lgc-* keeps the existing OpenClaw path.
     if (String(adoptId).startsWith("lgj-")) {
+      const chatMetric = beginChatRequest("jiuwenswarm");
+      const runtimeMetric = beginRuntimeCall("jiuwenswarm");
+      let metricFinished = false;
+      const finishMetrics = (outcome: ChatOutcome) => {
+        if (metricFinished) return;
+        metricFinished = true;
+        chatMetric.finish(outcome);
+        runtimeMetric(outcome);
+      };
+      res.once("finish", () => finishMetrics(res.statusCode >= 400 ? "error" : "success"));
+      res.once("close", () => finishMetrics(res.writableEnded ? "success" : "cancelled"));
       const msgStrForRuntime = String(message || "").slice(0, 4000);
       if (msgStrForRuntime.trim().length === 0) {
         res.status(400).json({ error: "message is empty" });
@@ -450,6 +462,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           selectedSkills: selectedSkills?.ok ? selectedSkills.metadata : [],
           knowledgeSources,
           memoryUserMessage: msgStrForRuntime,
+          onFirstToken: chatMetric.observeFirstToken,
         },
       );
       return;
@@ -671,6 +684,17 @@ export function registerChatStreamRoutes(app: express.Express) {
     }
 
     // 最小执行审计：记录谁在什么智能体上发起了什么请求（消息截断）
+    const chatMetric = beginChatRequest("openclaw");
+    const runtimeMetric = beginRuntimeCall("openclaw");
+    let metricFinished = false;
+    const finishMetrics = (outcome: ChatOutcome) => {
+      if (metricFinished) return;
+      metricFinished = true;
+      chatMetric.finish(outcome);
+      runtimeMetric(outcome);
+    };
+    res.once("finish", () => finishMetrics(res.statusCode >= 400 ? "error" : "success"));
+    res.once("close", () => finishMetrics(res.writableEnded ? "success" : "cancelled"));
     appendLogAsync("claw-exec.log", {
       ts: new Date().toISOString(),
       event: "chat_stream_request",
@@ -1248,6 +1272,7 @@ const options = {
                 sawFinishReason = evt.reason;
                 break;
               case "delta":
+                chatMetric.observeFirstToken();
                 lastAnyDeltaAt = Date.now();
                 memAcc.appendDelta(evt.content);
                 lastContentDeltaAt = Date.now();
