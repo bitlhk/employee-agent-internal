@@ -84,6 +84,9 @@ jobs:
           fi
           grep -F "database does not match baseline-v1; missing users.name" /tmp/db-migrate-incompatible.log
 
+      - name: Release and rollback flow
+        run: pnpm release:test
+
       - name: Lint
         run: pnpm run lint
 
