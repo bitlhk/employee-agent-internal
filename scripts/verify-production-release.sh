@@ -48,10 +48,13 @@ wait_for_endpoint "$APP_URL/health/ready"
 
 metrics_token="${METRICS_BEARER_TOKEN:-}"
 if [[ -z "$metrics_token" && -r "$APP_ROOT/.env" && -f "$APP_ROOT/node_modules/dotenv/package.json" ]]; then
-  metrics_token="$(APP_ENV_FILE="$APP_ROOT/.env" node -e '
-    require("dotenv").config({ path: process.env.APP_ENV_FILE, quiet: true });
-    process.stdout.write(String(process.env.METRICS_BEARER_TOKEN || ""));
-  ')"
+  metrics_token="$(
+    cd "$APP_ROOT"
+    APP_ENV_FILE="$APP_ROOT/.env" node -e '
+      require("dotenv").config({ path: process.env.APP_ENV_FILE, quiet: true });
+      process.stdout.write(String(process.env.METRICS_BEARER_TOKEN || ""));
+    '
+  )"
 fi
 
 metrics_headers=()
