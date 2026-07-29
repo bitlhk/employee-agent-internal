@@ -38,7 +38,9 @@ else
   if docker container inspect "$GRAFANA_CONTAINER" >/dev/null 2>&1; then
     docker container rm -f "$GRAFANA_CONTAINER" >/dev/null
   fi
-  docker pull "$GRAFANA_IMAGE" >/dev/null
+  if ! docker image inspect "$GRAFANA_IMAGE" >/dev/null 2>&1; then
+    docker pull "$GRAFANA_IMAGE" >/dev/null
+  fi
   docker create \
     --name "$GRAFANA_CONTAINER" \
     --network host \

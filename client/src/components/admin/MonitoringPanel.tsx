@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/action-button";
 import { Card } from "@/components/ui/card";
 
@@ -91,6 +92,17 @@ export function MonitoringPanel({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const { resolvedTheme, theme } = useTheme();
+  const dashboardUrl = status?.dashboardUrl || "";
+  const dashboardTheme =
+    (resolvedTheme || theme) === "dark" ? "dark" : "light";
+  const themedDashboardUrl = useMemo(() => {
+    if (!dashboardUrl) return "";
+    const url = new URL(dashboardUrl, window.location.origin);
+    url.searchParams.set("theme", dashboardTheme);
+    return `${url.pathname}${url.search}${url.hash}`;
+  }, [dashboardTheme, dashboardUrl]);
+
   if (loading && !status) {
     return (
       <Card className="admin-panel-card flex min-h-[360px] items-center justify-center p-6">
@@ -102,7 +114,6 @@ export function MonitoringPanel({
     );
   }
 
-  const dashboardUrl = status?.dashboardUrl || "";
   return (
     <div className="space-y-4">
       <Card className="admin-panel-card p-5">
@@ -126,7 +137,7 @@ export function MonitoringPanel({
                 size="sm"
                 className="admin-secondary-action"
                 onClick={() =>
-                  window.open(dashboardUrl, "_blank", "noopener,noreferrer")
+              window.open(themedDashboardUrl, "_blank", "noopener,noreferrer")
                 }
               >
                 <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
@@ -172,12 +183,12 @@ export function MonitoringPanel({
           </p>
         </Card>
       ) : status.available && dashboardUrl ? (
-        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="overflow-hidden rounded-xl border border-border bg-background">
           <iframe
             title="Employee Agent 运行监控"
-            src={dashboardUrl}
+            src={themedDashboardUrl}
             sandbox="allow-downloads allow-forms allow-same-origin allow-scripts"
-            className="block min-h-[780px] w-full border-0 bg-white"
+            className="block min-h-[780px] w-full border-0 bg-background"
           />
         </div>
       ) : (
