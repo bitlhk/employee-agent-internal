@@ -1,15 +1,16 @@
 import "dotenv/config";
 import "./runtime-permissions";
+import { logError, logFatal, logInfo, logWarn } from "./observability/logger";
+import { requestObservabilityMiddleware } from "./observability/http-middleware";
+import { registerOperationalRoutes } from "./observability/health-routes";
 // 全局异常捕获：防止 uncaught exception 导致服务崩溃，并打印完整 stack 方便排查
 process.on("uncaughtException", (err: Error) => {
-  console.error("[UNCAUGHT EXCEPTION] Shutting down gracefully...");
-  console.error("Error:", err?.message);
-  console.error("Stack:", err?.stack);
+  logFatal("process.uncaught_exception", err, {}, "Uncaught exception; shutting down gracefully");
   // 给 PM2/systemd 5 秒优雅退出，然后重启干净的进程
   setTimeout(() => process.exit(1), 5000);
 });
 process.on("unhandledRejection", (reason: unknown) => {
-  console.error("[UNHANDLED REJECTION]", reason);
+  logError("process.unhandled_rejection", reason);
 });
 import express, { type Request, type Response, type NextFunction } from "express";
 import { createServer } from "http";
@@ -91,7 +92,7 @@ const centralAuthConfig = centralAuthConfigFromEnv();
 startApplicationLogRetention();
 
 const roleBaseline = getRoleSkillMcpBaseline();
-console.log("[ROLE-TEMPLATE] baseline loaded", {
+logInfo("role_template.baseline_loaded", {
   version: roleBaseline.version,
   defaultRole: roleBaseline.schema.defaultRole,
   roles: listAgentRoleTemplates().length,
@@ -258,6 +259,7 @@ async function startServer() {
   // 生产环境：根据实际情况配置信任的代理IP
   const trustProxy = resolveTrustProxySetting(process.env.TRUST_PROXY, process.env.NODE_ENV);
   app.set("trust proxy", trustProxy);
+  app.use(requestObservabilityMiddleware);
   if (trustProxy === false) {
     console.log("[Server] Trust proxy disabled; set TRUST_PROXY explicitly when running behind a trusted reverse proxy");
   } else {
@@ -294,6 +296,10 @@ async function startServer() {
   // ========== 安全配置 ==========
   // 1. 设置安全 HTTP 头
   setupSecurityHeaders(app);
+
+  // Liveness stays available during incidents. Metrics enforce their own
+  // loopback-or-token access rule and do not expose request-level labels.
+  registerOperationalRoutes(app);
   
   // 2. IP 黑名单检查（最优先，在所有其他检查之前）
   app.use(ipBlacklistMiddleware());
@@ -410,7 +416,7 @@ async function startServer() {
         try {
           return await createContext(opts);
         } catch (error) {
-          console.error("[tRPC] Context creation error:", error);
+          logError("trpc.context.failed", error);
           // 即使创建上下文失败，也返回一个基本的上下文
           return {
             req: opts.req,
@@ -421,7 +427,7 @@ async function startServer() {
       },
       onError: ({ error, path, type }) => {
         // 只记录错误，不手动发送响应（让 tRPC 自己处理）
-        console.error(`[tRPC Error] ${type} ${path}:`, error);
+        logError("trpc.request.failed", error, { type, procedure: path || "unknown" });
       },
     })
   );
@@ -516,11 +522,6 @@ async function startServer() {
     } catch (_e) {
       res.status(500).json({ error: "read help doc failed" });
     }
-  });
-
-  // Health check endpoint（必须在静态文件服务之前）
-  app.get("/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
   // 静态文件服务（始终提供前端构建文件，不区分环境）
@@ -742,7 +743,7 @@ async function startServer() {
 
   // 全局错误处理中间件（必须在所有路由之后）
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("[Server Error]:", err);
+    logError("http.unhandled_error", err, { method: req.method, route: req.path });
     
     // 确保响应是 JSON 格式
     if (!res.headersSent) {
@@ -773,9 +774,11 @@ async function startServer() {
 
   server.listen(port, bindIp, () => {
     const displayHost = bindIp.includes(":") ? `[${bindIp}]` : bindIp;
-    console.log(`✅ Backend API server running on http://${displayHost}:${port}/`);
-    console.log(`   API endpoint: http://${displayHost}:${port}/api/trpc`);
-    console.log(`   CORS allowed origins: ${allowedOrigins.join(', ')}`);
+    logInfo("server.started", {
+      bindIp: displayHost,
+      port,
+      corsOriginCount: allowedOrigins.length,
+    });
     const dbWarmupStartedAt = Date.now();
     getDb()
       .then((db) => {
@@ -789,7 +792,8 @@ async function startServer() {
         }
       })
       .catch((error) => {
-        console.warn("[Database] Warmup failed:", (error as any)?.message || error);
+        logWarn("database.warmup_failed", {}, "Database warmup failed");
+        logError("database.warmup_error", error);
         logIosLoadDebug("db_warmup_error", {
           error: String((error as any)?.message || error),
           ms: Date.now() - dbWarmupStartedAt,
@@ -799,4 +803,7 @@ async function startServer() {
   startAuditDlqWorker();
   startRecycler();
 }
-startServer().catch(console.error);
+void startServer().catch((error) => {
+  logFatal("server.start_failed", error);
+  process.exitCode = 1;
+});

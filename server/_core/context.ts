@@ -1,5 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import { sdk, type AuthenticatedUser } from "./sdk";
+import { logError } from "./observability/logger";
+import { updateRequestContext } from "./observability/request-context";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -18,10 +20,12 @@ export async function createContext(
     // Authentication is optional for public procedures.
     // 记录错误但不抛出，允许未认证的请求继续
     if (error instanceof Error && !error.message.includes("Invalid session")) {
-      console.error("[Context] Authentication error:", error);
+      logError("auth.context.failed", error);
     }
     user = null;
   }
+
+  if (user) updateRequestContext({ userId: Number(user.id) });
 
   return {
     req: opts.req,

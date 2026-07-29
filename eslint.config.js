@@ -86,6 +86,16 @@ export default tseslint.config(
     },
   },
   {
+    files: [
+      "server/_core/observability/**/*.{ts,tsx}",
+      "server/_core/skills/routes/**/*.{ts,tsx}",
+    ],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "error",
+      "no-console": "error",
+    },
+  },
+  {
     files: ["**/*.cjs"],
     languageOptions: {
       sourceType: "commonjs",

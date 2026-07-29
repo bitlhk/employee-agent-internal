@@ -1,0 +1,9 @@
+{
+  "explicitAnyWarnings": 1474,
+  "scope": [
+    "server/**/*.{ts,tsx}",
+    "client/src/**/*.{ts,tsx}",
+    "shared/**/*.{ts,tsx}",
+    "scripts/**/*.{ts,tsx}"
+  ]
+}
