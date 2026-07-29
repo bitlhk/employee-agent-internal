@@ -136,8 +136,8 @@ bash /tmp/employee-agent-install.sh --host 你的服务器IP
 ```bash
 bash /tmp/employee-agent-install.sh \
   --repo https://atomgit.com/linggan_ai/employee-agent.git \
-  --ref ded5d3977ec118fd0190182ef7cbbe22175648da \
-  --expected-commit ded5d3977ec118fd0190182ef7cbbe22175648da \
+  --ref 836d827e9a977527f803aa4cfa6afc4fc09d2a13 \
+  --expected-commit 836d827e9a977527f803aa4cfa6afc4fc09d2a13 \
   --mirror auto \
   --dir "$HOME/employee-agent" \
   --host your-server-ip \
