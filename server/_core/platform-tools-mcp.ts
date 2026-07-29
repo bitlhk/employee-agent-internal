@@ -113,7 +113,13 @@ function hasRequestId(id: unknown): boolean {
   return id !== undefined && id !== null;
 }
 
-function textResult(text: string, extra: Record<string, unknown> = {}) {
+type PlatformToolResult = {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+  [key: string]: unknown;
+};
+
+function textResult(text: string, extra: Record<string, unknown> = {}): PlatformToolResult {
   return { content: [{ type: "text", text }], ...extra };
 }
 
@@ -421,7 +427,7 @@ async function handleMessage(req: Request, msg: any) {
       const finishMetric = beginMcpCall("platform");
       try {
         const result = await callTool(req, String(msg.params?.name || ""), msg.params?.arguments || {});
-        finishMetric((result as any)?.isError ? "error" : "success");
+        finishMetric(result.isError === true ? "error" : "success");
         return ok(id, result);
       } catch (error) {
         finishMetric("error");

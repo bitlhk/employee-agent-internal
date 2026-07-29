@@ -283,7 +283,7 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
       if (!tool) continue;
       try {
         const result = await callCustomMcpTool(configFromRow(row), tool.name, args);
-        metricOutcome = (result as any)?.isError ? "error" : "success";
+        metricOutcome = result.isError === true ? "error" : "success";
         await recordAuditBestEffort({
           action: "agent.custom_mcp.called",
           result: "success",

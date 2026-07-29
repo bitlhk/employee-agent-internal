@@ -805,6 +805,12 @@ export default function ClawAdmin() {
   const summary = listData?.summary;
   const rows = listData?.rows || [];
   const healthData = systemHealth as any;
+  const operationalHealth = systemHealth?.operations;
+  const operationalCapacity = operationalHealth?.capacity || {};
+  const operationalWorkers: Array<{ state?: string }> = Array.isArray(operationalHealth?.workers)
+    ? operationalHealth.workers
+    : [];
+  const operationalRunningWorkers = operationalWorkers.filter((worker) => worker.state === "running").length;
   const auditHealth = healthData?.audit;
   const auditTables = Array.isArray(auditHealth?.tables) ? auditHealth.tables : [];
   const auditPresentCount = auditTables.filter((table: any) => table.exists).length;
@@ -844,10 +850,7 @@ export default function ClawAdmin() {
       return `${statusText} · JiuwenSwarm ${jiuwen?.active ?? 0} 个 · OpenClaw ${openclaw?.active ?? 0} 个 · 24h 请求 ${jiuwen?.recent?.requests24h ?? 0}`;
     }
     if (group === "operations") {
-      const capacity = healthData?.operations?.capacity || {};
-      const workers = healthData?.operations?.workers || [];
-      const running = workers.filter((worker: any) => worker.state === "running").length;
-      return `${statusText} · 并发 ${capacity.chat_http?.active ?? 0}/${capacity.chat_http?.limit ?? "-"} · 后台任务 ${running}/${workers.length} · 告警 ${healthData?.operations?.alerting?.status || "disabled"}`;
+      return `${statusText} · 并发 ${operationalCapacity.chat_http?.active ?? 0}/${operationalCapacity.chat_http?.limit ?? "-"} · 后台任务 ${operationalRunningWorkers}/${operationalWorkers.length} · 告警 ${operationalHealth?.alerting?.status || "disabled"}`;
     }
     if (group === "database") {
       const tables = healthData?.database?.tables || [];
@@ -1563,19 +1566,19 @@ export default function ClawAdmin() {
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">聊天并发</div>
-                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).operations?.capacity?.chat_http?.active ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {(systemHealth as any).operations?.capacity?.chat_http?.limit ?? "-"}</span></div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{operationalCapacity.chat_http?.active ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {operationalCapacity.chat_http?.limit ?? "-"}</span></div>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">后台任务</div>
-                      <div className="mt-1 text-base font-semibold text-gray-900">{((systemHealth as any).operations?.workers || []).filter((worker: any) => worker.state === "running").length}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {((systemHealth as any).operations?.workers || []).length}</span></div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{operationalRunningWorkers}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {operationalWorkers.length}</span></div>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">数据库延迟</div>
-                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).database?.latencyMs ?? "-"}<span className="ml-1 text-xs font-normal text-muted-foreground">ms</span></div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{systemHealth.database?.latencyMs ?? "-"}<span className="ml-1 text-xs font-normal text-muted-foreground">ms</span></div>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">飞书告警</div>
-                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).operations?.alerting?.status === "online" ? "运行中" : (systemHealth as any).operations?.alerting?.configured ? "待启动" : "未配置"}</div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{operationalHealth?.alerting?.status === "online" ? "运行中" : operationalHealth?.alerting?.configured ? "待启动" : "未配置"}</div>
                     </div>
                   </div>
 
