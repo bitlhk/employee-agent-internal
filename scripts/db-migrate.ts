@@ -74,6 +74,29 @@ async function ensureMigrationTable(connection: Connection): Promise<void> {
   `);
 }
 
+async function validateDdlPrivileges(connection: Connection): Promise<void> {
+  const [rows] = await connection.query<Array<{ connection_id: number } & mysql.RowDataPacket>>(
+    "SELECT CONNECTION_ID() AS connection_id",
+  );
+  const suffix = `${process.pid}_${Number(rows[0]?.connection_id || 0)}`;
+  const table = `__ea_migration_probe_${suffix}`;
+  const trigger = `__ea_migration_probe_trigger_${suffix}`;
+  const view = `__ea_migration_probe_view_${suffix}`;
+
+  try {
+    await connection.query(`CREATE TABLE \`${table}\` (\`value\` INT NOT NULL) ENGINE=InnoDB`);
+    await connection.query(`CREATE TRIGGER \`${trigger}\` BEFORE INSERT ON \`${table}\` FOR EACH ROW SET NEW.\`value\` = NEW.\`value\``);
+    await connection.query(`CREATE VIEW \`${view}\` AS SELECT \`value\` FROM \`${table}\``);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`DDL privilege probe failed; configure DATABASE_MIGRATION_URL with a migration account (${reason})`);
+  } finally {
+    await connection.query(`DROP VIEW IF EXISTS \`${view}\``).catch(() => undefined);
+    await connection.query(`DROP TRIGGER IF EXISTS \`${trigger}\``).catch(() => undefined);
+    await connection.query(`DROP TABLE IF EXISTS \`${table}\``).catch(() => undefined);
+  }
+}
+
 async function validateBaseline(connection: Connection, contract: BaselineContract): Promise<void> {
   const [rows] = await connection.query<Array<{ TABLE_NAME: string; COLUMN_NAME: string } & mysql.RowDataPacket>>(`
     SELECT TABLE_NAME, COLUMN_NAME
@@ -158,6 +181,7 @@ async function main(): Promise<void> {
   const connection = await mysql.createConnection({ uri: databaseUrl(), multipleStatements: false });
   try {
     await acquireLock(connection);
+    if (mode === "apply") await validateDdlPrivileges(connection);
     const tablePresent = await migrationTableExists(connection);
     if (!tablePresent && mode !== "apply") {
       await validateBaseline(connection, loadBaseline().contract);

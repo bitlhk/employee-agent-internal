@@ -34,8 +34,19 @@ make_bundle() {
   printf '%s' "$bundle"
 }
 
+bundle_missing_migration="$(make_bundle release-missing-migration 0)"
+if PATH="$fake_bin:$PATH" RELEASE_REQUIRE_MIGRATION_URL=true "$SCRIPT_DIR/deploy-release.sh" \
+  --bundle "$bundle_missing_migration" \
+  --deploy-root "$deploy_root" \
+  --shared-root "$shared_root" \
+  --prepare-only \
+  --skip-backup; then
+  echo "production release accepted a missing migration URL" >&2
+  exit 1
+fi
+
 bundle_v1="$(make_bundle release-v1 0)"
-PATH="$fake_bin:$PATH" "$SCRIPT_DIR/deploy-release.sh" \
+PATH="$fake_bin:$PATH" DATABASE_MIGRATION_URL=mysql://unused "$SCRIPT_DIR/deploy-release.sh" \
   --bundle "$bundle_v1" \
   --deploy-root "$deploy_root" \
   --shared-root "$shared_root" \
@@ -46,7 +57,7 @@ PATH="$fake_bin:$PATH" "$SCRIPT_DIR/deploy-release.sh" \
 [[ "$(readlink -f "$deploy_root/current/data")" == "$shared_root/data" ]]
 
 bundle_v2="$(make_bundle release-v2 1)"
-if PATH="$fake_bin:$PATH" "$SCRIPT_DIR/deploy-release.sh" \
+if PATH="$fake_bin:$PATH" DATABASE_MIGRATION_URL=mysql://unused "$SCRIPT_DIR/deploy-release.sh" \
   --bundle "$bundle_v2" \
   --deploy-root "$deploy_root" \
   --shared-root "$shared_root" \

@@ -44,7 +44,7 @@ pnpm db:deploy
 - 空数据库：先依据 `drizzle/schema.ts` 创建当前基线，再执行受管前向迁移。
 - 已有数据库：必须通过 `config/schema-baseline-v1.json` 的表和字段校验，才登记基线并执行前向迁移，不会重放历史 SQL。
 
-生产环境建议配置独立的 `DATABASE_MIGRATION_URL`，只在发布窗口提供 DDL 权限；应用运行时继续使用权限更小的 `DATABASE_URL`。
+生产环境必须配置独立的 `DATABASE_MIGRATION_URL`，只在发布窗口提供 DDL 权限；应用运行时继续使用权限更小的 `DATABASE_URL`。迁移会先用随机临时对象验证建表、触发器和视图权限，探针失败时不会修改业务表。
 
 日常命令：
 

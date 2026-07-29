@@ -137,7 +137,7 @@ sudo scripts/deploy-release.sh \
 
 The shared root owns `.env`, `data`, and `logs`; each release owns its source, dependencies, and build output. Deployment verifies the bundle checksum, installs and builds in a new directory, creates a database backup, applies managed migrations, switches `current`, reloads PM2, and runs the production health gate. A failed health gate automatically restores the previous release.
 
-Set `RELEASE_REQUIRE_BACKUP=true` in production so a missing backup configuration blocks the release. The first migration from an existing live directory treats `--shared-root` as the rollback target; no data directory move is required.
+Set `RELEASE_REQUIRE_BACKUP=true` and `RELEASE_REQUIRE_MIGRATION_URL=true` in production so missing backup or DDL credentials block the release. The first migration from an existing live directory treats `--shared-root` as the rollback target; no data directory move is required.
 
 Inspect or manually roll back:
 

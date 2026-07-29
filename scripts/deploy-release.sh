@@ -130,6 +130,17 @@ if [[ -n "${RELEASE_MIGRATION_ENV_FILE:-}" ]]; then
   source "$RELEASE_MIGRATION_ENV_FILE"
   set +a
 fi
+if [[ "${RELEASE_REQUIRE_MIGRATION_URL:-false}" == true ]]; then
+  if [[ -z "${DATABASE_MIGRATION_URL:-}" ]]; then
+    node -e '
+      const fs = require("node:fs");
+      const line = fs.readFileSync(process.argv[1], "utf8").split(/\r?\n/)
+        .find((item) => /^\s*DATABASE_MIGRATION_URL\s*=/.test(item));
+      const value = String(line || "").replace(/^\s*DATABASE_MIGRATION_URL\s*=\s*/, "").trim().replace(/^(["'\''])(.*)\1$/, "$2");
+      if (!value) process.exit(1);
+    ' "$release_dir/.env" || release_die "DATABASE_MIGRATION_URL is required for production releases"
+  fi
+fi
 (cd "$release_dir" && pnpm db:deploy)
 
 if [[ "$PREPARE_ONLY" == true ]]; then
