@@ -53,12 +53,17 @@ export type KnowledgeRetrievalResult = {
   metrics: {
     knowledgeBaseCount: number;
     bm25MaxScore: number;
+    bm25RelevantMaxScore?: number;
     vectorMinDistance: number | null;
     reranker: string;
     cacheHit: boolean;
     externalQueryAllowed: boolean;
     queryCount: number;
     queryExpansion: KnowledgeQueryPlan["expansion"];
+    queryTermCount?: number;
+    lexicalMatchCount?: number;
+    lexicalCoverage?: number;
+    autoGate?: string;
   };
 };
 
@@ -439,12 +444,17 @@ export async function retrieveAcrossKnowledgeBases(
       metrics: {
         knowledgeBaseCount: 0,
         bm25MaxScore: 0,
+        bm25RelevantMaxScore: 0,
         vectorMinDistance: null,
         reranker: "disabled",
         cacheHit: false,
         externalQueryAllowed: false,
         queryCount: 0,
         queryExpansion: "skipped",
+        queryTermCount: 0,
+        lexicalMatchCount: 0,
+        lexicalCoverage: 0,
+        autoGate: "unavailable",
       },
     };
   }
@@ -527,6 +537,9 @@ export async function retrieveAcrossKnowledgeBases(
   const retrievalKinds = Array.from(new Set(payloads.map((payload) => String(payload?.retrieval || "bm25"))));
   const rerankerStatuses = payloads.map((payload) => String(payload?.metrics?.reranker || "disabled"));
   const reranker = ["applied", "fallback", "skipped_policy", "disabled"].find((status) => rerankerStatuses.includes(status)) || "disabled";
+  const autoGateStatuses = payloads.map((payload) => String(payload?.metrics?.auto_gate || ""));
+  const autoGate = ["forced", "bm25+vector", "bm25", "vector", "rejected"]
+    .find((status) => autoGateStatuses.includes(status)) || "unknown";
   const vectorDistances = payloads
     .map((payload) => payload?.metrics?.vector_min_distance)
     .filter((value) => value != null)
@@ -539,12 +552,17 @@ export async function retrieveAcrossKnowledgeBases(
     metrics: {
       knowledgeBaseCount: Math.max(...payloads.map((payload) => Number(payload?.metrics?.knowledge_base_count || 0)), available.length),
       bm25MaxScore: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.bm25_max_score || 0))),
+      bm25RelevantMaxScore: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.bm25_relevant_max_score || 0))),
       vectorMinDistance: vectorDistances.length ? Math.min(...vectorDistances) : null,
       reranker,
       cacheHit: payloads.every((payload) => Boolean(payload?.metrics?.cache_hit)),
       externalQueryAllowed: payloads.every((payload) => Boolean(payload?.metrics?.external_query_allowed)),
       queryCount: successful.length,
       queryExpansion: queryPlan.expansion,
+      queryTermCount: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.query_term_count || 0))),
+      lexicalMatchCount: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.lexical_match_count || 0))),
+      lexicalCoverage: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.lexical_coverage || 0))),
+      autoGate,
     },
   };
 }

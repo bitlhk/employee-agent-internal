@@ -381,10 +381,15 @@ export function registerChatStreamRoutes(app: express.Express) {
           triggered: Boolean(knowledgeContext),
           retrievalMs: Date.now() - knowledgeStartedAt,
           bm25MaxScore: knowledge.metrics.bm25MaxScore,
+          bm25RelevantMaxScore: knowledge.metrics.bm25RelevantMaxScore,
           vectorMinDistance: knowledge.metrics.vectorMinDistance,
           queryCount: knowledge.metrics.queryCount,
           queryExpansion: knowledge.metrics.queryExpansion,
           reranker: knowledge.metrics.reranker,
+          queryTermCount: knowledge.metrics.queryTermCount,
+          lexicalMatchCount: knowledge.metrics.lexicalMatchCount,
+          lexicalCoverage: knowledge.metrics.lexicalCoverage,
+          autoGate: knowledge.metrics.autoGate,
         });
       } catch (error) {
         appendLogAsync("jiuwenclaw-exec.log", {

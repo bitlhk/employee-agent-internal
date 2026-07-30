@@ -171,6 +171,70 @@ class KnowledgeServiceTest(unittest.TestCase):
             {"heading_path": [], "position": "正文"},
         ))
 
+    def test_auto_lexical_gate_rejects_a_single_generic_word_match(self):
+        candidate = service.NodeWithScore(
+            node=service.TextNode(
+                id_="doc_policy001:c1",
+                text="官网已发布产品介绍和公开研究观点。",
+                metadata={
+                    "document_name": "客户信息保护规范.md",
+                    "heading_path": ["数据分级"],
+                    "position": "正文",
+                },
+            ),
+            score=2.1,
+        )
+
+        terms, match_count, coverage, relevant = service._auto_lexical_evidence(
+            "《人工智能实施行动计划》已经发布了吗",
+            [candidate],
+        )
+
+        self.assertIn("人工智能", terms)
+        self.assertIn("行动计划", terms)
+        self.assertEqual(match_count, 0)
+        self.assertEqual(coverage, 0)
+        self.assertEqual(relevant, [])
+
+    def test_auto_lexical_gate_keeps_substantive_knowledge_matches(self):
+        candidate = service.NodeWithScore(
+            node=service.TextNode(
+                id_="doc_policy001:c1",
+                text="客户信息按照公开、内部、敏感和严格机密四个等级分级管理。",
+                metadata={
+                    "document_name": "客户信息保护规范.md",
+                    "heading_path": ["数据分级"],
+                    "position": "正文",
+                },
+            ),
+            score=2.1,
+        )
+
+        terms, match_count, coverage, relevant = service._auto_lexical_evidence(
+            "客户信息怎么分级",
+            [candidate],
+        )
+
+        self.assertGreaterEqual(len(terms), 2)
+        self.assertGreaterEqual(match_count, 2)
+        self.assertGreater(coverage, 0.5)
+        self.assertEqual(relevant, [candidate])
+
+    def test_auto_retrieval_ignores_reference_only_documents(self):
+        source_index = service.TextNode(
+            id_="doc_sources:c1",
+            text="财政部差旅费管理办法公开链接。",
+            metadata={"document_name": "SOURCES.md"},
+        )
+        policy = service.TextNode(
+            id_="doc_policy001:c1",
+            text="住宿标准为每人每晚 800 元。",
+            metadata={"document_name": "差旅制度.md"},
+        )
+
+        self.assertFalse(service._auto_source_candidate(source_index))
+        self.assertTrue(service._auto_source_candidate(policy))
+
 
 if __name__ == "__main__":
     unittest.main()

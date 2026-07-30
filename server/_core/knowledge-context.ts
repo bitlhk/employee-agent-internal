@@ -29,10 +29,15 @@ export type ChatKnowledgeResult = {
   candidateBaseCount: number;
   metrics: {
     bm25MaxScore: number;
+    bm25RelevantMaxScore?: number;
     vectorMinDistance: number | null;
     queryCount: number;
     queryExpansion: "skipped" | "applied" | "fallback";
     reranker: string;
+    queryTermCount?: number;
+    lexicalMatchCount?: number;
+    lexicalCoverage?: number;
+    autoGate?: string;
   };
 };
 
@@ -143,10 +148,15 @@ export async function buildChatKnowledgeContext(input: {
       candidateBaseCount: selected.length,
       metrics: {
         bm25MaxScore: retrieval.metrics.bm25MaxScore,
+        bm25RelevantMaxScore: retrieval.metrics.bm25RelevantMaxScore,
         vectorMinDistance: retrieval.metrics.vectorMinDistance,
         queryCount: retrieval.metrics.queryCount || 1,
         queryExpansion: retrieval.metrics.queryExpansion || "skipped",
         reranker: retrieval.metrics.reranker || "disabled",
+        queryTermCount: retrieval.metrics.queryTermCount,
+        lexicalMatchCount: retrieval.metrics.lexicalMatchCount,
+        lexicalCoverage: retrieval.metrics.lexicalCoverage,
+        autoGate: retrieval.metrics.autoGate,
       },
     };
   }
@@ -172,10 +182,15 @@ export async function buildChatKnowledgeContext(input: {
     candidateBaseCount: selected.length,
     metrics: {
       bm25MaxScore: retrieval.metrics.bm25MaxScore,
+      bm25RelevantMaxScore: retrieval.metrics.bm25RelevantMaxScore,
       vectorMinDistance: retrieval.metrics.vectorMinDistance,
       queryCount: retrieval.metrics.queryCount || 1,
       queryExpansion: retrieval.metrics.queryExpansion || "skipped",
       reranker: retrieval.metrics.reranker || "disabled",
+      queryTermCount: retrieval.metrics.queryTermCount,
+      lexicalMatchCount: retrieval.metrics.lexicalMatchCount,
+      lexicalCoverage: retrieval.metrics.lexicalCoverage,
+      autoGate: retrieval.metrics.autoGate,
     },
     context: [
       "<ea_knowledge_context>",

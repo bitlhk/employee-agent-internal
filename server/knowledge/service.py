@@ -676,6 +676,77 @@ def _auto_query_candidate(value: str) -> bool:
     return True
 
 
+_AUTO_QUERY_STOPWORDS = frozenset({
+    "一个", "一些", "一下", "一份", "一首", "为什么", "为何", "什么", "什么时候",
+    "时候", "几点", "哪个", "哪些", "哪里", "多少", "如何", "怎么", "怎样", "是否", "是不是",
+    "有没有", "有无", "已经", "还是", "现在", "目前", "这个", "那个", "这些",
+    "那些", "请问", "帮我", "给我", "告诉", "告诉我", "关于", "相关", "问题",
+    "情况", "内容", "可以", "能够", "需要", "进行", "要求", "规定", "规则",
+    "标准", "办法", "流程", "实施", "发布", "计划", "管理", "说明", "介绍",
+    "制度", "一下子", "了吗", "的吗",
+})
+_AUTO_REFERENCE_ONLY_DOCUMENTS = frozenset({
+    "sources.md", "references.md", "参考资料.md", "数据来源.md",
+})
+
+
+def _auto_query_terms(value: str) -> tuple[str, ...]:
+    import jieba
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for raw in jieba.cut_for_search(value):
+        term = re.sub(r"[\W_]+", "", raw.lower(), flags=re.UNICODE)
+        if len(term) < 2 or term in _AUTO_QUERY_STOPWORDS or term in seen:
+            continue
+        seen.add(term)
+        candidates.append(term)
+
+    # jieba search mode emits both a compound and its shorter components. Keep
+    # the compound so one concept cannot satisfy the gate multiple times.
+    ordered = sorted(candidates, key=lambda item: (-len(item), candidates.index(item)))
+    selected: list[str] = []
+    for term in ordered:
+        if any(term != existing and term in existing for existing in selected):
+            continue
+        selected.append(term)
+    return tuple(selected)
+
+
+def _auto_lexical_evidence(
+    query: str,
+    candidates: list[NodeWithScore],
+) -> tuple[tuple[str, ...], int, float, list[NodeWithScore]]:
+    terms = _auto_query_terms(query)
+    if not terms or not candidates:
+        return terms, 0, 0.0, []
+
+    required_matches = 1 if len(terms) == 1 else 2
+    best_match_count = 0
+    relevant: list[NodeWithScore] = []
+    for candidate in candidates:
+        metadata = candidate.node.metadata
+        searchable = "\n".join([
+            str(metadata.get("document_name") or ""),
+            " / ".join(map(str, metadata.get("heading_path") or [])),
+            str(metadata.get("position") or ""),
+            candidate.node.get_content(),
+        ]).lower()
+        compact = re.sub(r"\s+", "", searchable)
+        match_count = sum(1 for term in terms if term in compact)
+        best_match_count = max(best_match_count, match_count)
+        if match_count >= required_matches:
+            relevant.append(candidate)
+
+    coverage = best_match_count / max(1, len(terms))
+    return terms, best_match_count, coverage, relevant
+
+
+def _auto_source_candidate(node: TextNode) -> bool:
+    document_name = str(node.metadata.get("document_name") or "").strip().lower()
+    return document_name not in _AUTO_REFERENCE_ONLY_DOCUMENTS
+
+
 def _tag_node(node: TextNode, knowledge_base_id: str) -> TextNode:
     node.metadata = {**node.metadata, "knowledge_base_id": knowledge_base_id}
     return node
@@ -757,6 +828,8 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             original = nodes_by_id.get(str(result.node.node_id))
             if original is None or score <= 0:
                 continue
+            if request.mode == "auto" and not _auto_source_candidate(original):
+                continue
             bm25_max_score = max(bm25_max_score, score)
             bm25_candidates.append(NodeWithScore(node=_tag_node(original, knowledge_base_id), score=score))
     bm25_candidates.sort(key=lambda item: float(item.score or 0), reverse=True)
@@ -774,6 +847,8 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
                     continue
                 retriever = runtime.vector_index.as_retriever(similarity_top_k=min(candidate_k, len(runtime.nodes)))
                 for result in retriever.retrieve(query_bundle):
+                    if request.mode == "auto" and not _auto_source_candidate(result.node):
+                        continue
                     distance = float(result.score) if result.score is not None else None
                     if distance is not None:
                         vector_min_distance = distance if vector_min_distance is None else min(vector_min_distance, distance)
@@ -783,20 +858,46 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             vector_candidates = []
             vector_min_distance = None
 
+    query_terms, lexical_match_count, lexical_coverage, relevant_bm25_candidates = _auto_lexical_evidence(
+        request.query,
+        bm25_candidates,
+    )
+    relevant_bm25_max_score = max(
+        (float(candidate.score or 0) for candidate in relevant_bm25_candidates),
+        default=0.0,
+    )
     bm25_threshold = float(os.environ.get("KNOWLEDGE_AUTO_BM25_MIN_SCORE", "1.2"))
-    vector_threshold = float(os.environ.get("KNOWLEDGE_AUTO_VECTOR_MAX_DISTANCE", "0.88"))
-    triggered = request.mode == "forced" or (
+    vector_threshold = float(os.environ.get("KNOWLEDGE_AUTO_VECTOR_MAX_DISTANCE", "0.72"))
+    forced = request.mode == "forced"
+    bm25_signal = auto_candidate and relevant_bm25_max_score >= bm25_threshold
+    vector_signal = (
         auto_candidate
-        and (
-            bm25_max_score >= bm25_threshold
-            or (vector_min_distance is not None and vector_min_distance <= vector_threshold)
-        )
+        and vector_min_distance is not None
+        and vector_min_distance <= vector_threshold
+    )
+    relevant_vector_candidates = [
+        candidate for candidate in vector_candidates
+        if candidate.score is not None and float(candidate.score) <= vector_threshold
+    ]
+    triggered = forced or bm25_signal or vector_signal
+    auto_gate = (
+        "forced" if forced
+        else "bm25+vector" if bm25_signal and vector_signal
+        else "bm25" if bm25_signal
+        else "vector" if vector_signal
+        else "rejected"
     )
     result_sets: list[list[NodeWithScore]] = []
-    if bm25_candidates:
-        result_sets.append(bm25_candidates)
-    if vector_candidates:
-        result_sets.append(vector_candidates)
+    if forced:
+        if bm25_candidates:
+            result_sets.append(bm25_candidates)
+        if vector_candidates:
+            result_sets.append(vector_candidates)
+    else:
+        if bm25_signal and relevant_bm25_candidates:
+            result_sets.append(relevant_bm25_candidates)
+        if vector_signal and relevant_vector_candidates:
+            result_sets.append(relevant_vector_candidates)
     if not triggered or not result_sets:
         payload = {
             "ok": True,
@@ -807,10 +908,15 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             "metrics": {
                 "knowledge_base_count": len(targets),
                 "bm25_max_score": round(bm25_max_score, 6),
+                "bm25_relevant_max_score": round(relevant_bm25_max_score, 6),
                 "vector_min_distance": round(vector_min_distance, 6) if vector_min_distance is not None else None,
                 "reranker": "disabled",
                 "cache_hit": False,
                 "external_query_allowed": vector_policy_allowed,
+                "query_term_count": len(query_terms),
+                "lexical_match_count": lexical_match_count,
+                "lexical_coverage": round(lexical_coverage, 6),
+                "auto_gate": auto_gate,
             },
         }
         _query_cache_put(cache_key, payload)
@@ -878,10 +984,15 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         "metrics": {
             "knowledge_base_count": len(targets),
             "bm25_max_score": round(bm25_max_score, 6),
+            "bm25_relevant_max_score": round(relevant_bm25_max_score, 6),
             "vector_min_distance": round(vector_min_distance, 6) if vector_min_distance is not None else None,
             "reranker": reranker_status,
             "cache_hit": False,
             "external_query_allowed": vector_policy_allowed,
+            "query_term_count": len(query_terms),
+            "lexical_match_count": lexical_match_count,
+            "lexical_coverage": round(lexical_coverage, 6),
+            "auto_gate": auto_gate,
         },
     }
     _query_cache_put(cache_key, payload)
