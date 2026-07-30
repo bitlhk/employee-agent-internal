@@ -51,15 +51,15 @@ release_pm2_reload() {
     fi
   }
 
-  release_pm2_reset_if_stale "$app_name"
-  APP_ROOT="$app_root" PM2_APP_NAME="$app_name" \
-    pm2 startOrReload "$app_root/ecosystem.config.cjs" --only "$app_name" --update-env
-
   if [[ -f "$app_root/ecosystem.knowledge.config.cjs" ]]; then
     release_pm2_reset_if_stale "$knowledge_name"
     APP_ROOT="$app_root" PM2_KNOWLEDGE_APP_NAME="$knowledge_name" \
       pm2 startOrReload "$app_root/ecosystem.knowledge.config.cjs" --only "$knowledge_name" --update-env
   fi
+
+  release_pm2_reset_if_stale "$app_name"
+  APP_ROOT="$app_root" PM2_APP_NAME="$app_name" \
+    pm2 startOrReload "$app_root/ecosystem.config.cjs" --only "$app_name" --update-env
 
   if [[ -f "$app_root/ops/monitoring/ecosystem.alert-dispatcher.config.cjs" ]] \
     && grep -Eq '^EA_ALERT_FEISHU_WEBHOOK_URL=https://open\.feishu\.cn/' "$app_root/.env" 2>/dev/null; then

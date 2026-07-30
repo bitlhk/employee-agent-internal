@@ -4,6 +4,9 @@ const mocks = vi.hoisted(() => ({
   listKnowledgeDocuments: vi.fn(),
   createKnowledgeIndexJob: vi.fn(),
   getKnowledgeBaseById: vi.fn(),
+  listKnowledgeBasesForIndexRecovery: vi.fn(async () => []),
+  listRecoverableKnowledgeIndexJobs: vi.fn(async () => []),
+  pruneKnowledgeIndexJobs: vi.fn(async () => {}),
   setKnowledgeIndexJobState: vi.fn(),
   setKnowledgeBaseIndexState: vi.fn(),
   setKnowledgeDocumentState: vi.fn(),
@@ -15,9 +18,10 @@ vi.mock("../db", () => ({
   listKnowledgeDocuments: mocks.listKnowledgeDocuments,
   createKnowledgeIndexJob: mocks.createKnowledgeIndexJob,
   getKnowledgeBaseById: mocks.getKnowledgeBaseById,
+  listKnowledgeBasesForIndexRecovery: mocks.listKnowledgeBasesForIndexRecovery,
   isKnowledgeDocumentCurrentlyActive: () => true,
-  listRecoverableKnowledgeIndexJobs: vi.fn(async () => []),
-  pruneKnowledgeIndexJobs: vi.fn(async () => {}),
+  listRecoverableKnowledgeIndexJobs: mocks.listRecoverableKnowledgeIndexJobs,
+  pruneKnowledgeIndexJobs: mocks.pruneKnowledgeIndexJobs,
   setKnowledgeIndexJobState: mocks.setKnowledgeIndexJobState,
   setKnowledgeBaseIndexState: mocks.setKnowledgeBaseIndexState,
   setKnowledgeDocumentState: mocks.setKnowledgeDocumentState,
@@ -32,7 +36,7 @@ vi.mock("./ea-assistant-model", () => ({
   callEaAssistantModel: mocks.callEaAssistantModel,
 }));
 
-import { queueKnowledgeIndex, retrieveAcrossKnowledgeBases } from "./knowledge-service";
+import { queueKnowledgeIndex, retrieveAcrossKnowledgeBases, startKnowledgeIndexRecovery } from "./knowledge-service";
 
 describe("knowledge indexing queue", () => {
   afterEach(() => {
@@ -94,6 +98,89 @@ describe("knowledge indexing queue", () => {
 
     expect(mocks.listKnowledgeDocuments).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("queues a durable rebuild when database metadata exists but the physical index is missing", async () => {
+    const base = {
+      id: 77,
+      publicId: "kb_restorebase1",
+      ownerUserId: 7,
+      ownerGroupId: 3,
+      scope: "personal" as const,
+      isGlobal: false,
+      roleTemplate: null,
+      name: "恢复知识库",
+      description: "",
+      classification: "internal" as const,
+      externalProcessingAllowed: false,
+      status: "ready" as const,
+      documentCount: 1,
+      chunkCount: 1,
+      lastError: null,
+      indexVersion: "old-version",
+      indexSchemaVersion: 2,
+      indexedAt: new Date(0).toISOString(),
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+    const document = {
+      id: 10,
+      publicId: "doc_restore001",
+      knowledgeBaseId: 77,
+      name: "制度.txt",
+      extension: "txt",
+      mimeType: "text/plain",
+      storagePath: "documents/restore.txt",
+      sizeBytes: 10,
+      sha256: "b".repeat(64),
+      versionLabel: "1.0",
+      lifecycle: "active" as const,
+      sourceDepartment: "",
+      classification: "internal" as const,
+      authority: "reference" as const,
+      externalProcessingAllowed: false,
+      effectiveAt: null,
+      expiresAt: null,
+      status: "ready" as const,
+      chunkCount: 1,
+      lastError: null,
+      parserVersion: "2.1",
+      indexVersion: "old-version",
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+    mocks.listKnowledgeBasesForIndexRecovery.mockResolvedValueOnce([base]);
+    mocks.listRecoverableKnowledgeIndexJobs.mockResolvedValueOnce([]);
+    mocks.getKnowledgeBaseById.mockResolvedValue(base);
+    mocks.listKnowledgeDocuments.mockResolvedValue([document]);
+    mocks.createKnowledgeIndexJob.mockResolvedValue({ id: 17 });
+    mocks.resolveKnowledgeStoragePath.mockReturnValue("/safe/documents/restore.txt");
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("/index-status")) {
+        return new Response(JSON.stringify({
+          ok: true,
+          items: [{ knowledge_base_id: base.publicId, exists: false, index_version: "" }],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        ok: true,
+        chunk_count: 1,
+        document_chunks: { [document.publicId]: 1 },
+        index_version: "new-version",
+      }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+
+    const stop = startKnowledgeIndexRecovery();
+    try {
+      await vi.waitFor(() => expect(mocks.createKnowledgeIndexJob).toHaveBeenCalledWith(77, "index_missing_recovery"));
+      await vi.waitFor(() => expect(mocks.setKnowledgeIndexJobState).toHaveBeenCalledWith({
+        id: 17,
+        status: "succeeded",
+        error: null,
+      }));
+    } finally {
+      stop();
+    }
   });
 
   it("searches multiple accessible bases in one service request", async () => {

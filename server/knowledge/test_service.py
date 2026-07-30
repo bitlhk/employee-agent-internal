@@ -54,6 +54,22 @@ class KnowledgeServiceTest(unittest.TestCase):
             authority="official",
         )
 
+    def test_index_status_reports_missing_and_current_indexes(self):
+        missing = "kb_missing001"
+        existing = "kb_existing01"
+        target = service.INDEX_ROOT / existing / "versions" / "version-1"
+        target.mkdir(parents=True)
+        (target / "manifest.json").write_text('{"index_version":"version-1"}', "utf-8")
+        pointer = service.INDEX_ROOT / existing / "current.json"
+        pointer.write_text('{"version":"version-1"}', "utf-8")
+
+        result = service._index_status([missing, existing, existing])
+
+        self.assertEqual(result["items"], [
+            {"knowledge_base_id": missing, "exists": False, "index_version": ""},
+            {"knowledge_base_id": existing, "exists": True, "index_version": "version-1"},
+        ])
+
     def test_parent_child_index_returns_structured_citation(self):
         document = self.document()
         built = service._build_index(service.IndexRequest(knowledge_base_id="kb_testbase1", documents=[document]))

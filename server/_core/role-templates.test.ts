@@ -128,6 +128,19 @@ describe("role template baseline loader", () => {
     });
   });
 
+  it("resolves a configured relative baseline from the application root", () => {
+    const previous = process.env.ROLE_SKILL_MCP_BASELINE_PATH;
+    try {
+      process.env.ROLE_SKILL_MCP_BASELINE_PATH = "docs/design/role-skill-mcp-baseline.json";
+      resetRoleTemplateCacheForTests();
+      expect(getRoleSkillMcpBaseline().schema.defaultRole).toBeTruthy();
+    } finally {
+      if (previous === undefined) delete process.env.ROLE_SKILL_MCP_BASELINE_PATH;
+      else process.env.ROLE_SKILL_MCP_BASELINE_PATH = previous;
+      resetRoleTemplateCacheForTests();
+    }
+  });
+
   it("fails fast when the default role is missing", () => {
     const bad = baseline({
       schema: {

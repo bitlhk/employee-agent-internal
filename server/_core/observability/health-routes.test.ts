@@ -7,9 +7,10 @@ describe("operational readiness", () => {
       database: async () => true,
       knowledge: async () => true,
       jiuwenswarm: async () => ({ required: true, ok: true }),
+      antivirus: async () => ({ required: false, ok: true }),
     });
     expect(result.ok).toBe(true);
-    expect(result.checks.map((check) => check.status)).toEqual(["ok", "ok", "ok"]);
+    expect(result.checks.map((check) => check.status)).toEqual(["ok", "ok", "ok", "disabled"]);
   });
 
   it("fails closed for required dependencies and skips disabled runtime", async () => {
@@ -17,8 +18,9 @@ describe("operational readiness", () => {
       database: async () => false,
       knowledge: async () => true,
       jiuwenswarm: async () => ({ required: false, ok: true }),
+      antivirus: async () => ({ required: true, ok: false }),
     });
     expect(result.ok).toBe(false);
-    expect(result.checks.map((check) => check.status)).toEqual(["failed", "ok", "disabled"]);
+    expect(result.checks.map((check) => check.status)).toEqual(["failed", "ok", "disabled", "failed"]);
   });
 });

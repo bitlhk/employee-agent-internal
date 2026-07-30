@@ -158,7 +158,7 @@ export async function listAccessibleKnowledgeBases(input: {
 }): Promise<KnowledgeBaseRecord[]> {
   const db = await getDb();
   if (!db) return [];
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${BASE_SELECT}
     FROM knowledge_bases
     WHERE (scope = 'personal' AND owner_user_id = ${input.userId})
@@ -233,6 +233,23 @@ export async function getKnowledgeBaseById(id: number): Promise<KnowledgeBaseRec
   `);
   const row = rowsFromResult(result)[0];
   return row ? mapBase(row) : null;
+}
+
+export async function listKnowledgeBasesForIndexRecovery(limit = 1000): Promise<KnowledgeBaseRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.execute(sql`
+    SELECT ${BASE_SELECT}
+    FROM knowledge_bases
+    WHERE EXISTS (
+      SELECT 1
+      FROM knowledge_documents
+      WHERE knowledge_documents.knowledge_base_id = knowledge_bases.id
+    )
+    ORDER BY id ASC
+    LIMIT ${Math.max(1, Math.min(limit, 5000))}
+  `);
+  return rowsFromResult(result).map(mapBase);
 }
 
 export async function createKnowledgeBaseRecord(input: {

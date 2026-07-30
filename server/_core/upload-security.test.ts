@@ -2,7 +2,7 @@ import { EventEmitter } from "events";
 import { PassThrough } from "stream";
 import { spawn } from "child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
+import { decodeBase64Strict, getUploadAntivirusHealth, scanUploadForMalware, validateUploadContent } from "./upload-security";
 
 vi.mock("child_process", () => ({ spawn: vi.fn() }));
 
@@ -70,5 +70,14 @@ describe("upload content validation", () => {
     process.env.UPLOAD_ANTIVIRUS_MODE = "required";
     vi.mocked(spawn).mockReturnValueOnce(scannerProcess(2));
     await expect(scanUploadForMalware(Buffer.from("safe"))).resolves.toEqual({ ok: false, error: "antivirus scan unavailable" });
+  });
+
+  it("reports required scanner availability for readiness", async () => {
+    process.env.UPLOAD_ANTIVIRUS_MODE = "required";
+    vi.mocked(spawn)
+      .mockImplementationOnce(() => scannerProcess(0))
+      .mockImplementationOnce(() => scannerProcess(2));
+    await expect(getUploadAntivirusHealth()).resolves.toEqual({ required: true, ok: true, status: "ok" });
+    await expect(getUploadAntivirusHealth()).resolves.toEqual({ required: true, ok: false, status: "unavailable" });
   });
 });

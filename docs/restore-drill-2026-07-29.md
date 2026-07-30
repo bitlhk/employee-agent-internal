@@ -31,9 +31,7 @@
    `mysqladmin ping`.
 5. The full audit import requires a 3 GB recovery-container memory budget.
 
-## Remaining Exercise
+## Follow-Up
 
-This drill proves the data layer and durable filesystem recovery path. A later
-dedicated-host exercise should start the restored EA, knowledge service, and
-JiuwenSwarm together and validate login, one conversation, one Skill, one MCP
-call, one knowledge citation, and one downloadable artifact.
+The dedicated-host full application exercise was completed on 2026-07-30.
+See `full-application-restore-drill-2026-07-30.md`.

@@ -115,6 +115,7 @@ curl http://127.0.0.1:5180/api/brand
 cd ~/employee-agent
 corepack pnpm check
 corepack pnpm build
+pm2 restart employee-agent-knowledge
 pm2 restart employee-agent
 ./scripts/verify-production-release.sh
 ```

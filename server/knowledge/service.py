@@ -91,6 +91,10 @@ class CitationRequest(BaseModel):
     parent_id: str = Field(min_length=3, max_length=128)
 
 
+class IndexStatusRequest(BaseModel):
+    knowledge_base_ids: list[str] = Field(min_length=1, max_length=1000)
+
+
 def _token() -> str:
     try:
         return TOKEN_PATH.read_text("utf-8").strip()
@@ -270,6 +274,19 @@ def _current_index_version(knowledge_base_id: str) -> str:
         return str(manifest.get("index_version") or target.name)
     except (OSError, ValueError, json.JSONDecodeError):
         return target.name
+
+
+def _index_status(knowledge_base_ids: list[str]) -> dict[str, Any]:
+    items = []
+    for raw_id in dict.fromkeys(knowledge_base_ids):
+        knowledge_base_id = _kb_id(raw_id)
+        target = _current_index_target(knowledge_base_id)
+        items.append({
+            "knowledge_base_id": knowledge_base_id,
+            "exists": target is not None,
+            "index_version": _current_index_version(knowledge_base_id) if target is not None else "",
+        })
+    return {"ok": True, "items": items}
 
 
 def _index_target_for_version(knowledge_base_id: str, version: str) -> Path | None:
@@ -946,6 +963,12 @@ async def index(request: IndexRequest, x_ea_knowledge_token: str | None = Header
             return await asyncio.to_thread(_build_index, request)
         except (OSError, ValueError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)[:1000]) from exc
+
+
+@app.post("/index-status")
+async def index_status(request: IndexStatusRequest, x_ea_knowledge_token: str | None = Header(default=None)):
+    _authorize(x_ea_knowledge_token)
+    return _index_status(request.knowledge_base_ids)
 
 
 @app.post("/search")

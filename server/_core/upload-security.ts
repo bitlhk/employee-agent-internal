@@ -1,6 +1,11 @@
 import { spawn } from "child_process";
 
 export type UploadValidation = { ok: true } | { ok: false; error: string };
+export type UploadAntivirusHealth = {
+  required: boolean;
+  ok: boolean;
+  status: "disabled" | "ok" | "unavailable";
+};
 
 const TEXT_EXTENSIONS = new Set(["md", "txt", "csv", "yaml", "yml", "xml", "toml", "ini", "conf", "log", "css"]);
 const ZIP_EXTENSIONS = new Set(["zip", "docx", "xlsx", "pptx"]);
@@ -71,24 +76,27 @@ function antivirusUnavailable(mode: string, detail: string): UploadValidation {
   return { ok: true };
 }
 
-export async function scanUploadForMalware(buffer: Buffer): Promise<UploadValidation> {
+async function runAntivirusScanner(buffer: Buffer): Promise<{
+  validation: UploadValidation;
+  available: boolean;
+}> {
   const mode = String(process.env.UPLOAD_ANTIVIRUS_MODE || "disabled").toLowerCase();
-  if (mode === "disabled") return { ok: true };
+  if (mode === "disabled") return { validation: { ok: true }, available: false };
   const command = String(process.env.CLAMAV_COMMAND || "clamdscan").trim();
   const configuredTimeout = Number(process.env.CLAMAV_TIMEOUT_MS || 30_000);
   const timeoutMs = Number.isFinite(configuredTimeout)
     ? Math.max(1_000, Math.min(120_000, configuredTimeout))
     : 30_000;
 
-  return new Promise<UploadValidation>((resolve) => {
+  return new Promise((resolve) => {
     let settled = false;
     let stderr = "";
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const finish = (result: UploadValidation) => {
+    const finish = (validation: UploadValidation, available: boolean) => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      resolve(result);
+      resolve({ validation, available });
     };
 
     let child;
@@ -97,29 +105,44 @@ export async function scanUploadForMalware(buffer: Buffer): Promise<UploadValida
         stdio: ["pipe", "ignore", "pipe"],
       });
     } catch (error) {
-      finish(antivirusUnavailable(mode, error instanceof Error ? error.message : String(error)));
+      finish(antivirusUnavailable(mode, error instanceof Error ? error.message : String(error)), false);
       return;
     }
 
     timer = setTimeout(() => {
       child.kill("SIGKILL");
-      finish(antivirusUnavailable(mode, `scan timed out after ${timeoutMs}ms`));
+      finish(antivirusUnavailable(mode, `scan timed out after ${timeoutMs}ms`), false);
     }, timeoutMs);
 
     child.stderr.on("data", (chunk) => {
       if (stderr.length < 16_384) stderr += String(chunk).slice(0, 16_384 - stderr.length);
     });
     child.once("error", (error) => {
-      finish(antivirusUnavailable(mode, error.message));
+      finish(antivirusUnavailable(mode, error.message), false);
     });
     child.once("close", (code) => {
-      if (code === 0) finish({ ok: true });
-      else if (code === 1) finish({ ok: false, error: "malware detected" });
-      else finish(antivirusUnavailable(mode, stderr.trim() || `status=${code}`));
+      if (code === 0) finish({ ok: true }, true);
+      else if (code === 1) finish({ ok: false, error: "malware detected" }, true);
+      else finish(antivirusUnavailable(mode, stderr.trim() || `status=${code}`), false);
     });
     child.stdin.on("error", () => {
       // The child error/close event determines whether this is fail-open or fail-closed.
     });
     child.stdin.end(buffer);
   });
+}
+
+export async function scanUploadForMalware(buffer: Buffer): Promise<UploadValidation> {
+  return (await runAntivirusScanner(buffer)).validation;
+}
+
+export async function getUploadAntivirusHealth(): Promise<UploadAntivirusHealth> {
+  const mode = String(process.env.UPLOAD_ANTIVIRUS_MODE || "disabled").toLowerCase();
+  if (mode === "disabled") return { required: false, ok: true, status: "disabled" };
+  const result = await runAntivirusScanner(Buffer.from("employee-agent antivirus readiness probe\n"));
+  return {
+    required: mode === "required",
+    ok: result.available && result.validation.ok,
+    status: result.available && result.validation.ok ? "ok" : "unavailable",
+  };
 }

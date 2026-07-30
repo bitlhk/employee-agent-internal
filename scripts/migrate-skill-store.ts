@@ -13,11 +13,14 @@ import {
   skillStorePath,
   skillSourceDirsForRuntime,
 } from "../server/_core/skills/skill-store";
+import { parseRestorePathMaps, remapRestoredPath } from "../server/_core/skills/restore-paths";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const APPLY = process.argv.includes("--apply");
 const RECONCILE = process.argv.includes("--reconcile");
 const INCLUDE_LEGACY = process.argv.includes("--include-legacy");
+const RESET_RUNTIME_PATHS = process.argv.includes("--reset-runtime-paths");
+const PATH_MAPPINGS = parseRestorePathMaps(process.argv.slice(2));
 const ADOPT_ID = process.argv.find((arg) => arg.startsWith("--adoptId="))?.split("=")[1]?.trim();
 
 function readJson<T>(filePath: string, fallback: T): T {
@@ -71,12 +74,13 @@ function realpathIfExists(filePath: string | undefined): string | undefined {
 
 function remapSourcePath(rawPath: string | undefined): string | undefined {
   if (!rawPath) return rawPath;
-  const direct = remapLegacySkillMarketPath(rawPath);
+  const restored = remapRestoredPath(rawPath, PATH_MAPPINGS);
+  const direct = remapLegacySkillMarketPath(restored || rawPath);
   if (direct !== rawPath) return direct;
-  const real = realpathIfExists(rawPath);
+  const real = realpathIfExists(restored || rawPath);
   const remappedReal = real ? remapLegacySkillMarketPath(real) : real;
   if (remappedReal && remappedReal !== real && existsSync(remappedReal)) return remappedReal;
-  return rawPath;
+  return restored || rawPath;
 }
 
 function copyDirIfNeeded(src: string, dst: string): boolean {
@@ -113,6 +117,11 @@ async function defaultSkillsForAdopt(adoptId: string): Promise<Set<string>> {
 }
 
 async function main() {
+  if (APPLY) {
+    for (const mapping of PATH_MAPPINGS) {
+      if (!existsSync(mapping.to)) throw new Error(`restore path mapping target is missing: ${mapping.to}`);
+    }
+  }
   const registryPath = path.join(APP_ROOT, "data", "skill-registry.json");
   const registry = readJson<Skill[]>(registryPath, []);
   const scoped = registry.filter((row) => {
@@ -182,8 +191,11 @@ async function main() {
     }
 
     const privateSourceChanged = !!nextSourcePath && nextSourcePath !== nextRow.source.sourcePath;
+    const runtimePathReset = RESET_RUNTIME_PATHS
+      && String(row.adoptId || "").startsWith("lgj-")
+      && Boolean(nextRow.sync.runtimePath);
 
-    if (sourceChanged || shouldBeRoleDefault || generatedMarketSource || privateSourceChanged) {
+    if (sourceChanged || shouldBeRoleDefault || generatedMarketSource || privateSourceChanged || runtimePathReset) {
       nextRow = {
         ...nextRow,
         source: {
@@ -194,6 +206,7 @@ async function main() {
         state: "syncing",
         sync: {
           ...nextRow.sync,
+          runtimePath: runtimePathReset ? undefined : nextRow.sync.runtimePath,
           reason: "migrated to SKILL_STORE",
         },
         updatedAt: now,
@@ -209,6 +222,7 @@ async function main() {
   }
 
   console.log(`[SKILL-STORE-MIGRATE] scanned=${scoped.length}, changed=${changed}, remappedPaths=${remapped}, roleDefault=${roleDefault}, marketplace=${marketplace}, privateCopied=${privateCopied}`);
+  console.log(`[SKILL-STORE-MIGRATE] pathMappings=${PATH_MAPPINGS.length}, resetRuntimePaths=${RESET_RUNTIME_PATHS}`);
   console.log(`[SKILL-STORE-MIGRATE] touchedAdopts=${Array.from(touchedAdopts).sort().join(", ") || "<none>"}`);
   if (!APPLY) {
     console.log("[SKILL-STORE-MIGRATE] dry-run only. Re-run with --apply to update registry. Add --include-legacy to include lgc-*.");

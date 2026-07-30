@@ -2,6 +2,7 @@ import {
   createKnowledgeIndexJob,
   getKnowledgeBaseById,
   isKnowledgeDocumentCurrentlyActive,
+  listKnowledgeBasesForIndexRecovery,
   listRecoverableKnowledgeIndexJobs,
   listKnowledgeDocuments,
   pruneKnowledgeIndexJobs,
@@ -20,6 +21,8 @@ const SERVICE_TIMEOUT_MS = Math.max(5_000, Number(process.env.KNOWLEDGE_SERVICE_
 type IndexTaskState = { task: Promise<void>; rerun: boolean; pendingJobIds: Array<Promise<number>> };
 const indexing = new Map<number, IndexTaskState>();
 let recoveryStarted = false;
+let recoveryEvaluated = false;
+let recoveryMissingIndexes = 0;
 
 export type KnowledgeSearchResult = {
   chunkId: string;
@@ -140,6 +143,39 @@ export async function getKnowledgeServiceHealth(): Promise<{
   } catch (error) {
     return { ok: false, engine: "llamaindex", embeddingConfigured: false, error: error instanceof Error ? error.message : String(error) };
   }
+}
+
+type KnowledgeIndexStatus = {
+  knowledgeBaseId: string;
+  exists: boolean;
+  indexVersion: string;
+};
+
+async function getKnowledgeIndexStatuses(knowledgeBaseIds: string[]): Promise<KnowledgeIndexStatus[]> {
+  if (!knowledgeBaseIds.length) return [];
+  const payload = await serviceRequest("/index-status", {
+    method: "POST",
+    body: JSON.stringify({ knowledge_base_ids: knowledgeBaseIds }),
+  }, 10_000);
+  const items: Array<Record<string, unknown>> = Array.isArray(payload?.items) ? payload.items : [];
+  return items
+    .map((item) => ({
+      knowledgeBaseId: String(item?.knowledge_base_id || ""),
+      exists: Boolean(item?.exists),
+      indexVersion: String(item?.index_version || ""),
+    }));
+}
+
+export function getKnowledgeIndexRecoveryStatus(): {
+  started: boolean;
+  evaluated: boolean;
+  missingIndexes: number;
+} {
+  return {
+    started: recoveryStarted,
+    evaluated: recoveryEvaluated,
+    missingIndexes: recoveryMissingIndexes,
+  };
 }
 
 async function runKnowledgeIndex(base: KnowledgeBaseRecord): Promise<void> {
@@ -271,9 +307,12 @@ export function queueKnowledgeIndex(base: KnowledgeBaseRecord, reason = "content
 export function startKnowledgeIndexRecovery(): () => void {
   if (recoveryStarted) return () => {};
   recoveryStarted = true;
+  let running = false;
+  let initialRetry: ReturnType<typeof setTimeout> | undefined;
   const recover = async () => {
     await pruneKnowledgeIndexJobs(Number(process.env.KNOWLEDGE_INDEX_JOB_RETENTION_DAYS || 30)).catch(() => {});
     const jobs = await listRecoverableKnowledgeIndexJobs(200);
+    const queuedBaseIds = new Set(jobs.map((job) => job.knowledgeBaseId));
     for (const job of jobs) {
       const base = await getKnowledgeBaseById(job.knowledgeBaseId);
       if (!base) {
@@ -284,15 +323,48 @@ export function startKnowledgeIndexRecovery(): () => void {
         console.warn("[KNOWLEDGE] recovered index job failed", { jobId: job.id, knowledgeBaseId: base.id, error });
       });
     }
+    const bases = await listKnowledgeBasesForIndexRecovery(1000);
+    const statuses = await getKnowledgeIndexStatuses(bases.map((base) => base.publicId));
+    const byPublicId = new Map(statuses.map((status) => [status.knowledgeBaseId, status]));
+    const missing = bases.filter((base) => !byPublicId.get(base.publicId)?.exists);
+    recoveryMissingIndexes = missing.length;
+    recoveryEvaluated = true;
+    for (const base of missing) {
+      if (queuedBaseIds.has(base.id) || indexing.has(base.id)) continue;
+      void queueKnowledgeIndex(base, "index_missing_recovery").catch((error) => {
+        console.warn("[KNOWLEDGE] missing index rebuild failed", { knowledgeBaseId: base.id, error });
+      });
+    }
   };
-  void recover().catch((error) => console.warn("[KNOWLEDGE] index recovery failed", error));
+  const runRecover = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await recover();
+    } catch (error) {
+      console.warn("[KNOWLEDGE] index recovery failed", error);
+      if (!recoveryEvaluated && !initialRetry) {
+        initialRetry = setTimeout(() => {
+          initialRetry = undefined;
+          void runRecover();
+        }, 5_000);
+        initialRetry.unref?.();
+      }
+    } finally {
+      running = false;
+    }
+  };
+  void runRecover();
   const timer = setInterval(() => {
-    void recover().catch((error) => console.warn("[KNOWLEDGE] index recovery failed", error));
+    void runRecover();
   }, Math.max(15_000, Number(process.env.KNOWLEDGE_INDEX_RECOVERY_INTERVAL_MS || 60_000)));
   timer.unref?.();
   return () => {
     clearInterval(timer);
+    if (initialRetry) clearTimeout(initialRetry);
     recoveryStarted = false;
+    recoveryEvaluated = false;
+    recoveryMissingIndexes = 0;
   };
 }
 

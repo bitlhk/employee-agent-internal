@@ -33,6 +33,7 @@ INSTALL_MYSQL=true
 INSTALL_DOCKER=true
 INSTALL_JIUWENSWARM=true
 INSTALL_MONITORING="${EMPLOYEE_AGENT_MONITORING:-0}"
+INSTALL_ANTIVIRUS="${EMPLOYEE_AGENT_ANTIVIRUS:-0}"
 DRY_RUN=false
 OVERWRITE_ENV=false
 CREATE_ADMIN=true
@@ -68,6 +69,7 @@ Options:
   --skip-docker            Do not install docker.io for the optional sandbox.
   --skip-jiuwenswarm       Install EA without the bundled JiuwenSwarm runtime.
   --with-monitoring        Install optional Prometheus and Grafana operations monitoring.
+  --with-antivirus         Install ClamAV and require malware scanning for uploads.
   --jiuwenswarm-ref <ref>  JiuwenSwarm EA runtime tag or commit.
   --skip-start             Do not build/start PM2 service.
   --skip-admin             Do not create the default admin account.
@@ -98,6 +100,7 @@ while [[ $# -gt 0 ]]; do
     --skip-docker) INSTALL_DOCKER=false; shift ;;
     --skip-jiuwenswarm) INSTALL_JIUWENSWARM=false; shift ;;
     --with-monitoring) INSTALL_MONITORING=true; shift ;;
+    --with-antivirus) INSTALL_ANTIVIRUS=true; shift ;;
     --jiuwenswarm-ref) JIUWENSWARM_REF="${2:?missing --jiuwenswarm-ref value}"; shift 2 ;;
     --skip-start) START_SERVICE=false; shift ;;
     --skip-admin) CREATE_ADMIN=false; shift ;;
@@ -218,6 +221,10 @@ detect_host() {
 
 need_cmd() {
   ! command -v "$1" >/dev/null 2>&1
+}
+
+antivirus_requested() {
+  [[ "$INSTALL_ANTIVIRUS" == "1" || "$INSTALL_ANTIVIRUS" == "true" ]]
 }
 
 has_cn_apt_source() {
@@ -412,6 +419,17 @@ ensure_base_packages() {
         if [[ "$(id -u)" -ne 0 ]]; then
           sudo_cmd usermod -aG docker "${USER:-$(id -un)}"
         fi
+      fi
+    fi
+    if antivirus_requested; then
+      run_with_log "Install ClamAV" "/tmp/employee-agent-apt-clamav.log" \
+        sudo_cmd env DEBIAN_FRONTEND=noninteractive apt-get "${APT_SOURCE_ARGS[@]}" -o Dpkg::Use-Pty=0 install -y \
+        clamav clamav-daemon
+      if [[ "$DRY_RUN" == "true" ]]; then
+        echo "[dry-run] enable clamav-daemon and clamav-freshclam"
+      else
+        sudo_cmd systemctl enable --now clamav-freshclam
+        sudo_cmd systemctl enable --now clamav-daemon
       fi
     fi
   else
@@ -625,6 +643,29 @@ configure_monitoring_env() {
   upsert_env_value "$INSTALL_DIR/.env" "GRAFANA_INTERNAL_URL" "http://127.0.0.1:3000"
 }
 
+configure_antivirus() {
+  if ! antivirus_requested; then return; fi
+  log "Configuring required upload malware scanning"
+  if [[ "$DRY_RUN" == "true" ]]; then
+    echo "[dry-run] set UPLOAD_ANTIVIRUS_MODE=required and verify clamdscan"
+    return
+  fi
+  upsert_env_value "$INSTALL_DIR/.env" "UPLOAD_ANTIVIRUS_MODE" "required"
+  upsert_env_value "$INSTALL_DIR/.env" "CLAMAV_COMMAND" "clamdscan"
+  local ready=false
+  for _ in $(seq 1 90); do
+    if printf "employee-agent antivirus readiness probe\n" | clamdscan --no-summary - >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$ready" != "true" ]]; then
+    echo "ClamAV is required but clamdscan did not become ready." >&2
+    exit 1
+  fi
+}
+
 install_monitoring_stack() {
   if ! monitoring_requested; then return; fi
   log "Installing optional Prometheus and Grafana monitoring"
@@ -660,10 +701,10 @@ start_app() {
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[dry-run] would start PM2 with ecosystem.config.cjs after setup generates it"
   elif [[ -f "$INSTALL_DIR/ecosystem.config.cjs" ]]; then
-    run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.config.cjs --update-env || pm2 restart ecosystem.config.cjs --update-env"
     if [[ -f "$INSTALL_DIR/ecosystem.knowledge.config.cjs" ]]; then
       run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.knowledge.config.cjs --update-env || pm2 restart ecosystem.knowledge.config.cjs --update-env"
     fi
+    run bash -lc "cd '$INSTALL_DIR' && pm2 start ecosystem.config.cjs --update-env || pm2 restart ecosystem.config.cjs --update-env"
     if [[ "$INSTALL_JIUWENSWARM" == "true" ]]; then
       run bash -lc "cd '$INSTALL_DIR' && HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' JIUWENSWARM_MANAGED_MEMORY=true pm2 start ecosystem.jiuwenswarm.config.cjs --update-env || HOME='$HOME' JIUWENCLAW_HOME='$JIUWENSWARM_HOME' JIUWENSWARM_PYTHON='$JIUWENSWARM_VENV/bin/python' JIUWENSWARM_MANAGED_MEMORY=true pm2 restart ecosystem.jiuwenswarm.config.cjs --update-env"
     fi
@@ -828,6 +869,8 @@ main() {
   run_setup
   INSTALL_STAGE="monitoring-config"
   configure_monitoring_env
+  INSTALL_STAGE="antivirus-config"
+  configure_antivirus
   INSTALL_STAGE="jiuwenswarm-config"
   configure_jiuwenswarm
   INSTALL_STAGE="admin-account"

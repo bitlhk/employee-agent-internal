@@ -2,14 +2,15 @@ import { timingSafeEqual } from "node:crypto";
 import net from "node:net";
 import type { Express, Request, Response } from "express";
 import { getDb } from "../../db";
-import { getKnowledgeServiceHealth } from "../knowledge-service";
+import { getKnowledgeIndexRecoveryStatus, getKnowledgeServiceHealth } from "../knowledge-service";
 import { isJiuwenClawRuntimeEnabled } from "../jiuwenclaw-bridge";
+import { getUploadAntivirusHealth } from "../upload-security";
 import { logError } from "./logger";
 import { metricsRegistry, observeReadiness } from "./metrics";
 import { getServerLifecycleSnapshot } from "../operational-lifecycle";
 
 export type DependencyCheck = {
-  name: "database" | "knowledge" | "jiuwenswarm";
+  name: "database" | "knowledge" | "jiuwenswarm" | "antivirus";
   required: boolean;
   ok: boolean;
   durationMs: number;
@@ -20,6 +21,7 @@ export type ReadinessDependencies = {
   database: () => Promise<boolean>;
   knowledge: () => Promise<boolean>;
   jiuwenswarm: () => Promise<{ required: boolean; ok: boolean }>;
+  antivirus: () => Promise<{ required: boolean; ok: boolean }>;
 };
 
 function boundedTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -38,7 +40,9 @@ async function databaseReady(): Promise<boolean> {
 }
 
 async function knowledgeReady(): Promise<boolean> {
-  return Boolean((await getKnowledgeServiceHealth()).ok);
+  const service = await getKnowledgeServiceHealth();
+  const recovery = getKnowledgeIndexRecoveryStatus();
+  return Boolean(service.ok && recovery.evaluated);
 }
 
 function tcpReady(target: string): Promise<boolean> {
@@ -70,6 +74,10 @@ const defaultDependencies: ReadinessDependencies = {
   database: databaseReady,
   knowledge: knowledgeReady,
   jiuwenswarm: jiuwenReady,
+  antivirus: async () => {
+    const health = await getUploadAntivirusHealth();
+    return { required: health.required, ok: health.ok };
+  },
 };
 
 async function runCheck(
@@ -104,6 +112,7 @@ export async function evaluateReadiness(
     runCheck("database", async () => ({ required: true, ok: await dependencies.database() })),
     runCheck("knowledge", async () => ({ required: true, ok: await dependencies.knowledge() })),
     runCheck("jiuwenswarm", dependencies.jiuwenswarm),
+    runCheck("antivirus", dependencies.antivirus),
   ]);
   return {
     ok: checks.every((check) => !check.required || check.ok),

@@ -76,7 +76,9 @@ let cachedBaseline: RoleSkillMcpBaseline | null = null;
 let cachedTemplates: AgentRoleTemplate[] | null = null;
 
 function baselinePath(): string {
-  return process.env.ROLE_SKILL_MCP_BASELINE_PATH || path.join(APP_ROOT, "docs/design/role-skill-mcp-baseline.json");
+  const configured = String(process.env.ROLE_SKILL_MCP_BASELINE_PATH || "").trim();
+  if (!configured) return path.join(APP_ROOT, "docs/design/role-skill-mcp-baseline.json");
+  return path.isAbsolute(configured) ? configured : path.resolve(APP_ROOT, configured);
 }
 
 function loadBaselineFromDisk(): RoleSkillMcpBaseline {

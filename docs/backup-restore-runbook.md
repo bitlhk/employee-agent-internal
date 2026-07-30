@@ -133,3 +133,52 @@ The default drill budget is 3 GB memory, 2 CPU, and a 4 GB tmpfs. Override
 8. EA traffic.
 
 Keep traffic disabled until readiness passes and ownership checks succeed for restored users.
+
+## Post-Restore Reconciliation
+
+Before starting EA on a replacement host:
+
+1. Prefer repository-relative paths for repository-owned configuration:
+
+   ```dotenv
+   ROLE_SKILL_MCP_BASELINE_PATH=docs/design/role-skill-mcp-baseline.json
+   ```
+
+   External enterprise baselines must be restored separately and configured
+   with their new absolute path. EA does not silently replace a missing
+   enterprise baseline with the public default.
+
+2. Rebase durable Skill sources and discard restored runtime projections. Each
+   `--path-map` is explicit and its destination must already exist:
+
+   ```bash
+   cd /srv/employee-agent
+   pnpm restore:reconcile -- \
+     --path-map=/root/employee-agent=/srv/employee-agent \
+     --path-map=/root/skill-store=/srv/skill-store
+   ```
+
+   The command retains durable source packages, recalculates JiuwenSwarm
+   runtime paths, and reconciles enabled skills into current Agent workspaces.
+
+3. When `UPLOAD_ANTIVIRUS_MODE=required`, install and verify ClamAV before
+   admitting traffic:
+
+   ```bash
+   sudo apt-get install -y clamav clamav-daemon
+   sudo systemctl enable --now clamav-freshclam clamav-daemon
+   printf 'employee-agent antivirus readiness probe\n' | clamdscan --no-summary -
+   ```
+
+   A required but unavailable scanner makes `/health/ready` return `503`.
+   New installations can request this policy with
+   `scripts/bootstrap-install.sh --with-antivirus`.
+
+4. Start the knowledge service before EA. On startup, EA compares every
+   non-empty knowledge base in MySQL with the knowledge service's physical
+   indexes. Missing indexes receive durable `index_missing_recovery` jobs.
+   Readiness remains closed until this audit has completed; index rebuilds then
+   continue through the managed background worker.
+
+5. Start JiuwenSwarm and EA, then wait for `/health/ready` before enabling the
+   reverse proxy.
