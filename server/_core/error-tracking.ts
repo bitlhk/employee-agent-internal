@@ -40,7 +40,6 @@ function isErrorTrackingExemptPath(req: Request): boolean {
   if (path === "/api/claw/chat-history/sessions") return true;
   if (path === "/api/claw/files/capabilities") return true;
   if (path === "/api/claw/files/list") return true;
-  if (path === "/api/claw/health-summary") return true;
   if (path === "/api/claw/mcp-tools/status") return true;
   if (path === "/api/claw/skills/registry") return true;
   if (path === "/api/embed/auth-check") return true;

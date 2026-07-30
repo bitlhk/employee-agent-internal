@@ -3,7 +3,7 @@ import { observeCapacityRejection, setCapacityLane } from "./observability/metri
 
 export type CapacityLane = "api" | "chat_http" | "chat_ws";
 
-type CapacityState = {
+export type CapacityState = {
   active: number;
   limit: number;
 };

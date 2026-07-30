@@ -538,11 +538,6 @@ export default function ClawAdmin() {
     retry: false,
   });
 
-  const { data: sharedSkills, isLoading: skillsLoading, refetch: refetchSkills } = trpc.claw.adminListSharedSkills.useQuery(undefined, {
-    enabled: activeTab === "skills",
-    retry: false,
-  });
-
   const { data: marketSkills, isLoading: marketLoading, refetch: refetchMarket } = trpc.claw.adminListMarketSkills.useQuery(undefined, {
     enabled: activeTab === "skills",
     retry: false,
@@ -812,7 +807,10 @@ export default function ClawAdmin() {
   const rows = listData?.rows || [];
   const healthData = systemHealth as any;
   const operationalHealth = systemHealth?.operations;
-  const operationalCapacity = operationalHealth?.capacity || {};
+  const operationalCapacity = (operationalHealth?.capacity || {}) as Partial<Record<
+    "api" | "chat_http" | "chat_ws",
+    { active: number; limit: number }
+  >>;
   const operationalWorkers: Array<{ state?: string }> = Array.isArray(operationalHealth?.workers)
     ? operationalHealth.workers
     : [];

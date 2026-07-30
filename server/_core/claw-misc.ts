@@ -11,7 +11,6 @@ import { strictLimiter } from "./security";
 import {
   APP_ROOT,
   JIUWENCLAW_HOME,
-  OPENCLAW_HOME,
   OPENCLAW_JSON_PATH,
   buildSessionRegistryScope,
   isJiuwenClawAdoptId,
@@ -19,7 +18,6 @@ import {
   jiuwenClawSessionsDir,
   jiuwenClawWorkspaceDir,
   openClawAgentDir,
-  openClawWorkspaceDir,
   readSessionEpoch,
   resolveRuntimeAgentId,
   resolveRuntimeWorkspace,
@@ -50,6 +48,7 @@ import {
   expertConversationIdFromSessionKey,
   mergeExpertTaskHistorySessions,
 } from "./expert-task-history";
+import { logDebug, logError, logInfo, logWarn } from "./observability/logger";
 
 type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -102,7 +101,7 @@ function bindHistoryAttachmentOwner(messages: ChatHistoryMessage[], adoptId: str
 
 function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}): void {
   if (!iosLoadDebugEnabled) return;
-  console.log(`[IOS-LOAD] ${message}`, fields);
+  logDebug(`ios.load.${message}`, fields);
 }
 
 function normalizeHistoryText(value: unknown): string {
@@ -1302,7 +1301,9 @@ function writeSessionSummaryCache(sessionsDir: string, cache: ChatHistorySummary
     mkdirSync(sessionsDir, { recursive: true });
     writeFileSync(sessionSummaryCachePath(sessionsDir), JSON.stringify(cache, null, 2), "utf8");
   } catch (error: any) {
-    console.warn("[chat-history] summary cache write failed", error?.message || error);
+    logWarn("chat.history.summary_cache_write_failed", {
+      error: error?.message || String(error),
+    });
   }
 }
 
@@ -1382,7 +1383,9 @@ export async function listClawChatHistorySessionRecords(args: {
   const limit = Math.min(Math.max(Number(args.limit || 50) || 50, 1), 100);
   const dbAgentId = String((claw as any).agentId || "").trim();
   const expertTasks = await listAgentTasksForHistory(adoptId, 1000).catch((error: any) => {
-    console.warn("[chat-history] expert task session merge skipped", error?.message || error);
+    logWarn("chat.history.expert_merge_skipped", {
+      error: error?.message || String(error),
+    });
     return [];
   });
   const expertSessions = buildExpertTaskHistorySessions(expertTasks);
@@ -1524,27 +1527,6 @@ export async function listClawChatHistorySessionRecords(args: {
 
 export function registerMiscRoutes(app: express.Express) {
 
-  // ── Runtime info ──────────────────────────────────────
-  app.get("/api/claw/runtime-info", async (req, res) => {
-    try {
-      const adoptId = String(req.query.adoptId || "").trim();
-      if (!adoptId) {
-        res.status(400).json({ error: "adoptId required" });
-        return;
-      }
-      const claw = await requireClawOwner(req, res, adoptId);
-      if (!claw) return;
-      const dbAgentId = String((claw as any).agentId || "").trim();
-      const trialAgentId = `trial_${String(adoptId)}`;
-      const trialAgentDir = openClawAgentDir(trialAgentId);
-      const runtimeAgentId = existsSync(trialAgentDir) ? trialAgentId : dbAgentId;
-      const skillsDir = `${openClawWorkspaceDir(runtimeAgentId)}/skills`;
-      res.json({ adoptId, dbAgentId, runtimeAgentId, skillsDir, trialAgentDirExists: existsSync(trialAgentDir) });
-    } catch (e) {
-      res.status(500).json({ error: "runtime info failed" });
-    }
-  });
-
   app.post("/api/claw/client-load-metrics", async (req, res) => {
     try {
       const adoptId = String(req.body?.adoptId || "").trim();
@@ -1580,7 +1562,7 @@ export function registerMiscRoutes(app: express.Express) {
         .map((metric: SanitizedClientLoadMetric) => `${metric.key}:${metric.elapsedMs}ms:${metric.status}`)
         .join(",");
 
-      console.log("[CLIENT-LOAD]", {
+      logInfo("client.load.report", {
         adoptId,
         userId: Number((claw as any).userId || 0),
         path: String(req.body?.path || "").slice(0, 160),
@@ -1591,155 +1573,8 @@ export function registerMiscRoutes(app: express.Express) {
       });
       res.json({ ok: true });
     } catch (error: any) {
-      console.warn("[CLIENT-LOAD] failed", error?.message || error);
+      logError("client.load.report_failed", error);
       res.status(500).json({ error: "client_load_metrics_failed" });
-    }
-  });
-
-  app.get("/api/claw/health-summary", async (req, res) => {
-    const startedAt = Date.now();
-    const timings: Record<string, number> = {};
-    let stepStartedAt = startedAt;
-    const mark = (name: string) => {
-      timings[name] = Date.now() - stepStartedAt;
-      stepStartedAt = Date.now();
-    };
-    try {
-      const adoptId = String(req.query.adoptId || "").trim();
-      if (!adoptId) {
-        res.status(400).json({ error: "adoptId required" });
-        return;
-      }
-      const claw = await requireClawOwner(req, res, adoptId);
-      mark("auth");
-      if (!claw) return;
-
-      const dbAgentId = String((claw as any).agentId || "").trim();
-      const runtimeAgentId = resolveRuntimeAgentId(adoptId, dbAgentId);
-      const agentDir = openClawAgentDir(runtimeAgentId);
-      const workspaceDir = openClawWorkspaceDir(runtimeAgentId);
-      const sessionsDir = path.join(agentDir, "sessions");
-      const sessionsPath = path.join(sessionsDir, "sessions.json");
-      const trialAgentDir = openClawAgentDir(`trial_${adoptId}`);
-      mark("runtime");
-
-      let rawIndexCount = 0;
-      let sessionIndexReadable = false;
-      try {
-        if (existsSync(sessionsPath)) {
-          const rawIndex = JSON.parse(readFileSync(sessionsPath, "utf8") || "{}") || {};
-          rawIndexCount = Object.keys(rawIndex).length;
-          sessionIndexReadable = true;
-        }
-      } catch {}
-      const cachePath = sessionSummaryCachePath(sessionsDir);
-      let cacheEntryCount = 0;
-      let cacheMtimeMs = 0;
-      try {
-        const cache = readSessionSummaryCache(sessionsDir);
-        cacheEntryCount = Object.keys(cache.entries || {}).length;
-        cacheMtimeMs = existsSync(cachePath) ? Math.round(statSync(cachePath).mtimeMs || 0) : 0;
-      } catch {}
-      mark("history");
-
-      let models: Array<{ id: string; name: string; desc?: string; isDefault?: boolean }> = [];
-      let modelSourceError = "";
-      try {
-        const { getAvailableClawModelsFromConfig } = await import("../routers/helpers");
-        models = getAvailableClawModelsFromConfig();
-      } catch (error: any) {
-        modelSourceError = String(error?.message || error);
-      }
-      let profileModel = "";
-      let modelOverride = "";
-      try {
-        const { getClawProfileSettings } = await import("../db");
-        const settings = await getClawProfileSettings(Number((claw as any).id || 0));
-        profileModel = String((settings as any)?.model || "");
-      } catch {}
-      try {
-        const overridesPath = path.join(APP_ROOT, "data", "claw-model-overrides.json");
-        const overrides = existsSync(overridesPath)
-          ? JSON.parse(readFileSync(overridesPath, "utf8") || "{}")
-          : {};
-        modelOverride = String(overrides?.[adoptId] || "");
-      } catch {}
-      const defaultModel = models.find((model) => model.isDefault)?.id || models[0]?.id || "";
-      const storedModel = modelOverride || profileModel || "";
-      const modelIds = new Set(models.map((model) => model.id));
-      const storedModelAvailable = storedModel ? modelIds.has(storedModel) : true;
-      const effectiveModel = storedModel && storedModelAvailable ? storedModel : defaultModel;
-      const readinessIssues: Array<{ code: string; severity: "warning" | "error"; message: string }> = [];
-      if (!existsSync(OPENCLAW_JSON_PATH)) {
-        readinessIssues.push({ code: "openclaw_config_missing", severity: "error", message: "OpenClaw 配置文件不存在" });
-      }
-      if (!existsSync(agentDir)) {
-        readinessIssues.push({ code: "agent_dir_missing", severity: "error", message: "OpenClaw agent 目录不存在" });
-      }
-      if (!existsSync(workspaceDir)) {
-        readinessIssues.push({ code: "workspace_dir_missing", severity: "warning", message: "OpenClaw workspace 目录不存在" });
-      }
-      if (models.length === 0) {
-        readinessIssues.push({ code: "models_empty", severity: "error", message: "未读取到可用模型" });
-      }
-      if (modelSourceError) {
-        readinessIssues.push({ code: "model_source_error", severity: "warning", message: `模型配置读取异常：${modelSourceError}` });
-      }
-      const readinessOk = !readinessIssues.some((issue) => issue.severity === "error");
-      mark("model");
-
-      timings.total = Date.now() - startedAt;
-      res.json({
-        ok: true,
-        adoptId,
-        runtime: {
-          dbAgentId,
-          runtimeAgentId,
-          trialAgentDirExists: existsSync(trialAgentDir),
-          agentDirExists: existsSync(agentDir),
-          workspaceDirExists: existsSync(workspaceDir),
-        },
-        openclaw: {
-          home: OPENCLAW_HOME,
-          configPath: OPENCLAW_JSON_PATH,
-          configExists: existsSync(OPENCLAW_JSON_PATH),
-        },
-        model: {
-          selected: effectiveModel,
-          effectiveModel,
-          storedModel,
-          storedModelAvailable,
-          defaultModel,
-          profileModel,
-          overrideModel: modelOverride,
-          availableCount: models.length,
-          availableModels: models.slice(0, 20),
-          sourceError: modelSourceError || null,
-        },
-        readiness: {
-          ok: readinessOk,
-          status: readinessOk ? (readinessIssues.length > 0 ? "degraded" : "ready") : "blocked",
-          summary: readinessOk
-            ? (readinessIssues.length > 0 ? readinessIssues[0]?.message || "部分配置需要检查" : "ready")
-            : readinessIssues[0]?.message || "当前智能体不可用",
-          issues: readinessIssues,
-          checkedAt: new Date(startedAt).toISOString(),
-        },
-        history: {
-          sessionsPath,
-          sessionsDirExists: existsSync(sessionsDir),
-          sessionIndexReadable,
-          rawIndexCount,
-          summaryCachePath: cachePath,
-          summaryCacheExists: existsSync(cachePath),
-          summaryCacheEntryCount: cacheEntryCount,
-          summaryCacheMtimeMs: cacheMtimeMs,
-        },
-        timings,
-      });
-    } catch (error: any) {
-      console.warn("[health-summary] failed", error?.message || error);
-      res.status(500).json({ error: "health_summary_failed" });
     }
   });
 
@@ -1770,7 +1605,7 @@ export function registerMiscRoutes(app: express.Express) {
       const payload = await listClawChatHistorySessionRecords({ adoptId, claw, limit, startedAt });
       res.json(payload);
     } catch (error: any) {
-      console.warn("[chat-history] list failed", error?.message || error);
+      logError("chat.history.list_failed", error, { adoptId });
       logIosLoadDebug("chat_history_sessions_error", {
         adoptId,
         error: String(error?.message || error),
@@ -1915,7 +1750,7 @@ export function registerMiscRoutes(app: express.Express) {
       });
       res.json({ conversationId: parsed.conversationId, sessionKey, sessionId, messages });
     } catch (error: any) {
-      console.warn("[chat-history] messages failed", error?.message || error);
+      logError("chat.history.messages_failed", error, { adoptId });
       logIosLoadDebug("chat_history_messages_error", {
         adoptId,
         sessionKey,
@@ -1927,8 +1762,9 @@ export function registerMiscRoutes(app: express.Express) {
   });
 
   app.delete("/api/claw/chat-history/session", async (req, res) => {
+    let adoptId = "";
     try {
-      const adoptId = String(req.body?.adoptId || "").trim();
+      adoptId = String(req.body?.adoptId || "").trim();
       const sessionKey = String(req.body?.sessionKey || "").trim();
       if (!adoptId || !sessionKey) {
         res.status(400).json({ error: "adoptId and sessionKey required" });
@@ -1975,14 +1811,15 @@ export function registerMiscRoutes(app: express.Express) {
 
       res.status(400).json({ error: "unsupported_runtime" });
     } catch (error: any) {
-      console.warn("[chat-history] delete failed", error?.message || error);
+      logError("chat.history.delete_failed", error, { adoptId });
       res.status(500).json({ error: "chat_history_delete_failed" });
     }
   });
 
   app.post("/api/claw/chat-history/activate", async (req, res) => {
+    let adoptId = "";
     try {
-      const adoptId = String(req.body?.adoptId || "").trim();
+      adoptId = String(req.body?.adoptId || "").trim();
       const sessionKey = String(req.body?.sessionKey || "").trim();
       if (!adoptId || !sessionKey) {
         res.status(400).json({ error: "adoptId and sessionKey required" });
@@ -2060,7 +1897,7 @@ export function registerMiscRoutes(app: express.Express) {
       upsertSessionRegistry(adoptId, runtimeAgentId, sessionKey, currentEpoch, scope);
       res.json({ ok: true, conversationId: parsed.conversationId, sessionKey, epoch: currentEpoch });
     } catch (error: any) {
-      console.warn("[chat-history] activate failed", error?.message || error);
+      logError("chat.history.activate_failed", error, { adoptId });
       res.status(500).json({ error: "chat_history_activate_failed" });
     }
   });
@@ -2084,7 +1921,7 @@ export function registerMiscRoutes(app: express.Express) {
         updatedAt: insight.updatedAt,
       });
     } catch (error) {
-      console.error("[Insights] Failed to get latest insight:", error);
+      logError("insight.latest_failed", error);
       res.status(500).json({ error: "Failed to get latest insight" });
     }
   });
@@ -2116,7 +1953,7 @@ export function registerMiscRoutes(app: express.Express) {
 
       res.json({ success: true });
     } catch (error) {
-      console.error("[Insights] Failed to upsert insight:", error);
+      logError("insight.upsert_failed", error);
       res.status(500).json({ error: "Failed to upsert insight" });
     }
   });
@@ -2326,7 +2163,7 @@ export function registerMiscRoutes(app: express.Express) {
       res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     } catch (err: any) {
-      console.error("[ai-review]", err);
+      logError("skill.ai_review_failed", err);
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else { try { res.end(); } catch {} }
     }
@@ -2395,7 +2232,7 @@ export function registerMiscRoutes(app: express.Express) {
             warnings: parsed.warnings,
           });
         } catch (err: any) {
-          console.error("[skill-market upload] failed", err);
+          logError("skill.market_upload_failed", err);
           res.status(400).json({ error: String(err?.message || "技能包解析失败") });
         }
       });
@@ -2577,7 +2414,7 @@ export function registerMiscRoutes(app: express.Express) {
         const { getInstallTelemetrySummary } = await import("../db/install-telemetry");
         installations = await getInstallTelemetrySummary();
       } catch (error) {
-        console.error("[usage-stats] failed to load installer telemetry", error);
+        logError("admin.usage_stats.install_telemetry_failed", error);
       }
 
       return res.json({

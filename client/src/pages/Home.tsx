@@ -623,30 +623,6 @@ function normalizeMessageToolEvents(message: LxMsg): LxMsg {
   };
 }
 
-type ClawReadinessIssue = {
-  code: string;
-  severity: "warning" | "error";
-  message: string;
-};
-
-type ClawHealthSummary = {
-  ok?: boolean;
-  model?: {
-    selected?: string;
-    defaultModel?: string;
-    availableCount?: number;
-    sourceError?: string | null;
-  };
-  readiness?: {
-    ok?: boolean;
-    status?: "ready" | "degraded" | "blocked" | string;
-    summary?: string;
-    issues?: ClawReadinessIssue[];
-    checkedAt?: string;
-  };
-  timings?: Record<string, number>;
-};
-
 type ClientLoadMetric = {
   key: string;
   label: string;
@@ -664,10 +640,9 @@ const CLIENT_LOAD_METRIC_LABELS: Record<string, string> = {
   models: "模型列表",
   health: "健康检查",
   sessions: "历史会话",
-  runtimeInfo: "运行时信息",
   skills: "技能列表",
 };
-const CLIENT_LOAD_PRIMARY_KEYS = new Set(["auth", "agent", "settings", "models", "health", "runtimeInfo", "skills"]);
+const CLIENT_LOAD_PRIMARY_KEYS = new Set(["auth", "agent", "settings", "models", "health", "skills"]);
 
 function clientMetricDisplayMs(metric: ClientLoadMetric): number {
   return metric.requestMs ?? metric.elapsedMs;
@@ -923,12 +898,6 @@ export default function Home() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [openclawVersion, setOpenclawVersion] = useState("OpenClaw 2026.5.7");
   const [jiuwenswarmVersion, setJiuwenswarmVersion] = useState("JiuwenSwarm");
-  const [runtimeAgentId, setRuntimeAgentId] = useState("");
-  const prettyRuntimeAgentName = (agentId: string) => {
-    const s = String(agentId || "").trim();
-    if (!s) return "";
-    return s.replace(/^trial_/, "").replace(/^lgc-/, "");
-  };
   const [activePage, setActivePage] = useState<PageKey>(() => {
     // 支持别的页面（例如 CoopSession 返回按钮）通过 sessionStorage 指定首次落地的 page
     try {
@@ -1503,10 +1472,6 @@ export default function Home() {
   const restoreConversationRequestSeqRef = useRef(0);
   const lastBackendHistoryRefreshRef = useRef("");
   const [cachedClawStatus, setCachedClawStatus] = useState<string | null>(null);
-  const [clawHealthSummary, setClawHealthSummary] = useState<ClawHealthSummary | null>(null);
-  const [clawHealthLoading, setClawHealthLoading] = useState(false);
-  const [clawHealthError, setClawHealthError] = useState("");
-  const [showSlowReadinessHint, setShowSlowReadinessHint] = useState(false);
   const CLAW_STATUS_KEY = resolvedAdoptId && userStorageId ? clawStatusStorageKey(userStorageId, resolvedAdoptId) : null;
 
   useEffect(() => {
@@ -1551,66 +1516,6 @@ export default function Home() {
       localStorage.setItem(CLAW_STATUS_KEY, status);
     } catch {}
   }, [CLAW_STATUS_KEY, clawByAdoptId]);
-
-  const refreshClawHealthSummary = useCallback(async (silent = true) => {
-    if (!resolvedAdoptId || !user || isDirectHttpRuntime) {
-      setClawHealthSummary(null);
-      setClawHealthError("");
-      return;
-    }
-    if (silent && activeLingxiaStreaming) {
-      markClientLoadMetric("health", "skip", "聊天处理中，暂停后台健康检查");
-      return;
-    }
-    const apiBase = import.meta.env.VITE_API_URL || "";
-    const requestStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
-    if (!silent) setClawHealthLoading(true);
-    try {
-      const response = await fetchWithTimeout(`${apiBase}/api/claw/health-summary?adoptId=${encodeURIComponent(resolvedAdoptId)}`, {
-        credentials: "include",
-        cache: "no-store",
-      }, 5000);
-      if (!response.ok) throw new Error(`健康检查失败 (${response.status})`);
-      const data = await response.json().catch(() => null);
-      setClawHealthSummary(data || null);
-      setClawHealthError("");
-      markClientLoadMetric("health", "ok", data?.readiness?.status || "ready", requestStartedAt);
-    } catch (error: any) {
-      const classified = classifyDisplayError(error, "runtime");
-      setClawHealthError(classified.detail || classified.title);
-      markClientLoadMetric("health", "error", classified.title, requestStartedAt);
-    } finally {
-      if (!silent) setClawHealthLoading(false);
-    }
-  }, [activeLingxiaStreaming, isDirectHttpRuntime, markClientLoadMetric, resolvedAdoptId, user]);
-
-  useEffect(() => {
-    if (!resolvedAdoptId || !user || isDirectHttpRuntime) return;
-    let cancelled = false;
-    const run = async (silent = true) => {
-      if (cancelled) return;
-      await refreshClawHealthSummary(silent);
-    };
-    void run(false);
-    const interval = window.setInterval(() => void run(true), 30000);
-    const onFocus = () => void run(true);
-    window.addEventListener("focus", onFocus);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [isDirectHttpRuntime, refreshClawHealthSummary, resolvedAdoptId, user]);
-
-  useEffect(() => {
-    const pending = Boolean(resolvedAdoptId && !isDirectHttpRuntime && ((clawByAdoptLoading && !clawByAdoptId) || clawHealthLoading));
-    if (!pending) {
-      setShowSlowReadinessHint(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setShowSlowReadinessHint(true), 1500);
-    return () => window.clearTimeout(timer);
-  }, [clawByAdoptId, clawByAdoptLoading, clawHealthLoading, isDirectHttpRuntime, resolvedAdoptId]);
 
   const refreshBackendWebSessions = useCallback(async (silent = false) => {
     if (!resolvedAdoptId || !SESSION_INDEX_KEY || isLegacyArchivedRuntime) return [];
@@ -3431,7 +3336,6 @@ export default function Home() {
     clearLingxiaDraft();
     setLingxiaInput("");
     setLingxiaStreaming(true);
-    setClawHealthError("");
     updateLingxiaNearBottom(true);
     setLingxiaToolCalls([]);
 
@@ -4332,20 +4236,6 @@ export default function Home() {
           .catch(() => {});
       });
 
-    if (resolvedAdoptId && user) {
-      const requestStartedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
-      fetchWithTimeout(`/api/claw/runtime-info?adoptId=${encodeURIComponent(resolvedAdoptId)}`, {}, 4000)
-        .then(r => r.json())
-        .then(d => {
-          if (!cancelled) setRuntimeAgentId(String(d?.runtimeAgentId || ""));
-          if (!cancelled) markClientLoadMetric("runtimeInfo", "ok", String(d?.runtimeAgentId || "loaded"), requestStartedAt);
-        })
-        .catch(() => {
-          if (!cancelled) setRuntimeAgentId("");
-          if (!cancelled) markClientLoadMetric("runtimeInfo", "error", "request failed", requestStartedAt);
-        });
-    }
-
     return () => {
       cancelled = true;
     };
@@ -4548,54 +4438,6 @@ export default function Home() {
     const timer = window.setTimeout(() => void reportClientLoadMetrics("timeout"), 8500);
     return () => window.clearTimeout(timer);
   }, [reportClientLoadMetrics, resolvedAdoptId, user]);
-  const chatReadinessBanner = useMemo(() => {
-    if (!resolvedAdoptId || isDirectHttpRuntime) return null;
-    if (activeLingxiaStreaming && clawHealthError) return null;
-    if (showSlowReadinessHint && clawByAdoptLoading && !clawByAdoptId) {
-      return { severity: "info" as const, text: "正在连接 OpenClaw…", detail: "" };
-    }
-    if (!clawByAdoptLoading && !clawByAdoptId) {
-      return { severity: "error" as const, text: "未找到当前岗位智能体实例", detail: "请确认实例仍有效，或切换到有权限的工作台。" };
-    }
-    if (clawHealthError) {
-      return { severity: "warning" as const, text: "健康检查暂时不可用", detail: clawHealthError };
-    }
-    const readiness = clawHealthSummary?.readiness;
-    if (!readiness && clawHealthLoading && showSlowReadinessHint) {
-      return { severity: "info" as const, text: "正在检查模型与 OpenClaw 配置…", detail: "" };
-    }
-    if (!readiness) return null;
-    const selectedModel = String(clawHealthSummary?.model?.selected || effectiveLingxiaModelId || "").trim();
-    const elapsed = Number(clawHealthSummary?.timings?.total || 0);
-    const elapsedText = elapsed > 0 ? ` · ${elapsed}ms` : "";
-    if (readiness.status === "blocked" || readiness.ok === false) {
-      return {
-        severity: "error" as const,
-        text: readiness.summary || "当前智能体配置不可用",
-        detail: selectedModel ? `当前模型：${selectedModel}${elapsedText}` : elapsedText.replace(/^ · /, ""),
-      };
-    }
-    if (readiness.status === "degraded" || (readiness.issues || []).length > 0) {
-      return {
-        severity: "warning" as const,
-        text: readiness.summary || "部分配置需要检查",
-        detail: selectedModel ? `当前模型：${selectedModel}${elapsedText}` : elapsedText.replace(/^ · /, ""),
-      };
-    }
-    return null;
-  }, [
-    clawByAdoptId,
-    clawByAdoptLoading,
-    activeLingxiaStreaming,
-    clawHealthError,
-    clawHealthLoading,
-    clawHealthSummary,
-    effectiveLingxiaModelId,
-    isDirectHttpRuntime,
-    resolvedAdoptId,
-    showSlowReadinessHint,
-  ]);
-
   const accessGateShell = (title: string, desc: string, action?: any) => (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-6">
       <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
@@ -5016,15 +4858,6 @@ export default function Home() {
             )}
 
             {/* 输入区 */}
-            {chatReadinessBanner ? (
-              <div className={`lingxia-readiness-banner lingxia-readiness-banner--${chatReadinessBanner.severity}`}>
-                <span className="lingxia-readiness-banner__dot" />
-                <span className="lingxia-readiness-banner__text">{chatReadinessBanner.text}</span>
-                {chatReadinessBanner.detail ? (
-                  <span className="lingxia-readiness-banner__detail">{chatReadinessBanner.detail}</span>
-                ) : null}
-              </div>
-            ) : null}
             <ChatInput
               value={lingxiaInput}
               onChange={setLingxiaInput}
