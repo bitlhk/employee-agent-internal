@@ -16,6 +16,7 @@ import {
 import type { AgentRoleTemplate } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
 import { projectEffectiveAssetsToMcpSelection } from "./agent-mcp-selection";
+import { PLATFORM_UNTRUSTED_CONTENT_POLICY } from "./instruction-attack";
 import { PLATFORM_CONTENT_COMPLIANCE_POLICY } from "./platform-content-compliance";
 import { normalizeSkillRuntimePermissions } from "./skills/skill-runtime-permissions";
 
@@ -272,6 +273,8 @@ function managedContentComplianceBlock(): string {
   return [
     CONTENT_COMPLIANCE_BLOCK_START,
     PLATFORM_CONTENT_COMPLIANCE_POLICY,
+    "",
+    PLATFORM_UNTRUSTED_CONTENT_POLICY,
     CONTENT_COMPLIANCE_BLOCK_END,
   ].join("\n");
 }

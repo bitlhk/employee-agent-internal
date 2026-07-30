@@ -41,19 +41,65 @@ function normalizeSafeHref(href?: string): string | undefined {
   return undefined;
 }
 
-function normalizeSafeImageSrc(src?: string): string | undefined {
-  if (!src) return undefined;
+export type MarkdownImageSourcePolicy = {
+  src?: string;
+  mode: "invalid" | "same-origin" | "external";
+  hostname?: string;
+};
+
+export function classifyMarkdownImageSource(
+  src?: string,
+  origin = typeof window !== "undefined" ? window.location.origin : "https://localhost",
+): MarkdownImageSourcePolicy {
+  if (!src) return { mode: "invalid" };
   try {
-    const parsed = new URL(src, window.location.origin);
+    const parsed = new URL(src, origin);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return undefined;
+      return { mode: "invalid" };
     }
     if (!/\.(png|jpe?g|gif|webp|bmp|ico|avif)(?:$|[?#])/i.test(parsed.pathname)) {
-      return undefined;
+      return { mode: "invalid" };
     }
-    return src;
+    return {
+      src,
+      mode: parsed.origin === new URL(origin).origin ? "same-origin" : "external",
+      hostname: parsed.hostname,
+    };
   } catch {}
-  return undefined;
+  return { mode: "invalid" };
+}
+
+function MarkdownImage({ src, alt, title }: { src?: string; alt?: string; title?: string }) {
+  const [externalLoadAllowed, setExternalLoadAllowed] = useState(false);
+  const policy = classifyMarkdownImageSource(src);
+  const fallbackText = alt || src || "图片";
+  if (!policy.src || policy.mode === "invalid") {
+    return <span className="lingxia-md-link" title="图片地址不受支持">{fallbackText}</span>;
+  }
+  if (policy.mode === "external" && !externalLoadAllowed) {
+    return (
+      <button
+        type="button"
+        className="lingxia-md-external-image"
+        title={`图片来自外部站点 ${policy.hostname || ""}，点击后浏览器将访问该地址`}
+        onClick={() => setExternalLoadAllowed(true)}
+      >
+        <span className="lingxia-md-external-image__label">外部图片</span>
+        <span className="lingxia-md-external-image__host">{policy.hostname}</span>
+        <span className="lingxia-md-external-image__action">点击加载</span>
+      </button>
+    );
+  }
+  return (
+    <img
+      src={policy.src}
+      alt={alt || ""}
+      title={title}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      className="lingxia-md-image"
+    />
+  );
 }
 
 function FencedCodeBlock({ code, className }: { code: string; className?: string }) {
@@ -299,21 +345,7 @@ function ChatMarkdownInner({
             );
           },
           img: ({ src, alt, title }) => {
-            const safeSrc = normalizeSafeImageSrc(src);
-            const fallbackText = alt || src || "图片";
-            if (!safeSrc) {
-              return <span className="lingxia-md-link" title="图片地址不受支持">{fallbackText}</span>;
-            }
-            return (
-              <img
-                src={safeSrc}
-                alt={alt || ""}
-                title={title}
-                loading="lazy"
-                referrerPolicy="no-referrer"
-                className="lingxia-md-image"
-              />
-            );
+            return <MarkdownImage src={src} alt={alt} title={title} />;
           },
           hr:     () => <hr className="lingxia-md-hr" />,
           strong: ({ children }) => <strong className="lingxia-md-strong">{children}</strong>,

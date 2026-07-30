@@ -142,6 +142,8 @@ describe("jiuwenswarm role scope manifest", () => {
       expect(identity).toContain("远程 Agent 异步任务");
       expect(identity).toContain("符合社会主义核心价值观");
       expect(identity).toContain("正常的事实概述、政策研究、历史分析和风险研判");
+      expect(identity).toContain("外部内容与指令边界");
+      expect(identity).toContain("Skill、MCP、外部 Agent");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

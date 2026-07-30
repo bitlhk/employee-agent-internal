@@ -31,6 +31,7 @@ import {
 import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwenswarm-mcp-metrics";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { validateKnowledgeCitations } from "@shared/knowledge-citations";
+import { detectInstructionAttackSignals } from "./instruction-attack";
 
 export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
@@ -458,6 +459,52 @@ export async function recordJiuwenToolAudit(args: {
         result: tool.isResult ? summarizeAuditPayload(tool.resultPayload) : null,
       },
     });
+  }
+
+  if (tool.isResult) {
+    const instructionAttack = detectInstructionAttackSignals(tool.resultPayload);
+    const securityEventId = `jw_guard_${sha256(`${baseRaw}|${instructionAttack.fingerprint}`).slice(0, 53)}`;
+    if (instructionAttack.detected && !seenJiuwenAuditEventIds.has(securityEventId)) {
+      seenJiuwenAuditEventIds.add(securityEventId);
+      await recordAuditBestEffort({
+        eventId: securityEventId,
+        category: "security",
+        action: "security.instruction_attack.detected",
+        result: "warning",
+        severity: instructionAttack.severity,
+        actorType: "agent",
+        actorUserId: args.claw.userId,
+        ...(args.req ? auditRequest(args.req) : {}),
+        requestId: args.requestId,
+        targetType: "runtime_tool",
+        targetId: (tool.callId || baseEventId).slice(0, 128),
+        targetName: tool.toolName.slice(0, 256),
+        resourceType: "jiuwenswarm_tool_result",
+        resourceId: (tool.callId || baseEventId).slice(0, 128),
+        resourceName: tool.toolName.slice(0, 256),
+        agentInstanceId: args.claw.adoptId,
+        runtimeType: "jiuwenswarm",
+        runtimeAgentId: args.agentId,
+        sessionId: args.sessionId,
+        correlationId: args.requestId,
+        channel: args.channelId,
+        toolName: tool.toolName.slice(0, 128),
+        source: "jiuwenswarm_tool_result",
+        detailType: "instruction_attack_signal",
+        policyCode: "EA_INSTRUCTION_ATTACK_MONITOR_V1",
+        riskType: "prompt_injection",
+        metadata: {
+          contentSource: "tool_result",
+          eventType: args.eventType,
+          callId: tool.callId || null,
+          ruleIds: instructionAttack.signals.map((signal) => signal.ruleId),
+          categories: Array.from(new Set(instructionAttack.signals.map((signal) => signal.category))),
+          fingerprint: instructionAttack.fingerprint,
+          scannedChars: instructionAttack.scannedChars,
+          blocked: false,
+        },
+      });
+    }
   }
 
   const mcpServer = tool.toolName.startsWith("mcp_") ? inferMcpServerForJiuwenTool(tool.toolName) || "jiuwenswarm_mcp" : null;

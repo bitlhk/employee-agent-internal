@@ -176,8 +176,17 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
   const displayName = String(manifest?.displayName || manifest?.title || manifest?.name || mdMeta.title || mdMeta.name || fileStem).trim();
   const description = String(manifest?.description || mdMeta.description || "").replace(/\s+/g, " ").slice(0, 240);
 
+  const blockedExecutablePatterns = [
+    {
+      re: /(?:^|[;&|])[\t ]*rm\s+-rf\s+(?:--no-preserve-root\s+)?\/(?:\s|$)/im,
+      label: "删除根目录",
+    },
+    {
+      re: /\b(?:curl|wget)\b[^\r\n|]{0,500}\|\s*(?:(?:\/usr)?\/bin\/)?(?:bash|zsh|ksh|sh)\b/im,
+      label: "下载后直接执行",
+    },
+  ];
   const dangerousPatterns = [
-    { re: /\brm\s+-rf\s+\//i, label: "rm -rf /" },
     { re: /\beval\s*\(/i, label: "eval()" },
     { re: /\bchild_process\b/i, label: "child_process" },
     { re: /\bwget\s+https?:\/\//i, label: "wget 外部地址" },
@@ -186,6 +195,11 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
   for (const file of normalized) {
     if (!/\.(js|ts|py|sh|md|json|yaml|yml)$/i.test(file.path)) continue;
     const content = textContent(file.content);
+    if (/\.(js|ts|py|sh)$/i.test(file.path)) {
+      for (const item of blockedExecutablePatterns) {
+        if (item.re.test(content)) errors.push(`${file.path}: 检测到高风险行为（${item.label}）`);
+      }
+    }
     for (const item of dangerousPatterns) {
       if (item.re.test(content)) warnings.push(`${file.path}: ${item.label}`);
     }

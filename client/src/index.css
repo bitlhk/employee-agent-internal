@@ -8905,6 +8905,44 @@ input.session-searchbar__input:focus-visible,
   border-radius: 8px;
   object-fit: contain;
 }
+.lingxia-md-external-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 0.55em 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.035);
+  color: rgba(229,231,235,0.9);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.lingxia-md-external-image:hover {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(255,255,255,0.16);
+}
+.lingxia-md-external-image:focus { outline: none; }
+.lingxia-md-external-image:focus-visible {
+  outline: 2px solid rgba(148,163,184,0.7);
+  outline-offset: 2px;
+}
+.lingxia-md-external-image__label { font-weight: 600; }
+.lingxia-md-external-image__host {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(156,163,175,0.85);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lingxia-md-external-image__action {
+  flex: 0 0 auto;
+  color: #94bdf5;
+}
 .lingxia-md-strong { font-weight: 600; color: var(--oc-text-primary); }
 .lingxia-md-em     { font-style: italic; color: rgba(229,231,235,0.85); }
 
@@ -10286,6 +10324,21 @@ textarea::selection,
 }
 :root[data-theme-mode="light"] .lingxia-md-link:hover {
   color: #1D4ED8 !important;
+}
+:root[data-theme-mode="light"] .lingxia-md-external-image {
+  border-color: #E5E7EB;
+  background: #F9FAFB;
+  color: #2A2A26;
+}
+:root[data-theme-mode="light"] .lingxia-md-external-image:hover {
+  border-color: #D1D5DB;
+  background: #F3F4F6;
+}
+:root[data-theme-mode="light"] .lingxia-md-external-image__host {
+  color: #6B7280;
+}
+:root[data-theme-mode="light"] .lingxia-md-external-image__action {
+  color: #2563EB;
 }
 :root[data-theme-mode="light"] .lingxia-md-hr {
   border-top-color: #E5E7EB !important;

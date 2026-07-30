@@ -1,6 +1,7 @@
 import express from "express";
 import { existsSync } from "fs";
 import path from "path";
+import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { clawChatLimiter } from "./security";
 import {
   appendLogAsync,
@@ -19,6 +20,10 @@ import {
   type SelectedRuntimeSkill,
 } from "./chat-selected-skills";
 import { invalidateChatHistorySessionList } from "./chat-history";
+import {
+  PLATFORM_UNTRUSTED_CONTENT_POLICY,
+  detectInstructionAttackSignals,
+} from "./instruction-attack";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -245,6 +250,37 @@ export function registerChatStreamRoutes(app: express.Express) {
         res.status(400).json({ error: "message is empty" });
         return;
       }
+      const instructionAttack = detectInstructionAttackSignals(userMessage);
+      if (instructionAttack.detected) {
+        await recordAuditBestEffort({
+          category: "security",
+          action: "security.instruction_attack.detected",
+          result: "warning",
+          severity: instructionAttack.severity,
+          actorType: "user",
+          actorUserId: Number(adoption.userId),
+          ...auditRequest(req),
+          targetType: "claw_adoption",
+          targetId: String(adoption.adoptId),
+          agentInstanceId: String(adoption.adoptId),
+          runtimeType: "jiuwenswarm",
+          runtimeAgentId: String(adoption.agentId || `jiuwen_${String(adoption.adoptId)}`),
+          sessionId: String(conversationId || "").slice(0, 128) || null,
+          correlationId: clientRunId,
+          source: "chat_user_input",
+          detailType: "instruction_attack_signal",
+          policyCode: "EA_INSTRUCTION_ATTACK_MONITOR_V1",
+          riskType: "prompt_injection",
+          metadata: {
+            contentSource: "user_input",
+            ruleIds: instructionAttack.signals.map((signal) => signal.ruleId),
+            categories: Array.from(new Set(instructionAttack.signals.map((signal) => signal.category))),
+            fingerprint: instructionAttack.fingerprint,
+            scannedChars: instructionAttack.scannedChars,
+            blocked: false,
+          },
+        });
+      }
       const normalizedSelectedSkills = normalizeSelectedSkillIds(
         selectedSkillIds,
         selectedSkillId,
@@ -385,9 +421,16 @@ export function registerChatStreamRoutes(app: express.Express) {
         });
       }
 
-      const runtimeMessage = knowledgeContext
+      const userScopedRuntimeMessage = knowledgeContext
         ? `${knowledgeContext}\n\n<user_request>\n${runtimeMessageBody}\n</user_request>`
         : runtimeMessageBody;
+      const runtimeMessage = [
+        "<ea_security_policy>",
+        PLATFORM_UNTRUSTED_CONTENT_POLICY,
+        "</ea_security_policy>",
+        "",
+        userScopedRuntimeMessage,
+      ].join("\n");
       const { forwardToJiuwenClaw } = await import("./jiuwenclaw-bridge");
       await forwardToJiuwenClaw(
         {

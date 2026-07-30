@@ -1,4 +1,5 @@
 const KNOWLEDGE_CONTEXT_RE = /<ea_knowledge_context>[\s\S]*?<\/ea_knowledge_context>\s*/gi;
+const SECURITY_POLICY_RE = /<ea_security_policy>[\s\S]*?<\/ea_security_policy>\s*/gi;
 const USER_REQUEST_RE = /<user_request>\s*([\s\S]*?)\s*<\/user_request>/gi;
 const SELECTED_SKILL_HEADING = "【本轮已由用户在输入框选择技能 Chip】";
 const SELECTED_SKILL_QUESTION_MARKER = "\n用户问题：";
@@ -21,6 +22,12 @@ export function stripEaSelectedSkillRuntimeContext(value: unknown): string {
   return text.slice(markerIndex + SELECTED_SKILL_QUESTION_MARKER.length).trim();
 }
 
+export function stripEaSecurityRuntimeContext(value: unknown): string {
+  return String(value || "").replace(SECURITY_POLICY_RE, "").trim();
+}
+
 export function stripEaInternalRuntimeContext(value: unknown): string {
-  return stripEaSelectedSkillRuntimeContext(stripEaKnowledgeRuntimeContext(value));
+  return stripEaSelectedSkillRuntimeContext(
+    stripEaKnowledgeRuntimeContext(stripEaSecurityRuntimeContext(value)),
+  );
 }
