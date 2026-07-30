@@ -95,9 +95,7 @@ check_port() {
 echo "--- $(date '+%Y-%m-%d %H:%M:%S') ---" >> "$LOG_FILE"
 F=0
 
-check_port  "岗位智能体平台"       5180 || ((F++))
-check_http  "OpenClaw-GW"   "http://127.0.0.1:18789/health" || ((F++))
-check_http  "Business-MCP"   "http://127.0.0.1:8188/api/v1/auth/status" || ((F++))
-check_port  "business-mcp"   8188 || ((F++))
+check_port  "岗位智能体平台" 5180 || ((F++))
+check_http  "岗位智能体平台 readiness" "http://127.0.0.1:5180/health/ready" || ((F++))
 
 echo "Failures: $F" >> "$LOG_FILE"

@@ -71,7 +71,6 @@ docs/NODE_MODULES_*.md
 docs/BUILD_SIZE_REPORT.md
 docs/RESOURCE_OPTIMIZATION.md
 # 2026-06-08 第三轮：运维日志和内部协作跟踪（含内部路径/ID/备份信息）
-docs/OPENCLAW_PATCHES.md
 docs/JIUWENSWARM_PATCHES.md
 docs/runtime-snapshots
 EXCLUDES

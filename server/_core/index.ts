@@ -435,11 +435,6 @@ async function startServer() {
   registerCronRoutes(app);
   registerNotifyRoutes(app);
   registerFeishuRoutes(app);
-  // 启动 cron 结果投递轮询（岗位智能体平台侧，补充 Gateway 不支持的渠道）
-  void startManagedWorkerAsync("cron_delivery", async () => {
-    const module = await import("./cron-delivery");
-    return module.startCronDeliveryPoller();
-  });
   registerSkillRoutes(app);
   registerCollabRoutes(app);
   registerPersonalExpertRoutes(app);

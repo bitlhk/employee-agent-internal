@@ -1,6 +1,5 @@
 import type { ChannelId } from "@shared/types/cron";
 import { getFeishuStatus } from "../claw-feishu";
-import { getWeixinStatus } from "../claw-weixin";
 
 export type BoundChannel = {
   channelId: ChannelId;
@@ -10,16 +9,6 @@ export type BoundChannel = {
 
 export async function getBoundChannelsForAdopt(adoptId: string): Promise<BoundChannel[]> {
   const channels: BoundChannel[] = [];
-  const isJiuwenAgent = adoptId.startsWith("lgj-");
-
-  const wechat = isJiuwenAgent ? null : getWeixinStatus(adoptId);
-  if (wechat?.bound && !wechat.needsReactivation) {
-    channels.push({
-      channelId: "wechat",
-      label: "微信",
-      targetLabel: wechat.targetLabel || "微信",
-    });
-  }
 
   const feishu = await getFeishuStatus(adoptId);
   if (feishu.deliveryReady) {

@@ -36,6 +36,7 @@ import {
 import { skillRegistry } from "./skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { roleSkillPreferences } from "./skills/role-skill-preferences";
+import { setAgentSkillEnabled } from "./skills/skill-enable-service";
 import { skillInstaller } from "./skills/skill-installer";
 import { parseSkillSourceDirectory } from "./skills/skill-source";
 import {
@@ -1054,75 +1055,23 @@ export function registerSkillRoutes(app: express.Express) {
       }
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
-      const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
-      const isRoleDefault = effectiveAssets.skills.default.includes(skillId);
-      if (isRoleDefault) {
-        const role = resolveAgentRoleTemplate(roleTemplate);
-        const runtimeAgentId = resolveRuntimeAgentId(adoptId, String((claw as any).agentId || ""));
-        const runtimeAdapter = getRoleRuntimeAdapter(isJiuwenClawAdoptId(adoptId) ? "jiuwenswarm" : "openclaw");
-        const registered = await skillRegistry.listSkills(adoptId);
-        if (!registered.ok) {
-          res
-            .status(registryErrorStatus(registered.error.kind))
-            .json({ error: registered.error.detail, kind: registered.error.kind });
-          return;
-        }
-        const roleDefaultSkillIds = new Set(effectiveAssets.skills.default);
-        const activeSkillIds = registered.value
-          .filter((skill) => !roleDefaultSkillIds.has(skill.id) && skill.enabled && skill.state === "ready")
-          .map((skill) => skill.id);
-        const previousDisabled = roleSkillPreferences.getDisabledDefaultSkillIds(adoptId);
-        const wasDisabled = previousDisabled.includes(skillId);
-        const applyRoleScope = async (disabledDefaultSkillIds: string[]) => {
-          const result = await runtimeAdapter.reconcileSkills({
-            adoptId,
-            agentId: runtimeAgentId,
-            role,
-            effectiveAssets,
-            activeSkillIds,
-            disabledDefaultSkillIds,
-          });
-          if (!result.ok) throw new Error(result.reason || "岗位技能同步失败");
-        };
-
-        const disabledDefaultSkillIds = roleSkillPreferences.setDefaultSkillEnabled(adoptId, skillId, enabled);
-        try {
-          await applyRoleScope(disabledDefaultSkillIds);
-          await runtimeAdapter.bumpSessionEpoch(adoptId, runtimeAgentId);
-        } catch (error) {
-          roleSkillPreferences.setDefaultSkillEnabled(adoptId, skillId, wasDisabled ? false : true);
-          await applyRoleScope(previousDisabled).catch(() => undefined);
-          throw error;
-        }
-
-        const projected = await listSkillsWithRoleDefaults({
-          adoptId,
-          agentId: runtimeAgentId,
-          roleTemplate,
-        });
-        if (!projected.ok) {
-          res
-            .status(registryErrorStatus(projected.error.kind))
-            .json({ error: projected.error.detail, kind: projected.error.kind });
-          return;
-        }
-        const item = projected.value.find((skill) => skill.id === skillId);
-        if (!item) {
-          res.status(404).json({ error: "skill not found" });
-          return;
-        }
-        res.json({ item });
-        return;
-      }
-      const result = await skillRegistry.setEnabled(adoptId, skillId, enabled);
+      const result = await setAgentSkillEnabled({
+        adoptId,
+        agentId: String((claw as any).agentId || ""),
+        roleTemplate: String((claw as any).roleTemplate || "general-assistant"),
+        skillId,
+        enabled,
+      });
       if (!result.ok) {
-        res
-          .status(registryErrorStatus(result.error.kind))
-          .json({ error: result.error.detail, kind: result.error.kind });
+        const status = result.kind === "runtime_retired"
+          ? 410
+          : result.kind === "not_found"
+            ? 404
+            : 500;
+        res.status(status).json({ error: result.detail, kind: result.kind });
         return;
       }
-      res.json({ item: result.value });
+      res.json({ item: result.item });
     } catch (e) {
       console.error("[skills registry] set-enabled failed", e);
       res.status(500).json({ error: "set skill enabled failed" });

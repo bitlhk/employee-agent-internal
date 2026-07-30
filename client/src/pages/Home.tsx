@@ -2941,15 +2941,6 @@ export default function Home() {
     onSuccess: () => { refetchSkills(); toast.success("技能已更新"); },
     onError: (e) => toast.error(e.message),
   });
-  const upsertPrivateSkillMutation = trpc.claw.upsertPrivateSkill.useMutation({
-    onSuccess: () => { refetchSkills(); setLingxiaSkillEditor(null); toast.success("技能已保存"); },
-    onError: (e) => toast.error(e.message),
-  });
-  const deletePrivateSkillMutation = trpc.claw.deletePrivateSkill.useMutation({
-    onSuccess: () => { refetchSkills(); toast.success("技能已删除"); },
-    onError: (e) => toast.error(e.message),
-  });
-  const [lingxiaSkillEditor, setLingxiaSkillEditor] = useState<{ id: string; content: string } | null>(null);
 
   // localStorage 会话持久化
   useEffect(() => {

@@ -17,7 +17,7 @@ import type {
 } from "@shared/types/cron";
 import { getCronDeliveryChannel } from "../cron-delivery";
 import { jiuwenClawServiceId, resolveRuntimeWorkspaceByIds } from "../helpers";
-import { computePreviewRuns } from "./openclaw-cron-provider";
+import { computePreviewRuns } from "./schedule-preview";
 import { normalizeChannelId } from "./channel-provider-registry";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";

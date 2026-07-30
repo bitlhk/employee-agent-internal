@@ -2,7 +2,7 @@
  * stream-writer.ts — 传输层抽象
  * 
  * StreamWriter 统一 SSE / WebSocket / 未来渠道的流式输出接口。
- * 传输层（claw-chat / claw-ws-proxy）创建对应 Writer，
+ * 传输层创建对应 Writer，
  * 路由层（intent-agent）和执行层（intent-executor）只依赖此接口。
  */
 

@@ -333,7 +333,7 @@ export const resolveRuntimeAgentId = (adoptId: string, dbAgentIdRaw: any) => {
 };
 
 // Internal legacy RPC helper. New code must go through
-// createOpenClawRuntimeAdapter().callRpc() so OpenClaw access stays centralized.
+// Runtime-specific access should remain behind the active JiuwenSwarm bridge.
 const callClawGatewayRpc = (method: string, params: Record<string, any> = {}) => {
   const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
   const gatewayPort = parseInt(process.env.CLAW_GATEWAY_PORT || "18789", 10);

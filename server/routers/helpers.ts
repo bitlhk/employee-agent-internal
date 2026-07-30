@@ -31,7 +31,6 @@ export const OPENCLAW_HOME = normalizeOpenClawHome();
 
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { execSync } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
 import {
   getClawByAdoptId,
@@ -43,28 +42,6 @@ import {
 import { getClientIp } from "../_core/ip-utils";
 
 export const OPENCLAW_JSON_PATH = expandHomePath(process.env.CLAW_OPENCLAW_JSON || path.join(OPENCLAW_HOME, "openclaw.json"));
-
-// ── 每日对话额度：内存计数器（重启自动清零） ──
-export const clawDailyUsage = (() => {
-  const map = new Map<string, { count: number; date: string }>();
-  const today = () => new Date().toISOString().slice(0, 10);
-  return {
-    increment(adoptId: string): number {
-      const d = today();
-      const entry = map.get(adoptId);
-      if (!entry || entry.date !== d) {
-        map.set(adoptId, { count: 1, date: d });
-        return 1;
-      }
-      entry.count++;
-      return entry.count;
-    },
-    get(adoptId: string): number {
-      const entry = map.get(adoptId);
-      return entry && entry.date === today() ? entry.count : 0;
-    },
-  };
-})();
 
 type ClawModelOption = { id: string; name: string; desc?: string; isDefault?: boolean };
 const DEFAULT_FRONTEND_MODEL_FALLBACKS = ["modelarts-maas/glm-5.2", "maas/deepseek-v4-flash"];
@@ -315,68 +292,6 @@ export function restartOpenclawGatewayBestEffort() {
   // hot-switch mode: do NOT restart gateway from control-ui backend
   return;
 }
-
-
-/**
- * 岗位智能体实例编排（MVP）
- *
- * CLAW_PROVISION_MODE=mock         -> 仅占位成功（默认）
- * CLAW_PROVISION_MODE=local-script -> 调用本地脚本真实创建
- */
-export function provisionEmployeeAgentInstance(params: {
-  adoptId: string;
-  agentId: string;
-  userId: number;
-  permissionProfile: "starter" | "plus" | "internal";
-  ttlDays: number;
-}) {
-  const mode = (process.env.CLAW_PROVISION_MODE || "mock").trim();
-
-  if (mode === "mock") {
-    return {
-      ok: true,
-      mode,
-      message: "mock provisioned",
-    } as const;
-  }
-
-  if (mode === "local-script") {
-    const scriptPath = process.env.CLAW_PROVISION_SCRIPT || "./scripts/claw-provision.sh";
-    const cmd = [
-      "bash",
-      scriptPath,
-      "create",
-      `--adopt-id=${params.adoptId}`,
-      `--agent-id=${params.agentId}`,
-      `--user-id=${params.userId}`,
-      `--profile=${params.permissionProfile}`,
-      `--ttl-days=${params.ttlDays}`,
-    ].join(" ");
-
-    const out = execSync(cmd, {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      encoding: "utf8",
-    }).trim();
-
-    let parsed: any = null;
-    try {
-      parsed = out ? JSON.parse(out) : null;
-    } catch {
-      parsed = { raw: out };
-    }
-
-    return {
-      ok: true,
-      mode,
-      result: parsed,
-    } as const;
-  }
-
-  throw new Error(`Unsupported CLAW_PROVISION_MODE: ${mode}`);
-}
-
 
 
 export function writeClawExecAudit(entry: {

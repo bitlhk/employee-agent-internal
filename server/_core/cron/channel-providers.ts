@@ -8,14 +8,13 @@ import type {
   ScanChannelProvider,
   SyncBindChannelProvider,
 } from "@shared/types/cron";
-import { dingtalkCredentialsSchema, feishuCredentialsSchema, wechatCredentialsSchema, wecomCredentialsSchema } from "@shared/types/cron";
+import { dingtalkCredentialsSchema, feishuCredentialsSchema, wecomCredentialsSchema } from "@shared/types/cron";
 import {
   pollFeishuBindStatus,
   sendFeishuDeliveryMessage,
   startFeishuBindFlow,
   unbindFeishu,
 } from "../claw-feishu";
-import { sendWeixinMessage } from "../claw-weixin";
 
 function notImplemented<T>(provider: string): Result<T> {
   return {
@@ -25,57 +24,6 @@ function notImplemented<T>(provider: string): Result<T> {
       detail: `${provider} channel provider is a Sprint 0 stub`,
     },
   };
-}
-
-export class WechatChannelProvider implements ScanChannelProvider {
-  readonly id = "wechat";
-  readonly displayName = "微信";
-  readonly bindMode = "scan";
-  readonly credentialsSchema = wechatCredentialsSchema;
-
-  async startBindFlow(_ctx: ChannelSendContext): Promise<Result<ChannelBindStart>> {
-    return notImplemented("wechat");
-  }
-
-  async pollBindStatus(_ctx: ChannelSendContext, _pollToken: string): Promise<Result<ChannelBindStatus>> {
-    return notImplemented("wechat");
-  }
-
-  async test(_ctx: ChannelSendContext): Promise<Result<{ message: string }>> {
-    const result = await sendWeixinMessage(
-      _ctx.adoptId || "",
-      _ctx.targetId || "",
-      "岗位智能体频道测试\n\n微信频道已连接，后续定时任务可投递到这里。",
-    );
-    if (!result.ok) {
-      return {
-        ok: false,
-        error: {
-          kind: isWechatReactivationError(result.error) ? "auth_failed" : "channel_unreachable",
-          detail: result.error || "wechat test send failed",
-        },
-      };
-    }
-    return { ok: true, value: { message: "微信测试消息已发送" } };
-  }
-
-  async unbind(_ctx: ChannelSendContext): Promise<Result<void>> {
-    return notImplemented("wechat");
-  }
-
-  async send(_ctx: ChannelSendContext, _payload: ChannelPayload): Promise<Result<{ deliveredAt: string }>> {
-    const result = await sendWeixinMessage(_ctx.adoptId || "", _ctx.targetId || "", formatChannelPayload(_payload));
-    if (!result.ok) {
-      return {
-        ok: false,
-        error: {
-          kind: isWechatReactivationError(result.error) ? "auth_failed" : "channel_unreachable",
-          detail: result.error || "wechat send failed",
-        },
-      };
-    }
-    return { ok: true, value: { deliveredAt: new Date().toISOString() } };
-  }
 }
 
 export class FeishuChannelProvider implements ScanChannelProvider {
@@ -180,15 +128,4 @@ function formatChannelPayload(payload: ChannelPayload): string {
   const title = payload.title?.trim();
   const text = payload.text.trim();
   return title ? `${title}\n\n${text}` : text;
-}
-
-function isWechatReactivationError(error?: string): boolean {
-  const msg = String(error || "").toLowerCase();
-  return (
-    msg.includes("context_token") ||
-    msg.includes("context_expired") ||
-    msg.includes("send a message to bot first") ||
-    msg.includes("session timeout") ||
-    msg.includes("errcode=-14")
-  );
 }

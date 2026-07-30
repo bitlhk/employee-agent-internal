@@ -28,12 +28,12 @@ describe("background worker supervisor", () => {
   });
 
   it("records asynchronous startup failures without rejecting server startup", async () => {
-    await startManagedWorkerAsync("cron_delivery", async () => {
+    await startManagedWorkerAsync("knowledge_recovery", async () => {
       throw new Error("module unavailable");
     });
 
     expect(getBackgroundWorkerSnapshot()[0]).toEqual(expect.objectContaining({
-      name: "cron_delivery",
+      name: "knowledge_recovery",
       state: "failed",
       error: "module unavailable",
     }));

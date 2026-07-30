@@ -1279,46 +1279,6 @@ function addJiuwenUsageEvents(params: {
   }
 }
 
-function runtimeAgentIdFromSessionKey(sessionKey: string): string {
-  const match = /^agent:([^:]+):/.exec(String(sessionKey || ""));
-  return match?.[1] || "";
-}
-
-function adoptIdFromRuntimeAgentId(runtimeAgentId: string): string {
-  return String(runtimeAgentId || "").startsWith("trial_")
-    ? String(runtimeAgentId).slice("trial_".length)
-    : "";
-}
-
-function listTrajectoryFiles(rootDir: string, maxFiles: number): string[] {
-  const files: Array<{ path: string; mtimeMs: number }> = [];
-  const visit = (dir: string) => {
-    let entries: ReturnType<typeof readdirSync> = [];
-    try {
-      entries = readdirSync(dir, { withFileTypes: true }) as any;
-    } catch {
-      return;
-    }
-    for (const entry of entries as any[]) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        visit(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith(".trajectory.jsonl")) {
-        try {
-          files.push({ path: fullPath, mtimeMs: statSync(fullPath).mtimeMs });
-        } catch {
-          files.push({ path: fullPath, mtimeMs: 0 });
-        }
-      }
-    }
-  };
-  visit(rootDir);
-  return files
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
-    .slice(0, maxFiles)
-    .map((item) => item.path);
-}
-
 function sessionSummaryCachePath(sessionsDir: string): string {
   return path.join(sessionsDir, CHAT_HISTORY_SUMMARY_CACHE_FILE);
 }
@@ -2502,10 +2462,8 @@ export function registerMiscRoutes(app: express.Express) {
         } catch {}
       }
 
-      // 查用户名和 runtime agent 映射。OpenClaw 微信 channel 直接进 gateway，
-      // 不经过 employee-agent 的聊天接口，所以需要从 trajectory 里补统计。
+      // 查用户名和当前 JiuwenSwarm runtime 映射。
       let userMap: Record<number, string> = {};
-      const agentToAdopt: Record<string, { adoptId: string; userId: number }> = {};
       const adoptionRows: Array<{ adoptId: string; agentId: string; userId: number; runtime: string }> = [];
       const adoptRuntimeMap: Record<string, string> = {};
       const currentAdoptIds = new Set<string>();
@@ -2530,8 +2488,6 @@ export function registerMiscRoutes(app: express.Express) {
             adoptionRows.push({ adoptId, agentId: configuredAgentId, userId, runtime });
             if (adoptId) currentAdoptIds.add(adoptId);
             if (adoptId) adoptRuntimeMap[adoptId] = runtime;
-            if (configuredAgentId) agentToAdopt[configuredAgentId] = { adoptId, userId };
-            if (adoptId) agentToAdopt[`trial_${adoptId}`] = { adoptId, userId };
           }
         }
       } catch {}
@@ -2573,40 +2529,6 @@ export function registerMiscRoutes(app: express.Express) {
                 adoptId,
                 ts: d?.ts || "",
                 userId: d?.userId || 0,
-              });
-            } catch {}
-          }
-        }
-      } catch {}
-
-      try {
-        const maxFiles = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_TRAJECTORY_MAX_FILES || process.env.LINGXIA_USAGE_TRAJECTORY_MAX_FILES || 5000), 1), 50000);
-        const trajectoryFiles = listTrajectoryFiles(path.join(OPENCLAW_HOME, "agents"), maxFiles);
-        for (const filePath of trajectoryFiles) {
-          let raw = "";
-          try {
-            raw = readFileSync(filePath, "utf8");
-          } catch {
-            continue;
-          }
-          for (const line of raw.split("\n")) {
-            if (!line.includes('"type":"trace.artifacts"') || !line.includes("openclaw-weixin")) continue;
-            try {
-              const d = JSON.parse(line);
-              const sessionKey = String(d?.sessionKey || "");
-              if (!sessionKey.includes(":openclaw-weixin:")) continue;
-              const runtimeAgentId = runtimeAgentIdFromSessionKey(sessionKey);
-              const mapped = agentToAdopt[runtimeAgentId];
-              const adoptId = mapped?.adoptId || adoptIdFromRuntimeAgentId(runtimeAgentId);
-              if (!adoptId) continue;
-              addUsageEvent({
-                byAdopt,
-                dailyAll,
-                seen,
-                key: ["trajectory", d?.traceId || "", d?.runId || "", d?.seq || "", sessionKey].join("|"),
-                adoptId,
-                ts: d?.ts || "",
-                userId: mapped?.userId || 0,
               });
             } catch {}
           }

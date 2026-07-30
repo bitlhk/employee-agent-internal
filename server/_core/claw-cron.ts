@@ -1,48 +1,46 @@
 import express from "express";
-import { isAuthorizedInternalRequest, isJiuwenClawAdoptId, requireClawOwner, resolveRuntimeAgentId } from "./helpers";
-import { OpenClawCronProvider } from "./cron/openclaw-cron-provider";
+import type { CronJobInput, CronProviderHandle, CronSchedule } from "@shared/types/cron";
+import {
+  isAuthorizedInternalRequest,
+  isJiuwenClawAdoptId,
+  requireClawOwner,
+  resolveRuntimeAgentId,
+} from "./helpers";
 import { JiuwenClawCronProvider } from "./cron/jiuwenclaw-cron-provider";
-import { startCronRunWatcher } from "./cron/cron-run-watcher";
 import {
   resolveCronCapabilities,
   unavailableDeliveryChannelError,
 } from "./cron/channel-capabilities";
 import { deleteCronDeliveryConfig, saveCronDeliveryConfig } from "./cron-delivery";
 import { normalizeChannelId } from "./cron/channel-provider-registry";
-import type { CronJobInput, CronProviderHandle as SharedCronProviderHandle, CronSchedule } from "@shared/types/cron";
 
-const openClawCronProvider = new OpenClawCronProvider();
-const jiuwenClawCronProvider = new JiuwenClawCronProvider();
-
-async function capabilitiesForClaw(claw: any) {
-  const adoptId = String(claw?.adoptId || "").trim();
-  const provider = isJiuwenClawAdoptId(adoptId) ? jiuwenClawCronProvider : openClawCronProvider;
-  return resolveCronCapabilities(adoptId, provider.capabilities());
-}
+const cronProvider = new JiuwenClawCronProvider();
 
 function isLegacyArchivedAdopt(adoptId: string): boolean {
-  // OpenClaw and unknown runtime identifiers are retired and must fail closed.
   return !isJiuwenClawAdoptId(String(adoptId || ""));
 }
 
-function toOpenClawHandle(claw: any): SharedCronProviderHandle {
-  const adoptId = String(claw.adoptId || "");
-  return {
-    adoptId,
-    agentId: resolveRuntimeAgentId(adoptId, (claw as any).agentId),
-    userId: Number(claw.userId || 0),
-    runtime: "openclaw",
-  };
+function archivedRuntimeResponse(res: express.Response) {
+  return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
 }
 
-function toJiuwenClawHandle(claw: any): SharedCronProviderHandle {
+function archivedRuntimeError() {
+  return Object.assign(new Error("Legacy runtime has been archived"), { status: 410 });
+}
+
+function toCronHandle(claw: any): CronProviderHandle {
   const adoptId = String(claw.adoptId || "");
   return {
     adoptId,
-    agentId: resolveRuntimeAgentId(adoptId, (claw as any).agentId),
+    agentId: resolveRuntimeAgentId(adoptId, String(claw.agentId || "")),
     userId: Number(claw.userId || 0),
     runtime: "jiuwenclaw",
   };
+}
+
+async function capabilitiesForClaw(claw: any) {
+  const adoptId = String(claw?.adoptId || "").trim();
+  return resolveCronCapabilities(adoptId, cronProvider.capabilities());
 }
 
 async function resolveClaw(req: express.Request, res: express.Response, adoptId: string) {
@@ -61,7 +59,9 @@ async function resolveClaw(req: express.Request, res: express.Response, adoptId:
 function cronScheduleFromRequest(raw: any): CronSchedule {
   const kind = String(raw?.kind || "cron");
   if (kind === "interval" || kind === "every") {
-    const intervalMinutes = Number(raw?.intervalMinutes || (raw?.everyMs ? Math.round(Number(raw.everyMs) / 60000) : 0) || 30);
+    const intervalMinutes = Number(
+      raw?.intervalMinutes || (raw?.everyMs ? Math.round(Number(raw.everyMs) / 60_000) : 0) || 30,
+    );
     return { kind: "interval", intervalMinutes, display: `每 ${intervalMinutes} 分钟` };
   }
   if (kind === "once" || kind === "at") {
@@ -70,6 +70,14 @@ function cronScheduleFromRequest(raw: any): CronSchedule {
   }
   const cronExpr = String(raw?.cronExpr || raw?.expr || "0 9 * * *");
   return { kind: "cron", cronExpr, display: raw?.display ? String(raw.display) : cronExpr };
+}
+
+function channelLabel(channelId: string) {
+  if (channelId === "web") return "当前对话";
+  if (channelId === "wechat") return "微信";
+  if (channelId === "feishu") return "飞书";
+  if (channelId === "dingtalk") return "钉钉";
+  return "企业微信";
 }
 
 function cronDeliveryFromRequest(raw: any): CronJobInput["delivery"] {
@@ -81,7 +89,7 @@ function cronDeliveryFromRequest(raw: any): CronJobInput["delivery"] {
       return {
         targets: [{
           channelId,
-          channelLabel: first.channelLabel || (channelId === "web" ? "当前对话" : channelId === "wechat" ? "微信" : channelId === "feishu" ? "飞书" : "企业微信"),
+          channelLabel: first.channelLabel || channelLabel(channelId),
           targetId: first.targetId,
           targetLabel: first.targetLabel,
           format: first.format,
@@ -90,16 +98,18 @@ function cronDeliveryFromRequest(raw: any): CronJobInput["delivery"] {
     }
   }
 
-  const rawChannel = String(raw?.channel || raw?.to || raw?.mode || (raw?.weixin ? "wechat" : "")).trim();
+  const rawChannel = String(
+    raw?.channel || raw?.to || raw?.mode || (raw?.weixin ? "wechat" : ""),
+  ).trim();
   const channelId = rawChannel === "conversation"
     ? "web"
     : rawChannel === "weixin"
       ? "wechat"
-      : normalizeChannelId(rawChannel) || "wechat";
+      : normalizeChannelId(rawChannel) || "web";
   return {
     targets: [{
       channelId,
-      channelLabel: channelId === "web" ? "当前对话" : channelId === "wechat" ? "微信" : channelId === "feishu" ? "飞书" : "企业微信",
+      channelLabel: channelLabel(channelId),
       targetId: raw?.target || raw?.to,
       targetLabel: raw?.targetLabel,
     }],
@@ -124,22 +134,6 @@ function cronJobInputFromRequest(job: any): CronJobInput {
   };
 }
 
-function validateCronInputSafety(input: CronJobInput): string | null {
-  const minIntervalMinutes = 30;
-  if (input.schedule.kind === "interval" && input.schedule.intervalMinutes < minIntervalMinutes) {
-    return `执行间隔不能低于 ${minIntervalMinutes} 分钟`;
-  }
-  if (input.schedule.kind === "cron") {
-    const minutePart = input.schedule.cronExpr.trim().split(/\s+/)[0] || "";
-    const stepMatch = minutePart.match(/^\*\/(\d+)$/);
-    if (minutePart === "*" || (stepMatch && Number(stepMatch[1]) < minIntervalMinutes)) {
-      return "cron 表达式执行频率不能高于每 30 分钟";
-    }
-  }
-  if (input.schedule.kind === "once" && !input.schedule.runAt) return "单次任务时间不能为空";
-  return null;
-}
-
 function providerErrorStatus(kind?: string) {
   if (kind === "validation_failed") return 400;
   if (kind === "not_found") return 404;
@@ -153,10 +147,6 @@ function providerError(error: any) {
   });
 }
 
-function archivedRuntimeError() {
-  return Object.assign(new Error("Legacy runtime has been archived"), { status: 410 });
-}
-
 export async function listCronJobsForClaw(claw: any, options?: {
   limit?: number;
   offset?: number;
@@ -165,35 +155,37 @@ export async function listCronJobsForClaw(claw: any, options?: {
   scheduleKind?: string;
 }) {
   const adoptId = String(claw?.adoptId || "").trim();
+  if (isLegacyArchivedAdopt(adoptId)) throw archivedRuntimeError();
+
   const limit = Math.max(1, Math.min(200, Number(options?.limit || 20)));
   const offset = Math.max(0, Number(options?.offset || 0));
   const query = String(options?.query || "").trim().toLowerCase();
   const enabled = String(options?.enabled || "all");
   const scheduleKind = String(options?.scheduleKind || "all");
-
-  if (isLegacyArchivedAdopt(adoptId)) throw archivedRuntimeError();
-
-  if (isJiuwenClawAdoptId(adoptId)) {
-    const listed = await jiuwenClawCronProvider.listJobs(toJiuwenClawHandle(claw));
-    if (!listed.ok) throw providerError(listed.error);
-    let jobs = listed.value;
-    if (query) jobs = jobs.filter((j) => String(j.name || "").toLowerCase().includes(query) || String(j.description || "").toLowerCase().includes(query));
-    if (enabled === "enabled") jobs = jobs.filter((j) => j.enabled !== false);
-    if (enabled === "disabled") jobs = jobs.filter((j) => j.enabled === false);
-    if (["interval", "once", "cron"].includes(scheduleKind)) jobs = jobs.filter((j) => String(j.schedule?.kind || "") === scheduleKind);
-    const total = jobs.length;
-    return { runtime: "jiuwenclaw", capabilities: await capabilitiesForClaw(claw), jobs: jobs.slice(offset, offset + limit), total, limit, offset };
-  }
-
-  const listed = await openClawCronProvider.listJobs(toOpenClawHandle(claw));
+  const listed = await cronProvider.listJobs(toCronHandle(claw));
   if (!listed.ok) throw providerError(listed.error);
+
   let jobs = listed.value;
-  if (query) jobs = jobs.filter((j) => String(j.name || "").toLowerCase().includes(query) || String(j.description || "").toLowerCase().includes(query));
-  if (enabled === "enabled") jobs = jobs.filter((j) => j.enabled !== false);
-  if (enabled === "disabled") jobs = jobs.filter((j) => j.enabled === false);
-  if (["interval", "once", "cron"].includes(scheduleKind)) jobs = jobs.filter((j) => String(j.schedule?.kind || "") === scheduleKind);
+  if (query) {
+    jobs = jobs.filter((job) =>
+      String(job.name || "").toLowerCase().includes(query)
+      || String(job.description || "").toLowerCase().includes(query)
+    );
+  }
+  if (enabled === "enabled") jobs = jobs.filter((job) => job.enabled !== false);
+  if (enabled === "disabled") jobs = jobs.filter((job) => job.enabled === false);
+  if (["interval", "once", "cron"].includes(scheduleKind)) {
+    jobs = jobs.filter((job) => String(job.schedule?.kind || "") === scheduleKind);
+  }
   const total = jobs.length;
-  return { runtime: "openclaw", capabilities: await capabilitiesForClaw(claw), jobs: jobs.slice(offset, offset + limit), total, limit, offset };
+  return {
+    runtime: "jiuwenclaw",
+    capabilities: await capabilitiesForClaw(claw),
+    jobs: jobs.slice(offset, offset + limit),
+    total,
+    limit,
+    offset,
+  };
 }
 
 export async function listCronRunsForClaw(claw: any, options?: {
@@ -209,23 +201,28 @@ export async function listCronRunsForClaw(claw: any, options?: {
   const offset = Math.max(0, Number(options?.offset || 0));
   const jobId = String(options?.jobId || "").trim();
   const scope = String(options?.scope || "all").trim();
-  const provider = isJiuwenClawAdoptId(adoptId) ? jiuwenClawCronProvider : openClawCronProvider;
-  const handle = isJiuwenClawAdoptId(adoptId) ? toJiuwenClawHandle(claw) : toOpenClawHandle(claw);
-  const listed = await provider.listJobs(handle);
+  const handle = toCronHandle(claw);
+  const listed = await cronProvider.listJobs(handle);
   if (!listed.ok) throw providerError(listed.error);
 
-  const targetJobs = jobId ? listed.value.filter((j) => String(j.id) === jobId) : listed.value;
+  const targetJobs = jobId ? listed.value.filter((job) => String(job.id) === jobId) : listed.value;
   let runs: any[] = [];
   for (const job of targetJobs.slice(0, 50)) {
-    const runResult = await provider.listRuns(handle, job.id, 100);
+    const runResult = await cronProvider.listRuns(handle, job.id, 100);
     if (!runResult.ok) {
-      console.warn("[CRON-PROVIDER] listRuns failed for job", { adoptId, jobId: job.id, error: runResult.error });
+      console.warn("[CRON-PROVIDER] JiuwenSwarm listRuns failed", {
+        adoptId,
+        jobId: job.id,
+        error: runResult.error,
+      });
       continue;
     }
     runs.push(...runResult.value.map((run) => ({ ...run, jobName: job.name })));
   }
-  if (["ok", "error", "skipped", "timeout", "canceled"].includes(scope)) runs = runs.filter((r: any) => String(r?.status || "") === scope);
-  runs.sort((a: any, b: any) => Date.parse(String(b?.startedAt || "")) - Date.parse(String(a?.startedAt || "")));
+  if (["ok", "error", "skipped", "timeout", "canceled"].includes(scope)) {
+    runs = runs.filter((run) => String(run?.status || "") === scope);
+  }
+  runs.sort((a, b) => Date.parse(String(b?.startedAt || "")) - Date.parse(String(a?.startedAt || "")));
   const total = runs.length;
   return { runs: runs.slice(offset, offset + limit), total, limit, offset };
 }
@@ -237,38 +234,24 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const listed = await jiuwenClawCronProvider.listJobs(toJiuwenClawHandle(claw));
-        if (!listed.ok) return res.status(providerErrorStatus(listed.error.kind)).json({ error: listed.error.detail });
-        const enabled = listed.value.filter((j) => j.enabled);
-        const nextRunIso = enabled.map((j) => j.state.nextRunAt).filter(Boolean).sort()[0];
-        return res.json({
-          enabled: true,
-          runtime: "jiuwenclaw",
-          jobs: listed.value.length,
-          enabledJobs: enabled.length,
-          nextRunAt: nextRunIso || undefined,
-          nextWakeAtMs: nextRunIso ? new Date(nextRunIso).getTime() : undefined,
-        });
+      const listed = await cronProvider.listJobs(toCronHandle(claw));
+      if (!listed.ok) {
+        return res.status(providerErrorStatus(listed.error.kind)).json({ error: listed.error.detail });
       }
-
-      const listed = await openClawCronProvider.listJobs(toOpenClawHandle(claw));
-      if (!listed.ok) return res.status(500).json({ error: listed.error.detail });
-      const enabled = listed.value.filter((j) => j.enabled);
-      const nextRunIso = enabled.map((j) => j.state.nextRunAt).filter(Boolean).sort()[0];
+      const enabled = listed.value.filter((job) => job.enabled);
+      const nextRunIso = enabled.map((job) => job.state.nextRunAt).filter(Boolean).sort()[0];
       return res.json({
         enabled: true,
-        runtime: "openclaw",
+        runtime: "jiuwenclaw",
         jobs: listed.value.length,
         enabledJobs: enabled.length,
         nextRunAt: nextRunIso || undefined,
         nextWakeAtMs: nextRunIso ? new Date(nextRunIso).getTime() : undefined,
       });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron status failed") });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "cron status failed") });
     }
   });
 
@@ -278,11 +261,10 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-      if (isJiuwenClawAdoptId(adoptId)) return res.json({ runtime: "jiuwenclaw", capabilities: await capabilitiesForClaw(claw) });
-      return res.json({ runtime: "openclaw", capabilities: await capabilitiesForClaw(claw) });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "capabilities failed") });
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
+      return res.json({ runtime: "jiuwenclaw", capabilities: await capabilitiesForClaw(claw) });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "capabilities failed") });
     }
   });
 
@@ -292,38 +274,16 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
-
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit || 20)));
-      const offset = Math.max(0, Number(req.query.offset || 0));
-      const query = String(req.query.query || "").trim().toLowerCase();
-      const enabled = String(req.query.enabled || "all");
-      const scheduleKind = String(req.query.scheduleKind || "all");
-
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const listed = await jiuwenClawCronProvider.listJobs(toJiuwenClawHandle(claw));
-        if (!listed.ok) return res.status(providerErrorStatus(listed.error.kind)).json({ error: listed.error.detail });
-        let jobs = listed.value;
-        if (query) jobs = jobs.filter((j) => String(j.name || "").toLowerCase().includes(query) || String(j.description || "").toLowerCase().includes(query));
-        if (enabled === "enabled") jobs = jobs.filter((j) => j.enabled !== false);
-        if (enabled === "disabled") jobs = jobs.filter((j) => j.enabled === false);
-        if (["interval", "once", "cron"].includes(scheduleKind)) jobs = jobs.filter((j) => String(j.schedule?.kind || "") === scheduleKind);
-        const total = jobs.length;
-        return res.json({ runtime: "jiuwenclaw", capabilities: await capabilitiesForClaw(claw), jobs: jobs.slice(offset, offset + limit), total, limit, offset });
-      }
-
-      const listed = await openClawCronProvider.listJobs(toOpenClawHandle(claw));
-      if (!listed.ok) return res.status(providerErrorStatus(listed.error.kind)).json({ error: listed.error.detail });
-      let jobs = listed.value;
-      if (query) jobs = jobs.filter((j) => String(j.name || "").toLowerCase().includes(query) || String(j.description || "").toLowerCase().includes(query));
-      if (enabled === "enabled") jobs = jobs.filter((j) => j.enabled !== false);
-      if (enabled === "disabled") jobs = jobs.filter((j) => j.enabled === false);
-      if (["interval", "once", "cron"].includes(scheduleKind)) jobs = jobs.filter((j) => String(j.schedule?.kind || "") === scheduleKind);
-      const total = jobs.length;
-      return res.json({ runtime: "openclaw", capabilities: await capabilitiesForClaw(claw), jobs: jobs.slice(offset, offset + limit), total, limit, offset });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron list failed") });
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
+      return res.json(await listCronJobsForClaw(claw, {
+        limit: Number(req.query.limit || 20),
+        offset: Number(req.query.offset || 0),
+        query: String(req.query.query || ""),
+        enabled: String(req.query.enabled || "all"),
+        scheduleKind: String(req.query.scheduleKind || "all"),
+      }));
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || error || "cron list failed") });
     }
   });
 
@@ -333,53 +293,15 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      const limit = Math.max(1, Math.min(200, Number(req.query.limit || 20)));
-      const offset = Math.max(0, Number(req.query.offset || 0));
-      const jobId = String(req.query.jobId || "").trim();
-      const scope = String(req.query.scope || "all").trim();
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const handle = toJiuwenClawHandle(claw);
-        const listed = await jiuwenClawCronProvider.listJobs(handle);
-        if (!listed.ok) return res.status(providerErrorStatus(listed.error.kind)).json({ error: listed.error.detail });
-        const targetJobs = jobId ? listed.value.filter((j) => String(j.id) === jobId) : listed.value;
-        let runs: any[] = [];
-        for (const job of targetJobs.slice(0, 50)) {
-          const runResult = await jiuwenClawCronProvider.listRuns(handle, job.id, 100);
-          if (!runResult.ok) {
-            console.warn("[CRON-PROVIDER] JiuwenClaw listRuns failed for job", { adoptId, jobId: job.id, error: runResult.error });
-            continue;
-          }
-          runs.push(...runResult.value.map((run) => ({ ...run, jobName: job.name })));
-        }
-        if (["ok", "error", "skipped", "timeout", "canceled"].includes(scope)) runs = runs.filter((r: any) => String(r?.status || "") === scope);
-        runs.sort((a: any, b: any) => Date.parse(String(b?.startedAt || "")) - Date.parse(String(a?.startedAt || "")));
-        const total = runs.length;
-        return res.json({ runs: runs.slice(offset, offset + limit), total, limit, offset });
-      }
-
-      const handle = toOpenClawHandle(claw);
-
-      const listed = await openClawCronProvider.listJobs(handle);
-      if (!listed.ok) return res.status(providerErrorStatus(listed.error.kind)).json({ error: listed.error.detail });
-      const targetJobs = jobId ? listed.value.filter((j) => String(j.id) === jobId) : listed.value;
-      let runs: any[] = [];
-      for (const job of targetJobs.slice(0, 50)) {
-        const runResult = await openClawCronProvider.listRuns(handle, job.id, 100);
-        if (!runResult.ok) {
-          console.warn("[CRON-PROVIDER] listRuns failed for job", { adoptId, jobId: job.id, error: runResult.error });
-          continue;
-        }
-        runs.push(...runResult.value.map((run) => ({ ...run, jobName: job.name })));
-      }
-      if (["ok", "error", "skipped", "timeout", "canceled"].includes(scope)) runs = runs.filter((r: any) => String(r?.status || "") === scope);
-      runs.sort((a: any, b: any) => Date.parse(String(b?.startedAt || "")) - Date.parse(String(a?.startedAt || "")));
-      const total = runs.length;
-      return res.json({ runs: runs.slice(offset, offset + limit), total, limit, offset });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron runs failed") });
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
+      return res.json(await listCronRunsForClaw(claw, {
+        limit: Number(req.query.limit || 20),
+        offset: Number(req.query.offset || 0),
+        jobId: String(req.query.jobId || ""),
+        scope: String(req.query.scope || "all"),
+      }));
+    } catch (error: any) {
+      return res.status(Number(error?.status || 500)).json({ error: String(error?.message || error || "cron runs failed") });
     }
   });
 
@@ -389,19 +311,8 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const result = await jiuwenClawCronProvider.previewRuns({
-          adoptId,
-          schedule: req.body?.schedule,
-          timezone: req.body?.timezone,
-          count: req.body?.count || 5,
-          wakeOffsetSeconds: req.body?.wakeOffsetSeconds,
-        });
-        if (!result.ok) return res.status(400).json({ error: result.error.detail });
-        return res.json(result.value);
-      }
-      const result = await openClawCronProvider.previewRuns({
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
+      const result = await cronProvider.previewRuns({
         adoptId,
         schedule: req.body?.schedule,
         timezone: req.body?.timezone,
@@ -410,8 +321,8 @@ export function registerCronRoutes(app: express.Express) {
       });
       if (!result.ok) return res.status(400).json({ error: result.error.detail });
       return res.json(result.value);
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "preview runs failed") });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "preview runs failed") });
     }
   });
 
@@ -422,73 +333,32 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const handle = toJiuwenClawHandle(claw);
-        const input = cronJobInputFromRequest(job);
-        const availabilityError = unavailableDeliveryChannelError(
-          input.delivery.targets[0].channelId,
-          await capabilitiesForClaw(claw),
-        );
-        if (availabilityError) return res.status(400).json({ error: availabilityError });
-        const existing = await jiuwenClawCronProvider.listJobs(handle);
-        if (existing.ok && existing.value.length >= 5) {
-          return res.status(400).json({ error: `每个智能体最多 5 个定时任务，当前已有 ${existing.value.length} 个` });
-        }
-        const result = await jiuwenClawCronProvider.addJob(handle, input);
-        if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-        const target = input.delivery.targets[0];
-        if (target?.channelId) {
-          await saveCronDeliveryConfig(adoptId, result.value.name || input.name, target.channelId, result.value.id);
-        }
-        return res.json({ runtime: "jiuwenclaw", job: result.value });
-      }
-
-      const handle = toOpenClawHandle(claw);
+      const handle = toCronHandle(claw);
       const input = cronJobInputFromRequest(job);
-      const safetyError = validateCronInputSafety(input);
-      if (safetyError) return res.status(400).json({ error: safetyError });
       const availabilityError = unavailableDeliveryChannelError(
         input.delivery.targets[0].channelId,
         await capabilitiesForClaw(claw),
       );
       if (availabilityError) return res.status(400).json({ error: availabilityError });
-
-      const existing = await openClawCronProvider.listJobs(handle);
+      const existing = await cronProvider.listJobs(handle);
       if (existing.ok && existing.value.length >= 5) {
-        return res.status(400).json({ error: `每个智能体最多 5 个定时任务，当前已有 ${existing.value.length} 个` });
-      }
-
-      const result = await openClawCronProvider.addJob(handle, input);
-      if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-
-      const target = input.delivery.targets[0];
-      const deliveryManagedBy = String(result.value.meta?.deliveryManagedBy || "");
-      try {
-        if (target?.channelId && deliveryManagedBy !== "openclaw-native") {
-          await saveCronDeliveryConfig(adoptId, result.value.name || input.name, target.channelId, result.value.id);
-        }
-      } catch (saveError: any) {
-        console.error("[CRON] failed to save Lingxia delivery config after cron.add; rolling back OpenClaw job", {
-          adoptId,
-          jobId: result.value.id,
-          error: saveError?.message || String(saveError),
+        return res.status(400).json({
+          error: `每个智能体最多 5 个定时任务，当前已有 ${existing.value.length} 个`,
         });
-        const rollback = await openClawCronProvider.removeJob(handle, result.value.id);
-        if (!rollback.ok) {
-          console.error("[CRON-ORPHAN] rollback removeJob failed after delivery config save error", {
-            adoptId,
-            jobId: result.value.id,
-            error: rollback.error,
-          });
-        }
-        return res.status(500).json({ error: "定时任务创建失败：投递配置保存失败，已回滚任务" });
       }
-      return res.json({ runtime: "openclaw", job: result.value });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron add failed") });
+      const result = await cronProvider.addJob(handle, input);
+      if (!result.ok) {
+        return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
+      }
+      const target = input.delivery.targets[0];
+      if (target?.channelId) {
+        await saveCronDeliveryConfig(adoptId, result.value.name || input.name, target.channelId, result.value.id);
+      }
+      return res.json({ runtime: "jiuwenclaw", job: result.value });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "cron add failed") });
     }
   });
 
@@ -500,39 +370,28 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId || !id) return res.status(400).json({ error: "adoptId and id required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        if (patch.delivery !== undefined) {
-          const target = cronDeliveryFromRequest(patch.delivery).targets[0];
-          const availabilityError = unavailableDeliveryChannelError(target.channelId, await capabilitiesForClaw(claw));
-          if (availabilityError) return res.status(400).json({ error: availabilityError });
-        }
-        const result = await jiuwenClawCronProvider.updateJob(toJiuwenClawHandle(claw), id, patch);
-        if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-        return res.json({ runtime: "jiuwenclaw", job: result.value });
-      }
-
+      let deliveryTarget: CronJobInput["delivery"]["targets"][number] | undefined;
       if (patch.delivery !== undefined) {
-        const target = cronDeliveryFromRequest(patch.delivery).targets[0];
-        const availabilityError = unavailableDeliveryChannelError(target.channelId, await capabilitiesForClaw(claw));
+        deliveryTarget = cronDeliveryFromRequest(patch.delivery).targets[0];
+        const availabilityError = unavailableDeliveryChannelError(
+          deliveryTarget.channelId,
+          await capabilitiesForClaw(claw),
+        );
         if (availabilityError) return res.status(400).json({ error: availabilityError });
+        patch.delivery = { targets: [deliveryTarget] };
       }
-      const result = await openClawCronProvider.updateJob(toOpenClawHandle(claw), id, patch);
-      if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-      if (patch.delivery !== undefined) {
-        const target = cronDeliveryFromRequest(patch.delivery).targets[0];
-        const deliveryManagedBy = String(result.value.meta?.deliveryManagedBy || "");
-        if (deliveryManagedBy === "openclaw-native") {
-          await deleteCronDeliveryConfig(adoptId, id);
-        } else if (target?.channelId) {
-          await saveCronDeliveryConfig(adoptId, result.value.name, target.channelId, id);
-        }
+      const result = await cronProvider.updateJob(toCronHandle(claw), id, patch);
+      if (!result.ok) {
+        return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
       }
-      return res.json({ runtime: "openclaw", job: result.value });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron update failed") });
+      if (deliveryTarget?.channelId) {
+        await saveCronDeliveryConfig(adoptId, result.value.name, deliveryTarget.channelId, id);
+      }
+      return res.json({ runtime: "jiuwenclaw", job: result.value });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "cron update failed") });
     }
   });
 
@@ -543,39 +402,15 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId || !id) return res.status(400).json({ error: "adoptId and id required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const result = await jiuwenClawCronProvider.runJobNow(toJiuwenClawHandle(claw), id);
-        if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-        return res.json({ runtime: "jiuwenclaw", ok: true, ...result.value, watcher: "unsupported" });
+      const result = await cronProvider.runJobNow(toCronHandle(claw), id);
+      if (!result.ok) {
+        return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
       }
-
-      const handle = toOpenClawHandle(claw);
-      const listed = await openClawCronProvider.listJobs(handle);
-      const job = listed.ok ? listed.value.find((item) => item.id === id) : undefined;
-      const startedAtMs = Date.now();
-      const result = await openClawCronProvider.runJobNow(handle, id);
-      if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-
-      startCronRunWatcher({
-        adoptId,
-        jobId: id,
-        jobName: job?.name || id,
-        runId: result.value.runId,
-        startedAtMs,
-      }).catch((error: any) => {
-        console.warn("[CRON-WATCHER] failed after cron.run response", {
-          adoptId,
-          jobId: id,
-          runId: result.value.runId,
-          error: error?.message || String(error),
-        });
-      });
-      return res.json({ runtime: "openclaw", ok: true, ...result.value, watcher: "started" });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron run failed") });
+      return res.json({ runtime: "jiuwenclaw", ok: true, ...result.value, watcher: "unsupported" });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "cron run failed") });
     }
   });
 
@@ -586,22 +421,16 @@ export function registerCronRoutes(app: express.Express) {
       if (!adoptId || !id) return res.status(400).json({ error: "adoptId and id required" });
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
+      if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
-      if (isLegacyArchivedAdopt(adoptId)) return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED" });
-
-      if (isJiuwenClawAdoptId(adoptId)) {
-        const result = await jiuwenClawCronProvider.removeJob(toJiuwenClawHandle(claw), id);
-        if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-        await deleteCronDeliveryConfig(adoptId, id);
-        return res.json({ runtime: "jiuwenclaw", ok: true });
+      const result = await cronProvider.removeJob(toCronHandle(claw), id);
+      if (!result.ok) {
+        return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
       }
-
-      const result = await openClawCronProvider.removeJob(toOpenClawHandle(claw), id);
-      if (!result.ok) return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
       await deleteCronDeliveryConfig(adoptId, id);
-      return res.json({ runtime: "openclaw", ok: true });
-    } catch (e: any) {
-      return res.status(500).json({ error: String(e?.message || e || "cron remove failed") });
+      return res.json({ runtime: "jiuwenclaw", ok: true });
+    } catch (error: any) {
+      return res.status(500).json({ error: String(error?.message || error || "cron remove failed") });
     }
   });
 }

@@ -180,12 +180,11 @@ const operationalActivityActive = new Gauge({
   registers: [metricsRegistry],
 });
 
-export type ChatRuntime = "jiuwenswarm" | "openclaw";
+export type ChatRuntime = "jiuwenswarm";
 export type ChatOutcome = "success" | "error" | "timeout" | "cancelled";
 export type McpKind = "platform" | "custom";
 export type BackgroundWorkerName =
   | "log_retention"
-  | "cron_delivery"
   | "agent_health"
   | "agent_memory"
   | "knowledge_recovery"

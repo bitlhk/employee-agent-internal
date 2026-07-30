@@ -1,8 +1,7 @@
 import type { ChannelId, ChannelProvider } from "@shared/types/cron";
-import { DingtalkChannelProvider, FeishuChannelProvider, WechatChannelProvider, WecomChannelProvider } from "./channel-providers";
+import { DingtalkChannelProvider, FeishuChannelProvider, WecomChannelProvider } from "./channel-providers";
 
 const providers = new Map<ChannelId, ChannelProvider>([
-  ["wechat", new WechatChannelProvider()],
   ["feishu", new FeishuChannelProvider()],
   ["dingtalk", new DingtalkChannelProvider()],
   ["wecom", new WecomChannelProvider()],

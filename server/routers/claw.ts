@@ -2,8 +2,8 @@ import { publicProcedure, protectedProcedure, adminProcedure, router } from "../
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { nanoid } from "nanoid";
-import { execFileSync, execSync } from "child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { execSync } from "child_process";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import path from "path";
 import {
   getCurrentClawByUserId,
@@ -29,7 +29,6 @@ import {
   updateSkillMarketItem,
   deleteSkillMarketItem,
   incrementSkillDownload,
-  touchClawActivity,
   resolveEffectiveRoleAssets,
   previewRoleAssetSeedSync,
   syncRoleAssetSeed,
@@ -46,10 +45,8 @@ import {
   APP_ROOT,
   OPENCLAW_HOME,
   OPENCLAW_JSON_PATH,
-  clawDailyUsage,
   assertClawOwnerOrThrow,
   bumpClawSessionEpochBestEffort,
-  provisionEmployeeAgentInstance,
   writeClawExecAudit,
 } from "./helpers";
 import { isJiuwenClawAdoptId, JIUWENCLAW_HOME, jiuwenClawServiceId, resolveRuntimeAgentId } from "../_core/helpers";
@@ -59,6 +56,7 @@ import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
 import { skillRegistry } from "../_core/skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
 import { roleSkillPreferences } from "../_core/skills/role-skill-preferences";
+import { setAgentSkillEnabled } from "../_core/skills/skill-enable-service";
 import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
 import { toPublicSkillMarketItem } from "../_core/skills/skill-market-policy";
 import {
@@ -67,9 +65,7 @@ import {
   safeSkillStorePath,
   removeSkillStorePath,
 } from "../_core/skills/skill-store";
-import { cleanupOpenClawWeixinBindingForAdopt } from "../_core/claw-weixin";
 import type { Skill, SkillSource } from "../../shared/types/skill";
-import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "../_core/core-file-guard";
 import {
   getAgentRoleTemplate,
   getRoleSkillMcpBaseline,
@@ -165,43 +161,6 @@ function safeDescendantPath(parentDir: string, candidatePath: string): string {
 const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
   return resolveActiveAgentRuntime(adoptId);
 };
-
-function buildRemoteSshArgs(remoteUser: string, remoteHost: string, connectTimeoutSec = 8): string[] {
-  if (process.env.CLAW_REMOTE_PASSWORD) {
-    throw new Error("CLAW_REMOTE_PASSWORD is not supported. Use SSH key or agent authentication with known_hosts.");
-  }
-  const args = [
-    "-o", "BatchMode=yes",
-    "-o", "StrictHostKeyChecking=yes",
-    "-o", `ConnectTimeout=${connectTimeoutSec}`,
-  ];
-  const knownHosts = String(process.env.CLAW_REMOTE_KNOWN_HOSTS_FILE || "").trim();
-  if (knownHosts) args.push("-o", `UserKnownHostsFile=${knownHosts}`);
-  const keyPath = String(process.env.CLAW_REMOTE_SSH_KEY || "").trim();
-  if (keyPath) args.push("-i", keyPath);
-  args.push(`${remoteUser}@${remoteHost}`);
-  return args;
-}
-
-function runRemoteShellCommand(remoteUser: string, remoteHost: string, command: string, timeoutMs = 10000): string {
-  return execFileSync("ssh", [...buildRemoteSshArgs(remoteUser, remoteHost), command], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-    timeout: timeoutMs,
-  }).trim();
-}
-
-function execRemoteShellCommand(remoteUser: string, remoteHost: string, command: string, timeoutMs = 10000): void {
-  execFileSync("ssh", [...buildRemoteSshArgs(remoteUser, remoteHost), command], {
-    cwd: process.cwd(),
-    env: process.env,
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf8",
-    timeout: timeoutMs,
-  });
-}
 
 function buildClawEntryUrl(adoptId: string): string {
   return `${resolvePublicBaseUrl()}/claw/${encodeURIComponent(adoptId)}`;
@@ -450,10 +409,6 @@ function safeExec(command: string, timeout = 8000): { ok: boolean; output: strin
       error: String(e?.stderr || e?.message || e).trim(),
     };
   }
-}
-
-function shellQuote(value: string): string {
-  return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
 function safeJson<T = any>(text: string, fallback: T): T {
@@ -1219,7 +1174,6 @@ export const clawRouter = router({
         const agentStatePath = openClawAgentStateDir(runtimeAgentId);
         const skillsRemoved = pruneSkillRegistryForAdopt(adoptId);
         const configPruned = pruneOpenClawAgentConfig([String(row.agentId || ""), runtimeAgentId, `trial_${adoptId}`]);
-        const weixinCleanup = cleanupOpenClawWeixinBindingForAdopt(adoptId, row);
 
         try {
           if (existsSync(workspacePath)) rmSync(workspacePath, { recursive: true, force: true });
@@ -1251,11 +1205,6 @@ export const clawRouter = router({
             agentStateRemoved: !existsSync(agentStatePath),
             skillsRemoved,
             configPruned,
-            weixinCleanup: {
-              removed: Boolean(weixinCleanup?.removed),
-              accountIdPresent: Boolean(weixinCleanup?.accountId),
-              userIdPresent: Boolean(weixinCleanup?.userId),
-            },
           },
         });
         writeClawExecAudit({
@@ -1273,7 +1222,6 @@ export const clawRouter = router({
             agentStateRemoved: !existsSync(agentStatePath),
             skillsRemoved,
             configPruned,
-            weixinCleanup,
           },
         });
 
@@ -1292,7 +1240,6 @@ export const clawRouter = router({
             agentStateRemoved: !existsSync(agentStatePath),
             skillsRemoved,
             configPruned,
-            weixinCleanup,
           },
         };
       }),
@@ -1335,7 +1282,7 @@ export const clawRouter = router({
           ...server,
           name: server.serverId,
           groupId: "",
-          groupName: "OpenClaw MCP",
+            groupName: "MCP 工具",
         });
       }
       for (const group of Array.isArray(mcpGroups.items) ? mcpGroups.items : []) {
@@ -2638,181 +2585,17 @@ export const clawRouter = router({
         })
       )
       .mutation(async ({ input, ctx }) => {
-        const startedAt = Date.now();
-        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
-
-        // ── 每日对话额度检查 ──
-        const profile = String(claw.permissionProfile || "starter");
-        if (profile === "starter") {
-          const dailyLimit = Number(process.env.CLAW_STARTER_DAILY_LIMIT || 50);
-          const count = clawDailyUsage.increment(input.adoptId);
-          if (count > dailyLimit) {
-            throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: `今日对话已达上限（${dailyLimit}轮），请联系管理员调整角色或配额` });
-          }
+        await assertClawOwnerOrThrow(ctx, input.adoptId);
+        if (!isJiuwenClawAdoptId(input.adoptId)) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Legacy runtime has been archived",
+          });
         }
-
-        // ── touch 活跃时间（best-effort）──
-        touchClawActivity(input.adoptId);
-
-        const chatMode = (process.env.CLAW_CHAT_MODE || "mock").trim();
-
-        if (chatMode === "local-openclaw" || chatMode === "remote-openclaw") {
-          const openclawHome = process.env.CLAW_OPENCLAW_HOME || process.env.OPENCLAW_HOME || "";
-          const remoteOpenclawHome = OPENCLAW_HOME;
-          const timeoutSec = Number(process.env.CLAW_CHAT_TIMEOUT_SECONDS || 90);
-          // 安全转义：清理 shell 特殊字符，防止命令注入
-          const escapedMsg = input.message
-            .replace(/\\/g, "\\\\")
-            .replace(/"/g, '\\"')
-            .replace(/`/g, "\\`")
-            .replace(/\$/g, "\\$")
-            .replace(/\r/g, "")
-            .slice(0, 4000)
-
-          const remoteHost = process.env.CLAW_REMOTE_HOST || "";
-          const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-          const useRemote = chatMode === "remote-openclaw" || !!remoteHost;
-          const runtimeAgentIdForGuard = String((claw as any).agentId || "");
-          const coreFileSnapshot = snapshotProtectedCoreFiles(openClawWorkspaceDir(runtimeAgentIdForGuard));
-          const restoreCoreFiles = (phase: string) => {
-            restoreDeletedProtectedCoreFiles(coreFileSnapshot, {
-              adoptId: input.adoptId,
-              agentId: runtimeAgentIdForGuard,
-              phase,
-            });
-          };
-
-          const runAgentOnce = () => {
-            if (useRemote) {
-              if (!remoteHost) {
-                throw new Error("remote-openclaw mode requires CLAW_REMOTE_HOST");
-              }
-              const remoteCmd = [
-                `OPENCLAW_HOME=\"${remoteOpenclawHome}\"`,
-                "openclaw agent",
-                `--agent \"${claw.agentId}\"`,
-                `--message \"${escapedMsg}\"`,
-                "--thinking off",
-                "--json",
-                `--timeout ${timeoutSec}`,
-              ].join(" ");
-
-              return runRemoteShellCommand(remoteUser, remoteHost, remoteCmd, (timeoutSec + 10) * 1000);
-            }
-
-            const cmd = [
-              openclawHome ? `OPENCLAW_HOME=\"${openclawHome}\"` : "",
-              "openclaw agent",
-              `--agent \"${claw.agentId}\"`,
-              `--message \"${escapedMsg}\"`,
-              "--json",
-              `--timeout ${timeoutSec}`,
-            ]
-              .filter(Boolean)
-              .join(" ");
-
-            return execSync(cmd, {
-              cwd: process.cwd(),
-              env: process.env,
-              stdio: ["ignore", "pipe", "pipe"],
-              encoding: "utf8",
-            }).trim();
-          };
-
-          try {
-            let out = "";
-            try {
-              out = runAgentOnce();
-            } catch (firstErr: any) {
-              const firstMsg = firstErr?.stderr?.toString?.() || firstErr?.message || String(firstErr);
-              if (String(firstMsg).includes("Unknown agent id")) {
-                // 懒创建：老记录可能是 mock 阶段生成，首次聊天时补建 agent
-                if (useRemote) {
-                  const addCmd = [
-                    `OPENCLAW_HOME=\"${remoteOpenclawHome}\"`,
-                    "openclaw agents add",
-                    `\"${claw.agentId}\"`,
-                    `--workspace \"${OPENCLAW_HOME}/workspace-lingganclaw/${claw.agentId}\"`,
-                    "--non-interactive",
-                  ].join(" ");
-                  execRemoteShellCommand(remoteUser, remoteHost, addCmd, 10000);
-                } else {
-                  provisionEmployeeAgentInstance({
-                    adoptId: input.adoptId,
-                    agentId: claw.agentId,
-                    userId: Number(claw.userId),
-                    permissionProfile: (claw.permissionProfile as any) || "starter",
-                    ttlDays: Number(claw.ttlDays || 7),
-                  });
-                }
-                out = runAgentOnce();
-              } else {
-                throw firstErr;
-              }
-            }
-            restoreCoreFiles("trpc_chat_done");
-
-            let parsed: any = null;
-            try {
-              parsed = out ? JSON.parse(out) : null;
-            } catch {
-              parsed = { raw: out };
-            }
-
-            const reply =
-              parsed?.result?.payloads?.[0]?.text ||
-              parsed?.result?.payload?.text ||
-              parsed?.response?.text ||
-              parsed?.response ||
-              parsed?.reply ||
-              parsed?.text ||
-              parsed?.raw ||
-              "（已调用 OpenClaw，但未解析到回复文本）";
-
-            writeClawExecAudit({
-              adoptId: input.adoptId,
-              agentId: String((claw as any).agentId || ""),
-              userId: Number((claw as any).userId || 0),
-              permissionProfile: String((claw as any).permissionProfile || "starter"),
-              message: input.message,
-              ok: true,
-              durationMs: Date.now() - startedAt,
-              meta: parsed?.meta || null,
-            });
-
-            return {
-              ok: true,
-              adoptId: input.adoptId,
-              reply: String(reply),
-              ts: Date.now(),
-              mode: chatMode,
-            };
-          } catch (error: any) {
-            restoreCoreFiles("trpc_chat_error");
-            const msg = error?.stderr?.toString?.() || error?.message || String(error);
-            writeClawExecAudit({
-              adoptId: input.adoptId,
-              agentId: String((claw as any).agentId || ""),
-              userId: Number((claw as any).userId || 0),
-              permissionProfile: String((claw as any).permissionProfile || "starter"),
-              message: input.message,
-              ok: false,
-              durationMs: Date.now() - startedAt,
-              error: msg,
-            });
-            throw new Error(`岗位智能体对话引擎调用失败：${msg}`);
-          }
-        }
-
-        // 默认 mock
-        const reply = `岗位智能体已收到：${input.message}\n\n（对话引擎接入中，下一步将切到真实 OpenClaw 会话）`;
-        return {
-          ok: true,
-          adoptId: input.adoptId,
-          reply,
-          ts: Date.now(),
-          mode: "mock",
-        };
+        throw new TRPCError({
+          code: "METHOD_NOT_SUPPORTED",
+          message: "请使用流式对话接口 /api/claw/chat-stream",
+        });
       }),
 
     // ── 技能管理 ──────────────────────────────────────────────
@@ -2824,14 +2607,10 @@ export const clawRouter = router({
       .mutation(async ({ input, ctx }) => {
         const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
         if (!isJiuwenClawAdoptId(input.adoptId)) {
-          return {
-            skillId: input.skillId,
-            status: "unchecked" as const,
-            canProceed: true,
-            message: "当前运行时不支持 MCP 就绪检查",
-            checkedAt: new Date().toISOString(),
-            servers: [],
-          };
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "Legacy runtime has been archived",
+          });
         }
         return await probeJiuwenSkillMcpReadiness({
           adoptId: input.adoptId,
@@ -2840,167 +2619,50 @@ export const clawRouter = router({
         });
       }),
 
-    // ── 技能管理（三层架构）────────────────────────────────────
-    // Layer1: openclaw 系统内置  /usr/lib/node_modules/openclaw/skills/
-    // Layer2: 灵感公共金融技能  /root/.openclaw/skills-shared/
-    // Layer3: 智能体私有技能      /root/.openclaw/workspace-lingganclaw/{agentId}/skills/
+    // ── 技能管理（JiuwenSwarm）─────────────────────────────────
     listSkills: protectedProcedure
       .input(z.object({ adoptId: z.string().min(1).max(64) }))
       .query(async ({ input, ctx }) => {
         const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
-
-        if (isJiuwenClawAdoptId(input.adoptId)) {
-          const listed = await listSkillsWithRoleDefaults({
-            adoptId: input.adoptId,
-            agentId: resolveRuntimeAgentId(input.adoptId, String(claw.agentId || "")),
-            roleTemplate: String(claw.roleTemplate || "general-assistant"),
-          });
-          if (!listed.ok) {
-            return { shared: [], system: [], private: [], privateNotInstalled: [] };
-          }
-          const privateSkills = listed.value.map((skill) => ({
-            id: skill.id,
-            label: skill.source.displayName || skill.id,
-            desc: skill.source.description || "智能体技能",
-            emoji: "⚡",
-            source: "private" as const,
-            scope: "private" as const,
-            sourcePath: skill.sync.runtimePath || skill.source.sourcePath || "",
-            ownerAgentId: input.adoptId,
-            visible: true,
-            runnable: skill.enabled && skill.state === "ready",
-            reason: skill.enabled && skill.state === "ready" ? "" : skill.state,
-            active: skill.enabled,
-            state: skill.state,
-            enabled: skill.enabled,
-            sync: skill.sync,
-            requirements: {
-              mcpServers: Object.keys(getSkillMcpRequirement(skill.id).servers),
-            },
-          }));
-          return {
-            shared: [],
-            system: [],
-            private: privateSkills,
-            privateNotInstalled: [],
-            summary: {
-              discovered: privateSkills.length,
-              runnable: privateSkills.filter((s) => s.runnable).length,
-            },
-          };
+        if (!isJiuwenClawAdoptId(input.adoptId)) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legacy runtime has been archived" });
         }
-
-        if (String(input.adoptId).startsWith("lgh-")) {
-          return { shared: [], system: [], private: [], privateNotInstalled: [], summary: { discovered: 0, runnable: 0 } };
+        const listed = await listSkillsWithRoleDefaults({
+          adoptId: input.adoptId,
+          agentId: resolveRuntimeAgentId(input.adoptId, String(claw.agentId || "")),
+          roleTemplate: String(claw.roleTemplate || "general-assistant"),
+        });
+        if (!listed.ok) {
+          return { shared: [], system: [], private: [], privateNotInstalled: [] };
         }
-
-        const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
-        const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const userSkillsDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills`;
-        const sharedSkillsDir = openClawSharedSkillsDir();
-        const systemSkillsDir = `/usr/lib/node_modules/openclaw/skills`;
-        const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
-
-        const runRemote = (cmd: string) => {
-          if (useRemote) {
-            return runRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
-          }
-          return execSync(cmd, { encoding: "utf8", stdio: ["ignore","pipe","pipe"] }).trim();
-        };
-
-        const SHARED_META: Record<string, { label: string; desc: string; emoji: string }> = {};
-
-        const SYSTEM_META: Record<string, { label: string; desc: string; emoji: string }> = {
-          // 办公效率
-          "docx":             { label: "Word 文档", desc: "创建、读取、编辑 Word 文档", emoji: "📄" },
-          "xlsx":             { label: "Excel 表格", desc: "电子表格与数据分析", emoji: "📊" },
-          "pdf":              { label: "PDF 处理", desc: "读取、创建、合并 PDF", emoji: "📑" },
-          "pptx-doc":         { label: "PPT 演示", desc: "创建与编辑演示文稿", emoji: "📽" },
-          "internal-comms":   { label: "公文写作", desc: "通知、纪要、周报模板", emoji: "📋" },
-          // 金融分析
-          "stock-query":      { label: "股票行情", desc: "A股/港股/美股实时行情", emoji: "📈" },
-          "finance-news":     { label: "金融资讯", desc: "市场动态与宏观政策", emoji: "📰" },
-          "research-report":  { label: "研报解读", desc: "研究报告与财务数据", emoji: "🔬" },
-          "quant-lite":       { label: "量化工具", desc: "技术指标与趋势判断", emoji: "📉" },
-          // 工具
-          "skill-creator":    { label: "技能工坊", desc: "设计与创建新技能", emoji: "🛠" },
-          "weather":          { label: "天气查询", desc: "查询城市实时天气", emoji: "🌤" },
-        };
-
-        const lsLines = (cmd: string) => {
-          try {
-            const out = runRemote(cmd);
-            return out ? out.split("\n").map(s => s.trim()).filter(Boolean) : [];
-          } catch {
-            return [];
-          }
-        };
-
-        // discovery: system/shared/private 三层统一发现
-        const systemIds = lsLines(`ls ${systemSkillsDir} 2>/dev/null || echo ""`);
-        const sharedIds = lsLines(`ls ${sharedSkillsDir} 2>/dev/null || echo ""`);
-        const privateIdsRaw = lsLines(`cd ${userSkillsDir} 2>/dev/null && find . -maxdepth 1 -not -type l -mindepth 1 -printf '%f\n' | sort || echo ""`);
-        const activeSkills = lsLines(`ls ${userSkillsDir} 2>/dev/null || echo ""`);
-
-        const privateIds = privateIdsRaw.filter(id => !sharedIds.includes(id) && !systemIds.includes(id));
-
-        // only show skills defined in SYSTEM_META (deps satisfied on this host)
-        const system = systemIds.filter(id => id in SYSTEM_META).map((id) => {
-          const active = activeSkills.includes(id);
-          return {
-            id,
-            label: SYSTEM_META[id]?.label || id,
-            desc: SYSTEM_META[id]?.desc || "系统技能",
-            emoji: SYSTEM_META[id]?.emoji || "🧩",
-            source: "system" as const,
-            scope: "system" as const,
-            sourcePath: `${systemSkillsDir}/${id}`,
-            visible: true,
-            runnable: active,
-            reason: active ? "" : "not_mounted",
-            active,
-          };
-        });
-
-        const shared = sharedIds.map((id) => {
-          const active = activeSkills.includes(id);
-          return {
-            id,
-            label: SHARED_META[id]?.label || id,
-            desc: SHARED_META[id]?.desc || "公共金融技能",
-            emoji: SHARED_META[id]?.emoji || "💹",
-            source: "shared" as const,
-            scope: "shared" as const,
-            sourcePath: `${sharedSkillsDir}/${id}`,
-            visible: true,
-            runnable: active,
-            reason: active ? "" : "not_mounted",
-            active,
-          };
-        });
-
-        const privateSkills = privateIds.map((id) => ({
-          id,
-          label: id,
-          desc: "自定义技能",
+        const privateSkills = listed.value.map((skill) => ({
+          id: skill.id,
+          label: skill.source.displayName || skill.id,
+          desc: skill.source.description || "智能体技能",
           emoji: "⚡",
           source: "private" as const,
           scope: "private" as const,
-          sourcePath: `${userSkillsDir}/${id}`,
-          ownerAgentId: String(claw.agentId || ""),
+          sourcePath: skill.sync.runtimePath || skill.source.sourcePath || "",
+          ownerAgentId: input.adoptId,
           visible: true,
-          runnable: true,
-          reason: "",
-          active: true,
+          runnable: skill.enabled && skill.state === "ready",
+          reason: skill.enabled && skill.state === "ready" ? "" : skill.state,
+          active: skill.enabled,
+          state: skill.state,
+          enabled: skill.enabled,
+          sync: skill.sync,
+          requirements: {
+            mcpServers: Object.keys(getSkillMcpRequirement(skill.id).servers),
+          },
         }));
-
         return {
-          system,
-          shared,
+          shared: [],
+          system: [],
           private: privateSkills,
+          privateNotInstalled: [],
           summary: {
-            discovered: system.length + shared.length + privateSkills.length,
-            runnable: system.filter(s => s.runnable).length + shared.filter(s => s.runnable).length + privateSkills.filter(s => s.runnable).length,
+            discovered: privateSkills.length,
+            runnable: privateSkills.filter((skill) => skill.runnable).length,
           },
         };
       }),
@@ -3010,68 +2672,23 @@ export const clawRouter = router({
         adoptId: z.string().min(1).max(64),
         skillId: skillIdSchema,
         enable: z.boolean(),
-        source: z.enum(["system", "shared"]),  // 只有 system/shared 需要 toggle；private 永远激活
+        source: z.enum(["system", "shared", "private"]).optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const claw = await getClawByAdoptId(input.adoptId);
-        if (!claw) throw new Error("智能体实例不存在");
-        if (String(claw.userId) !== String(ctx.user!.id)) throw new Error("无权操作");
-
-        const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
-        const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
-
-        // 与个人技能链路对齐：运行时优先 trial_{adoptId}
-        const trialAgentId = `trial_${input.adoptId}`;
-        const trialAgentDir = `${OPENCLAW_HOME}/agents/${trialAgentId}`;
-        const runtimeAgentId = existsSync(trialAgentDir) ? trialAgentId : String(claw.agentId || "");
-
-        const userSkillsBase = path.resolve(openClawWorkspaceDir(runtimeAgentId), "skills");
-        const userSkillLink = safeChildPath(userSkillsBase, input.skillId);
-        // 源目录：system 来自 openclaw 内置，shared 来自公共库
-        const srcDir = input.source === "system"
-          ? path.resolve("/usr/lib/node_modules/openclaw/skills", input.skillId)
-          : safeChildPath(openClawSharedSkillsDir(), input.skillId);
-        if (input.enable) {
-          // 使用软链接指向共享源目录，改技能时智能体自动获得最新版本，无需重新 toggle
-          if (useRemote) {
-            execRemoteShellCommand(
-              remoteUser,
-              remoteHost,
-              [
-                `mkdir -p ${shellQuote(userSkillsBase)}`,
-                `rm -rf ${shellQuote(userSkillLink)} 2>/dev/null || true`,
-                `ln -sfn ${shellQuote(srcDir)} ${shellQuote(userSkillLink)}`,
-              ].join(" && "),
-              8000
-            );
-          } else {
-            mkdirSync(userSkillsBase, { recursive: true });
-            const baseReal = realpathSync(userSkillsBase);
-            const linkParentReal = realpathSync(path.dirname(userSkillLink));
-            if (linkParentReal !== baseReal) throw new Error("路径越权");
-            rmSync(userSkillLink, { recursive: true, force: true });
-            symlinkSync(srcDir, userSkillLink, "dir");
-          }
-        } else {
-          // 删除软链接（不影响源目录）
-          if (useRemote) {
-            execRemoteShellCommand(remoteUser, remoteHost, `rm -f ${shellQuote(userSkillLink)} 2>/dev/null || true`, 8000);
-          } else {
-            const baseReal = existsSync(userSkillsBase) ? realpathSync(userSkillsBase) : path.resolve(userSkillsBase);
-            const linkParentReal = existsSync(path.dirname(userSkillLink)) ? realpathSync(path.dirname(userSkillLink)) : path.resolve(path.dirname(userSkillLink));
-            if (linkParentReal !== baseReal) throw new Error("路径越权");
-            if (existsSync(userSkillLink)) {
-              const stat = lstatSync(userSkillLink);
-              if (stat.isSymbolicLink()) rmSync(userSkillLink, { force: true });
-              else throw new Error("只能移除技能软链接");
-            }
-          }
+        const claw = await assertClawOwnerOrThrow(ctx, input.adoptId);
+        const result = await setAgentSkillEnabled({
+          adoptId: input.adoptId,
+          agentId: String(claw.agentId || ""),
+          roleTemplate: String(claw.roleTemplate || "general-assistant"),
+          skillId: input.skillId,
+          enabled: input.enable,
+        });
+        if (!result.ok) {
+          throw new TRPCError({
+            code: result.kind === "runtime_retired" ? "PRECONDITION_FAILED" : result.kind === "not_found" ? "NOT_FOUND" : "INTERNAL_SERVER_ERROR",
+            message: result.detail,
+          });
         }
-
-        // 与个人技能安装链路对齐：技能变更后 bump epoch，触发聊天使用新技能快照
-        bumpClawSessionEpochBestEffort(String(input.adoptId));
-
         await recordAuditBestEffort({
           action: input.enable ? "skill.enabled" : "skill.disabled",
           ...auditActor(ctx.user),
@@ -3081,101 +2698,15 @@ export const clawRouter = router({
           resourceType: "agent",
           resourceId: input.adoptId,
           agentInstanceId: input.adoptId,
-          runtimeType: resolveClawRuntime(input.adoptId),
-          runtimeAgentId,
-          metadata: { source: input.source },
+          runtimeType: "jiuwenswarm",
+          runtimeAgentId: resolveRuntimeAgentId(input.adoptId, String(claw.agentId || "")),
+          metadata: { source: input.source || "private" },
         });
-
-        return { ok: true, skillId: input.skillId, enabled: input.enable };
-      }),
-
-    // 上传/创建私有技能
-    upsertPrivateSkill: protectedProcedure
-      .input(z.object({
-        adoptId: z.string().min(1).max(64),
-        skillId: skillIdSchema,
-        skillMd: z.string().min(10).max(50000),  // SKILL.md 内容
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const claw = await getClawByAdoptId(input.adoptId);
-        if (!claw) throw new Error("智能体实例不存在");
-        if (String(claw.userId) !== String(ctx.user!.id)) throw new Error("无权操作");
-
-        const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
-        const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
-
-        const skillDir = `${openClawWorkspaceDir(String(claw.agentId || ""))}/skills/${input.skillId}`;
-
-        if (useRemote) {
-          const encoded = Buffer.from(input.skillMd, "utf8").toString("base64");
-          const cmd = `mkdir -p ${shellQuote(skillDir)} && printf '%s' ${shellQuote(encoded)} | base64 -d > ${shellQuote(`${skillDir}/SKILL.md`)}`;
-          execRemoteShellCommand(remoteUser, remoteHost, cmd, 8000);
-        } else {
-          const fs = await import("fs");
-          fs.mkdirSync(skillDir, { recursive: true });
-          fs.writeFileSync(`${skillDir}/SKILL.md`, input.skillMd, "utf8");
-        }
-        await recordAuditBestEffort({
-          action: "skill.private.upserted",
-          ...auditActor(ctx.user),
-          ...auditRequest(ctx.req),
-          targetType: "skill",
-          targetId: input.skillId,
-          resourceType: "agent",
-          resourceId: input.adoptId,
-          agentInstanceId: input.adoptId,
-          runtimeType: resolveClawRuntime(input.adoptId),
-          runtimeAgentId: String(claw.agentId || ""),
-          metadata: {
-            skillMdBytes: Buffer.byteLength(input.skillMd, "utf8"),
-          },
-        });
-        return { ok: true, skillId: input.skillId };
-      }),
-
-    // 删除私有技能
-    deletePrivateSkill: protectedProcedure
-      .input(z.object({
-        adoptId: z.string().min(1).max(64),
-        skillId: skillIdSchema,
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const claw = await getClawByAdoptId(input.adoptId);
-        if (!claw) throw new Error("智能体实例不存在");
-        if (String(claw.userId) !== String(ctx.user!.id)) throw new Error("无权操作");
-
-        const remoteHost = process.env.CLAW_REMOTE_HOST || "127.0.0.1";
-        const remoteUser = process.env.CLAW_REMOTE_USER || "root";
-        const useRemote = !!remoteHost && remoteHost !== "127.0.0.1";
-
-        const skillsBase = path.resolve(openClawWorkspaceDir(String(claw.agentId || "")), "skills");
-        const skillDir = safeChildPath(skillsBase, input.skillId);
-        if (useRemote) {
-          execRemoteShellCommand(remoteUser, remoteHost, `rm -rf ${shellQuote(skillDir)} 2>/dev/null || true`, 8000);
-        } else {
-          const baseReal = existsSync(skillsBase) ? realpathSync(skillsBase) : path.resolve(skillsBase);
-          const parentReal = existsSync(path.dirname(skillDir)) ? realpathSync(path.dirname(skillDir)) : path.resolve(path.dirname(skillDir));
-          if (parentReal !== baseReal) throw new Error("路径越权");
-          rmSync(skillDir, { recursive: true, force: true });
-        }
-        await recordAuditBestEffort({
-          action: "skill.private.deleted",
-          ...auditActor(ctx.user),
-          ...auditRequest(ctx.req),
-          targetType: "skill",
-          targetId: input.skillId,
-          resourceType: "agent",
-          resourceId: input.adoptId,
-          agentInstanceId: input.adoptId,
-          runtimeType: resolveClawRuntime(input.adoptId),
-          runtimeAgentId: String(claw.agentId || ""),
-        });
-        return { ok: true };
+        return { ok: true, skillId: input.skillId, enabled: input.enable, item: result.item };
       }),
 
     // getMemory / updateMemory tRPC 端点已删除 (2026-04-20 review)
-    // 前端改用 REST /api/claw/core-files/* + /api/claw/memory/* (已分叉 lgh-/lgc-)
+    // 前端改用 REST /api/claw/core-files/* + /api/claw/memory/*。
 
     // ── 会话历史（localStorage 为主，DB 备用）─────────────────
     // 前端用 localStorage，此接口供未来 DB 持久化预留
