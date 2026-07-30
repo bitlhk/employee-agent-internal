@@ -15,13 +15,25 @@ const timeoutMs = Math.max(1_000, Number(process.env.EA_BUSINESS_LOAD_TEST_TIMEO
 const outputDir = path.resolve(process.env.EA_BUSINESS_LOAD_TEST_OUTPUT_DIR || "data/load-tests");
 const chatEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_CHAT === "1";
 const chatRequests = Math.min(5, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS || 0) || 0));
+const chatMessage = String(
+  process.env.EA_BUSINESS_LOAD_TEST_CHAT_MESSAGE
+  || "这是一次受控运行检查。请只回复：运行正常。",
+).slice(0, 1000);
+const requireChatToolEvent = process.env.EA_BUSINESS_LOAD_TEST_REQUIRE_TOOL_EVENT === "1";
+const sandboxEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_SANDBOX === "1";
+const sandboxRequests = Math.min(5, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_REQUESTS || 0) || 0));
 const internalKey = String(process.env.EA_BUSINESS_LOAD_TEST_INTERNAL_KEY || "").trim();
+const maxErrorRate = Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_ERROR_RATE || 0.01));
+const maxP95Ms = Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_P95_MS || 1500));
 
 if (!adoptId) throw new Error("EA_BUSINESS_LOAD_TEST_ADOPT_ID is required");
 if (!cookie) throw new Error("EA_BUSINESS_LOAD_TEST_COOKIE is required for authenticated read scenarios");
 if (!stages.length) throw new Error("EA_BUSINESS_LOAD_TEST_STAGES must contain at least one positive integer");
 if (chatRequests > 0 && !chatEnabled) {
   throw new Error("Set EA_BUSINESS_LOAD_TEST_ENABLE_CHAT=1 to allow paid model smoke requests");
+}
+if (sandboxRequests > 0 && !sandboxEnabled) {
+  throw new Error("Set EA_BUSINESS_LOAD_TEST_ENABLE_SANDBOX=1 to allow sandbox smoke requests");
 }
 
 const loopback = ["127.0.0.1", "localhost", "::1"].includes(baseUrl.hostname);
@@ -31,21 +43,32 @@ if (!loopback && process.env.EA_BUSINESS_LOAD_TEST_ALLOW_REMOTE !== "1") {
 
 const encodedAdoptId = encodeURIComponent(adoptId);
 const scenarios = [
-  { name: "health_summary", path: `/api/claw/health-summary?adoptId=${encodedAdoptId}`, weight: 20 },
   { name: "history_sessions", path: `/api/claw/chat-history/sessions?adoptId=${encodedAdoptId}&limit=50`, weight: 35 },
-  { name: "runtime_info", path: `/api/claw/runtime-info?adoptId=${encodedAdoptId}`, weight: 15 },
-  { name: "skill_registry", path: `/api/claw/skills/registry?adoptId=${encodedAdoptId}`, weight: 20 },
-  { name: "mcp_status", path: `/api/claw/mcp-tools/status?adoptId=${encodedAdoptId}`, weight: 10 },
+  { name: "skill_registry", path: `/api/claw/skills/registry?adoptId=${encodedAdoptId}`, weight: 25 },
+  { name: "mcp_status", path: `/api/claw/mcp-tools/status?adoptId=${encodedAdoptId}`, weight: 20 },
+  { name: "file_capabilities", path: `/api/claw/files/capabilities?adoptId=${encodedAdoptId}`, weight: 10 },
+  { name: "channel_capabilities", path: `/api/claw/channels/capabilities?adoptId=${encodedAdoptId}`, weight: 10 },
 ];
 
+function weightedSchedule(items) {
+  const totalWeight = items.reduce((total, item) => total + item.weight, 0);
+  const scores = new Map(items.map((item) => [item.name, 0]));
+  return Array.from({ length: totalWeight }, () => {
+    let selected = items[0];
+    for (const item of items) {
+      const score = (scores.get(item.name) || 0) + item.weight;
+      scores.set(item.name, score);
+      if (score > (scores.get(selected.name) || 0)) selected = item;
+    }
+    scores.set(selected.name, (scores.get(selected.name) || 0) - totalWeight);
+    return selected;
+  });
+}
+
+const scenarioSchedule = weightedSchedule(scenarios);
+
 function chooseScenario(sequence) {
-  const position = sequence % 100;
-  let boundary = 0;
-  for (const scenario of scenarios) {
-    boundary += scenario.weight;
-    if (position < boundary) return scenario;
-  }
-  return scenarios[scenarios.length - 1];
+  return scenarioSchedule[sequence % scenarioSchedule.length];
 }
 
 function percentile(values, quantile) {
@@ -61,6 +84,16 @@ function countBy(items, keyFn) {
     counts[key] = (counts[key] || 0) + 1;
   }
   return counts;
+}
+
+function latencySummary(items) {
+  const durations = items.map((item) => item.durationMs);
+  return {
+    p50: Number(percentile(durations, 0.5).toFixed(1)),
+    p95: Number(percentile(durations, 0.95).toFixed(1)),
+    p99: Number(percentile(durations, 0.99).toFixed(1)),
+    max: Number(Math.max(0, ...durations).toFixed(1)),
+  };
 }
 
 async function runReadStage(concurrency) {
@@ -90,8 +123,8 @@ async function runReadStage(concurrency) {
   });
   await Promise.all(workers);
 
-  const durations = samples.map((sample) => sample.durationMs);
   const errors = samples.filter((sample) => sample.error || sample.status < 200 || sample.status >= 400);
+  const byScenario = Object.groupBy(samples, (sample) => sample.scenario);
   return {
     concurrency,
     durationSeconds: durationMs / 1000,
@@ -99,12 +132,10 @@ async function runReadStage(concurrency) {
     requestsPerSecond: Number((samples.length / (durationMs / 1000)).toFixed(2)),
     errorCount: errors.length,
     errorRate: Number((errors.length / Math.max(1, samples.length)).toFixed(4)),
-    latencyMs: {
-      p50: Number(percentile(durations, 0.5).toFixed(1)),
-      p95: Number(percentile(durations, 0.95).toFixed(1)),
-      p99: Number(percentile(durations, 0.99).toFixed(1)),
-      max: Number(Math.max(0, ...durations).toFixed(1)),
-    },
+    latencyMs: latencySummary(samples),
+    scenarioLatencyMs: Object.fromEntries(
+      Object.entries(byScenario).map(([name, items]) => [name, latencySummary(items)]),
+    ),
     statusCounts: countBy(samples, (sample) => sample.status || sample.error || "unknown"),
     scenarioCounts: countBy(samples, (sample) => sample.scenario),
   };
@@ -122,13 +153,17 @@ async function runChatSmoke(index) {
   let status = 0;
   let error = "";
   let bytes = 0;
+  let completed = false;
+  let observedToolEvent = false;
+  let firstByteMs = 0;
+  let firstToolEventMs = 0;
   try {
     const response = await fetch(new URL("/api/claw/chat-stream", baseUrl), {
       method: "POST",
       headers,
       body: JSON.stringify({
         adoptId,
-        message: "这是一次受控运行检查。请只回复：运行正常。",
+        message: chatMessage,
         channel: "web",
         conversationId,
         clientRunId: `loadtest-${conversationId}`,
@@ -136,10 +171,35 @@ async function runChatSmoke(index) {
       signal: AbortSignal.timeout(Math.max(timeoutMs, 300_000)),
     });
     status = response.status;
-    const body = await response.arrayBuffer();
-    bytes = body.byteLength;
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let body = "";
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!firstByteMs) firstByteMs = performance.now() - startedAt;
+        bytes += value.byteLength;
+        body += decoder.decode(value, { stream: true });
+        if (!firstToolEventMs && body.includes("event: tool_call")) {
+          firstToolEventMs = performance.now() - startedAt;
+        }
+        if (body.length > 1_000_000) body = body.slice(-500_000);
+      }
+      body += decoder.decode();
+    } else {
+      body = await response.text();
+      bytes = Buffer.byteLength(body);
+      firstByteMs = performance.now() - startedAt;
+    }
+    completed = body.includes("data: [DONE]");
+    observedToolEvent = body.includes("event: tool_call");
     if (status < 200 || status >= 400) {
-      error = new TextDecoder().decode(body).slice(0, 200);
+      error = body.slice(0, 200);
+    } else if (!completed) {
+      error = "chat stream ended without completion marker";
+    } else if (requireChatToolEvent && !observedToolEvent) {
+      error = "chat stream completed without a tool event";
     }
   } catch (caught) {
     error = String(caught?.name || caught?.message || caught).slice(0, 200);
@@ -148,6 +208,49 @@ async function runChatSmoke(index) {
     index,
     status,
     bytes,
+    durationMs: Number((performance.now() - startedAt).toFixed(1)),
+    firstByteMs: Number(firstByteMs.toFixed(1)),
+    firstToolEventMs: Number(firstToolEventMs.toFixed(1)),
+    completed,
+    observedToolEvent,
+    error,
+  };
+}
+
+async function runSandboxSmoke(index) {
+  const startedAt = performance.now();
+  let status = 0;
+  let error = "";
+  let markerObserved = false;
+  try {
+    const response = await fetch(new URL("/api/claw/sandbox/exec", baseUrl), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie,
+      },
+      body: JSON.stringify({
+        adoptId,
+        command: "printf EA_SANDBOX_OK",
+        timeoutMs: 30_000,
+      }),
+      signal: AbortSignal.timeout(Math.max(timeoutMs, 45_000)),
+    });
+    status = response.status;
+    const body = await response.text();
+    markerObserved = body.includes("EA_SANDBOX_OK");
+    if (status < 200 || status >= 400) {
+      error = body.slice(0, 200);
+    } else if (!markerObserved) {
+      error = "sandbox response did not contain the expected marker";
+    }
+  } catch (caught) {
+    error = String(caught?.name || caught?.message || caught).slice(0, 200);
+  }
+  return {
+    index,
+    status,
+    markerObserved,
     durationMs: Number((performance.now() - startedAt).toFixed(1)),
     error,
   };
@@ -161,6 +264,7 @@ const report = {
   adoptIdHashHint: adoptId.length > 8 ? `${adoptId.slice(0, 4)}...${adoptId.slice(-4)}` : "redacted",
   stages: [],
   chatSmoke: [],
+  sandboxSmoke: [],
 };
 
 for (const concurrency of stages) {
@@ -176,9 +280,30 @@ for (let index = 1; index <= chatRequests; index += 1) {
   console.log(`chat request=${index} status=${result.status || "error"} duration=${result.durationMs}ms bytes=${result.bytes}`);
 }
 
+for (let index = 1; index <= sandboxRequests; index += 1) {
+  const result = await runSandboxSmoke(index);
+  report.sandboxSmoke.push(result);
+  console.log(`sandbox request=${index} status=${result.status || "error"} duration=${result.durationMs}ms marker=${result.markerObserved}`);
+}
+
+const failedStages = report.stages.filter(
+  (stage) => stage.errorRate > maxErrorRate || stage.latencyMs.p95 > maxP95Ms,
+);
+const failedChat = report.chatSmoke.filter((sample) => sample.error);
+const failedSandbox = report.sandboxSmoke.filter((sample) => sample.error);
+report.acceptance = {
+  passed: failedStages.length === 0 && failedChat.length === 0 && failedSandbox.length === 0,
+  maxErrorRate,
+  maxP95Ms,
+  failedStageConcurrencies: failedStages.map((stage) => stage.concurrency),
+  failedChatRequests: failedChat.map((sample) => sample.index),
+  failedSandboxRequests: failedSandbox.map((sample) => sample.index),
+};
 report.completedAt = new Date().toISOString();
 await mkdir(outputDir, { recursive: true });
 const stamp = report.startedAt.replace(/[:.]/g, "-");
 const outputPath = path.join(outputDir, `business-${stamp}.json`);
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
 console.log(`report=${outputPath}`);
+console.log(`acceptance=${report.acceptance.passed ? "passed" : "failed"}`);
+if (!report.acceptance.passed) process.exitCode = 1;

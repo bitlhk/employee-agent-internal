@@ -12,6 +12,8 @@ const durationMs = Math.max(5_000, Number(process.env.EA_LOAD_TEST_STAGE_SECONDS
 const timeoutMs = Math.max(1_000, Number(process.env.EA_LOAD_TEST_TIMEOUT_MS || 5_000));
 const outputDir = path.resolve(process.env.EA_LOAD_TEST_OUTPUT_DIR || "data/load-tests");
 const cookie = String(process.env.EA_LOAD_TEST_COOKIE || "").trim();
+const maxErrorRate = Math.max(0, Number(process.env.EA_LOAD_TEST_MAX_ERROR_RATE || 0.01));
+const maxP95Ms = Math.max(1, Number(process.env.EA_LOAD_TEST_MAX_P95_MS || 1000));
 
 if (!stages.length) throw new Error("EA_LOAD_TEST_STAGES must contain at least one positive integer");
 const loopback = ["127.0.0.1", "localhost", "::1"].includes(baseUrl.hostname);
@@ -26,14 +28,25 @@ const scenarios = [
   { name: "app", path: "/", weight: 60 },
 ];
 
+function weightedSchedule(items) {
+  const totalWeight = items.reduce((total, item) => total + item.weight, 0);
+  const scores = new Map(items.map((item) => [item.name, 0]));
+  return Array.from({ length: totalWeight }, () => {
+    let selected = items[0];
+    for (const item of items) {
+      const score = (scores.get(item.name) || 0) + item.weight;
+      scores.set(item.name, score);
+      if (score > (scores.get(selected.name) || 0)) selected = item;
+    }
+    scores.set(selected.name, (scores.get(selected.name) || 0) - totalWeight);
+    return selected;
+  });
+}
+
+const scenarioSchedule = weightedSchedule(scenarios);
+
 function chooseScenario(sequence) {
-  const position = sequence % 100;
-  let boundary = 0;
-  for (const scenario of scenarios) {
-    boundary += scenario.weight;
-    if (position < boundary) return scenario;
-  }
-  return scenarios[scenarios.length - 1];
+  return scenarioSchedule[sequence % scenarioSchedule.length];
 }
 
 function percentile(values, quantile) {
@@ -104,9 +117,20 @@ for (const concurrency of stages) {
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
 
+const failedStages = report.stages.filter(
+  (stage) => stage.errorRate > maxErrorRate || stage.latencyMs.p95 > maxP95Ms,
+);
+report.acceptance = {
+  passed: failedStages.length === 0,
+  maxErrorRate,
+  maxP95Ms,
+  failedStageConcurrencies: failedStages.map((stage) => stage.concurrency),
+};
 report.completedAt = new Date().toISOString();
 await mkdir(outputDir, { recursive: true });
 const stamp = report.startedAt.replace(/[:.]/g, "-");
 const outputPath = path.join(outputDir, `capacity-${stamp}.json`);
 await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
 console.log(`report=${outputPath}`);
+console.log(`acceptance=${report.acceptance.passed ? "passed" : "failed"}`);
+if (!report.acceptance.passed) process.exitCode = 1;

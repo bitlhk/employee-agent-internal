@@ -28,10 +28,12 @@ import {
   writeJiuwenSessionArtifacts,
   type JiuwenSessionArtifactFile,
 } from "./jiuwen-session-artifacts";
+import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwenswarm-mcp-metrics";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { validateKnowledgeCitations } from "@shared/knowledge-citations";
 
 export { bumpSessionEpoch } from "./helpers";
+export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
 export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 
 export type JiuwenClawRuntimeClaw = {
@@ -233,14 +235,6 @@ export function inferSkillIdFromJiuwenPayload(value: unknown): string | null {
   }
   const named = json.match(/"skill(?:Id|_id|Name|_name)"\s*:\s*"([a-zA-Z0-9._-]+)"/);
   return String(named?.[1] || "").trim() || null;
-}
-
-export function inferMcpServerForJiuwenTool(toolName: string): string | null {
-  const name = String(toolName || "").trim();
-  if (!name) return null;
-  const mcpTool = name.match(/^mcp_([a-zA-Z0-9_]+)__[a-zA-Z0-9_]+$/);
-  if (mcpTool?.[1]) return mcpTool[1];
-  return null;
 }
 
 function pickFirstString(obj: any, keys: string[]): string {
@@ -466,11 +460,17 @@ export async function recordJiuwenToolAudit(args: {
     });
   }
 
-  const mcpServer = inferMcpServerForJiuwenTool(tool.toolName);
+  const mcpServer = tool.toolName.startsWith("mcp_") ? inferMcpServerForJiuwenTool(tool.toolName) || "jiuwenswarm_mcp" : null;
   if (mcpServer) {
     const mcpEventId = `jw_mcp_${sha256(`${baseRaw}|${mcpServer}`).slice(0, 56)}`;
     if (!seenJiuwenAuditEventIds.has(mcpEventId)) {
       seenJiuwenAuditEventIds.add(mcpEventId);
+      recordJiuwenMcpMetricEvent({
+        agentId: args.agentId,
+        sessionId: args.sessionId,
+        requestId: args.requestId,
+        tool,
+      });
       await recordAuditBestEffort({
         eventId: mcpEventId,
         action: `mcp.tool.${phase}`,

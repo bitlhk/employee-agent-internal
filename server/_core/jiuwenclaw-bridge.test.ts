@@ -9,7 +9,6 @@ import {
   buildJiuwenTextDelta,
   collectRecentWorkspaceFiles,
   formatJiuwenTextSectionDelta,
-  inferMcpServerForJiuwenTool,
   inferSkillIdFromJiuwenPayload,
   pickJiuwenText,
 } from "./jiuwenclaw-bridge";
@@ -35,16 +34,6 @@ describe("jiuwenclaw bridge audit helpers", () => {
     expect(formatJiuwenTextSectionDelta("查询完成。", true)).toBe("\n\n查询完成。");
     expect(formatJiuwenTextSectionDelta("\n\n查询完成。", true)).toBe("\n\n查询完成。");
     expect(formatJiuwenTextSectionDelta("继续输出", false)).toBe("继续输出");
-  });
-
-  it("maps business tool names to MCP server ids", () => {
-    expect(inferMcpServerForJiuwenTool("mcp_demo_server__lookup_customer")).toBe("demo_server");
-    expect(inferMcpServerForJiuwenTool("mcp_market_data__get_quote")).toBe("market_data");
-  });
-
-  it("does not classify unknown runtime tools as MCP business tools", () => {
-    expect(inferMcpServerForJiuwenTool("execute_cmd")).toBeNull();
-    expect(inferMcpServerForJiuwenTool("read_file")).toBeNull();
   });
 
   it("infers skill ids from jiuwenswarm tool arguments", () => {

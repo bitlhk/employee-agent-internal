@@ -29,8 +29,7 @@ filenames, URLs, and model prompts are forbidden labels.
 
 - Chat: request count, active requests, total duration, first-token duration;
   labels are `runtime` and `outcome`.
-- Runtime: call count, active calls, and duration; runtime is `jiuwenswarm` or
-  `openclaw`.
+- Runtime: JiuwenSwarm call count, active calls, and duration.
 - MCP: call count, active calls, and duration; kind is `platform` or `custom`.
 - Sandbox: execution count, active calls, and duration by bounded outcome.
 - Database: pool configured limits, active checked-out connections, connection
@@ -85,11 +84,12 @@ credentials. They are run with small samples in local or dedicated test
 environments, not as a 50-user production model storm.
 
 Use `pnpm load:business` with `EA_BUSINESS_LOAD_TEST_COOKIE` and
-`EA_BUSINESS_LOAD_TEST_ADOPT_ID` to calibrate authenticated health summary,
-history, runtime, skill, and MCP reads. Model smoke requests are disabled by
-default; enabling `EA_BUSINESS_LOAD_TEST_ENABLE_CHAT=1` and setting
-`EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS` sends at most five sequential prompts.
-Reports are mode `0600` and never contain the supplied cookie or internal key.
+`EA_BUSINESS_LOAD_TEST_ADOPT_ID` to calibrate authenticated history, Skill,
+MCP status, file-capability, and channel-capability reads. Model and sandbox
+smoke requests are disabled by default. Chat can optionally require a real
+`tool_call` event, and sandbox checks require an explicit opt-in. Reports are
+mode `0600`, contain an SLO acceptance result, and never contain the supplied
+cookie, prompt, or internal key.
 
 Initial acceptance targets for the read-only platform scenario:
 
@@ -100,3 +100,6 @@ Initial acceptance targets for the read-only platform scenario:
 
 The measured report, not these provisional numbers, determines the production
 training concurrency recommendation.
+
+The corrected 2026-07-30 baseline and its accepted deployment envelope are
+recorded in `capacity-baseline-2026-07-29.md`.
