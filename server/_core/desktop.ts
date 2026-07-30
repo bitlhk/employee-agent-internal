@@ -57,7 +57,7 @@ import {
 import {
   listClawChatHistorySessionRecords,
   readModernChatHistorySessionMessages,
-} from "./claw-misc";
+} from "./chat-history";
 import { authLimiter } from "./security";
 
 type DesktopUser = {

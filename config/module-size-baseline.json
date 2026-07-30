@@ -1,0 +1,19 @@
+{
+  "maxUnlistedLines": 1200,
+  "scope": [
+    "server",
+    "client/src",
+    "shared",
+    "scripts"
+  ],
+  "files": {
+    "client/src/pages/Home.tsx": 5551,
+    "client/src/components/pages/SkillsPage.tsx": 2580,
+    "server/routers/claw.ts": 2324,
+    "client/src/pages/ClawAdmin.tsx": 2249,
+    "client/src/components/ChatMessage.tsx": 1634,
+    "server/_core/jiuwenclaw-bridge.ts": 1624,
+    "server/_core/desktop.ts": 1607,
+    "server/_core/agent-memory.ts": 1219
+  }
+}

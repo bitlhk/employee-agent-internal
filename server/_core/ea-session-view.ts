@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { listMyCoopSessions } from "../db/coop";
 import { listCronJobsForClaw, listCronRunsForClaw } from "./claw-cron";
-import { listClawChatHistorySessionRecords } from "./claw-misc";
+import { listClawChatHistorySessionRecords } from "./chat-history";
 import { requireClawOwner } from "./helpers";
 import { sdk } from "./sdk";
 

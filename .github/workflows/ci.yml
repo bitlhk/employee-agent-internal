@@ -110,6 +110,9 @@ jobs:
       - name: Type debt budget
         run: pnpm run lint:type-debt
 
+      - name: Module size budget
+        run: pnpm run lint:module-size
+
       - name: Typecheck
         run: pnpm run check
 

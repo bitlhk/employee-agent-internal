@@ -72,6 +72,16 @@ OpenClaw transport, provisioning, recovery, and channel adapters are retired.
 They must not be reintroduced into extracted modules. Historical `claw` route
 names remain stable until a separately versioned public API migration exists.
 
+## Current Status
+
+- Administrator health aggregation lives in `admin-system-health.ts`.
+- Active JiuwenSwarm history parsing and artifact reconstruction live in
+  `chat-history.ts`; retired OpenClaw trajectory and recovery parsing is removed.
+- `claw-misc.ts` remains the stable HTTP facade and is below the repository's
+  default module-size budget.
+- CI rejects growth in explicit `any` usage and growth beyond the recorded
+  large-module line budgets.
+
 ## Frontend Home
 
 The main page is split last into stateful feature controllers and presentational sections. Shared chat stream state remains in one controller until characterization tests cover send, reconnect, history switch, expert handoff, workspace panels, and knowledge citations.

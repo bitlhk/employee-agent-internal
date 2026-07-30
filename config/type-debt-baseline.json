@@ -1,5 +1,5 @@
 {
-  "explicitAnyWarnings": 1474,
+  "explicitAnyWarnings": 1230,
   "scope": [
     "server/**/*.{ts,tsx}",
     "client/src/**/*.{ts,tsx}",

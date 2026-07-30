@@ -64,7 +64,7 @@ describe("claw misc admin routes", () => {
         listJiuwenChatHistorySessions,
         readModernChatHistorySessionMessages,
         resolveJiuwenHistorySession,
-      } = await import("./claw-misc");
+      } = await import("./chat-history");
 
       const writeSession = (
         adoptId: string,
@@ -139,7 +139,7 @@ describe("claw misc admin routes", () => {
   it("hydrates JiuwenSwarm tool calls from embedded assistant history", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-tool-history-"));
     try {
-      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const { extractJiuwenChatMessages } = await import("./chat-history");
       const historyFile = path.join(root, "history.json");
       writeFileSync(historyFile, [
         JSON.stringify({ id: "u1", role: "user", request_id: "r1", timestamp: 1779000000, content: "获取我的客户信息" }),
@@ -193,7 +193,7 @@ describe("claw misc admin routes", () => {
   it("keeps distinct JiuwenSwarm final sections around tool execution", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-multi-final-"));
     try {
-      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const { extractJiuwenChatMessages } = await import("./chat-history");
       const historyFile = path.join(root, "history.jsonl");
       writeFileSync(historyFile, [
         JSON.stringify({ id: "u1", role: "user", request_id: "r1", timestamp: 1779000000, content: "查询客户" }),
@@ -221,7 +221,7 @@ describe("claw misc admin routes", () => {
   it("does not expose runtime workspace paths from JiuwenSwarm history", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-public-path-"));
     try {
-      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const { extractJiuwenChatMessages } = await import("./chat-history");
       const historyFile = path.join(root, "history.jsonl");
       const privatePath = "/home/ubuntu/.jiuwenswarm/service_linggan/agent_jiuwen_lgj-test/agent/jiuwenclaw_workspace/output/report.html";
       writeFileSync(historyFile, [
@@ -259,7 +259,7 @@ describe("claw misc admin routes", () => {
   it("restores uploaded attachment cards while keeping runtime paths out of user text", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-upload-history-"));
     try {
-      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const { extractJiuwenChatMessages } = await import("./chat-history");
       const historyFile = path.join(root, "history.jsonl");
       writeFileSync(historyFile, JSON.stringify({
         id: "u-upload",
@@ -312,7 +312,7 @@ describe("claw misc admin routes", () => {
         },
       }), "utf8");
 
-      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const { extractJiuwenChatMessages } = await import("./chat-history");
       const assistant = extractJiuwenChatMessages(historyFile, 20, "lgj-test").find((message) => message.role === "assistant");
       const artifactCall = assistant?.toolCalls?.find((tool) => tool.name === "[产出文件]");
       expect(artifactCall).toMatchObject({
@@ -351,7 +351,7 @@ describe("claw misc admin routes", () => {
         JSON.stringify({ id: "a1", role: "assistant", request_id: "request-files", timestamp: 1779000002, event_type: "chat.final", content: "报告已生成" }),
       ].join("\n"), "utf8");
 
-      const { extractJiuwenChatMessages } = await import("./claw-misc");
+      const { extractJiuwenChatMessages } = await import("./chat-history");
       const assistant = extractJiuwenChatMessages(historyFile, 20, "lgj-test", workspaceDir)
         .find((message) => message.role === "assistant");
       const artifactCall = assistant?.toolCalls?.find((tool) => tool.name === "[产出文件]");
