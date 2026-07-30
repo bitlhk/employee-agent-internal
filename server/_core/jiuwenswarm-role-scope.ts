@@ -379,7 +379,7 @@ export function writeJiuwenSwarmIdentityFilesIfMissing(
   const identityPath = path.join(workspaceDir, "IDENTITY.md");
   const current = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
   const markerCount = DEFAULT_IDENTITY_MARKERS.filter((marker) => current.toLocaleLowerCase("zh-CN").includes(marker)).length;
-  const base = !current.trim() || markerCount >= 2
+  const base = !current.trim() || markerCount >= 1
     ? (current.trim()
       ? migrateDefaultIdentityTemplate(current, role, effectiveAssets)
       : buildJiuwenSwarmIdentityMarkdown(role, effectiveAssets))
