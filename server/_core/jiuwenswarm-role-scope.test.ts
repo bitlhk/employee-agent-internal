@@ -167,6 +167,47 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("repairs upstream onboarding templates without overwriting custom profiles", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-onboarding-"));
+    try {
+      const identityPath = path.join(root, "IDENTITY.md");
+      const userPath = path.join(root, "USER.md");
+      writeFileSync(identityPath, [
+        "## 身份设定",
+        "_在你们的第一次对话中填写。让它属于你。_",
+        "- **名字：知衡",
+        "  _(选一个你喜欢的)_",
+        "这不仅仅是元数据。这是弄清楚你是谁的开始。",
+        "",
+        "## 工具使用偏好",
+        "",
+        "- 优先使用企业搜索。",
+      ].join("\n"), "utf8");
+      writeFileSync(userPath, "\n", "utf8");
+
+      const repaired = writeJiuwenSwarmRoleScopeManifest({ workspaceDir: root, role, effectiveAssets });
+      const identity = readFileSync(identityPath, "utf8");
+      const user = readFileSync(userPath, "utf8");
+
+      expect(repaired.identityChanged).toBe(true);
+      expect(repaired.userChanged).toBe(true);
+      expect(identity).toContain("当前岗位为「财富经理」");
+      expect(identity).toContain("不代表首次与用户交流");
+      expect(identity).not.toContain("在你们的第一次对话中填写");
+      expect(identity).toContain("- 名字：知衡");
+      expect(identity).toContain("优先使用企业搜索");
+      expect(user).toContain("用户申请该智能体时选择的岗位是「财富经理」");
+
+      writeFileSync(identityPath, "# 自定义身份\n\n请称呼我为知衡。\n", "utf8");
+      writeFileSync(userPath, "# 自定义用户偏好\n\n先给结论。\n", "utf8");
+      writeJiuwenSwarmRoleScopeManifest({ workspaceDir: root, role, effectiveAssets });
+      expect(readFileSync(identityPath, "utf8")).toContain("请称呼我为知衡");
+      expect(readFileSync(userPath, "utf8")).toContain("先给结论");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("materializes allowed shared skills and removes disallowed managed links", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-links-"));
     try {

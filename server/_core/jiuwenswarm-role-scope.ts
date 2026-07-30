@@ -24,6 +24,15 @@ export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json
 export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools", "custom_mcp_gateway"];
 const CONTENT_COMPLIANCE_BLOCK_START = "<!-- EA_CONTENT_COMPLIANCE_START -->";
 const CONTENT_COMPLIANCE_BLOCK_END = "<!-- EA_CONTENT_COMPLIANCE_END -->";
+const DEFAULT_IDENTITY_MARKERS = [
+  "在你们的第一次对话中填写",
+  "选一个你喜欢的",
+  "这不仅仅是元数据",
+  "fill this in during your first conversation",
+  "this isn't just metadata",
+];
+const MANAGED_MARKDOWN_BLOCK_RE =
+  /<!-- EA_[A-Z0-9_]+_START -->[\s\S]*?<!-- EA_[A-Z0-9_]+_END -->/g;
 
 export type JiuwenSwarmRoleScopeManifest = {
   version: 1;
@@ -320,6 +329,7 @@ export function buildJiuwenSwarmIdentityMarkdown(
     "- 优先使用当前工作目录已安装的岗位技能和已授权 MCP；如果能力不可用，应明确说明不可用，不要编造结果。",
     "- 回答默认使用中文，面向业务用户，避免暴露底层 runtime、文件路径、调试日志等实现细节。",
     "- 对金融、保险、证券、风控、审核相关内容保持合规审慎；区分事实、推断和建议。",
+    "- 当前运行会话或记忆为空不代表首次与用户交流；未经平台明确事实，不得声称第一次见面、刚上线或要求用户重新建立身份。",
     "",
     managedContentComplianceBlock(),
     "",
@@ -342,6 +352,25 @@ export function buildJiuwenSwarmUserMarkdown(role: AgentRoleTemplate): string {
   ].join("\n");
 }
 
+function migrateDefaultIdentityTemplate(
+  current: string,
+  role: AgentRoleTemplate,
+  effectiveAssets: EffectiveRoleAssets,
+): string {
+  const managedIdentity = buildJiuwenSwarmIdentityMarkdown(role, effectiveAssets);
+  const customName = current
+    .match(/-\s*\*\*(?:名字|name)[：:]\s*\**\s*([^\n_()]+)/i)?.[1]
+    ?.replace(/\*+$/, "")
+    .trim();
+  const withoutManagedBlocks = current.replace(MANAGED_MARKDOWN_BLOCK_RE, "").trim();
+  const customSectionMatch = withoutManagedBlocks.match(/\n(##\s+(?!身份设定|identity\b)[^\n]+[\s\S]*)$/i);
+  const preserved = [
+    customName ? `## 保留的自定义身份\n\n- 名字：${customName}` : "",
+    customSectionMatch?.[1]?.trim() || "",
+  ].filter(Boolean);
+  return [managedIdentity.trim(), ...preserved].join("\n\n") + "\n";
+}
+
 export function writeJiuwenSwarmIdentityFilesIfMissing(
   workspaceDir: string,
   role: AgentRoleTemplate,
@@ -349,7 +378,12 @@ export function writeJiuwenSwarmIdentityFilesIfMissing(
 ): { identityPath: string; identityChanged: boolean } {
   const identityPath = path.join(workspaceDir, "IDENTITY.md");
   const current = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "";
-  const base = current || buildJiuwenSwarmIdentityMarkdown(role, effectiveAssets);
+  const markerCount = DEFAULT_IDENTITY_MARKERS.filter((marker) => current.toLocaleLowerCase("zh-CN").includes(marker)).length;
+  const base = !current.trim() || markerCount >= 2
+    ? (current.trim()
+      ? migrateDefaultIdentityTemplate(current, role, effectiveAssets)
+      : buildJiuwenSwarmIdentityMarkdown(role, effectiveAssets))
+    : current;
   const next = upsertManagedContentComplianceBlock(base);
   if (current === next) return { identityPath, identityChanged: false };
   writeTextFileAtomic(identityPath, next);
@@ -361,7 +395,7 @@ export function writeJiuwenSwarmUserFileIfMissing(
   role: AgentRoleTemplate,
 ): { userPath: string; userChanged: boolean } {
   const userPath = path.join(workspaceDir, "USER.md");
-  if (existsSync(userPath)) return { userPath, userChanged: false };
+  if (existsSync(userPath) && readFileSync(userPath, "utf8").trim()) return { userPath, userChanged: false };
   writeFileSync(userPath, buildJiuwenSwarmUserMarkdown(role), "utf8");
   return { userPath, userChanged: true };
 }

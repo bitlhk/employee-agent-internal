@@ -10,6 +10,7 @@ import {
   renderManagedMemoryMarkdown,
   replaceManagedBlock,
 } from "./agent-memory";
+import { memoryPolicyMarkdown } from "./agent-memory-policy";
 
 describe("agent managed memory", () => {
   it("rejects credentials and prompt-injection content", () => {
@@ -163,5 +164,13 @@ describe("agent managed memory", () => {
       "internal_agent_session",
       { channel_id: "internal", channel_metadata: { linggan_adopt_id: "lgj-test" } },
     )).toBe("");
+  });
+
+  it("does not infer a first meeting from an empty runtime session", () => {
+    for (const mode of ["learn_and_use", "use_only", "off"] as const) {
+      const policy = memoryPolicyMarkdown(mode);
+      expect(policy).toContain("不代表首次与用户交流");
+      expect(policy).toContain("不得据此声称“第一次见面”“刚上线”");
+    }
   });
 });

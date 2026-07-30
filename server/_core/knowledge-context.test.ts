@@ -138,6 +138,39 @@ describe("knowledge chat context", () => {
     expect(result.sources).toEqual([]);
   });
 
+  it("skips automatic retrieval for conversation and memory meta questions", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    for (const query of ["是第一次对话吗", "这是我们第一次对话吗", "你还记得我吗", "上次我们聊了什么", "你的记忆文件是空的吗"]) {
+      const result = await buildChatKnowledgeContext({
+        userId: 7,
+        roleTemplate: "wealth-manager",
+        requestedIds: [],
+        query,
+      });
+      expect(result.retrieval).toBe("skipped");
+      expect(result.sources).toEqual([]);
+    }
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("honors an explicit knowledge selection for a conversation meta question", async () => {
+    await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [readyBase.publicId],
+      query: "这是我们第一次对话吗",
+    });
+
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith(
+      [readyBase],
+      "这是我们第一次对话吗",
+      6,
+      "forced",
+    );
+  });
+
   it("merges repeated chunks from the same displayed document", async () => {
     mocks.retrieveAcrossKnowledgeBases.mockResolvedValue({
       triggered: true,
