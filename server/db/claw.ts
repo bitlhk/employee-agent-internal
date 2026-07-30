@@ -39,8 +39,7 @@ export async function getCurrentClawByUserId(userId: number): Promise<ClawAdopti
 }
 
 /**
- * 列出用户所有活跃的虾（支持多 runtime: lgc-* / lgh-* legacy archived）
- * orderBy: OpenClaw (lgc-) 优先，其次按 id 升序（老虾在前）
+ * 列出用户所有活跃实例。JiuwenSwarm 始终排在已退役运行时之前。
  */
 export async function listClawsByUserId(userId: number): Promise<ClawAdoption[]> {
   const db = await getDb();
@@ -53,12 +52,13 @@ export async function listClawsByUserId(userId: number): Promise<ClawAdoption[]>
       .where(and(eq(clawAdoptions.userId, userId), inArray(clawAdoptions.status, ["creating", "active", "expiring"])))
       .orderBy(clawAdoptions.id);
 
-    // Stable sort: lgc-* 先（老 runtime），lgh-* 后
+    // Stable sort: active JiuwenSwarm first; retired/unknown rows remain visible
+    // to administrators but can no longer become the user's effective runtime.
     return rows.sort((a, b) => {
-      const aIsOpenClaw = a.adoptId.startsWith("lgc-");
-      const bIsOpenClaw = b.adoptId.startsWith("lgc-");
-      if (aIsOpenClaw && !bIsOpenClaw) return -1;
-      if (!aIsOpenClaw && bIsOpenClaw) return 1;
+      const aIsJiuwen = a.adoptId.startsWith("lgj-");
+      const bIsJiuwen = b.adoptId.startsWith("lgj-");
+      if (aIsJiuwen && !bIsJiuwen) return -1;
+      if (!aIsJiuwen && bIsJiuwen) return 1;
       return Number(a.id) - Number(b.id);
     });
   } catch (error) {

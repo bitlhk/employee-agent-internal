@@ -42,16 +42,10 @@ describe("resolveRoleRuntimeProvisionPlan", () => {
     });
   });
 
-  it("honors an admin/runtime override", () => {
-    const plan = resolveRoleRuntimeProvisionPlan(baseRole, {
+  it("rejects the retired OpenClaw runtime", () => {
+    expect(() => resolveRoleRuntimeProvisionPlan(baseRole, {
       jiuwenswarmProvisionEnabled: true,
       forceRuntime: "openclaw",
-    });
-
-    expect(plan).toEqual({
-      requestedRuntime: "openclaw",
-      runtime: "openclaw",
-      fallbackApplied: false,
-    });
+    })).toThrow("OpenClaw runtime has been retired");
   });
 });

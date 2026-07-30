@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from "fs";
 import { appendLogAsync, generateFileToken, openClawAgentDir, openClawWorkspaceDir } from "./helpers";
+import { retiredRuntimeMessage } from "./runtime-policy";
 
 export type CoopRuntimeExecutionArgs = {
   requestId: number;
@@ -171,6 +172,20 @@ const openClawGatewayExecutor: CoopRuntimeExecutor = {
   },
 };
 
+const retiredRuntimeExecutor: CoopRuntimeExecutor = {
+  protocol: "runtime-retired",
+  async execute(args) {
+    const { updateCollabRequest } = await import("../db");
+    const message = retiredRuntimeMessage();
+    await updateCollabRequest(args.requestId, {
+      status: "failed",
+      resultSummary: message,
+      completedAt: new Date(),
+    } as any);
+    args.onDone?.("failed", message);
+  },
+};
+
 export function getCoopRuntimeExecutor(_runtime?: string | null): CoopRuntimeExecutor {
-  return openClawGatewayExecutor;
+  return retiredRuntimeExecutor;
 }

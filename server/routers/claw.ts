@@ -47,12 +47,8 @@ import {
   OPENCLAW_HOME,
   OPENCLAW_JSON_PATH,
   clawDailyUsage,
-  getAvailableClawModelsFromConfig,
-  buildClawSessionKey,
   assertClawOwnerOrThrow,
   bumpClawSessionEpochBestEffort,
-  applyClawSessionModelViaGatewayCommand,
-  setAgentModelInOpenclawConfig,
   provisionEmployeeAgentInstance,
   writeClawExecAudit,
 } from "./helpers";
@@ -90,6 +86,7 @@ import { resolvePublicBaseUrl } from "../_core/public-base-url";
 import { probeJiuwenSkillMcpReadiness } from "../_core/skill-mcp-readiness";
 import { getBackgroundWorkerSnapshot } from "../_core/background-workers";
 import { getCapacitySnapshot } from "../_core/operational-capacity";
+import { resolveActiveAgentRuntime, retiredRuntimeMessage } from "../_core/runtime-policy";
 import {
   getEaAssistantModelAdminConfig,
   saveEaAssistantModelConfig,
@@ -122,7 +119,7 @@ import {
   validateJiuwenModel,
 } from "../_core/jiuwenswarm-model-admin";
 
-type ResolvedClawRuntime = "openclaw" | "jiuwenclaw" | "legacy_archived";
+type ResolvedClawRuntime = "jiuwenclaw" | "legacy_archived" | "unsupported";
 
 const skillIdSchema = z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "技能ID只能包含小写字母、数字和连字符");
 const feedbackIdentitySchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/, "消息标识格式不正确");
@@ -166,10 +163,7 @@ function safeDescendantPath(parentDir: string, candidatePath: string): string {
 }
 
 const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
-  const id = String(adoptId || "");
-  if (id.startsWith("lgj-")) return "jiuwenclaw";
-  if (id.startsWith("lgh-")) return "legacy_archived";
-  return "openclaw";
+  return resolveActiveAgentRuntime(adoptId);
 };
 
 function buildRemoteSshArgs(remoteUser: string, remoteHost: string, connectTimeoutSec = 8): string[] {
@@ -242,7 +236,7 @@ const diffEffectiveRoleAssets = (before: EffectiveRoleAssets, after: EffectiveRo
 const resolveRoleResetRuntime = (row: AdminClawAdoption): AgentRuntime => {
   const runtime = String(row.runtime || "").trim();
   if (runtime === "jiuwenswarm" || String(row.adoptId || "").startsWith("lgj-")) return "jiuwenswarm";
-  return "openclaw";
+  throw new TRPCError({ code: "BAD_REQUEST", message: retiredRuntimeMessage() });
 };
 
 const applyAdminRoleReset = async (input: {
@@ -432,10 +426,10 @@ const getAvailableJiuwenModels = async (): Promise<RuntimeModelOption[]> => {
 };
 
 const getAvailableModelsForRuntime = async (adoptId?: unknown): Promise<RuntimeModelOption[]> => {
+  if (!String(adoptId || "").trim()) return await getAvailableJiuwenModels();
   const runtime = resolveClawRuntime(adoptId);
   if (runtime === "jiuwenclaw") return await getAvailableJiuwenModels();
-  if (runtime === "legacy_archived") return [];
-  return getAvailableClawModelsFromConfig();
+  return [];
 };
 
 const openClawWorkspaceDir = (runtimeAgentId: string) => `${OPENCLAW_HOME}/workspace-${String(runtimeAgentId || "").trim()}`;
@@ -460,22 +454,6 @@ function safeExec(command: string, timeout = 8000): { ok: boolean; output: strin
 
 function shellQuote(value: string): string {
   return `'${String(value).replace(/'/g, "'\\''")}'`;
-}
-
-function resolveOpenClawCli(): string {
-  const candidates = [
-    process.env.OPENCLAW_BIN,
-    `${process.env.HOME || ""}/.npm-global/bin/openclaw`,
-    `${process.env.HOME || ""}/.local/bin/openclaw`,
-    `${process.env.HOME || ""}/bin/openclaw`,
-    "/usr/local/bin/openclaw",
-    "/usr/bin/openclaw",
-  ].filter(Boolean) as string[];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return shellQuote(candidate);
-  }
-  return "openclaw";
 }
 
 function safeJson<T = any>(text: string, fallback: T): T {
@@ -915,10 +893,10 @@ export const clawRouter = router({
       .input(z.object({ adoptId: z.string().min(1).max(64), modelId: z.string().min(1).max(120) }))
       .mutation(async ({ input, ctx }) => {
         const runtimeType = resolveClawRuntime(input.adoptId);
-        if (runtimeType === "legacy_archived") {
+        if (runtimeType !== "jiuwenclaw") {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: "Legacy runtime has been archived. Provision a JiuwenClaw agent instead.",
+            message: retiredRuntimeMessage(),
           });
         }
         const claw = await getClawByAdoptId(input.adoptId);
@@ -927,22 +905,17 @@ export const clawRouter = router({
           throw new Error("无权修改该智能体设置");
         }
         let jiuwenSelection: Awaited<ReturnType<typeof resolveSelectableJiuwenModel>> = null;
-        if (runtimeType === "jiuwenclaw") {
-          try {
-            jiuwenSelection = input.modelId === JIUWEN_AUTO_MODEL_ID
-              ? resolveAutomaticSelectableJiuwenModel(await listSelectableJiuwenModels())
-              : await resolveSelectableJiuwenModel(input.modelId);
-          } catch (error) {
-            throw new TRPCError({
-              code: "SERVICE_UNAVAILABLE",
-              message: sanitizeModelAdminError(error) || "模型目录暂时不可用",
-            });
-          }
-          if (!jiuwenSelection) throw new Error("不支持的模型");
-        } else {
-          const allowed = new Set((await getAvailableModelsForRuntime(input.adoptId)).map((m) => m.id));
-          if (!allowed.has(input.modelId)) throw new Error("不支持的模型");
+        try {
+          jiuwenSelection = input.modelId === JIUWEN_AUTO_MODEL_ID
+            ? resolveAutomaticSelectableJiuwenModel(await listSelectableJiuwenModels())
+            : await resolveSelectableJiuwenModel(input.modelId);
+        } catch (error) {
+          throw new TRPCError({
+            code: "SERVICE_UNAVAILABLE",
+            message: sanitizeModelAdminError(error) || "模型目录暂时不可用",
+          });
         }
+        if (!jiuwenSelection) throw new Error("不支持的模型");
 
         const previousSettings = await getClawProfileSettings(Number(claw.id));
         const previousModel = String((previousSettings as any)?.model || "");
@@ -953,61 +926,6 @@ export const clawRouter = router({
           updatedBy: ctx.user!.id,
         } as any);
 
-        if (runtimeType !== "openclaw") {
-          await recordAuditBestEffort({
-            action: "model.switched",
-            ...auditActor(ctx.user),
-            ...auditRequest(ctx.req),
-            targetType: "agent",
-            targetId: input.adoptId,
-            targetName: String((claw as any).agentId || input.adoptId),
-            agentInstanceId: input.adoptId,
-            runtimeType,
-            runtimeAgentId: String((claw as any).agentId || ""),
-            metadata: {
-              previousModel: previousModel || null,
-              model: input.modelId,
-              runtimeModel: jiuwenSelection?.runtimeModelId || input.modelId,
-              applied: false,
-              effectiveFrom: "next_request",
-              runtimeManaged: true,
-            },
-          });
-          return {
-            ok: true,
-            model: input.modelId,
-            applied: false,
-            statusCode: null,
-            applyError: null,
-            runtimeManaged: true,
-            effectiveFrom: "next_request" as const,
-          };
-        }
-
-        // 2) 通过 OpenClaw 会话命令即时切换（不重启 gateway）
-        const sessionKey = buildClawSessionKey(String((claw as any).adoptId || input.adoptId), Number((claw as any).userId || 0));
-        const applied = await applyClawSessionModelViaGatewayCommand({
-          agentId: String((claw as any).agentId || ""),
-          sessionKey,
-          modelId: input.modelId,
-        });
-
-        // 2.5) 持久化到 openclaw.json agents.list[].model —— gateway 热加载后路由才真正切过来
-        const cfgApplied = setAgentModelInOpenclawConfig(String((claw as any).agentId || ""), input.modelId);
-        if (!cfgApplied.ok) {
-          throw new Error(`模型切换持久化失败（${cfgApplied.error}）。当前会话已临时生效，但重启或热加载后会回退到原模型。`);
-        }
-
-        // 2.6) 持久化到 claw-model-overrides.json —— 刷新后下拉能记住用户选择
-        try {
-          const { readFileSync, writeFileSync, existsSync } = await import("fs");
-          const op = APP_ROOT + "/data/claw-model-overrides.json";
-          let obj: any = {};
-          if (existsSync(op)) { try { obj = JSON.parse(readFileSync(op, "utf8") || "{}"); } catch {} }
-          obj[input.adoptId] = input.modelId;
-          writeFileSync(op, JSON.stringify(obj, null, 2), "utf8");
-        } catch (e) { console.warn("[switchModel] overrides persist failed:", e); }
-
         await recordAuditBestEffort({
           action: "model.switched",
           ...auditActor(ctx.user),
@@ -1016,23 +934,26 @@ export const clawRouter = router({
           targetId: input.adoptId,
           targetName: String((claw as any).agentId || input.adoptId),
           agentInstanceId: input.adoptId,
-          runtimeType: resolveClawRuntime(input.adoptId),
+          runtimeType,
           runtimeAgentId: String((claw as any).agentId || ""),
           metadata: {
             previousModel: previousModel || null,
             model: input.modelId,
-            applied: applied.ok,
-            statusCode: applied.statusCode || null,
-            persistedToConfig: cfgApplied.ok,
+            runtimeModel: jiuwenSelection.runtimeModelId || input.modelId,
+            applied: false,
+            effectiveFrom: "next_request",
+            runtimeManaged: true,
           },
         });
 
         return {
           ok: true,
           model: input.modelId,
-          applied: applied.ok,
-          statusCode: applied.statusCode || null,
-          applyError: applied.ok ? null : applied.error || applied.respText || null,
+          applied: false,
+          statusCode: null,
+          applyError: null,
+          runtimeManaged: true,
+          effectiveFrom: "next_request" as const,
         };
       }),
 
@@ -1508,18 +1429,14 @@ export const clawRouter = router({
 
     adminSystemHealth: adminProcedure.query(async () => {
       const checkedAt = new Date().toISOString();
-      const openclawCli = resolveOpenClawCli();
       const health = {
         ok: true,
         output: JSON.stringify({ status: "ok", timestamp: checkedAt }),
         error: "",
       };
       const pm2 = safeExec("pm2 jlist", 8000);
-      const openclawStatus = safeExec(`${openclawCli} status --json`, 12000);
-      const channelStatus = safeExec(`${openclawCli} channels status --deep`, 12000);
       const gitBranch = safeExec("git rev-parse --abbrev-ref HEAD", 5000);
       const gitCommit = safeExec("git rev-parse --short HEAD", 5000);
-      const openclawProcesses = safeExec("pgrep -af '^openclaw( |$)'", 5000);
 
       const pm2Rows = pm2.ok ? safeJson<any[]>(pm2.output || "[]", []) : [];
       const appName = process.env.PM2_APP_NAME || (APP_ROOT.includes("linggan-platform") ? "linggan-claw" : "employee-agent");
@@ -1534,17 +1451,9 @@ export const clawRouter = router({
       const workers = getBackgroundWorkerSnapshot();
       const alertConfigured = Boolean(String(process.env.EA_ALERT_FEISHU_WEBHOOK_URL || "").trim());
 
-      const openclawJson = openclawStatus.ok ? safeJson<any>(openclawStatus.output, null) : null;
-      const config = existsSync(OPENCLAW_JSON_PATH) ? safeJson<any>(String(readFileSync(OPENCLAW_JSON_PATH, "utf8") || "{}"), {}) : {};
-      const availableModels = getAvailableClawModelsFromConfig();
-      const availableModelIds = new Set(availableModels.map((model) => model.id));
-      const primary = String(config?.agents?.defaults?.model?.primary || "");
-      const agentModelDrift = (Array.isArray(config?.agents?.list) ? config.agents.list : [])
-        .map((agent: any) => {
-          const model = typeof agent?.model === "string" ? agent.model : String(agent?.model?.primary || "");
-          return { id: String(agent?.id || ""), model };
-        })
-        .filter((agent: any) => agent.model && availableModelIds.size > 0 && !availableModelIds.has(agent.model));
+      const availableModels = await getAvailableJiuwenModels();
+      const primary = availableModels.find((model) => model.isDefault)?.id || JIUWEN_AUTO_MODEL_ID;
+      const agentModelDrift: Array<{ id: string; model: string }> = [];
 
       const dbTables = ["users", "claw_adoptions", "skill_marketplace"] as const;
       const dbTableSet = new Set<string>(dbTables);
@@ -1585,14 +1494,7 @@ export const clawRouter = router({
 
       const auditBaseline = await getAuditBaselineHealth();
 
-      const channelLines = channelStatus.output.split(/\r?\n/).filter((line) => line.trim().startsWith("- "));
-      const channels = channelLines.map((line) => ({
-        raw: line.replace(/^\-\s*/, ""),
-        ok: /\brunning\b/.test(line) && !/\bstopped\b|\berror:/i.test(line),
-        warn: /\bdisconnected\b|degraded|timed out/i.test(line),
-      }));
-
-      const processLines = openclawProcesses.output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      const channels: Array<{ raw: string; ok: boolean; warn: boolean }> = [];
       type HealthStatus = "ok" | "warning" | "error" | "disabled";
       type HealthCheck = {
         key: string;
@@ -1715,22 +1617,15 @@ export const clawRouter = router({
       });
 
       const openclawActive = Number(dbHealth.claws?.openclawActive || 0);
-      const openclawEnabled = openclawActive > 0 || process.env.WORKFORCE_AGENT_HEALTH_CHECK_OPENCLAW === "true";
       pushCheck({
         key: "runtime.openclaw",
         group: "runtime",
         label: "OpenClaw Runtime",
         provider: "openclaw",
-        status: !openclawEnabled
-          ? "disabled"
-          : openclawJson?.gateway?.reachable
-            ? "ok"
-            : processLines.length > 0
-              ? "warning"
-              : "error",
-        detail: !openclawEnabled
-          ? "当前没有启用 OpenClaw 智能体"
-          : `active ${openclawActive} · gateway ${openclawJson?.gateway?.reachable ? "reachable" : "unreachable"} · process ${processLines.length}`,
+        status: openclawActive > 0 ? "warning" : "disabled",
+        detail: openclawActive > 0
+          ? `运行时已退役，但数据库仍有 ${openclawActive} 个 active 记录`
+          : "运行时已退役",
       });
 
       pushCheck({
@@ -1777,7 +1672,7 @@ export const clawRouter = router({
         summary,
         checks,
         runtimes: {
-          primary: jiuwenActive > 0 ? "jiuwenswarm" : openclawActive > 0 ? "openclaw" : "none",
+          primary: jiuwenActive > 0 ? "jiuwenswarm" : "none",
           jiuwenswarm: {
             enabled: jiuwenEnabled,
             active: jiuwenActive,
@@ -1789,8 +1684,9 @@ export const clawRouter = router({
             recent: jiuwenRecentLog,
           },
           openclaw: {
-            enabled: openclawEnabled,
+            enabled: false,
             active: openclawActive,
+            retired: true,
           },
         },
         app: {
@@ -1819,20 +1715,18 @@ export const clawRouter = router({
           },
         },
         openclaw: {
-          reachable: Boolean(openclawJson?.gateway?.reachable),
-          version: openclawJson?.runtimeVersion || "",
-          cli: openclawCli.replace(/^'|'$/g, ""),
-          gateway: openclawJson?.gateway || null,
-          service: openclawJson?.gatewayService?.runtimeShort || openclawJson?.gatewayService || null,
-          processCount: processLines.length,
-          processes: processLines,
-          errors: [openclawStatus.error, openclawProcesses.error].filter(Boolean),
+          retired: true,
+          reachable: false,
+          version: "retired",
+          processCount: 0,
+          processes: [],
+          errors: [],
         },
         channels: {
-          ok: channelStatus.ok,
+          ok: true,
           lines: channels,
-          raw: channelStatus.output,
-          error: channelStatus.error || "",
+          raw: "",
+          error: "",
         },
         models: {
           primary,
@@ -2516,7 +2410,7 @@ export const clawRouter = router({
           .object({
             permissionProfile: z.enum(["plus", "internal"]).optional(),
             roleTemplate: z.string().min(1).max(64).optional(),
-            preferRuntime: z.enum(["jiuwenswarm", "openclaw"]).optional(),
+            preferRuntime: z.literal("jiuwenswarm").optional(),
           })
           .optional()
       )
@@ -2535,15 +2429,14 @@ export const clawRouter = router({
         const provisionPlan = resolveRoleRuntimeProvisionPlan(role, {
           jiuwenswarmProvisionEnabled: isJiuwenSwarmProvisionEnabled(),
         });
+        if (provisionPlan.runtime !== "jiuwenswarm") {
+          throw new Error(retiredRuntimeMessage());
+        }
         if (provisionPlan.runtime === "jiuwenswarm" && !isJiuwenSwarmProvisionEnabled()) {
           throw new Error("JiuwenSwarm 当前未配置。请先安装并启用 JiuwenSwarm runtime，再创建岗位智能体。");
         }
         if (preferRuntime && provisionPlan.runtime !== preferRuntime) {
-          throw new Error(
-            preferRuntime === "jiuwenswarm"
-              ? "JiuwenSwarm 当前不可用，请稍后重试"
-              : "OpenClaw 当前不可用，请稍后重试",
-          );
+          throw new Error("JiuwenSwarm 当前不可用，请稍后重试");
         }
 
         // 幂等：只复用目标 runtime 的现有实例，避免老 lgc-* 阻止创建当前默认的 lgj-*。
@@ -2571,8 +2464,8 @@ export const clawRouter = router({
         const ttlDays = 0;
 
         const suffix = randomRuntimeSuffix();
-        const adoptId = provisionPlan.runtime === "jiuwenswarm" ? `lgj-${suffix}` : `lgc-${suffix}`;
-        const agentId = provisionPlan.runtime === "jiuwenswarm" ? `jiuwen_${adoptId}` : `trial_${adoptId}`;
+        const adoptId = `lgj-${suffix}`;
+        const agentId = `jiuwen_${adoptId}`;
         const entryUrl = buildClawEntryUrl(adoptId);
         const expiresAt = null;
 

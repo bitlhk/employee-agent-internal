@@ -1,5 +1,6 @@
 import type { AgentRoleTemplate, AgentRuntime } from "./role-templates";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
+import { retiredRuntimeMessage } from "./runtime-policy";
 
 export type RoleRuntimeProvisionRuntime = AgentRuntime;
 
@@ -62,6 +63,9 @@ export function resolveRoleRuntimeProvisionPlan(
   } = {},
 ): RoleRuntimeProvisionPlan {
   const requestedRuntime = options.forceRuntime || role.runtime;
+  if (requestedRuntime !== "jiuwenswarm") {
+    throw new Error(retiredRuntimeMessage());
+  }
   return {
     requestedRuntime,
     runtime: requestedRuntime,

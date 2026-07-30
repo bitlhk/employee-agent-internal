@@ -93,12 +93,15 @@ function uploadLimitFor(_ext: string, _subPath: string): number {
   return MAX_UPLOAD_BYTES;
 }
 
-function runtimeName(adoptId: string): "openclaw" | "jiuwenclaw" {
-  if (isJiuwenClawAdoptId(adoptId)) return "jiuwenclaw";
-  return "openclaw";
+function runtimeName(adoptId: string): "jiuwenclaw" {
+  if (!isJiuwenClawAdoptId(adoptId)) {
+    throw Object.assign(new Error("Legacy runtime has been archived"), { status: 410 });
+  }
+  return "jiuwenclaw";
 }
 
 function runtimeWorkspace(claw: any, adoptId: string): string {
+  runtimeName(adoptId);
   return resolveRuntimeWorkspace(claw, adoptId);
 }
 
@@ -250,6 +253,18 @@ function openclawListFiles(workspace: string, subPath: string = "", adoptId = ""
 }
 
 export function registerFilesRoutes(app: express.Express) {
+  app.use("/api/claw/files", (req, res, next) => {
+    const adoptId = String(
+      req.method === "GET" ? req.query.adoptId || "" : (req.body as any)?.adoptId || "",
+    ).trim();
+    if (adoptId && !isJiuwenClawAdoptId(adoptId)) {
+      return res.status(410).json({
+        error: "RUNTIME_RETIRED",
+        message: "Legacy runtime has been archived",
+      });
+    }
+    next();
+  });
 
   app.get("/api/claw/files/capabilities", async (req, res) => {
     try {

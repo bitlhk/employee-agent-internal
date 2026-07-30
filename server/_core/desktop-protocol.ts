@@ -31,7 +31,7 @@ export function resolveDesktopRuntimeType(
     .trim()
     .toLowerCase();
   if (/(^|_)lgj-/.test(normalized)) return "jiuwenswarm";
-  if (/(^|_)lgh-/.test(normalized)) return "legacy_archived";
+  if (/(^|_)lg[ch]-/.test(normalized)) return "legacy_archived";
   return "unknown";
 }
 

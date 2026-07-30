@@ -20,12 +20,12 @@ import {
 } from "fs";
 import {
   getClawByAdoptId,
-  getCurrentClawByUserId,
   getSkillMarketItem,
   getUserByEmail,
   getUserById,
   incrementSkillDownload,
   listApprovedSkillMarketItems,
+  listClawsByUserId,
 } from "../db";
 import { sdk, sessionAuthVersion } from "./sdk";
 import { isAdminMfaEnabled } from "./admin-mfa";
@@ -38,7 +38,7 @@ import {
   resolveRuntimeAgentId,
   resolveRuntimeWorkspaceByIds,
 } from "./helpers";
-import { OpenClawCronProvider } from "./cron/openclaw-cron-provider";
+import { JiuwenClawCronProvider } from "./cron/jiuwenclaw-cron-provider";
 import type { CronProviderHandle } from "@shared/types/cron";
 import { normalizeWsEvent } from "./runtime";
 import { buildRuntimeUserMessage } from "./tool_schema";
@@ -49,12 +49,6 @@ import {
   startFeishuBindFlow,
   unbindFeishu,
 } from "./claw-feishu";
-import {
-  cleanupOpenClawWeixinBindingForAdopt,
-  desktopPollWeixinBind,
-  desktopStartWeixinBind,
-  getWeixinStatus,
-} from "./claw-weixin";
 import { skillRegistry } from "./skills/skill-registry";
 import { parseSkillSourceDirectory } from "./skills/skill-source";
 import { remapLegacySkillMarketPath } from "./skills/skill-store";
@@ -199,28 +193,32 @@ function defaultDesktopAdoptId(): string | null {
 // For numeric user IDs, queries the DB for the user's active adoption.
 // Falls back to the global default agent for the MVP token user.
 async function getDesktopUserClaw(user: DesktopUser) {
+  let claw = null;
   if (user.id === "desktop-mvp-user") {
     const adoptId = defaultDesktopAdoptId();
-    return adoptId ? getClawByAdoptId(adoptId) : null;
+    claw = adoptId ? await getClawByAdoptId(adoptId) : null;
+  } else {
+    const uid = Number(user.id);
+    if (!Number.isNaN(uid) && uid > 0) {
+      const adoptions = await listClawsByUserId(uid);
+      claw = adoptions.find((item) => resolveDesktopRuntimeType(item.adoptId) === "jiuwenswarm") || null;
+    }
   }
-  const uid = Number(user.id);
-  if (!Number.isNaN(uid) && uid > 0) {
-    return getCurrentClawByUserId(uid);
-  }
-  return null;
+  return claw && resolveDesktopRuntimeType(claw.adoptId) === "jiuwenswarm"
+    ? claw
+    : null;
 }
 
 async function listDesktopChannels(adoptId: string): Promise<{ channels: DesktopChannelStatus[] }> {
-  const weixin = getWeixinStatus(adoptId);
   const feishu = await getFeishuStatus(adoptId);
 
   return {
     channels: [
       {
         key: "weixin",
-        status: weixin.bound ? "connected" : "not_connected",
+        status: "unsupported",
         label: "微信",
-        detail: weixin.targetLabel || weixin.userId || weixin.accountId || "",
+        detail: "当前 JiuwenSwarm 桌面协议暂未接入",
       },
       {
         key: "feishu",
@@ -1420,7 +1418,7 @@ function desktopSerializeEntries(entries: { index: number; content: string }[]):
 
 // ── Desktop Cron ────────────────────────────────────────────────────────────
 
-const desktopCronProvider = new OpenClawCronProvider();
+const desktopCronProvider = new JiuwenClawCronProvider();
 
 function desktopCronHandle(claw: any): CronProviderHandle {
   const adoptId = String(claw.adoptId || "");
@@ -1428,7 +1426,7 @@ function desktopCronHandle(claw: any): CronProviderHandle {
     adoptId,
     agentId: resolveRuntimeAgentId(adoptId, claw.agentId),
     userId: Number(claw.userId || 0),
-    runtime: "openclaw",
+    runtime: "jiuwenclaw",
   };
 }
 
@@ -1521,26 +1519,14 @@ export function registerDesktopRoutes(app: express.Express) {
     const user = await requireDesktopUser(req, res);
     if (!user) return;
     const base = publicBaseUrl(req);
-    const wsBase = publicWsBaseUrl(req);
     const claw = await getDesktopUserClaw(user);
     const agentId = claw?.agentId || defaultDesktopAgentId();
-    const runtimeType = resolveDesktopRuntimeType(
-      claw?.adoptId || defaultDesktopAdoptId()
-    );
     res.json({
       ...desktopProtocolMetadata(claw?.adoptId || defaultDesktopAdoptId()),
       mode: "mvp",
       user,
-      gatewayUrl:
-        runtimeType === "jiuwenswarm"
-          ? `${base}/api/desktop/jiuwen`
-          : process.env.DESKTOP_OPENCLAW_GATEWAY_URL ||
-            `${base}/api/desktop/openclaw`,
-      gatewayWsUrl:
-        runtimeType === "jiuwenswarm"
-          ? ""
-          : process.env.DESKTOP_OPENCLAW_GATEWAY_WS_URL ||
-            `${wsBase}/api/desktop/openclaw/ws`,
+      gatewayUrl: `${base}/api/desktop/jiuwen`,
+      gatewayWsUrl: "",
       gatewayToken: bearerToken(req),
       defaultAgentId: agentId,
       agents: agentId
@@ -1553,10 +1539,6 @@ export function registerDesktopRoutes(app: express.Express) {
           ]
         : [],
     });
-  });
-
-  app.get("/api/desktop/openclaw/health", (_req, res) => {
-    res.json({ status: "ok", mode: "desktop-openclaw-proxy" });
   });
 
   app.get("/api/desktop/jiuwen/health", (_req, res) => {
@@ -1696,36 +1678,6 @@ export function registerDesktopRoutes(app: express.Express) {
     }
   });
 
-  app.post("/api/desktop/channels/weixin/begin", async (req, res) => {
-    const user = await requireDesktopUser(req, res);
-    if (!user) return;
-    try {
-      const claw = await getDesktopUserClaw(user);
-      if (!claw) return res.status(404).json({ error: "no agent assigned" });
-      const result = await desktopStartWeixinBind(claw.adoptId);
-      if (!result.ok) return res.status(502).json({ error: result.error });
-      const qrDataUrl = await toQrDataUrl(result.qrCode);
-      res.json({ qrCode: result.qrCode, pollToken: result.pollToken, qrDataUrl });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "weixin begin failed" });
-    }
-  });
-
-  app.post("/api/desktop/channels/weixin/poll", async (req, res) => {
-    const user = await requireDesktopUser(req, res);
-    if (!user) return;
-    try {
-      const pollToken = String(req.body?.pollToken || "").trim();
-      if (!pollToken) return res.status(400).json({ error: "pollToken required" });
-      const claw = await getDesktopUserClaw(user);
-      if (!claw) return res.status(404).json({ error: "no agent assigned" });
-      const result = await desktopPollWeixinBind(claw.adoptId, claw, pollToken);
-      res.json(result);
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : "weixin poll failed" });
-    }
-  });
-
   app.post("/api/desktop/channels/feishu/begin", async (req, res) => {
     const user = await requireDesktopUser(req, res);
     if (!user) return;
@@ -1765,10 +1717,6 @@ export function registerDesktopRoutes(app: express.Express) {
     try {
       const claw = await getDesktopUserClaw(user);
       if (!claw) return res.status(404).json({ error: "no agent assigned" });
-      if (key === "weixin") {
-        cleanupOpenClawWeixinBindingForAdopt(claw.adoptId, claw);
-        return res.json({ ok: true });
-      }
       if (key === "feishu") {
         await unbindFeishu(claw.adoptId);
         return res.json({ ok: true });
@@ -1816,7 +1764,6 @@ export function registerDesktopRoutes(app: express.Express) {
     }
   );
 
-  app.post("/api/desktop/openclaw/v1/chat/completions", forwardOpenClawChat);
   app.post("/api/desktop/jiuwen/v1/chat/completions", forwardJiuwenDesktopChat);
 
   // ── Soul management for enterprise desktop mode ──────────────────────────

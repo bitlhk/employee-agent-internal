@@ -51,7 +51,6 @@ import { startRecycler } from "./recycler";
 import { registerCronRoutes } from "./claw-cron";
 import { registerJiuwenWebhookRoutes } from "./jiuwen-webhook";
 import { registerNotifyRoutes } from "./claw-notify";
-import { registerWeixinRoutes } from "./claw-weixin";
 import { registerFeishuRoutes } from "./claw-feishu";
 import { registerSkillRoutes } from "./claw-skills";
 import { registerCollabRoutes } from "./claw-collab";
@@ -68,15 +67,13 @@ import { registerFilesRoutes } from "./claw-files";
 import { registerSandboxRoutes } from "./claw-sandbox";
 import { registerManagedBrowserRoutes } from "./managed-browser";
 import { registerChatStreamRoutes } from "./claw-chat";
-import { registerRecoverRoutes } from "./claw-recover";
 import { registerCoopUploadRoutes } from "./coop-upload";
 import { registerEaSessionViewRoutes } from "./ea-session-view";
 import { registerEaAssistantRoutes } from "./ea-assistant-routes";
-import { registerWSProxy } from "./claw-ws-proxy";
 import { registerMiscRoutes } from "./claw-misc";
 import { registerAuditExportRoutes } from "./audit-export-routes";
 import { registerAuditIngestRoutes } from "./claw-audit-ingest";
-import { registerDesktopRoutes, registerDesktopWSProxy } from "./desktop";
+import { registerDesktopRoutes } from "./desktop";
 import { registerKnowledgeRoutes } from "./knowledge-routes";
 import { registerMonitoringRoutes } from "./monitoring-routes";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
@@ -108,7 +105,6 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-let openClawVersionCache: { value: string; expiresAt: number } | null = null;
 let runtimeVersionsCache: {
   value: {
     openclaw: string;
@@ -129,14 +125,6 @@ logInfo("role_template.baseline_loaded", {
 function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}): void {
   if (!iosLoadDebugEnabled) return;
   console.log(`[IOS-LOAD] ${message}`, fields);
-}
-
-function readOpenClawVersion(): string {
-  try {
-    return String(execSync("openclaw --version", { encoding: "utf-8", timeout: 2500 }) || "").trim() || "unknown";
-  } catch {
-    return "unknown";
-  }
 }
 
 function readPm2ProcessScriptPath(processName: string): string | null {
@@ -446,10 +434,7 @@ async function startServer() {
   registerJiuwenWebhookRoutes(app);
   registerCronRoutes(app);
   registerNotifyRoutes(app);
-  registerWeixinRoutes(app);
   registerFeishuRoutes(app);
-  // 启动微信双向聊天桥
-  import("./claw-weixin-bridge").then(m => m.startWeixinBridge()).catch(e => console.error("weixin bridge start failed:", e));
   // 启动 cron 结果投递轮询（岗位智能体平台侧，补充 Gateway 不支持的渠道）
   void startManagedWorkerAsync("cron_delivery", async () => {
     const module = await import("./cron-delivery");
@@ -471,12 +456,9 @@ async function startServer() {
   registerSandboxRoutes(app);
   registerManagedBrowserRoutes(app);
   registerChatStreamRoutes(app);
-  registerRecoverRoutes(app);
   registerCoopUploadRoutes(app);
   registerEaSessionViewRoutes(app);
   registerEaAssistantRoutes(app);
-  registerWSProxy(server);
-  registerDesktopWSProxy(server);
   registerMiscRoutes(app);
   registerAuditExportRoutes(app);
   registerAuditIngestRoutes(app);
@@ -575,15 +557,7 @@ async function startServer() {
   });
 
   app.get("/api/meta/openclaw-version", async (_req, res) => {
-    const now = Date.now();
-    if (openClawVersionCache && openClawVersionCache.expiresAt > now) {
-      res.json({ version: openClawVersionCache.value });
-      return;
-    }
-
-    const version = readOpenClawVersion();
-    openClawVersionCache = { value: version, expiresAt: now + (version === "unknown" ? 30 * 1000 : 5 * 60 * 1000) };
-    res.json({ version });
+    res.json({ version: "retired", retired: true });
   });
 
   app.get("/api/meta/runtime-versions", async (_req, res) => {
@@ -594,7 +568,7 @@ async function startServer() {
     }
 
     const value = {
-      openclaw: readOpenClawVersion(),
+      openclaw: "retired",
       jiuwenswarm: readJiuwenSwarmVersion(),
     };
     const hasUnknown = Object.values(value).some((version) => version === "unknown");

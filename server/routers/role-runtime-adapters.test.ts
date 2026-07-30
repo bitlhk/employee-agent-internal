@@ -2,9 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
-import { missingDefaultRoleSkills } from "./role-runtime-adapters";
+import { getRoleRuntimeAdapter, missingDefaultRoleSkills } from "./role-runtime-adapters";
 
 describe("role runtime default skill preflight", () => {
+  it("exposes only the active JiuwenSwarm adapter", () => {
+    expect(getRoleRuntimeAdapter("jiuwenswarm").runtime).toBe("jiuwenswarm");
+    expect(() => getRoleRuntimeAdapter("openclaw")).toThrow("OpenClaw runtime has been retired");
+  });
+
   it("reports only default skills that do not have a deployable SKILL.md", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-role-preflight-"));
     try {

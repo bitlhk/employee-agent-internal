@@ -8,7 +8,7 @@ The refactor must preserve:
 - request and response payloads
 - authentication and ownership checks
 - database schema and migration history
-- JiuwenSwarm and optional OpenClaw behavior
+- JiuwenSwarm behavior and historical `/api/claw/*` API compatibility
 - the existing test baseline
 
 File size is not itself the target. The target is one-directional dependencies, independently testable route groups, and explicit service boundaries.
@@ -67,6 +67,10 @@ Desktop is split only after the server modules above stabilize:
 - workspace file routes
 
 The WebSocket connection state remains owned by one transport module. It must not be distributed across route modules.
+
+OpenClaw transport, provisioning, recovery, and channel adapters are retired.
+They must not be reintroduced into extracted modules. Historical `claw` route
+names remain stable until a separately versioned public API migration exists.
 
 ## Frontend Home
 

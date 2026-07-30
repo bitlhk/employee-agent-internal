@@ -19,6 +19,7 @@ describe("desktop protocol metadata", () => {
     expect(resolveDesktopRuntimeType("lgj-demo")).toBe("jiuwenswarm");
     expect(resolveDesktopRuntimeType("jiuwen_lgj-demo")).toBe("jiuwenswarm");
     expect(resolveDesktopRuntimeType("lgh-demo")).toBe("legacy_archived");
+    expect(resolveDesktopRuntimeType("lgc-demo")).toBe("legacy_archived");
     expect(resolveDesktopRuntimeType(null)).toBe("unknown");
   });
 

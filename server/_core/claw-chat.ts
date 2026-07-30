@@ -31,6 +31,7 @@ import {
 } from "./chat-inflight";
 import { restoreDeletedProtectedCoreFiles, snapshotProtectedCoreFiles } from "./core-file-guard";
 import { scheduleOpenClawToolAudit } from "./openclaw-tool-audit";
+import { isActiveJiuwenAdoptId, retiredRuntimeMessage } from "./runtime-policy";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { privateMessageLogFields } from "./log-privacy";
 import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
@@ -292,9 +293,15 @@ export function registerChatStreamRoutes(app: express.Express) {
       if (!claw) return;
     }
 
+    if (!isActiveJiuwenAdoptId(adoptId)) {
+      return res.status(410).json({
+        error: "RUNTIME_RETIRED",
+        message: retiredRuntimeMessage(),
+      });
+    }
+
     // ── JiuwenClaw runtime branch (lgj-*) ──────────────────────────
-    // lgj-* is the JiuwenClaw lane. lgh-* remains reserved for legacy
-    // archived instances; lgc-* keeps the existing OpenClaw path.
+    // JiuwenSwarm is the only active main-chat runtime.
     if (String(adoptId).startsWith("lgj-")) {
       const chatMetric = beginChatRequest("jiuwenswarm");
       const runtimeMetric = beginRuntimeCall("jiuwenswarm");
@@ -466,10 +473,6 @@ export function registerChatStreamRoutes(app: express.Express) {
         },
       );
       return;
-    }
-
-    if (String(adoptId).startsWith("lgh-")) {
-      return res.status(410).json({ error: "LEGACY_RUNTIME_ARCHIVED", message: "Legacy runtime has been archived. Use a JiuwenClaw adoption instead." });
     }
 
     // 安全校验：agentId 必须符合预期格式，防止 shell 注入

@@ -14,8 +14,7 @@
       "internal"
     ],
     "runtimes": [
-      "jiuwenswarm",
-      "openclaw"
+      "jiuwenswarm"
     ],
     "origins": [
       "opensource",
@@ -41,7 +40,7 @@
   "runtimePolicy": {
     "defaultRuntime": "jiuwenswarm",
     "fallbackRuntime": "jiuwenswarm",
-    "selection": "JiuwenSwarm is the default role runtime. If it is unavailable, provisioning fails closed until an administrator configures a supported runtime; no OpenClaw fallback is applied."
+    "selection": "JiuwenSwarm is the only active role runtime. If it is unavailable, provisioning fails closed."
   },
   "uiPolicy": {
     "applyFlow": "New users start with the general assistant. Add industry roles in an external baseline for production deployments.",

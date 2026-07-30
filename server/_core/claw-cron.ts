@@ -21,7 +21,8 @@ async function capabilitiesForClaw(claw: any) {
 }
 
 function isLegacyArchivedAdopt(adoptId: string): boolean {
-  return String(adoptId || "").startsWith("lgh-");
+  // OpenClaw and unknown runtime identifiers are retired and must fail closed.
+  return !isJiuwenClawAdoptId(String(adoptId || ""));
 }
 
 function toOpenClawHandle(claw: any): SharedCronProviderHandle {

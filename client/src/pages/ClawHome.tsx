@@ -490,7 +490,7 @@ export default function ClawHome() {
   });
 
   const handleAdopt = async (
-    options: { preferRuntime?: "jiuwenswarm" | "openclaw" } = {}
+    options: { preferRuntime?: "jiuwenswarm" } = {}
   ) => {
     if (!user) {
       setLocation("/login?redirect=/");

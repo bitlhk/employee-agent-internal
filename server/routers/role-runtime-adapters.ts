@@ -9,17 +9,13 @@ import { existsSync, mkdirSync } from "fs";
 import path from "path";
 import { writeJiuwenSwarmRoleScopeManifest } from "../_core/jiuwenswarm-role-scope";
 import { ensureJiuwenSwarmWorkspacePermission } from "../_core/jiuwenswarm-permissions";
-import { applyOpenClawRoleScope } from "../_core/openclaw-role-scope";
-import { OPENCLAW_JSON_PATH, openClawWorkspaceDir, resolveRuntimeWorkspaceByIds } from "../_core/helpers";
+import { resolveRuntimeWorkspaceByIds } from "../_core/helpers";
 import { skillSourceDirsForRuntime } from "../_core/skills/skill-store";
 import { isJiuwenClawRuntimeEnabled } from "../_core/jiuwenclaw-bridge";
 import { bumpSessionEpoch } from "../_core/helpers";
 import { resolvePersistedAgentMcpSelection } from "../db/agent-mcp-preferences";
-import { provisionEmployeeAgentInstance } from "./helpers";
-
-function noOpReconcile(reason: string): RoleRuntimeReconcileResult {
-  return { ok: true, applied: false, changed: 0, skipped: 0, reason };
-}
+import type { AgentRuntime } from "../_core/role-templates";
+import { retiredRuntimeMessage } from "../_core/runtime-policy";
 
 export function missingDefaultRoleSkills(defaultSkillIds: string[], sourceDirs: string[]): string[] {
   return Array.from(new Set(defaultSkillIds.map((id) => String(id || "").trim()).filter(Boolean)))
@@ -34,60 +30,6 @@ function assertDefaultRoleSkillsAvailable(input: RoleRuntimeReconcileInput | Rol
   );
   if (missing.length > 0) {
     throw new Error(`岗位 ${input.role.name} 的默认技能尚未部署: ${missing.join(", ")}`);
-  }
-}
-
-class OpenClawRoleRuntimeAdapter implements RoleRuntimeAdapter {
-  readonly runtime = "openclaw" as const;
-
-  provision(input: RoleRuntimeProvisionInput): RoleRuntimeProvisionResult {
-    assertDefaultRoleSkillsAvailable(input);
-    const result = provisionEmployeeAgentInstance({
-      adoptId: input.adoptId,
-      agentId: input.agentId,
-      userId: input.userId,
-      permissionProfile: input.permissionProfile,
-      ttlDays: input.ttlDays,
-    });
-    return { ok: true, mode: result.mode, runtime: this.runtime, result };
-  }
-
-  reconcileSkills(input: RoleRuntimeReconcileInput): RoleRuntimeReconcileResult {
-    assertDefaultRoleSkillsAvailable(input);
-    const result = applyOpenClawRoleScope({
-      configPath: OPENCLAW_JSON_PATH,
-      agentId: input.agentId,
-      effectiveAssets: input.effectiveAssets,
-      activeSkillIds: input.activeSkillIds,
-      disabledDefaultSkillIds: input.disabledDefaultSkillIds,
-      workspaceDir: openClawWorkspaceDir(input.agentId),
-      skillSourceDirs: skillSourceDirsForRuntime(),
-    });
-    const changed =
-      Number(result.skillAllowlistChanged) +
-      Number(result.mcpProjectionChanged) +
-      result.linkedSharedSkills.length +
-      result.removedSharedSkills.length;
-    return {
-      ok: true,
-      applied: changed > 0,
-      changed,
-      skipped: result.agentFound ? 0 : 1,
-      reason: result.agentFound ? undefined : "OpenClaw agent entry not found in openclaw.json",
-    };
-  }
-
-  reconcileMcp(_input: RoleRuntimeReconcileInput): RoleRuntimeReconcileResult {
-    return noOpReconcile("OpenClaw MCP projection is applied together with role-scoped skill reconciliation");
-  }
-
-  bumpSessionEpoch(adoptId: string): number {
-    return bumpSessionEpoch(adoptId);
-  }
-
-  audit(): void {
-    // Central audit is still recorded by the caller. Adapter-level audit hooks
-    // become the single capture point once reconcile mutates runtime state.
   }
 }
 
@@ -173,13 +115,13 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
   }
 }
 
-const adapters = {
-  openclaw: new OpenClawRoleRuntimeAdapter(),
-  jiuwenswarm: new JiuwenSwarmRoleRuntimeAdapter(),
-};
+const jiuwenSwarmAdapter = new JiuwenSwarmRoleRuntimeAdapter();
 
-export function getRoleRuntimeAdapter(runtime: keyof typeof adapters): RoleRuntimeAdapter {
-  return adapters[runtime];
+export function getRoleRuntimeAdapter(runtime: AgentRuntime): RoleRuntimeAdapter {
+  if (runtime !== "jiuwenswarm") {
+    throw new Error(retiredRuntimeMessage());
+  }
+  return jiuwenSwarmAdapter;
 }
 
 export function isJiuwenSwarmProvisionEnabled(): boolean {
