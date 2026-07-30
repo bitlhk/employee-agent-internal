@@ -1,6 +1,10 @@
-import { existsSync, statfsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statfsSync, statSync } from "node:fs";
 import path from "node:path";
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics } from "prom-client";
+import {
+  parseReleaseEvidence,
+  parseRestoreDrillEvidence,
+} from "./operational-evidence";
 
 export const metricsRegistry = new Registry();
 
@@ -142,6 +146,118 @@ const backupLastValidation = new Gauge({
     );
     try {
       this.set(existsSync(statusFile) ? statSync(statusFile).mtimeMs / 1000 : 0);
+    } catch {
+      this.set(0);
+    }
+  },
+});
+
+function deploymentLogPath(): string {
+  return String(
+    process.env.EA_DEPLOYMENT_LOG_FILE
+      || path.join(process.env.EA_DEPLOY_ROOT || "/opt/employee-agent", "deployments.log"),
+  );
+}
+
+function restoreDrillStatusPath(): string {
+  return String(
+    process.env.RESTORE_DRILL_STATUS_FILE
+      || path.join(
+        process.env.RESTORE_DRILL_ROOT || "/var/lib/employee-agent-restore-drills",
+        ".last-success-report",
+      ),
+  );
+}
+
+const releaseEvents30d = new Gauge({
+  name: "ea_release_events_30d",
+  help: "Release control events observed in the last 30 days.",
+  labelNames: ["action", "result"] as const,
+  registers: [metricsRegistry],
+  collect() {
+    this.reset();
+    try {
+      const rows = parseReleaseEvidence(readFileSync(deploymentLogPath(), "utf8"));
+      const counts = new Map<string, number>();
+      for (const row of rows) {
+        const key = `${row.action}:${row.result}`;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      for (const action of ["prepare", "deploy", "rollback"] as const) {
+        for (const result of ["success", "failed"] as const) {
+          this.set({ action, result }, counts.get(`${action}:${result}`) || 0);
+        }
+      }
+    } catch {
+      for (const action of ["prepare", "deploy", "rollback"] as const) {
+        for (const result of ["success", "failed"] as const) this.set({ action, result }, 0);
+      }
+    }
+  },
+});
+
+const releaseLastEvent = new Gauge({
+  name: "ea_release_last_event_timestamp_seconds",
+  help: "Unix timestamp of the most recent release control event.",
+  labelNames: ["action", "result"] as const,
+  registers: [metricsRegistry],
+  collect() {
+    this.reset();
+    try {
+      const rows = parseReleaseEvidence(readFileSync(deploymentLogPath(), "utf8"));
+      const latest = new Map<string, number>();
+      for (const row of rows) {
+        const key = `${row.action}:${row.result}`;
+        latest.set(key, Math.max(latest.get(key) || 0, row.timestampSeconds));
+      }
+      for (const [key, timestampSeconds] of latest) {
+        const [action, result] = key.split(":") as [
+          "prepare" | "deploy" | "rollback",
+          "success" | "failed",
+        ];
+        this.set({ action, result }, timestampSeconds);
+      }
+    } catch {
+      // Missing deployment evidence is represented by an absent series.
+    }
+  },
+});
+
+const restoreDrillLastSuccess = new Gauge({
+  name: "ea_restore_drill_last_success_timestamp_seconds",
+  help: "Unix timestamp of the most recent successful isolated restore drill.",
+  registers: [metricsRegistry],
+  collect() {
+    try {
+      const statusFile = restoreDrillStatusPath();
+      const evidence = parseRestoreDrillEvidence(readFileSync(statusFile, "utf8"));
+      this.set(evidence ? statSync(statusFile).mtimeMs / 1_000 : 0);
+    } catch {
+      this.set(0);
+    }
+  },
+});
+
+const restoreDrillRpo = new Gauge({
+  name: "ea_restore_drill_rpo_seconds",
+  help: "RPO measured by the most recent successful isolated restore drill.",
+  registers: [metricsRegistry],
+  collect() {
+    try {
+      this.set(parseRestoreDrillEvidence(readFileSync(restoreDrillStatusPath(), "utf8"))?.rpoSeconds || 0);
+    } catch {
+      this.set(0);
+    }
+  },
+});
+
+const restoreDrillRto = new Gauge({
+  name: "ea_restore_drill_rto_seconds",
+  help: "RTO measured by the most recent successful isolated restore drill.",
+  registers: [metricsRegistry],
+  collect() {
+    try {
+      this.set(parseRestoreDrillEvidence(readFileSync(restoreDrillStatusPath(), "utf8"))?.rtoSeconds || 0);
     } catch {
       this.set(0);
     }

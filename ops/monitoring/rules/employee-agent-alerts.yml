@@ -1,4 +1,58 @@
 groups:
+  - name: employee-agent-slo-recording
+    interval: 30s
+    rules:
+      - record: ea:slo_chat_success_ratio:30m
+        expr: |
+          (
+            sum(rate(ea_chat_requests_total{outcome="success"}[30m]))
+            /
+            clamp_min(sum(rate(ea_chat_requests_total{outcome!="cancelled"}[30m])), 0.001)
+          )
+          and sum(rate(ea_chat_requests_total{outcome!="cancelled"}[30m])) > 0
+
+      - record: ea:slo_mcp_success_ratio:30m
+        expr: |
+          (
+            sum(rate(ea_mcp_calls_total{outcome=~"success|empty"}[30m]))
+            /
+            clamp_min(sum(rate(ea_mcp_calls_total{outcome!="cancelled"}[30m])), 0.001)
+          )
+          and sum(rate(ea_mcp_calls_total{outcome!="cancelled"}[30m])) > 0
+
+      - record: ea:slo_knowledge_success_ratio:30m
+        expr: |
+          (
+            sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome=~"success|empty"}[30m]))
+            /
+            clamp_min(sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[30m])), 0.001)
+          )
+          and sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[30m])) > 0
+
+      - record: ea:slo_chat_first_token_p95_seconds:10m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ea_chat_first_token_duration_seconds_bucket[10m]))
+          )
+          and sum(rate(ea_chat_first_token_duration_seconds_count[10m])) > 0
+
+      - record: ea:slo_mcp_status_p95_seconds:10m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ea_http_request_duration_seconds_bucket{route="/api/claw/mcp-tools/status"}[10m]))
+          )
+          and sum(rate(ea_http_request_duration_seconds_count{route="/api/claw/mcp-tools/status"}[10m])) > 0
+
+      - record: ea:slo_knowledge_search_p95_seconds:10m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(ea_operational_activity_duration_seconds_bucket{activity="knowledge_search"}[10m]))
+          )
+          and sum(rate(ea_operational_activity_duration_seconds_count{activity="knowledge_search"}[10m])) > 0
+
   - name: employee-agent-availability
     rules:
       - alert: EmployeeAgentUnavailable
@@ -119,8 +173,59 @@ groups:
           summary: Employee Agent backup validation is stale or missing
           description: No checksum and decryption validation has passed within 26 hours.
 
+      - alert: EmployeeAgentRestoreDrillStale
+        expr: |
+          ea_restore_drill_last_success_timestamp_seconds == 0
+          or time() - ea_restore_drill_last_success_timestamp_seconds > 3024000
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent restore evidence is stale or missing
+          description: No successful isolated restore drill has been recorded within 35 days.
+
+      - alert: EmployeeAgentRestoreRpoExceeded
+        expr: ea_restore_drill_rpo_seconds > 86400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent restore RPO exceeded its objective
+          description: The latest isolated restore drill used a snapshot older than 24 hours.
+
+      - alert: EmployeeAgentRestoreRtoExceeded
+        expr: ea_restore_drill_rto_seconds > 14400
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent restore RTO exceeded its objective
+          description: The latest isolated restore drill took longer than four hours.
+
+      - alert: EmployeeAgentReleaseFailed
+        expr: |
+          ea_release_last_event_timestamp_seconds{action="deploy",result="failed"} > 0
+          and time() - ea_release_last_event_timestamp_seconds{action="deploy",result="failed"} < 900
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent release activation failed
+          description: A release failed its activation or verification gate within the last 15 minutes.
+
   - name: employee-agent-workloads
     rules:
+      - alert: EmployeeAgentChatSuccessSloMiss
+        expr: |
+          ea:slo_chat_success_ratio:30m < 0.98
+          and sum(increase(ea_chat_requests_total{outcome!="cancelled"}[30m])) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent chat success SLO is below target
+          description: Non-cancelled chat success has remained below 98% over the last 30 minutes.
+
       - alert: EmployeeAgentChatFirstTokenSlow
         expr: |
           histogram_quantile(
@@ -135,6 +240,17 @@ groups:
           summary: Employee Agent chat first-token latency is elevated
           description: Chat p95 time to first visible token has exceeded 20 seconds for ten minutes.
 
+      - alert: EmployeeAgentMcpStatusSlow
+        expr: |
+          ea:slo_mcp_status_p95_seconds:10m > 1.5
+          and sum(increase(ea_http_request_duration_seconds_count{route="/api/claw/mcp-tools/status"}[10m])) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent MCP status query is slow
+          description: MCP status p95 has exceeded 1.5 seconds with sufficient traffic.
+
       - alert: EmployeeAgentMcpCallsFailing
         expr: increase(ea_mcp_calls_total{outcome=~"error|timeout"}[15m]) >= 3
         for: 2m
@@ -143,6 +259,17 @@ groups:
         annotations:
           summary: Multiple MCP tool calls have failed
           description: At least three MCP calls failed or timed out in the last 15 minutes.
+
+      - alert: EmployeeAgentMcpSuccessSloMiss
+        expr: |
+          ea:slo_mcp_success_ratio:30m < 0.97
+          and sum(increase(ea_mcp_calls_total{outcome!="cancelled"}[30m])) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent MCP success SLO is below target
+          description: Non-cancelled MCP success has remained below 97% over the last 30 minutes.
 
       - alert: EmployeeAgentSandboxExecutionsFailing
         expr: increase(ea_sandbox_executions_total{outcome=~"error|timeout"}[15m]) >= 3
@@ -188,3 +315,25 @@ groups:
         annotations:
           summary: A knowledge indexing job failed
           description: At least one knowledge indexing job failed in the last 30 minutes.
+
+      - alert: EmployeeAgentKnowledgeSearchSloMiss
+        expr: |
+          ea:slo_knowledge_success_ratio:30m < 0.99
+          and sum(increase(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[30m])) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent knowledge search SLO is below target
+          description: Knowledge search success has remained below 99% over the last 30 minutes.
+
+      - alert: EmployeeAgentKnowledgeSearchSlow
+        expr: |
+          ea:slo_knowledge_search_p95_seconds:10m > 2.5
+          and sum(increase(ea_operational_activity_duration_seconds_count{activity="knowledge_search"}[10m])) >= 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Employee Agent knowledge search is slow
+          description: Knowledge search p95 has exceeded 2.5 seconds with sufficient traffic.

@@ -8,6 +8,7 @@ import { SignJWT, jwtVerify, type JWTPayload } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
+import { touchAuthenticatedUserActivity } from "./session-activity";
 import { sessionRevocations } from "./session-revocations";
 
 export type SessionPayload = {
@@ -415,7 +416,7 @@ async function oauthUser(
     }
   }
   if (!user) throw ForbiddenError("User not found");
-  await db.upsertUser({ openId: user.openId, lastSignedIn: signedInAt });
+  touchAuthenticatedUserActivity(user.id, signedInAt);
   return user;
 }
 
@@ -429,10 +430,8 @@ async function passwordUser(
   if (!user) throw ForbiddenError("User not found");
 
   if (process.env.NODE_ENV !== "development") {
-    await db.updateUser(userId, { lastSignedIn: signedInAt });
-    user = await db.getUserById(userId);
+    touchAuthenticatedUserActivity(userId, signedInAt);
   }
-  if (!user) throw ForbiddenError("User not found");
   return user;
 }
 

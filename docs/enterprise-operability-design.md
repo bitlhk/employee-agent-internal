@@ -95,7 +95,8 @@ Targets:
 - Daily local encrypted backup.
 - Weekly encrypted off-site copy.
 - Thirty-day default retention, configurable by deployment.
-- A quarterly isolated restore exercise.
+- A monthly isolated data-layer restore exercise on a recovery host.
+- A quarterly full-application restore exercise.
 - Restore documentation records RPO, RTO, backup timestamp, source host, checksums, and validation results.
 
 The backup process must not include caches, dependency directories, transient sandboxes, sockets, or process logs unless explicitly required for incident retention.

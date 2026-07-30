@@ -45,6 +45,11 @@ Administrators can view the provisioned operations dashboard from
 still authenticates every proxied dashboard and data-query request as an
 administrator.
 
+The recording and alert rules implement the objectives documented in
+`docs/service-level-objectives.md`. Release evidence is read from the bounded
+deployment ledger, and restore RPO/RTO evidence is read from the latest
+successful isolated restore report.
+
 ## Boundaries
 
 - Metrics contain bounded operational categories and no user, Agent, conversation, document, filename, prompt, or credential labels.

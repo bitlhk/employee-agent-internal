@@ -110,6 +110,18 @@ The default drill budget is 3 GB memory, 2 CPU, and a 4 GB tmpfs. Override
 `RESTORE_DRILL_MYSQL_MEMORY`, `RESTORE_DRILL_MYSQL_CPUS`, or
 `RESTORE_DRILL_MYSQL_TMPFS_SIZE` on a smaller dedicated recovery host.
 
+On the approved isolated recovery host, install the monthly timer explicitly:
+
+```bash
+sudo RESTORE_DRILL_RECOVERY_HOST=1 \
+  /root/employee-agent/scripts/install-restore-drill-timer.sh
+```
+
+The installer refuses to run without the recovery-host acknowledgement. It
+does not enable scheduled restore work on the production application host. The
+timer writes its latest successful bounded report to
+`/var/lib/employee-agent-restore-drills/.last-success-report`.
+
 1. Provision an isolated host with matching MySQL, Node.js, Python, JiuwenSwarm, and EA versions.
 2. Verify checksums before decrypting.
 3. Restore MySQL into an empty database using a dedicated migration-capable account.

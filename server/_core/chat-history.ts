@@ -26,6 +26,7 @@ import {
   expertConversationIdFromSessionKey,
   mergeExpertTaskHistorySessions,
 } from "./expert-task-history";
+import { createChatSessionListCache } from "./chat-session-list-cache";
 import { logDebug, logWarn } from "./observability/logger";
 
 export type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
@@ -52,6 +53,21 @@ export type ChatHistoryMessage = {
   toolCalls?: ChatHistoryToolCall[];
 };
 const iosLoadDebugEnabled = process.env.IOS_LOAD_DEBUG === "1";
+const configuredChatSessionListTtl = Number(
+  process.env.CHAT_SESSION_LIST_CACHE_TTL_MS || 2_500,
+);
+const chatSessionListCache = createChatSessionListCache<
+  ReturnType<typeof mergeExpertTaskHistorySessions>
+>({
+  ttlMs: Number.isFinite(configuredChatSessionListTtl)
+    ? Math.min(10_000, Math.max(500, configuredChatSessionListTtl))
+    : 2_500,
+});
+
+export function invalidateChatHistorySessionList(adoptId: string): void {
+  const normalized = String(adoptId || "").trim();
+  if (normalized) chatSessionListCache.invalidatePrefix(`${normalized}\u0000`);
+}
 
 export function bindHistoryAttachmentOwner(messages: ChatHistoryMessage[], adoptId: string): ChatHistoryMessage[] {
   return messages.map((message) => (
@@ -913,13 +929,6 @@ export async function listClawChatHistorySessionRecords(args: {
   const claw = args.claw;
   const limit = Math.min(Math.max(Number(args.limit || 50) || 50, 1), 100);
   const dbAgentId = String((claw as any).agentId || "").trim();
-  const expertTasks = await listAgentTasksForHistory(adoptId, 1000).catch((error: any) => {
-    logWarn("chat.history.expert_merge_skipped", {
-      error: error?.message || String(error),
-    });
-    return [];
-  });
-  const expertSessions = buildExpertTaskHistorySessions(expertTasks);
 
   if (!isJiuwenClawAdoptId(adoptId)) {
     return {
@@ -931,13 +940,22 @@ export async function listClawChatHistorySessionRecords(args: {
     };
   }
 
-  const runtimeSessions = listJiuwenChatHistorySessions({ adoptId, dbAgentId, limit });
-  const sessions = mergeExpertTaskHistorySessions(runtimeSessions, expertSessions, limit);
+  const cacheKey = `${adoptId}\u0000${dbAgentId}\u0000${limit}`;
+  const sessions = await chatSessionListCache.getOrLoad(cacheKey, async () => {
+    const expertTasks = await listAgentTasksForHistory(adoptId, 1000).catch((error: any) => {
+      logWarn("chat.history.expert_merge_skipped", {
+        error: error?.message || String(error),
+      });
+      return [];
+    });
+    const expertSessions = buildExpertTaskHistorySessions(expertTasks);
+    const runtimeSessions = listJiuwenChatHistorySessions({ adoptId, dbAgentId, limit });
+    return mergeExpertTaskHistorySessions(runtimeSessions, expertSessions, limit);
+  });
   logIosLoadDebug("chat_history_sessions_done_jiuwen", {
     adoptId,
     runtimeAgentId: jiuwenClawAgentId(adoptId, dbAgentId),
     returnedCount: sessions.length,
-    expertConversationCount: expertSessions.length,
     ms: Date.now() - startedAt,
   });
   return {

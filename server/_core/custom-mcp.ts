@@ -183,6 +183,8 @@ function toolsForRow(row: NonNullable<Awaited<ReturnType<typeof getCustomMcpConn
   return tools.filter((tool) => selected.has(tool.name)).slice(0, MAX_CUSTOM_MCP_SELECTED_TOOLS);
 }
 
+type CustomMcpConnectionRow = Awaited<ReturnType<typeof listCustomMcpConnections>>[number];
+
 export function customMcpServerId(connectionId: number): string {
   return `custom_user_${connectionId}`;
 }
@@ -192,8 +194,7 @@ export function parseCustomMcpServerId(serverId: string): number | null {
   return match ? Number(match[1]) || null : null;
 }
 
-export async function buildCustomMcpStatusGroup(adoptId: string, userId: number): Promise<any | null> {
-  const rows = await listCustomMcpConnections({ adoptId, userId });
+export function buildCustomMcpStatusGroupFromRows(rows: CustomMcpConnectionRow[]): any | null {
   if (rows.length === 0) return null;
   const children = rows.map((row) => {
     const tools = toolsForRow(row);
@@ -230,6 +231,11 @@ export async function buildCustomMcpStatusGroup(adoptId: string, userId: number)
     children,
     liveStatus: children.every((child) => child.liveStatus === "live") ? "live" : "unavailable",
   };
+}
+
+export async function buildCustomMcpStatusGroup(adoptId: string, userId: number): Promise<any | null> {
+  const rows = await listCustomMcpConnections({ adoptId, userId });
+  return buildCustomMcpStatusGroupFromRows(rows);
 }
 
 export async function toggleCustomMcpConnection(input: {

@@ -20,6 +20,14 @@ import { appendFileSync, chmodSync, chownSync, lstatSync, mkdirSync, readdirSync
 import path from "path";
 import { resolveExistingRegularFile } from "./file-path-security";
 import { beginSandboxExecution, type OperationalOutcome } from "./observability/metrics";
+import {
+  buildSandboxDockerRunArgs,
+  resolveSandboxContainerIdentity,
+  sandboxCommandBlockReason,
+  type SandboxContainerIdentity,
+} from "./sandbox-policy";
+
+export { resolveSandboxContainerIdentity } from "./sandbox-policy";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 
@@ -35,23 +43,6 @@ const SANDBOX_MAX_OUTPUT = parseInt(process.env.SANDBOX_MAX_OUTPUT_BYTES || Stri
 // 并发控制
 const SANDBOX_MAX_GLOBAL = parseInt(process.env.SANDBOX_MAX_GLOBAL || "5");
 const SANDBOX_MAX_PER_USER = parseInt(process.env.SANDBOX_MAX_PER_USER || "2");
-
-export type SandboxContainerIdentity = { uid: number; gid: number; value: string };
-
-export function resolveSandboxContainerIdentity(
-  configured = process.env.SANDBOX_USER,
-  hostUid = typeof process.getuid === "function" ? process.getuid() : 0,
-  hostGid = typeof process.getgid === "function" ? process.getgid() : 0,
-): SandboxContainerIdentity {
-  const fallbackUid = hostUid > 0 ? hostUid : 65534;
-  const fallbackGid = hostGid > 0 ? hostGid : 65534;
-  const match = String(configured || "").trim().match(/^(\d+)(?::(\d+))?$/);
-  const requestedUid = match ? Number(match[1]) : fallbackUid;
-  const requestedGid = match ? Number(match[2] || match[1]) : fallbackGid;
-  const uid = Number.isSafeInteger(requestedUid) && requestedUid > 0 ? requestedUid : fallbackUid;
-  const gid = Number.isSafeInteger(requestedGid) && requestedGid > 0 ? requestedGid : fallbackGid;
-  return { uid, gid, value: `${uid}:${gid}` };
-}
 
 export function collectSafeSandboxOutputFiles(outputDir: string): Array<{ name: string; size: number }> {
   const root = realpathSync(outputDir);
@@ -89,26 +80,6 @@ function auditLog(entry: Record<string, unknown>) {
   try { appendFileSync(`${logDir}/sandbox-exec.log`, line + "\n", "utf8"); } catch {}
 }
 
-// ── 命令黑名单（基础防护层） ─────────────────────────────────────────
-const BLOCKED_PATTERNS = [
-  /\bsudo\b/,
-  /\bsu\b\s/,
-  /\bchmod\b.*[+]s/,         // setuid
-  /\/proc\/sysrq/,
-  /\/dev\/sd/,                // 块设备
-  /\bdd\b.*\/dev\//,         // dd 写设备
-  /\bnsenter\b/,
-  /\bunshare\b/,
-  /\bmount\b/,
-];
-
-function isCommandBlocked(cmd: string): string | null {
-  for (const pat of BLOCKED_PATTERNS) {
-    if (pat.test(cmd)) return `blocked pattern: ${pat}`;
-  }
-  return null;
-}
-
 // ── 核心执行接口 ─────────────────────────────────────────────────────
 export interface SandboxExecOpts {
   adoptId: string;
@@ -138,7 +109,7 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
   const timeoutMs = opts.timeoutMs ?? SANDBOX_TIMEOUT_MS;
 
   // 1. 命令黑名单检查
-  const blocked = isCommandBlocked(command);
+  const blocked = sandboxCommandBlockReason(command);
   if (blocked) {
     auditLog({ event: "sandbox_blocked", adoptId, command, reason: blocked });
     finishMetric("error", 0);
@@ -167,41 +138,21 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
     // 4. 启动容器（detach 模式，后续 exec）
     const containerName = `sb-${adoptId.replace(/[^a-z0-9]/gi, "")}-${Date.now()}`;
 
-    // 构建 docker run 命令
     const sandboxIdentity = resolveSandboxContainerIdentity();
-    const dockerArgs = [
-      "run",
-      "--rm",
-      "--detach",
-      `--name=${containerName}`,
-      "--network=none",
-      "--read-only",
-      `--tmpfs=/tmp:size=${SANDBOX_TMPFS_SIZE}`,
-      `--memory=${SANDBOX_MEMORY}`,
-      `--cpus=${SANDBOX_CPUS}`,
-      `--pids-limit=${SANDBOX_PIDS_LIMIT}`,
-      "--cap-drop=ALL",
-      "--security-opt=no-new-privileges",
-      `--user=${sandboxIdentity.value}`,
-      "--env=HOME=/tmp",
-    ];
-
-    // 用户自定义环境变量（过滤危险 key）
-    if (opts.env) {
-      for (const [k, v] of Object.entries(opts.env)) {
-        if (/^[A-Z_][A-Z0-9_]*$/i.test(k)) {
-          dockerArgs.push(`--env=${k}=${v}`);
-        }
-      }
-    }
-
-    // 挂载输出目录（宿主机目录 → 容器 /output，可写）
-    if (opts.outputDir) {
-      const outputDir = prepareSandboxOutputDirectory(opts.outputDir, sandboxIdentity);
-      dockerArgs.push(`-v`, `${outputDir}:/output`);
-    }
-
-    dockerArgs.push(SANDBOX_IMAGE, "sh", "-c", "sleep 30");
+    const outputMount = opts.outputDir
+      ? prepareSandboxOutputDirectory(opts.outputDir, sandboxIdentity)
+      : undefined;
+    const dockerArgs = buildSandboxDockerRunArgs({
+      containerName,
+      identity: sandboxIdentity,
+      image: SANDBOX_IMAGE,
+      memory: SANDBOX_MEMORY,
+      cpus: SANDBOX_CPUS,
+      pidsLimit: SANDBOX_PIDS_LIMIT,
+      tmpfsSize: SANDBOX_TMPFS_SIZE,
+      env: opts.env,
+      outputMount,
+    });
 
     const startResult = spawnSync("docker", dockerArgs, {
       timeout: 5000,

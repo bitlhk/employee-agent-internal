@@ -38,6 +38,7 @@ import {
   bindHistoryAttachmentOwner,
   dedupeHistoryMessages,
   deleteJiuwenHistorySession,
+  invalidateChatHistorySessionList,
   listClawChatHistorySessionRecords,
   logIosLoadDebug,
   mergeJiuwenHistoryCandidates,
@@ -253,6 +254,7 @@ export function registerMiscRoutes(app: express.Express) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
+        invalidateChatHistorySessionList(adoptId);
         res.json({
           ok: true,
           runtime: "ea-expert",
@@ -271,6 +273,7 @@ export function registerMiscRoutes(app: express.Express) {
           return;
         }
         const expertDeleted = await deleteAgentTasksByConversation(adoptId, result.conversationId);
+        invalidateChatHistorySessionList(adoptId);
         res.json({
           ok: true,
           runtime: "jiuwenswarm",

@@ -38,6 +38,7 @@ run_root="$DRILL_ROOT/$drill_id"
 decrypted_root="$run_root/decrypted"
 restore_root="$run_root/restored"
 report_path="$run_root/REPORT"
+status_file="${RESTORE_DRILL_STATUS_FILE:-$DRILL_ROOT/.last-success-report}"
 container_name="employee-agent-restore-drill-${drill_id,,}"
 container_name="${container_name//[^a-z0-9_.-]/-}"
 started_epoch="$(date +%s)"
@@ -205,6 +206,11 @@ config_file_count=$config_files
 data_retained=$KEEP_DATA
 EOF
 chmod 600 "$report_path"
+status_tmp="${status_file}.tmp.$$"
+mkdir -p "$(dirname "$status_file")"
+cp "$report_path" "$status_tmp"
+chmod 600 "$status_tmp"
+mv -f "$status_tmp" "$status_file"
 
 echo "restore drill passed"
 echo "report=$report_path"

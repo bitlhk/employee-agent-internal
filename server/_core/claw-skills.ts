@@ -54,11 +54,16 @@ import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import {
-  buildCustomMcpStatusGroup,
+  buildCustomMcpStatusGroupFromRows,
   customMcpServerId,
   parseCustomMcpServerId,
   toggleCustomMcpConnection,
 } from "./custom-mcp";
+import {
+  fetchMcpLiveStatuses,
+  MCP_TOOLS_LIVE_TTL_MS,
+  type McpLiveStatus,
+} from "./mcp-live-status";
 import {
   removeSkillPackageIndexRows,
 } from "./skills/skill-package-index";
@@ -167,21 +172,6 @@ export function listConfiguredMcpServers() {
     .sort((a, b) => a.serverId.localeCompare(b.serverId));
 }
 
-type McpLiveTool = {
-  name: string;
-  description: string;
-};
-
-type McpLiveStatus = {
-  serverId: string;
-  status: "live" | "unavailable" | "unsupported";
-  tools: McpLiveTool[];
-  checkedAt: string;
-  error?: string;
-};
-
-const MCP_TOOLS_LIVE_TTL_MS = 45_000;
-const mcpToolsLiveCache = new Map<string, { expiresAt: number; value: McpLiveStatus }>();
 const agentMcpMutationTails = new Map<string, Promise<void>>();
 
 async function withAgentMcpMutationLock<T>(adoptId: string, action: () => Promise<T>): Promise<T> {
@@ -197,141 +187,6 @@ async function withAgentMcpMutationLock<T>(adoptId: string, action: () => Promis
     release();
     if (agentMcpMutationTails.get(adoptId) === tail) agentMcpMutationTails.delete(adoptId);
   }
-}
-
-function normalizeMcpTransport(raw: any): string {
-  return String(raw?.transport || raw?.type || "").trim().toLowerCase();
-}
-
-function normalizeMcpUrl(raw: any): string {
-  return String(raw?.url || raw?.endpoint || "").trim();
-}
-
-function normalizeMcpHeaders(raw: any): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const source = raw?.headers && typeof raw.headers === "object" ? raw.headers : {};
-  for (const [key, value] of Object.entries(source)) {
-    if (!key) continue;
-    headers[key] = String(value ?? "").replace(/\$\{([A-Z0-9_]+)\}/g, (_, name) => {
-      if (name === "OPENCLAW_AGENT_ID") return "";
-      return process.env[name] || "";
-    });
-  }
-  return headers;
-}
-
-function readMcpToolInclude(raw: any): Set<string> | null {
-  const include = raw?.toolFilter?.include;
-  if (!Array.isArray(include)) return null;
-  const names = include.map((item: any) => String(item || "").trim()).filter(Boolean);
-  return names.length > 0 ? new Set(names) : null;
-}
-
-function parseMcpToolsListPayload(text: string): McpLiveTool[] {
-  const payload = String(text || "").trim();
-  if (!payload) return [];
-  const candidates: string[] = [];
-  if (payload.includes("\ndata:") || payload.startsWith("data:")) {
-    const dataLines = payload
-      .split(/\r?\n/)
-      .map(line => line.trim())
-      .filter(line => line.startsWith("data:"))
-      .map(line => line.slice(5).trim())
-      .filter(Boolean);
-    candidates.push(...dataLines.reverse());
-  }
-  candidates.push(payload);
-  for (const candidate of candidates) {
-    try {
-      const json = JSON.parse(candidate);
-      const tools = json?.result?.tools || json?.tools || json?.data?.tools;
-      if (!Array.isArray(tools)) continue;
-      return tools
-        .map((tool: any) => ({
-          name: String(tool?.name || "").trim(),
-          description: String(tool?.description || "").trim(),
-        }))
-        .filter(tool => tool.name);
-    } catch {
-      continue;
-    }
-  }
-  return [];
-}
-
-async function fetchMcpLiveStatus(serverId: string, raw: any, options: { force?: boolean } = {}): Promise<McpLiveStatus> {
-  const now = Date.now();
-  const checkedAt = new Date(now).toISOString();
-  const cacheKey = `${serverId}:${normalizeMcpUrl(raw)}`;
-  const cached = mcpToolsLiveCache.get(cacheKey);
-  if (!options.force && cached && cached.expiresAt > now) return cached.value;
-
-  const transport = normalizeMcpTransport(raw);
-  const url = normalizeMcpUrl(raw);
-  if (!url || (transport && transport !== "url" && transport !== "streamable-http" && transport !== "http")) {
-    const value: McpLiveStatus = { serverId, status: "unsupported", tools: [], checkedAt };
-    mcpToolsLiveCache.set(cacheKey, { expiresAt: now + MCP_TOOLS_LIVE_TTL_MS, value });
-    return value;
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2500);
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        accept: "application/json, text/event-stream",
-        "content-type": "application/json",
-        connection: "close",
-        ...normalizeMcpHeaders(raw),
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      signal: controller.signal,
-    });
-    const text = await resp.text();
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    let tools = parseMcpToolsListPayload(text);
-    const include = readMcpToolInclude(raw);
-    if (include) tools = tools.filter(tool => include.has(tool.name));
-    const value: McpLiveStatus = {
-      serverId,
-      status: "live",
-      tools,
-      checkedAt,
-    };
-    mcpToolsLiveCache.set(cacheKey, { expiresAt: now + MCP_TOOLS_LIVE_TTL_MS, value });
-    return value;
-  } catch (e: any) {
-    const value: McpLiveStatus = {
-      serverId,
-      status: "unavailable",
-      tools: [],
-      checkedAt,
-      error: e?.name === "AbortError" ? "timeout" : String(e?.message || e || "fetch failed"),
-    };
-    mcpToolsLiveCache.set(cacheKey, { expiresAt: now + MCP_TOOLS_LIVE_TTL_MS, value });
-    return value;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchMcpLiveStatuses(
-  servers: Record<string, any>,
-  allowedServerIds: Set<string>,
-  options: { force?: boolean } = {}
-): Promise<Record<string, McpLiveStatus>> {
-  const entries = Object.entries(servers).filter(
-    ([serverId, raw]) => allowedServerIds.has(serverId) && !Boolean((raw as any)?.disabled)
-  );
-  const result: Record<string, McpLiveStatus> = {};
-  const concurrency = 4;
-  for (let i = 0; i < entries.length; i += concurrency) {
-    const chunk = entries.slice(i, i + concurrency);
-    const rows = await Promise.all(chunk.map(([serverId, raw]) => fetchMcpLiveStatus(serverId, raw, options)));
-    for (const row of rows) result[row.serverId] = row;
-  }
-  return result;
 }
 
 function readSkillMarkdownCandidate(
@@ -641,21 +496,19 @@ export function registerSkillRoutes(app: express.Express) {
       const allowedServerIds = new Set(selection.authorizedServerIds);
       const config = readOpenClawConfig();
       const servers = readOpenClawMcpServers(config);
-      const liveStatuses = await fetchMcpLiveStatuses(servers, allowedServerIds, { force }).catch(
-        (e) => {
+      const userId = Number((claw as any).userId || 0);
+      const [liveStatuses, invocationCounts, customRows] = await Promise.all([
+        fetchMcpLiveStatuses(servers, allowedServerIds, { force }).catch((e) => {
           console.warn("[mcp tools] live probe failed", e);
           return {} as Record<string, McpLiveStatus>;
-        }
-      );
-      const invocationCounts = await listMcpInvocationCounts(Array.from(allowedServerIds)).catch(
-        () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
-      );
+        }),
+        listMcpInvocationCounts(Array.from(allowedServerIds)).catch(
+          () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
+        ),
+        listCustomMcpConnections({ adoptId, userId }),
+      ]);
       const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
-      const customRows = await listCustomMcpConnections({
-        adoptId,
-        userId: Number((claw as any).userId || 0),
-      });
-      const customGroup = await buildCustomMcpStatusGroup(adoptId, Number((claw as any).userId || 0));
+      const customGroup = buildCustomMcpStatusGroupFromRows(customRows);
       const customServerIds = customRows.map((row) => customMcpServerId(row.id));
       const enabledCustomServerIds = customRows.filter((row) => row.enabled).map((row) => customMcpServerId(row.id));
       const enabledServerIds = new Set(selection.enabledServerIds);

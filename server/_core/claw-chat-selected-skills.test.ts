@@ -3,7 +3,7 @@ import {
   buildSelectedSkillsManifest,
   normalizeSelectedSkillIds,
   type SelectedRuntimeSkill,
-} from "./claw-chat";
+} from "./chat-selected-skills";
 
 describe("selected skills chat context", () => {
   it("normalizes an ordered selection and removes duplicates", () => {

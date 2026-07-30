@@ -20,6 +20,8 @@ const temporaryDirectories: string[] = [];
 afterEach(() => {
   delete process.env.BACKUP_STATUS_FILE;
   delete process.env.BACKUP_VALIDATION_STATUS_FILE;
+  delete process.env.EA_DEPLOYMENT_LOG_FILE;
+  delete process.env.RESTORE_DRILL_STATUS_FILE;
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -69,5 +71,27 @@ describe("operational metrics", () => {
     expect(output).toContain('ea_sandbox_executions_total{outcome="timeout"} 1');
     expect(output).toContain('ea_db_pool_connections{state="active"} 0');
     expect(output).toContain('ea_background_worker_state{worker="recycler",state="running"} 1');
+  });
+
+  it("exports bounded release and restore evidence without identifiers", async () => {
+    const directory = mkdtempSync(path.join(os.tmpdir(), "ea-operational-evidence-"));
+    temporaryDirectories.push(directory);
+    const deploymentLog = path.join(directory, "deployments.log");
+    const restoreReport = path.join(directory, "restore-report");
+    writeFileSync(deploymentLog, [
+      JSON.stringify({ time: new Date().toISOString(), action: "deploy", release: "secret-release-id", result: "success" }),
+      JSON.stringify({ time: new Date().toISOString(), action: "rollback", release: "secret-release-id", result: "failed" }),
+    ].join("\n"));
+    writeFileSync(restoreReport, "result=passed\nrpo_seconds=3600\nrto_seconds=298\n");
+    process.env.EA_DEPLOYMENT_LOG_FILE = deploymentLog;
+    process.env.RESTORE_DRILL_STATUS_FILE = restoreReport;
+
+    const output = await metricsRegistry.metrics();
+    expect(output).toContain('ea_release_events_30d{action="deploy",result="success"} 1');
+    expect(output).toContain('ea_release_events_30d{action="rollback",result="failed"} 1');
+    expect(output).toContain("ea_restore_drill_last_success_timestamp_seconds");
+    expect(output).toContain("ea_restore_drill_rpo_seconds 3600");
+    expect(output).toContain("ea_restore_drill_rto_seconds 298");
+    expect(output).not.toContain("secret-release-id");
   });
 });
