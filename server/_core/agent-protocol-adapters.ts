@@ -2,6 +2,7 @@ import type express from "express";
 import { createHash, randomUUID } from "crypto";
 import { auditErrorMetadata, auditRequest, recordAuditBestEffort } from "./audit-events";
 import { readSafeAgentResponseText, safeAgentRequest } from "./safe-agent-http";
+import { guardToolEgress } from "./tool-egress-policy";
 
 type ProtocolAdapterInput = {
   providerType: "mcp" | "a2a";
@@ -271,6 +272,16 @@ async function runMcpToolsV1(input: ProtocolAdapterInput) {
     : {};
   const messageParam = String(input.endpointConfig.messageParam || "message");
   const args = { ...staticArgs, [messageParam]: input.message };
+  const egress = await guardToolEgress({
+    channel: "mcp_adapter",
+    payload: args,
+    adoptId: input.agentId,
+    toolName,
+    destinationUrl: rpcUrl,
+  });
+  if (!egress.ok) {
+    throw new Error(egress.error || "MCP tool arguments failed egress policy");
+  }
   status(input.res, `MCP: 调用 ${toolName}...`);
   const argsSummary = summarizeArgs(args, messageParam);
   const startedAt = Date.now();
@@ -317,6 +328,16 @@ async function runA2ATaskV1(input: ProtocolAdapterInput) {
     messageId: randomUUID(),
     parts: [{ kind: "text", text: input.message }],
   };
+  const egress = await guardToolEgress({
+    channel: "a2a",
+    payload: message,
+    adoptId: input.agentId,
+    toolName: input.remoteAgentId || "a2a_task",
+    destinationUrl: rpcUrl,
+  });
+  if (!egress.ok) {
+    throw new Error(egress.error || "A2A message failed egress policy");
+  }
   const rpc = await postJsonRpc(rpcUrl, {
     jsonrpc: "2.0",
     id: randomUUID(),

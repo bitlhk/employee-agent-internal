@@ -76,6 +76,7 @@ import { registerAuditIngestRoutes } from "./claw-audit-ingest";
 import { registerDesktopRoutes } from "./desktop";
 import { registerKnowledgeRoutes } from "./knowledge-routes";
 import { registerMonitoringRoutes } from "./monitoring-routes";
+import { registerToolEgressRoutes } from "./tool-egress-routes";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
 import { getRoleSkillMcpBaseline, listAgentRoleTemplates } from "./role-templates";
 import { sdk } from "./sdk";
@@ -454,6 +455,7 @@ async function startServer() {
   registerFilesRoutes(app);
   registerSandboxRoutes(app);
   registerManagedBrowserRoutes(app);
+  registerToolEgressRoutes(app);
   registerChatStreamRoutes(app);
   registerCoopUploadRoutes(app);
   registerEaSessionViewRoutes(app);

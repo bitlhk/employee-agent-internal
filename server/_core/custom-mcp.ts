@@ -39,6 +39,7 @@ import { resolveAgentRoleTemplate } from "./role-templates";
 import { finishCustomMcpOAuth, startCustomMcpOAuth } from "./custom-mcp-oauth";
 import { resolvePublicBaseUrl } from "./public-base-url";
 import { beginMcpCall } from "./observability/metrics";
+import { guardToolEgress } from "./tool-egress-policy";
 
 const SERVICE_NAME = "custom-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -288,6 +289,17 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
       const tool = toolsForRow(row).find((item) => customMcpGatewayToolName(row.id, item.name) === exposedName);
       if (!tool) continue;
       try {
+        const egress = await guardToolEgress({
+          channel: "custom_mcp",
+          payload: args,
+          adoptId,
+          toolName: tool.name,
+          destinationUrl: row.endpointUrl,
+        });
+        if (!egress.ok) {
+          metricOutcome = "error";
+          return textResult(egress.error || "工具参数未通过数据护栏。", true);
+        }
         const result = await callCustomMcpTool(configFromRow(row), tool.name, args);
         metricOutcome = result.isError === true ? "error" : "success";
         await recordAuditBestEffort({

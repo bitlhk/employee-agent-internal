@@ -8,6 +8,7 @@ import { brotliDecompressSync, gunzipSync, inflateSync } from "zlib";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { isAuthorizedInternalRequest, isPrivateUrl } from "./helpers";
 import { isPrivateIpAddress } from "./ip-address";
+import { guardToolEgress } from "./tool-egress-policy";
 
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024;
@@ -376,6 +377,21 @@ export function registerManagedBrowserRoutes(app: express.Express) {
     const urlHash = url ? sha256(url) : "";
 
     try {
+      const egress = await guardToolEgress({
+        channel: "managed_browser",
+        payload: input,
+        adoptId: agentId || null,
+        toolName: `managed_browser_${action}`,
+        destinationUrl: url,
+      });
+      if (!egress.ok) {
+        res.status(400).json({
+          ok: false,
+          action,
+          error: egress.error || "目标地址未通过数据护栏。",
+        });
+        return;
+      }
       const result = await runManagedBrowserTool(input);
       const resultRecord = asRecord(result);
       await recordAuditBestEffort({
