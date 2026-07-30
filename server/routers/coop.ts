@@ -20,6 +20,7 @@ import {
   buildOrchestratorInput,
   isSessionReadyToConsolidate,
   listMyCoopSessions,
+  completeCoopRequest,
 } from "../db/coop";
 import { requireActiveCoopProfile } from "../db/coop-identity";
 import { consolidateCoopSession } from "../_core/coop-orchestrator";
@@ -241,7 +242,6 @@ export const coopRouter = router({
       const { getDb } = await import("../db");
       const { clawCollabRequests } = await import("../../drizzle/schema");
       const { eq } = await import("drizzle-orm");
-      const { appendCoopEvent } = await import("../db/coop");
       const db = await getDb();
       if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "db not available" });
 
@@ -267,28 +267,17 @@ export const coopRouter = router({
         attachments: input.attachments || [],
       });
 
-      // update request
-      await db.update(clawCollabRequests)
-        .set({
-          status: "completed",
-          resultSummary: input.resultText,
-          completedAt: new Date(),
-        })
-        .where(eq(clawCollabRequests.id, input.requestId));
-
-      // append event（含附件 + skipMemoryWrite hint）
-      await appendCoopEvent({
-        sessionId: r.sessionId!,
-        eventType: "member_completed",
-        actorUserId: ctx.user!.id,
-        actorAdoptId: r.targetAdoptId,
+      const completed = await completeCoopRequest({
         requestId: input.requestId,
-        payload: {
-          mode: "manual",
-          text: input.resultText,
-          attachments,
-        },
+        targetUserId: ctx.user!.id,
+        sessionId: r.sessionId!,
+        targetAdoptId: r.targetAdoptId,
+        resultText: input.resultText,
+        attachments,
       });
+      if (!completed) {
+        throw new TRPCError({ code: "CONFLICT", message: "该协作结果已提交，请刷新后查看" });
+      }
 
       return { ok: true, status: "completed" };
     }),

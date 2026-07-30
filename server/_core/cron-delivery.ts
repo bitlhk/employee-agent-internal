@@ -4,7 +4,8 @@
  * Execution and delivery are owned by JiuwenSwarm. EA stores the selected
  * channel so callbacks and the management UI can recover the intended route.
  */
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { writeJsonFileAtomicSync } from "./atomic-json-file";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const CONFIG_PATH = `${APP_ROOT}/data/cron-delivery-config.json`;
@@ -24,7 +25,7 @@ function loadConfigs(): DeliveryConfig[] {
 }
 
 function saveConfigs(configs: DeliveryConfig[]) {
-  writeFileSync(CONFIG_PATH, JSON.stringify(configs, null, 2), "utf-8");
+  writeJsonFileAtomicSync(CONFIG_PATH, configs);
 }
 
 function findDeliveryConfig(configs: DeliveryConfig[], adoptId: string, jobId: string) {

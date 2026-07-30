@@ -30,7 +30,14 @@ describe("cookie CSRF protection", () => {
     expect(isCookieMutationAllowed(request({ origin: "https://evil.example" }), allowed)).toBe(true);
   });
 
-  it("keeps legacy non-browser cookie clients compatible when browser metadata is absent", () => {
+  it("fails closed for production cookie mutations without browser metadata", () => {
+    process.env.NODE_ENV = "production";
+    expect(isCookieMutationAllowed(request({ cookie }), csrfAllowedOrigins([]))).toBe(false);
+  });
+
+  it("allows explicitly configured legacy cookie clients", () => {
+    process.env.NODE_ENV = "production";
+    process.env.CSRF_ALLOW_LEGACY_COOKIE_CLIENTS = "true";
     expect(isCookieMutationAllowed(request({ cookie }), csrfAllowedOrigins([]))).toBe(true);
   });
 

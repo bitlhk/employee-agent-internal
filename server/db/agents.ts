@@ -398,6 +398,68 @@ export async function createAgentTask(data: InsertAgentTask): Promise<void> {
   await db.insert(agentTasks).values(data as any);
 }
 
+export type AgentTaskReservation =
+  | { kind: "created" }
+  | { kind: "existing"; task: any }
+  | { kind: "concurrency_exceeded" }
+  | { kind: "daily_exceeded" };
+
+export async function reserveAgentTask(
+  data: InsertAgentTask,
+  limits: { maxConcurrent: number; maxDailyRequests: number; dayStartedAt: Date },
+): Promise<AgentTaskReservation> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.transaction(async (tx) => {
+    // A business-agent row is the stable lock shared by all submissions to one
+    // expert. This makes quota checks and the following insert one atomic unit.
+    await tx.execute(sql`SELECT id FROM business_agents WHERE id = ${data.agentId} FOR UPDATE`);
+
+    if (data.sourceMessageId) {
+      const existing = await tx
+        .select()
+        .from(agentTasks)
+        .where(and(
+          eq(agentTasks.adoptId, data.adoptId),
+          eq(agentTasks.agentId, data.agentId),
+          eq(agentTasks.sourceMessageId, data.sourceMessageId),
+        ))
+        .limit(1);
+      if (existing[0]) return { kind: "existing", task: existing[0] };
+    }
+
+    if (limits.maxConcurrent > 0) {
+      const active = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(agentTasks)
+        .where(and(
+          eq(agentTasks.agentId, data.agentId),
+          inArray(agentTasks.status, ["pending", "running"]),
+        ));
+      if (Number(active[0]?.count || 0) >= limits.maxConcurrent) {
+        return { kind: "concurrency_exceeded" };
+      }
+    }
+
+    if (limits.maxDailyRequests > 0) {
+      const submitted = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(agentTasks)
+        .where(and(
+          eq(agentTasks.agentId, data.agentId),
+          isNull(agentTasks.parentTaskId),
+          gte(agentTasks.createdAt, limits.dayStartedAt),
+        ));
+      if (Number(submitted[0]?.count || 0) >= limits.maxDailyRequests) {
+        return { kind: "daily_exceeded" };
+      }
+    }
+
+    await tx.insert(agentTasks).values(data as any);
+    return { kind: "created" };
+  });
+}
+
 export async function getAgentTask(id: string): Promise<any | undefined> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
@@ -405,11 +467,16 @@ export async function getAgentTask(id: string): Promise<any | undefined> {
   return rows[0];
 }
 
-export async function getAgentTaskBySourceMessage(adoptId: string, sourceMessageId: string): Promise<any | undefined> {
+export async function getAgentTaskBySourceMessage(
+  adoptId: string,
+  agentId: string,
+  sourceMessageId: string,
+): Promise<any | undefined> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const rows = await db.select().from(agentTasks).where(and(
     eq(agentTasks.adoptId, adoptId),
+    eq(agentTasks.agentId, agentId),
     eq(agentTasks.sourceMessageId, sourceMessageId),
   )).limit(1);
   return rows[0];
@@ -547,15 +614,44 @@ export async function updateActiveAgentTask(id: string, fields: Record<string, a
   ));
 }
 
+export async function failInterruptedAgentTasks(message: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db
+    .update(agentTasks)
+    .set({
+      status: "failed",
+      errorMessage: message,
+      completedAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(inArray(agentTasks.status, ["pending", "running"]));
+  return Number((result as any)?.[0]?.affectedRows || 0);
+}
+
 export async function answerAgentTaskInteractionAndCreate(
   taskId: string,
   context: BusinessAgentOwnerContext,
   responseJson: string,
   continuation: InsertAgentTask,
-): Promise<boolean> {
+  limits: { maxConcurrent: number },
+): Promise<"created" | "already_answered" | "concurrency_exceeded"> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT id FROM business_agents WHERE id = ${continuation.agentId} FOR UPDATE`);
+    if (limits.maxConcurrent > 0) {
+      const active = await tx
+        .select({ count: sql<number>`count(*)` })
+        .from(agentTasks)
+        .where(and(
+          eq(agentTasks.agentId, continuation.agentId),
+          inArray(agentTasks.status, ["pending", "running"]),
+        ));
+      if (Number(active[0]?.count || 0) >= limits.maxConcurrent) {
+        return "concurrency_exceeded";
+      }
+    }
+
     const updated = await tx
       .update(agentTasks)
       .set({
@@ -569,8 +665,8 @@ export async function answerAgentTaskInteractionAndCreate(
         eq(agentTasks.userId, context.userId),
         eq(agentTasks.interactionStatus, "pending"),
       ));
-    if (Number((updated as any)?.[0]?.affectedRows || 0) !== 1) return false;
+    if (Number((updated as any)?.[0]?.affectedRows || 0) !== 1) return "already_answered";
     await tx.insert(agentTasks).values(continuation as any);
-    return true;
+    return "created";
   });
 }

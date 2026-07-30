@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { ENV } from "./env";
 import { guardExternalDelivery } from "./external-delivery-guard";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 export type NotificationPayload = {
   title: string;
@@ -94,7 +95,7 @@ export async function notifyOwner(
   const endpoint = buildEndpointUrl(ENV.forgeApiUrl);
 
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchWithTimeout(endpoint, {
       method: "POST",
       headers: {
         accept: "application/json",

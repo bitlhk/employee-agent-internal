@@ -25,18 +25,17 @@ import {
   markAgentTaskSucceeded,
 } from "./agent-health";
 import {
-  countActiveAgentTasks,
-  countAgentCallsSince,
   answerAgentTaskInteractionAndCreate,
-  createAgentTask,
   getBusinessAgentForContext,
   getAgentTask,
   getAgentTaskBySourceMessage,
+  failInterruptedAgentTasks,
   insertCallLog,
   listAgentTasks,
   listAgentTasksByIds,
   listAgentTaskCounts,
   listEnabledBusinessAgentsForContext,
+  reserveAgentTask,
   updateActiveAgentTask,
 } from "../db/agents";
 import {
@@ -51,6 +50,7 @@ const AGENT_TASK_TEXT_LIMIT_BYTES = 60_000;
 const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
 const AGENT_TASK_RAW_EVENTS_LIMIT_BYTES = 40_000;
 const activeAgentTaskControllers = new Map<string, AbortController>();
+const activeAgentTaskPromises = new Map<string, Promise<void>>();
 
 export function isCancelledAgentTaskStatus(status: unknown): boolean {
   return ["cancelled", "canceled"].includes(String(status || "").trim().toLowerCase());
@@ -402,6 +402,55 @@ async function runAgentTaskInBackground(
   }
 }
 
+function startAgentTaskInBackground(
+  taskId: string,
+  agent: any,
+  input: string,
+  runtime: {
+    contextId?: string;
+    dataPart?: Record<string, unknown>;
+    dataPartMetadata?: Record<string, unknown>;
+  } = {},
+): void {
+  if (activeAgentTaskPromises.has(taskId)) return;
+  const running = runAgentTaskInBackground(taskId, agent, input, runtime)
+    .catch((error) => {
+      console.error("[AGENT-TASK] background runner failed", {
+        taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    })
+    .finally(() => {
+      if (activeAgentTaskPromises.get(taskId) === running) {
+        activeAgentTaskPromises.delete(taskId);
+      }
+    });
+  activeAgentTaskPromises.set(taskId, running);
+}
+
+export async function startAgentTaskRuntime(): Promise<() => Promise<void>> {
+  const recovered = await failInterruptedAgentTasks("服务重启前任务未完成，请重新提交");
+  if (recovered > 0) {
+    console.warn("[AGENT-TASK] recovered interrupted tasks", { count: recovered });
+  }
+  return async () => {
+    for (const controller of activeAgentTaskControllers.values()) {
+      controller.abort(new Error("server shutdown"));
+    }
+    const tasks = Array.from(activeAgentTaskPromises.values());
+    if (tasks.length > 0) {
+      await Promise.race([
+        Promise.allSettled(tasks).then(() => undefined),
+        new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 3_500);
+          timer.unref();
+        }),
+      ]);
+    }
+    await failInterruptedAgentTasks("服务正在重启，任务已安全中止，请重新提交");
+  };
+}
+
 export function registerAgentTaskRoutes(app: express.Express) {
   app.get("/api/claw/agents/available", async (req, res) => {
     const adoptId = String(req.query.adoptId || "").trim();
@@ -525,31 +574,9 @@ export function registerAgentTaskRoutes(app: express.Express) {
       if (reason) return res.status(409).json({ error: reason });
 
       const sourceMessageId = req.body?.sourceMessageId ? String(req.body.sourceMessageId).slice(0, 128) : "";
-      if (sourceMessageId) {
-        const existing = await getAgentTaskBySourceMessage(adoptId, sourceMessageId);
-        if (existing) {
-          return res.json({
-            taskId: existing.id,
-            reused: true,
-            task: { ...existing, agent: publicAgent(agent), agentName: agent.name },
-          });
-        }
-      }
-
       const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
       const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
-      if (maxConcurrent > 0 && await countActiveAgentTasks(agentId) >= maxConcurrent) {
-        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
-      }
       const maxDailyRequests = agentDailyRequestLimit(agent);
-      if (maxDailyRequests > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (await countAgentCallsSince(agentId, today) >= maxDailyRequests) {
-          return res.status(429).json({ error: "专家今日调用额度已用完" });
-        }
-      }
-
       await ensureAgentAvailable(agent);
 
       const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
@@ -560,7 +587,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const sourceSessionId = req.body?.sessionId
         ? String(req.body.sessionId).slice(0, 160)
         : null;
-      await createAgentTask({
+      const taskRecord = {
         id: taskId,
         adoptId,
         userId: taskUserId,
@@ -571,7 +598,27 @@ export function registerAgentTaskRoutes(app: express.Express) {
         status: "pending",
         input,
         adapterProtocol: String(agent.adapterProtocol || ""),
-      } as any);
+      } as any;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const reservation = await reserveAgentTask(taskRecord, {
+        maxConcurrent,
+        maxDailyRequests,
+        dayStartedAt: today,
+      });
+      if (reservation.kind === "existing") {
+        return res.json({
+          taskId: reservation.task.id,
+          reused: true,
+          task: { ...reservation.task, agent: publicAgent(agent), agentName: agent.name },
+        });
+      }
+      if (reservation.kind === "concurrency_exceeded") {
+        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
+      }
+      if (reservation.kind === "daily_exceeded") {
+        return res.status(429).json({ error: "专家今日调用额度已用完" });
+      }
 
       const publicPayload = publicAgent(agent);
       res.json({
@@ -589,7 +636,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
           agent: publicPayload,
         },
       });
-      void runAgentTaskInBackground(taskId, {
+      startAgentTaskInBackground(taskId, {
         ...agent,
         __taskUserId: taskUserId,
         __taskAdoptId: adoptId,
@@ -608,8 +655,6 @@ export function registerAgentTaskRoutes(app: express.Express) {
           },
           dataPartMetadata: { "ea.investment-team": true, version: "1.0.0" },
         } : {}),
-      }).catch((error) => {
-        console.error("[AGENT-TASK] background runner failed", { taskId, error: error?.message || error });
       });
     } catch (error: any) {
       if (error instanceof AgentUnavailableError) {
@@ -630,8 +675,12 @@ export function registerAgentTaskRoutes(app: express.Express) {
     try {
       const userId = Number((claw as any).userId || 0);
       const sourceMessageId = String(req.body?.sourceMessageId || "").trim().slice(0, 128);
+      const sourceTask = await getAgentTask(taskId);
+      if (!sourceTask || sourceTask.adoptId !== adoptId || Number(sourceTask.userId) !== userId) {
+        return res.status(404).json({ error: "待确认任务不存在" });
+      }
       if (sourceMessageId) {
-        const existing = await getAgentTaskBySourceMessage(adoptId, sourceMessageId);
+        const existing = await getAgentTaskBySourceMessage(adoptId, String(sourceTask.agentId || ""), sourceMessageId);
         if (existing && String(existing.parentTaskId || "") === taskId && Number(existing.userId) === userId) {
           const existingAgent = await getBusinessAgentForContext(String(existing.agentId || ""), { userId, adoptId });
           return res.json({
@@ -640,11 +689,6 @@ export function registerAgentTaskRoutes(app: express.Express) {
             task: { ...existing, agentName: existingAgent?.name || existing.agentId },
           });
         }
-      }
-
-      const sourceTask = await getAgentTask(taskId);
-      if (!sourceTask || sourceTask.adoptId !== adoptId || Number(sourceTask.userId) !== userId) {
-        return res.status(404).json({ error: "待确认任务不存在" });
       }
       const interaction = parseAgentInteraction(parseJsonRecord(sourceTask.interactionJson));
       if (!interaction || sourceTask.interactionStatus !== "pending") {
@@ -663,17 +707,6 @@ export function registerAgentTaskRoutes(app: express.Express) {
 
       const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
       const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
-      if (maxConcurrent > 0 && await countActiveAgentTasks(agent.id) >= maxConcurrent) {
-        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
-      }
-      const maxDailyRequests = agentDailyRequestLimit(agent);
-      if (maxDailyRequests > 0) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        if (await countAgentCallsSince(agent.id, today) >= maxDailyRequests) {
-          return res.status(429).json({ error: "专家今日调用额度已用完" });
-        }
-      }
 
       await ensureAgentAvailable(agent);
 
@@ -698,8 +731,12 @@ export function registerAgentTaskRoutes(app: express.Express) {
         { userId, adoptId },
         JSON.stringify(responseValue),
         continuation as any,
+        { maxConcurrent },
       );
-      if (!claimed) return res.status(409).json({ error: "该确认已被处理，请刷新会话" });
+      if (claimed === "concurrency_exceeded") {
+        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
+      }
+      if (claimed !== "created") return res.status(409).json({ error: "该确认已被处理，请刷新会话" });
 
       const publicPayload = publicAgent(agent);
       res.json({
@@ -713,7 +750,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
           agent: publicPayload,
         },
       });
-      void runAgentTaskInBackground(continuationId, {
+      startAgentTaskInBackground(continuationId, {
         ...agent,
         __taskUserId: userId,
         __taskAdoptId: adoptId,
@@ -731,11 +768,6 @@ export function registerAgentTaskRoutes(app: express.Express) {
           response: responseValue,
         },
         dataPartMetadata: { "ea.interaction": true, version: "1.0.0" },
-      }).catch((error) => {
-        console.error("[AGENT-TASK] continuation runner failed", {
-          taskId: continuationId,
-          error: error?.message || error,
-        });
       });
     } catch (error: any) {
       if (error instanceof AgentUnavailableError) {

@@ -895,6 +895,11 @@ export const agentTasks = mysqlTable("agent_tasks", {
   sourceConversationIdx: index("idx_agent_tasks_source_conversation").on(table.sourceConversationId),
   agentStatusIdx: index("idx_agent_tasks_agent_status").on(table.agentId, table.status),
   parentTaskIdx: index("idx_agent_tasks_parent").on(table.parentTaskId),
+  sourceMessageUnique: uniqueIndex("uk_agent_tasks_source_message").on(
+    table.adoptId,
+    table.agentId,
+    table.sourceMessageId,
+  ),
 }));
 
 export type AgentTask = typeof agentTasks.$inferSelect;

@@ -303,8 +303,10 @@ export type BackgroundWorkerName =
   | "log_retention"
   | "agent_health"
   | "agent_memory"
+  | "agent_tasks"
   | "knowledge_recovery"
   | "audit_dlq"
+  | "tool_audit"
   | "recycler";
 export type BackgroundWorkerState = "running" | "stopping" | "stopped" | "failed";
 

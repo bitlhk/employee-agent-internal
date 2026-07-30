@@ -1,6 +1,6 @@
 import { execFileSync, execSync } from "child_process";
 import path from "path";
-import { createHash, createHmac } from "crypto";
+import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync, readdirSync, createReadStream } from "fs";
 import { isIP } from "net";
 import type { Request, Response } from "express";
@@ -113,7 +113,11 @@ export function requestInternalToken(req: Request): string {
 
 export function isAuthorizedInternalRequest(req: Request, expectedToken?: string): boolean {
   const expected = String(expectedToken || configuredInternalApiKey()).trim();
-  if (expected) return requestInternalToken(req) === expected;
+  if (expected) {
+    const actualDigest = createHash("sha256").update(requestInternalToken(req)).digest();
+    const expectedDigest = createHash("sha256").update(expected).digest();
+    return timingSafeEqual(actualDigest, expectedDigest);
+  }
   return process.env.NODE_ENV !== "production" && isLoopbackRequest(req);
 }
 

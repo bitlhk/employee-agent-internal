@@ -62,9 +62,11 @@ export function isCookieMutationAllowed(req: Request, allowedOrigins: Set<string
   }
   if (fetchSite === "cross-site") return false;
 
-  // Preserve CLI and legacy clients that authenticate with an explicitly supplied cookie.
-  // Browser form/fetch CSRF requests carry Origin and/or Sec-Fetch-Site.
-  return !fetchSite || fetchSite === "same-origin" || fetchSite === "same-site" || fetchSite === "none";
+  if (!fetchSite) {
+    return process.env.NODE_ENV !== "production"
+      || process.env.CSRF_ALLOW_LEGACY_COOKIE_CLIENTS === "true";
+  }
+  return fetchSite === "same-origin" || fetchSite === "same-site" || fetchSite === "none";
 }
 
 export function cookieCsrfProtection(corsOrigins: string[]): RequestHandler {

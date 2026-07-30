@@ -15,7 +15,7 @@
  *   --security-opt no-new-privileges  禁止提权
  */
 
-import { execSync, spawnSync, spawn } from "child_process";
+import { spawn } from "child_process";
 import { appendFileSync, chmodSync, chownSync, lstatSync, mkdirSync, readdirSync, realpathSync } from "fs";
 import path from "path";
 import { resolveExistingRegularFile } from "./file-path-security";
@@ -102,6 +102,39 @@ export interface SandboxExecResult {
   outputFiles?: Array<{ name: string; size: number }>;
 }
 
+async function runProcess(command: string, args: string[], timeoutMs: number): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timer: NodeJS.Timeout;
+    const finish = (exitCode: number) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ exitCode, stdout, stderr });
+    };
+    child.stdout?.on("data", (chunk: Buffer) => { stdout += chunk.toString("utf8"); });
+    child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.on("error", (error) => {
+      stderr += error.message;
+      finish(1);
+    });
+    child.on("close", (code) => finish(code ?? 1));
+    timer = setTimeout(() => {
+      stderr += `process timed out after ${timeoutMs}ms`;
+      child.kill("SIGKILL");
+      finish(124);
+    }, timeoutMs);
+    timer.unref();
+  });
+}
+
 export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecResult> {
   const finishMetric = beginSandboxExecution();
   let metricOutcome: OperationalOutcome = "error";
@@ -154,11 +187,9 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
       outputMount,
     });
 
-    const startResult = spawnSync("docker", dockerArgs, {
-      timeout: 5000,
-    });
+    const startResult = await runProcess("docker", dockerArgs, 5_000);
 
-    if (startResult.status !== 0) {
+    if (startResult.exitCode !== 0) {
       throw new Error(`Failed to start container: ${startResult.stderr}`);
     }
 
@@ -172,10 +203,9 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
     let exitCode: number | null = null;
     let timedOut = false;
 
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn("docker", ["exec", containerName, "sh", "-c", command], {
-        timeout: timeoutMs,
-      });
+    await new Promise<void>((resolve) => {
+      const child = spawn("docker", ["exec", containerName, "sh", "-c", command]);
+      let forceKillTimer: NodeJS.Timeout | null = null;
 
       // stdout 收集（异步累积）
       child.stdout!.on("data", (chunk: Buffer) => {
@@ -211,12 +241,16 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
 
       child.on("close", (code) => {
         exitCode = code ?? (child.killed ? 130 : 1);
+        clearTimeout(timer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         resolve();
       });
 
       child.on("error", (err) => {
         exitCode = 1;
         stderr += `\nSpawn error: ${err.message}`;
+        clearTimeout(timer);
+        if (forceKillTimer) clearTimeout(forceKillTimer);
         resolve();
       });
 
@@ -224,9 +258,10 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
       const timer = setTimeout(() => {
         timedOut = true;
         child.kill("SIGTERM");
+        forceKillTimer = setTimeout(() => child.kill("SIGKILL"), 1_000);
+        forceKillTimer.unref();
       }, timeoutMs);
-
-      child.on("close", () => clearTimeout(timer));
+      timer.unref();
     });
 
     const durationMs = Date.now() - startMs;
@@ -270,7 +305,7 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
     // 6. 强制清理容器
     if (containerId) {
       try {
-        spawnSync("docker", ["rm", "-f", containerId], { timeout: 3000 });
+        await runProcess("docker", ["rm", "-f", containerId], 3_000);
       } catch {}
     }
     // 7. 释放计数
@@ -282,15 +317,13 @@ export async function sandboxExec(opts: SandboxExecOpts): Promise<SandboxExecRes
 }
 
 // ── 健康检查 ─────────────────────────────────────────────────────────
-export function sandboxHealthCheck(): { ok: boolean; docker: boolean; image: boolean; error?: string } {
-  try {
-    execSync("docker info", { stdio: "pipe", timeout: 5000 });
-  } catch {
+export async function sandboxHealthCheck(): Promise<{ ok: boolean; docker: boolean; image: boolean; error?: string }> {
+  const dockerInfo = await runProcess("docker", ["info"], 5_000);
+  if (dockerInfo.exitCode !== 0) {
     return { ok: false, docker: false, image: false, error: "docker not accessible" };
   }
-  try {
-    execSync("docker inspect " + SANDBOX_IMAGE, { stdio: "pipe", timeout: 5000 });
-  } catch {
+  const imageInspect = await runProcess("docker", ["inspect", SANDBOX_IMAGE], 5_000);
+  if (imageInspect.exitCode !== 0) {
     return { ok: false, docker: true, image: false, error: `image ${SANDBOX_IMAGE} not found` };
   }
   return { ok: true, docker: true, image: true };

@@ -16,6 +16,7 @@ import {
   rememberExplicitPreference,
 } from "./agent-memory";
 import { beginMcpCall } from "./observability/metrics";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -198,7 +199,7 @@ async function internalJson(path: string, init: RequestInit = {}) {
   const base = process.env.INTERNAL_BASE_URL || process.env.WORKFORCE_AGENT_INTERNAL_BASE_URL || process.env.LINGXIA_INTERNAL_BASE_URL || "http://127.0.0.1:5180";
   const headers = new Headers(init.headers || {});
   headers.set("X-Internal-Key", process.env.INTERNAL_API_KEY || "");
-  const resp = await fetch(`${base}${path}`, { ...init, headers });
+  const resp = await fetchWithTimeout(`${base}${path}`, { ...init, headers });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(String((data as any)?.error || resp.status));
   return data;

@@ -176,10 +176,11 @@ async function signSession(
 }
 
 async function verifySession(
-  token: string | null | undefined
+  token: string | null | undefined,
+  options: { quiet?: boolean } = {},
 ): Promise<VerifiedSession | null> {
   if (!token) {
-    console.warn("[Auth] Missing session cookie");
+    if (!options.quiet) console.warn("[Auth] Missing session cookie");
     return null;
   }
   try {
@@ -188,7 +189,9 @@ async function verifySession(
     });
     return sessionFromClaims(verified.payload);
   } catch (error) {
-    console.warn("[Auth] Session verification failed", String(error));
+    if (!options.quiet) {
+      console.warn("[Auth] Session verification failed", String(error));
+    }
     return null;
   }
 }

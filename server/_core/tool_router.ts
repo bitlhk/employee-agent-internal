@@ -185,6 +185,11 @@ const EXEC_RATE_LIMIT_WINDOW_MS = 3600_000;
 
 function checkExecRateLimit(userId: number): { allowed: boolean; resetInMin?: number } {
   const now = Date.now();
+  if (EXEC_RATE_LIMIT_MAP.size > 1_000) {
+    for (const [key, value] of EXEC_RATE_LIMIT_MAP) {
+      if (now >= value.resetAt) EXEC_RATE_LIMIT_MAP.delete(key);
+    }
+  }
   let rl = EXEC_RATE_LIMIT_MAP.get(userId);
   if (!rl || now >= rl.resetAt) {
     rl = { count: 0, resetAt: now + EXEC_RATE_LIMIT_WINDOW_MS };
@@ -470,8 +475,11 @@ const auditBuffer: ToolExecutionAuditRecord[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_BUFFER_SIZE = 50;
+const pendingLedgerWrites = new Set<Promise<void>>();
+let auditStopping = false;
+let auditFlushPromise: Promise<void> | null = null;
 
-async function flushAuditBuffer() {
+async function flushAuditBatch() {
   if (auditBuffer.length === 0) return;
   const records = auditBuffer.splice(0, auditBuffer.length);
   try {
@@ -482,11 +490,15 @@ async function flushAuditBuffer() {
     // 改用 Drizzle 的 insert API，type-safe 且正确处理 MySQL ON DUPLICATE KEY
     const { getDb } = await import("../db");
     const db = await getDb();
-    if (!db) return;
+    if (!db) {
+      auditBuffer.unshift(...records);
+      return;
+    }
     const { toolExecutionAudits } = await import("../../drizzle/schema");
     const { sql: sqlTag } = await import("drizzle-orm");
 
     let ok = 0, fail = 0;
+    const failedRecords: ToolExecutionAuditRecord[] = [];
     for (const r of records) {
       try {
         await db.insert(toolExecutionAudits).values({
@@ -514,29 +526,65 @@ async function flushAuditBuffer() {
           createdAt:        new Date(r.createdAt),
         }).onDuplicateKeyUpdate({ set: { auditId: sqlTag`audit_id` } });
         ok++;
-      } catch { fail++; }
+      } catch {
+        fail++;
+        failedRecords.push(r);
+      }
     }
+    if (failedRecords.length > 0) auditBuffer.unshift(...failedRecords);
     auditLog({ event: "audit_flush", count: records.length, ok, fail });
   } catch (err) {
+    auditBuffer.unshift(...records);
     auditLog({ event: "audit_flush_error", error: String(err), count: records.length });
   }
 }
 
+function flushAuditBuffer(): Promise<void> {
+  if (auditFlushPromise) return auditFlushPromise;
+  const running = flushAuditBatch().finally(() => {
+    if (auditFlushPromise === running) auditFlushPromise = null;
+  });
+  auditFlushPromise = running;
+  return running;
+}
+
 function scheduleFlush() {
-  if (flushTimer !== null) return;
+  if (auditStopping || flushTimer !== null) return;
   flushTimer = setTimeout(() => {
     flushTimer = null;
-    flushAuditBuffer();
+    void flushAuditBuffer();
   }, FLUSH_INTERVAL_MS);
+  flushTimer.unref();
 }
 
 function enqueueAudit(record: ToolExecutionAuditRecord) {
   auditBuffer.push(record);
   if (auditBuffer.length >= MAX_BUFFER_SIZE) {
-    flushAuditBuffer();
+    void flushAuditBuffer();
   } else {
     scheduleFlush();
   }
+}
+
+function trackLedgerWrite(promise: Promise<void>): void {
+  pendingLedgerWrites.add(promise);
+  void promise.finally(() => pendingLedgerWrites.delete(promise));
+}
+
+export function startToolAuditRuntime(): () => Promise<void> {
+  auditStopping = false;
+  return flushToolAuditWrites;
+}
+
+export async function flushToolAuditWrites(): Promise<void> {
+  auditStopping = true;
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  await flushAuditBuffer();
+  await Promise.allSettled(Array.from(pendingLedgerWrites));
+  await flushAuditBuffer();
 }
 
 async function recordToolLedgerEvent(
@@ -731,7 +779,7 @@ export async function routeTool(
         executor: "none",
         createdAt: Date.now(),
       });
-      recordToolLedgerEvent({
+      trackLedgerWrite(recordToolLedgerEvent({
         auditId, requestId: ctx.adoptId, userId: ctx.userId, agentId: ctx.agentId,
         profile: ctx.permissionProfile, toolCallId: req.id,
         originalToolName, routedToolName,
@@ -746,7 +794,7 @@ export async function routeTool(
         result: "denied",
         severity: "medium",
         errorCode: "TOOL_RATE_LIMITED",
-      });
+      }));
       return result;
     }
   }
@@ -788,7 +836,7 @@ export async function routeTool(
       executor: "none",
       createdAt: Date.now(),
     });
-    recordToolLedgerEvent({
+    trackLedgerWrite(recordToolLedgerEvent({
       auditId, requestId: ctx.adoptId, userId: ctx.userId, agentId: ctx.agentId,
       profile: ctx.permissionProfile, toolCallId: req.id,
       originalToolName, routedToolName,
@@ -806,7 +854,7 @@ export async function routeTool(
       result: "denied",
       severity: "medium",
       errorCode: "TOOL_POLICY_DENIED",
-    });
+    }));
 
     auditLog({
       event: "tool_denied",
@@ -931,7 +979,7 @@ export async function routeTool(
     durationMs,
     createdAt: Date.now(),
   });
-  recordToolLedgerEvent({
+  trackLedgerWrite(recordToolLedgerEvent({
     auditId, requestId: ctx.adoptId, userId: ctx.userId, agentId: ctx.agentId,
     profile: ctx.permissionProfile, toolCallId: req.id,
     originalToolName, routedToolName,
@@ -952,7 +1000,7 @@ export async function routeTool(
     result: (exitCode ?? 1) === 0 && !errorType ? "success" : "failed",
     severity: (exitCode ?? 1) === 0 && !errorType ? "info" : "medium",
     errorCode: errorType ? "TOOL_EXECUTION_ERROR" : undefined,
-  });
+  }));
 
   auditLog({
     event: "tool_executed",

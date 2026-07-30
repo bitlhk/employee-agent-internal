@@ -14,6 +14,7 @@ import {
   users,
   lxGroups,
   lxCollabUserProfiles,
+  type InsertLxCoopEvent,
 } from "../../drizzle/schema";
 import { getDb } from "./connection";
 import { canCollaborate, canViewCoopSession, requireActiveCoopProfile } from "./coop-identity";
@@ -385,6 +386,28 @@ export async function listMentionCandidates(params: {
 /**
  * 通用：追加一条事件
  */
+function coopEventValues(params: {
+  sessionId: string;
+  eventType: string;
+  actorUserId: number;
+  actorAdoptId?: string | null;
+  requestId?: number | null;
+  payload?: any;
+}): InsertLxCoopEvent {
+  return {
+    sessionId: params.sessionId,
+    eventType: params.eventType,
+    actorUserId: params.actorUserId,
+    actorAdoptId: params.actorAdoptId ?? null,
+    requestId: params.requestId ?? null,
+    payload: params.payload ? JSON.stringify(params.payload) : null,
+  };
+}
+
+function affectedRows(result: unknown): number {
+  return Number((result as any)?.[0]?.affectedRows || 0);
+}
+
 export async function appendCoopEvent(params: {
   sessionId: string;
   eventType: string;
@@ -395,13 +418,46 @@ export async function appendCoopEvent(params: {
 }) {
   const db = await getDb();
   if (!db) return;
-  await db.insert(lxCoopEvents).values({
-    sessionId: params.sessionId,
-    eventType: params.eventType,
-    actorUserId: params.actorUserId,
-    actorAdoptId: params.actorAdoptId ?? null,
-    requestId: params.requestId ?? null,
-    payload: params.payload ? JSON.stringify(params.payload) : null,
+  await db.insert(lxCoopEvents).values(coopEventValues(params));
+}
+
+export async function completeCoopRequest(params: {
+  requestId: number;
+  targetUserId: number;
+  sessionId: string;
+  targetAdoptId?: string | null;
+  resultText: string;
+  attachments: any[];
+}): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.transaction(async (tx) => {
+    const updated = await tx
+      .update(clawCollabRequests)
+      .set({
+        status: "completed",
+        resultSummary: params.resultText,
+        completedAt: new Date(),
+      })
+      .where(and(
+        eq(clawCollabRequests.id, params.requestId),
+        eq(clawCollabRequests.targetUserId, params.targetUserId),
+        inArray(clawCollabRequests.status, ["pending", "approved", "running"]),
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
+      sessionId: params.sessionId,
+      eventType: "member_completed",
+      actorUserId: params.targetUserId,
+      actorAdoptId: params.targetAdoptId,
+      requestId: params.requestId,
+      payload: {
+        mode: "manual",
+        text: params.resultText,
+        attachments: params.attachments,
+      },
+    }));
+    return true;
   });
 }
 
@@ -448,38 +504,60 @@ export async function agreeCoopRequest(params: {
     patch.taskSummary = params.modifiedSubtask;
   }
 
-  await db.update(clawCollabRequests).set(patch).where(eq(clawCollabRequests.id, params.requestId));
-
-  await appendCoopEvent({
-    sessionId: r.req.sessionId!,
-    eventType: params.modifiedSubtask && params.modifiedSubtask !== r.req.taskSummary ? "member_modified_task" : "member_agreed",
-    actorUserId: params.userId,
-    actorAdoptId: r.req.targetAdoptId,
-    requestId: params.requestId,
-    payload: patch.taskSummary ? { modifiedSubtask: patch.taskSummary } : undefined,
+  const claimed = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(clawCollabRequests)
+      .set(patch)
+      .where(and(
+        eq(clawCollabRequests.id, params.requestId),
+        eq(clawCollabRequests.targetUserId, params.userId),
+        eq(clawCollabRequests.status, "pending"),
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
+      sessionId: r.req.sessionId!,
+      eventType: params.modifiedSubtask && params.modifiedSubtask !== r.req.taskSummary ? "member_modified_task" : "member_agreed",
+      actorUserId: params.userId,
+      actorAdoptId: r.req.targetAdoptId,
+      requestId: params.requestId,
+      payload: patch.taskSummary ? { modifiedSubtask: patch.taskSummary } : undefined,
+    }));
+    return true;
   });
+  if (!claimed) throw new Error("invitation already handled");
 
-  // session 状态流转：全部 approved → running
-  const allMembers = await db
-    .select({ status: clawCollabRequests.status })
-    .from(clawCollabRequests)
-    .where(eq(clawCollabRequests.sessionId, r.req.sessionId!));
-  const allResponded = allMembers.every((m) => m.status !== "pending");
-  const anyApproved = allMembers.some((m) => m.status === "approved" || m.status === "running" || m.status === "completed");
-  if (allResponded && anyApproved && r.session.status === "inviting") {
-    await db.update(lxCoopSessions).set({ status: "running" }).where(eq(lxCoopSessions.id, r.req.sessionId!));
-    await appendCoopEvent({
+  const sessionStatusChanged = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(lxCoopSessions)
+      .set({ status: "running" })
+      .where(and(
+        eq(lxCoopSessions.id, r.req.sessionId!),
+        eq(lxCoopSessions.status, "inviting"),
+        sql`NOT EXISTS (
+          SELECT 1 FROM claw_collab_requests pending_member
+          WHERE pending_member.session_id = ${r.req.sessionId!}
+            AND pending_member.status = 'pending'
+        )`,
+        sql`EXISTS (
+          SELECT 1 FROM claw_collab_requests accepted_member
+          WHERE accepted_member.session_id = ${r.req.sessionId!}
+            AND accepted_member.status IN ('approved', 'running', 'completed')
+        )`,
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
       sessionId: r.req.sessionId!,
       eventType: "session_started",
       actorUserId: params.userId,
-    });
-  }
+    }));
+    return true;
+  });
 
   // Step 4: 同意即开跑（并行，不等其他人）
   // 异步触发，不阻塞 mutation return
   startCoopExecution(params.requestId).catch((e) => console.error("[coop-exec] fire after agree failed:", e));
 
-  return { ok: true, sessionStatusChanged: allResponded && anyApproved };
+  return { ok: true, sessionStatusChanged };
 }
 
 /**
@@ -498,32 +576,49 @@ export async function rejectCoopRequest(params: {
   if (r.req.targetUserId !== params.userId) throw new Error("forbidden: not your invitation");
   if (r.req.status !== "pending") throw new Error(`cannot reject on status=${r.req.status}`);
 
-  await db.update(clawCollabRequests).set({ status: "rejected", completedAt: new Date() }).where(eq(clawCollabRequests.id, params.requestId));
-
-  await appendCoopEvent({
-    sessionId: r.req.sessionId!,
-    eventType: "member_rejected",
-    actorUserId: params.userId,
-    actorAdoptId: r.req.targetAdoptId,
-    requestId: params.requestId,
-    payload: params.reason ? { reason: params.reason } : undefined,
+  const claimed = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(clawCollabRequests)
+      .set({ status: "rejected", completedAt: new Date() })
+      .where(and(
+        eq(clawCollabRequests.id, params.requestId),
+        eq(clawCollabRequests.targetUserId, params.userId),
+        eq(clawCollabRequests.status, "pending"),
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
+      sessionId: r.req.sessionId!,
+      eventType: "member_rejected",
+      actorUserId: params.userId,
+      actorAdoptId: r.req.targetAdoptId,
+      requestId: params.requestId,
+      payload: params.reason ? { reason: params.reason } : undefined,
+    }));
+    return true;
   });
+  if (!claimed) throw new Error("invitation already handled");
 
-  // 如果全员拒绝 → session cancel
-  const allMembers = await db
-    .select({ status: clawCollabRequests.status })
-    .from(clawCollabRequests)
-    .where(eq(clawCollabRequests.sessionId, r.req.sessionId!));
-  const allRejected = allMembers.every((m) => m.status === "rejected");
-  if (allRejected && r.session.status === "inviting") {
-    await db.update(lxCoopSessions).set({ status: "closed", closedAt: new Date() }).where(eq(lxCoopSessions.id, r.req.sessionId!));
-    await appendCoopEvent({
+  await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(lxCoopSessions)
+      .set({ status: "closed", closedAt: new Date() })
+      .where(and(
+        eq(lxCoopSessions.id, r.req.sessionId!),
+        eq(lxCoopSessions.status, "inviting"),
+        sql`NOT EXISTS (
+          SELECT 1 FROM claw_collab_requests non_rejected_member
+          WHERE non_rejected_member.session_id = ${r.req.sessionId!}
+            AND non_rejected_member.status <> 'rejected'
+        )`,
+      ));
+    if (affectedRows(updated) !== 1) return;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
       sessionId: r.req.sessionId!,
       eventType: "session_closed",
       actorUserId: params.userId,
       payload: { reason: "all_members_rejected" },
-    });
-  }
+    }));
+  });
 
   return { ok: true };
 }
@@ -630,21 +725,28 @@ export async function startCoopExecution(requestId: number): Promise<void> {
   const r = rows[0];
   if (!r || !r.req) return;
 
-  // 只对 approved 状态发起执行；已在 running/completed 的跳过
-  if (r.req.status !== "approved") {
-    console.log(`[coop-exec] skip requestId=${requestId}, status=${r.req.status}`);
+  const claimed = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(clawCollabRequests)
+      .set({ status: "running" })
+      .where(and(
+        eq(clawCollabRequests.id, requestId),
+        eq(clawCollabRequests.status, "approved"),
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
+      sessionId: r.req.sessionId!,
+      eventType: "execution_started",
+      actorUserId: r.req.targetUserId,
+      actorAdoptId: r.req.targetAdoptId,
+      requestId,
+    }));
+    return true;
+  });
+  if (!claimed) {
+    console.log(`[coop-exec] skip requestId=${requestId}, already claimed`);
     return;
   }
-
-  // 1) 状态转 running + event
-  await db.update(clawCollabRequests).set({ status: "running" }).where(eq(clawCollabRequests.id, requestId));
-  await appendCoopEvent({
-    sessionId: r.req.sessionId!,
-    eventType: "execution_started",
-    actorUserId: r.req.targetUserId,
-    actorAdoptId: r.req.targetAdoptId,
-    requestId: requestId,
-  });
 
   // 2026-04-17 手动模式：真人接收方走 CoopChatBox 提交，不自动 mock
   // 仅 @lingxia.local 后缀的 mock user 继续走 5 秒模板自动执行（演示流畅性保留）
@@ -665,33 +767,45 @@ export async function startCoopExecution(requestId: number): Promise<void> {
         groupName: r.groupName,
         subtask: r.req.taskSummary || "",
       });
-      await db2
-        .update(clawCollabRequests)
-        .set({ status: "completed", resultSummary: result, completedAt: new Date() })
-        .where(eq(clawCollabRequests.id, requestId));
-      await appendCoopEvent({
-        sessionId: r.req.sessionId!,
-        eventType: "execution_completed",
-        actorUserId: r.req.targetUserId,
-        actorAdoptId: r.req.targetAdoptId,
-        requestId: requestId,
-        payload: { durationMs: delayMs, resultPreview: result.slice(0, 120) },
+      await db2.transaction(async (tx) => {
+        const updated = await tx
+          .update(clawCollabRequests)
+          .set({ status: "completed", resultSummary: result, completedAt: new Date() })
+          .where(and(
+            eq(clawCollabRequests.id, requestId),
+            eq(clawCollabRequests.status, "running"),
+          ));
+        if (affectedRows(updated) !== 1) return;
+        await tx.insert(lxCoopEvents).values(coopEventValues({
+          sessionId: r.req.sessionId!,
+          eventType: "execution_completed",
+          actorUserId: r.req.targetUserId,
+          actorAdoptId: r.req.targetAdoptId,
+          requestId,
+          payload: { durationMs: delayMs, resultPreview: result.slice(0, 120) },
+        }));
       });
       console.log(`[coop-exec] completed requestId=${requestId} after ${delayMs}ms`);
     } catch (e) {
       console.error(`[coop-exec] simulate execution failed for ${requestId}:`, e);
       const db2 = await getDb();
       if (db2) {
-        await db2
-          .update(clawCollabRequests)
-          .set({ status: "failed" })
-          .where(eq(clawCollabRequests.id, requestId));
-        await appendCoopEvent({
-          sessionId: r.req.sessionId!,
-          eventType: "execution_failed",
-          actorUserId: r.req.targetUserId,
-          requestId: requestId,
-          payload: { error: String(e) },
+        await db2.transaction(async (tx) => {
+          const updated = await tx
+            .update(clawCollabRequests)
+            .set({ status: "failed" })
+            .where(and(
+              eq(clawCollabRequests.id, requestId),
+              eq(clawCollabRequests.status, "running"),
+            ));
+          if (affectedRows(updated) !== 1) return;
+          await tx.insert(lxCoopEvents).values(coopEventValues({
+            sessionId: r.req.sessionId!,
+            eventType: "execution_failed",
+            actorUserId: r.req.targetUserId,
+            requestId,
+            payload: { error: String(e) },
+          }));
         });
       }
     }
@@ -733,28 +847,36 @@ export async function publishCoopSession(params: {
   if (session.status === "published") throw new Error("already published");
   if (session.status === "closed" || session.status === "dissolved") throw new Error("cannot publish closed session");
 
-  await db
-    .update(lxCoopSessions)
-    .set({
-      status: "published",
-      finalSummary: params.finalSummary,
-      finalArtifacts: params.finalArtifacts ? JSON.stringify(params.finalArtifacts) : null,
-      publishedAt: new Date(),
-    })
-    .where(eq(lxCoopSessions.id, params.sessionId));
-
-  // 所有成员可见
-  await db
-    .update(clawCollabRequests)
-    .set({ resultVisibleToAll: true })
-    .where(eq(clawCollabRequests.sessionId, params.sessionId));
-
-  await appendCoopEvent({
-    sessionId: params.sessionId,
-    eventType: "published",
-    actorUserId: params.creatorUserId,
-    payload: { summaryPreview: params.finalSummary.slice(0, 200) },
+  const published = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(lxCoopSessions)
+      .set({
+        status: "published",
+        finalSummary: params.finalSummary,
+        finalArtifacts: params.finalArtifacts ? JSON.stringify(params.finalArtifacts) : null,
+        publishedAt: new Date(),
+      })
+      .where(and(
+        eq(lxCoopSessions.id, params.sessionId),
+        eq(lxCoopSessions.creatorUserId, params.creatorUserId),
+        ne(lxCoopSessions.status, "published"),
+        ne(lxCoopSessions.status, "closed"),
+        ne(lxCoopSessions.status, "dissolved"),
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx
+      .update(clawCollabRequests)
+      .set({ resultVisibleToAll: true })
+      .where(eq(clawCollabRequests.sessionId, params.sessionId));
+    await tx.insert(lxCoopEvents).values(coopEventValues({
+      sessionId: params.sessionId,
+      eventType: "published",
+      actorUserId: params.creatorUserId,
+      payload: { summaryPreview: params.finalSummary.slice(0, 200) },
+    }));
+    return true;
   });
+  if (!published) throw new Error("session state changed; refresh before publishing");
 
   return { ok: true };
 }
@@ -778,14 +900,26 @@ export async function closeCoopSession(params: {
   if (session.creatorUserId !== params.creatorUserId) throw new Error("forbidden: only creator can close");
 
   const nextStatus = params.mode === "dissolve" ? "dissolved" : "closed";
-  await db.update(lxCoopSessions).set({ status: nextStatus, closedAt: new Date() }).where(eq(lxCoopSessions.id, params.sessionId));
-
-  await appendCoopEvent({
-    sessionId: params.sessionId,
-    eventType: nextStatus === "dissolved" ? "session_dissolved" : "session_closed",
-    actorUserId: params.creatorUserId,
-    payload: { mode: params.mode },
+  const closed = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(lxCoopSessions)
+      .set({ status: nextStatus, closedAt: new Date() })
+      .where(and(
+        eq(lxCoopSessions.id, params.sessionId),
+        eq(lxCoopSessions.creatorUserId, params.creatorUserId),
+        ne(lxCoopSessions.status, "closed"),
+        ne(lxCoopSessions.status, "dissolved"),
+      ));
+    if (affectedRows(updated) !== 1) return false;
+    await tx.insert(lxCoopEvents).values(coopEventValues({
+      sessionId: params.sessionId,
+      eventType: nextStatus === "dissolved" ? "session_dissolved" : "session_closed",
+      actorUserId: params.creatorUserId,
+      payload: { mode: params.mode },
+    }));
+    return true;
   });
+  if (!closed) throw new Error("session already closed");
 
   return { ok: true, nextStatus };
 }

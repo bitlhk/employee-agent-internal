@@ -8,7 +8,7 @@ export function registerSandboxRoutes(app: express.Express) {
 
   // ── Sandbox Exec (plus isolated exec) ──────────────────────────────
   app.get("/api/claw/sandbox/health", async (_req, res) => {
-    const health = sandboxHealthCheck();
+    const health = await sandboxHealthCheck();
     return res.json(health);
   });
 

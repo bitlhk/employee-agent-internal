@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, mkdirSync } from "fs";
 import path from "path";
 import { WebSocket, type RawData } from "ws";
 import type {
@@ -19,6 +19,7 @@ import { getCronDeliveryChannel } from "../cron-delivery";
 import { jiuwenClawServiceId, resolveRuntimeWorkspaceByIds } from "../helpers";
 import { computePreviewRuns } from "./schedule-preview";
 import { normalizeChannelId } from "./channel-provider-registry";
+import { writeJsonFileAtomicSync } from "../atomic-json-file";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
 const DEFAULT_WEBCHANNEL_WS_URL = "ws://127.0.0.1:19000/ws";
@@ -107,7 +108,7 @@ function readMeta(): JiuwenCronMeta {
 
 function writeMeta(meta: JiuwenCronMeta) {
   ensureDataDir();
-  writeFileSync(META_PATH, JSON.stringify({ jobs: meta.jobs || [] }, null, 2), "utf-8");
+  writeJsonFileAtomicSync(META_PATH, { jobs: meta.jobs || [] });
 }
 
 function readRuns(): JiuwenCronRuns {
@@ -119,7 +120,7 @@ function readRuns(): JiuwenCronRuns {
 
 function writeRuns(store: JiuwenCronRuns) {
   ensureDataDir();
-  writeFileSync(RUNS_PATH, JSON.stringify({ runs: store.runs || [] }, null, 2), "utf-8");
+  writeJsonFileAtomicSync(RUNS_PATH, { runs: store.runs || [] });
 }
 
 function getMeta(adoptId: string, taskId: string) {

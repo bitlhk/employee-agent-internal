@@ -5,8 +5,12 @@
 
 import type { Express, Request, Response, NextFunction } from "express";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import { validationResult } from "express-validator";
+import { createHash, timingSafeEqual } from "crypto";
+import { parse as parseCookieHeader } from "cookie";
+import { COOKIE_NAME } from "@shared/const";
+import { sdk } from "./sdk";
 
 /**
  * 配置安全 HTTP 头
@@ -438,19 +442,49 @@ export function detectSuspiciousActivity(req: Request, res: Response, next: Next
 
 /**
  * 岗位智能体聊天接口速率限制
- * 按 adoptId 限速（优先），兜底按 IP
- * 每个 adoptId 每分钟最多 15 次请求
+ * 按已验证的调用身份限速，兜底按 IP。请求体中的 adoptId 不参与
+ * 限流身份，避免攻击者枚举其他实例并耗尽受害者的限流额度。
  */
+export async function clawChatRateLimitKey(req: Request): Promise<string> {
+  const internalCredential = String(
+    req.headers["x-internal-key"]
+    || req.headers["x-linggan-token"]
+    || req.headers.authorization
+    || "",
+  ).trim();
+  const configuredInternalKey = String(process.env.INTERNAL_API_KEY || "").trim();
+  if (internalCredential && configuredInternalKey) {
+    const actualDigest = createHash("sha256").update(internalCredential.replace(/^Bearer\s+/i, "")).digest();
+    const expectedDigest = createHash("sha256").update(configuredInternalKey).digest();
+    if (timingSafeEqual(actualDigest, expectedDigest)) {
+      return `internal:${expectedDigest.toString("hex").slice(0, 24)}`;
+    }
+  }
+
+  let sessionCredential = "";
+  try {
+    sessionCredential = String(parseCookieHeader(req.headers.cookie || "")[COOKIE_NAME] || "");
+  } catch {
+    sessionCredential = "";
+  }
+  if (sessionCredential) {
+    const session = await sdk.verifySession(sessionCredential, { quiet: true });
+    const identity = session?.userId !== undefined
+      ? `user:${session.userId}`
+      : session?.openId
+        ? `openid:${session.openId}`
+        : "";
+    if (identity) {
+      return `auth:${createHash("sha256").update(identity).digest("hex").slice(0, 24)}`;
+    }
+  }
+  return ipKeyGenerator(getClientIp(req));
+}
+
 export const clawChatLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: Number.parseInt(process.env.CLAW_CHAT_RATELIMIT_MAX || "60", 10) || 60,
-  keyGenerator: (req: Request) => {
-    const adoptId = req.body?.adoptId;
-    if (typeof adoptId === "string" && adoptId.length > 0) {
-      return "adoptId:" + adoptId.slice(0, 64);
-    }
-    return getClientIp(req);
-  },
+  keyGenerator: clawChatRateLimitKey,
   message: { error: "请求过于频繁，请稍后再试" },
   standardHeaders: true,
   legacyHeaders: false,

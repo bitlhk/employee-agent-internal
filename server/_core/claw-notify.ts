@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync, existsSy
 import { safePostWebhookJson, validateWebhookTarget } from "./safe-webhook";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-protection";
 import { guardExternalDelivery } from "./external-delivery-guard";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const NOTIFY_CONFIG_PATH = `${APP_ROOT}/data/claw-notify-configs.json`;
@@ -86,7 +87,7 @@ async function sendWechatWork(config: any, text: string, title?: string): Promis
   try {
     // 1. 获取 access_token
     const tokenUrl = `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(config.corpId)}&corpsecret=${encodeURIComponent(config.secret)}`;
-    const tokenResp = await fetch(tokenUrl);
+    const tokenResp = await fetchWithTimeout(tokenUrl);
     const tokenData = await tokenResp.json() as any;
     if (tokenData.errcode !== 0) return { ok: false, error: `获取token失败: ${tokenData.errmsg}` };
 
@@ -98,7 +99,7 @@ async function sendWechatWork(config: any, text: string, title?: string): Promis
       msgtype: "markdown",
       markdown: { content: title ? `### ${title}\n${text}` : text },
     };
-    const sendResp = await fetch(sendUrl, {
+    const sendResp = await fetchWithTimeout(sendUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

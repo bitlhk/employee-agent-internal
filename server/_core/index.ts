@@ -54,7 +54,7 @@ import { registerNotifyRoutes } from "./claw-notify";
 import { registerFeishuRoutes } from "./claw-feishu";
 import { registerSkillRoutes } from "./claw-skills";
 import { registerCollabRoutes } from "./claw-collab";
-import { registerAgentTaskRoutes } from "./claw-agent-tasks";
+import { registerAgentTaskRoutes, startAgentTaskRuntime } from "./claw-agent-tasks";
 import { registerPersonalExpertRoutes } from "./personal-experts";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
@@ -242,7 +242,7 @@ import {
 } from "./error-tracking";
 import { sandboxExec, sandboxHealthCheck } from "./sandbox";
 import { startAuditDlqWorker } from "./audit-dlq-worker";
-import { routeTool, type ToolContext } from "./tool_router";
+import { flushToolAuditWrites, routeTool, startToolAuditRuntime, type ToolContext } from "./tool_router";
 import { buildChatRequestBody, type PermissionProfile } from "./tool_schema";
 
 
@@ -270,6 +270,7 @@ async function startServer() {
   const server = createServer(app);
   let shutdownPromise: Promise<void> | null = null;
   startManagedWorker("log_retention", startApplicationLogRetention);
+  startManagedWorker("tool_audit", startToolAuditRuntime);
 
   processShutdownHandler = (reason, exitCode, error) => {
     if (shutdownPromise) return shutdownPromise;
@@ -278,7 +279,6 @@ async function startServer() {
         logFatal("process.uncaught_exception", error, { reason }, "Uncaught exception; draining before exit");
       }
       beginServerDrain(reason);
-      await stopManagedWorkers(5_000);
       const drainTimeoutMs = Math.min(
         120_000,
         Math.max(1_000, Number.parseInt(process.env.EA_SHUTDOWN_DRAIN_TIMEOUT_MS || "20000", 10) || 20_000),
@@ -288,6 +288,7 @@ async function startServer() {
         Math.max(0, Number.parseInt(process.env.EA_SHUTDOWN_QUIESCE_MS || "1000", 10) || 0),
       );
       logInfo("server.drain_started", { reason, drainTimeoutMs, quiesceMs });
+      await stopManagedWorkers(5_000);
 
       // Give a reverse proxy or load balancer one readiness interval to stop
       // routing new traffic before the listening socket is closed.
@@ -313,6 +314,9 @@ async function startServer() {
         listenerClosed,
         new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
       ]);
+      await flushToolAuditWrites().catch((auditError) => {
+        logError("tool_audit.flush_failed", auditError);
+      });
       await closeDbConnection().catch((dbError) => {
         logError("database.close_failed", dbError);
       });
@@ -843,12 +847,13 @@ async function startServer() {
     });
     const dbWarmupStartedAt = Date.now();
     getDb()
-      .then((db) => {
+      .then(async (db) => {
         logIosLoadDebug("db_warmup_done", {
           ok: Boolean(db),
           ms: Date.now() - dbWarmupStartedAt,
         });
         if (db) {
+          await startManagedWorkerAsync("agent_tasks", startAgentTaskRuntime);
           startManagedWorker("agent_memory", startAgentMemoryRuntime);
           startManagedWorker("knowledge_recovery", startKnowledgeIndexRecovery);
         }

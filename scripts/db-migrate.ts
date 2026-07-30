@@ -19,6 +19,11 @@ type MigrationRow = {
   created_at: number | string;
 };
 
+type MigrationCapabilities = {
+  trigger: boolean;
+  view: boolean;
+};
+
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const baselinePath = path.join(appRoot, "config", "schema-baseline-v1.json");
 const migrationsFolder = path.join(appRoot, "drizzle", "managed");
@@ -74,7 +79,34 @@ async function ensureMigrationTable(connection: Connection): Promise<void> {
   `);
 }
 
-async function validateDdlPrivileges(connection: Connection): Promise<void> {
+function migrationCapabilities(sqlStatements: string[]): MigrationCapabilities {
+  const source = sqlStatements.join("\n").toUpperCase();
+  return {
+    trigger: /\bCREATE\s+TRIGGER\b/.test(source),
+    view: /\bCREATE(?:\s+OR\s+REPLACE)?\s+.*\bVIEW\b/.test(source),
+  };
+}
+
+async function pendingMigrationCapabilities(connection: Connection): Promise<MigrationCapabilities> {
+  const migrations = readMigrationFiles({ migrationsFolder });
+  if (!await migrationTableExists(connection)) {
+    return migrationCapabilities(migrations.flatMap((migration) => migration.sql));
+  }
+  const [rows] = await connection.query<Array<MigrationRow & mysql.RowDataPacket>>(
+    `SELECT hash, created_at FROM \`${migrationsTable}\` WHERE created_at > 0 ORDER BY created_at`,
+  );
+  const appliedTimes = new Set(rows.map((row) => Number(row.created_at)));
+  return migrationCapabilities(
+    migrations
+      .filter((migration) => !appliedTimes.has(migration.folderMillis))
+      .flatMap((migration) => migration.sql),
+  );
+}
+
+async function validateDdlPrivileges(
+  connection: Connection,
+  required: MigrationCapabilities,
+): Promise<void> {
   const [rows] = await connection.query<Array<{ connection_id: number } & mysql.RowDataPacket>>(
     "SELECT CONNECTION_ID() AS connection_id",
   );
@@ -85,8 +117,16 @@ async function validateDdlPrivileges(connection: Connection): Promise<void> {
 
   try {
     await connection.query(`CREATE TABLE \`${table}\` (\`value\` INT NOT NULL) ENGINE=InnoDB`);
-    await connection.query(`CREATE TRIGGER \`${trigger}\` BEFORE INSERT ON \`${table}\` FOR EACH ROW SET NEW.\`value\` = NEW.\`value\``);
-    await connection.query(`CREATE VIEW \`${view}\` AS SELECT \`value\` FROM \`${table}\``);
+    await connection.query(`ALTER TABLE \`${table}\` ADD COLUMN \`probe\` INT NULL`);
+    await connection.query(`CREATE INDEX \`idx_probe\` ON \`${table}\` (\`probe\`)`);
+    await connection.query(`INSERT INTO \`${table}\` (\`value\`) VALUES (1)`);
+    await connection.query(`DELETE FROM \`${table}\` WHERE \`value\` = 1`);
+    if (required.trigger) {
+      await connection.query(`CREATE TRIGGER \`${trigger}\` BEFORE INSERT ON \`${table}\` FOR EACH ROW SET NEW.\`value\` = NEW.\`value\``);
+    }
+    if (required.view) {
+      await connection.query(`CREATE VIEW \`${view}\` AS SELECT \`value\` FROM \`${table}\``);
+    }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new Error(`DDL privilege probe failed; configure DATABASE_MIGRATION_URL with a migration account (${reason})`);
@@ -190,7 +230,7 @@ async function main(): Promise<void> {
     }
     let ddlPrivilegesValidated = false;
     if (!tablePresent) {
-      await validateDdlPrivileges(connection);
+      await validateDdlPrivileges(connection, await pendingMigrationCapabilities(connection));
       ddlPrivilegesValidated = true;
       await ensureMigrationTable(connection);
     }
@@ -202,7 +242,9 @@ async function main(): Promise<void> {
     }
     const before = await inspectHistory(connection, false);
     if (mode === "apply" && before.pending > 0) {
-      if (!ddlPrivilegesValidated) await validateDdlPrivileges(connection);
+      if (!ddlPrivilegesValidated) {
+        await validateDdlPrivileges(connection, await pendingMigrationCapabilities(connection));
+      }
       await migrate(drizzle(connection), { migrationsFolder, migrationsTable });
     }
     const after = await inspectHistory(connection, mode !== "status");
