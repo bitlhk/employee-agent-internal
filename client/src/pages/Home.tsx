@@ -78,6 +78,7 @@ import {
   type ExpertAgent,
   type ExpertAgentsResponse,
 } from "@/lib/expert-agents";
+import { mergeCachedAssistantMetadata } from "@/lib/chat-history-metadata";
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
@@ -1839,40 +1840,16 @@ export default function Home() {
     toast.success(pinned ? "会话已置顶" : "已取消置顶");
   }, [updateWebSessionMeta]);
 
-  const mergeCurrentToolCallsIntoHistory = (messages: LxMsg[]) => {
-    const current = activeLingxiaMsgsRef.current || [];
-    if (!current.length || !messages.length) return messages;
-
-    const currentAssistantWithTools = current
-      .filter((msg) => msg.role === "assistant" && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0)
-      .reverse();
-    if (currentAssistantWithTools.length === 0) return messages;
-
-    const usedCurrentIds = new Set<string>();
-    const next = [...messages];
-    for (let i = next.length - 1; i >= 0; i -= 1) {
-      const msg = next[i];
-      if (msg.role !== "assistant" || (msg.toolCalls || []).length > 0) continue;
-      const msgText = normalizeSessionText(extractJiuwenPermissionMarker(msg.text || "").text);
-      const currentMatch = currentAssistantWithTools.find((candidate) => {
-        if (usedCurrentIds.has(candidate.id)) return false;
-        const candidateText = normalizeSessionText(extractJiuwenPermissionMarker(candidate.text || "").text);
-        return Boolean(candidateText && msgText && candidateText === msgText);
-      });
-      if (!currentMatch?.toolCalls?.length) continue;
-      usedCurrentIds.add(currentMatch.id);
-      next[i] = {
-        ...msg,
-        toolCalls: currentMatch.toolCalls,
-      };
-    }
-    return next;
-  };
+  const mergeCurrentMessageMetadataIntoHistory = (messages: LxMsg[]) => mergeCachedAssistantMetadata(
+    messages,
+    activeLingxiaMsgsRef.current || [],
+    (message) => normalizeSessionText(extractJiuwenPermissionMarker(message.text || "").text),
+  );
 
   const restoreLingxiaMessages = (messages: any[], opts?: { preserveCurrentToolCalls?: boolean }) => {
     const nextMessages = backfillLxMsgIds(messages || []);
     const hydratedMessages = opts?.preserveCurrentToolCalls
-      ? mergeCurrentToolCallsIntoHistory(nextMessages)
+      ? mergeCurrentMessageMetadataIntoHistory(nextMessages)
       : nextMessages;
     setLingxiaToolCalls([]);
     setLingxiaMsgs(hydratedMessages);
@@ -1880,9 +1857,12 @@ export default function Home() {
 
   const activateWebConversation = (conversationId: string, restoredMessages?: any[]) => {
     if (!resolvedAdoptId || !userStorageId) return;
-    const nextMessages = restoredMessages ? restoredMessages.slice(-100) : [];
     const hasRestoredMessages = Array.isArray(restoredMessages);
     const isAlreadyActive = conversationId === webConversationIdRef.current;
+    const restoredSlice = hasRestoredMessages ? restoredMessages.slice(-100) : [];
+    const nextMessages = isAlreadyActive
+      ? mergeCurrentMessageMetadataIntoHistory(restoredSlice)
+      : restoredSlice;
     restoreConversationRequestSeqRef.current += 1;
     restoredSessionKeyRef.current = hasRestoredMessages ? restoredSessionKeyRef.current : "";
     if (hasRestoredMessages) {
@@ -2416,7 +2396,9 @@ export default function Home() {
   const knowledgeSelectionKey = resolvedAdoptId && userStorageId && webConversationId
     ? webKnowledgeStorageKey(userStorageId, resolvedAdoptId, webConversationId)
     : "";
+  const knowledgeSelectionHydratingRef = useRef("");
   useEffect(() => {
+    knowledgeSelectionHydratingRef.current = knowledgeSelectionKey;
     if (!knowledgeSelectionKey) { setSelectedComposerKnowledgeIds([]); return; }
     try {
       const parsed = JSON.parse(localStorage.getItem(knowledgeSelectionKey) || "[]");
@@ -2427,6 +2409,10 @@ export default function Home() {
   }, [knowledgeSelectionKey]);
   useEffect(() => {
     if (!knowledgeSelectionKey) return;
+    if (knowledgeSelectionHydratingRef.current === knowledgeSelectionKey) {
+      knowledgeSelectionHydratingRef.current = "";
+      return;
+    }
     try { localStorage.setItem(knowledgeSelectionKey, JSON.stringify(selectedComposerKnowledgeIds.slice(0, 8))); } catch {}
   }, [knowledgeSelectionKey, selectedComposerKnowledgeIds]);
   const [composerConnectors, setComposerConnectors] = useState<ComposerConnector[]>([]);
