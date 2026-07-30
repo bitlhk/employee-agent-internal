@@ -26,6 +26,7 @@ done
 
 source "$SCRIPT_DIR/lib/release-common.sh"
 release_require_command git
+release_require_command node
 release_require_command tar
 release_require_command sha256sum
 
@@ -45,14 +46,15 @@ staging="$(mktemp -d)"
 trap 'rm -rf "$staging"' EXIT
 
 git -C "$APP_ROOT" archive --format=tar HEAD | tar -xf - -C "$staging"
-cat > "$staging/release-manifest.json" <<EOF
-{
-  "schema": 1,
-  "releaseId": "$RELEASE_ID",
-  "sourceCommit": "$commit",
-  "createdAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-}
-EOF
+created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+(
+  cd "$staging"
+  node scripts/generate-release-manifest.mjs \
+    --output release-manifest.json \
+    --release-id "$RELEASE_ID" \
+    --source-commit "$commit" \
+    --created-at "$created_at"
+)
 
 bundle="$OUTPUT_DIR/employee-agent-$RELEASE_ID.tar.gz"
 tar -C "$staging" -czf "$bundle" .

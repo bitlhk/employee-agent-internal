@@ -113,11 +113,17 @@ jobs:
       - name: Module size budget
         run: pnpm run lint:module-size
 
+      - name: Dependency policy
+        run: pnpm run lint:dependencies
+
+      - name: Production dependency audit
+        run: pnpm run audit:dependencies
+
       - name: Typecheck
         run: pnpm run check
 
-      - name: Test
-        run: pnpm run test
+      - name: Test and coverage budget
+        run: pnpm run test:coverage
 
       - name: Knowledge service dependencies
         run: pip install -r server/knowledge/requirements.txt
