@@ -7,7 +7,7 @@
 - MySQL pool: 10 connections, queue limit 100
 - Smooth weighted scheduling across each scenario
 - Platform stage duration: 15 seconds each
-- Authenticated business stage duration: 15 seconds each
+- Authenticated multi-identity business stage duration: 10 seconds each
 
 ## Read-only Platform Result
 
@@ -25,19 +25,19 @@ below one second.
 
 ## Authenticated Business Result
 
-Scenario mix: history 35%, Skill registry 25%, MCP status 20%, file capabilities
-10%, and channel capabilities 10%.
+Scenario mix: history 30%, Skill registry 20%, MCP status 20%, file capabilities
+10%, channel capabilities 10%, and knowledge search 10%. Five independent
+authenticated Agent identities were rotated across the workers.
 
-| Concurrency | Requests | Throughput | Errors | p50 | p95 | p99 |
+| Concurrency | Requests | Throughput | Errors | Overall p95 | MCP p95 | Knowledge p95 |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 5 | 187 | 12.47 req/s | 0 | 278.7 ms | 550.6 ms | 1,537.0 ms |
-| 10 | 217 | 14.47 req/s | 0 | 645.0 ms | 926.3 ms | 1,079.6 ms |
-| 20 | 220 | 14.67 req/s | 0 | 1,250.4 ms | 2,074.6 ms | 4,619.9 ms |
+| 10 | 756 | 75.6 req/s | 0 | 162.5 ms | 175.4 ms | 223.7 ms |
+| 30 | 1,658 | 165.8 req/s | 0 | 242.7 ms | 210.0 ms | 324.7 ms |
+| 50 | 1,776 | 177.6 req/s | 0 | 480.8 ms | 506.2 ms | 557.5 ms |
 
-All stages passed the business acceptance gate of less than 1% errors and
-aggregate p95 below three seconds. At 20 continuous clients, aggregate throughput
-has plateaued and MCP status p95 is 4.62 seconds. This is the first scaling signal
-to investigate before raising the current single-node recommendation.
+All 4,190 requests passed with no HTTP or transport errors. Every stage remained
+below the A-level 1.5-second p95 gate. MCP response caching recorded 782 hits, 25
+coalesced concurrent requests, and 30 misses during the run.
 
 ## Real Runtime Smoke
 
@@ -46,6 +46,8 @@ to investigate before raising the current single-node recommendation.
 | JiuwenSwarm + wealth MCP | HTTP 200, SSE complete, real tool event | first byte 2.54 s; first tool event 6.70 s; complete 47.22 s |
 | JiuwenSwarm + focused MCP probe | HTTP 200, SSE complete, Prometheus lifecycle recorded | first byte 1.96 s; first tool event 6.55 s; complete 21.95 s |
 | JiuwenBox sandbox | HTTP 200, expected output marker | 0.39 s |
+| Two-account JiuwenSwarm smoke | 2/2 HTTP 200 and SSE complete | 7.84-9.71 s complete |
+| Two-account JiuwenBox smoke | 2/2 HTTP 200 with expected marker | 0.31-0.34 s |
 
 The focused MCP probe produced `ea_mcp_calls_total{kind="platform",
 outcome="success"} 1`, a 10.489-second MCP duration, and zero active MCP calls
@@ -75,9 +77,9 @@ session and an owned test Agent:
 
 ```bash
 EA_BUSINESS_LOAD_TEST_URL=http://127.0.0.1:5180 \
-EA_BUSINESS_LOAD_TEST_COOKIE='<short-lived cookie>' \
-EA_BUSINESS_LOAD_TEST_ADOPT_ID='<test adopt id>' \
-EA_BUSINESS_LOAD_TEST_STAGE_SECONDS=15 \
-EA_BUSINESS_LOAD_TEST_MAX_P95_MS=3000 \
+EA_BUSINESS_LOAD_TEST_PROFILE_FILE='<mode-0600 multi-identity JSON file>' \
+EA_BUSINESS_LOAD_TEST_STAGES=10,30,50 \
+EA_BUSINESS_LOAD_TEST_STAGE_SECONDS=10 \
+EA_BUSINESS_LOAD_TEST_MAX_P95_MS=1500 \
 pnpm load:business
 ```

@@ -22,6 +22,7 @@ SCRIPT_APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 : "${REMOTE_USER:=ea-backup}"
 : "${REMOTE_DIR:=/opt/backups/employee-agent}"
 : "${REMOTE_KEY:=$CONFIG_DIR/offsite-backup-key}"
+: "${OFFSITE_BACKUP_FREQUENCY:=weekly}"
 : "${MYSQL_CORE_EXCLUDE_TABLES:=}"
 : "${MYSQL_INCLUDE_EVENTS:=false}"
 : "${MYSQL_DUMP_COMPRESS:=true}"
@@ -71,6 +72,10 @@ fi
 [[ "$BACKUP_PROFILE" == "core" || "$BACKUP_PROFILE" == "full" ]] || {
   echo "BACKUP_PROFILE must be core or full" >&2
   exit 2
+}
+[[ "$OFFSITE_BACKUP_FREQUENCY" == "daily" || "$OFFSITE_BACKUP_FREQUENCY" == "weekly" ]] || {
+  echo "OFFSITE_BACKUP_FREQUENCY must be daily or weekly" >&2
+  exit 1
 }
 
 [[ -r "$DB_CNF" ]] || { echo "missing $DB_CNF" >&2; exit 1; }
@@ -232,7 +237,11 @@ SNAPSHOT_DIR="$FINAL_SNAPSHOT_DIR"
 find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -mtime "+$KEEP_DAYS" -exec rm -rf -- {} +
 date --iso-8601=seconds > "$BACKUP_DIR/.last-local-success"
 
-if [[ "$DAY_OF_WEEK" == "7" && -n "$REMOTE_HOST" ]]; then
+sync_offsite=false
+if [[ "$OFFSITE_BACKUP_FREQUENCY" == "daily" || "$DAY_OF_WEEK" == "7" ]]; then
+  sync_offsite=true
+fi
+if [[ "$sync_offsite" == "true" && -n "$REMOTE_HOST" ]]; then
   [[ -r "$REMOTE_KEY" ]] || { echo "missing $REMOTE_KEY" >&2; exit 1; }
   EMPLOYEE_AGENT_BACKUP_CONFIG_DIR="$CONFIG_DIR" \
     "$BACKUP_SOURCE_ROOT/scripts/validate-production-backup.sh" "$SNAPSHOT_DIR"

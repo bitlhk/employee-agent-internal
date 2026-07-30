@@ -128,6 +128,9 @@ jobs:
       - name: Critical path coverage budget
         run: pnpm run test:coverage:critical
 
+      - name: Load-test configuration safety
+        run: pnpm run test:load-config
+
       - name: Knowledge service dependencies
         run: pip install -r server/knowledge/requirements.txt
 

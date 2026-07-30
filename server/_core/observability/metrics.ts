@@ -384,6 +384,13 @@ const mcpActive = new Gauge({
   registers: [metricsRegistry],
 });
 
+const mcpStatusCacheRequests = new Counter({
+  name: "ea_mcp_status_cache_requests_total",
+  help: "MCP status response cache lookups by bounded outcome.",
+  labelNames: ["outcome"] as const,
+  registers: [metricsRegistry],
+});
+
 const sandboxExecutions = new Counter({
   name: "ea_sandbox_executions_total",
   help: "Completed sandbox executions by outcome.",
@@ -558,6 +565,12 @@ export function beginMcpCall(kind: McpKind): (outcome: OperationalOutcome) => vo
     mcpCalls.inc(labels);
     mcpDuration.observe(labels, Math.max(0, Date.now() - startedAt) / 1000);
   };
+}
+
+export function recordMcpStatusCacheRequest(
+  outcome: "hit" | "miss" | "coalesced" | "bypass",
+): void {
+  mcpStatusCacheRequests.inc({ outcome });
 }
 
 export function beginRuntimeCall(runtime: ChatRuntime): (outcome: ChatOutcome) => void {

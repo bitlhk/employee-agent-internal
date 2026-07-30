@@ -2,6 +2,10 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, or, sql } from "dr
 import { auditEvents, businessAgents, skillMarketplace, agentCallLogs, agentTasks, BusinessAgent, InsertBusinessAgent, InsertAgentTask } from "../../drizzle/schema";
 import { getDb } from "./connection";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "../_core/secret-protection";
+export {
+  reserveAgentTask,
+  type AgentTaskReservation,
+} from "./agent-task-reservation";
 
 function revealBusinessAgentToken(agent: BusinessAgent): BusinessAgent {
   if (!agent.apiToken) return agent;
@@ -396,68 +400,6 @@ export async function createAgentTask(data: InsertAgentTask): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   await db.insert(agentTasks).values(data as any);
-}
-
-export type AgentTaskReservation =
-  | { kind: "created" }
-  | { kind: "existing"; task: any }
-  | { kind: "concurrency_exceeded" }
-  | { kind: "daily_exceeded" };
-
-export async function reserveAgentTask(
-  data: InsertAgentTask,
-  limits: { maxConcurrent: number; maxDailyRequests: number; dayStartedAt: Date },
-): Promise<AgentTaskReservation> {
-  const db = await getDb();
-  if (!db) throw new Error("DB not available");
-  return db.transaction(async (tx) => {
-    // A business-agent row is the stable lock shared by all submissions to one
-    // expert. This makes quota checks and the following insert one atomic unit.
-    await tx.execute(sql`SELECT id FROM business_agents WHERE id = ${data.agentId} FOR UPDATE`);
-
-    if (data.sourceMessageId) {
-      const existing = await tx
-        .select()
-        .from(agentTasks)
-        .where(and(
-          eq(agentTasks.adoptId, data.adoptId),
-          eq(agentTasks.agentId, data.agentId),
-          eq(agentTasks.sourceMessageId, data.sourceMessageId),
-        ))
-        .limit(1);
-      if (existing[0]) return { kind: "existing", task: existing[0] };
-    }
-
-    if (limits.maxConcurrent > 0) {
-      const active = await tx
-        .select({ count: sql<number>`count(*)` })
-        .from(agentTasks)
-        .where(and(
-          eq(agentTasks.agentId, data.agentId),
-          inArray(agentTasks.status, ["pending", "running"]),
-        ));
-      if (Number(active[0]?.count || 0) >= limits.maxConcurrent) {
-        return { kind: "concurrency_exceeded" };
-      }
-    }
-
-    if (limits.maxDailyRequests > 0) {
-      const submitted = await tx
-        .select({ count: sql<number>`count(*)` })
-        .from(agentTasks)
-        .where(and(
-          eq(agentTasks.agentId, data.agentId),
-          isNull(agentTasks.parentTaskId),
-          gte(agentTasks.createdAt, limits.dayStartedAt),
-        ));
-      if (Number(submitted[0]?.count || 0) >= limits.maxDailyRequests) {
-        return { kind: "daily_exceeded" };
-      }
-    }
-
-    await tx.insert(agentTasks).values(data as any);
-    return { kind: "created" };
-  });
 }
 
 export async function getAgentTask(id: string): Promise<any | undefined> {

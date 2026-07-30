@@ -9,6 +9,7 @@ ENCRYPTION_KEY_FILE="$CONFIG_DIR/backup-encryption.key"
 [[ -r "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
 : "${BACKUP_DIR:=/root/backups/employee-agent}"
 : "${BACKUP_REQUIRED_ARCHIVES:=mysql application-data skill-store jiuwenswarm-state platform-config}"
+: "${BACKUP_VALIDATION_STATUS_FILE:=$BACKUP_DIR/.last-validated-success}"
 
 case " $BACKUP_REQUIRED_ARCHIVES " in
   *" mysql "*) ;;
@@ -69,5 +70,9 @@ for encrypted in "${encrypted_files[@]}"; do
   esac
 done
 
-date --iso-8601=seconds > "$BACKUP_DIR/.last-validated-success"
+mkdir -p "$(dirname "$BACKUP_VALIDATION_STATUS_FILE")"
+validation_status_tmp="${BACKUP_VALIDATION_STATUS_FILE}.tmp.$$"
+date --iso-8601=seconds > "$validation_status_tmp"
+chmod 600 "$validation_status_tmp"
+mv -f "$validation_status_tmp" "$BACKUP_VALIDATION_STATUS_FILE"
 echo "backup validation passed: $snapshot"

@@ -2,10 +2,18 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  browserMutationHeaders,
+  loadTestProfiles,
+  trpcKnowledgeSearchPath,
+} from "./lib/load-test-profiles.mjs";
 
 const baseUrl = new URL(process.env.EA_BUSINESS_LOAD_TEST_URL || "http://127.0.0.1:5180");
 const adoptId = String(process.env.EA_BUSINESS_LOAD_TEST_ADOPT_ID || "").trim();
 const cookie = String(process.env.EA_BUSINESS_LOAD_TEST_COOKIE || "").trim();
+const knowledgeBaseId = String(process.env.EA_BUSINESS_LOAD_TEST_KNOWLEDGE_BASE_ID || "").trim();
+const profileFile = String(process.env.EA_BUSINESS_LOAD_TEST_PROFILE_FILE || "").trim();
+const mutationOrigin = String(process.env.EA_BUSINESS_LOAD_TEST_ORIGIN || "").trim();
 const stages = String(process.env.EA_BUSINESS_LOAD_TEST_STAGES || "5,10,20")
   .split(",")
   .map((value) => Number(value.trim()))
@@ -26,8 +34,6 @@ const internalKey = String(process.env.EA_BUSINESS_LOAD_TEST_INTERNAL_KEY || "")
 const maxErrorRate = Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_ERROR_RATE || 0.01));
 const maxP95Ms = Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_P95_MS || 1500));
 
-if (!adoptId) throw new Error("EA_BUSINESS_LOAD_TEST_ADOPT_ID is required");
-if (!cookie) throw new Error("EA_BUSINESS_LOAD_TEST_COOKIE is required for authenticated read scenarios");
 if (!stages.length) throw new Error("EA_BUSINESS_LOAD_TEST_STAGES must contain at least one positive integer");
 if (chatRequests > 0 && !chatEnabled) {
   throw new Error("Set EA_BUSINESS_LOAD_TEST_ENABLE_CHAT=1 to allow paid model smoke requests");
@@ -41,13 +47,22 @@ if (!loopback && process.env.EA_BUSINESS_LOAD_TEST_ALLOW_REMOTE !== "1") {
   throw new Error("Remote business load tests require EA_BUSINESS_LOAD_TEST_ALLOW_REMOTE=1");
 }
 
-const encodedAdoptId = encodeURIComponent(adoptId);
+const profiles = await loadTestProfiles({
+  profileFile,
+  adoptId,
+  cookie,
+  knowledgeBaseId,
+});
+const knowledgeQuery = String(
+  process.env.EA_BUSINESS_LOAD_TEST_KNOWLEDGE_QUERY || "企业制度、岗位职责与风险要求",
+).slice(0, 400);
 const scenarios = [
-  { name: "history_sessions", path: `/api/claw/chat-history/sessions?adoptId=${encodedAdoptId}&limit=50`, weight: 35 },
-  { name: "skill_registry", path: `/api/claw/skills/registry?adoptId=${encodedAdoptId}`, weight: 25 },
-  { name: "mcp_status", path: `/api/claw/mcp-tools/status?adoptId=${encodedAdoptId}`, weight: 20 },
-  { name: "file_capabilities", path: `/api/claw/files/capabilities?adoptId=${encodedAdoptId}`, weight: 10 },
-  { name: "channel_capabilities", path: `/api/claw/channels/capabilities?adoptId=${encodedAdoptId}`, weight: 10 },
+  { name: "history_sessions", path: (profile) => `/api/claw/chat-history/sessions?adoptId=${encodeURIComponent(profile.adoptId)}&limit=50`, weight: 30 },
+  { name: "skill_registry", path: (profile) => `/api/claw/skills/registry?adoptId=${encodeURIComponent(profile.adoptId)}`, weight: 20 },
+  { name: "mcp_status", path: (profile) => `/api/claw/mcp-tools/status?adoptId=${encodeURIComponent(profile.adoptId)}`, weight: 20 },
+  { name: "file_capabilities", path: (profile) => `/api/claw/files/capabilities?adoptId=${encodeURIComponent(profile.adoptId)}`, weight: 10 },
+  { name: "channel_capabilities", path: (profile) => `/api/claw/channels/capabilities?adoptId=${encodeURIComponent(profile.adoptId)}`, weight: 10 },
+  { name: "knowledge_search", path: (profile) => trpcKnowledgeSearchPath(profile, knowledgeQuery), weight: 10, requiresKnowledge: true },
 ];
 
 function weightedSchedule(items) {
@@ -67,8 +82,12 @@ function weightedSchedule(items) {
 
 const scenarioSchedule = weightedSchedule(scenarios);
 
-function chooseScenario(sequence) {
-  return scenarioSchedule[sequence % scenarioSchedule.length];
+function chooseScenario(sequence, profile) {
+  for (let offset = 0; offset < scenarioSchedule.length; offset += 1) {
+    const scenario = scenarioSchedule[(sequence + offset) % scenarioSchedule.length];
+    if (!scenario.requiresKnowledge || profile.knowledgeBaseId) return scenario;
+  }
+  return scenarios[0];
 }
 
 function percentile(values, quantile) {
@@ -100,15 +119,16 @@ async function runReadStage(concurrency) {
   const deadline = Date.now() + durationMs;
   const samples = [];
   let sequence = 0;
-  const workers = Array.from({ length: concurrency }, async () => {
+  const workers = Array.from({ length: concurrency }, async (_, workerIndex) => {
+    const profile = profiles[workerIndex % profiles.length];
     while (Date.now() < deadline) {
-      const scenario = chooseScenario(sequence++);
+      const scenario = chooseScenario(sequence++, profile);
       const startedAt = performance.now();
       let status = 0;
       let error = "";
       try {
-        const response = await fetch(new URL(scenario.path, baseUrl), {
-          headers: { cookie },
+        const response = await fetch(new URL(scenario.path(profile), baseUrl), {
+          headers: { cookie: profile.cookie },
           redirect: "manual",
           signal: AbortSignal.timeout(timeoutMs),
         });
@@ -141,13 +161,10 @@ async function runReadStage(concurrency) {
   };
 }
 
-async function runChatSmoke(index) {
+async function runChatSmoke(index, profile) {
   const startedAt = performance.now();
   const conversationId = `loadtest_${Date.now().toString(36)}_${index}`;
-  const headers = {
-    "content-type": "application/json",
-    cookie,
-  };
+  const headers = browserMutationHeaders(profile.cookie, mutationOrigin);
   if (internalKey) headers["x-internal-key"] = internalKey;
 
   let status = 0;
@@ -162,7 +179,7 @@ async function runChatSmoke(index) {
       method: "POST",
       headers,
       body: JSON.stringify({
-        adoptId,
+        adoptId: profile.adoptId,
         message: chatMessage,
         channel: "web",
         conversationId,
@@ -217,7 +234,7 @@ async function runChatSmoke(index) {
   };
 }
 
-async function runSandboxSmoke(index) {
+async function runSandboxSmoke(index, profile) {
   const startedAt = performance.now();
   let status = 0;
   let error = "";
@@ -226,11 +243,10 @@ async function runSandboxSmoke(index) {
     const response = await fetch(new URL("/api/claw/sandbox/exec", baseUrl), {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        cookie,
+        ...browserMutationHeaders(profile.cookie, mutationOrigin),
       },
       body: JSON.stringify({
-        adoptId,
+        adoptId: profile.adoptId,
         command: "printf EA_SANDBOX_OK",
         timeoutMs: 30_000,
       }),
@@ -260,8 +276,9 @@ const report = {
   schemaVersion: 1,
   startedAt: new Date().toISOString(),
   target: `${baseUrl.protocol}//${baseUrl.host}`,
-  mode: "authenticated-business-read",
-  adoptIdHashHint: adoptId.length > 8 ? `${adoptId.slice(0, 4)}...${adoptId.slice(-4)}` : "redacted",
+  mode: "authenticated-multi-user-business",
+  profileCount: profiles.length,
+  profilesWithKnowledge: profiles.filter((profile) => profile.knowledgeBaseId).length,
   stages: [],
   chatSmoke: [],
   sandboxSmoke: [],
@@ -275,19 +292,23 @@ for (const concurrency of stages) {
 }
 
 for (let index = 1; index <= chatRequests; index += 1) {
-  const result = await runChatSmoke(index);
+  const result = await runChatSmoke(index, profiles[(index - 1) % profiles.length]);
   report.chatSmoke.push(result);
   console.log(`chat request=${index} status=${result.status || "error"} duration=${result.durationMs}ms bytes=${result.bytes}`);
 }
 
 for (let index = 1; index <= sandboxRequests; index += 1) {
-  const result = await runSandboxSmoke(index);
+  const result = await runSandboxSmoke(index, profiles[(index - 1) % profiles.length]);
   report.sandboxSmoke.push(result);
   console.log(`sandbox request=${index} status=${result.status || "error"} duration=${result.durationMs}ms marker=${result.markerObserved}`);
 }
 
 const failedStages = report.stages.filter(
-  (stage) => stage.errorRate > maxErrorRate || stage.latencyMs.p95 > maxP95Ms,
+  (stage) => (
+    stage.requests < stage.concurrency
+    || stage.errorRate > maxErrorRate
+    || stage.latencyMs.p95 > maxP95Ms
+  ),
 );
 const failedChat = report.chatSmoke.filter((sample) => sample.error);
 const failedSandbox = report.sandboxSmoke.filter((sample) => sample.error);

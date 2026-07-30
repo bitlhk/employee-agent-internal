@@ -54,7 +54,6 @@ import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import {
-  buildCustomMcpStatusGroupFromRows,
   customMcpServerId,
   parseCustomMcpServerId,
   toggleCustomMcpConnection,
@@ -67,6 +66,9 @@ import {
 import {
   removeSkillPackageIndexRows,
 } from "./skills/skill-package-index";
+import { createBoundedAsyncCache } from "./bounded-async-cache";
+import { recordMcpStatusCacheRequest } from "./observability/metrics";
+import { buildMcpStatusResponse } from "./mcp-status-response";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -173,6 +175,11 @@ export function listConfiguredMcpServers() {
 }
 
 const agentMcpMutationTails = new Map<string, Promise<void>>();
+const mcpStatusResponseCache = createBoundedAsyncCache<Record<string, unknown>>({
+  ttlMs: 5_000,
+  maxEntries: 1_000,
+  onEvent: recordMcpStatusCacheRequest,
+});
 
 async function withAgentMcpMutationLock<T>(adoptId: string, action: () => Promise<T>): Promise<T> {
   const previous = agentMcpMutationTails.get(adoptId) || Promise.resolve();
@@ -489,92 +496,40 @@ export function registerSkillRoutes(app: express.Express) {
       }
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
-      const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
-      const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
       const force = String(req.query.force || "") === "1";
-      const allowedServerIds = new Set(selection.authorizedServerIds);
-      const config = readOpenClawConfig();
-      const servers = readOpenClawMcpServers(config);
-      const userId = Number((claw as any).userId || 0);
-      const [liveStatuses, invocationCounts, customRows] = await Promise.all([
-        fetchMcpLiveStatuses(servers, allowedServerIds, { force }).catch((e) => {
-          console.warn("[mcp tools] live probe failed", e);
-          return {} as Record<string, McpLiveStatus>;
-        }),
-        listMcpInvocationCounts(Array.from(allowedServerIds)).catch(
-          () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
-        ),
-        listCustomMcpConnections({ adoptId, userId }),
-      ]);
-      const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
-      const customGroup = buildCustomMcpStatusGroupFromRows(customRows);
-      const customServerIds = customRows.map((row) => customMcpServerId(row.id));
-      const enabledCustomServerIds = customRows.filter((row) => row.enabled).map((row) => customMcpServerId(row.id));
-      const enabledServerIds = new Set(selection.enabledServerIds);
-      const items = customGroup ? [...rawPayload.items, customGroup] : rawPayload.items;
-      const payload = {
-        ...rawPayload,
-        items: items.map((group: any) => {
-          if (group.id === "custom-user-mcp") return group;
-          const children = group.children.map((child: any) => ({
-            ...child,
-            enabledForAgent: enabledServerIds.has(child.serverId),
-            grantMode: selection.grantModeByServerId[child.serverId] || "optional",
-          }));
-          return {
-            ...group,
-            activeCount: children.filter((child: any) => child.enabledForAgent).length,
-            children,
-          };
-        }),
-        totals: {
-          ...rawPayload.totals,
-          groups: items.length,
-          configuredServers: Number(rawPayload.totals?.configuredServers || 0) + customRows.length,
-          availableServers: Number(rawPayload.totals?.availableServers || 0)
-            + customRows.filter((row) => row.enabled && row.healthStatus === "ready").length,
-          activeServers: selection.enabledServerIds.length + enabledCustomServerIds.length,
-        },
-      };
-      res.json({
-        ...payload,
-        roleTemplate,
-        filtered: true,
-        allowedServerIds: [...selection.authorizedServerIds, ...customServerIds],
-        enabledServerIds: [...selection.enabledServerIds, ...enabledCustomServerIds],
-        disabledServerIds: [
-          ...selection.disabledServerIds,
-          ...customRows.filter((row) => !row.enabled).map((row) => customMcpServerId(row.id)),
-        ],
-        live: {
-          enabled: true,
-          ttlMs: MCP_TOOLS_LIVE_TTL_MS,
-          checkedAt: new Date().toISOString(),
-          serverStatuses: Object.fromEntries(
-            [
-              ...Object.entries(liveStatuses).map(([serverId, status]) => [
-                serverId,
-                {
-                  status: status.status,
-                  toolCount: status.tools.length,
-                  checkedAt: status.checkedAt,
-                  error: status.error || null,
-                },
-              ]),
-              ...customRows.map((row) => [
-                customMcpServerId(row.id),
-                {
-                  status: row.healthStatus === "ready" ? "live" : "unavailable",
-                  toolCount: Array.isArray(row.selectedToolNames) ? row.selectedToolNames.length : 0,
-                  checkedAt: row.lastTestedAt?.toISOString() || null,
-                  error: row.lastError || null,
-                },
-              ]),
-            ]
+      const loadStatus = async (): Promise<Record<string, unknown>> => {
+        const roleTemplate = String((claw as any).roleTemplate || "general-assistant");
+        const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+        const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
+        const allowedServerIds = new Set(selection.authorizedServerIds);
+        const config = readOpenClawConfig();
+        const servers = readOpenClawMcpServers(config);
+        const userId = Number((claw as any).userId || 0);
+        const [liveStatuses, invocationCounts, customRows] = await Promise.all([
+          fetchMcpLiveStatuses(servers, allowedServerIds, { force }).catch((e) => {
+            console.warn("[mcp tools] live probe failed", e);
+            return {} as Record<string, McpLiveStatus>;
+          }),
+          listMcpInvocationCounts(Array.from(allowedServerIds)).catch(
+            () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
           ),
-        },
-      });
+          listCustomMcpConnections({ adoptId, userId }),
+        ]);
+        const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
+        return buildMcpStatusResponse({
+          rawPayload,
+          selection,
+          customRows,
+          liveStatuses,
+          roleTemplate,
+          liveTtlMs: MCP_TOOLS_LIVE_TTL_MS,
+        });
+      };
+      const responsePayload = force
+        ? await loadStatus()
+        : await mcpStatusResponseCache.getOrLoad(`${adoptId}\u0000status`, loadStatus);
+      if (force) recordMcpStatusCacheRequest("bypass");
+      res.json(responsePayload);
     } catch (e) {
       console.error("[mcp tools] status failed", e);
       res.status(500).json({ error: "list mcp tools failed" });
@@ -631,6 +586,7 @@ export function registerSkillRoutes(app: express.Express) {
           runtimeType: "jiuwenswarm",
           metadata: { enabled, custom: true, sessionEpoch: result.sessionEpoch },
         });
+        mcpStatusResponseCache.invalidatePrefix(`${adoptId}\u0000`);
         res.json({
           ok: true,
           changed: result.changed,
@@ -726,6 +682,7 @@ export function registerSkillRoutes(app: express.Express) {
         }
       });
 
+      mcpStatusResponseCache.invalidatePrefix(`${adoptId}\u0000`);
       res.json({
         ok: true,
         changed: result.changed,

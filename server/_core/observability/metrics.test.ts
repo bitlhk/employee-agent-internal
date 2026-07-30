@@ -12,6 +12,7 @@ import {
   metricsRegistry,
   observeDbPoolEvent,
   observeOperationalActivity,
+  recordMcpStatusCacheRequest,
   setBackgroundWorkerState,
 } from "./metrics";
 
@@ -57,6 +58,7 @@ describe("operational metrics", () => {
     chat.finish("success");
     beginRuntimeCall("jiuwenswarm")("success");
     beginMcpCall("platform")("error");
+    recordMcpStatusCacheRequest("hit");
     beginSandboxExecution()("timeout", 250);
     configureDbPoolMetrics({ connectionLimit: 10, maxIdle: 2, queueLimit: 100 });
     observeDbPoolEvent("acquire");
@@ -68,6 +70,7 @@ describe("operational metrics", () => {
     expect(output).toContain('ea_chat_requests_total{runtime="jiuwenswarm",outcome="success"} 1');
     expect(output).toContain('ea_runtime_calls_total{runtime="jiuwenswarm",outcome="success"} 1');
     expect(output).toContain('ea_mcp_calls_total{kind="platform",outcome="error"} 1');
+    expect(output).toContain('ea_mcp_status_cache_requests_total{outcome="hit"} 1');
     expect(output).toContain('ea_sandbox_executions_total{outcome="timeout"} 1');
     expect(output).toContain('ea_db_pool_connections{state="active"} 0');
     expect(output).toContain('ea_background_worker_state{worker="recycler",state="running"} 1');

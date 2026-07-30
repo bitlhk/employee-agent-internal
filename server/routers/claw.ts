@@ -67,7 +67,7 @@ import {
   safeSkillStorePath,
   removeSkillStorePath,
 } from "../_core/skills/skill-store";
-import type { Skill, SkillSource } from "../../shared/types/skill";
+import type { SkillSource } from "../../shared/types/skill";
 import {
   getAgentRoleTemplate,
   getRoleSkillMcpBaseline,
@@ -75,7 +75,6 @@ import {
   listAgentRoleTemplates,
   resolveAgentRoleTemplate,
 } from "../_core/role-templates";
-import type { AgentRoleTemplate, AgentRuntime } from "../_core/role-templates";
 import { resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
@@ -100,6 +99,11 @@ import {
   rejectAgentMemory,
   updateAgentMemory,
 } from "../_core/agent-memory";
+import {
+  applyAdminRoleReset,
+  resolveSelectableAdoptRoleTemplate,
+  type AdminClawAdoption,
+} from "../_core/admin-role-reset";
 import {
   JIUWEN_AUTO_MODEL_ID,
   JIUWEN_MODEL_PROVIDERS,
@@ -151,13 +155,6 @@ function safeChildPath(parentDir: string, childName: string): string {
   throw new Error("路径越权");
 }
 
-function safeDescendantPath(parentDir: string, candidatePath: string): string {
-  const parent = path.resolve(parentDir);
-  const candidate = path.resolve(candidatePath);
-  if (candidate !== parent && candidate.startsWith(`${parent}${path.sep}`)) return candidate;
-  throw new Error("路径越权");
-}
-
 const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
   return resolveActiveAgentRuntime(adoptId);
 };
@@ -165,179 +162,6 @@ const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
 function buildClawEntryUrl(adoptId: string): string {
   return `${resolvePublicBaseUrl()}/claw/${encodeURIComponent(adoptId)}`;
 }
-
-type AdminClawAdoption = NonNullable<Awaited<ReturnType<typeof getClawAdoptionAdminById>>>;
-
-const roleResettableStatuses = new Set(["creating", "active", "expiring"]);
-
-type EffectiveRoleAssets = Awaited<ReturnType<typeof resolveEffectiveRoleAssets>>;
-
-const diffSorted = (before: readonly string[] = [], after: readonly string[] = []) => {
-  const beforeSet = new Set(before.map((item) => String(item || "").trim()).filter(Boolean));
-  const afterSet = new Set(after.map((item) => String(item || "").trim()).filter(Boolean));
-  return {
-    added: [...afterSet].filter((item) => !beforeSet.has(item)).sort(),
-    removed: [...beforeSet].filter((item) => !afterSet.has(item)).sort(),
-  };
-};
-
-const diffEffectiveRoleAssets = (before: EffectiveRoleAssets, after: EffectiveRoleAssets) => ({
-  skills: {
-    default: diffSorted(before.skills.default, after.skills.default),
-    optional: diffSorted(before.skills.optional, after.skills.optional),
-  },
-  mcpServers: {
-    default: diffSorted(before.mcpServers.default, after.mcpServers.default),
-    optional: diffSorted(before.mcpServers.optional, after.mcpServers.optional),
-  },
-});
-
-const resolveRoleResetRuntime = (row: AdminClawAdoption): AgentRuntime => {
-  const runtime = String(row.runtime || "").trim();
-  if (runtime === "jiuwenswarm" || String(row.adoptId || "").startsWith("lgj-")) return "jiuwenswarm";
-  throw new TRPCError({ code: "BAD_REQUEST", message: retiredRuntimeMessage() });
-};
-
-const applyAdminRoleReset = async (input: {
-  before: AdminClawAdoption;
-  role: AgentRoleTemplate;
-  operatorId: number | null;
-  targetStatus?: string | null;
-}) => {
-  const adoptId = String(input.before.adoptId || "");
-  const agentId = String(input.before.agentId || "");
-  const runtime = resolveRoleResetRuntime(input.before);
-  const status = String(input.targetStatus || input.before.status || "");
-
-  if (!adoptId || !agentId) {
-    return {
-      applied: false,
-      runtime,
-      reason: "missing runtime agent identifiers",
-    };
-  }
-  if (!roleResettableStatuses.has(status)) {
-    return {
-      applied: false,
-      runtime,
-      reason: `status ${status || "unknown"} is not resettable`,
-    };
-  }
-
-  const previousRoleTemplate = String(input.before.roleTemplate || "general-assistant");
-  const previousEffectiveAssets = await resolveEffectiveRoleAssets(previousRoleTemplate);
-  const effectiveAssets = await resolveEffectiveRoleAssets(input.role.id);
-  const effectiveAssetDiff = diffEffectiveRoleAssets(previousEffectiveAssets, effectiveAssets);
-  const activeSkillIds = await resolveActiveSkillIdsAfterRoleReset(adoptId, effectiveAssets);
-  const runtimeAdapter = getRoleRuntimeAdapter(runtime);
-  const skillReconcile = await runtimeAdapter.reconcileSkills({
-    adoptId,
-    agentId,
-    role: input.role,
-    effectiveAssets,
-    activeSkillIds,
-  });
-  const mcpReconcile = await runtimeAdapter.reconcileMcp({
-    adoptId,
-    agentId,
-    role: input.role,
-    effectiveAssets,
-  });
-  roleSkillPreferences.clear(adoptId);
-  const sessionEpoch = await runtimeAdapter.bumpSessionEpoch(adoptId, agentId);
-
-  await appendClawAdoptionEvent({
-    adoptionId: Number(input.before.id),
-    eventType: "profile_updated",
-    operatorType: "admin",
-    operatorId: input.operatorId,
-    detail: JSON.stringify({
-      action: "role_reset",
-      previousRoleTemplate,
-      roleTemplate: input.role.id,
-      industry: input.role.industry,
-      runtime,
-      previousEffectiveAssets,
-      effectiveAssets,
-      effectiveAssetDiff,
-      activeSkillIds,
-      skillReconcile,
-      mcpReconcile,
-      sessionEpoch,
-    }),
-  });
-
-  return {
-    applied: true,
-    runtime,
-    previousRoleTemplate,
-    previousEffectiveAssets,
-    effectiveAssets,
-    effectiveAssetDiff,
-    skillReconcile,
-    mcpReconcile,
-    sessionEpoch,
-  };
-};
-
-const resolveSelectableAdoptRoleTemplate = (roleId?: string | null): AgentRoleTemplate => {
-  const role = resolveAgentRoleTemplate(roleId);
-  if (role.status !== "mvp") {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: `岗位暂未开放申请: ${role.name}`,
-    });
-  }
-  return role;
-};
-
-const resolveRoleSkillAccessForAdoption = async (adoptId: string) => {
-  const claw = await getClawByAdoptId(adoptId);
-  const roleTemplate = String((claw as any)?.roleTemplate || "general-assistant");
-  const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
-  const allowedSkillIds = new Set([
-    ...effectiveAssets.skills.default,
-    ...effectiveAssets.skills.optional,
-  ].map((skillId) => String(skillId || "").trim()).filter(Boolean));
-  return {
-    claw,
-    roleTemplate,
-    effectiveAssets,
-    allowedSkillIds,
-  };
-};
-
-const personalSkillSourceKinds = new Set(["uploaded", "generated"]);
-
-const resolveActiveSkillIdsAfterRoleReset = async (
-  adoptId: string,
-  effectiveAssets: Awaited<ReturnType<typeof resolveEffectiveRoleAssets>>,
-): Promise<string[]> => {
-  const allowedSkillIds = new Set([
-    ...effectiveAssets.skills.default,
-    ...effectiveAssets.skills.optional,
-  ].map((skillId) => String(skillId || "").trim()).filter(Boolean));
-  const listed = await skillRegistry.listSkills(adoptId);
-  if (!listed.ok) {
-    logWarn("agent.role_reset.skill_list_failed", {
-      adoptId,
-      kind: listed.error.kind,
-      detail: listed.error.detail,
-    });
-    return [];
-  }
-  return listed.value
-    .filter((skill: Skill) => skill.enabled && skill.state === "ready")
-    .filter((skill: Skill) => {
-      const sourceKind = String(skill.source?.kind || "");
-      if (personalSkillSourceKinds.has(sourceKind)) return true;
-      return allowedSkillIds.has(String(skill.id || "").trim()) ||
-        allowedSkillIds.has(String(skill.source?.skillId || "").trim());
-    })
-    .map((skill: Skill) => String(skill.id || skill.source?.skillId || "").trim())
-    .filter(Boolean)
-    .sort();
-};
 
 const randomRuntimeSuffix = () => nanoid(10).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 

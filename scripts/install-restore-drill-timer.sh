@@ -24,6 +24,7 @@ TIMER_FILE="/etc/systemd/system/employee-agent-restore-drill.timer"
   echo "backup encryption key is missing: $CONFIG_DIR/backup-encryption.key" >&2
   exit 1
 }
+install -d -o root -g root -m 0700 "$DRILL_ROOT"
 
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
@@ -36,6 +37,7 @@ Type=oneshot
 WorkingDirectory=$APP_ROOT
 Environment=EMPLOYEE_AGENT_BACKUP_CONFIG_DIR=$CONFIG_DIR
 Environment=RESTORE_DRILL_ROOT=$DRILL_ROOT
+Environment=BACKUP_VALIDATION_STATUS_FILE=$DRILL_ROOT/.last-backup-validation-success
 ExecStart=$APP_ROOT/scripts/run-restore-drill.sh latest
 Nice=10
 IOSchedulingClass=best-effort
@@ -52,7 +54,7 @@ cat > "$TIMER_FILE" <<'EOF'
 Description=Run the Employee Agent restore drill monthly
 
 [Timer]
-OnCalendar=*-*-01 03:30:00
+OnCalendar=*-*-01 06:30:00
 RandomizedDelaySec=2h
 Persistent=true
 Unit=employee-agent-restore-drill.service

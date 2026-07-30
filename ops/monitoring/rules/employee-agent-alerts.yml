@@ -29,6 +29,78 @@ groups:
           )
           and sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[30m])) > 0
 
+      - record: ea:slo_chat_error_budget_burn:5m
+        expr: |
+          (
+            1 -
+            (
+              sum(rate(ea_chat_requests_total{outcome="success"}[5m]))
+              /
+              clamp_min(sum(rate(ea_chat_requests_total{outcome!="cancelled"}[5m])), 0.001)
+            )
+          ) / 0.02
+          and sum(rate(ea_chat_requests_total{outcome!="cancelled"}[5m])) > 0
+
+      - record: ea:slo_chat_error_budget_burn:1h
+        expr: |
+          (
+            1 -
+            (
+              sum(rate(ea_chat_requests_total{outcome="success"}[1h]))
+              /
+              clamp_min(sum(rate(ea_chat_requests_total{outcome!="cancelled"}[1h])), 0.001)
+            )
+          ) / 0.02
+          and sum(rate(ea_chat_requests_total{outcome!="cancelled"}[1h])) > 0
+
+      - record: ea:slo_mcp_error_budget_burn:5m
+        expr: |
+          (
+            1 -
+            (
+              sum(rate(ea_mcp_calls_total{outcome=~"success|empty"}[5m]))
+              /
+              clamp_min(sum(rate(ea_mcp_calls_total{outcome!="cancelled"}[5m])), 0.001)
+            )
+          ) / 0.03
+          and sum(rate(ea_mcp_calls_total{outcome!="cancelled"}[5m])) > 0
+
+      - record: ea:slo_mcp_error_budget_burn:1h
+        expr: |
+          (
+            1 -
+            (
+              sum(rate(ea_mcp_calls_total{outcome=~"success|empty"}[1h]))
+              /
+              clamp_min(sum(rate(ea_mcp_calls_total{outcome!="cancelled"}[1h])), 0.001)
+            )
+          ) / 0.03
+          and sum(rate(ea_mcp_calls_total{outcome!="cancelled"}[1h])) > 0
+
+      - record: ea:slo_knowledge_error_budget_burn:5m
+        expr: |
+          (
+            1 -
+            (
+              sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome=~"success|empty"}[5m]))
+              /
+              clamp_min(sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[5m])), 0.001)
+            )
+          ) / 0.01
+          and sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[5m])) > 0
+
+      - record: ea:slo_knowledge_error_budget_burn:1h
+        expr: |
+          (
+            1 -
+            (
+              sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome=~"success|empty"}[1h]))
+              /
+              clamp_min(sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[1h])), 0.001)
+            )
+          ) / 0.01
+          and sum(rate(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[1h])) > 0
+
       - record: ea:slo_chat_first_token_p95_seconds:10m
         expr: |
           histogram_quantile(
@@ -215,6 +287,42 @@ groups:
 
   - name: employee-agent-workloads
     rules:
+      - alert: EmployeeAgentChatErrorBudgetFastBurn
+        expr: |
+          ea:slo_chat_error_budget_burn:5m > 14.4
+          and ea:slo_chat_error_budget_burn:1h > 14.4
+          and sum(increase(ea_chat_requests_total{outcome!="cancelled"}[5m])) >= 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent chat error budget is burning rapidly
+          description: Chat failures are consuming the 30-day error budget at more than 14.4 times the sustainable rate.
+
+      - alert: EmployeeAgentMcpErrorBudgetFastBurn
+        expr: |
+          ea:slo_mcp_error_budget_burn:5m > 14.4
+          and ea:slo_mcp_error_budget_burn:1h > 14.4
+          and sum(increase(ea_mcp_calls_total{outcome!="cancelled"}[5m])) >= 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent MCP error budget is burning rapidly
+          description: MCP failures are consuming the 30-day error budget at more than 14.4 times the sustainable rate.
+
+      - alert: EmployeeAgentKnowledgeErrorBudgetFastBurn
+        expr: |
+          ea:slo_knowledge_error_budget_burn:5m > 14.4
+          and ea:slo_knowledge_error_budget_burn:1h > 14.4
+          and sum(increase(ea_operational_activity_total{activity="knowledge_search",outcome!="cancelled"}[5m])) >= 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Employee Agent knowledge error budget is burning rapidly
+          description: Knowledge-search failures are consuming the 30-day error budget at more than 14.4 times the sustainable rate.
+
       - alert: EmployeeAgentChatSuccessSloMiss
         expr: |
           ea:slo_chat_success_ratio:30m < 0.98

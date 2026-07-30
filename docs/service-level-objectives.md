@@ -36,6 +36,9 @@ objective.
 
 - Availability and safety failures page immediately after a short confirmation
   interval.
+- Conversation, MCP, and knowledge search use multi-window error-budget alerts.
+  A critical page requires both the 5-minute and 1-hour burn rates to exceed
+  14.4 times the sustainable 30-day rate with sufficient traffic.
 - Latency and success-rate alerts require a minimum sample count so low traffic
   does not create false alarms.
 - Initial success-rate alerts use a 30-minute operational window. Monthly
@@ -58,7 +61,8 @@ successful report; it does not expose restored row contents.
 
 The platform reaches the A operating target when:
 
-1. MCP status p95 passes the 20-client authenticated business test.
+1. MCP status p95 passes the 50-client, multi-identity authenticated business
+   test and remains below 1.5 seconds.
 2. Critical-path coverage and all existing CI gates pass.
 3. A representative 30-50 participant mixed workload stays within these
    objectives without capacity leakage after the test.

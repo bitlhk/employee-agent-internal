@@ -36,6 +36,7 @@ MYSQL_INCLUDE_EVENTS=false
 REMOTE_HOST=
 REMOTE_USER=ea-backup
 REMOTE_DIR=/opt/backups/employee-agent
+OFFSITE_BACKUP_FREQUENCY=weekly
 RPO_HOURS=24
 RTO_HOURS=4
 ```
@@ -70,10 +71,15 @@ sudo /root/employee-agent/scripts/validate-production-backup.sh latest
 1. Verify that the snapshot contains `MANIFEST`, `SHA256SUMS`, and the expected encrypted archives.
 2. Run `validate-production-backup.sh latest`; it verifies checksums, decrypts every archive, and tests the compressed stream without extracting user data.
 3. Confirm `.last-local-success` is newer than the configured RPO.
-4. Confirm `.last-offsite-success` is no older than eight days when off-site backup is enabled.
+4. Confirm `.last-offsite-success` is no older than 26 hours when
+   `OFFSITE_BACKUP_FREQUENCY=daily`, or eight days when it is `weekly`.
 5. Alert when any validation fails.
 
-The Sunday off-site copy runs only after the full local snapshot passes checksum, decryption, and archive validation.
+The default Sunday off-site copy runs only after the full local snapshot passes
+checksum, decryption, and archive validation. Set
+`OFFSITE_BACKUP_FREQUENCY=daily` for the A-level 24-hour disaster-recovery RPO;
+daily core snapshots are validated before transfer and Sunday still uses the
+full profile.
 
 ## Isolated Restore Exercise
 
@@ -116,6 +122,19 @@ On the approved isolated recovery host, install the monthly timer explicitly:
 sudo RESTORE_DRILL_RECOVERY_HOST=1 \
   /root/employee-agent/scripts/install-restore-drill-timer.sh
 ```
+
+When backups first land on a separate backup node, use
+`scripts/sync-latest-backup.sh` there to push the latest checksum-valid encrypted
+snapshot to the recovery host. Schedule that transfer before 06:30; the restore
+timer deliberately starts at 06:30 on the first day of each month so it consumes
+the latest completed transfer.
+
+The repository also provides `scripts/install-backup-sync-timer.sh`. Install the
+sync runner on the backup node, place its environment in the root-readable
+`/root/.config/employee-agent/backup-sync.env`, and enable the daily 04:30 timer.
+The timer uses a dedicated SSH key that can write only to the recovery host's
+backup account; the recovery host does not receive credentials that can modify
+the primary backup node.
 
 The installer refuses to run without the recovery-host acknowledgement. It
 does not enable scheduled restore work on the production application host. The

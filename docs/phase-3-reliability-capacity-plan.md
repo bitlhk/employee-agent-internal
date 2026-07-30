@@ -91,6 +91,11 @@ smoke requests are disabled by default. Chat can optionally require a real
 mode `0600`, contain an SLO acceptance result, and never contain the supplied
 cookie, prompt, or internal key.
 
+When write-path smoke checks target loopback while production CSRF protection
+is enabled, set `EA_BUSINESS_LOAD_TEST_ORIGIN` to an allowed public frontend
+origin. The harness sends the browser `Sec-Fetch-Site` header as well; missing
+or untrusted origins remain fail-closed.
+
 Initial acceptance targets for the read-only platform scenario:
 
 - HTTP error rate below 1 percent

@@ -9,7 +9,7 @@
   "files": {
     "client/src/pages/Home.tsx": 5551,
     "client/src/components/pages/SkillsPage.tsx": 2580,
-    "server/routers/claw.ts": 2324,
+    "server/routers/claw.ts": 2148,
     "client/src/pages/ClawAdmin.tsx": 2249,
     "client/src/components/ChatMessage.tsx": 1634,
     "server/_core/jiuwenclaw-bridge.ts": 1624,

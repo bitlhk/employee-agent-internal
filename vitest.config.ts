@@ -21,10 +21,10 @@ export default defineConfig({
       exclude: ["**/*.test.ts", "**/*.spec.ts"],
       reporter: ["text-summary", "json-summary"],
       thresholds: {
-        statements: 21,
+        statements: 22,
         branches: 65,
-        functions: 41,
-        lines: 21,
+        functions: 43,
+        lines: 22,
       },
     },
   },
