@@ -14,7 +14,7 @@ export function validateKnowledgeCitations(
 ): KnowledgeCitationValidation {
   const text = String(value || "");
   const allowed = new Set(Array.from(allowedIndexes).filter((index) => Number.isInteger(index) && index > 0));
-  if (!text || !allowed.size) return { text, normalizedCount: 0, removedCount: 0, markdownNormalizedCount: 0 };
+  if (!text) return { text, normalizedCount: 0, removedCount: 0, markdownNormalizedCount: 0 };
 
   let normalizedCount = 0;
   let removedCount = 0;

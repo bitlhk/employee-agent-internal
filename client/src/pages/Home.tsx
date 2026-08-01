@@ -4229,12 +4229,6 @@ export default function Home() {
 
   // 岗位智能体聊天消息区：仅在接近底部时自动跟随
   const lingxiaMsgsEndRef = useRef<HTMLDivElement>(null);
-  const isLingxiaNearBottom = useCallback(() => {
-    const el = lingxiaMsgViewportRef.current;
-    if (!el) return true;
-    const threshold = 100;
-    return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
-  }, []);
   const scrollLingxiaToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     const el = lingxiaMsgViewportRef.current;
     if (!el) return;
@@ -4303,15 +4297,45 @@ export default function Home() {
   useEffect(() => {
     const el = lingxiaMsgViewportRef.current;
     if (!el) return;
-    const onScroll = () => {
-      const nearBottom = isLingxiaNearBottom();
-      if (nearBottom) lingxiaManualNavigationRef.current = false;
-      updateLingxiaNearBottom(nearBottom);
+    let lastScrollTop = el.scrollTop;
+    const pauseAutoFollow = () => {
+      lingxiaManualNavigationRef.current = true;
+      updateLingxiaNearBottom(false);
     };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) pauseAutoFollow();
+    };
+    const onScroll = () => {
+      const scrollTop = el.scrollTop;
+      const scrollingUp = scrollTop < lastScrollTop - 1;
+      lastScrollTop = scrollTop;
+      if (scrollingUp) {
+        pauseAutoFollow();
+        return;
+      }
+
+      const distanceFromBottom = Math.max(0, el.scrollHeight - scrollTop - el.clientHeight);
+      if (distanceFromBottom <= 12) {
+        lingxiaManualNavigationRef.current = false;
+        updateLingxiaNearBottom(true);
+        return;
+      }
+      if (lingxiaManualNavigationRef.current) {
+        updateLingxiaNearBottom(false);
+        return;
+      }
+      updateLingxiaNearBottom(distanceFromBottom <= 100);
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
     el.addEventListener("scroll", onScroll, { passive: true });
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target instanceof Element ? event.target : null;
-      if (!target?.closest(".agent-task-card__header, .agent-task-card__details-toggle")) return;
+      if (!target?.closest([
+        ".agent-task-card__header",
+        ".agent-task-card__details-toggle",
+        ".lingxia-tool-summary",
+        ".lingxia-tool-step-summary",
+      ].join(", "))) return;
       const scrollTop = el.scrollTop;
       lingxiaManualNavigationRef.current = true;
       updateLingxiaNearBottom(false);
@@ -4324,10 +4348,11 @@ export default function Home() {
     el.addEventListener("pointerdown", onPointerDown);
     onScroll();
     return () => {
+      el.removeEventListener("wheel", onWheel);
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [isLingxiaNearBottom, updateLingxiaNearBottom]);
+  }, [updateLingxiaNearBottom]);
 
   useEffect(() => {
     const content = lingxiaMsgContentRef.current;

@@ -12,6 +12,16 @@ describe("knowledge citation validation", () => {
     expect(result.removedCount).toBe(1);
   });
 
+  it("removes knowledge markers when the current turn has no knowledge sources", () => {
+    const result = validateKnowledgeCitations(
+      "工具返回了公开信息[知识1]，但本轮没有知识库来源。",
+      [],
+    );
+
+    expect(result.text).toBe("工具返回了公开信息，但本轮没有知识库来源。");
+    expect(result.removedCount).toBe(1);
+  });
+
   it("does not rewrite examples inside fenced code blocks", () => {
     const result = validateKnowledgeCitations("正文[知识1]\n`[知识99]`\n```text\n[知识99]\n```", [1]);
     expect(result.text).toContain("正文[知识1]");

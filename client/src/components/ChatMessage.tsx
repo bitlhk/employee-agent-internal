@@ -11,7 +11,7 @@ import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
-import { formatKnowledgeCitations } from "@shared/knowledge-citations";
+import { formatKnowledgeCitations, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import { EA_ARTIFACT_SCHEMA } from "@shared/agent-artifact";
 import {
@@ -1096,10 +1096,18 @@ function ChatMessageInner({
     throttleStreamingText,
   );
   const displayedSourceText = throttleStreamingText ? throttledSourceText : text;
-  const displayText = useMemo(
-    () => sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText)),
-    [displayedSourceText],
+  const knowledgeSourceIndexes = useMemo(
+    () => (knowledgeSources || [])
+      .map((source) => source.index)
+      .filter((index) => Number.isInteger(index) && index > 0),
+    [knowledgeSources],
   );
+  const displayText = useMemo(() => {
+    const publicText = sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText));
+    return streaming
+      ? publicText
+      : validateKnowledgeCitations(publicText, knowledgeSourceIndexes).text;
+  }, [displayedSourceText, knowledgeSourceIndexes, streaming]);
   const knowledgeSourceGroups = useMemo(() => {
     const groups = new Map<string, { source: ChatKnowledgeSource; indexes: number[]; knowledgeBaseNames: string[] }>();
     for (const source of knowledgeSources || []) {
@@ -1248,7 +1256,7 @@ function ChatMessageInner({
             <ChatMarkdown
               content={displayText}
               phase={isLast && streaming ? "streaming" : "final"}
-              knowledgeSourceIndexes={(knowledgeSources || []).map((source) => source.index)}
+              knowledgeSourceIndexes={knowledgeSourceIndexes}
               knowledgeCitationLabels={knowledgeCitationLabels}
               knowledgeCitationUrls={knowledgeCitationUrls}
               knowledgeCitationScope={messageId}

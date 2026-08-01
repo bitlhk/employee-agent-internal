@@ -133,6 +133,24 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain('id="ea-knowledge-source-msg-weather-4"');
   });
 
+  it("does not display a model-authored knowledge marker without source metadata", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "公开工具返回了这条信息。[知识1]",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:01",
+      }),
+    );
+
+    expect(html).toContain("公开工具返回了这条信息。");
+    expect(html).not.toContain("知识1");
+  });
+
   it("shows execution evidence only when the runtime provides it", () => {
     const withEvidence = renderToStaticMarkup(
       React.createElement(ToolExecutionReceipt, { toolCalls: [{

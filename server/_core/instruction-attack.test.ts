@@ -34,5 +34,6 @@ describe("instruction attack detection", () => {
     expect(PLATFORM_UNTRUSTED_CONTENT_POLICY).toContain("不可信数据");
     expect(PLATFORM_UNTRUSTED_CONTENT_POLICY).toContain("MCP");
     expect(PLATFORM_UNTRUSTED_CONTENT_POLICY).toContain("只从这些内容中提取");
+    expect(PLATFORM_UNTRUSTED_CONTENT_POLICY).toContain("不得冒充知识库引用");
   });
 });
