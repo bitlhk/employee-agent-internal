@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { inferModelCapabilities, type ModelCapabilities } from "@shared/model-capabilities";
 
 type ModelDraft = {
   modelName: string;
@@ -20,6 +21,7 @@ type ModelDraft = {
   isDefault: boolean;
   originIndex?: number;
   contextWindowTokens?: number;
+  capabilities?: ModelCapabilities;
 };
 
 type EaModelDraft = {
@@ -75,6 +77,7 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
       isDefault: model.isDefault,
       originIndex: model.originIndex,
       contextWindowTokens: model.contextWindowTokens,
+      capabilities: model.capabilities,
     })));
     setEaModel({
       modelName: modelSettings.data.eaModel.modelName,
@@ -278,7 +281,7 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Agent 内核模型</h3>
-            <p className="mt-1 text-xs text-muted-foreground">由 JiuwenSwarm 保存并热加载，列表首项用于 Agent 主对话。</p>
+            <p className="mt-1 text-xs text-muted-foreground">由 JiuwenSwarm 保存并热加载，列表首项用于 Agent 主对话；图片由独立视觉配置处理，不随主模型切换。</p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setModels((current) => [...current, emptyModel()])}>
             <Plus className="h-4 w-4" />添加模型
@@ -288,6 +291,7 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
         <div className="space-y-3">
           {models.map((model, index) => {
             const sameNameCount = models.filter((item) => item.modelName === model.modelName).length;
+            const capabilities = inferModelCapabilities(model);
             return (
               <div key={`${model.originIndex ?? "new"}-${index}`} className="overflow-hidden rounded-md border border-gray-200 bg-white">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 bg-gray-50/70 px-4 py-3">
@@ -295,6 +299,9 @@ export function ModelSettingsPanel({ enabled = true }: { enabled?: boolean }) {
                     <span className="truncate text-sm font-medium text-gray-900">{model.alias || model.modelName || "新模型"}</span>
                     {index === 0 && <span className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] text-red-700">主对话默认</span>}
                     {model.isDefault && <span className="rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700">组内默认</span>}
+                    <span className="text-[10px] text-gray-500" title="模型能力依据配置与型号保守推断，保存后由运行时实际验证">
+                      {capabilities.tools ? "工具" : "对话"}{capabilities.vision ? " · 原生视觉" : ""}{capabilities.contextWindowTokens > 0 ? ` · ${Math.round(capabilities.contextWindowTokens / 1000)}K` : ""}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1">
                     {index !== 0 && <Button variant="ghost" size="sm" className="h-8" onClick={() => setPrimary(index)}><Star className="h-3.5 w-3.5" />设为主模型</Button>}

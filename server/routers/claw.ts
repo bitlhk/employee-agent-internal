@@ -99,6 +99,8 @@ import {
   rejectAgentMemory,
   updateAgentMemory,
 } from "../_core/agent-memory";
+import { restoreMemoryVersionProcedure } from "./claw-memory-version";
+import { getAvailableJiuwenModels, type RuntimeModelOption } from "../_core/available-models";
 import {
   applyAdminRoleReset,
   resolveSelectableAdoptRoleTemplate,
@@ -165,48 +167,12 @@ function buildClawEntryUrl(adoptId: string): string {
 
 const randomRuntimeSuffix = () => nanoid(10).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
 
-type RuntimeModelOption = { id: string; name: string; desc?: string; isDefault?: boolean };
 const iosLoadDebugEnabled = process.env.IOS_LOAD_DEBUG === "1";
 
 function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}): void {
   if (!iosLoadDebugEnabled) return;
   logDebug(`ios.load.${message}`, fields);
 }
-
-const getAvailableJiuwenModels = async (): Promise<RuntimeModelOption[]> => {
-  try {
-    const models = await listSelectableJiuwenModels();
-    if (models.length > 0) {
-      const automaticModel = resolveAutomaticSelectableJiuwenModel(models);
-      const orderedModels = automaticModel
-        ? [automaticModel, ...models.filter((model) => model.id !== automaticModel.id)]
-        : models;
-      return [
-        {
-          id: JIUWEN_AUTO_MODEL_ID,
-          name: "自动",
-          desc: automaticModel?.name || "由系统选择",
-          isDefault: true,
-        },
-        ...orderedModels.map((model) => ({
-          id: model.id,
-          name: model.name,
-          desc: model.description,
-          isDefault: false,
-        })),
-      ];
-    }
-  } catch (error) {
-    logWarn("model.catalog.read_failed", {
-      error: sanitizeModelAdminError(error),
-    });
-  }
-  const id = String(process.env.JIUWENCLAW_DEFAULT_MODEL || "glm-5.2").trim() || "glm-5.2";
-  return [
-    { id: JIUWEN_AUTO_MODEL_ID, name: "自动", desc: "由系统选择", isDefault: true },
-    { id, name: id, desc: "JiuwenSwarm", isDefault: false },
-  ];
-};
 
 const getAvailableModelsForRuntime = async (adoptId?: unknown): Promise<RuntimeModelOption[]> => {
   if (!String(adoptId || "").trim()) return await getAvailableJiuwenModels();
@@ -520,6 +486,8 @@ export const clawRouter = router({
         });
         return memory;
       }),
+
+    restoreMemoryVersion: restoreMemoryVersionProcedure,
 
     forgetMemory: protectedProcedure
       .input(z.object({

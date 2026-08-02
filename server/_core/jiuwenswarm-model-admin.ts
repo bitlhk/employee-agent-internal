@@ -1,4 +1,10 @@
 import { WebSocket, type RawData } from "ws";
+import {
+  inferModelCapabilities,
+  modelMeetsCapabilities,
+  type ModelCapabilities,
+  type ModelCapabilityRequirements,
+} from "../../shared/model-capabilities";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -40,6 +46,7 @@ export type PublicJiuwenModel = Omit<JiuwenModelSecret, "apiKey" | "timeout" | "
   apiKeyConfigured: boolean;
   isPrimary: boolean;
   contextWindowTokens: number;
+  capabilities: ModelCapabilities;
 };
 
 export type SelectableJiuwenModel = {
@@ -51,6 +58,7 @@ export type SelectableJiuwenModel = {
   provider: string;
   isDefault: boolean;
   runtimeModelId: string;
+  capabilities: ModelCapabilities;
 };
 
 export const JIUWEN_AUTO_MODEL_ID = "__auto";
@@ -58,6 +66,7 @@ export const JIUWEN_AUTO_MODEL_ID = "__auto";
 export function resolveAutomaticSelectableJiuwenModel(
   models: SelectableJiuwenModel[],
   configuredTarget = String(process.env.JIUWEN_AUTO_TARGET_MODEL || "").trim(),
+  requirements: ModelCapabilityRequirements = {},
 ): SelectableJiuwenModel | null {
   const normalizedTarget = configuredTarget.toLowerCase();
   const configuredModel = normalizedTarget
@@ -66,7 +75,11 @@ export function resolveAutomaticSelectableJiuwenModel(
           .some((value) => String(value || "").trim().toLowerCase() === normalizedTarget),
       )
     : null;
-  return configuredModel || models.find((model) => model.isDefault) || models[0] || null;
+  const compatible = models.filter((model) => modelMeetsCapabilities(model.capabilities, requirements));
+  return (configuredModel && compatible.some((model) => model.id === configuredModel.id) ? configuredModel : null)
+    || compatible.find((model) => model.isDefault)
+    || compatible[0]
+    || null;
 }
 
 const MODEL_CATALOG_TTL_MS = 5_000;
@@ -198,6 +211,7 @@ export function toPublicJiuwenModels(models: JiuwenModelSecret[]): PublicJiuwenM
     apiKeyConfigured: Boolean(model.apiKey),
     isPrimary: index === 0,
     contextWindowTokens: model.contextWindowTokens,
+    capabilities: inferModelCapabilities(model),
   }));
 }
 
@@ -213,6 +227,7 @@ export function toSelectableJiuwenModels(models: JiuwenModelSecret[]): Selectabl
       provider: model.provider,
       isDefault: index === 0,
       runtimeModelId: id,
+      capabilities: inferModelCapabilities(model),
     };
   });
 }
@@ -296,6 +311,7 @@ function toGatewayModel(model: JiuwenModelSecret) {
     origin_index: model.originIndex,
     timeout: model.timeout,
     verify_ssl: model.verifySsl,
+    context_window_tokens: model.contextWindowTokens,
   };
 }
 

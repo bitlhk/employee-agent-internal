@@ -6,6 +6,7 @@ export type AgentMemoryKind = "preference" | "instruction" | "entity" | "procedu
 export type AgentMemoryStatus = "candidate" | "active" | "superseded" | "forgotten" | "rejected" | "expired";
 export type AgentMemorySource = "explicit" | "automatic" | "feedback" | "legacy";
 export type AgentMemorySynthesisSlot = "profile" | "recent" | "playbook";
+export type AgentMemoryVersionChange = "created" | "observed" | "edited" | "restored";
 
 export type AgentMemoryRecord = {
   id: number;
@@ -26,6 +27,20 @@ export type AgentMemoryRecord = {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type AgentMemoryVersionRecord = {
+  id: number;
+  memoryId: number;
+  version: number;
+  kind: AgentMemoryKind;
+  content: string;
+  source: AgentMemorySource;
+  confidence: number;
+  changeType: AgentMemoryVersionChange;
+  validFrom: string;
+  validTo: string | null;
+  createdAt: string;
 };
 
 export type AgentMemoryJobRecord = {
@@ -111,6 +126,22 @@ function mapMemory(row: any): AgentMemoryRecord {
     expiresAt: isoDate(row.expires_at),
     createdAt: isoDate(row.created_at) || new Date(0).toISOString(),
     updatedAt: isoDate(row.updated_at) || new Date(0).toISOString(),
+  };
+}
+
+function mapMemoryVersion(row: Record<string, unknown>): AgentMemoryVersionRecord {
+  return {
+    id: Number(row.id),
+    memoryId: Number(row.memory_id),
+    version: Number(row.version || 1),
+    kind: String(row.kind || "preference") as AgentMemoryKind,
+    content: String(row.content || ""),
+    source: String(row.source || "automatic") as AgentMemorySource,
+    confidence: Number(row.confidence || 0),
+    changeType: String(row.change_type || "observed") as AgentMemoryVersionChange,
+    validFrom: isoDate(row.valid_from) || new Date(0).toISOString(),
+    validTo: isoDate(row.valid_to),
+    createdAt: isoDate(row.created_at) || new Date(0).toISOString(),
   };
 }
 
@@ -255,6 +286,15 @@ export async function createAgentMemory(input: {
   `);
   const created = await findAgentMemoryByKey(input.userId, input.adoptId, input.canonicalKey);
   if (!created) throw new Error("memory insert failed");
+  await db.execute(sql`
+    INSERT IGNORE INTO agent_memory_versions (
+      memory_id, user_id, adopt_id, version, kind, content, source, confidence,
+      change_type, valid_from
+    ) VALUES (
+      ${created.id}, ${created.userId}, ${created.adoptId}, ${created.version}, ${created.kind},
+      ${created.content}, ${created.source}, ${created.confidence}, 'created', ${new Date(created.createdAt)}
+    )
+  `);
   return created;
 }
 
@@ -269,25 +309,49 @@ export async function updateAgentMemoryObservation(input: {
 }): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  if (input.status) {
-    await db.execute(sql`
-      UPDATE agent_memory_items
-      SET content = ${input.content}, kind = ${input.kind}, source = ${input.source},
-          confidence = GREATEST(confidence, ${input.confidence}), status = ${input.status},
-          expires_at = ${input.expiresAt || null}, last_observed_at = CURRENT_TIMESTAMP,
-          version = version + 1
-      WHERE id = ${input.id}
+  await db.transaction(async (tx) => {
+    const locked: unknown = await tx.execute(sql`SELECT ${MEMORY_SELECT} FROM agent_memory_items WHERE id = ${input.id} FOR UPDATE`);
+    const row = rowsFromResult(locked)[0];
+    if (!row) return;
+    const current = mapMemory(row);
+    await tx.execute(sql`
+      INSERT IGNORE INTO agent_memory_versions (
+        memory_id, user_id, adopt_id, version, kind, content, source, confidence,
+        change_type, valid_from
+      ) VALUES (
+        ${current.id}, ${current.userId}, ${current.adoptId}, ${current.version}, ${current.kind},
+        ${current.content}, ${current.source}, ${current.confidence}, 'created', ${new Date(current.createdAt)}
+      )
     `);
-  } else {
-    await db.execute(sql`
+    const contentChanged = current.content !== input.content || current.kind !== input.kind;
+    const nextVersion = current.version + (contentChanged ? 1 : 0);
+    if (contentChanged) {
+      await tx.execute(sql`
+        UPDATE agent_memory_versions SET valid_to = CURRENT_TIMESTAMP
+        WHERE memory_id = ${current.id} AND version = ${current.version} AND valid_to IS NULL
+      `);
+    }
+    await tx.execute(sql`
       UPDATE agent_memory_items
       SET content = ${input.content}, kind = ${input.kind}, source = ${input.source},
           confidence = GREATEST(confidence, ${input.confidence}),
+          status = COALESCE(${input.status || null}, status),
           expires_at = COALESCE(${input.expiresAt || null}, expires_at),
-          last_observed_at = CURRENT_TIMESTAMP
+          last_observed_at = CURRENT_TIMESTAMP, version = ${nextVersion}
       WHERE id = ${input.id}
     `);
-  }
+    if (contentChanged) {
+      await tx.execute(sql`
+        INSERT INTO agent_memory_versions (
+          memory_id, user_id, adopt_id, version, kind, content, source, confidence,
+          change_type, valid_from
+        ) VALUES (
+          ${current.id}, ${current.userId}, ${current.adoptId}, ${nextVersion}, ${input.kind},
+          ${input.content}, ${input.source}, ${Math.max(current.confidence, input.confidence)}, 'observed', CURRENT_TIMESTAMP
+        )
+      `);
+    }
+  });
 }
 
 export async function addAgentMemoryEvidence(input: {
@@ -336,7 +400,7 @@ export async function setAgentMemoryStatus(id: number, userId: number, adoptId: 
   if (!db) throw new Error("DB not available");
   await db.execute(sql`
     UPDATE agent_memory_items
-    SET status = ${status}, version = version + 1
+    SET status = ${status}
     WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
   `);
 }
@@ -555,7 +619,7 @@ export async function confirmAgentMemoryRecord(id: number, userId: number, adopt
   await db.execute(sql`
     UPDATE agent_memory_items
     SET status = 'active', source = 'explicit', confidence = 100,
-        version = version + 1, last_observed_at = CURRENT_TIMESTAMP
+        last_observed_at = CURRENT_TIMESTAMP
     WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId} AND status = 'candidate'
   `);
 }
@@ -566,7 +630,7 @@ export async function rejectAgentMemoryRecord(id: number, userId: number, adoptI
   await db.transaction(async (tx) => {
     await tx.execute(sql`
       UPDATE agent_memory_items
-      SET status = 'rejected', version = version + 1, last_observed_at = CURRENT_TIMESTAMP
+      SET status = 'rejected', last_observed_at = CURRENT_TIMESTAMP
       WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId} AND status = 'candidate'
     `);
     await tx.execute(sql`
@@ -583,7 +647,7 @@ export async function forgetAgentMemoryRecord(id: number, userId: number, adoptI
   await db.transaction(async (tx) => {
     await tx.execute(sql`
       UPDATE agent_memory_items
-      SET status = 'forgotten', content = '[已忘记]', version = version + 1,
+      SET status = 'forgotten', content = '[已忘记]',
           last_observed_at = CURRENT_TIMESTAMP
       WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
     `);
@@ -592,18 +656,127 @@ export async function forgetAgentMemoryRecord(id: number, userId: number, adoptI
       SET snippet = NULL
       WHERE memory_id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
     `);
+    await tx.execute(sql`
+      UPDATE agent_memory_versions
+      SET content = '[已忘记]', valid_to = COALESCE(valid_to, CURRENT_TIMESTAMP)
+      WHERE memory_id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
+    `);
   });
 }
 
-export async function updateAgentMemoryContent(id: number, userId: number, adoptId: string, content: string): Promise<void> {
+export async function updateAgentMemoryContent(
+  id: number,
+  userId: number,
+  adoptId: string,
+  content: string,
+  changeType: AgentMemoryVersionChange = "edited",
+): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  await db.execute(sql`
-    UPDATE agent_memory_items
-    SET content = ${content}, status = 'active', source = 'explicit', confidence = 100,
-        version = version + 1, last_observed_at = CURRENT_TIMESTAMP
-    WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
+  await db.transaction(async (tx) => {
+    const locked: unknown = await tx.execute(sql`
+      SELECT ${MEMORY_SELECT} FROM agent_memory_items
+      WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
+      FOR UPDATE
+    `);
+    const row = rowsFromResult(locked)[0];
+    if (!row) throw new Error("memory not found");
+    const current = mapMemory(row);
+    await tx.execute(sql`
+      INSERT IGNORE INTO agent_memory_versions (
+        memory_id, user_id, adopt_id, version, kind, content, source, confidence,
+        change_type, valid_from
+      ) VALUES (
+        ${current.id}, ${current.userId}, ${current.adoptId}, ${current.version}, ${current.kind},
+        ${current.content}, ${current.source}, ${current.confidence}, 'created', ${new Date(current.createdAt)}
+      )
+    `);
+    if (current.content === content) {
+      await tx.execute(sql`
+        UPDATE agent_memory_items SET status = 'active', source = 'explicit', confidence = 100,
+          last_observed_at = CURRENT_TIMESTAMP
+        WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
+      `);
+      return;
+    }
+    const nextVersion = current.version + 1;
+    await tx.execute(sql`
+      UPDATE agent_memory_versions SET valid_to = CURRENT_TIMESTAMP
+      WHERE memory_id = ${id} AND version = ${current.version} AND valid_to IS NULL
+    `);
+    await tx.execute(sql`
+      UPDATE agent_memory_items
+      SET content = ${content}, status = 'active', source = 'explicit', confidence = 100,
+          version = ${nextVersion}, last_observed_at = CURRENT_TIMESTAMP
+      WHERE id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
+    `);
+    await tx.execute(sql`
+      INSERT INTO agent_memory_versions (
+        memory_id, user_id, adopt_id, version, kind, content, source, confidence,
+        change_type, valid_from
+      ) VALUES (
+        ${id}, ${userId}, ${adoptId}, ${nextVersion}, ${current.kind}, ${content},
+        'explicit', 100, ${changeType}, CURRENT_TIMESTAMP
+      )
+    `);
+  });
+}
+
+export async function listAgentMemoryVersions(input: {
+  userId: number;
+  adoptId: string;
+  memoryIds?: number[];
+  limit?: number;
+}): Promise<AgentMemoryVersionRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const memoryIds = (input.memoryIds || []).map(Number).filter((id) => Number.isInteger(id) && id > 0);
+  const memoryFilter = memoryIds.length
+    ? sql`AND memory_id IN (${sql.join(memoryIds.map((id) => sql`${id}`), sql`, `)})`
+    : sql``;
+  const limit = Math.max(1, Math.min(Number(input.limit || 500), 1000));
+  const result: unknown = await db.execute(sql`
+    SELECT id, memory_id, version, kind, content, source, confidence, change_type,
+           valid_from, valid_to, created_at
+    FROM agent_memory_versions
+    WHERE user_id = ${input.userId} AND adopt_id = ${input.adoptId} ${memoryFilter}
+    ORDER BY memory_id, version DESC
+    LIMIT ${limit}
   `);
+  return rowsFromResult(result).map(mapMemoryVersion);
+}
+
+export async function markAgentMemoriesUsed(input: {
+  userId: number;
+  adoptId: string;
+  memoryIds: number[];
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const memoryIds = Array.from(new Set(input.memoryIds.map(Number).filter((id) => Number.isInteger(id) && id > 0)));
+  if (!memoryIds.length) return;
+  await db.execute(sql`
+    UPDATE agent_memory_items SET last_used_at = CURRENT_TIMESTAMP
+    WHERE user_id = ${input.userId} AND adopt_id = ${input.adoptId}
+      AND id IN (${sql.join(memoryIds.map((id) => sql`${id}`), sql`, `)})
+      AND status = 'active'
+  `);
+}
+
+export async function restoreAgentMemoryVersionRecord(input: {
+  userId: number;
+  adoptId: string;
+  memoryId: number;
+  version: number;
+}): Promise<void> {
+  const versions = await listAgentMemoryVersions({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    memoryIds: [input.memoryId],
+  });
+  const target = versions.find((item) => item.version === input.version);
+  if (!target || target.content === "[已忘记]") throw new Error("记忆历史版本不存在");
+  await updateAgentMemoryContent(input.memoryId, input.userId, input.adoptId, target.content, "restored");
 }
 
 export async function promoteConversationMemoryCandidates(input: {
@@ -617,7 +790,7 @@ export async function promoteConversationMemoryCandidates(input: {
     UPDATE agent_memory_items item
     JOIN agent_memory_evidence evidence ON evidence.memory_id = item.id
     SET item.status = 'active', item.source = 'feedback', item.confidence = GREATEST(item.confidence, 85),
-        item.version = item.version + 1
+        item.last_observed_at = CURRENT_TIMESTAMP
     WHERE item.user_id = ${input.userId}
       AND item.adopt_id = ${input.adoptId}
       AND item.status = 'candidate'
@@ -636,7 +809,7 @@ export async function rejectConversationMemoryCandidates(input: {
   const result: any = await db.execute(sql`
     UPDATE agent_memory_items item
     JOIN agent_memory_evidence evidence ON evidence.memory_id = item.id
-    SET item.status = 'rejected', item.version = item.version + 1
+    SET item.status = 'rejected'
     WHERE item.user_id = ${input.userId}
       AND item.adopt_id = ${input.adoptId}
       AND item.status = 'candidate'

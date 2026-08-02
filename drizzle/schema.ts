@@ -1074,6 +1074,29 @@ export const agentMemoryItems = mysqlTable("agent_memory_items", {
 export type AgentMemoryItem = typeof agentMemoryItems.$inferSelect;
 export type InsertAgentMemoryItem = typeof agentMemoryItems.$inferInsert;
 
+export const agentMemoryVersions = mysqlTable("agent_memory_versions", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  memoryId:           bigint("memory_id", { mode: "number" }).notNull(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  version:            int("version").notNull(),
+  kind:               mysqlEnum("kind", ["preference", "instruction", "entity", "procedure"]).notNull(),
+  content:            text("content").notNull(),
+  source:             mysqlEnum("source", ["explicit", "automatic", "feedback", "legacy"]).notNull(),
+  confidence:         int("confidence").default(50).notNull(),
+  changeType:         mysqlEnum("change_type", ["created", "observed", "edited", "restored"]).default("observed").notNull(),
+  validFrom:          timestamp("valid_from").defaultNow().notNull(),
+  validTo:            timestamp("valid_to"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+}, (table) => ({
+  uniqueVersion: uniqueIndex("uk_agent_memory_version").on(table.memoryId, table.version),
+  memoryVersionIdx: index("idx_agent_memory_version_item").on(table.adoptId, table.memoryId, table.version),
+  userCreatedIdx: index("idx_agent_memory_version_user").on(table.userId, table.createdAt),
+}));
+
+export type AgentMemoryVersion = typeof agentMemoryVersions.$inferSelect;
+export type InsertAgentMemoryVersion = typeof agentMemoryVersions.$inferInsert;
+
 export const agentMemoryEvidence = mysqlTable("agent_memory_evidence", {
   id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   memoryId:           bigint("memory_id", { mode: "number" }).notNull(),

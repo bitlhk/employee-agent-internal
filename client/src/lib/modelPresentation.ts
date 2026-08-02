@@ -7,6 +7,14 @@ export type RuntimeModelOption = {
   available?: boolean;
   badge?: string | null;
   group?: string | null;
+  capabilities?: {
+    tools: boolean;
+    vision: boolean;
+    parallelTools: boolean;
+    streaming: boolean;
+    contextWindowTokens: number;
+    source: "runtime" | "inferred";
+  } | null;
 };
 
 export type ModelBrand =

@@ -42,6 +42,16 @@ type MemoryItem = {
   confidence: number;
   lastUsedAt?: string | null;
   updatedAt: string;
+  version: number;
+};
+type MemoryVersion = {
+  id: number;
+  memoryId: number;
+  version: number;
+  content: string;
+  changeType: "created" | "observed" | "edited" | "restored";
+  validFrom: string;
+  validTo?: string | null;
 };
 type MemoryEvidence = {
   id: number;
@@ -123,6 +133,7 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editor, setEditor] = useState<{ item?: MemoryItem; content: string; kind: MemoryKind } | null>(null);
   const [forgetting, setForgetting] = useState<MemoryItem | null>(null);
+  const [historyItem, setHistoryItem] = useState<MemoryItem | null>(null);
   const view = trpc.claw.memoryView.useQuery(
     { adoptId },
     {
@@ -181,6 +192,14 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
     },
     onError: (error) => toast.error(error.message || "操作失败"),
   });
+  const restoreVersion = trpc.claw.restoreMemoryVersion.useMutation({
+    onSuccess: async () => {
+      setHistoryItem(null);
+      await refresh();
+      toast.success("已恢复为新的记忆版本");
+    },
+    onError: (error) => toast.error(error.message || "恢复失败"),
+  });
   const refreshSynthesis = trpc.claw.refreshMemorySynthesis.useMutation({
     onSuccess: async () => {
       await refresh();
@@ -193,6 +212,7 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
   const items = (view.data?.items || []) as MemoryItem[];
   const evidence = (view.data?.evidence || []) as MemoryEvidence[];
   const syntheses = (view.data?.syntheses || []) as MemorySynthesis[];
+  const versions = (view.data?.versions || []) as MemoryVersion[];
   const synthesisState = view.data?.synthesisState as {
     status: "ready" | "building" | "failed";
     model?: string;
@@ -253,6 +273,7 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
         </span>
       </span>
       <span className="memory-record-row__actions">
+        {item.version > 1 ? <button type="button" title="版本历史" aria-label="查看记忆版本历史" onClick={() => setHistoryItem(item)}><History /></button> : null}
         <button type="button" title="编辑" aria-label="编辑记忆" onClick={() => setEditor({ item, content: item.content, kind: item.kind })}><Pencil /></button>
         <button type="button" title="忘记" aria-label="忘记记忆" onClick={() => setForgetting(item)}><Trash2 /></button>
       </span>
@@ -428,6 +449,26 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
           <DialogHeader><DialogTitle>忘记这条记忆？</DialogTitle><DialogDescription>删除后，智能体不会再在后续任务中使用它。</DialogDescription></DialogHeader>
           <p className="memory-dialog__memory">{forgetting?.content}</p>
           <DialogFooter><button type="button" className="memory-dialog__secondary" onClick={() => setForgetting(null)}>取消</button><button type="button" className="memory-dialog__danger" disabled={forget.isPending} onClick={() => forgetting && forget.mutate({ adoptId, id: forgetting.id })}>{forget.isPending ? "处理中..." : "忘记"}</button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(historyItem)} onOpenChange={(open) => { if (!open) setHistoryItem(null); }}>
+        <DialogContent className="memory-dialog sm:max-w-xl">
+          <DialogHeader><DialogTitle>记忆版本</DialogTitle><DialogDescription>历史版本可以查看或恢复；恢复操作会创建一个新版本。</DialogDescription></DialogHeader>
+          <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+            {historyItem ? versions.filter((entry) => entry.memoryId === historyItem.id).map((entry) => (
+              <div key={entry.id} className="flex items-start gap-3 rounded-md border border-gray-200 px-3 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 text-xs text-gray-500">
+                    <span>v{entry.version}</span><span>{formatDate(entry.validFrom)}</span>
+                    {entry.version === historyItem.version ? <span className="text-green-700">当前</span> : null}
+                  </div>
+                  <p className="mt-1 break-words text-sm leading-6 text-gray-800">{entry.content}</p>
+                </div>
+                {entry.version !== historyItem.version ? <button type="button" className="memory-page__secondary shrink-0" disabled={restoreVersion.isPending} onClick={() => restoreVersion.mutate({ adoptId, id: historyItem.id, version: entry.version })}><RotateCcw />恢复</button> : null}
+              </div>
+            )) : null}
+          </div>
         </DialogContent>
       </Dialog>
     </PageContainer>

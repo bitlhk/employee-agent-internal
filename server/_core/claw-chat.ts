@@ -24,6 +24,7 @@ import {
   PLATFORM_UNTRUSTED_CONTENT_POLICY,
   detectInstructionAttackSignals,
 } from "./instruction-attack";
+import { parseUploadedAttachmentRuntimeMessage } from "../../shared/uploaded-attachment-context";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -307,6 +308,7 @@ export function registerChatStreamRoutes(app: express.Express) {
       }
 
       const requestedModelId = String(model || "").trim();
+      const parsedUserMessage = parseUploadedAttachmentRuntimeMessage(userMessage);
       const {
         JIUWEN_AUTO_MODEL_ID,
         listSelectableJiuwenModels,
@@ -350,6 +352,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         ? selectedSkills.message.slice(0, selectedSkillMessageLimit)
         : userMessage;
       let knowledgeContext = "";
+      let memoryContext = "";
       let knowledgeSources: Array<Record<string, unknown>> = [];
       const manualKnowledgeSelection = Array.isArray(knowledgeBaseIds)
         && knowledgeBaseIds.length > 0;
@@ -410,6 +413,38 @@ export function registerChatStreamRoutes(app: express.Express) {
         }
       }
 
+      const memoryStartedAt = Date.now();
+      try {
+        const { buildRelevantAgentMemoryContext } = await import("./agent-memory-retrieval");
+        const memory = await buildRelevantAgentMemoryContext({
+          userId: Number(adoption.userId),
+          adoptId: String(adoption.adoptId),
+          adoptionId: Number(adoption.id),
+          query: parsedUserMessage.text || userMessage,
+        });
+        memoryContext = memory.context;
+        appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "memory_retrieval",
+          adoptId: String(adoption.adoptId),
+          userId: Number(adoption.userId),
+          clientRunId,
+          activeCount: memory.activeCount,
+          selectedCount: memory.selectedIds.length,
+          retrievalMs: Date.now() - memoryStartedAt,
+        });
+      } catch (error) {
+        appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "memory_retrieval_failed",
+          adoptId: String(adoption.adoptId),
+          userId: Number(adoption.userId),
+          clientRunId,
+          retrievalMs: Date.now() - memoryStartedAt,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       if (selectedSkills?.ok) {
         appendLogAsync("jiuwenclaw-exec.log", {
           ts: new Date().toISOString(),
@@ -426,8 +461,9 @@ export function registerChatStreamRoutes(app: express.Express) {
         });
       }
 
-      const userScopedRuntimeMessage = knowledgeContext
-        ? `${knowledgeContext}\n\n<user_request>\n${runtimeMessageBody}\n</user_request>`
+      const contextualMemory = [memoryContext, knowledgeContext].filter(Boolean).join("\n\n");
+      const userScopedRuntimeMessage = contextualMemory
+        ? `${contextualMemory}\n\n<user_request>\n${runtimeMessageBody}\n</user_request>`
         : runtimeMessageBody;
       const runtimeMessage = [
         "<ea_security_policy>",

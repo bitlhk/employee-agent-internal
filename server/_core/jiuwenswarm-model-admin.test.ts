@@ -93,6 +93,23 @@ describe("JiuwenSwarm model admin safety", () => {
     expect(resolveAutomaticSelectableJiuwenModel(selectable, "missing-model")?.id).toBe("agent-main");
   });
 
+  it("keeps default chat routing stable while supporting explicit capability filters", () => {
+    const selectable = toSelectableJiuwenModels([
+      existingModel(),
+      existingModel({
+        modelName: "qwen2.5-vl-72b",
+        alias: "vision-model",
+        originIndex: 1,
+      }),
+    ]);
+
+    expect(resolveAutomaticSelectableJiuwenModel(selectable, "agent-main")?.id).toBe("agent-main");
+    expect(resolveAutomaticSelectableJiuwenModel(selectable, "agent-main", { vision: true })?.id)
+      .toBe("vision-model");
+    expect(selectable[0].capabilities.vision).toBe(false);
+    expect(selectable[1].capabilities.vision).toBe(true);
+  });
+
   it("preserves the existing key when an admin leaves the key field blank", () => {
     const [merged] = mergeJiuwenModelDrafts([draft()], [existingModel()]);
     expect(merged.apiKey).toBe("sk-existing-secret");

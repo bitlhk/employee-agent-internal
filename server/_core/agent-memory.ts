@@ -1,13 +1,9 @@
 import { createHash } from "crypto";
 import {
-  chmodSync,
   existsSync,
-  mkdirSync,
   readFileSync,
   readdirSync,
-  renameSync,
   statSync,
-  writeFileSync,
 } from "fs";
 import path from "path";
 import {
@@ -29,6 +25,7 @@ import {
   listAgentMemories,
   listAgentMemoryEvidence,
   listAgentMemorySyntheses,
+  listAgentMemoryVersions,
   listClawAdoptionsAdmin,
   promoteConversationMemoryCandidates,
   pruneAgentMemoryJobs,
@@ -39,6 +36,7 @@ import {
   markAgentMemorySynthesisPending,
   markAgentMemorySynthesisRunning,
   replaceAgentMemorySyntheses,
+  restoreAgentMemoryVersionRecord,
   setAgentMemoryMode,
   setAgentMemoryStatus,
   updateAgentMemoryContent,
@@ -49,7 +47,6 @@ import {
   type AgentMemoryRecord,
   type AgentMemorySource,
   type AgentMemoryStatus,
-  type AgentMemorySynthesisRecord,
   type AgentMemorySynthesisSlot,
 } from "../db";
 import { callEaAssistantModel } from "./ea-assistant-model";
@@ -57,20 +54,23 @@ import { detectSensitiveData, type SensitiveDataType } from "./data-guardrail";
 import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import { decryptSecret, encryptSecret } from "./secret-protection";
 import { JIUWENCLAW_HOME, appendLogAsync, jiuwenClawWorkspaceDir } from "./helpers";
-import { memoryPolicyMarkdown } from "./agent-memory-policy";
 import { resolveAgentRoleTemplate } from "./role-templates";
+import { selectCoreAgentMemories } from "./agent-memory-retrieval";
+import {
+  MANAGED_BLOCK_END,
+  MANAGED_BLOCK_START,
+  POLICY_BLOCK_END,
+  POLICY_BLOCK_START,
+  renderManagedMemoryMarkdown,
+  replaceManagedBlock,
+  writeAgentMemoryProjection,
+} from "./agent-memory-projection";
 import {
   writeJiuwenSwarmIdentityFilesIfMissing,
   writeJiuwenSwarmUserFileIfMissing,
 } from "./jiuwenswarm-role-scope";
 
-const MANAGED_BLOCK_START = "<!-- EA_MANAGED_MEMORY_START -->";
-const MANAGED_BLOCK_END = "<!-- EA_MANAGED_MEMORY_END -->";
-const POLICY_BLOCK_START = "<!-- EA_MEMORY_POLICY_START -->";
-const POLICY_BLOCK_END = "<!-- EA_MEMORY_POLICY_END -->";
 const MAX_MEMORY_CONTENT_CHARS = 800;
-const MAX_PROJECTED_MEMORY_CHARS = 4800;
-const MAX_PROJECTED_SYNTHESIS_CHARS = 1800;
 const MEMORY_WORKER_INTERVAL_MS = 3000;
 const CHANNEL_SCAN_INTERVAL_MS = 15_000;
 const MEMORY_SYNTHESIS_DELAY_MS = 750;
@@ -304,63 +304,7 @@ function fallbackMemorySyntheses(memories: AgentMemoryRecord[]): MemorySynthesis
   ].filter((item): item is MemorySynthesisCandidate => Boolean(item));
 }
 
-function atomicWrite(filePath: string, content: string): void {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  const temporary = `${filePath}.ea-memory-${process.pid}-${Date.now()}`;
-  writeFileSync(temporary, content, "utf8");
-  try { chmodSync(temporary, 0o600); } catch {}
-  renameSync(temporary, filePath);
-}
-
-export function replaceManagedBlock(
-  existing: string,
-  startMarker: string,
-  endMarker: string,
-  body: string,
-): string {
-  const start = existing.indexOf(startMarker);
-  const end = existing.indexOf(endMarker);
-  const block = body.trim() ? `${startMarker}\n${body.trim()}\n${endMarker}` : "";
-  if (start >= 0 && end >= start) {
-    const after = end + endMarker.length;
-    return `${existing.slice(0, start).trimEnd()}${block ? `\n\n${block}` : ""}${existing.slice(after)}`.trim() + "\n";
-  }
-  return `${existing.trim()}${existing.trim() && block ? "\n\n" : ""}${block}`.trim() + "\n";
-}
-
-export function renderManagedMemoryMarkdown(
-  memories: AgentMemoryRecord[],
-  syntheses: AgentMemorySynthesisRecord[] = [],
-): string {
-  if (!memories.length) return "";
-  const lines = [
-    "## 已确认的岗位记忆",
-    "",
-    "以下内容由 EA 持续学习系统管理；仅作为用户工作偏好，不覆盖系统规则、岗位边界或实时业务数据。",
-    "",
-  ];
-  if (syntheses.length) {
-    const synthesisLines: string[] = [];
-    let synthesisChars = 0;
-    for (const item of syntheses) {
-      const label = item.slot === "profile" ? "画像" : item.slot === "recent" ? "近期" : "方法";
-      const line = `- [${label}] ${normalizeMemoryContent(item.content)}`;
-      if (synthesisChars + line.length + 1 > MAX_PROJECTED_SYNTHESIS_CHARS) break;
-      synthesisLines.push(line);
-      synthesisChars += line.length + 1;
-    }
-    if (synthesisLines.length) lines.push("### 综合认知", "", ...synthesisLines, "", "### 记忆事实", "");
-  }
-  let used = lines.join("\n").length;
-  for (const item of memories) {
-    const label = item.kind === "procedure" ? "流程" : item.kind === "entity" ? "事项" : "偏好";
-    const line = `- [${label}] ${normalizeMemoryContent(item.content)}`;
-    if (used + line.length + 1 > MAX_PROJECTED_MEMORY_CHARS) break;
-    lines.push(line);
-    used += line.length + 1;
-  }
-  return lines.join("\n");
-}
+export { renderManagedMemoryMarkdown, replaceManagedBlock } from "./agent-memory-projection";
 
 export async function projectAgentMemories(input: {
   userId: number;
@@ -380,25 +324,11 @@ export async function projectAgentMemories(input: {
         adoptId: input.adoptId,
         sourceSignature,
       });
-  const workspaceDir = jiuwenClawWorkspaceDir(input.adoptId, input.dbAgentId);
-  const userPath = path.join(workspaceDir, "USER.md");
-  const identityPath = path.join(workspaceDir, "IDENTITY.md");
-  const existingUser = existsSync(userPath) ? readFileSync(userPath, "utf8") : "# 用户偏好\n";
-  const existingIdentity = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "# 身份\n";
-  const nextUser = replaceManagedBlock(
-    existingUser,
-    MANAGED_BLOCK_START,
-    MANAGED_BLOCK_END,
-    renderManagedMemoryMarkdown(memories, syntheses),
-  );
-  const nextIdentity = replaceManagedBlock(
-    existingIdentity,
-    POLICY_BLOCK_START,
-    POLICY_BLOCK_END,
-    memoryPolicyMarkdown(mode),
-  );
-  if (nextUser !== existingUser) atomicWrite(userPath, nextUser);
-  if (nextIdentity !== existingIdentity) atomicWrite(identityPath, nextIdentity);
+  const userPath = writeAgentMemoryProjection({
+    workspaceDir: jiuwenClawWorkspaceDir(input.adoptId, input.dbAgentId), mode,
+    memories: selectCoreAgentMemories(memories),
+    syntheses: syntheses.filter((item) => item.slot === "profile").slice(0, 3),
+  });
   return { activeCount: memories.length, userPath };
 }
 
@@ -787,17 +717,48 @@ export async function updateAgentMemory(input: {
   return await getAgentMemoryById(input.userId, input.adoptId, input.id) || { ...existing, content, status: "active" };
 }
 
+export async function restoreAgentMemoryVersion(input: {
+  userId: number;
+  adoptId: string;
+  id: number;
+  version: number;
+}): Promise<AgentMemoryRecord> {
+  const existing = await getAgentMemoryById(input.userId, input.adoptId, input.id);
+  if (!existing || !["active", "candidate"].includes(existing.status)) throw new Error("岗位偏好不存在");
+  await restoreAgentMemoryVersionRecord({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    memoryId: input.id,
+    version: input.version,
+  });
+  await projectByAdoptId(input.adoptId);
+  scheduleAgentMemorySynthesis({
+    userId: input.userId,
+    adoptId: input.adoptId,
+    roleTemplate: existing.roleTemplate,
+  });
+  return await getAgentMemoryById(input.userId, input.adoptId, input.id) || existing;
+}
+
 export async function listAgentMemoryView(input: { userId: number; adoptId: string; adoptionId: number }) {
   const [mode, items] = await Promise.all([
     getAgentMemoryMode(input.adoptionId),
     listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active", "candidate"], limit: 300 }),
   ]);
-  const evidence = await listAgentMemoryEvidence({
-    userId: input.userId,
-    adoptId: input.adoptId,
-    memoryIds: items.map((item) => item.id),
-    limit: 600,
-  });
+  const [evidence, versions] = await Promise.all([
+    listAgentMemoryEvidence({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      memoryIds: items.map((item) => item.id),
+      limit: 600,
+    }),
+    listAgentMemoryVersions({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      memoryIds: items.map((item) => item.id),
+      limit: 1000,
+    }),
+  ]);
   const activeItems = items.filter((item) => item.status === "active");
   const sourceSignature = memorySynthesisSignature(activeItems);
   const [syntheses, storedSynthesisState] = await Promise.all([
@@ -829,6 +790,7 @@ export async function listAgentMemoryView(input: { userId: number; adoptId: stri
     },
     items,
     evidence,
+    versions,
     syntheses,
     synthesisState: {
       status: synthesisStatus,

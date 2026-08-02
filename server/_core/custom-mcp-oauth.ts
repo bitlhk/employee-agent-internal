@@ -3,6 +3,7 @@ import { auth } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { CustomMcpOAuthData } from "../db/custom-mcp-connections";
 import { discoverCustomMcpTools, parseCustomMcpEndpoint, safeMcpFetch } from "./custom-mcp-client";
 import { CustomMcpOAuthProvider } from "./custom-mcp-oauth-provider";
+import { connectorCatalogEntry } from "../../shared/connector-catalog";
 
 const OAUTH_SESSION_TTL_MS = 10 * 60 * 1000;
 
@@ -12,37 +13,6 @@ export type CustomMcpOAuthCatalogEntry = {
   endpointUrl: string;
   scope?: string;
   clientMetadata?: Record<string, unknown>;
-};
-
-const OAUTH_CATALOG: Record<string, CustomMcpOAuthCatalogEntry> = {
-  jinshuju: {
-    id: "jinshuju",
-    displayName: "金数据",
-    endpointUrl: "https://jinshuju.net/mcp",
-    scope: "public profile forms read_entries write_entries",
-  },
-  notion: {
-    id: "notion",
-    displayName: "Notion",
-    endpointUrl: "https://mcp.notion.com/mcp",
-  },
-  canva: {
-    id: "canva",
-    displayName: "Canva 可画",
-    endpointUrl: "https://mcp.canva.com/mcp",
-  },
-  atlassian: {
-    id: "atlassian",
-    displayName: "Jira · Confluence",
-    endpointUrl: "https://mcp.atlassian.com/v1/mcp/authv2",
-  },
-  yunzhangfang: {
-    id: "yunzhangfang",
-    displayName: "云账房 AI 开票",
-    endpointUrl: "https://super-ai-app.yunzhangfang.com/api/mcp",
-    scope: "mcp:visit",
-    clientMetadata: { mcp_name: "yzf-invoice-mcp-server" },
-  },
 };
 
 type PendingOAuthSession = {
@@ -65,8 +35,17 @@ function removeExpired(now = Date.now()): void {
 }
 
 function catalogEntry(catalogId: string): CustomMcpOAuthCatalogEntry {
-  const entry = OAUTH_CATALOG[String(catalogId || "").trim()];
-  if (!entry) throw new Error("该连接器尚未开放 OAuth 授权");
+  const definition = connectorCatalogEntry(catalogId);
+  if (!definition?.oauth || definition.oauthCatalogId !== definition.id) {
+    throw new Error("该连接器尚未开放 OAuth 授权");
+  }
+  const entry = {
+    id: definition.id,
+    displayName: definition.name,
+    endpointUrl: definition.oauth.endpointUrl,
+    scope: definition.oauth.scope,
+    clientMetadata: definition.oauth.clientMetadata,
+  };
   parseCustomMcpEndpoint(entry.endpointUrl);
   return entry;
 }
