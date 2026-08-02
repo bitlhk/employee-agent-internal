@@ -716,6 +716,7 @@ def _auto_query_terms(value: str) -> tuple[str, ...]:
 def _auto_lexical_evidence(
     query: str,
     candidates: list[NodeWithScore],
+    minimum_coverage: float = 0.0,
 ) -> tuple[tuple[str, ...], int, float, list[NodeWithScore]]:
     terms = _auto_query_terms(query)
     if not terms or not candidates:
@@ -735,7 +736,8 @@ def _auto_lexical_evidence(
         compact = re.sub(r"\s+", "", searchable)
         match_count = sum(1 for term in terms if term in compact)
         best_match_count = max(best_match_count, match_count)
-        if match_count >= required_matches:
+        candidate_coverage = match_count / max(1, len(terms))
+        if match_count >= required_matches and candidate_coverage >= minimum_coverage:
             relevant.append(candidate)
 
     coverage = best_match_count / max(1, len(terms))
@@ -811,8 +813,24 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             "metrics": {"knowledge_base_count": 0, "bm25_max_score": 0, "vector_min_distance": None, "reranker": "disabled", "cache_hit": False},
         }
 
+    bm25_threshold = float(os.environ.get("KNOWLEDGE_AUTO_BM25_MIN_SCORE", "1.2"))
+    vector_threshold = float(os.environ.get("KNOWLEDGE_AUTO_VECTOR_MAX_DISTANCE", "0.72"))
+    lexical_minimum_coverage = max(0.0, min(
+        float(os.environ.get("KNOWLEDGE_AUTO_LEXICAL_MIN_COVERAGE", "0.4")),
+        1.0,
+    ))
     versions = tuple((knowledge_base_id, runtime.version) for knowledge_base_id, runtime in targets)
-    cache_key = (versions, request.query.strip(), request.top_k, request.mode, _rerank_url(), os.environ.get("KNOWLEDGE_RERANK_MODEL", ""))
+    cache_key = (
+        versions,
+        request.query.strip(),
+        request.top_k,
+        request.mode,
+        _rerank_url(),
+        os.environ.get("KNOWLEDGE_RERANK_MODEL", ""),
+        bm25_threshold,
+        vector_threshold,
+        lexical_minimum_coverage,
+    )
     cached = _query_cache_get(cache_key)
     if cached is not None:
         return {**cached, "metrics": {**cached.get("metrics", {}), "cache_hit": True}}
@@ -861,13 +879,12 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     query_terms, lexical_match_count, lexical_coverage, relevant_bm25_candidates = _auto_lexical_evidence(
         request.query,
         bm25_candidates,
+        lexical_minimum_coverage,
     )
     relevant_bm25_max_score = max(
         (float(candidate.score or 0) for candidate in relevant_bm25_candidates),
         default=0.0,
     )
-    bm25_threshold = float(os.environ.get("KNOWLEDGE_AUTO_BM25_MIN_SCORE", "1.2"))
-    vector_threshold = float(os.environ.get("KNOWLEDGE_AUTO_VECTOR_MAX_DISTANCE", "0.72"))
     forced = request.mode == "forced"
     bm25_signal = auto_candidate and relevant_bm25_max_score >= bm25_threshold
     vector_signal = (

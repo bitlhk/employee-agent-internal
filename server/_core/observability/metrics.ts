@@ -391,6 +391,35 @@ const mcpStatusCacheRequests = new Counter({
   registers: [metricsRegistry],
 });
 
+const searchToolCalls = new Counter({
+  name: "ea_search_tool_calls_total",
+  help: "Completed external search tool calls by bounded outcome.",
+  labelNames: ["outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const searchToolDuration = new Histogram({
+  name: "ea_search_tool_duration_seconds",
+  help: "External search tool call duration in seconds.",
+  labelNames: ["outcome"] as const,
+  buckets: [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60],
+  registers: [metricsRegistry],
+});
+
+const searchResultOptimizations = new Counter({
+  name: "ea_search_result_optimizations_total",
+  help: "Search tool results compacted before model continuation.",
+  registers: [metricsRegistry],
+});
+
+const searchResultChars = new Histogram({
+  name: "ea_search_result_chars",
+  help: "Search result size before and after runtime compaction.",
+  labelNames: ["stage"] as const,
+  buckets: [500, 1000, 2000, 4000, 6000, 9000, 12000, 20000, 40000, 80000, 160000],
+  registers: [metricsRegistry],
+});
+
 const sandboxExecutions = new Counter({
   name: "ea_sandbox_executions_total",
   help: "Completed sandbox executions by outcome.",
@@ -571,6 +600,26 @@ export function recordMcpStatusCacheRequest(
   outcome: "hit" | "miss" | "coalesced" | "bypass",
 ): void {
   mcpStatusCacheRequests.inc({ outcome });
+}
+
+export function beginSearchToolCall(): (outcome: OperationalOutcome) => void {
+  const startedAt = Date.now();
+  let finished = false;
+  return (outcome) => {
+    if (finished) return;
+    finished = true;
+    searchToolCalls.inc({ outcome });
+    searchToolDuration.observe({ outcome }, Math.max(0, Date.now() - startedAt) / 1000);
+  };
+}
+
+export function recordSearchResultOptimization(args: {
+  originalChars: number;
+  compactChars: number;
+}): void {
+  searchResultOptimizations.inc();
+  searchResultChars.observe({ stage: "original" }, Math.max(0, args.originalChars));
+  searchResultChars.observe({ stage: "compact" }, Math.max(0, args.compactChars));
 }
 
 export function beginRuntimeCall(runtime: ChatRuntime): (outcome: ChatOutcome) => void {

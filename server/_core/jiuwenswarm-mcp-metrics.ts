@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
-import { beginMcpCall, type McpKind } from "./observability/metrics";
+import {
+  beginMcpCall,
+  beginSearchToolCall,
+  recordSearchResultOptimization,
+  type McpKind,
+} from "./observability/metrics";
 
 const JIUWEN_MCP_METRIC_TIMEOUT_MS = 5 * 60 * 1000;
 const MAX_ACTIVE_JIUWEN_MCP_METRICS = 1000;
@@ -9,14 +14,30 @@ export type JiuwenMcpMetricToolEvent = {
   callId: string;
   toolName: string;
   isError: boolean;
+  resultPayload?: unknown;
 };
 
 type JiuwenMcpMetricSpan = {
   finish: ReturnType<typeof beginMcpCall>;
+  finishSearch?: ReturnType<typeof beginSearchToolCall>;
   timer: ReturnType<typeof setTimeout>;
 };
 
 const activeJiuwenMcpMetrics = new Map<string, JiuwenMcpMetricSpan>();
+const SEARCH_TOOL_RE =
+  /(?:^|_)(?:financial_news|company_announcements|fetch_webpage|web_search|free_search|paid_search|news|announcement|search)(?:_|$)/i;
+
+export function extractSearchOptimizationStats(value: unknown): {
+  originalChars: number;
+  compactChars: number;
+} | null {
+  const text = typeof value === "string" ? value : JSON.stringify(value ?? "");
+  if (!text.includes("_ea_search_optimized")) return null;
+  const original = text.match(/["']original_chars["']\s*:\s*(\d+)/i);
+  const originalChars = Number(original?.[1] || 0);
+  if (!Number.isFinite(originalChars) || originalChars <= 0) return null;
+  return { originalChars, compactChars: text.length };
+}
 
 export function inferMcpServerForJiuwenTool(toolName: string): string | null {
   const name = String(toolName || "").trim();
@@ -67,6 +88,7 @@ function finishOldestMetric(): void {
   const [key, span] = oldest;
   clearTimeout(span.timer);
   span.finish("cancelled");
+  span.finishSearch?.("cancelled");
   activeJiuwenMcpMetrics.delete(key);
 }
 
@@ -87,9 +109,15 @@ export function recordJiuwenMcpMetricEvent(args: {
       clearTimeout(span.timer);
       activeJiuwenMcpMetrics.delete(key);
       span.finish(args.tool.isError ? "error" : "success");
+      span.finishSearch?.(args.tool.isError ? "error" : "success");
     } else {
       beginMcpCall(kind)(args.tool.isError ? "error" : "success");
+      if (SEARCH_TOOL_RE.test(args.tool.toolName)) {
+        beginSearchToolCall()(args.tool.isError ? "error" : "success");
+      }
     }
+    const optimization = extractSearchOptimizationStats(args.tool.resultPayload);
+    if (optimization) recordSearchResultOptimization(optimization);
     return true;
   }
 
@@ -97,6 +125,7 @@ export function recordJiuwenMcpMetricEvent(args: {
   if (previous) {
     clearTimeout(previous.timer);
     previous.finish("cancelled");
+    previous.finishSearch?.("cancelled");
     activeJiuwenMcpMetrics.delete(key);
   }
   while (activeJiuwenMcpMetrics.size >= MAX_ACTIVE_JIUWEN_MCP_METRICS) {
@@ -104,13 +133,15 @@ export function recordJiuwenMcpMetricEvent(args: {
   }
 
   const finish = beginMcpCall(kind);
+  const finishSearch = SEARCH_TOOL_RE.test(args.tool.toolName) ? beginSearchToolCall() : undefined;
   const timer = setTimeout(() => {
     const current = activeJiuwenMcpMetrics.get(key);
     if (!current || current.finish !== finish) return;
     activeJiuwenMcpMetrics.delete(key);
     finish("timeout");
+    finishSearch?.("timeout");
   }, JIUWEN_MCP_METRIC_TIMEOUT_MS);
   timer.unref?.();
-  activeJiuwenMcpMetrics.set(key, { finish, timer });
+  activeJiuwenMcpMetrics.set(key, { finish, finishSearch, timer });
   return true;
 }

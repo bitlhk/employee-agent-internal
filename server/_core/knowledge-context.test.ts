@@ -155,6 +155,41 @@ describe("knowledge chat context", () => {
     expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
   });
 
+  it("skips automatic retrieval for open-ended trend discussion without enterprise context", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [],
+      query: "你怎么看最近的人工智能趋势？我感觉模型开始转向持续学习",
+    });
+
+    expect(result.retrieval).toBe("skipped");
+    expect(result.sources).toEqual([]);
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("keeps automatic retrieval for an enterprise question phrased as an opinion", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [],
+      query: "你怎么看本行客户信息分级制度",
+    });
+
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith(
+      [enterprise],
+      "你怎么看本行客户信息分级制度",
+      4,
+      "auto",
+    );
+  });
+
   it("honors an explicit knowledge selection for a conversation meta question", async () => {
     await buildChatKnowledgeContext({
       userId: 7,

@@ -220,6 +220,69 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertGreater(coverage, 0.5)
         self.assertEqual(relevant, [candidate])
 
+    def test_auto_lexical_gate_rejects_low_topic_coverage(self):
+        candidates = [
+            service.NodeWithScore(
+                node=service.TextNode(
+                    id_="doc_policy001:c1",
+                    text="L1 公开信息包括官网内容和公开研究观点。L4 严格机密信息不得外发。",
+                    metadata={
+                        "document_name": "客户信息保护规范.md",
+                        "heading_path": ["数据分级"],
+                        "position": "正文",
+                    },
+                ),
+                score=3.25,
+            ),
+            service.NodeWithScore(
+                node=service.TextNode(
+                    id_="doc_research001:c1",
+                    text="研究报告应区分事实与判断，模型生成内容必须由研究人员复核。",
+                    metadata={
+                        "document_name": "投资研究合规规范.md",
+                        "heading_path": ["研究输出"],
+                        "position": "正文",
+                    },
+                ),
+                score=2.8,
+            ),
+        ]
+
+        terms, match_count, coverage, relevant = service._auto_lexical_evidence(
+            "你怎么看最近的人工智能趋势 我感觉奔着L4也就是研究去了 模型开始转向持续学习",
+            candidates,
+            0.4,
+        )
+
+        self.assertGreaterEqual(len(terms), 8)
+        self.assertEqual(match_count, 2)
+        self.assertLess(coverage, 0.4)
+        self.assertEqual(relevant, [])
+
+    def test_auto_lexical_gate_keeps_high_coverage_enterprise_question(self):
+        candidate = service.NodeWithScore(
+            node=service.TextNode(
+                id_="doc_policy001:c1",
+                text="客户信息按照公开、内部、敏感和严格机密四级管理，L4 数据禁止通过个人微信外发。",
+                metadata={
+                    "document_name": "客户信息保护规范.md",
+                    "heading_path": ["数据分级", "外发要求"],
+                    "position": "正文",
+                },
+            ),
+            score=3.1,
+        )
+
+        terms, match_count, coverage, relevant = service._auto_lexical_evidence(
+            "客户L4数据可以通过个人微信外发吗",
+            [candidate],
+            0.4,
+        )
+
+        self.assertGreaterEqual(match_count, 2)
+        self.assertGreaterEqual(coverage, 0.4)
+        self.assertEqual(relevant, [candidate])
+
     def test_auto_retrieval_ignores_reference_only_documents(self):
         source_index = service.TextNode(
             id_="doc_sources:c1",

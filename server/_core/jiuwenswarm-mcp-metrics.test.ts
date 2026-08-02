@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { metricsRegistry } from "./observability/metrics";
 import {
+  extractSearchOptimizationStats,
   inferMcpServerForJiuwenTool,
   recordJiuwenMcpMetricEvent,
 } from "./jiuwenswarm-mcp-metrics";
@@ -54,5 +55,37 @@ describe("JiuwenSwarm MCP metrics", () => {
     })).toBe(true);
 
     expect(sampleValue(await metricText())).toBe(before + 1);
+  });
+
+  it("records search duration and compaction without exposing tool names", async () => {
+    const common = {
+      agentId: "jiuwen_lgj-search",
+      sessionId: "session-search",
+      requestId: "request-search",
+    };
+    recordJiuwenMcpMetricEvent({
+      ...common,
+      tool: {
+        isResult: false,
+        callId: "call-search",
+        toolName: "mcp_wind_financial_docs_get_financial_news",
+        isError: false,
+      },
+    });
+    recordJiuwenMcpMetricEvent({
+      ...common,
+      tool: {
+        isResult: true,
+        callId: "call-search",
+        toolName: "mcp_wind_financial_docs_get_financial_news",
+        isError: false,
+        resultPayload: '{"_ea_search_optimized":{"original_chars":24290},"items":[]}',
+      },
+    });
+
+    const metrics = await metricsRegistry.metrics();
+    expect(metrics).toContain('ea_search_tool_calls_total{outcome="success"}');
+    expect(metrics).toContain("ea_search_result_optimizations_total 1");
+    expect(extractSearchOptimizationStats("plain result")).toBeNull();
   });
 });

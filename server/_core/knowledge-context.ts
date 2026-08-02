@@ -43,6 +43,8 @@ export type ChatKnowledgeResult = {
 
 const REALTIME_QUERY_RE = /(天气|气温|温度|下雨|降雨|降水|空气质量|台风|几点|现在时间|今天几号|星期几|实时路况)/i;
 const CONVERSATION_META_QUERY_RE = /(?:第[一二三四五六七八九十\d]+次(?:见面|对话|聊天)|(?:我们|你和我).{0,10}(?:以前|之前|曾经).{0,10}(?:聊过|对话过|见过)|(?:你)?(?:还)?记得(?:我|我们|之前|上次)|(?:之前|刚才|上次).{0,10}(?:说了|聊了|问了|对话)|(?:会话|对话|聊天)(?:记录|历史|上下文)|(?:身份|记忆)(?:文件|状态|为空|是空的)|你是谁|自我介绍)/i;
+const OPEN_DISCUSSION_QUERY_RE = /(?:你怎么看|你(?:怎么)?认为|你觉得|如何看待|谈谈|聊聊|我(?:个人)?感觉|我(?:个人)?认为|发展趋势|未来趋势|最近.{0,12}趋势|趋势.{0,8}(?:如何|怎样|怎么看))/i;
+const ENTERPRISE_KNOWLEDGE_SIGNAL_RE = /(?:根据|依据|知识库|资料|文档|附件|文件|制度|办法|规范|流程|政策|规定|手册|指引|合同|条款|报告|报销|审批|客户|产品|业务|合规|风控|本行|我司|本公司|公司内部|企业内部|我们(?:公司|单位|部门|团队))/i;
 
 export function knowledgeRetrievalQuery(value: unknown): string {
   const withoutInternalContext = stripExpertHandoffRuntimeMessage(stripEaInternalRuntimeContext(value));
@@ -51,7 +53,10 @@ export function knowledgeRetrievalQuery(value: unknown): string {
 
 function shouldAttemptAutomaticRetrieval(query: string): boolean {
   const compact = query.replace(/\s+/g, "");
-  return Boolean(compact) && !REALTIME_QUERY_RE.test(compact) && !CONVERSATION_META_QUERY_RE.test(compact);
+  if (!compact || REALTIME_QUERY_RE.test(compact) || CONVERSATION_META_QUERY_RE.test(compact)) {
+    return false;
+  }
+  return !OPEN_DISCUSSION_QUERY_RE.test(compact) || ENTERPRISE_KNOWLEDGE_SIGNAL_RE.test(compact);
 }
 
 export async function buildChatKnowledgeContext(input: {

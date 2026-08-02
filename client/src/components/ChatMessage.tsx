@@ -8,8 +8,10 @@ import {
   type AgentArtifactView,
 } from "@/components/AgentArtifactPanel";
 import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
+import { WebSourceCard } from "@/components/WebSourceCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
+import { extractChatWebSources } from "@/lib/web-sources";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { formatKnowledgeCitations, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
@@ -1063,6 +1065,7 @@ function ChatMessageInner({
   const eventToolCalls = toolCallsFromMessageEvents(messageEvents);
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
   const timelineToolCalls = effectiveToolCalls.filter((tool) => tool.name !== "[产出文件]");
+  const webSources = useMemo(() => extractChatWebSources(timelineToolCalls), [timelineToolCalls]);
   const memoryReceipt = useMemo(() => {
     for (let index = effectiveToolCalls.length - 1; index >= 0; index -= 1) {
       const receipt = parseMemoryReceipt(effectiveToolCalls[index]?.result);
@@ -1273,6 +1276,7 @@ function ChatMessageInner({
           attachments={attachments}
           onOpenArtifacts={onOpenAgentArtifact}
         />
+        {!streaming && webSources.length > 0 ? <WebSourceCard sources={webSources} /> : null}
         {!streaming && knowledgeSources?.length ? (
           <div className="lingxia-knowledge-sources" aria-label="知识来源">
             <span className="lingxia-knowledge-sources__label"><BookOpen />参考资料</span>

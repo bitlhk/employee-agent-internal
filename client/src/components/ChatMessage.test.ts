@@ -103,6 +103,33 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain("完成");
   });
 
+  it("renders a compact source trigger for completed web results", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "这是检索后的回答。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:00",
+        toolCalls: [{
+          id: "web-1",
+          name: "fetch_webpage",
+          arguments: '{"url":"https://example.com/report"}',
+          result: "URL: https://example.com/report\nStatus: 200\nTitle: 示例报告\nContent:\n正文",
+          status: "done",
+          ts: Date.now(),
+        }],
+      }),
+    );
+
+    expect(html).toContain("lingxia-web-source-trigger");
+    expect(html).toContain("查看 1 条来源");
+    expect(html).toContain("来源");
+  });
+
   it("groups duplicate displayed knowledge sources while retaining citation anchors", () => {
     const html = renderToStaticMarkup(
       React.createElement(ChatMessage, {

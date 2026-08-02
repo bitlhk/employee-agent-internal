@@ -77,6 +77,7 @@ import { registerDesktopRoutes } from "./desktop";
 import { registerKnowledgeRoutes } from "./knowledge-routes";
 import { registerMonitoringRoutes } from "./monitoring-routes";
 import { registerToolEgressRoutes } from "./tool-egress-routes";
+import { registerWebFaviconRoutes } from "./web-favicon";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
 import { getRoleSkillMcpBaseline, listAgentRoleTemplates } from "./role-templates";
 import { sdk } from "./sdk";
@@ -466,6 +467,7 @@ async function startServer() {
   registerDesktopRoutes(app);
   registerKnowledgeRoutes(app);
   registerMonitoringRoutes(app);
+  registerWebFaviconRoutes(app);
 
   // ── 岗位智能体平台流式聊天 SSE 端点 ──
   // Session/auth helpers extracted to ./helpers.ts
