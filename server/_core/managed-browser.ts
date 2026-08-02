@@ -383,6 +383,7 @@ export function registerManagedBrowserRoutes(app: express.Express) {
         adoptId: agentId || null,
         toolName: `managed_browser_${action}`,
         destinationUrl: url,
+        destinationTrust: "unknown",
       });
       if (!egress.ok) {
         res.status(400).json({

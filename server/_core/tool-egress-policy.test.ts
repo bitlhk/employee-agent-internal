@@ -35,7 +35,7 @@ describe("tool egress policy", () => {
     expect(decision).toMatchObject({ ok: true, action: "allow", types: [] });
   });
 
-  it("monitors PII without blocking or mutating structured arguments", () => {
+  it("monitors PII sent to a platform-managed destination without mutating arguments", () => {
     const payload = {
       customerName: "张三",
       phone: "13800138000",
@@ -45,12 +45,39 @@ describe("tool egress policy", () => {
       channel: "custom_mcp",
       payload,
       toolName: "customer_profile",
+      destinationTrust: "platform",
     });
 
     expect(decision.ok).toBe(true);
     expect(decision.action).toBe("monitor");
     expect(decision.types).toContain("cn_phone");
     expect(payload.phone).toBe("13800138000");
+  });
+
+  it("blocks PII sent to an untrusted user-managed destination", () => {
+    const decision = evaluateToolEgress({
+      channel: "custom_mcp",
+      payload: { phone: "13800138000" },
+      toolName: "customer_profile",
+      destinationUrl: "https://mcp.example.com/v1",
+      destinationTrust: "user",
+    });
+    expect(decision).toMatchObject({
+      ok: false,
+      action: "block",
+      reasonCodes: ["personal_data_to_untrusted_destination"],
+    });
+  });
+
+  it("allows PII for an administrator-approved destination host", () => {
+    vi.stubEnv("EA_TOOL_EGRESS_TRUSTED_HOSTS", "mcp.example.com");
+    const decision = evaluateToolEgress({
+      channel: "custom_mcp",
+      payload: { phone: "13800138000" },
+      destinationUrl: "https://mcp.example.com/v1",
+      destinationTrust: "user",
+    });
+    expect(decision).toMatchObject({ ok: true, action: "monitor" });
   });
 
   it.each([

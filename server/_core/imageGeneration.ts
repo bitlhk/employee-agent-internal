@@ -17,6 +17,7 @@
  */
 import { storagePut } from "server/storage";
 import { ENV } from "./env";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 export type GenerateImageOptions = {
   prompt: string;
@@ -50,7 +51,7 @@ export async function generateImage(
     baseUrl
   ).toString();
 
-  const response = await fetch(fullUrl, {
+  const response = await fetchWithTimeout(fullUrl, {
     method: "POST",
     headers: {
       accept: "application/json",
@@ -62,7 +63,7 @@ export async function generateImage(
       prompt: options.prompt,
       original_images: options.originalImages || [],
     }),
-  });
+  }, 120_000);
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

@@ -17,6 +17,7 @@ import { INTERNAL_BASE_URL as BASE, sanitizeRelPath } from "./helpers";
 import { skillRegistry } from "./skills/skill-registry";
 import { parseSkillSourceFiles, sanitizeSkillId, type SkillSourceFile } from "./skills/skill-source";
 import { skillStoreGeneratedDir } from "./skills/skill-store";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 function channelName(channelId: string): string {
   if (channelId === "wechat" || channelId === "weixin") return "微信";
@@ -177,7 +178,7 @@ export async function executePlatformIntent(
       meta: { sessionTarget: "isolated" },
     };
     try {
-      const resp = await fetch(`${BASE}/api/claw/cron/add`, {
+      const resp = await fetchWithTimeout(`${BASE}/api/claw/cron/add`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Internal-Key": INTERNAL_KEY },
         body: JSON.stringify({ adoptId, job }),
@@ -199,7 +200,7 @@ export async function executePlatformIntent(
   // ── 查询定时任务 ──
   if (intent.type === "schedule_list") {
     try {
-      const resp = await fetch(`${BASE}/api/claw/cron/list?adoptId=${encodeURIComponent(adoptId)}`, { headers: { "X-Internal-Key": INTERNAL_KEY } });
+      const resp = await fetchWithTimeout(`${BASE}/api/claw/cron/list?adoptId=${encodeURIComponent(adoptId)}`, { headers: { "X-Internal-Key": INTERNAL_KEY } });
       const data = await resp.json() as any;
       const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
       if (jobs.length === 0) {
@@ -239,7 +240,7 @@ export async function executePlatformIntent(
   if (intent.type === "schedule_delete") {
     const keyword = String(intent.task_name || "").toLowerCase();
     try {
-      const resp = await fetch(`${BASE}/api/claw/cron/list?adoptId=${encodeURIComponent(adoptId)}`, { headers: { "X-Internal-Key": INTERNAL_KEY } });
+      const resp = await fetchWithTimeout(`${BASE}/api/claw/cron/list?adoptId=${encodeURIComponent(adoptId)}`, { headers: { "X-Internal-Key": INTERNAL_KEY } });
       const data = await resp.json() as any;
       const jobs = Array.isArray(data?.jobs) ? data.jobs : [];
       const match = jobs.find((j: any) =>
@@ -252,7 +253,7 @@ export async function executePlatformIntent(
         writer.writeEnd();
         return;
       }
-      const delResp = await fetch(`${BASE}/api/claw/cron/remove`, {
+      const delResp = await fetchWithTimeout(`${BASE}/api/claw/cron/remove`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Internal-Key": INTERNAL_KEY },
         body: JSON.stringify({ adoptId, id: match.id }),

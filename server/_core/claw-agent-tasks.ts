@@ -43,6 +43,7 @@ import {
   observeOperationalActivity,
   type OperationalOutcome,
 } from "./observability/metrics";
+import { guardToolEgress } from "./tool-egress-policy";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -310,6 +311,15 @@ async function runAgentTaskInBackground(
       apiToken: agent.apiToken,
       endpointConfig,
     };
+    const egress = await guardToolEgress({
+      channel: "a2a",
+      payload: { input, dataPart: runtime.dataPart },
+      adoptId: String((agent as { __taskAdoptId?: unknown }).__taskAdoptId || "") || null,
+      toolName: String(agent.id || "a2a_expert"),
+      destinationUrl: connection.apiUrl,
+      destinationTrust: String(agent.visibility || "platform") === "personal" ? "user" : "platform",
+    });
+    if (!egress.ok) throw new Error(egress.error || "专家任务未通过数据外发护栏");
     const result = await runA2AExpertTask(connection, input, {
       ...runtime,
       taskId: endpointConfig.supportsCancellation === true ? taskId : undefined,

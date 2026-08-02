@@ -7,6 +7,7 @@ vi.mock("./audit-events", () => ({
 import {
   evaluateJiuwenPreToolUse,
   isLikelyOutboundToolCall,
+  policyUnavailableDecision,
 } from "./tool-egress-routes";
 
 describe("Jiuwen PreToolUse egress evaluation", () => {
@@ -83,5 +84,33 @@ describe("Jiuwen PreToolUse egress evaluation", () => {
         },
       })
     ).resolves.toEqual({ decision: "allow" });
+  });
+
+  it("fails closed only when an outbound policy check is unavailable", () => {
+    expect(policyUnavailableDecision({
+      tool_name: "read_file",
+      tool_input: { path: "report.md" },
+    })).toEqual({ decision: "allow" });
+    expect(policyUnavailableDecision({
+      tool_name: "mcp_external_publish",
+      tool_input: { content: "hello" },
+    })).toMatchObject({
+      decision: "block",
+      policyCode: "EA_TOOL_EGRESS_UNAVAILABLE",
+    });
+  });
+
+  it("allows PII for a platform tool but blocks an unknown MCP target", async () => {
+    await expect(evaluateJiuwenPreToolUse({
+      tool_name: "mcp_wind_customer_lookup",
+      tool_input: { phone: "13800138000" },
+    })).resolves.toEqual({ decision: "allow" });
+    await expect(evaluateJiuwenPreToolUse({
+      tool_name: "mcp_custom_customer_lookup",
+      tool_input: { phone: "13800138000" },
+    })).resolves.toMatchObject({
+      decision: "block",
+      policyCode: "EA_TOOL_EGRESS_V1",
+    });
   });
 });

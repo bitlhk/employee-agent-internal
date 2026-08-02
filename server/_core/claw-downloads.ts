@@ -27,10 +27,31 @@ const HTML_PREVIEW_CSP = [
   "frame-ancestors 'self'",
 ].join("; ");
 
+const SVG_PREVIEW_CSP = [
+  "default-src 'none'",
+  "script-src 'none'",
+  "connect-src 'none'",
+  "img-src 'self' data: blob:",
+  "style-src 'unsafe-inline'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'self'",
+].join("; ");
+
 function setHtmlPreviewHeaders(res: express.Response) {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.removeHeader("X-Frame-Options");
   res.setHeader("Content-Security-Policy", HTML_PREVIEW_CSP);
+}
+
+export function inlinePreviewSecurityHeaders(fileName: string): Record<string, string> {
+  const ext = path.extname(fileName).slice(1).toLowerCase();
+  if (ext !== "svg") return {};
+  return {
+    "Content-Security-Policy": SVG_PREVIEW_CSP,
+    "Cross-Origin-Resource-Policy": "same-origin",
+  };
 }
 
 const INLINE_PREVIEW_TYPES: Record<string, string> = {
@@ -60,6 +81,9 @@ function streamInlinePreview(res: express.Response, filePath: string, fileName: 
     res.setHeader("Content-Type", contentType);
     res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
     res.setHeader("X-Content-Type-Options", "nosniff");
+    for (const [name, value] of Object.entries(inlinePreviewSecurityHeaders(fileName))) {
+      res.setHeader(name, value);
+    }
   }
   const stream = createReadStream(filePath);
   stream.on("error", () => {

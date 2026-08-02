@@ -29,11 +29,17 @@ export type ToolEgressInput = {
   adoptId?: string | null;
   toolName?: string | null;
   destinationUrl?: string | null;
+  destinationTrust?: "platform" | "user" | "unknown";
 };
 
 const SECRET_TYPES = new Set<SensitiveDataType>([
   "private_key",
   "credential",
+]);
+const PERSONAL_DATA_TYPES = new Set<SensitiveDataType>([
+  "cn_id_card",
+  "cn_phone",
+  "bank_card",
 ]);
 const URL_CREDENTIAL_NAME_RE =
   /^(?:api[-_]?key|access[-_]?token|auth[-_]?token|bearer|client[-_]?secret|password|passwd|secret|token)$/i;
@@ -67,6 +73,20 @@ function destinationHost(rawUrl?: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+function splitCsv(raw: string | undefined): string[] {
+  return String(raw || "").split(",").map(item => item.trim().toLowerCase()).filter(Boolean);
+}
+
+function isTrustedDestination(input: ToolEgressInput): boolean {
+  if (input.destinationTrust === "platform") return true;
+  const host = destinationHost(input.destinationUrl)?.toLowerCase();
+  if (!host) return false;
+  const hostname = host.replace(/:\d+$/, "");
+  return splitCsv(process.env.EA_TOOL_EGRESS_TRUSTED_HOSTS).some(entry =>
+    entry === host || entry === hostname || (entry.startsWith(".") && hostname.endsWith(entry))
+  );
 }
 
 function inspectDestinationUrl(rawUrl?: string | null): {
@@ -131,9 +151,14 @@ export function evaluateToolEgress(
         )
     ) ||
     urlInspection.hasCredential;
+  const hasPersonalData = protectedPayload.detections.some(detection =>
+    PERSONAL_DATA_TYPES.has(detection.type)
+  );
+  const trustedDestination = isTrustedDestination(input);
   const reasonCodes: string[] = [];
   if (hasSecret) reasonCodes.push("credential_or_private_key");
   if (urlInspection.queryTooLarge) reasonCodes.push("oversized_url_query");
+  if (hasPersonalData && !trustedDestination) reasonCodes.push("personal_data_to_untrusted_destination");
 
   const enforce = dataGuardrailMode() === "enforce";
   const shouldBlock = enforce && reasonCodes.length > 0;
@@ -147,6 +172,8 @@ export function evaluateToolEgress(
       ? {
           error: urlInspection.queryTooLarge
             ? "目标 URL 查询参数过长，数据护栏已阻止外发。请缩短参数后重试。"
+            : reasonCodes.includes("personal_data_to_untrusted_destination")
+              ? "工具参数包含个人敏感信息，且目标未被管理员标记为可信连接，数据护栏已阻止外发。"
             : "工具参数包含凭据或私钥，数据护栏已阻止外发。请移除敏感信息后重试。",
         }
       : {}),
@@ -181,12 +208,15 @@ export async function guardToolEgress(
         decision.action === "block"
           ? decision.reasonCodes.includes("oversized_url_query")
             ? "TOOL_EGRESS_URL_QUERY_BLOCK"
+            : decision.reasonCodes.includes("personal_data_to_untrusted_destination")
+              ? "TOOL_EGRESS_UNTRUSTED_PII_BLOCK"
             : "TOOL_EGRESS_SECRET_BLOCK"
           : "TOOL_EGRESS_SENSITIVE_MONITOR",
       riskType: [...decision.types, ...decision.reasonCodes].join(","),
       metadata: {
         channel: input.channel,
         destinationHost: destinationHost(input.destinationUrl),
+        destinationTrust: input.destinationTrust || "unknown",
         payloadBytes: decision.payloadBytes,
         payloadHash: decision.payloadHash,
         sensitiveTypes: decision.types,

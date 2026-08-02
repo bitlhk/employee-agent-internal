@@ -19,6 +19,12 @@ const SHELL_TOOL_NAME_RE =
 const NETWORK_COMMAND_RE =
   /(?:^|[\s;&|])(?:curl|wget|nc|ncat|netcat|scp|sftp|ftp|ssh)\b|https?:\/\//i;
 const URL_FIELD_RE = /(?:^|_)(?:url|uri|endpoint|webhook)(?:$|_)/i;
+const DEFAULT_TRUSTED_TOOL_PREFIXES = [
+  "mcp_platform_tools_",
+  "mcp_wind_",
+  "mcp_wealth_assistant_",
+  "mcp_market_data__",
+];
 
 function stableText(value: unknown): string {
   try {
@@ -67,6 +73,25 @@ export function isLikelyOutboundToolCall(
   return OUTBOUND_TOOL_NAME_RE.test(name);
 }
 
+function isTrustedPlatformTool(toolName: string): boolean {
+  const configured = String(process.env.EA_TOOL_EGRESS_TRUSTED_TOOL_PREFIXES || "")
+    .split(",").map(item => item.trim().toLowerCase()).filter(Boolean);
+  const prefixes = configured.length > 0 ? configured : DEFAULT_TRUSTED_TOOL_PREFIXES;
+  const normalized = toolName.toLowerCase();
+  return prefixes.some(prefix => normalized.startsWith(prefix));
+}
+
+export function policyUnavailableDecision(
+  body: JiuwenPreToolInput
+): { decision: "allow" } | { decision: "block"; reason: string; policyCode: string } {
+  if (!isLikelyOutboundToolCall(body.tool_name, body.tool_input)) return { decision: "allow" };
+  return {
+    decision: "block",
+    reason: "外部工具安全检查暂时不可用，请稍后重试。",
+    policyCode: "EA_TOOL_EGRESS_UNAVAILABLE",
+  };
+}
+
 export async function evaluateJiuwenPreToolUse(
   body: JiuwenPreToolInput
 ): Promise<
@@ -83,6 +108,7 @@ export async function evaluateJiuwenPreToolUse(
     adoptId: String(body.session_id || "").trim() || null,
     toolName,
     destinationUrl: findDestinationUrl(body.tool_input),
+    destinationTrust: isTrustedPlatformTool(toolName) ? "platform" : "unknown",
   });
   if (decision.ok) return { decision: "allow" };
   return {
@@ -101,10 +127,8 @@ export function registerToolEgressRoutes(app: Express): void {
     try {
       res.json(await evaluateJiuwenPreToolUse(req.body || {}));
     } catch {
-      res.status(503).json({
-        decision: "allow",
-        warning: "tool egress policy temporarily unavailable",
-      });
+      const decision = policyUnavailableDecision(req.body || {});
+      res.status(decision.decision === "block" ? 503 : 200).json(decision);
     }
   });
 }

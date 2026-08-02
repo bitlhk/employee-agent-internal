@@ -18,7 +18,7 @@ import { closeDbConnection } from "../db/connection";
 type ProcessShutdownHandler = (reason: string, exitCode: number, error?: unknown) => Promise<void>;
 
 let processShutdownHandler: ProcessShutdownHandler = async (reason, exitCode, error) => {
-  if (error) logFatal("process.uncaught_exception", error, { reason });
+  if (error) logFatal(reason === "unhandled_rejection" ? "process.unhandled_rejection" : "process.uncaught_exception", error, { reason });
   process.exit(exitCode);
 };
 
@@ -27,7 +27,7 @@ process.on("uncaughtException", (err: Error) => {
   void processShutdownHandler("uncaught_exception", 1, err);
 });
 process.on("unhandledRejection", (reason: unknown) => {
-  logError("process.unhandled_rejection", reason);
+  void processShutdownHandler("unhandled_rejection", 1, reason);
 });
 process.on("SIGTERM", () => {
   void processShutdownHandler("SIGTERM", 0);
@@ -278,7 +278,8 @@ async function startServer() {
     if (shutdownPromise) return shutdownPromise;
     shutdownPromise = (async () => {
       if (error) {
-        logFatal("process.uncaught_exception", error, { reason }, "Uncaught exception; draining before exit");
+        const event = reason === "unhandled_rejection" ? "process.unhandled_rejection" : "process.uncaught_exception";
+        logFatal(event, error, { reason }, "Fatal process error; draining before exit");
       }
       beginServerDrain(reason);
       const drainTimeoutMs = Math.min(

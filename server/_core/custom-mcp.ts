@@ -295,6 +295,7 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
           adoptId,
           toolName: tool.name,
           destinationUrl: row.endpointUrl,
+          destinationTrust: "user",
         });
         if (!egress.ok) {
           metricOutcome = "error";

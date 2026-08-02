@@ -31,6 +31,7 @@ import {
 } from "./expert-task-history";
 import { logError, logInfo } from "./observability/logger";
 import { resolveEaAssistantModelConfig } from "./ea-assistant-model";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 import {
   addJiuwenUsageEvents,
@@ -553,14 +554,14 @@ export function registerMiscRoutes(app: express.Express) {
       if (modelConfig.disableThinking) {
         requestBody.chat_template_kwargs = { thinking: false };
       }
-      const apiRes = await fetch(modelConfig.baseUrl, {
+      const apiRes = await fetchWithTimeout(modelConfig.baseUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${modelConfig.apiKey}`,
         },
         body: JSON.stringify(requestBody),
-      });
+      }, 120_000);
 
       if (!apiRes.ok || !apiRes.body) {
         res.write(`data: ${JSON.stringify({ error: "LLM 调用失败: " + apiRes.status })}\n\n`);

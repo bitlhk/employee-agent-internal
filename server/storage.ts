@@ -2,6 +2,7 @@
 // Uses Authorization: Bearer <token>.
 
 import { ENV } from './_core/env';
+import { fetchWithTimeout } from "./_core/fetch-timeout";
 
 type StorageConfig = { baseUrl: string; apiKey: string };
 
@@ -34,7 +35,7 @@ async function buildDownloadUrl(
     ensureTrailingSlash(baseUrl)
   );
   downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
+  const response = await fetchWithTimeout(downloadApiUrl, {
     method: "GET",
     headers: buildAuthHeaders(apiKey),
   });
@@ -76,11 +77,11 @@ export async function storagePut(
   const key = normalizeKey(relKey);
   const uploadUrl = buildUploadUrl(baseUrl, key);
   const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
+  const response = await fetchWithTimeout(uploadUrl, {
     method: "POST",
     headers: buildAuthHeaders(apiKey),
     body: formData,
-  });
+  }, 120_000);
 
   if (!response.ok) {
     const message = await response.text().catch(() => response.statusText);

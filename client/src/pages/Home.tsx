@@ -56,9 +56,7 @@ import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import {
   buildExpertHandoffRuntimeMessage,
   stripExpertHandoffRuntimeMessage,
-  type ExpertHandoffContext,
 } from "@shared/expert-handoff-context";
-import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
 import {
   EA_INTERACTION_SCHEMA,
   agentInteractionResponseText,
@@ -79,24 +77,67 @@ import {
   type ExpertAgentsResponse,
 } from "@/lib/expert-agents";
 import { mergeCachedAssistantMetadata } from "@/lib/chat-history-metadata";
+import {
+  arrayBufferToBase64,
+  buildExpertHandoff,
+  extractAgentTaskIds,
+  extractJiuwenPermissionMarker,
+  fetchWithTimeout,
+  flattenComposerSkills,
+  messageAgentTaskIds,
+  withJiuwenPermissionMarker,
+  type ComposerSkillOption,
+} from "@/lib/chat-home-helpers";
+import {
+  clawModelFallbackStorageKey,
+  clawModelStorageKey,
+  clawStatusStorageKey,
+  compactSessionSearchText,
+  inferSessionPreview,
+  inferSessionTitle,
+  initialWorkspacePanelWidth,
+  legacyClawModelFallbackStorageKey,
+  legacyClawModelStorageKey,
+  legacyClawStatusStorageKey,
+  legacyWebConversationStorageKeys,
+  legacyWebDraftStorageKey,
+  legacyWebHiddenSessionsStorageKey,
+  legacyWebInputHistoryStorageKey,
+  legacyWebMessagesStorageKeys,
+  legacyWebSessionIndexStorageKey,
+  makeClientRunId,
+  makeConversationId,
+  makeLxMsgId,
+  mergeWebSessionRecords,
+  normalizeSessionSearchText,
+  normalizeSessionText,
+  normalizeSessionViewRecord,
+  readHiddenWebSessions,
+  readLocalStorageWithLegacy,
+  readWebSessionIndex,
+  removeLocalStorageKeys,
+  sortWebSessionRecords,
+  visibleWebSessionIndex,
+  webConversationStorageKey,
+  webDraftStorageKey,
+  webExpertModeStorageKey,
+  webHiddenSessionsStorageKey,
+  webInputHistoryStorageKey,
+  webKnowledgeStorageKey,
+  webMessagesStorageKey,
+  webSessionIndexStorageKey,
+  writeHiddenWebSessions,
+  writeWebSessionIndex,
+  WORKSPACE_PANEL_DEFAULT_WIDTH,
+  WORKSPACE_PANEL_MAX_WIDTH,
+  WORKSPACE_PANEL_MIN_WIDTH,
+  WORKSPACE_PANEL_WIDTH_KEY,
+  type WebChatSessionRecord,
+} from "@/lib/chat-session-state";
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
 const MAX_COMPOSER_SKILLS = 3;
-const WORKSPACE_PANEL_WIDTH_KEY = "employee_agent_workspace_panel_width";
-const WORKSPACE_PANEL_DEFAULT_WIDTH = 400;
-const WORKSPACE_PANEL_MIN_WIDTH = 320;
-const WORKSPACE_PANEL_MAX_WIDTH = 560;
-
-function initialWorkspacePanelWidth(): number {
-  try {
-    const saved = Number(window.localStorage.getItem(WORKSPACE_PANEL_WIDTH_KEY));
-    if (Number.isFinite(saved) && saved > 0) {
-      return Math.min(WORKSPACE_PANEL_MAX_WIDTH, Math.max(WORKSPACE_PANEL_MIN_WIDTH, saved));
-    }
-  } catch {}
-  return WORKSPACE_PANEL_DEFAULT_WIDTH;
-}
 
 const ROLE_DISPLAY_NAMES: Record<string, string> = {
   "investment-researcher": "投顾分析",
@@ -150,310 +191,6 @@ function normalizeIncomingToolName(chunk: any): string {
   return value || "tool";
 }
 
-// 2026-04-28 批次 2 A1：chat messages 加稳定 id，恢复时按 id 替换不按 findLastIndex
-// 用于 SSE 截断 recover 时精确匹配目标消息——用户在 recover 期间发新消息也不串
-const makeLxMsgId = () => `lx-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-const makeClientRunId = () => `run-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-const makeConversationId = () => `conv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-const webConversationStorageKey = (userId: string, adoptId: string) => `agent_web_conversation_${userId}_${adoptId}`;
-const legacyWebConversationStorageKeys = (userId: string, adoptId: string) => [
-  `lingxia_web_conversation_${userId}_${adoptId}`,
-  `lingxia_web_conversation_${adoptId}`,
-];
-const webMessagesStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_messages_${userId}_${adoptId}_${conversationId}`;
-const legacyWebMessagesStorageKeys = (userId: string, adoptId: string, conversationId: string) => [
-  `lgc_msgs_${userId}_${adoptId}_${conversationId}`,
-  `lgc_msgs_${adoptId}_${conversationId}`,
-];
-const webDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_draft_${userId}_${adoptId}_${conversationId}`;
-const webExpertModeStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_expert_${userId}_${adoptId}_${conversationId}`;
-const webKnowledgeStorageKey = (userId: string, adoptId: string, conversationId: string) => `agent_web_knowledge_${userId}_${adoptId}_${conversationId}`;
-const legacyWebDraftStorageKey = (userId: string, adoptId: string, conversationId: string) => `lingxia_web_draft_${userId}_${adoptId}_${conversationId}`;
-const webInputHistoryStorageKey = (userId: string, adoptId: string) => `agent_web_input_history_${userId}_${adoptId}`;
-const legacyWebInputHistoryStorageKey = (userId: string, adoptId: string) => `lingxia_web_input_history_${userId}_${adoptId}`;
-const webSessionIndexStorageKey = (userId: string, adoptId: string) => `agent_web_sessions_${userId}_${adoptId}`;
-const legacyWebSessionIndexStorageKey = (userId: string, adoptId: string) => `lingxia_web_sessions_${userId}_${adoptId}`;
-const webHiddenSessionsStorageKey = (userId: string, adoptId: string) => `agent_web_sessions_hidden_${userId}_${adoptId}`;
-const legacyWebHiddenSessionsStorageKey = (userId: string, adoptId: string) => `lingxia_web_sessions_hidden_${userId}_${adoptId}`;
-const clawStatusStorageKey = (userId: string, adoptId: string) => `agent_claw_status_${userId}_${adoptId}`;
-const legacyClawStatusStorageKey = (userId: string, adoptId: string) => `lingxia_claw_status_${userId}_${adoptId}`;
-const clawModelStorageKey = (userId: string, adoptId: string) => `agent_claw_model_${userId}_${adoptId}`;
-const legacyClawModelStorageKey = (userId: string, adoptId: string) => `lingxia_claw_model_${userId}_${adoptId}`;
-const clawModelFallbackStorageKey = (adoptId: string) => `agent_claw_model_public_${adoptId}`;
-const legacyClawModelFallbackStorageKey = (adoptId: string) => `lingxia_claw_model_public_${adoptId}`;
-const JIUWEN_PERMISSION_MARKER_RE = /<!--EA_JIUWEN_PERMISSION:([A-Za-z0-9+/=]+)-->/g;
-
-type ComposerSkillOption = {
-  id: string;
-  label: string;
-  desc: string;
-  source: string;
-  initial: string;
-  requiredMcpServers: string[];
-};
-
-function composerSkillInitial(skill: any, id: string): string {
-  const candidates = [
-    skill?.name,
-    skill?.source?.name,
-    skill?.source?.skillId,
-    id,
-  ];
-  for (const candidate of candidates) {
-    const match = String(candidate || "").match(/[A-Za-z]/);
-    if (match) return match[0].toUpperCase();
-  }
-  return "S";
-}
-
-function flattenComposerSkills(groups: any): ComposerSkillOption[] {
-  const raw = [
-    ...(Array.isArray(groups?.shared) ? groups.shared : []),
-    ...(Array.isArray(groups?.system) ? groups.system : []),
-    ...(Array.isArray(groups?.private) ? groups.private : []),
-  ];
-  const seen = new Set<string>();
-  const out: ComposerSkillOption[] = [];
-  for (const skill of raw) {
-    const id = String(skill?.id || "").trim();
-    if (!id || seen.has(id)) continue;
-    const enabled = skill?.enabled !== false;
-    const ready = !skill?.state || skill.state === "ready";
-    const runnable = skill?.runnable !== false && skill?.active !== false;
-    if (!enabled || !ready || !runnable) continue;
-    seen.add(id);
-    out.push({
-      id,
-      label: String(skill?.source?.displayName || skill?.displayName || skill?.label || skill?.name || id).trim() || id,
-      desc: String(skill?.desc || skill?.description || skill?.source?.description || "").trim(),
-      source: String(skill?.scope || skill?.source || "skill").trim(),
-      initial: composerSkillInitial(skill, id),
-      requiredMcpServers: Array.isArray(skill?.requirements?.mcpServers)
-        ? skill.requirements.mcpServers.map((value: unknown) => String(value || "").trim()).filter(Boolean)
-        : [],
-    });
-  }
-  return out.sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
-}
-
-type WebChatSessionRecord = {
-  conversationId: string;
-  sessionKey?: string;
-  sessionId?: string;
-  title: string;
-  customTitle?: string;
-  autoTitle?: boolean;
-  preview: string;
-  searchText?: string;
-  messageCount: number;
-  createdAt: number;
-  updatedAt: number;
-  sourceUpdatedAt?: number;
-  sortUpdatedAt?: number;
-  pinnedAt?: number;
-};
-
-function normalizeSessionText(text: string) {
-  return String(text || "").replace(/\s+/g, " ").trim();
-}
-
-function normalizeSessionSearchText(text: string) {
-  return normalizeSessionText(text).toLowerCase();
-}
-
-function compactSessionSearchText(text: string) {
-  return normalizeSessionSearchText(text).replace(/\s+/g, "");
-}
-
-function stripSessionMessagePrefix(text: string) {
-  return String(text || "")
-    .replace(/^\[[A-Za-z]{3}\s+\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}\s+GMT[+-]\d+\]\s*/g, "")
-    .trim();
-}
-
-function encodeJiuwenPermissionMarker(permission: JiuwenPermissionRequestCard) {
-  try {
-    const payload = {
-      requestId: permission.requestId,
-      source: permission.source || "permission_interrupt",
-      title: permission.title || "权限审批",
-      question: permission.question || "",
-      command: permission.command || "",
-      toolName: permission.toolName || "",
-      options: permission.options || [],
-      state: permission.state || "pending",
-    };
-    return `\n\n<!--EA_JIUWEN_PERMISSION:${btoa(encodeURIComponent(JSON.stringify(payload)))}-->`;
-  } catch {
-    return "";
-  }
-}
-
-function extractJiuwenPermissionMarker(text: string): { text: string; permission?: JiuwenPermissionRequestCard } {
-  let permission: JiuwenPermissionRequestCard | undefined;
-  const cleanText = String(text || "").replace(JIUWEN_PERMISSION_MARKER_RE, (_match, encoded: string) => {
-    try {
-      const parsed = JSON.parse(decodeURIComponent(atob(encoded)));
-      if (parsed?.requestId) {
-        permission = {
-          requestId: String(parsed.requestId),
-          source: String(parsed.source || "permission_interrupt"),
-          title: String(parsed.title || "权限审批"),
-          question: String(parsed.question || ""),
-          command: parsed.command ? String(parsed.command) : undefined,
-          toolName: parsed.toolName ? String(parsed.toolName) : undefined,
-          options: Array.isArray(parsed.options) ? parsed.options : undefined,
-          state: parsed.state === "approved" || parsed.state === "rejected" || parsed.state === "error" ? parsed.state : "pending",
-        };
-      }
-    } catch {}
-    return "";
-  }).replace(/\n{4,}/g, "\n\n\n").trim();
-  return { text: cleanText, permission };
-}
-
-function withJiuwenPermissionMarker(text: string, permission: JiuwenPermissionRequestCard) {
-  const extracted = extractJiuwenPermissionMarker(text);
-  const visibleText = extracted.text || "需要你的授权才能继续执行。";
-  return `${visibleText}${encodeJiuwenPermissionMarker(permission)}`;
-}
-
-function truncateSessionText(text: string, max = 28) {
-  const normalized = normalizeSessionText(stripSessionMessagePrefix(text));
-  if (!normalized) return "";
-  return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
-}
-
-function inferSessionTitle(messages: Array<{ role?: string; text?: string }>) {
-  const firstUser = messages.find((m) => m.role === "user" && normalizeSessionText(m.text || ""));
-  return truncateSessionText(firstUser?.text || "", 24) || "新对话";
-}
-
-function inferSessionPreview(messages: Array<{ text?: string }>) {
-  const last = [...messages].reverse().find((m) => normalizeSessionText(m.text || ""));
-  return truncateSessionText(last?.text || "", 42);
-}
-
-function readLocalStorageWithLegacy(primaryKey: string, legacyKeys: string[] = []): string {
-  try {
-    const primary = localStorage.getItem(primaryKey);
-    if (primary) return primary;
-    for (const legacyKey of legacyKeys) {
-      const legacy = localStorage.getItem(legacyKey);
-      if (legacy) {
-        localStorage.setItem(primaryKey, legacy);
-        return legacy;
-      }
-    }
-  } catch {}
-  return "";
-}
-
-function removeLocalStorageKeys(keys: Array<string | null | undefined>) {
-  try {
-    for (const key of keys) {
-      if (key) localStorage.removeItem(key);
-    }
-  } catch {}
-}
-
-function readWebSessionIndex(key: string, legacyKeys: string[] = []): WebChatSessionRecord[] {
-  try {
-    const parsed = JSON.parse(readLocalStorageWithLegacy(key, legacyKeys) || "[]");
-    return Array.isArray(parsed) ? parsed.filter((item) => item?.conversationId) : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeWebSessionIndex(key: string, sessions: WebChatSessionRecord[]) {
-  try {
-    localStorage.setItem(key, JSON.stringify(sessions.slice(0, 30)));
-  } catch {}
-}
-
-function readHiddenWebSessions(key: string, legacyKeys: string[] = []): Set<string> {
-  try {
-    const parsed = JSON.parse(readLocalStorageWithLegacy(key, legacyKeys) || "[]");
-    return new Set(Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function writeHiddenWebSessions(key: string, hidden: Set<string>) {
-  try {
-    localStorage.setItem(key, JSON.stringify(Array.from(hidden).slice(0, 200)));
-  } catch {}
-}
-
-function sortWebSessionRecords(sessions: WebChatSessionRecord[]) {
-  return [...sessions].sort((a, b) => {
-    const aPinned = Number(a.pinnedAt || 0);
-    const bPinned = Number(b.pinnedAt || 0);
-    if (aPinned || bPinned) return bPinned - aPinned;
-    return Number(b.sortUpdatedAt || b.sourceUpdatedAt || b.updatedAt || 0) - Number(a.sortUpdatedAt || a.sourceUpdatedAt || a.updatedAt || 0);
-  });
-}
-
-function normalizeSessionViewRecord(item: any): WebChatSessionRecord | null {
-  const conversationId = String(item?.conversationId || "").trim();
-  const sessionKey = String(item?.sessionKey || item?.runtimeSessionKey || "").trim();
-  if (!conversationId || !sessionKey) return null;
-  const updatedAt = Number(item?.updatedAt || item?.sourceUpdatedAt || item?.sortUpdatedAt || 0) || 0;
-  const sourceUpdatedAt = Number(item?.sourceUpdatedAt || updatedAt) || updatedAt;
-  const sortUpdatedAt = Number(item?.sortUpdatedAt || sourceUpdatedAt || updatedAt) || sourceUpdatedAt || updatedAt;
-  return {
-    conversationId,
-    sessionKey,
-    sessionId: String(item?.sessionId || item?.jiuwenSessionId || "").trim() || undefined,
-    title: normalizeSessionText(String(item?.title || "新对话")),
-    preview: normalizeSessionText(String(item?.preview || "")),
-    searchText: normalizeSessionText(String(item?.searchText || "")),
-    messageCount: Number(item?.messageCount || 0) || 0,
-    createdAt: Number(item?.createdAt || updatedAt || sourceUpdatedAt || sortUpdatedAt || Date.now()) || Date.now(),
-    updatedAt: updatedAt || sourceUpdatedAt || sortUpdatedAt || Date.now(),
-    sourceUpdatedAt: sourceUpdatedAt || updatedAt,
-    sortUpdatedAt: sortUpdatedAt || sourceUpdatedAt || updatedAt,
-  };
-}
-
-function visibleWebSessionIndex(
-  key: string,
-  hiddenKey?: string | null,
-  legacyKeys: string[] = [],
-  legacyHiddenKeys: string[] = [],
-): WebChatSessionRecord[] {
-  const hidden = hiddenKey ? readHiddenWebSessions(hiddenKey, legacyHiddenKeys) : new Set<string>();
-  return sortWebSessionRecords(readWebSessionIndex(key, legacyKeys)
-    .filter((item) => item?.conversationId && !hidden.has(item.conversationId)));
-}
-
-function mergeWebSessionRecords(local: WebChatSessionRecord[], remote: WebChatSessionRecord[], hidden: Set<string>) {
-  const byConversation = new Map<string, WebChatSessionRecord>();
-  for (const item of [...local, ...remote]) {
-    if (!item?.conversationId || hidden.has(item.conversationId)) continue;
-    const previous = byConversation.get(item.conversationId);
-    const itemHasBackendSession = Boolean(item.sessionKey);
-    const previousHasBackendSession = Boolean(previous?.sessionKey);
-    const itemUpdatedAt = Number(item.updatedAt || 0);
-    const previousUpdatedAt = Number(previous?.updatedAt || 0);
-    const localMeta = {
-      customTitle: previous?.customTitle || item.customTitle,
-      autoTitle: Boolean(previous?.autoTitle || item.autoTitle),
-      pinnedAt: previous?.pinnedAt || item.pinnedAt,
-    };
-    if (!previous || itemUpdatedAt >= previousUpdatedAt) {
-      byConversation.set(item.conversationId, { ...previous, ...item, ...localMeta });
-    } else if (item.sessionKey && !previous.sessionKey) {
-      byConversation.set(item.conversationId, { ...previous, ...localMeta, sessionKey: item.sessionKey, sessionId: item.sessionId, searchText: item.searchText || previous.searchText });
-    } else if (itemHasBackendSession && !previousHasBackendSession) {
-      byConversation.set(item.conversationId, { ...item, ...previous, ...localMeta, sessionKey: item.sessionKey, sessionId: item.sessionId, searchText: item.searchText || previous.searchText });
-    }
-  }
-  return sortWebSessionRecords(Array.from(byConversation.values())).slice(0, 100);
-}
-
 type UploadedLingxiaAttachment = {
   name: string;
   path: string;
@@ -462,100 +199,6 @@ type UploadedLingxiaAttachment = {
 };
 
 type ComposerAddMenuView = "root" | "knowledge" | "connectors" | "skills" | "experts";
-
-function arrayBufferToBase64(buffer: ArrayBuffer) {
-  const bytes = new Uint8Array(buffer);
-  let binary = "";
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 8000): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-function extractAgentTaskIds(text: unknown): string[] {
-  const value = String(text || "");
-  return Array.from(value.matchAll(/\bagt_[A-Za-z0-9]{8,64}\b/g), (match) => match[0]);
-}
-
-function messageAgentTaskIds(message: Pick<LxMsg, "text" | "agentTaskIds">): string[] {
-  return Array.from(new Set([
-    ...(Array.isArray(message.agentTaskIds) ? message.agentTaskIds : []),
-    ...extractAgentTaskIds(message.text),
-  ].filter((id) => /^agt_[A-Za-z0-9]{8,64}$/.test(id))));
-}
-
-function agentTaskTimestamp(task: AgentTask): number {
-  const value = task.updatedAt || task.updated_at || task.completedAt || task.completed_at || task.createdAt || task.created_at;
-  const time = value ? new Date(value).getTime() : 0;
-  return Number.isFinite(time) ? time : 0;
-}
-
-function compactExpertSummary(value: unknown): string {
-  return String(value || "")
-    .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/```[a-z0-9_-]*|```/gi, "")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 1800);
-}
-
-function buildExpertHandoff(
-  tasks: AgentTask[],
-  expertId: string,
-  expertName: string,
-): ExpertHandoffContext | null {
-  const related = tasks
-    .filter((task) => String(task.agentId || task.agent_id || "") === expertId)
-    .sort((left, right) => agentTaskTimestamp(left) - agentTaskTimestamp(right));
-  if (related.length === 0) return null;
-  const latest = related.at(-1)!;
-  const byId = new Map(related.map((task) => [task.id, task]));
-  let root = latest;
-  const visited = new Set<string>();
-  while (root.parentTaskId || root.parent_task_id) {
-    const parentId = String(root.parentTaskId || root.parent_task_id || "");
-    if (!parentId || visited.has(parentId)) break;
-    visited.add(parentId);
-    const parent = byId.get(parentId);
-    if (!parent) break;
-    root = parent;
-  }
-  const status = String(latest.status || "");
-  const interactionStatus = String(latest.interactionStatus || latest.interaction_status || "");
-  const handoffStatus: ExpertHandoffContext["status"] = interactionStatus === "pending"
-    ? "waiting_input"
-    : status === "pending" || status === "running"
-      ? "processing"
-      : status === "failed" || status === "cancelled"
-        ? "failed"
-        : "completed";
-  const artifacts = related.flatMap((task) => (
-    parseAgentTaskArtifacts(task.artifactsJson || task.artifacts_json).map((artifact) => artifact.name)
-  ));
-  return {
-    schema: "ea.expert_handoff.v1",
-    expertName,
-    status: handoffStatus,
-    goal: compactExpertSummary(root.input || root.prompt),
-    latestSummary: compactExpertSummary(
-      latest.resultMarkdown || latest.result_markdown || latest.result || latest.errorMessage || latest.error_message,
-    ),
-    artifacts: Array.from(new Set(artifacts)).slice(0, 20),
-  };
-}
 
 type LxMsg = {
   id: string;

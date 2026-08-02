@@ -12,6 +12,7 @@ import {
   listIncomingCollabRequests,
   listOutgoingCollabRequests,
 } from "../db";
+import { fetchWithTimeout } from "../_core/fetch-timeout";
 
 export const collabRouter = router({
 
@@ -202,7 +203,7 @@ export const collabRouter = router({
           const baseUrl = "http://127.0.0.1:" + port;
           // 用 fire-and-forget 的方式触发，不阻塞返回
           const internalSecret = process.env.INTERNAL_COLLAB_SECRET || "";
-          fetch(baseUrl + "/api/claw/collab-exec", {
+          fetchWithTimeout(baseUrl + "/api/claw/collab-exec", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

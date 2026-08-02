@@ -8,6 +8,7 @@
  */
 
 import { ENV } from "./env";
+import { fetchWithTimeout } from "./fetch-timeout";
 
 // ============================================================================
 // Configuration
@@ -71,7 +72,7 @@ export async function makeRequest<T = unknown>(
     }
   });
 
-  const response = await fetch(url.toString(), {
+  const response = await fetchWithTimeout(url.toString(), {
     method: options.method || "GET",
     headers: {
       "Content-Type": "application/json",
@@ -313,6 +314,5 @@ export type RoadsResult = {
  * Output: Image URL (not JSON) - use directly in <img src={url} />
  * Note: Construct URL manually with getMapsConfig() for auth
  */
-
 
 

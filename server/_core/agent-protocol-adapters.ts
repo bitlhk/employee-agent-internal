@@ -278,6 +278,7 @@ async function runMcpToolsV1(input: ProtocolAdapterInput) {
     adoptId: input.agentId,
     toolName,
     destinationUrl: rpcUrl,
+    destinationTrust: "unknown",
   });
   if (!egress.ok) {
     throw new Error(egress.error || "MCP tool arguments failed egress policy");
@@ -334,6 +335,7 @@ async function runA2ATaskV1(input: ProtocolAdapterInput) {
     adoptId: input.agentId,
     toolName: input.remoteAgentId || "a2a_task",
     destinationUrl: rpcUrl,
+    destinationTrust: "unknown",
   });
   if (!egress.ok) {
     throw new Error(egress.error || "A2A message failed egress policy");
