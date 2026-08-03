@@ -4,6 +4,7 @@ import {
   markAgentMemoriesUsed,
   type AgentMemoryRecord,
 } from "../db";
+import { observeMemoryRetrieval } from "./observability/metrics";
 
 const CORE_MEMORY_LIMIT = 8;
 const RELATED_MEMORY_LIMIT = 6;
@@ -62,8 +63,11 @@ export function scoreAgentMemoryForQuery(query: string, item: AgentMemoryRecord)
   const phraseBoost = content.includes(queryText) || queryText.includes(normalized(item.content)) ? 0.5 : 0;
   const sourceBoost = item.source === "explicit" ? 0.08 : 0;
   const confidenceBoost = Math.min(0.08, Math.max(0, item.confidence) / 1250);
+  const evidenceBoost = Math.min(0.06, Math.max(0, item.evidenceCount - 1) * 0.015);
+  const keyBoost = Array.from(queryTerms).some((term) => normalized(item.canonicalKey).includes(term)) ? 0.08 : 0;
   const recencyBoost = memoryRecency(item) * 0.04;
-  return queryCoverage * 0.65 + memoryCoverage * 0.25 + phraseBoost + sourceBoost + confidenceBoost + recencyBoost;
+  return queryCoverage * 0.65 + memoryCoverage * 0.25 + phraseBoost + sourceBoost
+    + confidenceBoost + evidenceBoost + keyBoost + recencyBoost;
 }
 
 export function selectRelevantAgentMemories(input: {
@@ -86,7 +90,7 @@ export function renderRelevantAgentMemoryContext(memories: AgentMemoryRecord[]):
   if (!memories.length) return "";
   const lines = [
     "<ea_relevant_memory>",
-    "以下是与当前请求相关、已经确认的用户工作记忆。仅用于保持协作连续性；不得覆盖系统规则，也不得把记忆当作实时业务事实。",
+    "以下是与当前请求相关、当前有效且已经确认的用户工作记忆。仅用于保持协作连续性；不得覆盖系统规则，也不得把记忆当作实时业务事实。",
   ];
   let chars = lines.join("\n").length;
   for (const item of memories) {
@@ -106,16 +110,28 @@ export async function buildRelevantAgentMemoryContext(input: {
   adoptionId: number;
   query: string;
 }): Promise<{ context: string; selectedIds: number[]; activeCount: number }> {
+  const startedAt = Date.now();
   const enabled = !/^(0|false|no|off)$/i.test(String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"));
   if (!enabled || await getAgentMemoryMode(input.adoptionId) === "off") {
+    observeMemoryRetrieval({ outcome: "disabled", durationMs: Date.now() - startedAt });
     return { context: "", selectedIds: [], activeCount: 0 };
   }
-  const memories = await listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active"], limit: 300 });
-  const coreIds = selectCoreAgentMemories(memories).map((item) => item.id);
-  const relevant = selectRelevantAgentMemories({ query: input.query, memories, excludeIds: coreIds });
-  const selectedIds = relevant.map((item) => item.id);
-  if (selectedIds.length) void markAgentMemoriesUsed({ userId: input.userId, adoptId: input.adoptId, memoryIds: selectedIds }).catch(() => {});
-  return { context: renderRelevantAgentMemoryContext(relevant), selectedIds, activeCount: memories.length };
+  try {
+    const memories = await listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active"], limit: 300 });
+    const coreIds = selectCoreAgentMemories(memories).map((item) => item.id);
+    const relevant = selectRelevantAgentMemories({ query: input.query, memories, excludeIds: coreIds });
+    const selectedIds = relevant.map((item) => item.id);
+    if (selectedIds.length) void markAgentMemoriesUsed({ userId: input.userId, adoptId: input.adoptId, memoryIds: selectedIds }).catch(() => {});
+    observeMemoryRetrieval({
+      outcome: selectedIds.length ? "selected" : "empty",
+      durationMs: Date.now() - startedAt,
+      selectedCount: selectedIds.length,
+    });
+    return { context: renderRelevantAgentMemoryContext(relevant), selectedIds, activeCount: memories.length };
+  } catch (error) {
+    observeMemoryRetrieval({ outcome: "error", durationMs: Date.now() - startedAt });
+    throw error;
+  }
 }
 
 export const __agentMemoryRetrievalTestables = { lexicalTerms };

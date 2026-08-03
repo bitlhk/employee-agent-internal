@@ -2864,6 +2864,45 @@ export default function Home() {
     }
   }, [resolvedAdoptId]);
 
+  const retryExpertTask = useCallback(async (task: AgentTask): Promise<void> => {
+    if (!resolvedAdoptId || !task.id) return;
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      const response = await fetchWithTimeout(
+        `${apiBase}/api/claw/agent-tasks/${encodeURIComponent(task.id)}/retry`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ adoptId: resolvedAdoptId }),
+        },
+        15_000,
+      );
+      const payload = await response.json().catch(() => ({})) as {
+        error?: string;
+        taskId?: string;
+        task?: AgentTask;
+      };
+      if (!response.ok || !payload.taskId || !payload.task) {
+        throw new Error(payload.error || `重试专家任务失败 (${response.status})`);
+      }
+      setAgentTasks((previous) => [
+        payload.task as AgentTask,
+        ...previous.filter((item) => item.id !== payload.taskId),
+      ].slice(0, 64));
+      setLingxiaMsgs((previous) => previous.map((message) => {
+        if (!messageAgentTaskIds(message).includes(task.id)) return message;
+        return {
+          ...message,
+          agentTaskIds: Array.from(new Set([...messageAgentTaskIds(message), payload.taskId as string])),
+        };
+      }));
+      toast.success("专家任务已重新提交");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "重试专家任务失败");
+    }
+  }, [resolvedAdoptId]);
+
   const sendLingxiaMessage = async (
     messageOverride?: string,
     opts?: {
@@ -4479,6 +4518,7 @@ export default function Home() {
                     onOpenAgentArtifact={openAgentArtifactPanel}
                     onResumeExpert={resumeComposerExpertTask}
                     onCancelExpert={cancelExpertTask}
+                    onRetryExpert={retryExpertTask}
                     onDelete={m.role === "assistant" ? () => { setLingxiaMsgs(prev => prev.filter((_, i) => i !== idx)); } : undefined}
                   />
                   </div>

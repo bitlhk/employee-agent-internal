@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   reservation: { kind: "created" } as any,
   failInterruptedCalls: 0,
+  task: { status: "running" } as Record<string, unknown>,
 }));
 
 vi.mock("../db/agents", () => ({
@@ -28,7 +29,7 @@ vi.mock("../db/agents", () => ({
     maxDailyRequests: 10,
     healthStatus: "healthy",
   })),
-  getAgentTask: vi.fn(async () => ({ status: "running" })),
+  getAgentTask: vi.fn(async () => state.task),
   getAgentTaskBySourceMessage: vi.fn(),
   insertCallLog: vi.fn(),
   listAgentTasks: vi.fn(async () => []),
@@ -72,6 +73,8 @@ vi.mock("./a2a-expert-client", () => ({
 vi.mock("./agent-artifacts", () => ({ materializeA2AArtifacts: vi.fn(async () => []) }));
 vi.mock("./observability/metrics", () => ({
   beginOperationalActivity: vi.fn(() => () => {}),
+  observeAgentTaskRetry: vi.fn(),
+  observeCapabilityPreflight: vi.fn(),
   observeOperationalActivity: vi.fn(),
 }));
 
@@ -91,6 +94,7 @@ async function startServer(): Promise<string> {
 
 afterEach(async () => {
   state.reservation = { kind: "created" };
+  state.task = { status: "running" };
   if (server) {
     await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     server = undefined;
@@ -114,7 +118,7 @@ describe("agent task consistency", () => {
         sourceMessageId: "message-1",
       }),
     });
-    const body = await response.json() as any;
+    const body = await response.json() as { taskId?: string; reused?: boolean };
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ taskId: "agt_existing", reused: true });
@@ -125,5 +129,34 @@ describe("agent task consistency", () => {
     const stop = await startAgentTaskRuntime();
     await stop();
     expect(state.failInterruptedCalls - before).toBe(2);
+  });
+
+  it("retries a failed task with the persisted runtime request", async () => {
+    state.task = {
+      id: "agt_failed12345678",
+      adoptId: "lgj-owner",
+      userId: 1,
+      agentId: "expert-1",
+      status: "failed",
+      input: "展示给用户的任务",
+      requestContextJson: JSON.stringify({ input: "远端原始任务", contextId: "ea-context" }),
+      sourceConversationId: "conversation-1",
+      sourceSessionId: "session-1",
+    };
+    const base = await startServer();
+    const response = await fetch(`${base}/api/claw/agent-tasks/agt_failed12345678/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adoptId: "lgj-owner" }),
+    });
+    const body = await response.json() as {
+      taskId?: string;
+      task: { parentTaskId?: string; lifecycleState?: string; requestContextJson?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.taskId).toMatch(/^agt_/);
+    expect(body.task).toMatchObject({ parentTaskId: "agt_failed12345678", lifecycleState: "queued" });
+    expect(body.task.requestContextJson).toBeUndefined();
   });
 });

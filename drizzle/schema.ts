@@ -876,6 +876,7 @@ export const agentTasks = mysqlTable("agent_tasks", {
   sourceMessageId: varchar("source_message_id", { length: 128 }),
   status: mysqlEnum("status", ["pending", "running", "succeeded", "failed", "cancelled"]).notNull().default("pending"),
   input: text("input").notNull(),
+  requestContextJson: text("request_context_json"),
   resultMarkdown: text("result_markdown"),
   errorMessage: text("error_message"),
   adapterProtocol: varchar("adapter_protocol", { length: 96 }),
@@ -1100,6 +1101,7 @@ export type InsertAgentMemoryVersion = typeof agentMemoryVersions.$inferInsert;
 export const agentMemoryEvidence = mysqlTable("agent_memory_evidence", {
   id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   memoryId:           bigint("memory_id", { mode: "number" }).notNull(),
+  conflictId:         bigint("conflict_id", { mode: "number" }),
   userId:             int("user_id").notNull(),
   adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
   sourceType:         mysqlEnum("source_type", ["explicit", "conversation", "feedback", "legacy"]).notNull(),
@@ -1115,11 +1117,38 @@ export const agentMemoryEvidence = mysqlTable("agent_memory_evidence", {
 }, (table) => ({
   uniqueEvidence: uniqueIndex("uk_agent_memory_evidence").on(table.memoryId, table.sourceHash),
   memoryObservedIdx: index("idx_agent_memory_evidence_item").on(table.memoryId, table.observedAt),
+  conflictObservedIdx: index("idx_agent_memory_evidence_conflict").on(table.conflictId, table.observedAt),
   conversationIdx: index("idx_agent_memory_evidence_conversation").on(table.adoptId, table.conversationId),
 }));
 
 export type AgentMemoryEvidence = typeof agentMemoryEvidence.$inferSelect;
 export type InsertAgentMemoryEvidence = typeof agentMemoryEvidence.$inferInsert;
+
+export const agentMemoryConflicts = mysqlTable("agent_memory_conflicts", {
+  id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  memoryId:           bigint("memory_id", { mode: "number" }).notNull(),
+  userId:             int("user_id").notNull(),
+  adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
+  proposedKind:       mysqlEnum("proposed_kind", ["preference", "instruction", "entity", "procedure"]).notNull(),
+  proposedContent:    text("proposed_content").notNull(),
+  proposedHash:       varchar("proposed_hash", { length: 64 }).notNull(),
+  proposedSource:     mysqlEnum("proposed_source", ["explicit", "automatic", "feedback", "legacy"]).default("automatic").notNull(),
+  proposedConfidence:int("proposed_confidence").default(50).notNull(),
+  evidenceCount:      int("evidence_count").default(0).notNull(),
+  status:             mysqlEnum("status", ["pending", "accepted", "rejected"]).default("pending").notNull(),
+  firstObservedAt:    timestamp("first_observed_at").defaultNow().notNull(),
+  lastObservedAt:     timestamp("last_observed_at").defaultNow().notNull(),
+  resolvedAt:         timestamp("resolved_at"),
+  createdAt:          timestamp("created_at").defaultNow().notNull(),
+  updatedAt:          timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  memoryStatusIdx: index("idx_agent_memory_conflict_item").on(table.memoryId, table.status, table.updatedAt),
+  adoptStatusIdx: index("idx_agent_memory_conflict_adopt").on(table.adoptId, table.status, table.updatedAt),
+  proposedHashIdx: index("idx_agent_memory_conflict_hash").on(table.memoryId, table.proposedHash),
+}));
+
+export type AgentMemoryConflict = typeof agentMemoryConflicts.$inferSelect;
+export type InsertAgentMemoryConflict = typeof agentMemoryConflicts.$inferInsert;
 
 export const agentMemorySyntheses = mysqlTable("agent_memory_syntheses", {
   id:                 bigint("id", { mode: "number" }).autoincrement().primaryKey(),

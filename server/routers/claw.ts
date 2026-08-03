@@ -100,6 +100,10 @@ import {
   updateAgentMemory,
 } from "../_core/agent-memory";
 import { restoreMemoryVersionProcedure } from "./claw-memory-version";
+import {
+  acceptMemoryConflictProcedure,
+  rejectMemoryConflictProcedure,
+} from "./claw-memory-conflicts";
 import { getAvailableJiuwenModels, type RuntimeModelOption } from "../_core/available-models";
 import {
   applyAdminRoleReset,
@@ -458,6 +462,10 @@ export const clawRouter = router({
         await rejectAgentMemory({ userId: Number(ctx.user!.id), adoptId: input.adoptId, id: input.id });
         return { ok: true };
       }),
+
+    acceptMemoryConflict: acceptMemoryConflictProcedure,
+
+    rejectMemoryConflict: rejectMemoryConflictProcedure,
 
     updateMemory: protectedProcedure
       .input(z.object({

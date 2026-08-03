@@ -13,7 +13,12 @@ import { isActiveJiuwenAdoptId, retiredRuntimeMessage } from "./runtime-policy";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
 import { capacityGuard } from "./operational-capacity";
-import { beginChatRequest, beginRuntimeCall, type ChatOutcome } from "./observability/metrics";
+import {
+  beginChatRequest,
+  beginRuntimeCall,
+  observeCapabilityPreflight,
+  type ChatOutcome,
+} from "./observability/metrics";
 import {
   buildSelectedSkillsManifest,
   normalizeSelectedSkillIds,
@@ -25,6 +30,7 @@ import {
   detectInstructionAttackSignals,
 } from "./instruction-attack";
 import { parseUploadedAttachmentRuntimeMessage } from "../../shared/uploaded-attachment-context";
+import { summarizeCapabilityPreflight, type CapabilityPreflight } from "../../shared/capability-preflight";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -104,12 +110,33 @@ async function buildSelectedSkillsContext(
       roleTemplate,
     }),
   })));
-  const unavailable = readinessResults.find((item) => !item.readiness.canProceed);
-  if (unavailable) {
+  const preflightEntries: CapabilityPreflight[] = readinessResults.map(({ skill, readiness }) => ({
+    kind: "skill",
+    id: skill.id,
+    name: skill.name,
+    readiness: readiness.canProceed ? "ready" : "blocked",
+    ...(!readiness.canProceed ? { reason: readiness.message } : {}),
+  }));
+  for (const entry of preflightEntries) {
+    observeCapabilityPreflight({ kind: entry.kind, outcome: entry.readiness });
+  }
+  for (const { readiness } of readinessResults) {
+    for (const server of readiness.servers) {
+      const outcome = server.probeError
+        ? "unchecked"
+        : server.authorized && server.configured && server.enabled && server.missingTools.length === 0
+          ? "ready"
+          : "blocked";
+      observeCapabilityPreflight({ kind: "connector", outcome });
+    }
+  }
+  const preflight = summarizeCapabilityPreflight(preflightEntries);
+  if (!preflight.ready) {
+    const unavailable = preflight.blocked[0];
     return {
       ok: false,
       status: 503,
-      error: `技能“${unavailable.skill.name}”：${unavailable.readiness.message}`,
+      error: `技能“${unavailable.name}”：${unavailable.reason || "暂时不可用"}`,
     };
   }
 
@@ -327,6 +354,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           ? selectableModels.find((item) => item.id === requestedModelId)
           : undefined;
       if (requestedModelId && !selectedModel) {
+        observeCapabilityPreflight({ kind: "model", outcome: "blocked" });
         res.status(400).json({ error: "所选模型已不可用，请刷新模型列表后重试" });
         return;
       }
@@ -340,9 +368,11 @@ export function registerChatStreamRoutes(app: express.Express) {
         selectedModel ||= resolveAutomaticSelectableJiuwenModel(selectableModels);
       }
       if (!selectedModel) {
+        observeCapabilityPreflight({ kind: "model", outcome: "blocked" });
         res.status(503).json({ error: "尚未配置可用的 Agent 模型" });
         return;
       }
+      observeCapabilityPreflight({ kind: "model", outcome: "ready" });
 
       const selectedSkillMessageLimit = Math.max(
         4000,

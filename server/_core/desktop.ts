@@ -29,7 +29,6 @@ import { sdk, sessionAuthVersion } from "./sdk";
 import { isAdminMfaEnabled } from "./admin-mfa";
 import {
   APP_ROOT,
-  bumpSessionEpoch,
   INTERNAL_BASE_URL,
   openClawAgentDir,
   resolveClawWorkspace,
@@ -470,7 +469,6 @@ async function installDesktopMarketSkill(marketId: number, adoptId: string, agen
     scannedAt: new Date().toISOString(),
   });
   await incrementSkillDownload(marketId);
-  bumpSessionEpoch(adoptId);
   return {
     ok: true,
     skillId: source.skillId,

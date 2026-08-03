@@ -7,12 +7,13 @@ import type { SkillSource } from "../../../../shared/types/skill";
 import { getClawByAdoptId } from "../../../db";
 import {
   OPENCLAW_BASE_HOME,
-  bumpSessionEpoch,
   clearAgentSessionsCache,
+  isJiuwenClawAdoptId,
   openClawAgentDir,
   requireClawOwner,
   resolveRuntimeWorkspaceByIds,
 } from "../../helpers";
+import { refreshJiuwenRuntimeCapabilities } from "../../jiuwenswarm-runtime-refresh";
 import { logError } from "../../observability/logger";
 import { scanUploadForMalware } from "../../upload-security";
 import { skillInstaller } from "../skill-installer";
@@ -230,7 +231,6 @@ export function registerSkillPackageRoutes(app: Express): void {
         return;
       }
 
-      bumpSessionEpoch(payload.adoptId);
       res.json({
         ok: true,
         file: { filename: safeName, sha256, size: payload.fileBuf.length },
@@ -295,6 +295,7 @@ export function registerSkillPackageRoutes(app: Express): void {
       });
       const packagePath = remapLegacySkillMarketPath(String(found.path || "").trim());
       const installedSkillId = String(found.installedSkillId || "").trim();
+      let registryRefreshed = false;
       if (installedSkillId) {
         const destroyed = await skillRegistry.destroy(adoptId, installedSkillId);
         if (!destroyed.ok && destroyed.error.kind !== "not_found") {
@@ -304,6 +305,7 @@ export function registerSkillPackageRoutes(app: Express): void {
           });
           return;
         }
+        registryRefreshed = destroyed.ok;
       }
       if (packagePath && existsSync(packagePath)) rmSync(packagePath, { force: true });
 
@@ -331,7 +333,9 @@ export function registerSkillPackageRoutes(app: Express): void {
           : String(adoption.agentId || "");
         if (runtimeAgentId) clearAgentSessionsCache(runtimeAgentId, OPENCLAW_BASE_HOME);
       }
-      bumpSessionEpoch(adoptId);
+      if (isJiuwenClawAdoptId(adoptId) && !registryRefreshed) {
+        await refreshJiuwenRuntimeCapabilities(adoptId);
+      }
       res.json({ ok: true });
     } catch (error) {
       logError("skill_package.delete_failed", error);
@@ -442,7 +446,9 @@ print(json.dumps({'ok':True}))`;
       ));
       writeSkillPackageIndex(rows);
       clearAgentSessionsCache(runtimeAgentId, OPENCLAW_BASE_HOME);
-      bumpSessionEpoch(adoptId);
+      if (isJiuwenClawAdoptId(adoptId)) {
+        await refreshJiuwenRuntimeCapabilities(adoptId);
+      }
       res.json({ ok: true, skillId: installedSkillId, path: skillDirectory });
     } catch (error) {
       logError("skill_package.legacy_install_failed", error);

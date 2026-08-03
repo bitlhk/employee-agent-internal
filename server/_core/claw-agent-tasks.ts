@@ -8,6 +8,10 @@ import {
   parseAgentInteraction,
   parseAgentInteractionResponse,
 } from "@shared/agent-interaction";
+import {
+  canRetryAgentTask,
+  normalizeAgentTaskLifecycle,
+} from "@shared/agent-task-lifecycle";
 import { isAuthorizedInternalRequest, requireClawOwner, resolveRuntimeWorkspaceByIds } from "./helpers";
 import { materializeA2AArtifacts } from "./agent-artifacts";
 import {
@@ -40,6 +44,8 @@ import {
 } from "../db/agents";
 import {
   beginOperationalActivity,
+  observeAgentTaskRetry,
+  observeCapabilityPreflight,
   observeOperationalActivity,
   type OperationalOutcome,
 } from "./observability/metrics";
@@ -52,6 +58,10 @@ const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
 const AGENT_TASK_RAW_EVENTS_LIMIT_BYTES = 40_000;
 const activeAgentTaskControllers = new Map<string, AbortController>();
 const activeAgentTaskPromises = new Map<string, Promise<void>>();
+
+function agentTaskRetryEnabled(): boolean {
+  return !/^(0|false|no|off)$/i.test(String(process.env.EA_AGENT_TASK_RETRY_ENABLED || "true"));
+}
 
 export function isCancelledAgentTaskStatus(status: unknown): boolean {
   return ["cancelled", "canceled"].includes(String(status || "").trim().toLowerCase());
@@ -74,6 +84,36 @@ function parseJsonRecord(raw: unknown): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+function publicAgentTask(task: unknown): Record<string, unknown> {
+  const publicFields: Record<string, unknown> = task && typeof task === "object" ? { ...task } : {};
+  delete publicFields.requestContextJson;
+  delete publicFields.request_context_json;
+  return {
+    ...publicFields,
+    lifecycleState: normalizeAgentTaskLifecycle({
+      status: publicFields.status,
+      interactionStatus: publicFields.interactionStatus ?? publicFields.interaction_status,
+    }),
+  };
+}
+
+function storedAgentTaskRuntime(task: Record<string, unknown>): {
+  input: string;
+  contextId?: string;
+  dataPart?: Record<string, unknown>;
+  dataPartMetadata?: Record<string, unknown>;
+} {
+  const stored = parseJsonRecord(task.requestContextJson ?? task.request_context_json);
+  return {
+    input: String(stored.input || task.input || ""),
+    ...(stored.contextId ? { contextId: String(stored.contextId) } : {}),
+    ...(stored.dataPart && typeof stored.dataPart === "object" ? { dataPart: stored.dataPart } : {}),
+    ...(stored.dataPartMetadata && typeof stored.dataPartMetadata === "object"
+      ? { dataPartMetadata: stored.dataPartMetadata }
+      : {}),
+  };
 }
 
 function parseJsonArray(raw: unknown): any[] {
@@ -183,6 +223,7 @@ function publicAgent(agent: any, usageCount = 0) {
     executionMode: endpointConfig.executionMode || "async",
     interactionMode: endpointConfig.interactionMode === "session" ? "session" : "single",
     routeReady: !reason,
+    readiness: reason ? "blocked" : "ready",
     reason,
     healthStatus: String(agent.healthStatus || "unknown"),
     lastHealthCheck: agent.lastHealthCheck || null,
@@ -468,12 +509,13 @@ export function registerAgentTaskRoutes(app: express.Express) {
     const claw = await resolveClaw(req, res, adoptId);
     if (!claw) return;
     try {
-      const userId = Number((claw as any).userId || 0);
+      const clawRecord = claw as { userId?: unknown; roleTemplate?: unknown; agentId?: unknown };
+      const userId = Number(clawRecord.userId || 0);
       const profileKeys = await requesterProfiles(userId);
       const visibleAgents = (await listEnabledBusinessAgentsForContext({ userId, adoptId }))
         .filter((agent) => isAgentIntegration(agent))
         .filter((agent) => profileAllowed(agent, profileKeys))
-        .filter((agent) => roleAllowed(agent, (claw as any).roleTemplate));
+        .filter((agent) => roleAllowed(agent, clawRecord.roleTemplate));
       const usageCounts = await listAgentTaskCounts(adoptId, visibleAgents.map((agent) => String(agent.id)));
       const agents = visibleAgents.map((agent) => publicAgent(agent, usageCounts[String(agent.id)] || 0));
       res.json({ agents });
@@ -496,7 +538,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const tasks = ids.length > 0
         ? await listAgentTasksByIds(adoptId, ids)
         : await listAgentTasks(adoptId, Number(req.query.limit || 30));
-      res.json({ tasks });
+      res.json({ tasks: tasks.map(publicAgentTask) });
     } catch (error: any) {
       res.status(500).json({ error: error?.message || "TASKS_UNAVAILABLE" });
     }
@@ -511,7 +553,8 @@ export function registerAgentTaskRoutes(app: express.Express) {
     if (!claw) return;
 
     try {
-      const userId = Number((claw as any).userId || 0);
+      const clawRecord = claw as { userId?: unknown; roleTemplate?: unknown; agentId?: unknown };
+      const userId = Number(clawRecord.userId || 0);
       const task = await getAgentTask(taskId);
       if (!task || String(task.adoptId || "") !== adoptId || Number(task.userId || 0) !== userId) {
         return res.status(404).json({ error: "专家任务不存在" });
@@ -559,6 +602,110 @@ export function registerAgentTaskRoutes(app: express.Express) {
     }
   });
 
+  app.post("/api/claw/agent-tasks/:taskId/retry", async (req, res) => {
+    const adoptId = String(req.body?.adoptId || "").trim();
+    const taskId = String(req.params.taskId || "").trim();
+    if (!agentTaskRetryEnabled()) return res.status(404).json({ error: "专家任务重试未启用" });
+    if (!adoptId) return res.status(400).json({ error: "adoptId required" });
+    if (!/^agt_[A-Za-z0-9]{8,64}$/.test(taskId)) return res.status(400).json({ error: "taskId invalid" });
+    const claw = await resolveClaw(req, res, adoptId);
+    if (!claw) return;
+
+    try {
+      const clawRecord = claw as { userId?: unknown; roleTemplate?: unknown; agentId?: unknown };
+      const userId = Number(clawRecord.userId || 0);
+      const task = await getAgentTask(taskId);
+      if (!task || String(task.adoptId || "") !== adoptId || Number(task.userId || 0) !== userId) {
+        observeAgentTaskRetry("blocked");
+        return res.status(404).json({ error: "专家任务不存在" });
+      }
+      if (!canRetryAgentTask({ status: task.status, interactionStatus: task.interactionStatus })) {
+        observeAgentTaskRetry("blocked");
+        return res.status(409).json({ error: "该任务当前不能重试" });
+      }
+      const profileKeys = await requesterProfiles(userId);
+      const agent = await getBusinessAgentForContext(String(task.agentId || ""), { userId, adoptId });
+      if (!agent || !isAgentIntegration(agent) || !profileAllowed(agent, profileKeys) || !roleAllowed(agent, clawRecord.roleTemplate)) {
+        observeAgentTaskRetry("blocked");
+        return res.status(403).json({ error: "AGENT_NOT_ALLOWED" });
+      }
+      const reason = routeReason(agent);
+      if (reason) {
+        observeCapabilityPreflight({ kind: "expert", outcome: "blocked" });
+        observeAgentTaskRetry("blocked");
+        return res.status(409).json({ error: reason });
+      }
+      await ensureAgentAvailable(agent);
+      observeCapabilityPreflight({ kind: "expert", outcome: "ready" });
+
+      const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
+      const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
+      const runtime = storedAgentTaskRuntime(task);
+      if (!runtime.input.trim()) {
+        observeAgentTaskRetry("blocked");
+        return res.status(409).json({ error: "原任务缺少可重试的输入" });
+      }
+      const retryId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+      const retryRecord = {
+        id: retryId,
+        parentTaskId: task.id,
+        adoptId,
+        userId,
+        agentId: task.agentId,
+        sourceConversationId: task.sourceConversationId || null,
+        sourceSessionId: task.sourceSessionId || null,
+        sourceMessageId: `retry:${task.id}`.slice(0, 128),
+        status: "pending" as AgentTaskStatus,
+        input: task.input,
+        requestContextJson: JSON.stringify(runtime),
+        adapterProtocol: String(agent.adapterProtocol || task.adapterProtocol || ""),
+      };
+      const reservation = await reserveAgentTask(retryRecord as Parameters<typeof reserveAgentTask>[0], {
+        maxConcurrent,
+        maxDailyRequests: 0,
+        dayStartedAt: new Date(0),
+      });
+      if (reservation.kind === "existing") {
+        observeAgentTaskRetry("created");
+        return res.json({
+          taskId: reservation.task.id,
+          reused: true,
+          task: publicAgentTask({ ...reservation.task, agentName: agent.name, agent: publicAgent(agent) }),
+        });
+      }
+      if (reservation.kind === "concurrency_exceeded") {
+        observeAgentTaskRetry("blocked");
+        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
+      }
+      if (reservation.kind !== "created") {
+        observeAgentTaskRetry("blocked");
+        return res.status(429).json({ error: "专家当前无法重试" });
+      }
+
+      const publicTask = publicAgentTask({
+        ...retryRecord,
+        agentName: agent.name,
+        createdAt: new Date().toISOString(),
+        agent: publicAgent(agent),
+      });
+      res.json({ taskId: retryId, reused: false, task: publicTask });
+      observeAgentTaskRetry("created");
+      startAgentTaskInBackground(retryId, {
+        ...agent,
+        __taskUserId: userId,
+        __taskAdoptId: adoptId,
+        __runtimeAgentId: String(clawRecord.agentId || ""),
+      }, runtime.input, runtime);
+    } catch (error: unknown) {
+      observeAgentTaskRetry("error");
+      if (error instanceof AgentUnavailableError) {
+        observeCapabilityPreflight({ kind: "expert", outcome: "blocked" });
+        return res.status(error.httpStatus).json({ error: error.message, code: error.code });
+      }
+      res.status(500).json({ error: error instanceof Error ? error.message : "TASK_RETRY_FAILED" });
+    }
+  });
+
   app.post("/api/claw/agent-tasks/submit", async (req, res) => {
     const adoptId = String(req.body?.adoptId || "").trim();
     const agentId = String(req.body?.agentId || "").trim();
@@ -581,13 +728,17 @@ export function registerAgentTaskRoutes(app: express.Express) {
         return res.status(403).json({ error: "AGENT_NOT_ALLOWED" });
       }
       const reason = routeReason(agent);
-      if (reason) return res.status(409).json({ error: reason });
+      if (reason) {
+        observeCapabilityPreflight({ kind: "expert", outcome: "blocked" });
+        return res.status(409).json({ error: reason });
+      }
 
       const sourceMessageId = req.body?.sourceMessageId ? String(req.body.sourceMessageId).slice(0, 128) : "";
       const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
       const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
       const maxDailyRequests = agentDailyRequestLimit(agent);
       await ensureAgentAvailable(agent);
+      observeCapabilityPreflight({ kind: "expert", outcome: "ready" });
 
       const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
       const taskUserId = Number((claw as any).userId || 0);
@@ -597,61 +748,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const sourceSessionId = req.body?.sessionId
         ? String(req.body.sessionId).slice(0, 160)
         : null;
-      const taskRecord = {
-        id: taskId,
-        adoptId,
-        userId: taskUserId,
-        agentId,
-        sourceConversationId,
-        sourceSessionId,
-        sourceMessageId: sourceMessageId || null,
-        status: "pending",
-        input,
-        adapterProtocol: String(agent.adapterProtocol || ""),
-      } as any;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const reservation = await reserveAgentTask(taskRecord, {
-        maxConcurrent,
-        maxDailyRequests,
-        dayStartedAt: today,
-      });
-      if (reservation.kind === "existing") {
-        return res.json({
-          taskId: reservation.task.id,
-          reused: true,
-          task: { ...reservation.task, agent: publicAgent(agent), agentName: agent.name },
-        });
-      }
-      if (reservation.kind === "concurrency_exceeded") {
-        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
-      }
-      if (reservation.kind === "daily_exceeded") {
-        return res.status(429).json({ error: "专家今日调用额度已用完" });
-      }
-
-      const publicPayload = publicAgent(agent);
-      res.json({
-        taskId,
-        reused: false,
-        task: {
-          id: taskId,
-          adoptId,
-          agentId,
-          agentName: agent.name,
-          status: "pending",
-          input,
-          adapterProtocol: String(agent.adapterProtocol || ""),
-          createdAt: new Date().toISOString(),
-          agent: publicPayload,
-        },
-      });
-      startAgentTaskInBackground(taskId, {
-        ...agent,
-        __taskUserId: taskUserId,
-        __taskAdoptId: adoptId,
-        __runtimeAgentId: String((claw as any).agentId || ""),
-      }, input, {
+      const runtime = {
         contextId: a2aRuntimeContextId(
           endpointConfig,
           adoptId,
@@ -665,9 +762,66 @@ export function registerAgentTaskRoutes(app: express.Express) {
           },
           dataPartMetadata: { "ea.investment-team": true, version: "1.0.0" },
         } : {}),
+      };
+      const taskRecord = {
+        id: taskId,
+        adoptId,
+        userId: taskUserId,
+        agentId,
+        sourceConversationId,
+        sourceSessionId,
+        sourceMessageId: sourceMessageId || null,
+        status: "pending",
+        input,
+        requestContextJson: JSON.stringify({ input, ...runtime }),
+        adapterProtocol: String(agent.adapterProtocol || ""),
+      } as any;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const reservation = await reserveAgentTask(taskRecord, {
+        maxConcurrent,
+        maxDailyRequests,
+        dayStartedAt: today,
       });
+      if (reservation.kind === "existing") {
+        return res.json({
+          taskId: reservation.task.id,
+          reused: true,
+          task: publicAgentTask({ ...reservation.task, agent: publicAgent(agent), agentName: agent.name }),
+        });
+      }
+      if (reservation.kind === "concurrency_exceeded") {
+        return res.status(429).json({ error: "专家当前任务较多，请稍后重试" });
+      }
+      if (reservation.kind === "daily_exceeded") {
+        return res.status(429).json({ error: "专家今日调用额度已用完" });
+      }
+
+      const publicPayload = publicAgent(agent);
+      res.json({
+        taskId,
+        reused: false,
+        task: publicAgentTask({
+          id: taskId,
+          adoptId,
+          agentId,
+          agentName: agent.name,
+          status: "pending",
+          input,
+          adapterProtocol: String(agent.adapterProtocol || ""),
+          createdAt: new Date().toISOString(),
+          agent: publicPayload,
+        }),
+      });
+      startAgentTaskInBackground(taskId, {
+        ...agent,
+        __taskUserId: taskUserId,
+        __taskAdoptId: adoptId,
+        __runtimeAgentId: String((claw as any).agentId || ""),
+      }, input, runtime);
     } catch (error: any) {
       if (error instanceof AgentUnavailableError) {
+        observeCapabilityPreflight({ kind: "expert", outcome: "blocked" });
         return res.status(error.httpStatus).json({ error: error.message, code: error.code });
       }
       res.status(500).json({ error: error?.message || "TASK_SUBMIT_FAILED" });
@@ -696,7 +850,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
           return res.json({
             taskId: existing.id,
             reused: true,
-            task: { ...existing, agentName: existingAgent?.name || existing.agentId },
+            task: publicAgentTask({ ...existing, agentName: existingAgent?.name || existing.agentId }),
           });
         }
       }
@@ -723,6 +877,20 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const responseText = agentInteractionResponseText(interaction, responseValue);
       const remoteInput = agentInteractionAgentInput(interaction, responseValue);
       const continuationId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+      const continuationRuntime = {
+        contextId: a2aRuntimeContextId(
+          endpointConfig,
+          adoptId,
+          sourceTask.agentId,
+          sourceTask.sourceConversationId || sourceTask.sourceSessionId,
+        ),
+        dataPart: {
+          schema: EA_INTERACTION_SCHEMA,
+          kind: "response",
+          response: responseValue,
+        },
+        dataPartMetadata: { "ea.interaction": true, version: "1.0.0" },
+      };
       const continuation = {
         id: continuationId,
         parentTaskId: sourceTask.id,
@@ -734,6 +902,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
         sourceMessageId: sourceMessageId || null,
         status: "pending" as AgentTaskStatus,
         input: responseText,
+        requestContextJson: JSON.stringify({ input: remoteInput, ...continuationRuntime }),
         adapterProtocol: String(agent.adapterProtocol || ""),
       };
       const claimed = await answerAgentTaskInteractionAndCreate(
@@ -753,32 +922,19 @@ export function registerAgentTaskRoutes(app: express.Express) {
         taskId: continuationId,
         reused: false,
         displayText: responseText,
-        task: {
+        task: publicAgentTask({
           ...continuation,
           agentName: agent.name,
           createdAt: new Date().toISOString(),
           agent: publicPayload,
-        },
+        }),
       });
       startAgentTaskInBackground(continuationId, {
         ...agent,
         __taskUserId: userId,
         __taskAdoptId: adoptId,
         __runtimeAgentId: String((claw as any).agentId || ""),
-      }, remoteInput, {
-        contextId: a2aRuntimeContextId(
-          endpointConfig,
-          adoptId,
-          sourceTask.agentId,
-          sourceTask.sourceConversationId || sourceTask.sourceSessionId,
-        ),
-        dataPart: {
-          schema: EA_INTERACTION_SCHEMA,
-          kind: "response",
-          response: responseValue,
-        },
-        dataPartMetadata: { "ea.interaction": true, version: "1.0.0" },
-      });
+      }, remoteInput, continuationRuntime);
     } catch (error: any) {
       if (error instanceof AgentUnavailableError) {
         return res.status(error.httpStatus).json({ error: error.message, code: error.code });

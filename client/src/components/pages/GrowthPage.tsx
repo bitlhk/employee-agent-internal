@@ -62,6 +62,16 @@ type MemoryEvidence = {
   snippet?: string | null;
   observedAt: string;
 };
+type MemoryConflict = {
+  id: number;
+  memoryId: number;
+  proposedKind: MemoryKind;
+  proposedContent: string;
+  evidenceCount: number;
+  latestSnippet?: string | null;
+  latestChannel?: string | null;
+  lastObservedAt: string;
+};
 type MemorySynthesisSlot = "profile" | "recent" | "playbook";
 type MemorySynthesis = {
   id: number;
@@ -184,6 +194,20 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
     },
     onError: (error) => toast.error(error.message || "操作失败"),
   });
+  const acceptConflict = trpc.claw.acceptMemoryConflict.useMutation({
+    onSuccess: async () => {
+      await refresh();
+      toast.success("已采用新的工作偏好");
+    },
+    onError: (error) => toast.error(error.message || "更新失败"),
+  });
+  const rejectConflict = trpc.claw.rejectMemoryConflict.useMutation({
+    onSuccess: async () => {
+      await refresh();
+      toast.success("已保留当前工作偏好");
+    },
+    onError: (error) => toast.error(error.message || "操作失败"),
+  });
   const forget = trpc.claw.forgetMemory.useMutation({
     onSuccess: async () => {
       setForgetting(null);
@@ -211,6 +235,7 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
 
   const items = (view.data?.items || []) as MemoryItem[];
   const evidence = (view.data?.evidence || []) as MemoryEvidence[];
+  const conflicts = (view.data?.conflicts || []) as MemoryConflict[];
   const syntheses = (view.data?.syntheses || []) as MemorySynthesis[];
   const versions = (view.data?.versions || []) as MemoryVersion[];
   const synthesisState = view.data?.synthesisState as {
@@ -346,6 +371,36 @@ export function GrowthPage({ adoptId }: { adoptId: string }) {
         ) : layer === "facts" ? (
           <section className="memory-panel">
             <div className="memory-panel__heading"><div><h2>记忆事实</h2><p>已确认事实会自动用于后续任务；学习中的规律需要再次出现或由你确认。</p></div><span>{activeItems.length} 已确认 · {candidateItems.length} 学习中</span></div>
+            {conflicts.length ? <div className="memory-kind-group is-conflict-group">
+              <div className="memory-kind-group__title"><span>发现变化</span><small>{conflicts.length}</small></div>
+              <div className="memory-conflict-list">
+                {conflicts.map((conflict) => {
+                  const current = itemById.get(conflict.memoryId);
+                  if (!current) return null;
+                  return (
+                    <div key={conflict.id} className="memory-conflict-row">
+                      <span className="memory-record-row__icon is-conflict"><RefreshCw /></span>
+                      <span className="memory-conflict-row__body">
+                        <span className="memory-conflict-row__label">当前记忆</span>
+                        <span className="memory-conflict-row__content is-current">{current.content}</span>
+                        <span className="memory-conflict-row__label">协作中发现的新变化</span>
+                        <span className="memory-conflict-row__content">{conflict.proposedContent}</span>
+                        <span className="memory-record-row__meta">
+                          <span>{CHANNEL_LABELS[conflict.latestChannel || ""] || conflict.latestChannel || "对话"}</span><i />
+                          <span>已出现 {conflict.evidenceCount || 1} 次</span><i />
+                          <span>{formatDate(conflict.lastObservedAt)}</span>
+                        </span>
+                        {conflict.latestSnippet ? <span className="memory-conflict-row__snippet">“{conflict.latestSnippet}”</span> : null}
+                      </span>
+                      <span className="memory-candidate-row__actions">
+                        <button type="button" className="is-confirm" disabled={acceptConflict.isPending || rejectConflict.isPending} onClick={() => acceptConflict.mutate({ adoptId, memoryId: conflict.memoryId, conflictId: conflict.id })}><Check />采用更新</button>
+                        <button type="button" disabled={acceptConflict.isPending || rejectConflict.isPending} onClick={() => rejectConflict.mutate({ adoptId, memoryId: conflict.memoryId, conflictId: conflict.id })}><X />保留当前</button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div> : null}
             {candidateItems.length ? <div className="memory-kind-group is-candidate-group">
               <div className="memory-kind-group__title"><span>学习中</span><small>{candidateItems.length}</small></div>
               <div className="memory-candidate-list">

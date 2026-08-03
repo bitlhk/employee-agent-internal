@@ -51,6 +51,7 @@ export interface RoleRuntimeAdapter {
   provision(input: RoleRuntimeProvisionInput): Promise<RoleRuntimeProvisionResult> | RoleRuntimeProvisionResult;
   reconcileSkills(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> | RoleRuntimeReconcileResult;
   reconcileMcp(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> | RoleRuntimeReconcileResult;
+  refreshCapabilities(adoptId: string, agentId: string): Promise<number> | number;
   bumpSessionEpoch(adoptId: string, agentId: string): Promise<number> | number;
   audit(input: RoleRuntimeReconcileInput & { action: string; metadata?: Record<string, unknown> }): Promise<void> | void;
 }

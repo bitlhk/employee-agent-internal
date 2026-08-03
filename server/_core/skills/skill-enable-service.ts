@@ -70,7 +70,7 @@ export async function setAgentSkillEnabled(input: {
   );
   try {
     await applyRoleScope(disabledDefaultSkillIds);
-    await runtimeAdapter.bumpSessionEpoch(input.adoptId, runtimeAgentId);
+    await runtimeAdapter.refreshCapabilities(input.adoptId, runtimeAgentId);
   } catch (error) {
     roleSkillPreferences.setDefaultSkillEnabled(
       input.adoptId,

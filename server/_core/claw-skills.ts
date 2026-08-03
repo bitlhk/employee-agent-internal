@@ -14,7 +14,6 @@ import type { Skill, SkillSource } from "../../shared/types/skill";
 import {
   requireClawOwner,
   resolveRuntimeAgentId,
-  bumpSessionEpoch,
   clearAgentSessionsCache,
   OPENCLAW_BASE_HOME,
   OPENCLAW_HOME,
@@ -640,8 +639,7 @@ export function registerSkillRoutes(app: express.Express) {
             role,
             effectiveAssets,
           });
-          const sessionEpoch = await runtimeAdapter.bumpSessionEpoch(adoptId, runtimeAgentId);
-          if (sessionEpoch <= 0) throw new Error("会话配置刷新失败");
+          const sessionEpoch = await runtimeAdapter.refreshCapabilities(adoptId, runtimeAgentId);
           const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
           await recordAuditBestEffort({
             action: "agent.connector.updated",

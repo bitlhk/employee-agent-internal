@@ -546,7 +546,7 @@ export function pickJiuwenText(value: unknown): string {
 function pickErrorMessage(frame: any): string {
   const body = frame?.body || {};
   const delta = body?.delta || {};
-  return String(
+  const raw = String(
     body?.message
       || body?.error
       || body?.content
@@ -560,6 +560,10 @@ function pickErrorMessage(frame: any): string {
       || frame?.message
       || "jiuwenclaw runtime error"
   ).slice(0, 1000);
+  if (/max(?:imum)? iterations?|iteration limit|达到.{0,8}(?:迭代|工具).{0,8}上限/i.test(raw)) {
+    return "本轮联网检索未能在限定步骤内收敛。请缩小问题范围，或提供一个明确的原始网址后重试。";
+  }
+  return raw;
 }
 
 export function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: number): Array<{ name: string; size: number; path: string }> {

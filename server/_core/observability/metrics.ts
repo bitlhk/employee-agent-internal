@@ -485,6 +485,49 @@ const backgroundWorkerStopDuration = new Histogram({
   registers: [metricsRegistry],
 });
 
+const memoryRetrievals = new Counter({
+  name: "ea_memory_retrieval_total",
+  help: "Managed memory retrieval attempts by bounded outcome.",
+  labelNames: ["outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const memoryRetrievalDuration = new Histogram({
+  name: "ea_memory_retrieval_duration_seconds",
+  help: "Managed memory retrieval duration in seconds.",
+  labelNames: ["outcome"] as const,
+  buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2],
+  registers: [metricsRegistry],
+});
+
+const memoryRetrievalSelected = new Histogram({
+  name: "ea_memory_retrieval_selected_items",
+  help: "Number of managed memory items selected per retrieval.",
+  buckets: [0, 1, 2, 3, 4, 6, 8, 12],
+  registers: [metricsRegistry],
+});
+
+const memoryConflicts = new Counter({
+  name: "ea_memory_conflicts_total",
+  help: "Managed memory conflict events by action.",
+  labelNames: ["action"] as const,
+  registers: [metricsRegistry],
+});
+
+const capabilityPreflight = new Counter({
+  name: "ea_capability_preflight_total",
+  help: "Capability preflight outcomes by bounded capability kind.",
+  labelNames: ["kind", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const agentTaskRetries = new Counter({
+  name: "ea_agent_task_retries_total",
+  help: "Agent task retry requests by bounded outcome.",
+  labelNames: ["outcome"] as const,
+  registers: [metricsRegistry],
+});
+
 export function beginHttpRequest(): void {
   httpInflight.inc();
 }
@@ -535,6 +578,31 @@ export function setCapacityLane(lane: string, active: number, limit: number): vo
 
 export function observeCapacityRejection(lane: string): void {
   capacityRejections.inc({ lane: lane.slice(0, 32) });
+}
+
+export function observeMemoryRetrieval(input: {
+  outcome: "selected" | "empty" | "disabled" | "error";
+  durationMs: number;
+  selectedCount?: number;
+}): void {
+  memoryRetrievals.inc({ outcome: input.outcome });
+  memoryRetrievalDuration.observe({ outcome: input.outcome }, Math.max(0, input.durationMs) / 1000);
+  memoryRetrievalSelected.observe(Math.max(0, input.selectedCount || 0));
+}
+
+export function observeMemoryConflict(action: "detected" | "accepted" | "rejected"): void {
+  memoryConflicts.inc({ action });
+}
+
+export function observeCapabilityPreflight(input: {
+  kind: "model" | "skill" | "connector" | "expert" | "knowledge";
+  outcome: "ready" | "blocked" | "unchecked";
+}): void {
+  capabilityPreflight.inc(input);
+}
+
+export function observeAgentTaskRetry(outcome: "created" | "blocked" | "error"): void {
+  agentTaskRetries.inc({ outcome });
 }
 
 export function beginOperationalActivity(activity: OperationalActivity): () => void {

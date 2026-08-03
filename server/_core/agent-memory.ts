@@ -8,6 +8,7 @@ import {
 import path from "path";
 import {
   addAgentMemoryEvidence,
+  observeAgentMemoryConflict,
   claimNextAgentMemoryJob,
   createAgentMemory,
   enqueueAgentMemoryJob,
@@ -23,6 +24,7 @@ import {
   getAgentMemoryMode,
   getAgentMemorySynthesisState,
   listAgentMemories,
+  listAgentMemoryConflicts,
   listAgentMemoryEvidence,
   listAgentMemorySyntheses,
   listAgentMemoryVersions,
@@ -43,10 +45,10 @@ import {
   updateAgentMemoryObservation,
   upsertAgentMemoryCursor,
   type AgentMemoryKind,
+  type AgentMemoryConflictRecord,
   type AgentMemoryMode,
   type AgentMemoryRecord,
   type AgentMemorySource,
-  type AgentMemoryStatus,
   type AgentMemorySynthesisSlot,
 } from "../db";
 import { callEaAssistantModel } from "./ea-assistant-model";
@@ -56,6 +58,12 @@ import { decryptSecret, encryptSecret } from "./secret-protection";
 import { JIUWENCLAW_HOME, appendLogAsync, jiuwenClawWorkspaceDir } from "./helpers";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { selectCoreAgentMemories } from "./agent-memory-retrieval";
+import {
+  decideMemoryObservation, managedMemoryEnabled as featureEnabled,
+  memoryConflictReviewEnabled, memoryEvidenceHash, memorySourceSnippetsEnabled,
+  type MemoryEvidenceInput,
+} from "./agent-memory-observation";
+import { observeMemoryConflict } from "./observability/metrics";
 import {
   MANAGED_BLOCK_END,
   MANAGED_BLOCK_START,
@@ -111,17 +119,6 @@ type MemoryJobPayload = Pick<
   "userMessage" | "assistantMessage" | "selectedSkillIds" | "toolNames" | "messageId"
 >;
 
-type MemoryEvidenceInput = {
-  sourceType: "explicit" | "conversation" | "feedback" | "legacy";
-  channel: string;
-  sessionId?: string;
-  requestId?: string;
-  conversationId?: string;
-  messageId?: string;
-  sourceText: string;
-  metadata?: Record<string, unknown>;
-};
-
 const MEMORY_KINDS = new Set<AgentMemoryKind>(["preference", "instruction", "entity", "procedure"]);
 const MEMORY_SYNTHESIS_SLOTS = new Set<AgentMemorySynthesisSlot>(["profile", "recent", "playbook"]);
 const HIGH_RISK_PATTERNS: Array<[RegExp, string]> = [
@@ -137,10 +134,6 @@ const MEMORY_RISK_BY_SENSITIVE_TYPE: Record<SensitiveDataType, string> = {
   cn_phone: "phone_number",
   bank_card: "payment_number",
 };
-
-function featureEnabled(): boolean {
-  return !/^(0|false|no|off)$/i.test(String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"));
-}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -512,6 +505,15 @@ function scheduleAgentMemorySynthesis(input: {
   synthesisTimers.set(key, timer);
 }
 
+export async function reconcileAgentMemoryChange(input: {
+  userId: number;
+  adoptId: string;
+  roleTemplate: string;
+}): Promise<void> {
+  await projectByAdoptId(input.adoptId);
+  scheduleAgentMemorySynthesis(input);
+}
+
 function scheduleSynthesisByAdoptId(adoptId: string): void {
   void (async () => {
     const claw = await getClawByAdoptId(adoptId);
@@ -531,18 +533,6 @@ async function isAgentMemoryLearningAllowed(userId: number, adoptId: string): Pr
     && Number(claw.userId) === Number(userId)
     && await getAgentMemoryMode(Number(claw.id)) === "learn_and_use",
   );
-}
-
-function evidenceHash(input: MemoryEvidenceInput, content: string): string {
-  return sha256([
-    input.sourceType,
-    input.channel,
-    input.sessionId || "",
-    input.requestId || "",
-    input.conversationId || "",
-    input.messageId || "",
-    normalizeMemoryContent(content),
-  ].join("\0"));
 }
 
 async function observeMemory(input: {
@@ -567,7 +557,18 @@ async function observeMemory(input: {
     ? new Date(Date.now() + input.expiresDays * 24 * 60 * 60 * 1000)
     : null;
   let item = await findAgentMemoryByKey(input.userId, input.adoptId, canonicalKey);
-  if (item && ["forgotten", "rejected"].includes(item.status) && !explicit) return item;
+  const decision = item
+    ? decideMemoryObservation({
+        currentStatus: item.status,
+        currentKind: item.kind,
+        currentContent: item.content,
+        proposedKind: input.kind,
+        proposedContent: content,
+        explicit,
+        conflictReviewEnabled: memoryConflictReviewEnabled(),
+      })
+    : null;
+  if (item && decision === "ignore") return item;
   if (!item) {
     item = await createAgentMemory({
       userId: input.userId,
@@ -582,7 +583,7 @@ async function observeMemory(input: {
       confidence: input.confidence,
       expiresAt,
     });
-  } else if (!(item.status === "active" && !explicit)) {
+  } else if (decision === "update") {
     await updateAgentMemoryObservation({
       id: item.id,
       content,
@@ -593,8 +594,25 @@ async function observeMemory(input: {
       expiresAt,
     });
   }
+  let conflict: AgentMemoryConflictRecord | null = null;
+  if (item && decision === "conflict") {
+    conflict = await observeAgentMemoryConflict({
+      memoryId: item.id,
+      userId: input.userId,
+      adoptId: input.adoptId,
+      proposedKind: input.kind,
+      proposedContent: content,
+      proposedHash: sha256(`${input.kind}\0${content}`),
+      proposedSource: input.source,
+      proposedConfidence: input.confidence,
+    });
+  }
+  const sourceSnippet = memorySourceSnippetsEnabled()
+    ? sanitizeMemoryTurnText(input.evidence.sourceText, 500)
+    : "";
   const evidenceCount = await addAgentMemoryEvidence({
     memoryId: item.id,
+    conflictId: conflict?.id,
     userId: input.userId,
     adoptId: input.adoptId,
     sourceType: input.evidence.sourceType,
@@ -603,15 +621,22 @@ async function observeMemory(input: {
     requestId: input.evidence.requestId,
     conversationId: input.evidence.conversationId,
     messageId: input.evidence.messageId,
-    sourceHash: evidenceHash(input.evidence, content),
-    // Automatic evidence keeps only a hash and structured metadata. The durable
-    // memory itself is already stored in agent_memory_items, so retaining a chat
-    // excerpt would unnecessarily duplicate user content.
-    snippet: input.evidence.sourceType === "explicit"
-      ? sanitizeMemoryTurnText(input.evidence.sourceText, 500)
-      : undefined,
+    sourceHash: memoryEvidenceHash(input.evidence, content),
+    snippet: sourceSnippet || undefined,
     metadata: input.evidence.metadata,
   });
+  if (conflict) {
+    observeMemoryConflict("detected");
+    appendLogAsync("agent-memory.log", {
+      ts: new Date().toISOString(),
+      event: "memory_conflict_detected",
+      adoptId: input.adoptId,
+      memoryId: item.id,
+      conflictId: conflict.id,
+      canonicalKey,
+    });
+    return item;
+  }
   item = await getAgentMemoryById(input.userId, input.adoptId, item.id) || item;
   if (!explicit && item.status === "candidate" && evidenceCount >= 2 && item.confidence >= 70) {
     await setAgentMemoryStatus(item.id, input.userId, input.adoptId, "active");
@@ -745,7 +770,7 @@ export async function listAgentMemoryView(input: { userId: number; adoptId: stri
     getAgentMemoryMode(input.adoptionId),
     listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active", "candidate"], limit: 300 }),
   ]);
-  const [evidence, versions] = await Promise.all([
+  const [evidence, versions, conflicts] = await Promise.all([
     listAgentMemoryEvidence({
       userId: input.userId,
       adoptId: input.adoptId,
@@ -757,6 +782,12 @@ export async function listAgentMemoryView(input: { userId: number; adoptId: stri
       adoptId: input.adoptId,
       memoryIds: items.map((item) => item.id),
       limit: 1000,
+    }),
+    listAgentMemoryConflicts({
+      userId: input.userId,
+      adoptId: input.adoptId,
+      statuses: ["pending"],
+      limit: 100,
     }),
   ]);
   const activeItems = items.filter((item) => item.status === "active");
@@ -786,10 +817,12 @@ export async function listAgentMemoryView(input: { userId: number; adoptId: stri
       candidate: items.filter((item) => item.status === "candidate").length,
       procedures: activeItems.filter((item) => item.kind === "procedure").length,
       evidence: evidence.length,
+      conflicts: conflicts.length,
       syntheses: syntheses.length,
     },
     items,
     evidence,
+    conflicts,
     versions,
     syntheses,
     synthesisState: {
@@ -891,7 +924,7 @@ function extractionPrompt(roleTemplate: string, payload: MemoryJobPayload): stri
     "请从这一轮对话中识别未来仍有价值、且明确来自用户的稳定工作偏好。",
     "只保存沟通方式、输出格式、稳定工作习惯、明确纠正，以及经过工具成功验证后可复用的个人流程。",
     "不要保存问候、临时任务、任务进度、助手猜测、附件正文、密钥、个人证件、客户明细、余额、持仓、行情、产品状态或任何实时业务数据。",
-    "content 必须是第三人称、简短、可独立理解的中文陈述。key 使用稳定的英文点分标识，相同语义必须尽量返回相同 key。",
+    "content 必须是第三人称、简短、可独立理解的中文陈述。key 使用稳定的英文点分标识；同一偏好或约定即使内容发生变化，也必须沿用原 key，以便系统识别变化并请用户确认。",
     "如果没有值得长期保存的内容，返回 {\"memories\":[]}。最多返回 3 条。",
     "输出严格 JSON：{\"memories\":[{\"key\":\"output.risk_first\",\"kind\":\"preference|instruction|entity|procedure\",\"content\":\"...\",\"confidence\":0-100,\"expires_days\":null}]}。",
     payload.selectedSkillIds?.length ? `本轮选择技能：${payload.selectedSkillIds.join(", ")}` : "",

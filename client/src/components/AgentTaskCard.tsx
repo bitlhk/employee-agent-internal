@@ -6,16 +6,18 @@
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Database, Eye, FileCheck2, Files, ShieldCheck, Square } from "lucide-react";
+import { ChevronDown, Database, Eye, FileCheck2, Files, RotateCcw, ShieldCheck, Square } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { ExpertAvatar, ExpertMemberAvatar, ExpertTeamAvatar, isInvestmentTeamExpert, isInvestmentTeamMember } from "@/components/ExpertAvatar";
 import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
+import { canRetryAgentTask, normalizeAgentTaskLifecycle } from "@shared/agent-task-lifecycle";
 
 export interface AgentToolStep {
   name: string;
   status: "running" | "done" | "error";
   durationMs?: number;
+  lifecycleState?: string;
 }
 
 export type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled" | "done";
@@ -172,11 +174,13 @@ export function AgentTaskCard({
   onOpenArtifact,
   onResumeExpert,
   onCancel,
+  onRetry,
 }: {
   task: AgentTask;
   onOpenArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
   onResumeExpert?: (task: AgentTask) => void;
   onCancel?: (task: AgentTask) => Promise<void> | void;
+  onRetry?: (task: AgentTask) => Promise<void> | void;
 }) {
   const normalized = useMemo(() => {
     const status = String(task.status || "pending");
@@ -192,10 +196,11 @@ export function AgentTaskCard({
     const completedAt = value(task.completedAt, task.completed_at);
     const updatedAt = value(task.updatedAt, task.updated_at);
     const interactionStatus = value(task.interactionStatus, task.interaction_status) || "";
-    const isWaitingForInput = interactionStatus === "pending";
-    const isActive = status === "pending" || status === "running";
-    const isDone = status === "succeeded" || status === "done";
-    const isFailed = status === "failed" || status === "cancelled";
+    const lifecycle = normalizeAgentTaskLifecycle({ status, interactionStatus });
+    const isWaitingForInput = lifecycle === "waiting_user";
+    const isActive = lifecycle === "queued" || lifecycle === "running";
+    const isDone = lifecycle === "completed";
+    const isFailed = lifecycle === "failed" || lifecycle === "cancelled";
     const artifacts = parseAgentTaskArtifacts(value(task.artifactsJson, task.artifacts_json)).map((artifact) => ({
       ...artifact,
       adoptId: String(task.adoptId || task.adopt_id || ""),
@@ -218,6 +223,7 @@ export function AgentTaskCard({
       isDone,
       isFailed,
       interactionStatus,
+      lifecycle,
       isWaitingForInput,
       artifacts,
       steps: task.steps || [],
@@ -228,6 +234,7 @@ export function AgentTaskCard({
   const [expanded, setExpanded] = useState(false);
   const [taskDetailsExpanded, setTaskDetailsExpanded] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
+  const [retryPending, setRetryPending] = useState(false);
   const autoExpandedRef = useRef(false);
   const teamAutoExpandedRef = useRef(false);
 
@@ -440,6 +447,25 @@ export function AgentTaskCard({
 
           {normalized.error ? (
             <div className="agent-task-card__error">{normalized.error}</div>
+          ) : null}
+
+          {onRetry && canRetryAgentTask({ status: normalized.status, interactionStatus: normalized.interactionStatus }) ? (
+            <button
+              type="button"
+              className="agent-task-card__resume"
+              disabled={retryPending}
+              onClick={async () => {
+                setRetryPending(true);
+                try {
+                  await onRetry(task);
+                } finally {
+                  setRetryPending(false);
+                }
+              }}
+            >
+              <RotateCcw size={13} />
+              {retryPending ? "正在重试" : "重新执行"}
+            </button>
           ) : null}
 
           {normalized.result ? (

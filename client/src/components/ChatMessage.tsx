@@ -182,6 +182,7 @@ type ChatMessageProps = {
   onOpenAgentArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
   onResumeExpert?: (task: AgentTask) => void;
   onCancelExpert?: (task: AgentTask) => Promise<void> | void;
+  onRetryExpert?: (task: AgentTask) => Promise<void> | void;
 };
 
 export type MessageFeedbackValue = {
@@ -690,6 +691,7 @@ function ChatMessageInner({
   onOpenAgentArtifact,
   onResumeExpert,
   onCancelExpert,
+  onRetryExpert,
 }: ChatMessageProps) {
   const eventToolCalls = toolCallsFromMessageEvents(messageEvents);
   const effectiveToolCalls = toolCalls && toolCalls.length > 0 ? toolCalls : eventToolCalls;
@@ -1057,6 +1059,7 @@ function ChatMessageInner({
                 onOpenArtifact={onOpenAgentArtifact}
                 onResumeExpert={onResumeExpert}
                 onCancel={onCancelExpert}
+                onRetry={onRetryExpert}
               />
             ))}
           </div>
@@ -1263,6 +1266,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.onOpenAgentArtifact === next.onOpenAgentArtifact &&
     prev.onResumeExpert === next.onResumeExpert &&
     prev.onCancelExpert === next.onCancelExpert &&
+    prev.onRetryExpert === next.onRetryExpert &&
     prev.onCaptureKnowledge === next.onCaptureKnowledge &&
     prev.onOpenKnowledgeSource === next.onOpenKnowledgeSource &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&

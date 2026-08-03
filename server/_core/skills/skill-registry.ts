@@ -21,7 +21,8 @@ import type {
   SkillScanInfo,
   SkillSource,
 } from "../../../shared/types/skill";
-import { APP_ROOT, OPENCLAW_HOME, bumpSessionEpoch, clearAgentSessionsCache, resolveRuntimeAgentId, isJiuwenClawAdoptId, jiuwenClawWorkspaceDir } from "../helpers";
+import { APP_ROOT, OPENCLAW_HOME, clearAgentSessionsCache, resolveRuntimeAgentId, isJiuwenClawAdoptId, jiuwenClawWorkspaceDir } from "../helpers";
+import { refreshJiuwenRuntimeCapabilities } from "../jiuwenswarm-runtime-refresh";
 import { skillInstaller, type SkillInstaller } from "./skill-installer";
 import { parseSkillSourceDirectory } from "./skill-source";
 import { skillSourceDirsForRuntime, skillStoreAgentDir, skillStoreMarketplaceInstallDir } from "./skill-store";
@@ -664,12 +665,12 @@ export class FileSkillRegistry implements SkillRegistry {
     try {
       if (isJiuwenClawAdoptId(adoptId)) {
         await this.syncJiuwenSwarmWorkspaceSkills(adoptId);
+        await refreshJiuwenRuntimeCapabilities(adoptId);
       } else {
         await this.syncOpenClawAgentSkillFilter(adoptId);
       }
       const runtimeAgentId = await this.runtimeAgentId(adoptId);
       clearAgentSessionsCache(runtimeAgentId, this.openclawHome.replace(/\/\.openclaw$/, ""));
-      bumpSessionEpoch(adoptId);
     } catch {
       // Best effort: registry mutations should not fail solely because cache
       // invalidation failed.

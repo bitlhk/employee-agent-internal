@@ -10,6 +10,7 @@ import {
   renderManagedMemoryMarkdown,
   replaceManagedBlock,
 } from "./agent-memory";
+import { decideMemoryObservation } from "./agent-memory-observation";
 import { memoryPolicyMarkdown } from "./agent-memory-policy";
 
 describe("agent managed memory", () => {
@@ -172,5 +173,32 @@ describe("agent managed memory", () => {
       expect(policy).toContain("不代表首次与用户交流");
       expect(policy).toContain("不得据此声称“第一次见面”“刚上线”");
     }
+  });
+
+  it("holds automatic changes to active memory for user confirmation", () => {
+    expect(decideMemoryObservation({
+      currentStatus: "active",
+      currentKind: "preference",
+      currentContent: "用户偏好先给结论",
+      proposedKind: "preference",
+      proposedContent: "用户偏好先列依据",
+      explicit: false,
+    })).toBe("conflict");
+    expect(decideMemoryObservation({
+      currentStatus: "active",
+      currentKind: "preference",
+      currentContent: "用户偏好先给结论",
+      proposedKind: "preference",
+      proposedContent: "用户偏好先列依据",
+      explicit: true,
+    })).toBe("update");
+    expect(decideMemoryObservation({
+      currentStatus: "active",
+      currentKind: "preference",
+      currentContent: "用户偏好先给结论",
+      proposedKind: "preference",
+      proposedContent: "用户偏好先给结论",
+      explicit: false,
+    })).toBe("observe");
   });
 });

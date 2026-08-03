@@ -15,6 +15,7 @@ export * from "./agents";
 export * from "./install-telemetry";
 export * from "./message-feedback";
 export * from "./agent-memory";
+export * from "./agent-memory-conflicts";
 export * from "./agent-mcp-preferences";
 export * from "./custom-mcp-connections";
 export * from "./knowledge";

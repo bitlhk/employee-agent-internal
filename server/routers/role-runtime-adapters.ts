@@ -12,7 +12,8 @@ import { ensureJiuwenSwarmWorkspacePermission } from "../_core/jiuwenswarm-permi
 import { resolveRuntimeWorkspaceByIds } from "../_core/helpers";
 import { skillSourceDirsForRuntime } from "../_core/skills/skill-store";
 import { isJiuwenClawRuntimeEnabled } from "../_core/jiuwenclaw-bridge";
-import { bumpSessionEpoch } from "../_core/helpers";
+import { bumpSessionEpoch, readSessionEpoch } from "../_core/helpers";
+import { refreshJiuwenRuntimeCapabilities } from "../_core/jiuwenswarm-runtime-refresh";
 import { resolvePersistedAgentMcpSelection } from "../db/agent-mcp-preferences";
 import type { AgentRuntime } from "../_core/role-templates";
 import { retiredRuntimeMessage } from "../_core/runtime-policy";
@@ -108,6 +109,11 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
 
   bumpSessionEpoch(adoptId: string): number {
     return bumpSessionEpoch(adoptId);
+  }
+
+  async refreshCapabilities(adoptId: string): Promise<number> {
+    await refreshJiuwenRuntimeCapabilities(adoptId);
+    return readSessionEpoch(adoptId);
   }
 
   audit(): void {

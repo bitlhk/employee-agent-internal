@@ -25,13 +25,14 @@ import {
   type CustomMcpEndpointConfig,
 } from "./custom-mcp-client";
 import {
-  bumpSessionEpoch,
+  readSessionEpoch,
   isAuthorizedInternalRequest,
   isJiuwenClawAdoptId,
   requireClawOwner,
   resolveRequesterUserId,
   resolveRuntimeAgentId,
 } from "./helpers";
+import { refreshJiuwenRuntimeCapabilities } from "./jiuwenswarm-runtime-refresh";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { strictLimiter } from "./security";
 import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
@@ -258,7 +259,8 @@ export async function toggleCustomMcpConnection(input: {
     throw error;
   }
   await updateCustomMcpConnection(input, { enabled: input.enabled });
-  return { changed: true, sessionEpoch: bumpSessionEpoch(input.adoptId) };
+  await refreshJiuwenRuntimeCapabilities(input.adoptId);
+  return { changed: true, sessionEpoch: readSessionEpoch(input.adoptId) };
 }
 
 async function gatewayTools(adoptId: string) {
@@ -472,7 +474,7 @@ export function registerCustomMcpRoutes(app: Express): void {
           lastTestedAt: new Date(),
         });
       if (!row) return fail("连接器保存失败");
-      bumpSessionEpoch(context.adoptId);
+      await refreshJiuwenRuntimeCapabilities(context.adoptId);
       await recordAuditBestEffort({
         action: existing ? "agent.custom_mcp.oauth_refreshed" : "agent.custom_mcp.oauth_connected",
         actorType: "user",
@@ -551,7 +553,8 @@ export function registerCustomMcpRoutes(app: Express): void {
         selectedToolNames,
         lastTestedAt: new Date(),
       });
-      const sessionEpoch = bumpSessionEpoch(context.adoptId);
+      await refreshJiuwenRuntimeCapabilities(context.adoptId);
+      const sessionEpoch = readSessionEpoch(context.adoptId);
       await recordAuditBestEffort({
         action: "agent.custom_mcp.created",
         actorType: "user",
@@ -598,7 +601,8 @@ export function registerCustomMcpRoutes(app: Express): void {
         lastTestedAt: new Date(),
       });
       if (!row) return res.status(404).json({ error: "连接不存在" });
-      const sessionEpoch = bumpSessionEpoch(context.adoptId);
+      await refreshJiuwenRuntimeCapabilities(context.adoptId);
+      const sessionEpoch = readSessionEpoch(context.adoptId);
       await recordAuditBestEffort({
         action: "agent.custom_mcp.updated",
         actorType: "user",
@@ -638,7 +642,7 @@ export function registerCustomMcpRoutes(app: Express): void {
         selectedToolNames,
         lastTestedAt: new Date(),
       });
-      bumpSessionEpoch(context.adoptId);
+      await refreshJiuwenRuntimeCapabilities(context.adoptId);
       await recordAuditBestEffort({
         action: "agent.custom_mcp.tested",
         actorType: "user",
@@ -661,7 +665,7 @@ export function registerCustomMcpRoutes(app: Express): void {
         lastError: message,
         lastTestedAt: new Date(),
       });
-      bumpSessionEpoch(context.adoptId);
+      await refreshJiuwenRuntimeCapabilities(context.adoptId).catch(() => undefined);
       res.status(400).json({ error: message });
     }
   });
@@ -674,7 +678,8 @@ export function registerCustomMcpRoutes(app: Express): void {
       const existing = await getCustomMcpConnection({ id, ...context });
       if (!existing) return res.status(404).json({ error: "连接不存在" });
       await deleteCustomMcpConnection({ id, ...context });
-      const sessionEpoch = bumpSessionEpoch(context.adoptId);
+      await refreshJiuwenRuntimeCapabilities(context.adoptId);
+      const sessionEpoch = readSessionEpoch(context.adoptId);
       await recordAuditBestEffort({
         action: "agent.custom_mcp.deleted",
         actorType: "user",

@@ -60,6 +60,7 @@ export type AgentMemoryJobRecord = {
 export type AgentMemoryEvidenceRecord = {
   id: number;
   memoryId: number;
+  conflictId: number | null;
   sourceType: "explicit" | "conversation" | "feedback" | "legacy";
   channel: string;
   sessionId: string | null;
@@ -356,6 +357,7 @@ export async function updateAgentMemoryObservation(input: {
 
 export async function addAgentMemoryEvidence(input: {
   memoryId: number;
+  conflictId?: number;
   userId: number;
   adoptId: string;
   sourceType: "explicit" | "conversation" | "feedback" | "legacy";
@@ -372,26 +374,40 @@ export async function addAgentMemoryEvidence(input: {
   if (!db) throw new Error("DB not available");
   await db.execute(sql`
     INSERT IGNORE INTO agent_memory_evidence (
-      memory_id, user_id, adopt_id, source_type, channel, session_id, request_id,
+      memory_id, conflict_id, user_id, adopt_id, source_type, channel, session_id, request_id,
       conversation_id, message_id, source_hash, snippet, metadata_json
     ) VALUES (
-      ${input.memoryId}, ${input.userId}, ${input.adoptId}, ${input.sourceType}, ${input.channel},
+      ${input.memoryId}, ${input.conflictId || null}, ${input.userId}, ${input.adoptId}, ${input.sourceType}, ${input.channel},
       ${input.sessionId || null}, ${input.requestId || null}, ${input.conversationId || null},
       ${input.messageId || null}, ${input.sourceHash}, ${input.snippet || null},
       ${input.metadata ? JSON.stringify(input.metadata) : null}
     )
   `);
-  const countResult: any = await db.execute(sql`
-    SELECT COUNT(DISTINCT COALESCE(NULLIF(session_id, ''), source_hash)) AS evidence_count
-    FROM agent_memory_evidence
-    WHERE memory_id = ${input.memoryId}
-  `);
+  const countResult: unknown = input.conflictId
+    ? await db.execute(sql`
+        SELECT COUNT(DISTINCT COALESCE(NULLIF(session_id, ''), source_hash)) AS evidence_count
+        FROM agent_memory_evidence
+        WHERE conflict_id = ${input.conflictId}
+      `)
+    : await db.execute(sql`
+        SELECT COUNT(DISTINCT COALESCE(NULLIF(session_id, ''), source_hash)) AS evidence_count
+        FROM agent_memory_evidence
+        WHERE memory_id = ${input.memoryId} AND conflict_id IS NULL
+      `);
   const count = Number(rowsFromResult(countResult)[0]?.evidence_count || 0);
-  await db.execute(sql`
-    UPDATE agent_memory_items
-    SET evidence_count = ${count}, last_observed_at = CURRENT_TIMESTAMP
-    WHERE id = ${input.memoryId}
-  `);
+  if (input.conflictId) {
+    await db.execute(sql`
+      UPDATE agent_memory_conflicts
+      SET evidence_count = ${count}, last_observed_at = CURRENT_TIMESTAMP
+      WHERE id = ${input.conflictId} AND memory_id = ${input.memoryId}
+    `);
+  } else {
+    await db.execute(sql`
+      UPDATE agent_memory_items
+      SET evidence_count = ${count}, last_observed_at = CURRENT_TIMESTAMP
+      WHERE id = ${input.memoryId}
+    `);
+  }
   return count;
 }
 
@@ -419,14 +435,16 @@ export async function listAgentMemoryEvidence(input: {
     ? sql`AND evidence.memory_id IN (${sql.join(memoryIds.map((id) => sql`${id}`), sql`, `)})`
     : sql``;
   const result: any = await db.execute(sql`
-    SELECT evidence.id, evidence.memory_id, evidence.source_type, evidence.channel,
+    SELECT evidence.id, evidence.memory_id, evidence.conflict_id, evidence.source_type, evidence.channel,
            evidence.session_id, evidence.conversation_id, evidence.message_id,
            evidence.snippet, evidence.metadata_json, evidence.observed_at
     FROM agent_memory_evidence evidence
     JOIN agent_memory_items item ON item.id = evidence.memory_id
+    LEFT JOIN agent_memory_conflicts conflict ON conflict.id = evidence.conflict_id
     WHERE evidence.user_id = ${input.userId}
       AND evidence.adopt_id = ${input.adoptId}
       AND item.status IN ('active', 'candidate')
+      AND (evidence.conflict_id IS NULL OR conflict.status = 'pending')
       ${memoryFilter}
     ORDER BY evidence.observed_at DESC, evidence.id DESC
     LIMIT ${limit}
@@ -434,6 +452,7 @@ export async function listAgentMemoryEvidence(input: {
   return rowsFromResult(result).map((row) => ({
     id: Number(row.id),
     memoryId: Number(row.memory_id),
+    conflictId: row.conflict_id ? Number(row.conflict_id) : null,
     sourceType: String(row.source_type || "conversation") as AgentMemoryEvidenceRecord["sourceType"],
     channel: String(row.channel || "web"),
     sessionId: row.session_id ? String(row.session_id) : null,
@@ -661,6 +680,11 @@ export async function forgetAgentMemoryRecord(id: number, userId: number, adoptI
       SET content = '[已忘记]', valid_to = COALESCE(valid_to, CURRENT_TIMESTAMP)
       WHERE memory_id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId}
     `);
+    await tx.execute(sql`
+      UPDATE agent_memory_conflicts
+      SET status = 'rejected', resolved_at = CURRENT_TIMESTAMP
+      WHERE memory_id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId} AND status = 'pending'
+    `);
   });
 }
 
@@ -718,6 +742,11 @@ export async function updateAgentMemoryContent(
         ${id}, ${userId}, ${adoptId}, ${nextVersion}, ${current.kind}, ${content},
         'explicit', 100, ${changeType}, CURRENT_TIMESTAMP
       )
+    `);
+    await tx.execute(sql`
+      UPDATE agent_memory_conflicts
+      SET status = 'rejected', resolved_at = CURRENT_TIMESTAMP
+      WHERE memory_id = ${id} AND user_id = ${userId} AND adopt_id = ${adoptId} AND status = 'pending'
     `);
   });
 }

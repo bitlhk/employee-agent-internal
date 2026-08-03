@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   listSkills: vi.fn(),
   setEnabled: vi.fn(),
   reconcileSkills: vi.fn(),
-  bumpSessionEpoch: vi.fn(),
+  refreshCapabilities: vi.fn(),
 }));
 
 vi.mock("../../db", () => ({
@@ -81,13 +81,13 @@ describe("setAgentSkillEnabled", () => {
     });
     mocks.getRoleRuntimeAdapter.mockReturnValue({
       reconcileSkills: mocks.reconcileSkills,
-      bumpSessionEpoch: mocks.bumpSessionEpoch,
+      refreshCapabilities: mocks.refreshCapabilities,
     });
     mocks.getDisabledDefaultSkillIds.mockReturnValue([]);
     mocks.setDefaultSkillEnabled.mockReturnValue(["risk-default"]);
     mocks.listSkills.mockResolvedValue({ ok: true, value: [skill("personal-skill")] });
     mocks.reconcileSkills.mockResolvedValue({ ok: true });
-    mocks.bumpSessionEpoch.mockResolvedValue(undefined);
+    mocks.refreshCapabilities.mockResolvedValue(7);
     mocks.listSkillsWithRoleDefaults.mockResolvedValue({
       ok: true,
       value: [skill("risk-default", false)],
@@ -141,6 +141,15 @@ describe("setAgentSkillEnabled", () => {
       true,
     );
     expect(mocks.reconcileSkills).toHaveBeenCalledTimes(2);
-    expect(mocks.bumpSessionEpoch).not.toHaveBeenCalled();
+    expect(mocks.refreshCapabilities).not.toHaveBeenCalled();
+  });
+
+  it("refreshes role skills without resetting the conversation session", async () => {
+    await expect(setAgentSkillEnabled(input)).resolves.toEqual({
+      ok: true,
+      item: skill("risk-default", false),
+    });
+    expect(mocks.reconcileSkills).toHaveBeenCalledTimes(1);
+    expect(mocks.refreshCapabilities).toHaveBeenCalledWith("lgj-test", "jiuwen_lgj-test");
   });
 });
