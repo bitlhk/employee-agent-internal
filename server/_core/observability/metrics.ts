@@ -307,6 +307,7 @@ export type BackgroundWorkerName =
   | "knowledge_recovery"
   | "audit_dlq"
   | "tool_audit"
+  | "public_health"
   | "recycler";
 export type BackgroundWorkerState = "running" | "stopping" | "stopped" | "failed";
 
@@ -482,6 +483,13 @@ const backgroundWorkerStopDuration = new Histogram({
   help: "Background worker stop duration in seconds.",
   labelNames: ["worker", "outcome"] as const,
   buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5],
+  registers: [metricsRegistry],
+});
+
+const publicHealthComponentStatus = new Gauge({
+  name: "ea_public_health_component_status",
+  help: "Public health component status as a one-hot gauge.",
+  labelNames: ["component", "status"] as const,
   registers: [metricsRegistry],
 });
 
@@ -753,4 +761,13 @@ export function observeBackgroundWorkerStop(
   const labels = { worker, outcome };
   backgroundWorkerStops.inc(labels);
   backgroundWorkerStopDuration.observe(labels, Math.max(0, durationMs) / 1000);
+}
+
+export function setPublicHealthComponentStatus(
+  component: "application" | "runtime" | "model",
+  status: "operational" | "degraded" | "outage" | "unknown",
+): void {
+  for (const candidate of ["operational", "degraded", "outage", "unknown"] as const) {
+    publicHealthComponentStatus.set({ component, status: candidate }, candidate === status ? 1 : 0);
+  }
 }

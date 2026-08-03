@@ -67,6 +67,7 @@ export type JiuwenForwardOptions = {
   knowledgeSources?: Array<Record<string, unknown>>;
   memoryUserMessage?: string;
   onFirstToken?: () => void;
+  onRuntimeOutcome?: (outcome: "success" | "error" | "cancelled") => void;
 };
 
 export type JiuwenSelectedSkillMetadata = {
@@ -1093,6 +1094,7 @@ export async function forwardToJiuwenClaw(
     };
     const fail = (error: string) => {
       logEnd("chat_stream_failed", { error: error.slice(0, 1000) });
+      opts.onRuntimeOutcome?.("error");
       writeData({ __stream_error: true, error });
       emitDone();
       settle();
@@ -1105,6 +1107,7 @@ export async function forwardToJiuwenClaw(
         settle("silent");
         return;
       }
+      opts.onRuntimeOutcome?.("success");
       const recentFiles = collectRecentWorkspaceFiles(workspaceDir, startedAt)
         .filter((file) => !emittedWorkspaceFiles.has(file.path))
         .slice(0, 20);
@@ -1193,6 +1196,7 @@ export async function forwardToJiuwenClaw(
     const onClientClose = () => {
       if (res.writableEnded || settled) return;
       clientClosed = true;
+      opts.onRuntimeOutcome?.("cancelled");
       logEnd("chat_stream_client_closed");
       try { ws.close(1000, "client closed"); } catch {}
       settle();
@@ -1324,6 +1328,7 @@ export async function forwardToJiuwenClaw(
               });
               sawText = true;
               writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
+              opts.onRuntimeOutcome?.("success");
               emitDone();
               try { ws.close(1000, "human approval required"); } catch {}
               settle();

@@ -371,6 +371,13 @@ export async function forwardToJiuwenGateway(
     const settle = (reason: string) => {
       if (settled) return;
       settled = true;
+      opts.onRuntimeOutcome?.(
+        reason === "done" || reason === "permission-required"
+          ? "success"
+          : reason === "client-closed"
+            ? "cancelled"
+            : "error",
+      );
       clearTimeout(timeout);
       for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
         generatedFiles.set(file.path, file);

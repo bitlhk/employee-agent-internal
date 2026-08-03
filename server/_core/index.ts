@@ -3,6 +3,7 @@ import "./runtime-permissions";
 import { flushApplicationLogs, logError, logFatal, logInfo, logWarn } from "./observability/logger";
 import { requestObservabilityMiddleware } from "./observability/http-middleware";
 import { registerOperationalRoutes } from "./observability/health-routes";
+import { startPublicHealthMonitor } from "./observability/public-health";
 import {
   beginServerDrain,
   markServerReady,
@@ -844,6 +845,7 @@ async function startServer() {
 
   server.listen(port, bindIp, () => {
     markServerReady();
+    startManagedWorker("public_health", startPublicHealthMonitor);
     const displayHost = bindIp.includes(":") ? `[${bindIp}]` : bindIp;
     logInfo("server.started", {
       bindIp: displayHost,

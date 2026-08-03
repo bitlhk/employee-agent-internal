@@ -19,6 +19,7 @@ import {
   observeCapabilityPreflight,
   type ChatOutcome,
 } from "./observability/metrics";
+import { observePublicModelTraffic } from "./observability/public-health";
 import {
   buildSelectedSkillsManifest,
   normalizeSelectedSkillIds,
@@ -525,6 +526,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           knowledgeSources,
           memoryUserMessage: userMessage,
           onFirstToken: chatMetric.observeFirstToken,
+          onRuntimeOutcome: observePublicModelTraffic,
         },
       );
     },
