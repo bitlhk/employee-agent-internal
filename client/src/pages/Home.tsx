@@ -2630,7 +2630,7 @@ export default function Home() {
   const handleJiuwenPermissionAnswer = async (
     messageId: string,
     permission: JiuwenPermissionRequestCard,
-    action: "allow_once" | "reject",
+    action: "allow_once" | "allow_always" | "reject",
   ) => {
     if (!resolvedAdoptId || !permission?.requestId) return;
     const nextState: JiuwenPermissionRequestCard["state"] = action === "reject" ? "rejected" : "approved";
@@ -2650,6 +2650,8 @@ export default function Home() {
           requestId: permission.requestId,
           action,
           source: permission.source || "permission_interrupt",
+          toolName: permission.toolName,
+          command: permission.command,
           channel: "web",
           conversationId: webConversationId,
           runtimeMode: chatRuntimeMode,
@@ -3260,6 +3262,10 @@ export default function Home() {
                   toolName: chunk.toolName ? String(chunk.toolName) : undefined,
                   options: Array.isArray(chunk.options) ? chunk.options : undefined,
                   questions: Array.isArray(chunk.questions) ? chunk.questions : undefined,
+                  riskLevel: ["low", "medium", "high"].includes(chunk.riskLevel) ? chunk.riskLevel : undefined,
+                  reasonCode: chunk.reasonCode ? String(chunk.reasonCode) : undefined,
+                  reasonText: chunk.reasonText ? String(chunk.reasonText) : undefined,
+                  allowAlways: chunk.allowAlways === true,
                   state: "pending",
                 });
                 setLingxiaStreaming(false);
@@ -3599,6 +3605,10 @@ export default function Home() {
                 toolName: chunk.toolName ? String(chunk.toolName) : undefined,
                 options: Array.isArray(chunk.options) ? chunk.options : undefined,
                 questions: Array.isArray(chunk.questions) ? chunk.questions : undefined,
+                riskLevel: ["low", "medium", "high"].includes(chunk.riskLevel) ? chunk.riskLevel : undefined,
+                reasonCode: chunk.reasonCode ? String(chunk.reasonCode) : undefined,
+                reasonText: chunk.reasonText ? String(chunk.reasonText) : undefined,
+                allowAlways: chunk.allowAlways === true,
                 state: "pending",
               });
               setLingxiaStreaming(false);

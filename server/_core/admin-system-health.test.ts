@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   getAuditBaselineHealth: vi.fn(),
   getBackgroundWorkerSnapshot: vi.fn(),
   getCapacitySnapshot: vi.fn(),
+  getAgentTaskRuntimeSnapshot: vi.fn(),
 }));
 
 vi.mock("child_process", () => ({
@@ -32,6 +33,10 @@ vi.mock("./helpers", () => ({
 
 vi.mock("./operational-capacity", () => ({
   getCapacitySnapshot: mocks.getCapacitySnapshot,
+}));
+
+vi.mock("../db/agents", () => ({
+  getAgentTaskRuntimeSnapshot: mocks.getAgentTaskRuntimeSnapshot,
 }));
 
 function databaseResult(rows: Array<Record<string, unknown>>) {
@@ -77,6 +82,7 @@ describe("admin system health", () => {
     mocks.getBackgroundWorkerSnapshot.mockReturnValue([
       { id: "knowledge-index", state: "running" },
     ]);
+    mocks.getAgentTaskRuntimeSnapshot.mockResolvedValue({ pending: 1, running: 2, stale: 0, tasks: [] });
     mocks.getAuditBaselineHealth.mockResolvedValue({
       ok: true,
       checkedAt: "2026-07-30T00:00:00.000Z",
@@ -100,6 +106,7 @@ describe("admin system health", () => {
     expect(result.summary).toMatchObject({ ok: true, error: 0, warning: 0 });
     expect(result.app.pm2).toMatchObject({ name: "employee-agent", status: "online" });
     expect(result.operations.capacity.chat_http).toEqual({ active: 1, limit: 60 });
+    expect(result.operations.agentTasks).toMatchObject({ pending: 1, running: 2, stale: 0 });
     expect(result.database).toMatchObject({
       ok: true,
       skillMarketApproved: 12,

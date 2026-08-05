@@ -81,6 +81,27 @@ describe("jiuwenclaw bridge audit helpers", () => {
 
     expect(request).toMatchObject({ kind: "permission", title: "权限审批" });
     expect(request?.options.map((option) => option.value)).toEqual(["本次允许", "拒绝"]);
+    expect(request).toMatchObject({ riskLevel: "medium", allowAlways: false });
+  });
+
+  it("exposes persistent approval only when the runtime offers it and the action is not high risk", () => {
+    const request = normalizeJiuwenPermissionRequest("chat.permission", {
+      request_id: "permission-read",
+      source: "permission_interrupt",
+      tool_name: "read_file",
+      question: "读取工作区文件",
+      options: [
+        { label: "本次允许", value: "allow_once" },
+        { label: "总是允许", value: "allow_always" },
+        { label: "拒绝", value: "reject" },
+      ],
+    }, "fallback");
+
+    expect(request).toMatchObject({
+      riskLevel: "low",
+      reasonCode: "read_only",
+      allowAlways: true,
+    });
   });
 
   it("returns every ask-user answer to JiuwenSwarm in question order", () => {

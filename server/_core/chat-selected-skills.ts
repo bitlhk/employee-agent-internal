@@ -5,7 +5,13 @@ export type SkillSelectionMode = "manual" | "automatic";
 export type AutomaticSkillMatch = {
   skillId: string;
   score: number;
-  reason: "name" | "trigger" | "description" | "intent";
+  reason: "name" | "trigger" | "description" | "intent" | "session";
+};
+
+export type SkillSessionAffinity = {
+  skillId: string;
+  useCount: number;
+  lastSelectedAt: Date | string;
 };
 
 export type SelectedRuntimeSkill = {
@@ -107,7 +113,33 @@ function automaticSkillScore(query: string, name: string, description: string): 
   return null;
 }
 
-export function selectAutomaticSkillMatch(skills: any[], userMessage: string): AutomaticSkillMatch | null {
+function isContinuationRequest(value: string): boolean {
+  const text = String(value || "").normalize("NFKC").trim();
+  if (!text || text.length > 180) return false;
+  return /(?:^|[，。！？,.!?\s])(?:继续|接着|再来|再做|再改|然后|下一步|按这个|基于这个|刚才|上面|前面|这个|那个|它|其|补充|调整|修改|优化|重试)(?:一下|下|吧|呢|看看|处理|分析|生成|执行|完善)?(?:$|[，。！？,.!?\s])/u.test(text)
+    || /^(?:继续|接着|再|然后|下一步|按这个|基于这个|刚才|上面|前面|这个|那个|它|其)/u.test(text);
+}
+
+function affinityBoost(affinity: SkillSessionAffinity | undefined, nowMs: number): number {
+  if (!affinity) return 0;
+  const selectedAt = new Date(affinity.lastSelectedAt).getTime();
+  if (!Number.isFinite(selectedAt)) return 0;
+  const ageMs = Math.max(0, nowMs - selectedAt);
+  if (ageMs > 24 * 60 * 60 * 1000) return 0;
+  const recency = ageMs <= 30 * 60 * 1000 ? 8 : ageMs <= 4 * 60 * 60 * 1000 ? 5 : 2;
+  const frequency = Math.min(5, Math.floor(Math.log2(Math.max(1, affinity.useCount))) + 1);
+  return recency + frequency;
+}
+
+export function rankAutomaticSkillMatches(
+  skills: any[],
+  userMessage: string,
+  affinities: SkillSessionAffinity[] = [],
+  now = new Date(),
+): AutomaticSkillMatch[] {
+  const affinityBySkill = new Map(affinities.map((item) => [item.skillId, item]));
+  const continuation = isContinuationRequest(userMessage);
+  const nowMs = now.getTime();
   const ranked = skills
     .filter((skill) => skill?.enabled === true && skill?.state === "ready" && String(skill?.sync?.runtimePath || "").trim())
     .map((skill) => {
@@ -116,11 +148,27 @@ export function selectAutomaticSkillMatch(skills: any[], userMessage: string): A
         skill?.source?.displayName || skill?.displayName || skill?.label || skill?.name || skillId,
       ).trim();
       const description = String(skill?.source?.description || skill?.description || "").trim();
-      const score = automaticSkillScore(userMessage, name, description);
-      return skillId && score ? { skillId, ...score } : null;
+      const semantic = automaticSkillScore(userMessage, name, description);
+      const affinity = affinityBySkill.get(skillId);
+      const boost = affinityBoost(affinity, nowMs);
+      if (semantic) return skillId ? { skillId, score: semantic.score + boost, reason: semantic.reason } : null;
+      if (continuation && affinity && boost > 0) {
+        return { skillId, score: 76 + boost, reason: "session" as const };
+      }
+      return null;
     })
     .filter(Boolean)
     .sort((left, right) => right!.score - left!.score) as AutomaticSkillMatch[];
+  return ranked;
+}
+
+export function selectAutomaticSkillMatch(
+  skills: any[],
+  userMessage: string,
+  affinities: SkillSessionAffinity[] = [],
+  now = new Date(),
+): AutomaticSkillMatch | null {
+  const ranked = rankAutomaticSkillMatches(skills, userMessage, affinities, now);
   const best = ranked[0];
   if (!best || best.score < 75) return null;
   const runnerUp = ranked[1];

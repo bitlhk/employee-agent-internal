@@ -7,11 +7,37 @@ import {
 } from "./chat-selected-skills";
 
 describe("selected skills chat context", () => {
+  const sessionSkills = [{
+    id: "sales-coach",
+    enabled: true,
+    state: "ready",
+    sync: { runtimePath: "/workspace/skills/sales-coach" },
+    source: { displayName: "销售陪练", description: "销售话术模拟与复盘" },
+  }];
+
   it("normalizes an ordered selection and removes duplicates", () => {
     expect(normalizeSelectedSkillIds(["fund-compare", "risk.review", "fund-compare"])).toEqual({
       ok: true,
       skillIds: ["fund-compare", "risk.review"],
     });
+  });
+
+  it("reuses the most recent session skill for an explicit continuation", () => {
+    const now = new Date("2026-08-05T10:00:00.000Z");
+    expect(selectAutomaticSkillMatch(sessionSkills, "继续优化一下", [{
+      skillId: "sales-coach",
+      useCount: 3,
+      lastSelectedAt: new Date("2026-08-05T09:55:00.000Z"),
+    }], now)).toMatchObject({ skillId: "sales-coach", reason: "session" });
+  });
+
+  it("does not carry a session skill into an unrelated request", () => {
+    const now = new Date("2026-08-05T10:00:00.000Z");
+    expect(selectAutomaticSkillMatch(sessionSkills, "今天天气怎么样", [{
+      skillId: "sales-coach",
+      useCount: 8,
+      lastSelectedAt: new Date("2026-08-05T09:59:00.000Z"),
+    }], now)).toBeNull();
   });
 
   it("keeps compatibility with the legacy single-skill field", () => {

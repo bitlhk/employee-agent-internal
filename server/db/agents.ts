@@ -556,7 +556,89 @@ export async function updateActiveAgentTask(id: string, fields: Record<string, a
   ));
 }
 
-export async function failInterruptedAgentTasks(message: string): Promise<number> {
+export async function claimAgentTaskLease(input: {
+  id: string;
+  owner: string;
+  leaseMs: number;
+}): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const leaseExpiresAt = new Date(Date.now() + Math.max(10_000, input.leaseMs));
+  const result = await db
+    .update(agentTasks)
+    .set({
+      status: "running",
+      startedAt: sql`COALESCE(${agentTasks.startedAt}, CURRENT_TIMESTAMP)`,
+      errorMessage: null,
+      leaseOwner: input.owner,
+      leaseExpiresAt,
+      lastHeartbeatAt: sql`CURRENT_TIMESTAMP`,
+      attemptCount: sql`${agentTasks.attemptCount} + 1`,
+    })
+    .where(and(
+      eq(agentTasks.id, input.id),
+      or(
+        eq(agentTasks.status, "pending"),
+        and(
+          eq(agentTasks.status, "running"),
+          or(
+            eq(agentTasks.leaseOwner, input.owner),
+            isNull(agentTasks.leaseOwner),
+            isNull(agentTasks.leaseExpiresAt),
+            sql`${agentTasks.leaseExpiresAt} < CURRENT_TIMESTAMP`,
+          ),
+        ),
+      ),
+    ));
+  return Number((result as any)?.[0]?.affectedRows || 0) === 1;
+}
+
+export async function renewAgentTaskLease(input: {
+  id: string;
+  owner: string;
+  leaseMs: number;
+}): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db
+    .update(agentTasks)
+    .set({
+      leaseExpiresAt: new Date(Date.now() + Math.max(10_000, input.leaseMs)),
+      lastHeartbeatAt: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(and(
+      eq(agentTasks.id, input.id),
+      eq(agentTasks.status, "running"),
+      eq(agentTasks.leaseOwner, input.owner),
+    ));
+  return Number((result as any)?.[0]?.affectedRows || 0) === 1;
+}
+
+export async function updateLeasedAgentTask(
+  id: string,
+  owner: string,
+  fields: Record<string, any>,
+): Promise<boolean> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const terminal = ["succeeded", "failed", "cancelled"].includes(String(fields.status || ""));
+  const result = await db
+    .update(agentTasks)
+    .set(terminal ? {
+      ...fields,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+      lastHeartbeatAt: sql`CURRENT_TIMESTAMP`,
+    } : fields)
+    .where(and(
+      eq(agentTasks.id, id),
+      eq(agentTasks.status, "running"),
+      eq(agentTasks.leaseOwner, owner),
+    ));
+  return Number((result as any)?.[0]?.affectedRows || 0) === 1;
+}
+
+export async function recoverExpiredAgentTaskLeases(message: string): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   const result = await db
@@ -565,9 +647,85 @@ export async function failInterruptedAgentTasks(message: string): Promise<number
       status: "failed",
       errorMessage: message,
       completedAt: sql`CURRENT_TIMESTAMP`,
+      leaseOwner: null,
+      leaseExpiresAt: null,
     })
-    .where(inArray(agentTasks.status, ["pending", "running"]));
+    .where(or(
+      and(
+        eq(agentTasks.status, "running"),
+        or(
+          isNull(agentTasks.leaseOwner),
+          isNull(agentTasks.leaseExpiresAt),
+          sql`${agentTasks.leaseExpiresAt} < CURRENT_TIMESTAMP`,
+        ),
+      ),
+      and(
+        eq(agentTasks.status, "pending"),
+        sql`${agentTasks.updatedAt} < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 2 MINUTE)`,
+      ),
+    ));
   return Number((result as any)?.[0]?.affectedRows || 0);
+}
+
+export async function failOwnedAgentTaskLeases(owner: string, message: string): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db
+    .update(agentTasks)
+    .set({
+      status: "failed",
+      errorMessage: message,
+      completedAt: sql`CURRENT_TIMESTAMP`,
+      leaseOwner: null,
+      leaseExpiresAt: null,
+    })
+    .where(and(eq(agentTasks.status, "running"), eq(agentTasks.leaseOwner, owner)));
+  return Number((result as any)?.[0]?.affectedRows || 0);
+}
+
+export async function getAgentTaskRuntimeSnapshot(limit = 12): Promise<{
+  pending: number;
+  running: number;
+  stale: number;
+  tasks: Array<Record<string, unknown>>;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const [pendingRows, runningRows, staleRows, tasks] = await Promise.all([
+    db.select({ count: sql<number>`count(*)` }).from(agentTasks).where(eq(agentTasks.status, "pending")),
+    db.select({ count: sql<number>`count(*)` }).from(agentTasks).where(eq(agentTasks.status, "running")),
+    db.select({ count: sql<number>`count(*)` }).from(agentTasks).where(or(
+      and(
+        eq(agentTasks.status, "running"),
+        or(isNull(agentTasks.leaseExpiresAt), sql`${agentTasks.leaseExpiresAt} < CURRENT_TIMESTAMP`),
+      ),
+      and(
+        eq(agentTasks.status, "pending"),
+        sql`${agentTasks.updatedAt} < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 2 MINUTE)`,
+      ),
+    )),
+    db.select({
+      id: agentTasks.id,
+      adoptId: agentTasks.adoptId,
+      agentId: agentTasks.agentId,
+      status: agentTasks.status,
+      attemptCount: agentTasks.attemptCount,
+      leaseOwner: agentTasks.leaseOwner,
+      leaseExpiresAt: agentTasks.leaseExpiresAt,
+      lastHeartbeatAt: agentTasks.lastHeartbeatAt,
+      createdAt: agentTasks.createdAt,
+      startedAt: agentTasks.startedAt,
+    }).from(agentTasks)
+      .where(inArray(agentTasks.status, ["pending", "running"]))
+      .orderBy(desc(agentTasks.updatedAt))
+      .limit(Math.max(1, Math.min(50, Number(limit || 12)))),
+  ]);
+  return {
+    pending: Number(pendingRows[0]?.count || 0),
+    running: Number(runningRows[0]?.count || 0),
+    stale: Number(staleRows[0]?.count || 0),
+    tasks,
+  };
 }
 
 export async function answerAgentTaskInteractionAndCreate(

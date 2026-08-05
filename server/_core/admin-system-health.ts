@@ -11,6 +11,7 @@ import {
   jiuwenClawServiceId,
 } from "./helpers";
 import { getCapacitySnapshot } from "./operational-capacity";
+import { getAgentTaskRuntimeSnapshot } from "../db/agents";
 
 export interface RuntimeModelOption {
   id: string;
@@ -198,6 +199,13 @@ export async function getAdminSystemHealth(availableModels: RuntimeModelOption[]
   const primaryModel = availableModels.find((model) => model.isDefault)?.id || "__auto";
   const database = await readDatabaseHealth();
   const auditBaseline = await getAuditBaselineHealth();
+  const agentTasks = await getAgentTaskRuntimeSnapshot().catch((error) => ({
+    pending: 0,
+    running: 0,
+    stale: 0,
+    tasks: [],
+    error: error instanceof Error ? error.message : String(error),
+  }));
   const checks: HealthCheck[] = [];
   const appStatus = String(app?.pm2_env?.status || "");
 
@@ -232,6 +240,15 @@ export async function getAdminSystemHealth(availableModels: RuntimeModelOption[]
     provider: "ea",
     status: failedWorkers.length > 0 ? "error" : workers.length > 0 ? "ok" : "warning",
     detail: `${runningWorkers.length}/${workers.length} 运行${failedWorkers.length ? ` · ${failedWorkers.length} 异常` : ""}`,
+  });
+  checks.push({
+    key: "operations.agent_tasks",
+    group: "operations",
+    label: "专家任务租约",
+    provider: "ea",
+    status: agentTasks.stale > 0 ? "error" : "error" in agentTasks ? "warning" : "ok",
+    detail: `排队 ${agentTasks.pending} · 执行 ${agentTasks.running} · 失效 ${agentTasks.stale}`,
+    meta: { tasks: agentTasks.tasks },
   });
   checks.push({
     key: "operations.metrics",
@@ -373,6 +390,7 @@ export async function getAdminSystemHealth(availableModels: RuntimeModelOption[]
         chat_ws: capacity.chat_ws,
       },
       workers,
+      agentTasks,
       metrics: { enabled: true, endpoint: "/internal/metrics" },
       alerting: {
         configured: alertConfigured,

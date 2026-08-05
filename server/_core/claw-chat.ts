@@ -34,6 +34,11 @@ import {
 } from "./instruction-attack";
 import { parseUploadedAttachmentRuntimeMessage } from "../../shared/uploaded-attachment-context";
 import { summarizeCapabilityPreflight, type CapabilityPreflight } from "../../shared/capability-preflight";
+import { classifyPermissionRisk } from "./permission-risk";
+import {
+  listChatSkillAffinities,
+  recordChatSkillSelection,
+} from "../db/chat-skill-session-state";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -209,6 +214,8 @@ export function registerChatStreamRoutes(app: express.Express) {
       conversationId,
       epochLabel,
       runtimeMode,
+      toolName,
+      command,
     } = req.body || {};
     if (!adoptId || !requestId) {
       res.status(400).json({ error: "adoptId and requestId required" });
@@ -230,6 +237,11 @@ export function registerChatStreamRoutes(app: express.Express) {
       return;
     }
     const normalizedAction = String(action || selectedOption || "").trim();
+    const permissionRisk = classifyPermissionRisk({ toolName, command });
+    if (!isQuestion && ["allow_always", "总是允许"].includes(normalizedAction) && permissionRisk.riskLevel === "high") {
+      res.status(400).json({ error: "高风险操作只能按次授权" });
+      return;
+    }
     const answerLabel = isQuestion
       ? interactionAnswers[0]?.selectedOptions[0] || interactionAnswers[0]?.customInput || ""
       : normalizedAction === "allow_once"
@@ -263,6 +275,32 @@ export function registerChatStreamRoutes(app: express.Express) {
       res.status(502).json({ error: result.error, text: result.text || "" });
       return;
     }
+    recordAuditBestEffort({
+      action: "runtime.permission_answer",
+      category: "security",
+      result: answerLabel === "拒绝" ? "denied" : "success",
+      severity: permissionRisk.riskLevel,
+      actorType: "user",
+      actorUserId: Number(adoption.userId),
+      ...auditRequest(req),
+      targetType: "runtime_tool",
+      targetId: String(toolName || requestId).slice(0, 128),
+      agentInstanceId: String(adoption.adoptId),
+      runtimeType: "jiuwenswarm",
+      runtimeAgentId: String(adoption.agentId || `jiuwen_${String(adoption.adoptId)}`),
+      sessionId: String(conversationId || "").slice(0, 128) || null,
+      source: normalizedSource,
+      detailType: "permission_decision",
+      policyCode: permissionRisk.reasonCode,
+      riskType: permissionRisk.riskLevel,
+      toolName: String(toolName || "").slice(0, 128) || null,
+      metadata: {
+        requestId: String(requestId).slice(0, 128),
+        decision: answerLabel,
+        persistent: answerLabel === "总是允许",
+        reasonText: permissionRisk.reasonText,
+      },
+    });
     res.json({ ok: true, text: result.text || "", selectedOption: answerLabel });
   });
 
@@ -372,11 +410,19 @@ export function registerChatStreamRoutes(app: express.Express) {
       let skillSelectionMode: SkillSelectionMode = "manual";
       let listedSkills: any[] | undefined;
       let automaticSkillMatch: ReturnType<typeof selectAutomaticSkillMatch> = null;
+      const skillSessionId = String(conversationId || "").trim().slice(0, 160);
       if (!restrictedMiniExperience && effectiveSkillIds.length === 0) {
         const listed = await listSkillsWithRoleDefaults({ adoptId: String(adoption.adoptId), agentId, roleTemplate });
         if (listed.ok) {
           listedSkills = listed.value;
-          automaticSkillMatch = selectAutomaticSkillMatch(listed.value, parsedUserMessage.text || userMessage);
+          const affinities = skillSessionId
+            ? await listChatSkillAffinities(String(adoption.adoptId), skillSessionId).catch(() => [])
+            : [];
+          automaticSkillMatch = selectAutomaticSkillMatch(
+            listed.value,
+            parsedUserMessage.text || userMessage,
+            affinities,
+          );
           if (automaticSkillMatch) {
             effectiveSkillIds = [automaticSkillMatch.skillId];
             skillSelectionMode = "automatic";
@@ -408,6 +454,20 @@ export function registerChatStreamRoutes(app: express.Express) {
           reason: selectedSkills.error,
         });
         selectedSkills = null;
+      }
+      if (selectedSkills?.ok && skillSessionId) {
+        recordChatSkillSelection({
+          adoptId: String(adoption.adoptId),
+          sessionId: skillSessionId,
+          skillIds: selectedSkills.skillIds,
+          selectionMode: skillSelectionMode,
+        }).catch((error) => appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "selected_skills_session_record_failed",
+          adoptId: String(adoption.adoptId),
+          sessionId: skillSessionId,
+          error: error instanceof Error ? error.message : String(error),
+        }));
       }
 
       const requestedModelId = String(model || "").trim();

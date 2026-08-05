@@ -114,6 +114,10 @@ export function extractJiuwenPermissionMarker(text: string): {
             toolName: parsed.toolName ? String(parsed.toolName) : undefined,
             options: Array.isArray(parsed.options) ? parsed.options : undefined,
             questions: Array.isArray(parsed.questions) ? parsed.questions : undefined,
+            riskLevel: ["low", "medium", "high"].includes(parsed.riskLevel) ? parsed.riskLevel : undefined,
+            reasonCode: parsed.reasonCode ? String(parsed.reasonCode) : undefined,
+            reasonText: parsed.reasonText ? String(parsed.reasonText) : undefined,
+            allowAlways: parsed.allowAlways === true,
             state:
               parsed.state === "approved" ||
               parsed.state === "rejected" ||

@@ -30,17 +30,21 @@ import {
 } from "./agent-health";
 import {
   answerAgentTaskInteractionAndCreate,
+  claimAgentTaskLease,
+  failOwnedAgentTaskLeases,
   getBusinessAgentForContext,
   getAgentTask,
   getAgentTaskBySourceMessage,
-  failInterruptedAgentTasks,
   insertCallLog,
   listAgentTasks,
   listAgentTasksByIds,
   listAgentTaskCounts,
   listEnabledBusinessAgentsForContext,
   reserveAgentTask,
+  recoverExpiredAgentTaskLeases,
+  renewAgentTaskLease,
   updateActiveAgentTask,
+  updateLeasedAgentTask,
 } from "../db/agents";
 import {
   beginOperationalActivity,
@@ -58,6 +62,14 @@ const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
 const AGENT_TASK_RAW_EVENTS_LIMIT_BYTES = 40_000;
 const activeAgentTaskControllers = new Map<string, AbortController>();
 const activeAgentTaskPromises = new Map<string, Promise<void>>();
+const AGENT_TASK_LEASE_OWNER = `ea:${process.pid}:${randomUUID()}`;
+const configuredLeaseMs = Number(process.env.EA_AGENT_TASK_LEASE_MS || 90_000);
+const AGENT_TASK_LEASE_MS = Number.isFinite(configuredLeaseMs) ? Math.max(30_000, configuredLeaseMs) : 90_000;
+const configuredHeartbeatMs = Number(process.env.EA_AGENT_TASK_HEARTBEAT_MS || 20_000);
+const AGENT_TASK_HEARTBEAT_MS = Math.max(10_000, Math.min(
+  Math.floor(AGENT_TASK_LEASE_MS / 3),
+  Number.isFinite(configuredHeartbeatMs) ? configuredHeartbeatMs : 20_000,
+));
 
 function agentTaskRetryEnabled(): boolean {
   return !/^(0|false|no|off)$/i.test(String(process.env.EA_AGENT_TASK_RETRY_ENABLED || "true"));
@@ -90,6 +102,8 @@ function publicAgentTask(task: unknown): Record<string, unknown> {
   const publicFields: Record<string, unknown> = task && typeof task === "object" ? { ...task } : {};
   delete publicFields.requestContextJson;
   delete publicFields.request_context_json;
+  delete publicFields.leaseOwner;
+  delete publicFields.lease_owner;
   return {
     ...publicFields,
     lifecycleState: normalizeAgentTaskLifecycle({
@@ -333,11 +347,37 @@ async function runAgentTaskInBackground(
   let metricOutcome: OperationalOutcome = "error";
   const controller = new AbortController();
   let progressWrites = Promise.resolve();
-  activeAgentTaskControllers.set(taskId, controller);
+  let heartbeatTimer: NodeJS.Timeout | null = null;
   try {
-    await updateActiveAgentTask(taskId, { status: "running" as AgentTaskStatus, startedAt: sql`CURRENT_TIMESTAMP`, errorMessage: null });
+    const claimed = await claimAgentTaskLease({
+      id: taskId,
+      owner: AGENT_TASK_LEASE_OWNER,
+      leaseMs: AGENT_TASK_LEASE_MS,
+    });
+    if (!claimed) {
+      metricOutcome = "cancelled";
+      return;
+    }
+    activeAgentTaskControllers.set(taskId, controller);
+    heartbeatTimer = setInterval(() => {
+      renewAgentTaskLease({
+        id: taskId,
+        owner: AGENT_TASK_LEASE_OWNER,
+        leaseMs: AGENT_TASK_LEASE_MS,
+      }).then((renewed) => {
+        if (!renewed && !controller.signal.aborted) {
+          controller.abort(new Error("agent task lease lost"));
+        }
+      }).catch((error) => {
+        console.warn("[AGENT-TASK] lease heartbeat failed", {
+          taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, AGENT_TASK_HEARTBEAT_MS);
+    heartbeatTimer.unref();
     const startingTask = await getAgentTask(taskId);
-    if (String(startingTask?.status || "") !== "running") {
+    if (String(startingTask?.status || "") !== "running" || startingTask?.leaseOwner !== AGENT_TASK_LEASE_OWNER) {
       metricOutcome = isCancelledAgentTaskStatus(startingTask?.status) ? "cancelled" : "error";
       return;
     }
@@ -368,7 +408,9 @@ async function runAgentTaskInBackground(
       onEvents: (events) => {
         const rawEventsJson = summarizeA2AEvents(events, endpointConfig, AGENT_TASK_RAW_EVENTS_LIMIT_BYTES);
         progressWrites = progressWrites
-          .then(() => updateActiveAgentTask(taskId, { rawEventsJson }))
+          .then(async () => {
+            await updateLeasedAgentTask(taskId, AGENT_TASK_LEASE_OWNER, { rawEventsJson });
+          })
           .catch((error) => {
             console.warn("[AGENT-TASK] progress update failed", {
               taskId,
@@ -394,7 +436,7 @@ async function runAgentTaskInBackground(
           artifacts: result.artifacts,
         })
       : [];
-    await updateActiveAgentTask(taskId, {
+    const completed = await updateLeasedAgentTask(taskId, AGENT_TASK_LEASE_OWNER, {
       status: "succeeded" as AgentTaskStatus,
       resultMarkdown: cleanedText ? truncateUtf8(cleanedText, AGENT_TASK_TEXT_LIMIT_BYTES) : null,
       remoteTaskId: result.remoteTaskId || null,
@@ -405,6 +447,7 @@ async function runAgentTaskInBackground(
       completedAt: sql`CURRENT_TIMESTAMP`,
       errorMessage: null,
     });
+    if (!completed) return;
     const completedTask = await getAgentTask(taskId);
     if (String(completedTask?.status || "") !== "succeeded") return;
     await markAgentTaskSucceeded(agent).catch(() => undefined);
@@ -426,11 +469,12 @@ async function runAgentTaskInBackground(
       return;
     }
     const displayError = friendlyAgentTaskError(error, String(agent.name || "专家"));
-    await updateActiveAgentTask(taskId, {
+    const failed = await updateLeasedAgentTask(taskId, AGENT_TASK_LEASE_OWNER, {
       status: "failed" as AgentTaskStatus,
       errorMessage: truncateUtf8(displayError, AGENT_TASK_ERROR_LIMIT_BYTES),
       completedAt: sql`CURRENT_TIMESTAMP`,
     });
+    if (!failed) return;
     await markAgentTaskFailed(agent, error).catch(() => undefined);
     await insertCallLog({
       agentId: String(agent.id),
@@ -441,6 +485,7 @@ async function runAgentTaskInBackground(
       errorMessage: truncateUtf8(displayError, 2_000),
     }).catch(() => undefined);
   } finally {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (activeAgentTaskControllers.get(taskId) === controller) {
       activeAgentTaskControllers.delete(taskId);
     }
@@ -480,11 +525,23 @@ function startAgentTaskInBackground(
 }
 
 export async function startAgentTaskRuntime(): Promise<() => Promise<void>> {
-  const recovered = await failInterruptedAgentTasks("服务重启前任务未完成，请重新提交");
+  const staleMessage = "任务执行租约未建立或已失效，请重新提交";
+  const recovered = await recoverExpiredAgentTaskLeases(staleMessage);
   if (recovered > 0) {
     console.warn("[AGENT-TASK] recovered interrupted tasks", { count: recovered });
   }
+  const staleSweep = setInterval(() => {
+    recoverExpiredAgentTaskLeases(staleMessage)
+      .then((count) => {
+        if (count > 0) console.warn("[AGENT-TASK] recovered stale tasks", { count });
+      })
+      .catch((error) => console.warn("[AGENT-TASK] stale task sweep failed", {
+        error: error instanceof Error ? error.message : String(error),
+      }));
+  }, 60_000);
+  staleSweep.unref();
   return async () => {
+    clearInterval(staleSweep);
     for (const controller of activeAgentTaskControllers.values()) {
       controller.abort(new Error("server shutdown"));
     }
@@ -498,7 +555,7 @@ export async function startAgentTaskRuntime(): Promise<() => Promise<void>> {
         }),
       ]);
     }
-    await failInterruptedAgentTasks("服务正在重启，任务已安全中止，请重新提交");
+    await failOwnedAgentTaskLeases(AGENT_TASK_LEASE_OWNER, "服务正在重启，任务已安全中止，请重新提交");
   };
 }
 
@@ -578,6 +635,8 @@ export function registerAgentTaskRoutes(app: express.Express) {
         status: "cancelled" as AgentTaskStatus,
         errorMessage: null,
         completedAt: sql`CURRENT_TIMESTAMP`,
+        leaseOwner: null,
+        leaseExpiresAt: null,
       });
       const controller = activeAgentTaskControllers.get(taskId);
       const remoteCancellation = endpointConfig.supportsCancellation === true && agent.apiUrl

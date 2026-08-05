@@ -1570,7 +1570,7 @@ export default function ClawAdmin() {
                     </div>
                   </div>
 
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">聊天并发</div>
                       <div className="mt-1 text-base font-semibold text-gray-900">{operationalCapacity.chat_http?.active ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {operationalCapacity.chat_http?.limit ?? "-"}</span></div>
@@ -1578,6 +1578,10 @@ export default function ClawAdmin() {
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">后台任务</div>
                       <div className="mt-1 text-base font-semibold text-gray-900">{operationalRunningWorkers}<span className="ml-1 text-xs font-normal text-muted-foreground">/ {operationalWorkers.length}</span></div>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
+                      <div className="text-xs text-muted-foreground">专家任务</div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).operations?.agentTasks?.running ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">执行 · {(systemHealth as any).operations?.agentTasks?.pending ?? 0} 排队</span></div>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">数据库延迟</div>

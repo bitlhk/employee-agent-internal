@@ -134,6 +134,10 @@ export type JiuwenPermissionRequestCard = {
     options: Array<{ label: string; description?: string; value?: string }>;
     multiSelect: boolean;
   }>;
+  riskLevel?: "low" | "medium" | "high";
+  reasonCode?: string;
+  reasonText?: string;
+  allowAlways?: boolean;
   state?: "pending" | "submitting" | "approved" | "rejected" | "answered" | "error";
   error?: string;
 };
@@ -185,7 +189,7 @@ type ChatMessageProps = {
   onCaptureKnowledge?: (input: { messageId?: string; text: string; modelId: string }) => void;
   onOpenKnowledgeSource?: (source: ChatKnowledgeSource) => void;
   jiuwenPermission?: JiuwenPermissionRequestCard;
-  onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "reject") => void;
+  onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "allow_always" | "reject") => void;
   onOpenAgentArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
   onResumeExpert?: (task: AgentTask) => void;
   onCancelExpert?: (task: AgentTask) => Promise<void> | void;
@@ -992,17 +996,36 @@ function ChatMessageInner({
                   {jiuwenPermission.toolName ? `工具：${jiuwenPermission.toolName}` : "JiuwenSwarm 请求授权后继续执行"}
                 </div>
               </div>
-              <span
-                className="shrink-0 rounded-full px-2 py-0.5"
-                style={{
-                  background: "color-mix(in oklab, var(--oc-bg-secondary) 80%, transparent)",
-                  color: "var(--oc-text-tertiary)",
-                  fontSize: 11,
-                }}
-              >
-                {jiuwenPermission.state === "approved" ? "已允许" : jiuwenPermission.state === "rejected" ? "已拒绝" : jiuwenPermission.state === "submitting" ? "提交中" : "待确认"}
-              </span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {jiuwenPermission.riskLevel ? (
+                  <span
+                    className="rounded-full px-2 py-0.5"
+                    style={{
+                      background: jiuwenPermission.riskLevel === "high" ? "rgba(239,68,68,0.10)" : jiuwenPermission.riskLevel === "medium" ? "rgba(217,119,6,0.10)" : "rgba(29,158,117,0.10)",
+                      color: jiuwenPermission.riskLevel === "high" ? "#dc2626" : jiuwenPermission.riskLevel === "medium" ? "#a16207" : "#15803d",
+                      fontSize: 11,
+                    }}
+                  >
+                    {jiuwenPermission.riskLevel === "high" ? "高风险" : jiuwenPermission.riskLevel === "medium" ? "需确认" : "低风险"}
+                  </span>
+                ) : null}
+                <span
+                  className="rounded-full px-2 py-0.5"
+                  style={{
+                    background: "color-mix(in oklab, var(--oc-bg-secondary) 80%, transparent)",
+                    color: "var(--oc-text-tertiary)",
+                    fontSize: 11,
+                  }}
+                >
+                  {jiuwenPermission.state === "approved" ? "已允许" : jiuwenPermission.state === "rejected" ? "已拒绝" : jiuwenPermission.state === "submitting" ? "提交中" : "待确认"}
+                </span>
+              </div>
             </div>
+            {jiuwenPermission.reasonText ? (
+              <div className="mt-2" style={{ color: "var(--oc-text-secondary)", lineHeight: 1.5 }}>
+                {jiuwenPermission.reasonText}
+              </div>
+            ) : null}
             {jiuwenPermission.command ? (
               <pre
                 className="mt-2 overflow-auto rounded-lg px-2.5 py-2"
@@ -1038,6 +1061,24 @@ function ChatMessageInner({
               >
                 {jiuwenPermission.state === "approved" ? "已允许" : jiuwenPermission.state === "submitting" ? "提交中..." : "本次允许"}
               </button>
+              {jiuwenPermission.allowAlways ? (
+                <button
+                  type="button"
+                  disabled={jiuwenPermission.state === "submitting" || jiuwenPermission.state === "approved" || jiuwenPermission.state === "rejected"}
+                  onClick={() => onJiuwenPermissionAnswer?.(jiuwenPermission, "allow_always")}
+                  className="rounded-lg px-3 py-1.5"
+                  style={{
+                    background: "transparent",
+                    color: "var(--oc-text-primary)",
+                    border: "1px solid var(--oc-border)",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    cursor: jiuwenPermission.state === "submitting" || jiuwenPermission.state === "approved" || jiuwenPermission.state === "rejected" ? "default" : "pointer",
+                  }}
+                >
+                  以后允许
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={jiuwenPermission.state === "submitting" || jiuwenPermission.state === "approved" || jiuwenPermission.state === "rejected"}

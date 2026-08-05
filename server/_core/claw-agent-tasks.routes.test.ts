@@ -4,16 +4,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   reservation: { kind: "created" } as any,
-  failInterruptedCalls: 0,
+  recoverLeaseCalls: 0,
+  failOwnedLeaseCalls: 0,
   task: { status: "running" } as Record<string, unknown>,
 }));
 
 vi.mock("../db/agents", () => ({
   answerAgentTaskInteractionAndCreate: vi.fn(),
-  failInterruptedAgentTasks: vi.fn(async () => {
-    state.failInterruptedCalls++;
+  claimAgentTaskLease: vi.fn(async () => true),
+  failOwnedAgentTaskLeases: vi.fn(async () => {
+    state.failOwnedLeaseCalls++;
     return 0;
   }),
+  recoverExpiredAgentTaskLeases: vi.fn(async () => {
+    state.recoverLeaseCalls++;
+    return 0;
+  }),
+  renewAgentTaskLease: vi.fn(async () => true),
   getBusinessAgentForContext: vi.fn(async () => ({
     id: "expert-1",
     name: "测试专家",
@@ -38,6 +45,7 @@ vi.mock("../db/agents", () => ({
   listEnabledBusinessAgentsForContext: vi.fn(async () => []),
   reserveAgentTask: vi.fn(async () => state.reservation),
   updateActiveAgentTask: vi.fn(),
+  updateLeasedAgentTask: vi.fn(async () => true),
 }));
 
 vi.mock("../db/users", () => ({
@@ -124,11 +132,13 @@ describe("agent task consistency", () => {
     expect(body).toMatchObject({ taskId: "agt_existing", reused: true });
   });
 
-  it("marks interrupted tasks during runtime startup and shutdown", async () => {
-    const before = state.failInterruptedCalls;
+  it("recovers expired leases at startup and releases owned tasks at shutdown", async () => {
+    const recoveredBefore = state.recoverLeaseCalls;
+    const releasedBefore = state.failOwnedLeaseCalls;
     const stop = await startAgentTaskRuntime();
     await stop();
-    expect(state.failInterruptedCalls - before).toBe(2);
+    expect(state.recoverLeaseCalls - recoveredBefore).toBe(1);
+    expect(state.failOwnedLeaseCalls - releasedBefore).toBe(1);
   });
 
   it("retries a failed task with the persisted runtime request", async () => {

@@ -32,6 +32,7 @@ import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwe
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { detectInstructionAttackSignals } from "./instruction-attack";
+import { classifyPermissionRisk } from "./permission-risk";
 import {
   normalizeJiuwenToolPayload,
   normalizeJiuwenUsageSummary,
@@ -111,6 +112,10 @@ export type JiuwenPermissionRequest = {
   toolName?: string;
   options: Array<{ label: string; description?: string; value?: string }>;
   questions?: JiuwenInteractionQuestion[];
+  riskLevel?: "low" | "medium" | "high";
+  reasonCode?: string;
+  reasonText?: string;
+  allowAlways?: boolean;
 };
 
 export type JiuwenInteractionQuestion = {
@@ -372,6 +377,12 @@ export function normalizeJiuwenPermissionRequest(eventType: string, delta: any, 
   const command = extractCommandFromQuestion(question || stableJson(delta));
   const toolName = String(delta?.tool_name || delta?.toolName || firstQuestion?.tool_name || "").trim()
     || (command.startsWith("tool: ") ? command.slice(6).trim() : "");
+  const options = kind === "question"
+    ? normalizeChoiceOptions(firstQuestion?.options || delta?.options)
+    : permissionOptions(firstQuestion?.options || delta?.options);
+  const risk = kind === "permission"
+    ? classifyPermissionRisk({ toolName, command, options })
+    : null;
   return {
     requestId,
     source: source || "permission_interrupt",
@@ -380,10 +391,9 @@ export function normalizeJiuwenPermissionRequest(eventType: string, delta: any, 
     question: question || (kind === "question" ? "请补充必要信息后继续。" : "JiuwenSwarm 请求授权后继续执行。"),
     ...(command ? { command } : {}),
     ...(toolName ? { toolName } : {}),
-    options: kind === "question"
-      ? normalizeChoiceOptions(firstQuestion?.options || delta?.options)
-      : permissionOptions(firstQuestion?.options || delta?.options),
+    options,
     ...(interactionQuestions.length > 0 ? { questions: interactionQuestions } : {}),
+    ...(risk || {}),
   };
 }
 
