@@ -39,6 +39,24 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+/** Stable mapping from a trusted upstream account to the canonical EA user. */
+export const channelIdentityLinks = mysqlTable("channel_identity_links", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  provider: varchar("provider", { length: 40 }).notNull(),
+  providerSubject: varchar("providerSubject", { length: 128 }).notNull(),
+  userId: int("userId").notNull(),
+  verifiedEmail: varchar("verifiedEmail", { length: 320 }),
+  verifiedPhone: varchar("verifiedPhone", { length: 24 }),
+  lastSeenAt: timestamp("lastSeenAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("channel_identity_provider_subject_unique").on(table.provider, table.providerSubject),
+  index("channel_identity_user_idx").on(table.userId),
+]);
+
+export type ChannelIdentityLink = typeof channelIdentityLinks.$inferSelect;
+
 export const adminMfaCredentials = mysqlTable("admin_mfa_credentials", {
   userId: int("user_id").primaryKey(),
   secretEncrypted: varchar("secret_encrypted", { length: 1024 }).notNull(),

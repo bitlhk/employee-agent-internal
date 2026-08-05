@@ -29,6 +29,13 @@
       "when": 1785717600000,
       "tag": "0003_agent_memory_conflicts",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785888000000,
+      "tag": "0004_channel_identity_links",
+      "breakpoints": true
     }
   ]
 }

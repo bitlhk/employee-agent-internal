@@ -9,6 +9,9 @@ const mocks = vi.hoisted(() => ({
   createUser: vi.fn(async () => 99),
   getClawByAdoptId: vi.fn(),
   getUserByOpenId: vi.fn(async () => undefined),
+  listClawsByUserId: vi.fn(async () => []),
+  resolveEffectiveRoleAssets: vi.fn(async () => ({ skills: { default: [], optional: [] }, mcpServers: { default: [], optional: [] } })),
+  resolveTrustedChannelUser: vi.fn(async () => ({ id: 77, name: "已注册用户", email: "user@example.com" })),
   updateClawAdoptionStatus: vi.fn(async () => undefined),
   upsertClawProfileSettings: vi.fn(async () => undefined),
   provision: vi.fn(async () => ({ ok: true })),
@@ -24,6 +27,9 @@ vi.mock("../db", () => ({
   createUser: mocks.createUser,
   getClawByAdoptId: mocks.getClawByAdoptId,
   getUserByOpenId: mocks.getUserByOpenId,
+  listClawsByUserId: mocks.listClawsByUserId,
+  resolveEffectiveRoleAssets: mocks.resolveEffectiveRoleAssets,
+  resolveTrustedChannelUser: mocks.resolveTrustedChannelUser,
   updateClawAdoptionStatus: mocks.updateClawAdoptionStatus,
   upsertClawProfileSettings: mocks.upsertClawProfileSettings,
 }));
@@ -39,6 +45,10 @@ vi.mock("../routers/role-runtime-adapters", () => ({
 
 vi.mock("./jiuwenswarm-role-scope", () => ({
   writeJiuwenSwarmRoleScopeManifest: mocks.writeRoleScope,
+}));
+
+vi.mock("./skills/skill-onboarding", () => ({
+  onboardBuiltinSkillsForAdopt: vi.fn(async () => undefined),
 }));
 
 vi.mock("./observability/logger", () => ({
@@ -133,6 +143,7 @@ describe("EA Mini Program experience route", () => {
     mocks.getClawByAdoptId
       .mockResolvedValueOnce(null)
       .mockResolvedValue(adoption);
+    mocks.listClawsByUserId.mockResolvedValue([]);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -142,6 +153,83 @@ describe("EA Mini Program experience route", () => {
         )
       )
     );
+  });
+
+  it("reuses the registered user's existing EA adoption", async () => {
+    const registeredAdoption = {
+      ...adoption,
+      userId: 77,
+      adoptId: "lgj-existing1234",
+      agentId: "jiuwen_lgj-existing1234",
+      permissionProfile: "plus",
+      ttlDays: 0,
+      expiresAt: null,
+    };
+    mocks.listClawsByUserId.mockResolvedValue([registeredAdoption]);
+
+    const response = await post(
+      `${baseUrl}/api/internal/miniprogram/experience/chat`,
+      {
+        subject: "b".repeat(64),
+        identity: {
+          name: "已注册用户",
+          verifiedEmail: "user@example.com",
+          verifiedPhone: null,
+          onboardingComplete: true,
+        },
+        message: "继续上次的话题",
+        conversationId: "mini-conversation-456",
+      },
+      process.env.MINIPROGRAM_EXPERIENCE_TOKEN
+    );
+
+    expect(response.status, response.body).toBe(200);
+    expect(mocks.resolveTrustedChannelUser).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "linggan",
+      verifiedEmail: "user@example.com",
+    }));
+    expect(mocks.createClawAdoption).not.toHaveBeenCalled();
+    const upstreamRequest = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(upstreamRequest.body));
+    expect(body).toMatchObject({ adoptId: "lgj-existing1234", experienceMode: "mini_owner" });
+    expect(body).not.toHaveProperty("selectedSkillIds");
+  });
+
+  it("provisions one deterministic adoption for a registered user without one", async () => {
+    const registeredAdoption = {
+      ...adoption,
+      userId: 77,
+      adoptId: "lgj-deterministic-channel",
+      agentId: "jiuwen_lgj-deterministic-channel",
+      permissionProfile: "plus",
+      ttlDays: 0,
+      expiresAt: null,
+    };
+    mocks.getClawByAdoptId.mockReset();
+    mocks.getClawByAdoptId.mockResolvedValueOnce(null).mockResolvedValue(registeredAdoption);
+    mocks.listClawsByUserId.mockResolvedValue([]);
+
+    const response = await post(
+      `${baseUrl}/api/internal/miniprogram/account/agents`,
+      {
+        subject: "c".repeat(64),
+        identity: {
+          name: "新注册用户",
+          verifiedEmail: "new@example.com",
+          onboardingComplete: true,
+        },
+        ensure: true,
+      },
+      process.env.MINIPROGRAM_EXPERIENCE_TOKEN
+    );
+
+    expect(response.status, response.body).toBe(200);
+    expect(mocks.createClawAdoption).toHaveBeenCalledOnce();
+    expect(mocks.createClawAdoption).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 77,
+      adoptId: expect.stringMatching(/^lgj-[a-f0-9]{24}$/u),
+      permissionProfile: "plus",
+    }));
   });
 
   it("rejects callers without the dedicated experience token", async () => {
