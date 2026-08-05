@@ -166,11 +166,14 @@ export function buildJiuwenSwarmRoleScopeManifest(
   role: AgentRoleTemplate,
   effectiveAssets: EffectiveRoleAssets,
   activeMcpServerIds?: string[],
+  options: { includePlatformMcp?: boolean } = {},
 ): JiuwenSwarmRoleScopeManifest {
   const selectedAssets = activeMcpServerIds === undefined
     ? effectiveAssets
     : projectEffectiveAssetsToMcpSelection(effectiveAssets, activeMcpServerIds);
-  const scopedAssets = withJiuwenSwarmPlatformMcp(selectedAssets);
+  const scopedAssets = options.includePlatformMcp === false
+    ? selectedAssets
+    : withJiuwenSwarmPlatformMcp(selectedAssets);
   return {
     version: 1,
     runtime: "jiuwenswarm",
@@ -197,6 +200,7 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
   activeSkillIds?: string[];
   disabledDefaultSkillIds?: string[];
   activeMcpServerIds?: string[];
+  includePlatformMcp?: boolean;
 }): JiuwenSwarmRoleScopeWriteResult {
   const workspaceDir = path.resolve(args.workspaceDir);
   const manifestPath = path.join(workspaceDir, JIUWENSWARM_ROLE_SCOPE_MANIFEST);
@@ -204,7 +208,12 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
   const activeMcpServerIds = args.activeMcpServerIds === undefined
     ? readPreservedMcpSelection(current, args.effectiveAssets)
     : args.activeMcpServerIds;
-  const manifest = buildJiuwenSwarmRoleScopeManifest(args.role, args.effectiveAssets, activeMcpServerIds);
+  const manifest = buildJiuwenSwarmRoleScopeManifest(
+    args.role,
+    args.effectiveAssets,
+    activeMcpServerIds,
+    { includePlatformMcp: args.includePlatformMcp },
+  );
   const next = `${JSON.stringify(manifest, null, 2)}\n`;
 
   mkdirSync(workspaceDir, { recursive: true });

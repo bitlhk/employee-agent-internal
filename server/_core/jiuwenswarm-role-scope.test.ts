@@ -92,6 +92,23 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("can omit platform MCP servers for a restricted experience workspace", () => {
+    const manifest = buildJiuwenSwarmRoleScopeManifest(
+      role,
+      {
+        skills: { default: [], optional: [] },
+        mcpServers: { default: [], optional: [] },
+      },
+      [],
+      { includePlatformMcp: false },
+    );
+
+    expect(manifest.effectiveAssets.mcpServers).toEqual({
+      default: [],
+      optional: [],
+    });
+  });
+
   it("preserves an agent MCP selection during later skill reconciliation", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-mcp-selection-"));
     const assetsWithOptional: EffectiveRoleAssets = {

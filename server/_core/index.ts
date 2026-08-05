@@ -68,6 +68,7 @@ import { registerFilesRoutes } from "./claw-files";
 import { registerSandboxRoutes } from "./claw-sandbox";
 import { registerManagedBrowserRoutes } from "./managed-browser";
 import { registerChatStreamRoutes } from "./claw-chat";
+import { registerMiniExperienceRoutes } from "./mini-experience";
 import { registerCoopUploadRoutes } from "./coop-upload";
 import { registerEaSessionViewRoutes } from "./ea-session-view";
 import { registerEaAssistantRoutes } from "./ea-assistant-routes";
@@ -459,6 +460,7 @@ async function startServer() {
   registerSandboxRoutes(app);
   registerManagedBrowserRoutes(app);
   registerToolEgressRoutes(app);
+  registerMiniExperienceRoutes(app);
   registerChatStreamRoutes(app);
   registerCoopUploadRoutes(app);
   registerEaSessionViewRoutes(app);

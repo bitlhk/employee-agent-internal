@@ -283,9 +283,14 @@ export function registerChatStreamRoutes(app: express.Express) {
         selectedSkillIds,
         knowledgeBaseIds,
         cancelPendingPermission,
+        experienceMode,
       } = req.body || {};
       const clientRunId = normalizeClientRunId(req.body?.clientRunId);
-      const normalizedRuntimeMode = normalizeChatRuntimeMode(runtimeMode);
+      const restrictedMiniExperience = experienceMode === "mini_trial"
+        && isAuthorizedInternalRequest(req);
+      const normalizedRuntimeMode = restrictedMiniExperience
+        ? "fast"
+        : normalizeChatRuntimeMode(runtimeMode);
       if (!adoptId || !message) {
         res.status(400).json({ error: "adoptId and message required" });
         return;
@@ -361,11 +366,13 @@ export function registerChatStreamRoutes(app: express.Express) {
         adoption.agentId || `jiuwen_${String(adoption.adoptId)}`,
       );
       const roleTemplate = String(adoption.roleTemplate || "general-assistant");
-      let effectiveSkillIds = normalizedSelectedSkills.skillIds;
+      let effectiveSkillIds = restrictedMiniExperience
+        ? []
+        : normalizedSelectedSkills.skillIds;
       let skillSelectionMode: SkillSelectionMode = "manual";
       let listedSkills: any[] | undefined;
       let automaticSkillMatch: ReturnType<typeof selectAutomaticSkillMatch> = null;
-      if (effectiveSkillIds.length === 0) {
+      if (!restrictedMiniExperience && effectiveSkillIds.length === 0) {
         const listed = await listSkillsWithRoleDefaults({ adoptId: String(adoption.adoptId), agentId, roleTemplate });
         if (listed.ok) {
           listedSkills = listed.value;
@@ -455,92 +462,96 @@ export function registerChatStreamRoutes(app: express.Express) {
       const manualKnowledgeSelection = Array.isArray(knowledgeBaseIds)
         && knowledgeBaseIds.length > 0;
       const knowledgeStartedAt = Date.now();
-      try {
-        const {
-          buildChatKnowledgeContext,
-          knowledgeRetrievalQuery,
-          publicChatKnowledgeSources,
-        } = await import("./knowledge-context");
-        const knowledge = await buildChatKnowledgeContext({
-          userId: Number(adoption.userId),
-          roleTemplate,
-          requestedIds: knowledgeBaseIds,
-          query: knowledgeRetrievalQuery(userMessage),
-        });
-        knowledgeContext = knowledge.context;
-        knowledgeSources = publicChatKnowledgeSources(knowledge.sources);
-        appendLogAsync("jiuwenclaw-exec.log", {
-          ts: new Date().toISOString(),
-          event: "knowledge_retrieval",
-          adoptId: String(adoption.adoptId),
-          userId: Number(adoption.userId),
-          clientRunId,
-          mode: knowledge.mode,
-          retrieval: knowledge.retrieval,
-          candidateBaseCount: knowledge.candidateBaseCount,
-          sourceCount: knowledgeSources.length,
-          triggered: Boolean(knowledgeContext),
-          retrievalMs: Date.now() - knowledgeStartedAt,
-          bm25MaxScore: knowledge.metrics.bm25MaxScore,
-          bm25RelevantMaxScore: knowledge.metrics.bm25RelevantMaxScore,
-          vectorMinDistance: knowledge.metrics.vectorMinDistance,
-          queryCount: knowledge.metrics.queryCount,
-          queryExpansion: knowledge.metrics.queryExpansion,
-          reranker: knowledge.metrics.reranker,
-          queryTermCount: knowledge.metrics.queryTermCount,
-          lexicalMatchCount: knowledge.metrics.lexicalMatchCount,
-          lexicalCoverage: knowledge.metrics.lexicalCoverage,
-          autoGate: knowledge.metrics.autoGate,
-        });
-      } catch (error) {
-        appendLogAsync("jiuwenclaw-exec.log", {
-          ts: new Date().toISOString(),
-          event: "knowledge_retrieval_failed",
-          adoptId: String(adoption.adoptId),
-          userId: Number(adoption.userId),
-          clientRunId,
-          mode: manualKnowledgeSelection ? "manual" : "auto",
-          retrievalMs: Date.now() - knowledgeStartedAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        if (manualKnowledgeSelection) {
-          res.status(503).json({
-            error: "知识检索暂时不可用，请稍后重试或取消选择知识库",
+      if (!restrictedMiniExperience) {
+        try {
+          const {
+            buildChatKnowledgeContext,
+            knowledgeRetrievalQuery,
+            publicChatKnowledgeSources,
+          } = await import("./knowledge-context");
+          const knowledge = await buildChatKnowledgeContext({
+            userId: Number(adoption.userId),
+            roleTemplate,
+            requestedIds: knowledgeBaseIds,
+            query: knowledgeRetrievalQuery(userMessage),
           });
-          return;
+          knowledgeContext = knowledge.context;
+          knowledgeSources = publicChatKnowledgeSources(knowledge.sources);
+          appendLogAsync("jiuwenclaw-exec.log", {
+            ts: new Date().toISOString(),
+            event: "knowledge_retrieval",
+            adoptId: String(adoption.adoptId),
+            userId: Number(adoption.userId),
+            clientRunId,
+            mode: knowledge.mode,
+            retrieval: knowledge.retrieval,
+            candidateBaseCount: knowledge.candidateBaseCount,
+            sourceCount: knowledgeSources.length,
+            triggered: Boolean(knowledgeContext),
+            retrievalMs: Date.now() - knowledgeStartedAt,
+            bm25MaxScore: knowledge.metrics.bm25MaxScore,
+            bm25RelevantMaxScore: knowledge.metrics.bm25RelevantMaxScore,
+            vectorMinDistance: knowledge.metrics.vectorMinDistance,
+            queryCount: knowledge.metrics.queryCount,
+            queryExpansion: knowledge.metrics.queryExpansion,
+            reranker: knowledge.metrics.reranker,
+            queryTermCount: knowledge.metrics.queryTermCount,
+            lexicalMatchCount: knowledge.metrics.lexicalMatchCount,
+            lexicalCoverage: knowledge.metrics.lexicalCoverage,
+            autoGate: knowledge.metrics.autoGate,
+          });
+        } catch (error) {
+          appendLogAsync("jiuwenclaw-exec.log", {
+            ts: new Date().toISOString(),
+            event: "knowledge_retrieval_failed",
+            adoptId: String(adoption.adoptId),
+            userId: Number(adoption.userId),
+            clientRunId,
+            mode: manualKnowledgeSelection ? "manual" : "auto",
+            retrievalMs: Date.now() - knowledgeStartedAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          if (manualKnowledgeSelection) {
+            res.status(503).json({
+              error: "知识检索暂时不可用，请稍后重试或取消选择知识库",
+            });
+            return;
+          }
         }
       }
 
       const memoryStartedAt = Date.now();
-      try {
-        const { buildRelevantAgentMemoryContext } = await import("./agent-memory-retrieval");
-        const memory = await buildRelevantAgentMemoryContext({
-          userId: Number(adoption.userId),
-          adoptId: String(adoption.adoptId),
-          adoptionId: Number(adoption.id),
-          query: parsedUserMessage.text || userMessage,
-        });
-        memoryContext = memory.context;
-        appendLogAsync("jiuwenclaw-exec.log", {
-          ts: new Date().toISOString(),
-          event: "memory_retrieval",
-          adoptId: String(adoption.adoptId),
-          userId: Number(adoption.userId),
-          clientRunId,
-          activeCount: memory.activeCount,
-          selectedCount: memory.selectedIds.length,
-          retrievalMs: Date.now() - memoryStartedAt,
-        });
-      } catch (error) {
-        appendLogAsync("jiuwenclaw-exec.log", {
-          ts: new Date().toISOString(),
-          event: "memory_retrieval_failed",
-          adoptId: String(adoption.adoptId),
-          userId: Number(adoption.userId),
-          clientRunId,
-          retrievalMs: Date.now() - memoryStartedAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
+      if (!restrictedMiniExperience) {
+        try {
+          const { buildRelevantAgentMemoryContext } = await import("./agent-memory-retrieval");
+          const memory = await buildRelevantAgentMemoryContext({
+            userId: Number(adoption.userId),
+            adoptId: String(adoption.adoptId),
+            adoptionId: Number(adoption.id),
+            query: parsedUserMessage.text || userMessage,
+          });
+          memoryContext = memory.context;
+          appendLogAsync("jiuwenclaw-exec.log", {
+            ts: new Date().toISOString(),
+            event: "memory_retrieval",
+            adoptId: String(adoption.adoptId),
+            userId: Number(adoption.userId),
+            clientRunId,
+            activeCount: memory.activeCount,
+            selectedCount: memory.selectedIds.length,
+            retrievalMs: Date.now() - memoryStartedAt,
+          });
+        } catch (error) {
+          appendLogAsync("jiuwenclaw-exec.log", {
+            ts: new Date().toISOString(),
+            event: "memory_retrieval_failed",
+            adoptId: String(adoption.adoptId),
+            userId: Number(adoption.userId),
+            clientRunId,
+            retrievalMs: Date.now() - memoryStartedAt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
 
       if (selectedSkills?.ok) {
@@ -571,6 +582,13 @@ export function registerChatStreamRoutes(app: express.Express) {
         "<ea_security_policy>",
         PLATFORM_UNTRUSTED_CONTENT_POLICY,
         "</ea_security_policy>",
+        ...(restrictedMiniExperience ? [
+          "",
+          "<mini_experience_policy>",
+          "当前为微信小程序轻体验。仅提供基础对话，不调用工具、技能、MCP、知识库、记忆、文件或外部专家。",
+          "如用户需要这些能力，简要说明完整版岗位智能体支持，并继续回答可直接回答的部分。",
+          "</mini_experience_policy>",
+        ] : []),
         "",
         userScopedRuntimeMessage,
       ].join("\n");
@@ -595,7 +613,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           cancelPendingPermission,
           selectedSkills: selectedSkills?.ok ? selectedSkills.metadata : [],
           knowledgeSources,
-          memoryUserMessage: userMessage,
+          memoryUserMessage: restrictedMiniExperience ? undefined : userMessage,
           onFirstToken: chatMetric.observeFirstToken,
           onRuntimeOutcome: observePublicModelTraffic,
         },
