@@ -67,7 +67,7 @@
         "agentCard": {
           "name": "{\"zh\":\"智能金融助理\",\"en\":\"alice chat\"}",
           "description": "{\"agentId\":\"6ba7b810-9dad-11d1-80b4-00c04fd430c8\",\"agentDescription\":{\"zh\":\"2023年诞生的智能金融助理，由万得（Wind）AI团队与金融专家团队联合开发，融合近30年金融领域知识及实时全球金融数据，为投资者提供全方位金融咨询与投资决策支持\",\"en\":\"Intelligent financial assistant launched in 2023, jointly developed by Wind AI team and financial experts, integrating 30 years of financial expertise and real-time global financial data to provide comprehensive financial consulting and investment decision support\"}}",
-          "url": "https://114.80.154.45/AliceChat.Agent/",
+          "url": "https://alice.wind.com.cn/AliceChat.Agent/",
           "version": "1.0.0",
           "capabilities": {
             "streaming": true,
