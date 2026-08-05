@@ -122,12 +122,19 @@ export type MessageEventEntry =
 export type JiuwenPermissionRequestCard = {
   requestId: string;
   source: string;
+  kind?: "permission" | "question";
   title: string;
   question: string;
   command?: string;
   toolName?: string;
   options?: Array<{ label: string; description?: string; value?: string }>;
-  state?: "pending" | "submitting" | "approved" | "rejected" | "error";
+  questions?: Array<{
+    header: string;
+    question: string;
+    options: Array<{ label: string; description?: string; value?: string }>;
+    multiSelect: boolean;
+  }>;
+  state?: "pending" | "submitting" | "approved" | "rejected" | "answered" | "error";
   error?: string;
 };
 
@@ -968,7 +975,7 @@ function ChatMessageInner({
             ) : null}
           </div>
         ) : null}
-        {jiuwenPermission && (
+        {jiuwenPermission && jiuwenPermission.kind !== "question" && (
           <div
             className="mt-2 rounded-xl px-3 py-3 text-xs"
             style={{

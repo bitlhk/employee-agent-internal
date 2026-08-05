@@ -77,11 +77,13 @@ function encodeJiuwenPermissionMarker(permission: JiuwenPermissionRequestCard) {
     const payload = {
       requestId: permission.requestId,
       source: permission.source || "permission_interrupt",
+      kind: permission.kind || (permission.source === "ask_user_interrupt" ? "question" : "permission"),
       title: permission.title || "权限审批",
       question: permission.question || "",
       command: permission.command || "",
       toolName: permission.toolName || "",
       options: permission.options || [],
+      questions: permission.questions || [],
       state: permission.state || "pending",
     };
     return `\n\n<!--EA_JIUWEN_PERMISSION:${btoa(
@@ -105,14 +107,17 @@ export function extractJiuwenPermissionMarker(text: string): {
           permission = {
             requestId: String(parsed.requestId),
             source: String(parsed.source || "permission_interrupt"),
+            kind: parsed.kind === "question" || parsed.source === "ask_user_interrupt" ? "question" : "permission",
             title: String(parsed.title || "权限审批"),
             question: String(parsed.question || ""),
             command: parsed.command ? String(parsed.command) : undefined,
             toolName: parsed.toolName ? String(parsed.toolName) : undefined,
             options: Array.isArray(parsed.options) ? parsed.options : undefined,
+            questions: Array.isArray(parsed.questions) ? parsed.questions : undefined,
             state:
               parsed.state === "approved" ||
               parsed.state === "rejected" ||
+              parsed.state === "answered" ||
               parsed.state === "error"
                 ? parsed.state
                 : "pending",
@@ -131,7 +136,9 @@ export function withJiuwenPermissionMarker(
   permission: JiuwenPermissionRequestCard
 ) {
   const extracted = extractJiuwenPermissionMarker(text);
-  const visibleText = extracted.text || "需要你的授权才能继续执行。";
+  const visibleText = extracted.text || (permission.kind === "question"
+    ? "我还需要你补充一些信息，选择后即可继续。"
+    : "需要你的授权才能继续执行。");
   return `${visibleText}${encodeJiuwenPermissionMarker(permission)}`;
 }
 

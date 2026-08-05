@@ -11099,6 +11099,31 @@ html:has(:root[data-theme-mode="light"]) body {
   font-size: 11px;
   line-height: 17px;
 }
+.jiuwen-interaction__question {
+  display: grid;
+  gap: 7px;
+}
+.jiuwen-interaction__question + .jiuwen-interaction__question {
+  padding-top: 2px;
+}
+.jiuwen-interaction__question-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 2px;
+}
+.jiuwen-interaction__question-heading > strong {
+  color: var(--oc-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+.jiuwen-interaction__question-heading > small {
+  flex: 0 0 auto;
+  color: var(--oc-text-tertiary);
+  font-size: 10px;
+}
 .expert-interaction__options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

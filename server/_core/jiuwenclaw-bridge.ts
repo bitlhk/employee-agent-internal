@@ -104,11 +104,25 @@ export function buildJiuwenRunDescriptor(args: {
 export type JiuwenPermissionRequest = {
   requestId: string;
   source: string;
+  kind: "permission" | "question";
   title: string;
   question: string;
   command?: string;
   toolName?: string;
   options: Array<{ label: string; description?: string; value?: string }>;
+  questions?: JiuwenInteractionQuestion[];
+};
+
+export type JiuwenInteractionQuestion = {
+  header: string;
+  question: string;
+  options: Array<{ label: string; description?: string; value?: string }>;
+  multiSelect: boolean;
+};
+
+export type JiuwenInteractionAnswer = {
+  selectedOptions: string[];
+  customInput: string;
 };
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
@@ -267,20 +281,21 @@ function summarizeJiuwenApprovalEvent(eventType: string, delta: unknown): string
   return `JiuwenSwarm 运行时请求人工确认，EA 当前未接入原生确认回传。event=${eventType}; payload=${trimmedPayload}`;
 }
 
-function normalizePermissionOptions(rawOptions: unknown): Array<{ label: string; description?: string; value?: string }> {
-  if (!Array.isArray(rawOptions)) return [
-    { label: "本次允许", value: "本次允许", description: "仅本次允许执行" },
-    { label: "拒绝", value: "拒绝", description: "拒绝本次执行" },
-  ];
+function normalizeChoiceOptions(
+  rawOptions: unknown,
+  fallback: Array<{ label: string; description?: string; value?: string }> = [],
+): Array<{ label: string; description?: string; value?: string }> {
+  if (!Array.isArray(rawOptions)) return fallback;
   const options = rawOptions
+    .slice(0, 12)
     .map((item) => {
-      if (typeof item === "string") return { label: item, value: item };
+      if (typeof item === "string") return { label: item.slice(0, 160), value: item.slice(0, 160) };
       if (!item || typeof item !== "object") return null;
       const obj = item as Record<string, unknown>;
-      const label = String(obj.label || obj.value || "").trim();
+      const label = String(obj.label || obj.value || "").trim().slice(0, 160);
       if (!label) return null;
-      const description = String(obj.description || "").trim();
-      const value = String(obj.value || label).trim();
+      const description = String(obj.description || "").trim().slice(0, 360);
+      const value = String(obj.value || label).trim().slice(0, 160);
       return {
         label,
         value,
@@ -288,10 +303,34 @@ function normalizePermissionOptions(rawOptions: unknown): Array<{ label: string;
       };
     })
     .filter(Boolean) as Array<{ label: string; description?: string; value?: string }>;
-  return options.length > 0 ? options : [
+  return options.length > 0 ? options : fallback;
+}
+
+function permissionOptions(rawOptions: unknown): Array<{ label: string; description?: string; value?: string }> {
+  const fallback = [
     { label: "本次允许", value: "本次允许", description: "仅本次允许执行" },
     { label: "拒绝", value: "拒绝", description: "拒绝本次执行" },
   ];
+  return normalizeChoiceOptions(rawOptions, fallback);
+}
+
+function normalizeInteractionQuestions(rawQuestions: unknown): JiuwenInteractionQuestion[] {
+  if (!Array.isArray(rawQuestions)) return [];
+  return rawQuestions
+    .slice(0, 8)
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const question = item as Record<string, unknown>;
+      const text = String(question.question || question.message || "").trim().slice(0, 600);
+      if (!text) return null;
+      return {
+        header: String(question.header || "请确认").trim().slice(0, 120) || "请确认",
+        question: text,
+        options: normalizeChoiceOptions(question.options),
+        multiSelect: question.multi_select === true || question.multiSelect === true,
+      };
+    })
+    .filter(Boolean) as JiuwenInteractionQuestion[];
 }
 
 function extractCommandFromQuestion(question: string): string {
@@ -311,7 +350,8 @@ function extractCommandFromQuestion(question: string): string {
 
 export function normalizeJiuwenPermissionRequest(eventType: string, delta: any, fallbackRequestId: string): JiuwenPermissionRequest | null {
   if (!isJiuwenHumanApprovalEvent(eventType, delta)) return null;
-  const source = String(delta?.source || "").trim() || (String(eventType).toLowerCase() === "chat.ask_user_question" ? "permission_interrupt" : "");
+  const source = String(delta?.source || "").trim()
+    || (String(eventType).toLowerCase() === "chat.ask_user_question" ? "ask_user_interrupt" : "");
   if (source && !["permission_interrupt", "confirm_interrupt", "ask_user_interrupt"].includes(source)) return null;
   const questions = Array.isArray(delta?.questions) ? delta.questions : [];
   const firstQuestion = questions.find((item: any) => item && typeof item === "object") || {};
@@ -325,18 +365,25 @@ export function normalizeJiuwenPermissionRequest(eventType: string, delta: any, 
   ).trim();
   if (!requestId) return null;
   const question = String(firstQuestion?.question || delta?.question || delta?.message || delta?.query || "").trim();
-  const title = String(firstQuestion?.header || delta?.header || "权限审批").trim() || "权限审批";
+  const kind = source === "ask_user_interrupt" ? "question" : "permission";
+  const interactionQuestions = kind === "question" ? normalizeInteractionQuestions(delta?.questions) : [];
+  const titleFallback = kind === "question" ? "需要补充信息" : "权限审批";
+  const title = String(firstQuestion?.header || delta?.header || titleFallback).trim() || titleFallback;
   const command = extractCommandFromQuestion(question || stableJson(delta));
   const toolName = String(delta?.tool_name || delta?.toolName || firstQuestion?.tool_name || "").trim()
     || (command.startsWith("tool: ") ? command.slice(6).trim() : "");
   return {
     requestId,
     source: source || "permission_interrupt",
+    kind,
     title,
-    question: question || "JiuwenSwarm 请求授权后继续执行。",
+    question: question || (kind === "question" ? "请补充必要信息后继续。" : "JiuwenSwarm 请求授权后继续执行。"),
     ...(command ? { command } : {}),
     ...(toolName ? { toolName } : {}),
-    options: normalizePermissionOptions(firstQuestion?.options || delta?.options),
+    options: kind === "question"
+      ? normalizeChoiceOptions(firstQuestion?.options || delta?.options)
+      : permissionOptions(firstQuestion?.options || delta?.options),
+    ...(interactionQuestions.length > 0 ? { questions: interactionQuestions } : {}),
   };
 }
 
@@ -776,6 +823,7 @@ export function buildJiuwenAgentServerPermissionAnswerRequest(args: {
   channelId: string;
   workspaceDir: string;
   selectedOption: string;
+  answers?: JiuwenInteractionAnswer[];
   source?: string;
   runtimeMode?: unknown;
 }) {
@@ -804,7 +852,12 @@ export function buildJiuwenAgentServerPermissionAnswerRequest(args: {
       query: "",
       content: "",
       request_id: args.permissionRequestId,
-      answers: [{ selected_options: [args.selectedOption], custom_input: "" }],
+      answers: args.answers?.length
+        ? args.answers.map((answer) => ({
+            selected_options: answer.selectedOptions,
+            custom_input: answer.customInput,
+          }))
+        : [{ selected_options: [args.selectedOption], custom_input: "" }],
       source,
       mode,
       project_dir: args.workspaceDir,
@@ -1465,6 +1518,7 @@ export async function answerJiuwenPermission(
   args: {
     permissionRequestId: string;
     selectedOption: string;
+    answers?: JiuwenInteractionAnswer[];
     source?: string;
     model?: string;
     channel?: unknown;
@@ -1501,6 +1555,7 @@ export async function answerJiuwenPermission(
     channelId,
     workspaceDir,
     selectedOption: args.selectedOption,
+    answers: args.answers,
     source: args.source,
     runtimeMode: args.runtimeMode,
   });
@@ -1517,6 +1572,7 @@ export async function answerJiuwenPermission(
     envelopeRequestId,
     permissionRequestId,
     selectedOption: args.selectedOption,
+    answerCount: args.answers?.length || 1,
     source: args.source || "permission_interrupt",
   });
 

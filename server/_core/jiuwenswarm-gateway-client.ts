@@ -12,6 +12,7 @@ import {
   bumpSessionEpoch,
   type JiuwenClawRuntimeClaw,
   type JiuwenForwardOptions,
+  type JiuwenInteractionAnswer,
   type JiuwenSelectedSkillMetadata,
   normalizeJiuwenFileEvent,
   normalizeJiuwenPermissionRequest,
@@ -111,6 +112,7 @@ function buildGatewayPermissionAnswerParams(args: {
   workspaceDir: string;
   permissionRequestId: string;
   selectedOption: string;
+  answers?: JiuwenInteractionAnswer[];
   source?: string;
   runtimeMode?: unknown;
 }) {
@@ -124,7 +126,12 @@ function buildGatewayPermissionAnswerParams(args: {
     content: "",
     project_dir: args.workspaceDir,
     request_id: args.permissionRequestId,
-    answers: [{ selected_options: [args.selectedOption] }],
+    answers: args.answers?.length
+      ? args.answers.map((answer) => ({
+          selected_options: answer.selectedOptions,
+          custom_input: answer.customInput,
+        }))
+      : [{ selected_options: [args.selectedOption], custom_input: "" }],
     source,
     mode,
     request_metadata: {
@@ -522,6 +529,7 @@ export async function answerJiuwenGatewayPermission(
   args: {
     permissionRequestId: string;
     selectedOption: string;
+    answers?: JiuwenInteractionAnswer[];
     source?: string;
     model?: string;
     channel?: unknown;
@@ -548,6 +556,7 @@ export async function answerJiuwenGatewayPermission(
     workspaceDir,
     permissionRequestId,
     selectedOption: args.selectedOption,
+    answers: args.answers,
     source: args.source,
     runtimeMode: args.runtimeMode,
   });
@@ -564,6 +573,7 @@ export async function answerJiuwenGatewayPermission(
     requestId,
     permissionRequestId,
     selectedOption: args.selectedOption,
+    answerCount: args.answers?.length || 1,
     source: args.source || "permission_interrupt",
     wsUrl,
   });

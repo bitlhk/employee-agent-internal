@@ -23,6 +23,7 @@ import { CustomMcpDialog, type CustomMcpTemplate } from "@/components/CustomMcpD
 import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
 import { KnowledgeCaptureDialog, type KnowledgeCaptureSource } from "@/components/KnowledgeCaptureDialog";
 import { ExpertInteractionPrompt } from "@/components/ExpertInteractionPrompt";
+import { JiuwenInteractionPrompt } from "@/components/JiuwenInteractionPrompt";
 import { ChatMessage, type ChatKnowledgeSource, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
 import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
 import { ModelPicker } from "@/components/ModelPicker";
@@ -2001,6 +2002,45 @@ export default function Home() {
   ), [knowledgeCatalog]);
   const [selectedComposerSkillIds, setSelectedComposerSkillIds] = useState<string[]>([]);
   const [selectedComposerKnowledgeIds, setSelectedComposerKnowledgeIds] = useState<string[]>([]);
+  const pendingJiuwenInteraction = useMemo(() => {
+    for (let index = activeLingxiaMsgs.length - 1; index >= 0; index -= 1) {
+      const message = activeLingxiaMsgs[index];
+      const request = message.role === "assistant" ? message.jiuwenPermission : undefined;
+      if (!request || request.kind !== "question") continue;
+      if (request.state === "pending" || request.state === "error" || request.state === "submitting") {
+        return { messageId: message.id, request };
+      }
+    }
+    return null;
+  }, [activeLingxiaMsgs]);
+  const [selectedJiuwenInteractionOptions, setSelectedJiuwenInteractionOptions] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    setSelectedJiuwenInteractionOptions({});
+  }, [pendingJiuwenInteraction?.request.requestId]);
+  const jiuwenInteractionQuestions = useMemo(() => {
+    if (!pendingJiuwenInteraction) return [];
+    const request = pendingJiuwenInteraction.request;
+    return request.questions?.length
+      ? request.questions
+      : [{
+          header: request.title || "请确认",
+          question: request.question,
+          options: request.options || [],
+          multiSelect: false,
+        }];
+  }, [pendingJiuwenInteraction]);
+  const jiuwenInteractionCanSubmitWithoutContent = Boolean(
+    pendingJiuwenInteraction
+    && jiuwenInteractionQuestions.length > 0
+    && jiuwenInteractionQuestions.every((question, questionIndex) => {
+      const selected = selectedJiuwenInteractionOptions[String(questionIndex)] || [];
+      if (selected.length === 0) return false;
+      return !selected.some((value) => {
+        const option = question.options.find((item) => (item.value || item.label) === value);
+        return /^(other|其他|其它)/i.test(String(option?.label || "").trim());
+      });
+    }),
+  );
   const [composerAddMenuOpen, setComposerAddMenuOpen] = useState(false);
   const [composerAddMenuView, setComposerAddMenuView] = useState<ComposerAddMenuView>("root");
   const [composerKnowledgeSearch, setComposerKnowledgeSearch] = useState("");
@@ -2574,9 +2614,12 @@ export default function Home() {
       const lastIdx = next.length - 1;
       if (lastIdx < 0 || next[lastIdx].role !== "assistant") return prev;
       const nextPermission = { ...permission, state: "pending" as const };
+      const fallbackText = permission.kind === "question"
+        ? "我还需要你补充一些信息，选择后即可继续。"
+        : "需要你的授权才能继续执行。";
       next[lastIdx] = {
         ...next[lastIdx],
-        text: withJiuwenPermissionMarker(next[lastIdx].text || "需要你的授权才能继续执行。", nextPermission),
+        text: withJiuwenPermissionMarker(next[lastIdx].text || fallbackText, nextPermission),
         jiuwenPermission: nextPermission,
         status: undefined,
       };
@@ -2638,6 +2681,90 @@ export default function Home() {
           : msg
       )));
       toast.error(errorText);
+    }
+  };
+
+  const respondToJiuwenInteraction = async (): Promise<boolean> => {
+    if (!resolvedAdoptId || !pendingJiuwenInteraction) return false;
+    const { messageId, request } = pendingJiuwenInteraction;
+    const questions = request.questions?.length
+      ? request.questions
+      : [{
+          header: request.title || "请确认",
+          question: request.question,
+          options: request.options || [],
+          multiSelect: false,
+        }];
+    const inputText = lingxiaInput.trim();
+    const answers = questions.map((question, questionIndex) => {
+      const selected = selectedJiuwenInteractionOptions[String(questionIndex)] || [];
+      const otherValues = new Set(question.options
+        .filter((option) => /^(other|其他|其它)/i.test(option.label.trim()))
+        .map((option) => option.value || option.label));
+      const selectedOther = selected.some((value) => otherValues.has(value));
+      return {
+        selectedOptions: selected.filter((value) => !otherValues.has(value)),
+        customInput: selectedOther || question.options.length === 0 ? inputText : "",
+      };
+    });
+    const incompleteIndex = answers.findIndex((answer) => (
+      answer.selectedOptions.length === 0 && !answer.customInput
+    ));
+    if (incompleteIndex >= 0) {
+      toast.error(`请先回答：${questions[incompleteIndex]?.question || questions[incompleteIndex]?.header || "待确认问题"}`);
+      return false;
+    }
+
+    setLingxiaMsgs((prev) => prev.map((message) => (
+      message.id === messageId
+        ? { ...message, jiuwenPermission: { ...request, state: "submitting", error: undefined } }
+        : message
+    )));
+    try {
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      const response = await fetch(`${apiBase}/api/claw/jiuwen/permission-answer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          adoptId: resolvedAdoptId,
+          requestId: request.requestId,
+          kind: "question",
+          source: request.source || "ask_user_interrupt",
+          answers,
+          channel: "web",
+          conversationId: webConversationId,
+          runtimeMode: chatRuntimeMode,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || `回答提交失败 (${response.status})`);
+      }
+      const continuedText = String(payload?.text || "").trim();
+      setLingxiaMsgs((prev) => prev.map((message) => {
+        if (message.id !== messageId) return message;
+        const nextRequest = { ...request, state: "answered" as const };
+        const visible = extractJiuwenPermissionMarker(message.text || "").text;
+        const mergedText = continuedText ? [visible, continuedText].filter(Boolean).join("\n\n") : visible;
+        return {
+          ...message,
+          text: withJiuwenPermissionMarker(mergedText, nextRequest),
+          jiuwenPermission: nextRequest,
+        };
+      }));
+      setSelectedJiuwenInteractionOptions({});
+      setLingxiaInput("");
+      return true;
+    } catch (error: any) {
+      const errorText = error?.message || "回答提交失败";
+      setLingxiaMsgs((prev) => prev.map((message) => (
+        message.id === messageId
+          ? { ...message, jiuwenPermission: { ...request, state: "error", error: errorText } }
+          : message
+      )));
+      toast.error(errorText);
+      return false;
     }
   };
 
@@ -3126,11 +3253,13 @@ export default function Home() {
                 attachJiuwenPermissionToLastAssistant({
                   requestId: String(chunk.requestId || ""),
                   source: String(chunk.source || "permission_interrupt"),
-                  title: String(chunk.title || "权限审批"),
+                  kind: chunk.kind === "question" || chunk.source === "ask_user_interrupt" ? "question" : "permission",
+                  title: String(chunk.title || (chunk.kind === "question" ? "需要补充信息" : "权限审批")),
                   question: String(chunk.question || ""),
                   command: chunk.command ? String(chunk.command) : undefined,
                   toolName: chunk.toolName ? String(chunk.toolName) : undefined,
                   options: Array.isArray(chunk.options) ? chunk.options : undefined,
+                  questions: Array.isArray(chunk.questions) ? chunk.questions : undefined,
                   state: "pending",
                 });
                 setLingxiaStreaming(false);
@@ -3463,11 +3592,13 @@ export default function Home() {
               attachJiuwenPermissionToLastAssistant({
                 requestId: String(chunk.requestId || ""),
                 source: String(chunk.source || "permission_interrupt"),
-                title: String(chunk.title || "权限审批"),
+                kind: chunk.kind === "question" || chunk.source === "ask_user_interrupt" ? "question" : "permission",
+                title: String(chunk.title || (chunk.kind === "question" ? "需要补充信息" : "权限审批")),
                 question: String(chunk.question || ""),
                 command: chunk.command ? String(chunk.command) : undefined,
                 toolName: chunk.toolName ? String(chunk.toolName) : undefined,
                 options: Array.isArray(chunk.options) ? chunk.options : undefined,
+                questions: Array.isArray(chunk.questions) ? chunk.questions : undefined,
                 state: "pending",
               });
               setLingxiaStreaming(false);
@@ -4557,6 +4688,13 @@ export default function Home() {
               onChange={setLingxiaInput}
               onSend={async (files = []) => {
                 const text = (lingxiaInput || "").trim();
+                if (pendingJiuwenInteraction) {
+                  if (files.length > 0) {
+                    toast.error("回答智能体问题时暂不支持附件");
+                    return false;
+                  }
+                  return respondToJiuwenInteraction();
+                }
                 if (pendingExpertInteraction) {
                   if (files.length > 0) {
                     toast.error("专家确认暂不支持附件");
@@ -4651,8 +4789,10 @@ export default function Home() {
 	              }}
               onStop={stopLingxiaStreaming}
               streaming={activeLingxiaStreaming}
-              disabled={expertTaskSubmitting || selectedExpertHasActiveTask}
-              placeholder={selectedExpertHasActiveTask
+              disabled={expertTaskSubmitting || selectedExpertHasActiveTask || pendingJiuwenInteraction?.request.state === "submitting"}
+              placeholder={pendingJiuwenInteraction
+                ? "请选择选项；选择其他时可输入补充…"
+                : selectedExpertHasActiveTask
                 ? `${selectedComposerExpert?.name || "专家"}正在处理当前任务…`
                 : pendingExpertInteraction
                 ? pendingExpertInteraction.interaction.allowCustom
@@ -4664,8 +4804,26 @@ export default function Home() {
               maxLength={4000}
               historyStorageKey={INPUT_HISTORY_KEY}
               voiceOnRight
-              canSubmitWithoutContent={Boolean(pendingExpertInteraction && selectedExpertInteractionOptionId)}
-              interactionPanel={pendingExpertInteraction ? (
+              canSubmitWithoutContent={jiuwenInteractionCanSubmitWithoutContent || Boolean(pendingExpertInteraction && selectedExpertInteractionOptionId)}
+              interactionPanel={pendingJiuwenInteraction ? (
+                <JiuwenInteractionPrompt
+                  request={pendingJiuwenInteraction.request}
+                  selections={selectedJiuwenInteractionOptions}
+                  disabled={pendingJiuwenInteraction.request.state === "submitting"}
+                  onToggle={(questionIndex, optionValue, multiSelect) => {
+                    setSelectedJiuwenInteractionOptions((current) => {
+                      const key = String(questionIndex);
+                      const previous = current[key] || [];
+                      const next = multiSelect
+                        ? previous.includes(optionValue)
+                          ? previous.filter((value) => value !== optionValue)
+                          : [...previous, optionValue]
+                        : [optionValue];
+                      return { ...current, [key]: next };
+                    });
+                  }}
+                />
+              ) : pendingExpertInteraction ? (
                 <ExpertInteractionPrompt
                   expertName={selectedComposerExpert?.name || pendingExpertInteraction.task.agentName || "专家"}
                   interaction={pendingExpertInteraction.interaction}

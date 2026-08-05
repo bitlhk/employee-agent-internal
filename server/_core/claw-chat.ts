@@ -23,6 +23,8 @@ import { observePublicModelTraffic } from "./observability/public-health";
 import {
   buildSelectedSkillsManifest,
   normalizeSelectedSkillIds,
+  selectAutomaticSkillMatch,
+  type SkillSelectionMode,
   type SelectedRuntimeSkill,
 } from "./chat-selected-skills";
 import { invalidateChatHistorySessionList } from "./chat-history";
@@ -52,17 +54,23 @@ async function buildSelectedSkillsContext(
   roleTemplate: string,
   selectedSkillIds: string[],
   userMessage: string,
+  selectionMode: SkillSelectionMode = "manual",
+  listedSkills?: any[],
 ): Promise<SelectedSkillsContext | null> {
   if (selectedSkillIds.length === 0) return null;
 
-  const listed = await listSkillsWithRoleDefaults({ adoptId, agentId, roleTemplate });
-  if (!listed.ok) {
-    return { ok: false, status: 400, error: `技能读取失败：${listed.error.detail}` };
+  let skills = listedSkills;
+  if (!skills) {
+    const listed = await listSkillsWithRoleDefaults({ adoptId, agentId, roleTemplate });
+    if (!listed.ok) {
+      return { ok: false, status: 400, error: `技能读取失败：${listed.error.detail}` };
+    }
+    skills = listed.value;
   }
 
   const metadata: SelectedRuntimeSkill[] = [];
   for (const skillId of selectedSkillIds) {
-    const skill = listed.value.find((item: any) => String(item?.id || "") === skillId);
+    const skill = skills.find((item: any) => String(item?.id || "") === skillId);
     if (!skill) {
       return {
         ok: false,
@@ -143,7 +151,7 @@ async function buildSelectedSkillsContext(
 
   return {
     ok: true,
-    message: buildSelectedSkillsManifest(metadata, userMessage),
+    message: buildSelectedSkillsManifest(metadata, userMessage, selectionMode),
     skillIds: metadata.map((skill) => skill.id),
     labels: metadata.map((skill) => skill.name),
     skillFiles: metadata.map((skill) => skill.skillFile),
@@ -153,6 +161,24 @@ async function buildSelectedSkillsContext(
 
 function normalizeChatRuntimeMode(value: unknown): ChatRuntimeMode {
   return String(value || "").trim().toLowerCase() === "plan" ? "plan" : "fast";
+}
+
+function normalizeInteractionAnswers(value: unknown): Array<{ selectedOptions: string[]; customInput: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 8).map((item) => {
+    const answer = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const rawSelected = Array.isArray(answer.selectedOptions)
+      ? answer.selectedOptions
+      : Array.isArray(answer.selected_options)
+        ? answer.selected_options
+        : [];
+    const selectedOptions = rawSelected
+      .map((option) => String(option || "").trim().slice(0, 160))
+      .filter(Boolean)
+      .slice(0, 12);
+    const customInput = String(answer.customInput || answer.custom_input || "").trim().slice(0, 4000);
+    return { selectedOptions, customInput };
+  }).filter((answer) => answer.selectedOptions.length > 0 || Boolean(answer.customInput));
 }
 
 async function resolveChatAdoption(
@@ -176,6 +202,8 @@ export function registerChatStreamRoutes(app: express.Express) {
       requestId,
       action,
       selectedOption,
+      answers,
+      kind,
       source,
       channel,
       conversationId,
@@ -194,11 +222,19 @@ export function registerChatStreamRoutes(app: express.Express) {
     const adoption = await resolveChatAdoption(req, res, String(adoptId));
     if (!adoption) return;
 
+    const normalizedSource = String(source || "permission_interrupt").trim() || "permission_interrupt";
+    const isQuestion = kind === "question" || normalizedSource === "ask_user_interrupt";
+    const interactionAnswers = isQuestion ? normalizeInteractionAnswers(answers) : [];
+    if (isQuestion && interactionAnswers.length === 0) {
+      res.status(400).json({ error: "请先回答智能体提出的问题" });
+      return;
+    }
     const normalizedAction = String(action || selectedOption || "").trim();
-    const answerLabel =
-      normalizedAction === "allow_once"
-        || normalizedAction === "approve"
-        || normalizedAction === "本次允许"
+    const answerLabel = isQuestion
+      ? interactionAnswers[0]?.selectedOptions[0] || interactionAnswers[0]?.customInput || ""
+      : normalizedAction === "allow_once"
+          || normalizedAction === "approve"
+          || normalizedAction === "本次允许"
         ? "本次允许"
         : normalizedAction === "allow_always" || normalizedAction === "总是允许"
           ? "总是允许"
@@ -214,7 +250,8 @@ export function registerChatStreamRoutes(app: express.Express) {
       {
         permissionRequestId: String(requestId),
         selectedOption: answerLabel,
-        source: String(source || "permission_interrupt"),
+        ...(interactionAnswers.length > 0 ? { answers: interactionAnswers } : {}),
+        source: normalizedSource,
         channel,
         conversationId,
         epochLabel,
@@ -319,24 +356,54 @@ export function registerChatStreamRoutes(app: express.Express) {
         return;
       }
 
+      const parsedUserMessage = parseUploadedAttachmentRuntimeMessage(userMessage);
       const agentId = String(
         adoption.agentId || `jiuwen_${String(adoption.adoptId)}`,
       );
       const roleTemplate = String(adoption.roleTemplate || "general-assistant");
-      const selectedSkills = await buildSelectedSkillsContext(
+      let effectiveSkillIds = normalizedSelectedSkills.skillIds;
+      let skillSelectionMode: SkillSelectionMode = "manual";
+      let listedSkills: any[] | undefined;
+      let automaticSkillMatch: ReturnType<typeof selectAutomaticSkillMatch> = null;
+      if (effectiveSkillIds.length === 0) {
+        const listed = await listSkillsWithRoleDefaults({ adoptId: String(adoption.adoptId), agentId, roleTemplate });
+        if (listed.ok) {
+          listedSkills = listed.value;
+          automaticSkillMatch = selectAutomaticSkillMatch(listed.value, parsedUserMessage.text || userMessage);
+          if (automaticSkillMatch) {
+            effectiveSkillIds = [automaticSkillMatch.skillId];
+            skillSelectionMode = "automatic";
+          }
+        }
+      }
+      let selectedSkills = await buildSelectedSkillsContext(
         String(adoption.adoptId),
         agentId,
         roleTemplate,
-        normalizedSelectedSkills.skillIds,
+        effectiveSkillIds,
         userMessage,
+        skillSelectionMode,
+        listedSkills,
       );
       if (selectedSkills && !selectedSkills.ok) {
-        res.status(selectedSkills.status).json({ error: selectedSkills.error });
-        return;
+        if (skillSelectionMode === "manual") {
+          res.status(selectedSkills.status).json({ error: selectedSkills.error });
+          return;
+        }
+        appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "automatic_skill_skipped",
+          adoptId: String(adoption.adoptId),
+          agentId,
+          userId: Number(adoption.userId),
+          clientRunId,
+          skillId: automaticSkillMatch?.skillId || "",
+          reason: selectedSkills.error,
+        });
+        selectedSkills = null;
       }
 
       const requestedModelId = String(model || "").trim();
-      const parsedUserMessage = parseUploadedAttachmentRuntimeMessage(userMessage);
       const {
         JIUWEN_AUTO_MODEL_ID,
         listSelectableJiuwenModels,
@@ -488,7 +555,11 @@ export function registerChatStreamRoutes(app: express.Express) {
           selectedSkillNames: selectedSkills.labels,
           selectedSkillFiles: selectedSkills.skillFiles,
           model: selectedModel.runtimeModelId,
-          injectionMode: "manifest",
+          injectionMode: skillSelectionMode === "automatic" ? "automatic_manifest" : "manifest",
+          ...(automaticSkillMatch ? {
+            matchScore: automaticSkillMatch.score,
+            matchReason: automaticSkillMatch.reason,
+          } : {}),
         });
       }
 

@@ -4,12 +4,14 @@ import os from "os";
 import path from "path";
 import {
   buildJiuwenAgentServerChatRequest,
+  buildJiuwenAgentServerPermissionAnswerRequest,
   buildJiuwenFinalSnapshot,
   buildJiuwenRunDescriptor,
   buildJiuwenTextDelta,
   collectRecentWorkspaceFiles,
   formatJiuwenTextSectionDelta,
   inferSkillIdFromJiuwenPayload,
+  normalizeJiuwenPermissionRequest,
   pickJiuwenText,
 } from "./jiuwenclaw-bridge";
 
@@ -39,6 +41,69 @@ describe("jiuwenclaw bridge audit helpers", () => {
   it("infers skill ids from jiuwenswarm tool arguments", () => {
     expect(inferSkillIdFromJiuwenPayload({ command: "python skills/wealth-manager-assistant/run.py" })).toBe("wealth-manager-assistant");
     expect(inferSkillIdFromJiuwenPayload({ skillId: "insurance-advisor-pro" })).toBe("insurance-advisor-pro");
+  });
+
+  it("keeps ask-user questions separate from security permissions", () => {
+    const request = normalizeJiuwenPermissionRequest("chat.ask_user_question", {
+      request_id: "ask-1",
+      source: "ask_user_interrupt",
+      questions: [
+        {
+          header: "客户类型",
+          question: "请选择客户类型",
+          options: [{ label: "新保客户" }, { label: "续保客户" }],
+        },
+        {
+          header: "难度",
+          question: "请选择难度",
+          options: [{ label: "简单" }, { label: "困难" }],
+        },
+      ],
+    }, "fallback");
+
+    expect(request).toMatchObject({
+      requestId: "ask-1",
+      source: "ask_user_interrupt",
+      kind: "question",
+      title: "客户类型",
+    });
+    expect(request?.questions).toHaveLength(2);
+    expect(request?.questions?.[1].options[1].label).toBe("困难");
+    expect(request?.options.map((option) => option.label)).toEqual(["新保客户", "续保客户"]);
+  });
+
+  it("keeps real permission interrupts on the allow or reject contract", () => {
+    const request = normalizeJiuwenPermissionRequest("chat.permission", {
+      request_id: "permission-1",
+      source: "permission_interrupt",
+      question: "工具 bash 需要授权",
+    }, "fallback");
+
+    expect(request).toMatchObject({ kind: "permission", title: "权限审批" });
+    expect(request?.options.map((option) => option.value)).toEqual(["本次允许", "拒绝"]);
+  });
+
+  it("returns every ask-user answer to JiuwenSwarm in question order", () => {
+    const request = buildJiuwenAgentServerPermissionAnswerRequest({
+      envelopeRequestId: "answer-1",
+      permissionRequestId: "ask-1",
+      serviceId: "linggan",
+      agentId: "jiuwen_lgj-test",
+      sessionId: "session-1",
+      channelId: "lgj-test",
+      workspaceDir: "/tmp/workspace",
+      selectedOption: "续保客户",
+      source: "ask_user_interrupt",
+      answers: [
+        { selectedOptions: ["续保客户"], customInput: "" },
+        { selectedOptions: ["困难"], customInput: "" },
+      ],
+    });
+
+    expect(request.params.answers).toEqual([
+      { selected_options: ["续保客户"], custom_input: "" },
+      { selected_options: ["困难"], custom_input: "" },
+    ]);
   });
 
   it("extracts final text nested in an AgentServer completion payload", () => {
