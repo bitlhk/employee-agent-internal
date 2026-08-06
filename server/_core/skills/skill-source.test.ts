@@ -41,6 +41,22 @@ describe("parseSkillSourceFiles", () => {
     expect(parsed.description).toBe("Process PDF documents.");
   });
 
+  it("prefers the root manifest for a compound skill package", () => {
+    const parsed = parseSkillSourceFiles([
+      {
+        path: "MX_FinData/SKILL.md",
+        content: "---\nname: mx-findata\n---\n# Financial Data",
+      },
+      {
+        path: "SKILL.md",
+        content: "---\nname: sentiment-suite\n---\n# Sentiment Suite",
+      },
+    ], "fallback");
+
+    expect(parsed.skillId).toBe("sentiment-suite");
+    expect(parsed.displayName).toBe("Sentiment Suite");
+  });
+
   it("parses folded and literal frontmatter descriptions", () => {
     const folded = parseSkillSourceFiles([{
       path: "SKILL.md",

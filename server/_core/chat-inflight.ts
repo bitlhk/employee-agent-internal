@@ -26,10 +26,13 @@ export type ChatRunRecord = {
 
 export type MarkChatRunStartedResult =
   | { status: "started"; run: ChatRunRecord }
-  | { status: "in_flight"; run: ChatRunRecord };
+  | { status: "in_flight"; run: ChatRunRecord }
+  | { status: "session_deleting" };
 
 const DEFAULT_TTL_MS = 10 * 60 * 1000;
 const runs = new Map<string, ChatRunRecord>();
+const deletingSessions = new Set<string>();
+const idleWaiters = new Map<string, Set<() => void>>();
 let now = () => Date.now();
 
 export function isChatSendDedupEnabled(): boolean {
@@ -62,6 +65,7 @@ function sweepExpired() {
   for (const [key, run] of runs) {
     if (run.lastEventAt < cutoff) {
       runs.delete(key);
+      notifySessionIdle(key);
       console.warn("[CHAT-DEDUP] expired in-flight run", {
         sessionKey: run.sessionKey,
         clientRunId: run.clientRunId,
@@ -71,12 +75,66 @@ function sweepExpired() {
   }
 }
 
+function notifySessionIdle(sessionKey: string): void {
+  if (runs.has(sessionKey)) return;
+  const waiters = idleWaiters.get(sessionKey);
+  if (!waiters) return;
+  idleWaiters.delete(sessionKey);
+  for (const resolve of waiters) resolve();
+}
+
+export function makeChatLifecycleKey(adoptId: string, conversationId: unknown): string {
+  const adopt = String(adoptId || "").trim();
+  const conversation = String(conversationId || "main").trim() || "main";
+  return `${adopt}\u0000${conversation}`;
+}
+
+export function beginChatSessionDeletion(sessionKey: string): boolean {
+  sweepExpired();
+  if (deletingSessions.has(sessionKey)) return false;
+  deletingSessions.add(sessionKey);
+  return true;
+}
+
+export function endChatSessionDeletion(sessionKey: string): void {
+  deletingSessions.delete(sessionKey);
+}
+
+export function getActiveChatRun(sessionKey: string): ChatRunRecord | undefined {
+  sweepExpired();
+  return runs.get(makeChatSessionRunKey(sessionKey));
+}
+
+export async function waitForChatSessionIdle(sessionKey: string, timeoutMs: number): Promise<boolean> {
+  sweepExpired();
+  if (!runs.has(sessionKey)) return true;
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (idle: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const waiters = idleWaiters.get(sessionKey);
+      waiters?.delete(onIdle);
+      if (waiters?.size === 0) idleWaiters.delete(sessionKey);
+      resolve(idle);
+    };
+    const onIdle = () => finish(true);
+    const waiters = idleWaiters.get(sessionKey) || new Set<() => void>();
+    waiters.add(onIdle);
+    idleWaiters.set(sessionKey, waiters);
+    const timer = setTimeout(() => finish(false), Math.max(0, timeoutMs));
+    if (!runs.has(sessionKey)) finish(true);
+  });
+}
+
 export function markChatRunStarted(args: {
   sessionKey: string;
   clientRunId?: string;
   transport: ChatTransportName;
   message?: string;
 }): MarkChatRunStartedResult | null {
+  if (deletingSessions.has(args.sessionKey)) return { status: "session_deleting" };
   if (!isChatSendDedupEnabled() || !args.clientRunId) return null;
   sweepExpired();
 
@@ -134,11 +192,14 @@ export function markChatRunComplete(
   const run = runs.get(key);
   if (!run) return;
   runs.delete(key);
+  notifySessionIdle(key);
   console.log("[CHAT-DEDUP] complete", { sessionKey, clientRunId, runId: run.runId, reason });
 }
 
 export function __resetChatInflightForTests(): void {
   runs.clear();
+  deletingSessions.clear();
+  idleWaiters.clear();
   now = () => Date.now();
 }
 

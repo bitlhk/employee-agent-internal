@@ -5,6 +5,7 @@
  * 不做分类（分类在 intent-agent.ts），不关心传输协议（StreamWriter 抽象）。
  */
 import path from "path";
+import { randomUUID } from "crypto";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import type { StreamWriter } from "./stream-writer";
 import { INTERNAL_API_KEY as INTERNAL_KEY } from "./constants";
@@ -181,7 +182,7 @@ export async function executePlatformIntent(
       const resp = await fetchWithTimeout(`${BASE}/api/claw/cron/add`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Internal-Key": INTERNAL_KEY },
-        body: JSON.stringify({ adoptId, job }),
+        body: JSON.stringify({ adoptId, job, idempotencyKey: `intent:${randomUUID()}` }),
       });
       const data = await resp.json() as any;
       if (!resp.ok) { writer.writeError(`创建失败: ${data?.error || resp.status}`); return; }

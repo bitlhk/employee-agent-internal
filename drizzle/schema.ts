@@ -929,6 +929,25 @@ export const agentTasks = mysqlTable("agent_tasks", {
 export type AgentTask = typeof agentTasks.$inferSelect;
 export type InsertAgentTask = typeof agentTasks.$inferInsert;
 
+export const cronJobCreations = mysqlTable("cron_job_creations", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
+  requestHash: varchar("request_hash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["pending", "succeeded", "failed"]).notNull().default("pending"),
+  jobId: varchar("job_id", { length: 128 }),
+  jobJson: text("job_json"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  adoptKeyUnique: uniqueIndex("uk_cron_job_creations_adopt_key").on(table.adoptId, table.idempotencyKey),
+  statusUpdatedIdx: index("idx_cron_job_creations_status_updated").on(table.status, table.updatedAt),
+}));
+
+export type CronJobCreation = typeof cronJobCreations.$inferSelect;
+export type InsertCronJobCreation = typeof cronJobCreations.$inferInsert;
+
 export const chatSkillSessionState = mysqlTable("chat_skill_session_state", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   adoptId: varchar("adopt_id", { length: 64 }).notNull(),

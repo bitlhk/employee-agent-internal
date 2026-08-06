@@ -50,6 +50,23 @@ describe("expert task history", () => {
     ]);
   });
 
+  it("surfaces running, confirmation and latest-failure attention", () => {
+    const base = { ...completedTask, resultMarkdown: null, completedAt: null };
+    expect(buildExpertTaskHistorySessions([{ ...base, status: "running" }])[0]?.attention).toBe("running");
+    expect(buildExpertTaskHistorySessions([{
+      ...base,
+      status: "running",
+      interactionStatus: "pending",
+    }])[0]?.attention).toBe("needs_action");
+    expect(buildExpertTaskHistorySessions([{
+      ...base,
+      status: "failed",
+      errorMessage: "执行失败",
+      updatedAt: "2026-07-21T01:00:10.000Z",
+    }])[0]?.attention).toBe("failed");
+    expect(buildExpertTaskHistorySessions([completedTask])[0]?.attention).toBeUndefined();
+  });
+
   it("merges expert tasks into an existing runtime conversation", () => {
     const runtime = [{
       conversationId: "conv_expert_one",

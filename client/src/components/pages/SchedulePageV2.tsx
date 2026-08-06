@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Bell,
@@ -321,6 +321,7 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
   const [createBusy, setCreateBusy] = useState(false);
   const [createForm, setCreateForm] = useState<CreateForm>(EMPTY_CREATE_FORM);
   const [capabilities, setCapabilities] = useState<CronCapabilities | null>(null);
+  const createAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   const availableDeliveryChannels = useMemo(() => {
     if (Array.isArray(capabilities?.availableDeliveryChannels)) {
@@ -550,15 +551,29 @@ export function SchedulePageV2({ adoptId }: { adoptId?: string }) {
     }
     setCreateBusy(true);
     try {
+      const fingerprint = JSON.stringify(job);
+      if (!createAttemptRef.current || createAttemptRef.current.fingerprint !== fingerprint) {
+        const nonce = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `${Date.now().toString(36)}:${Math.random().toString(36).slice(2)}`;
+        createAttemptRef.current = { fingerprint, key: `ui:${nonce}` };
+      }
+      const idempotencyKey = createAttemptRef.current.key;
       const resp = await fetch("/api/claw/cron/add", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adoptId: aid, job }),
+        body: JSON.stringify({ adoptId: aid, job, idempotencyKey }),
       });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.error || `${T.createFailed} (${resp.status})`);
+      if (!resp.ok) {
+        if (resp.status >= 400 && resp.status < 500 && data?.code !== "CRON_CREATION_IN_PROGRESS") {
+          createAttemptRef.current = null;
+        }
+        throw new Error(data?.error || `${T.createFailed} (${resp.status})`);
+      }
       toast.success(T.createSuccess);
+      createAttemptRef.current = null;
       setCreateForm(EMPTY_CREATE_FORM);
       setCreateOpen(false);
       await load();

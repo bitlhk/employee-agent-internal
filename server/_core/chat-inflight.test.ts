@@ -2,10 +2,14 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   __resetChatInflightForTests,
   __setChatInflightNowForTests,
+  beginChatSessionDeletion,
+  endChatSessionDeletion,
   getChatRun,
+  makeChatLifecycleKey,
   markChatRunComplete,
   markChatRunStarted,
   touchChatRun,
+  waitForChatSessionIdle,
 } from "./chat-inflight";
 
 describe("chat in-flight dedup registry", () => {
@@ -104,5 +108,35 @@ describe("chat in-flight dedup registry", () => {
     // Browser/client close is intentionally not modeled as a completion signal.
     // The gateway may still be running the agent turn in the background.
     expect(getChatRun("s", "r")).toBeDefined();
+  });
+
+  it("fences new turns while a session is being deleted", () => {
+    const key = makeChatLifecycleKey("lgj-owner", "conv-1");
+    expect(beginChatSessionDeletion(key)).toBe(true);
+    expect(markChatRunStarted({
+      sessionKey: key,
+      clientRunId: "run-1",
+      transport: "http",
+    })).toEqual({ status: "session_deleting" });
+    endChatSessionDeletion(key);
+    expect(markChatRunStarted({
+      sessionKey: key,
+      clientRunId: "run-1",
+      transport: "http",
+    })?.status).toBe("started");
+  });
+
+  it("waits for an active turn to quiesce before deletion", async () => {
+    const key = makeChatLifecycleKey("lgj-owner", "conv-1");
+    markChatRunStarted({ sessionKey: key, clientRunId: "run-1", transport: "http" });
+    const idle = waitForChatSessionIdle(key, 200);
+    markChatRunComplete(key, "run-1", "http_done");
+    await expect(idle).resolves.toBe(true);
+  });
+
+  it("times out rather than deleting an active turn", async () => {
+    const key = makeChatLifecycleKey("lgj-owner", "conv-1");
+    markChatRunStarted({ sessionKey: key, clientRunId: "run-1", transport: "http" });
+    await expect(waitForChatSessionIdle(key, 1)).resolves.toBe(false);
   });
 });

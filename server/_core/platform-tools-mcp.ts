@@ -1,4 +1,5 @@
 import type { Express, Request, Response } from "express";
+import { createHash } from "crypto";
 import path from "path";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { isAuthorizedInternalRequest, resolveRuntimeAgentId, resolveRuntimeWorkspaceByIds } from "./helpers";
@@ -224,7 +225,12 @@ function summarizeAgents(data: any): string {
   ].join("\n");
 }
 
-async function callTool(req: Request, name: string, args: Record<string, unknown>) {
+async function callTool(
+  req: Request,
+  name: string,
+  args: Record<string, unknown>,
+  requestIdentity?: unknown,
+) {
   let adoptId = "";
   try {
     adoptId = resolveAdoptId(req, args);
@@ -394,10 +400,14 @@ async function callTool(req: Request, name: string, args: Record<string, unknown
       },
       meta: {},
     };
+    const suppliedKey = String(args.idempotency_key || args.idempotencyKey || "").trim();
+    const idempotencyKey = suppliedKey || `mcp:${createHash("sha256")
+      .update(`${String(requestIdentity ?? "")}:${JSON.stringify(args)}`)
+      .digest("hex")}`;
     await internalJson("/api/claw/cron/add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adoptId, job }),
+      body: JSON.stringify({ adoptId, job, idempotencyKey }),
     });
     return textResult(`Scheduled task "${job.name}" created. Cron: ${cronExpr}, delivery: ${deliveryChannel}.`);
   }
@@ -427,7 +437,12 @@ async function handleMessage(req: Request, msg: any) {
       if (!hasRequestId(id)) return null;
       const finishMetric = beginMcpCall("platform");
       try {
-        const result = await callTool(req, String(msg.params?.name || ""), msg.params?.arguments || {});
+        const result = await callTool(
+          req,
+          String(msg.params?.name || ""),
+          msg.params?.arguments || {},
+          id,
+        );
         finishMetric(result.isError === true ? "error" : "success");
         return ok(id, result);
       } catch (error) {

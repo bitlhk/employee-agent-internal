@@ -9,6 +9,7 @@ export type ExpertHistoryTask = {
   resultMarkdown?: string | null;
   errorMessage?: string | null;
   status?: string | null;
+  interactionStatus?: string | null;
   agentName?: string | null;
   agentId?: string | null;
   createdAt?: string | Date | number | null;
@@ -16,6 +17,8 @@ export type ExpertHistoryTask = {
   completedAt?: string | Date | number | null;
   updatedAt?: string | Date | number | null;
 };
+
+export type ExpertTaskAttention = "running" | "needs_action" | "failed";
 
 export type ExpertHistoryMessage = {
   id: string;
@@ -35,6 +38,7 @@ export type ExpertHistorySession = {
   messageCount: number;
   createdAt: number;
   updatedAt: number;
+  attention?: ExpertTaskAttention;
 };
 
 function timeMs(value: ExpertHistoryTask["createdAt"], fallback = 0): number {
@@ -80,6 +84,21 @@ function taskUpdatedAt(task: ExpertHistoryTask, createdAt: number): number {
 
 function taskPreview(task: ExpertHistoryTask): string {
   return truncateText(task.resultMarkdown || task.errorMessage || task.input, 42);
+}
+
+function taskAttention(tasks: ExpertHistoryTask[]): ExpertTaskAttention | undefined {
+  if (tasks.some((task) => String(task.interactionStatus || "").toLowerCase() === "pending")) {
+    return "needs_action";
+  }
+  if (tasks.some((task) => ["pending", "running"].includes(String(task.status || "").toLowerCase()))) {
+    return "running";
+  }
+  const latest = tasks.slice().sort((left, right) => {
+    const leftCreated = timeMs(left.createdAt);
+    const rightCreated = timeMs(right.createdAt);
+    return taskUpdatedAt(right, rightCreated) - taskUpdatedAt(left, leftCreated);
+  })[0];
+  return String(latest?.status || "").toLowerCase() === "failed" ? "failed" : undefined;
 }
 
 function historyTimeLabel(timestamp: number): string {
@@ -162,6 +181,7 @@ export function buildExpertTaskHistorySessions(tasks: ExpertHistoryTask[]): Expe
       messageCount: ordered.length * 2,
       createdAt,
       updatedAt,
+      attention: taskAttention(ordered),
     };
   }).sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -175,6 +195,7 @@ export function mergeExpertTaskHistorySessions<T extends {
   messageCount?: number;
   createdAt?: number;
   updatedAt?: number;
+  attention?: ExpertTaskAttention;
 }>(runtimeSessions: T[], expertSessions: ExpertHistorySession[], limit: number): Array<T | ExpertHistorySession> {
   const merged = new Map<string, T | ExpertHistorySession>();
   for (const session of runtimeSessions) merged.set(session.conversationId, session);
@@ -197,6 +218,7 @@ export function mergeExpertTaskHistorySessions<T extends {
       messageCount: Number(runtime.messageCount || 0) + expert.messageCount,
       createdAt: Math.min(runtimeCreatedAt || expert.createdAt, expert.createdAt),
       updatedAt: Math.max(runtimeUpdatedAt, expert.updatedAt),
+      attention: expert.attention,
     } as T);
   }
 

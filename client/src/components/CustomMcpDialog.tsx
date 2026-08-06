@@ -382,7 +382,7 @@ export function CustomMcpDialog({
                   })}
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="custom-mcp-select-content">
                     <SelectItem value="none">无需认证</SelectItem>
                     <SelectItem value="bearer">Bearer Token</SelectItem>
                     <SelectItem value="api_key">API Key Header</SelectItem>

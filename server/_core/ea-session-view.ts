@@ -32,6 +32,7 @@ type EaSessionView = {
   messageCount: number;
   interactive: boolean;
   status?: "idle" | "running" | "failed" | "done";
+  attention?: "running" | "needs_action" | "failed";
   route: string;
 };
 
@@ -90,6 +91,7 @@ function normalizeChatSession(adoptId: string, item: any): EaSessionView {
     messageCount: numberValue(item?.messageCount, 0),
     interactive: true,
     status: "idle",
+    ...(item?.attention ? { attention: item.attention } : {}),
     route: `/claw/${encodeURIComponent(adoptId)}?conversation=${encodeURIComponent(conversationId)}`,
   };
 }

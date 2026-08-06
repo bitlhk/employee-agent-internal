@@ -1112,6 +1112,9 @@ export default function Home() {
   const [webSessions, setWebSessions] = useState<WebChatSessionRecord[]>([]);
   const [webSessionsLoading, setWebSessionsLoading] = useState(false);
   const webSessionsRef = useRef<WebChatSessionRecord[]>([]);
+  const hasAttentiveHistorySession = webSessions.some((session) => (
+    session.attention === "running" || session.attention === "needs_action"
+  ));
   const backendSessionsRequestSeqRef = useRef(0);
   const autoSessionTitleRequestRef = useRef<Record<string, string>>({});
   const restoreConversationRequestSeqRef = useRef(0);
@@ -1291,15 +1294,16 @@ export default function Home() {
   useEffect(() => {
     if (!resolvedAdoptId || !SESSION_INDEX_KEY || isLegacyArchivedRuntime) return;
     const onFocus = () => void refreshBackendWebSessions(true).catch(() => {});
+    const intervalMs = hasAttentiveHistorySession ? 5_000 : 30_000;
     const timer = window.setInterval(() => {
       void refreshBackendWebSessions(true).catch(() => {});
-    }, 30000);
+    }, intervalMs);
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [isLegacyArchivedRuntime, refreshBackendWebSessions, resolvedAdoptId, SESSION_INDEX_KEY]);
+  }, [hasAttentiveHistorySession, isLegacyArchivedRuntime, refreshBackendWebSessions, resolvedAdoptId, SESSION_INDEX_KEY]);
 
   useEffect(() => {
     if (!SESSION_INDEX_KEY) return;
@@ -1834,14 +1838,10 @@ export default function Home() {
 
   const deleteLingxiaConversation = async (conversationId: string) => {
     if (!SESSION_INDEX_KEY || !resolvedAdoptId || !userStorageId) return;
-    if (activeLingxiaStreaming) {
-      toast.error("请先停止当前回复");
-      return;
-    }
     const session = webSessions.find((item) => item.conversationId === conversationId);
     const ok = await confirm({
       title: "删除会话？",
-      description: `会话「${session?.title || "未命名会话"}」会从当前浏览器历史记录中移除。`,
+      description: `会话「${session?.title || "未命名会话"}」及其历史记录将被删除。正在处理的会话需要先完成或取消任务。`,
       confirmText: "删除",
       variant: "danger",
     });
@@ -1851,6 +1851,27 @@ export default function Home() {
       setSessionSwitchingId(null);
     }
     setSessionMenuOpen(false);
+
+    if (isJiuwenRuntime && session?.sessionKey) {
+      const apiBase = import.meta.env.VITE_API_URL || "";
+      try {
+        const response = await fetchWithTimeout(`${apiBase}/api/claw/chat-history/session`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ adoptId: resolvedAdoptId, sessionKey: session.sessionKey }),
+        }, 8000);
+        const payload = await response.json().catch(() => null);
+        if (!response.ok && response.status !== 404) {
+          toast.error(String(payload?.message || payload?.error || "会话暂时无法删除"));
+          return;
+        }
+      } catch (error) {
+        console.warn("[history] backend delete failed", error);
+        toast.error("会话删除失败，请稍后重试");
+        return;
+      }
+    }
 
     const next = webSessions.filter((item) => item.conversationId !== conversationId);
     writeWebSessionIndex(SESSION_INDEX_KEY, next);
@@ -1864,19 +1885,6 @@ export default function Home() {
       localStorage.removeItem(webMessagesStorageKey(userStorageId, resolvedAdoptId, conversationId));
       removeLocalStorageKeys(legacyWebMessagesStorageKeys(userStorageId, resolvedAdoptId, conversationId));
     } catch {}
-    if (isJiuwenRuntime && session?.sessionKey) {
-      const apiBase = import.meta.env.VITE_API_URL || "";
-      try {
-        await fetchWithTimeout(`${apiBase}/api/claw/chat-history/session`, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ adoptId: resolvedAdoptId, sessionKey: session.sessionKey }),
-        }, 5000);
-      } catch (error) {
-        console.warn("[history] backend delete failed; keeping local hidden tombstone", error);
-      }
-    }
     if (conversationId === webConversationId) {
       const nextSession = next[0];
       if (nextSession?.sessionKey && !isLegacyArchivedRuntime) {

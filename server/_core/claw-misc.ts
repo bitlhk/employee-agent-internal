@@ -46,6 +46,67 @@ import {
   resolveJiuwenHistorySession,
   type UsageBucket,
 } from "./chat-history";
+import {
+  beginChatSessionDeletion,
+  endChatSessionDeletion,
+  makeChatLifecycleKey,
+  waitForChatSessionIdle,
+} from "./chat-inflight";
+
+function activeConversationTask(tasks: any[]): any | undefined {
+  return tasks.find((task) => {
+    const status = String(task?.status || "").toLowerCase();
+    const interactionStatus = String(task?.interactionStatus || task?.interaction_status || "").toLowerCase();
+    return status === "pending" || status === "running" || interactionStatus === "pending";
+  });
+}
+
+async function prepareConversationDeletion(args: {
+  adoptId: string;
+  conversationId: string;
+}): Promise<
+  | { ok: true; lifecycleKey: string }
+  | { ok: false; status: number; error: string; message: string }
+> {
+  const lifecycleKey = makeChatLifecycleKey(args.adoptId, args.conversationId);
+  if (!beginChatSessionDeletion(lifecycleKey)) {
+    return {
+      ok: false,
+      status: 409,
+      error: "SESSION_DELETING",
+      message: "该会话正在删除，请稍后再试",
+    };
+  }
+
+  try {
+    const idle = await waitForChatSessionIdle(lifecycleKey, 5_000);
+    if (!idle) {
+      endChatSessionDeletion(lifecycleKey);
+      return {
+        ok: false,
+        status: 409,
+        error: "SESSION_BUSY",
+        message: "该会话仍在生成回复，请等待完成后再删除",
+      };
+    }
+
+    const tasks = await listAgentTasksByConversation(args.adoptId, args.conversationId, 100);
+    const activeTask = activeConversationTask(tasks);
+    if (activeTask) {
+      endChatSessionDeletion(lifecycleKey);
+      return {
+        ok: false,
+        status: 409,
+        error: "SESSION_HAS_ACTIVE_TASK",
+        message: `“${String(activeTask.agentName || activeTask.agentId || "专家")}”仍在处理，请先取消或等待任务完成`,
+      };
+    }
+    return { ok: true, lifecycleKey };
+  } catch (error) {
+    endChatSessionDeletion(lifecycleKey);
+    throw error;
+  }
+}
 
 export function registerMiscRoutes(app: express.Express) {
 
@@ -250,40 +311,66 @@ export function registerMiscRoutes(app: express.Express) {
 
       const expertConversationId = expertConversationIdFromSessionKey(sessionKey);
       if (expertConversationId) {
-        const deleted = await deleteAgentTasksByConversation(adoptId, expertConversationId);
-        if (deleted === 0) {
-          res.status(404).json({ error: "session_missing" });
+        const prepared = await prepareConversationDeletion({ adoptId, conversationId: expertConversationId });
+        if (!prepared.ok) {
+          res.status(prepared.status).json({ error: prepared.error, message: prepared.message });
           return;
         }
-        invalidateChatHistorySessionList(adoptId);
-        res.json({
-          ok: true,
-          runtime: "ea-expert",
-          conversationId: expertConversationId,
-          sessionId: sessionKey,
-          deleted,
-        });
-        return;
+        try {
+          const deleted = await deleteAgentTasksByConversation(adoptId, expertConversationId);
+          if (deleted === 0) {
+            res.status(404).json({ error: "session_missing" });
+            return;
+          }
+          invalidateChatHistorySessionList(adoptId);
+          res.json({
+            ok: true,
+            runtime: "ea-expert",
+            conversationId: expertConversationId,
+            sessionId: sessionKey,
+            deleted,
+          });
+          return;
+        } finally {
+          endChatSessionDeletion(prepared.lifecycleKey);
+        }
       }
 
       const dbAgentId = String((claw as any).agentId || "").trim();
       if (isJiuwenClawAdoptId(adoptId)) {
-        const result = deleteJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
-        if (!result) {
+        const resolved = resolveJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
+        if (!resolved) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
-        const expertDeleted = await deleteAgentTasksByConversation(adoptId, result.conversationId);
-        invalidateChatHistorySessionList(adoptId);
-        res.json({
-          ok: true,
-          runtime: "jiuwenswarm",
-          conversationId: result.conversationId,
-          sessionId: result.sessionId,
-          deleted: result.deleted + expertDeleted,
-          expertDeleted,
+        const prepared = await prepareConversationDeletion({
+          adoptId,
+          conversationId: resolved.conversationId,
         });
-        return;
+        if (!prepared.ok) {
+          res.status(prepared.status).json({ error: prepared.error, message: prepared.message });
+          return;
+        }
+        try {
+          const result = deleteJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
+          if (!result) {
+            res.status(404).json({ error: "session_missing" });
+            return;
+          }
+          const expertDeleted = await deleteAgentTasksByConversation(adoptId, result.conversationId);
+          invalidateChatHistorySessionList(adoptId);
+          res.json({
+            ok: true,
+            runtime: "jiuwenswarm",
+            conversationId: result.conversationId,
+            sessionId: result.sessionId,
+            deleted: result.deleted + expertDeleted,
+            expertDeleted,
+          });
+          return;
+        } finally {
+          endChatSessionDeletion(prepared.lifecycleKey);
+        }
       }
 
       res.status(400).json({ error: "unsupported_runtime" });

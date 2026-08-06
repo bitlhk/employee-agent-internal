@@ -110,6 +110,7 @@ export type WebChatSessionRecord = {
   sourceUpdatedAt?: number;
   sortUpdatedAt?: number;
   pinnedAt?: number;
+  attention?: "running" | "needs_action" | "failed";
 };
 
 export function normalizeSessionText(text: string) {
@@ -288,6 +289,9 @@ export function normalizeSessionViewRecord(
     updatedAt: updatedAt || sourceUpdatedAt || sortUpdatedAt || Date.now(),
     sourceUpdatedAt: sourceUpdatedAt || updatedAt,
     sortUpdatedAt: sortUpdatedAt || sourceUpdatedAt || updatedAt,
+    attention: ["running", "needs_action", "failed"].includes(String(item?.attention || ""))
+      ? item.attention
+      : undefined,
   };
 }
 

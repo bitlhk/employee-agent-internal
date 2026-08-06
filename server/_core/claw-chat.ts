@@ -8,7 +8,12 @@ import {
   isAuthorizedInternalRequest,
   requireClawOwner,
 } from "./helpers";
-import { normalizeClientRunId } from "./chat-inflight";
+import {
+  makeChatLifecycleKey,
+  markChatRunComplete,
+  markChatRunStarted,
+  normalizeClientRunId,
+} from "./chat-inflight";
 import { isActiveJiuwenAdoptId, retiredRuntimeMessage } from "./runtime-policy";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
@@ -359,6 +364,23 @@ export function registerChatStreamRoutes(app: express.Express) {
         res.status(400).json({ error: "message is empty" });
         return;
       }
+      const chatLifecycleKey = makeChatLifecycleKey(String(adoption.adoptId), conversationId);
+      const chatRun = markChatRunStarted({
+        sessionKey: chatLifecycleKey,
+        clientRunId,
+        transport: "http",
+        message: userMessage,
+      });
+      if (chatRun?.status === "session_deleting") {
+        res.status(409).json({ error: "SESSION_DELETING", message: "该会话正在删除，请稍后新建会话" });
+        return;
+      }
+      if (chatRun?.status === "in_flight") {
+        res.status(409).json({ error: "SESSION_BUSY", message: "该会话已有任务正在处理，请等待完成后再发送" });
+        return;
+      }
+      const trackedClientRunId = chatRun?.status === "started" ? chatRun.run.clientRunId : undefined;
+      try {
       const instructionAttack = detectInstructionAttackSignals(userMessage);
       if (instructionAttack.detected) {
         await recordAuditBestEffort({
@@ -678,6 +700,11 @@ export function registerChatStreamRoutes(app: express.Express) {
           onRuntimeOutcome: observePublicModelTraffic,
         },
       );
+      } finally {
+        if (trackedClientRunId) {
+          markChatRunComplete(chatLifecycleKey, trackedClientRunId, "http_done");
+        }
+      }
     },
   );
 }

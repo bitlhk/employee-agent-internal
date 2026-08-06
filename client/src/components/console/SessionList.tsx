@@ -13,6 +13,7 @@ export type SessionListConversation = {
   createdAt: number;
   updatedAt: number;
   pinnedAt?: number;
+  attention?: "running" | "needs_action" | "failed";
 };
 
 export type SessionGroup = "pinned" | "today" | "week" | "earlier";
@@ -259,6 +260,13 @@ export function SessionList({
                   const pinned = Boolean(session.pinnedAt);
                   const previewText = session.preview || "";
                   const timestamp = formatSessionTimestamp(session.updatedAt || session.createdAt);
+                  const attentionLabel = session.attention === "needs_action"
+                    ? "等待你的确认"
+                    : session.attention === "running"
+                      ? "专家正在处理"
+                      : session.attention === "failed"
+                        ? "任务执行失败"
+                        : "";
                   return (
                     <div
                       key={session.conversationId}
@@ -319,8 +327,18 @@ export function SessionList({
                             </button>
                           </div>
                         ) : (
-                          <div className="sidebar-item-label truncate" style={{ fontSize: 14, fontWeight: 400, color: isMobile ? "var(--oc-text-primary)" : undefined }}>
-                            {shortTitle(session)}
+                          <div className="session-list-title-row">
+                            {attentionLabel ? (
+                              <span
+                                className="session-attention-dot"
+                                data-attention={session.attention}
+                                title={attentionLabel}
+                                aria-label={attentionLabel}
+                              />
+                            ) : null}
+                            <div className="sidebar-item-label truncate" style={{ fontSize: 14, fontWeight: 400, color: isMobile ? "var(--oc-text-primary)" : undefined }}>
+                              {shortTitle(session)}
+                            </div>
                           </div>
                         )}
                         {isMobile && previewText ? (

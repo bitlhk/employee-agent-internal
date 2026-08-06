@@ -13,6 +13,11 @@ import {
 } from "./cron/channel-capabilities";
 import { deleteCronDeliveryConfig, saveCronDeliveryConfig } from "./cron-delivery";
 import { normalizeChannelId } from "./cron/channel-provider-registry";
+import {
+  createCronJobIdempotently,
+  normalizeCronIdempotencyKey,
+} from "./cron/cron-idempotency";
+import { withCronCreationScopeLock } from "../db/cron-job-creations";
 
 const cronProvider = new JiuwenClawCronProvider();
 
@@ -337,28 +342,40 @@ export function registerCronRoutes(app: express.Express) {
 
       const handle = toCronHandle(claw);
       const input = cronJobInputFromRequest(job);
+      const idempotencyKey = normalizeCronIdempotencyKey(
+        req.get("Idempotency-Key") || req.body?.idempotencyKey || req.body?.idempotency_key,
+      );
       const availabilityError = unavailableDeliveryChannelError(
         input.delivery.targets[0].channelId,
         await capabilitiesForClaw(claw),
       );
       if (availabilityError) return res.status(400).json({ error: availabilityError });
-      const existing = await cronProvider.listJobs(handle);
-      if (existing.ok && existing.value.length >= 5) {
-        return res.status(400).json({
-          error: `每个智能体最多 5 个定时任务，当前已有 ${existing.value.length} 个`,
-        });
-      }
-      const result = await cronProvider.addJob(handle, input);
-      if (!result.ok) {
-        return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
-      }
+      const creation = await createCronJobIdempotently({
+        adoptId,
+        idempotencyKey,
+        input,
+        create: () => withCronCreationScopeLock(adoptId, async () => {
+          const existing = await cronProvider.listJobs(handle);
+          if (existing.ok && existing.value.length >= 5) {
+            throw Object.assign(new Error(
+              `每个智能体最多 5 个定时任务，当前已有 ${existing.value.length} 个`,
+            ), { status: 400, code: "CRON_LIMIT_EXCEEDED" });
+          }
+          const result = await cronProvider.addJob(handle, input);
+          if (!result.ok) throw providerError(result.error);
+          return result.value;
+        }),
+      });
       const target = input.delivery.targets[0];
       if (target?.channelId) {
-        await saveCronDeliveryConfig(adoptId, result.value.name || input.name, target.channelId, result.value.id);
+        await saveCronDeliveryConfig(adoptId, creation.job.name || input.name, target.channelId, creation.job.id);
       }
-      return res.json({ runtime: "jiuwenclaw", job: result.value });
+      return res.json({ runtime: "jiuwenclaw", job: creation.job, reused: creation.reused });
     } catch (error: any) {
-      return res.status(500).json({ error: String(error?.message || error || "cron add failed") });
+      return res.status(Number(error?.status || 500)).json({
+        error: String(error?.message || error || "cron add failed"),
+        ...(error?.code ? { code: String(error.code) } : {}),
+      });
     }
   });
 

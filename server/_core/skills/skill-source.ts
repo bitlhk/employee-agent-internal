@@ -154,7 +154,8 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
   }
   if (totalBytes > MAX_SKILL_PACKAGE_BYTES) errors.push("技能包超过 50MB 限制");
 
-  const skillMd = normalized.find((file) => file.path.toLowerCase().endsWith("skill.md"));
+  const skillMd = normalized.find((file) => file.path.toLowerCase() === "skill.md")
+    || normalized.find((file) => file.path.toLowerCase().endsWith("skill.md"));
   if (!skillMd) errors.push("技能缺少 SKILL.md");
 
   let manifest: any = {};
