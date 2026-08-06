@@ -39,6 +39,7 @@ function SelectTrigger({
   return (
     <RadixSelect.Trigger
       {...props}
+      data-slot="select-trigger"
       data-size={size}
       className={cn(triggerStyle, className)}
     >
@@ -131,6 +132,7 @@ function SelectContent({
     <RadixSelect.Portal>
       <RadixSelect.Content
         {...props}
+        data-slot="select-content"
         align={align}
         position={position}
         className={contentClass}
@@ -160,6 +162,7 @@ function SelectItem({
   return (
     <RadixSelect.Item
       {...props}
+      data-slot="select-item"
       className={cn(
         "relative flex min-h-8 w-full cursor-default select-none items-center rounded-md py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-45",
         className
