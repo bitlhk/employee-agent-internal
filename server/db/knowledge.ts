@@ -94,7 +94,7 @@ function mapBase(row: any): KnowledgeBaseRecord {
     roleTemplate: row.role_template ? String(row.role_template) : null,
     name: String(row.name || ""),
     description: String(row.description || ""),
-    classification: String(row.classification || "internal") as KnowledgeClassification,
+    classification: String(row.classification || "restricted") as KnowledgeClassification,
     externalProcessingAllowed: Boolean(row.external_processing_allowed),
     status: String(row.status || "empty") as KnowledgeStatus,
     documentCount: Number(row.document_count || 0),
@@ -120,9 +120,9 @@ function mapDocument(row: any): KnowledgeDocumentRecord {
     sizeBytes: Number(row.size_bytes || 0),
     sha256: String(row.sha256 || ""),
     versionLabel: String(row.version_label || "1.0"),
-    lifecycle: String(row.lifecycle || "active") as KnowledgeDocumentLifecycle,
+    lifecycle: String(row.lifecycle || "draft") as KnowledgeDocumentLifecycle,
     sourceDepartment: String(row.source_department || ""),
-    classification: String(row.classification || "internal") as KnowledgeClassification,
+    classification: String(row.classification || "restricted") as KnowledgeClassification,
     authority: String(row.authority || "reference") as KnowledgeAuthority,
     externalProcessingAllowed: Boolean(row.external_processing_allowed),
     effectiveAt: isoDate(row.effective_at),
@@ -344,6 +344,23 @@ export async function listKnowledgeDocuments(knowledgeBaseId: number): Promise<K
     WHERE knowledge_base_id = ${knowledgeBaseId}
     ORDER BY updated_at DESC, id DESC
     LIMIT 2000
+  `);
+  return rowsFromResult(result).map(mapDocument);
+}
+
+export async function listKnowledgeDocumentsForBases(knowledgeBaseIds: number[]): Promise<KnowledgeDocumentRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const normalized = Array.from(new Set(
+    knowledgeBaseIds.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0),
+  )).slice(0, 8);
+  if (!normalized.length) return [];
+  const result = await db.execute(sql`
+    SELECT ${DOCUMENT_SELECT}
+    FROM knowledge_documents
+    WHERE knowledge_base_id IN (${sql.join(normalized.map((id) => sql`${id}`), sql`, `)})
+    ORDER BY knowledge_base_id ASC, updated_at DESC, id DESC
+    LIMIT 16000
   `);
   return rowsFromResult(result).map(mapDocument);
 }

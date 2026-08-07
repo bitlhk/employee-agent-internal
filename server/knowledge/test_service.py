@@ -2,6 +2,7 @@ import hashlib
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 
 import service
@@ -54,6 +55,19 @@ class KnowledgeServiceTest(unittest.TestCase):
             authority="official",
         )
 
+    def second_document(self) -> service.SourceDocument:
+        source = service.DATA_ROOT / "documents" / "kb_testbase1" / "doc_policy002" / "policy.md"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("# 差旅制度\n\n上海住宿标准为每晚 600 元。", "utf-8")
+        return service.SourceDocument(
+            id="doc_policy002",
+            name="上海差旅制度.md",
+            path=str(source),
+            sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            version_label="2026.1",
+            authority="approved",
+        )
+
     def test_index_status_reports_missing_and_current_indexes(self):
         missing = "kb_missing001"
         existing = "kb_existing01"
@@ -94,6 +108,53 @@ class KnowledgeServiceTest(unittest.TestCase):
         ))
         self.assertEqual(locator["heading_path"], ["差旅制度", "住宿标准"])
         self.assertIn("800", locator["matched_text"])
+
+    def test_governed_search_filters_documents_before_results(self):
+        service._build_index(service.IndexRequest(
+            knowledge_base_id="kb_testbase1",
+            documents=[self.document(), self.second_document()],
+        ))
+
+        result = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"],
+            eligible_document_ids=["doc_policy002"],
+            query="住宿标准",
+            top_k=3,
+            mode="forced",
+        ))
+
+        self.assertTrue(result["results"])
+        self.assertEqual({item["document_id"] for item in result["results"]}, {"doc_policy002"})
+        self.assertGreater(result["metrics"]["eligible_filtered_out"], 0)
+        self.assertTrue(result["metrics"]["candidate_exhausted"])
+
+    def test_explicit_empty_eligibility_never_falls_back_to_all_documents(self):
+        result = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"],
+            eligible_document_ids=[],
+            query="住宿标准",
+            top_k=3,
+            mode="forced",
+        ))
+        self.assertEqual(result["retrieval"], "governed-empty")
+        self.assertEqual(result["results"], [])
+
+    def test_query_cache_is_scoped_by_eligible_document_set(self):
+        service._build_index(service.IndexRequest(
+            knowledge_base_id="kb_testbase1",
+            documents=[self.document(), self.second_document()],
+        ))
+        first = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"], eligible_document_ids=["doc_policy001"],
+            query="住宿标准", top_k=2, mode="forced",
+        ))
+        second = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"], eligible_document_ids=["doc_policy002"],
+            query="住宿标准", top_k=2, mode="forced",
+        ))
+        self.assertEqual({item["document_id"] for item in first["results"]}, {"doc_policy001"})
+        self.assertEqual({item["document_id"] for item in second["results"]}, {"doc_policy002"})
+        self.assertFalse(second["metrics"]["cache_hit"])
 
     def test_version_switch_keeps_two_rollback_indexes(self):
         document = self.document()
@@ -142,6 +203,20 @@ class KnowledgeServiceTest(unittest.TestCase):
             service._rerank_url = original_url
             os.environ.pop("KNOWLEDGE_RERANK_API_KEY", None)
             os.environ.pop("KNOWLEDGE_RERANK_MODEL", None)
+
+    def test_vector_policy_checks_only_eligible_documents(self):
+        targets = [("kb_testbase1", SimpleNamespace(document_external_allowed={
+            "doc_allowed": True,
+            "doc_blocked": False,
+        }))]
+        self.assertTrue(service._vector_policy_allowed(targets, frozenset({"doc_allowed"})))
+        self.assertFalse(service._vector_policy_allowed(targets, frozenset({"doc_blocked"})))
+
+    def test_vector_policy_fails_closed_when_node_metadata_is_missing(self):
+        node = service.TextNode(id_="doc_policy001:c1", text="资料", metadata={"document_id": "doc_policy001"})
+        document_external_allowed = service._document_external_permissions([node])
+        targets = [("kb_testbase1", SimpleNamespace(document_external_allowed=document_external_allowed))]
+        self.assertFalse(service._vector_policy_allowed(targets, frozenset({"doc_policy001"})))
 
     def test_navigation_only_text_does_not_hide_substantive_paragraphs(self):
         self.assertTrue(service._navigation_only_text(

@@ -46,6 +46,10 @@ export type KnowledgeSearchResult = {
 };
 
 export type KnowledgeRetrievalMode = "auto" | "forced";
+export type KnowledgeEligibilityConstraint = {
+  documentIds: string[];
+  fingerprint: string;
+};
 export type KnowledgeRetrievalResult = {
   triggered: boolean;
   retrieval: string;
@@ -64,6 +68,10 @@ export type KnowledgeRetrievalResult = {
     lexicalMatchCount?: number;
     lexicalCoverage?: number;
     autoGate?: string;
+    eligibleDocumentCount?: number;
+    eligibleFilteredOut?: number;
+    eligibleRatio?: number;
+    candidateExhausted?: boolean;
   };
 };
 
@@ -434,15 +442,16 @@ export async function retrieveAcrossKnowledgeBases(
   query: string,
   totalLimit = 4,
   mode: KnowledgeRetrievalMode = "auto",
+  eligibility?: KnowledgeEligibilityConstraint,
 ): Promise<KnowledgeRetrievalResult> {
   const available = bases.filter((base) => base.status === "ready").slice(0, 8);
-  if (!available.length) {
+  if (!available.length || (eligibility && eligibility.documentIds.length === 0)) {
     return {
       triggered: false,
-      retrieval: "unavailable",
+      retrieval: available.length ? "governed-empty" : "unavailable",
       results: [],
       metrics: {
-        knowledgeBaseCount: 0,
+        knowledgeBaseCount: available.length,
         bm25MaxScore: 0,
         bm25RelevantMaxScore: 0,
         vectorMinDistance: null,
@@ -454,7 +463,11 @@ export async function retrieveAcrossKnowledgeBases(
         queryTermCount: 0,
         lexicalMatchCount: 0,
         lexicalCoverage: 0,
-        autoGate: "unavailable",
+        autoGate: available.length ? "governed-empty" : "unavailable",
+        eligibleDocumentCount: eligibility?.documentIds.length,
+        eligibleFilteredOut: 0,
+        eligibleRatio: eligibility ? 0 : undefined,
+        candidateExhausted: false,
       },
     };
   }
@@ -468,6 +481,7 @@ export async function retrieveAcrossKnowledgeBases(
         query: plannedQuery,
         top_k: Math.max(1, Math.min(totalLimit, 12)),
         mode,
+        ...(eligibility ? { eligible_document_ids: eligibility.documentIds } : {}),
       }),
     }, 30_000);
     const results = Array.isArray(payload?.results) ? payload.results.map((item: any) => {
@@ -563,6 +577,12 @@ export async function retrieveAcrossKnowledgeBases(
       lexicalMatchCount: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.lexical_match_count || 0))),
       lexicalCoverage: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.lexical_coverage || 0))),
       autoGate,
+      eligibleDocumentCount: eligibility?.documentIds.length,
+      eligibleFilteredOut: Math.max(0, ...payloads.map((payload) => Number(payload?.metrics?.eligible_filtered_out || 0))),
+      eligibleRatio: eligibility
+        ? Math.min(1, ...payloads.map((payload) => Number(payload?.metrics?.eligible_ratio ?? 1)))
+        : undefined,
+      candidateExhausted: payloads.some((payload) => Boolean(payload?.metrics?.candidate_exhausted)),
     },
   };
 }

@@ -1,9 +1,17 @@
+import { randomUUID } from "node:crypto";
 import type { Express, Request } from "express";
+import { recordAuditBestEffort } from "./audit-events";
 import { isAuthorizedInternalRequest } from "./helpers";
 import {
   guardToolEgress,
   type ToolEgressDecision,
 } from "./tool-egress-policy";
+import {
+  resolveToolGovernance,
+  shouldBlockWithoutPolicyCore,
+  stableToolInputHash,
+  type ToolGovernanceProfile,
+} from "./tool-governance";
 
 type JiuwenPreToolInput = {
   event?: unknown;
@@ -81,14 +89,50 @@ function isTrustedPlatformTool(toolName: string): boolean {
   return prefixes.some(prefix => normalized.startsWith(prefix));
 }
 
+async function auditGovernanceDecision(input: {
+  body: JiuwenPreToolInput;
+  profile: ToolGovernanceProfile;
+  decision: "allow" | "block";
+  policyCode: string;
+  policyDecisionId: string;
+}): Promise<void> {
+  await recordAuditBestEffort({
+    action: input.decision === "allow" ? "governance.tool.allowed" : "governance.tool.blocked",
+    result: input.decision === "allow" ? "success" : "denied",
+    severity: input.decision === "allow" ? "info" : "high",
+    actorType: "agent",
+    targetType: "runtime_tool",
+    targetId: input.profile.tool || "unknown",
+    targetName: input.profile.tool || "unknown",
+    agentInstanceId: String(input.body.session_id || "").trim() || null,
+    source: "tool_governance",
+    channel: "jiuwen_pre_tool",
+    toolName: input.profile.tool || null,
+    policyCode: input.policyCode,
+    metadata: {
+      policyDecisionId: input.policyDecisionId,
+      sideEffect: input.profile.sideEffect,
+      policyRequired: input.profile.policyRequired,
+      approvalMode: input.profile.approvalMode,
+      auditLevel: input.profile.auditLevel,
+      governanceSource: input.profile.source,
+      registered: input.profile.registered,
+      toolInputHash: stableToolInputHash(input.body.tool_input),
+    },
+  });
+}
+
 export function policyUnavailableDecision(
   body: JiuwenPreToolInput
 ): { decision: "allow" } | { decision: "block"; reason: string; policyCode: string } {
-  if (!isLikelyOutboundToolCall(body.tool_name, body.tool_input)) return { decision: "allow" };
+  const profile = resolveToolGovernance(body.tool_name);
+  if (!isLikelyOutboundToolCall(body.tool_name, body.tool_input) && !shouldBlockWithoutPolicyCore(profile)) {
+    return { decision: "allow" };
+  }
   return {
     decision: "block",
-    reason: "外部工具安全检查暂时不可用，请稍后重试。",
-    policyCode: "EA_TOOL_EGRESS_UNAVAILABLE",
+    reason: "工具安全检查暂时不可用，请稍后重试。",
+    policyCode: "EA_TOOL_GOVERNANCE_UNAVAILABLE",
   };
 }
 
@@ -99,23 +143,36 @@ export async function evaluateJiuwenPreToolUse(
   | { decision: "block"; reason: string; policyCode: string }
 > {
   const toolName = String(body.tool_name || "").trim();
-  if (!isLikelyOutboundToolCall(toolName, body.tool_input)) {
-    return { decision: "allow" };
+  const profile = resolveToolGovernance(toolName);
+  const policyDecisionId = `pdec_${randomUUID()}`;
+  if (isLikelyOutboundToolCall(toolName, body.tool_input)) {
+    const decision: ToolEgressDecision = await guardToolEgress({
+      channel: "jiuwen_pre_tool",
+      payload: body.tool_input,
+      adoptId: String(body.session_id || "").trim() || null,
+      toolName,
+      destinationUrl: findDestinationUrl(body.tool_input),
+      destinationTrust: isTrustedPlatformTool(toolName) ? "platform" : "unknown",
+    });
+    if (!decision.ok) {
+      await auditGovernanceDecision({ body, profile, decision: "block", policyCode: "EA_TOOL_EGRESS_V1", policyDecisionId });
+      return {
+        decision: "block",
+        reason: decision.error || "工具参数未通过出站数据护栏。",
+        policyCode: "EA_TOOL_EGRESS_V1",
+      };
+    }
   }
-  const decision: ToolEgressDecision = await guardToolEgress({
-    channel: "jiuwen_pre_tool",
-    payload: body.tool_input,
-    adoptId: String(body.session_id || "").trim() || null,
-    toolName,
-    destinationUrl: findDestinationUrl(body.tool_input),
-    destinationTrust: isTrustedPlatformTool(toolName) ? "platform" : "unknown",
-  });
-  if (decision.ok) return { decision: "allow" };
-  return {
-    decision: "block",
-    reason: decision.error || "工具参数未通过出站数据护栏。",
-    policyCode: "EA_TOOL_EGRESS_V1",
-  };
+  if (shouldBlockWithoutPolicyCore(profile)) {
+    await auditGovernanceDecision({ body, profile, decision: "block", policyCode: "EA_TOOL_GOVERNANCE_UNREGISTERED", policyDecisionId });
+    return {
+      decision: "block",
+      reason: "该工具可能产生业务副作用，但尚未登记治理规则，已阻止执行。",
+      policyCode: "EA_TOOL_GOVERNANCE_UNREGISTERED",
+    };
+  }
+  await auditGovernanceDecision({ body, profile, decision: "allow", policyCode: "EA_TOOL_GOVERNANCE_V1", policyDecisionId });
+  return { decision: "allow" };
 }
 
 export function registerToolEgressRoutes(app: Express): void {

@@ -240,7 +240,13 @@ describe("knowledge indexing queue", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await retrieveAcrossKnowledgeBases(bases, "住宿标准", 4, "auto");
+    const result = await retrieveAcrossKnowledgeBases(
+      bases,
+      "住宿标准",
+      4,
+      "auto",
+      { documentIds: ["doc_policy001"], fingerprint: "fingerprint" },
+    );
 
     expect(result.triggered).toBe(true);
     expect(result.results[0].knowledgeBaseName).toBe("企业制度");
@@ -250,6 +256,7 @@ describe("knowledge indexing queue", () => {
       knowledge_base_ids: [bases[0].publicId, bases[1].publicId],
       mode: "auto",
       top_k: 4,
+      eligible_document_ids: ["doc_policy001"],
     });
   });
 

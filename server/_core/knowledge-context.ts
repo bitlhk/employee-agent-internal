@@ -1,4 +1,10 @@
-import { getUserById, listAccessibleKnowledgeBases, type KnowledgeBaseRecord } from "../db";
+import {
+  getUserById,
+  listAccessibleKnowledgeBases,
+  listKnowledgeDocumentsForBases,
+  type KnowledgeBaseRecord,
+} from "../db";
+import { buildKnowledgeEligibility } from "./knowledge-eligibility";
 import { retrieveAcrossKnowledgeBases, type KnowledgeRetrievalMode } from "./knowledge-service";
 import { stripEaInternalRuntimeContext } from "../../shared/ea-runtime-context";
 import { stripExpertHandoffRuntimeMessage } from "../../shared/expert-handoff-context";
@@ -40,6 +46,10 @@ export type ChatKnowledgeResult = {
     autoGate?: string;
     routeReason?: AutomaticKnowledgeRouteReason;
     routedBaseCount?: number;
+    eligibleDocumentCount?: number;
+    eligibleFilteredOut?: number;
+    eligibleRatio?: number;
+    candidateExhausted?: boolean;
   };
 };
 
@@ -189,7 +199,44 @@ export async function buildChatKnowledgeContext(input: {
   }
   const selected = manual ? eligible : selectAutomaticKnowledgeBases(eligible, input.query);
   const retrievalMode: KnowledgeRetrievalMode = manual ? "forced" : "auto";
-  const retrieval = await retrieveAcrossKnowledgeBases(selected, input.query, manual ? 6 : 4, retrievalMode);
+  const documents = await listKnowledgeDocumentsForBases(selected.map((base) => base.id));
+  const eligibility = buildKnowledgeEligibility({
+    bases: selected,
+    documents,
+    userId: input.userId,
+    actorRole: String(user?.role || "user"),
+    roleTemplate: input.roleTemplate,
+  });
+  const eligibleFilteredOut = Object.values(eligibility.excludedByReason).reduce((sum, count) => sum + count, 0);
+  if (!eligibility.documentIds.length) {
+    return {
+      context: "",
+      sources: [],
+      mode,
+      retrieval: "governed-empty",
+      candidateBaseCount: eligible.length,
+      metrics: {
+        bm25MaxScore: 0,
+        vectorMinDistance: null,
+        queryCount: 0,
+        queryExpansion: "skipped",
+        reranker: "disabled",
+        routeReason,
+        routedBaseCount: selected.length,
+        eligibleDocumentCount: 0,
+        eligibleFilteredOut,
+        eligibleRatio: 0,
+        candidateExhausted: false,
+      },
+    };
+  }
+  const retrieval = await retrieveAcrossKnowledgeBases(
+    selected,
+    input.query,
+    manual ? 6 : 4,
+    retrievalMode,
+    { documentIds: eligibility.documentIds, fingerprint: eligibility.fingerprint },
+  );
   const totalBudget = manual ? 8000 : 4800;
   const perSourceBudget = manual ? 2000 : 1500;
   let remaining = totalBudget;
@@ -249,6 +296,10 @@ export async function buildChatKnowledgeContext(input: {
         lexicalMatchCount: retrieval.metrics.lexicalMatchCount,
         lexicalCoverage: retrieval.metrics.lexicalCoverage,
         autoGate: retrieval.metrics.autoGate,
+        eligibleDocumentCount: retrieval.metrics.eligibleDocumentCount,
+        eligibleFilteredOut: retrieval.metrics.eligibleFilteredOut,
+        eligibleRatio: retrieval.metrics.eligibleRatio,
+        candidateExhausted: retrieval.metrics.candidateExhausted,
         routeReason,
         routedBaseCount: selected.length,
       },
@@ -285,6 +336,10 @@ export async function buildChatKnowledgeContext(input: {
       lexicalMatchCount: retrieval.metrics.lexicalMatchCount,
       lexicalCoverage: retrieval.metrics.lexicalCoverage,
       autoGate: retrieval.metrics.autoGate,
+      eligibleDocumentCount: retrieval.metrics.eligibleDocumentCount,
+      eligibleFilteredOut: retrieval.metrics.eligibleFilteredOut,
+      eligibleRatio: retrieval.metrics.eligibleRatio,
+      candidateExhausted: retrieval.metrics.candidateExhausted,
       routeReason,
       routedBaseCount: selected.length,
     },

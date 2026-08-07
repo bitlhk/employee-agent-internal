@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   getUserById: vi.fn(),
   listAccessibleKnowledgeBases: vi.fn(),
+  listKnowledgeDocumentsForBases: vi.fn(),
   retrieveAcrossKnowledgeBases: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
   getUserById: mocks.getUserById,
   listAccessibleKnowledgeBases: mocks.listAccessibleKnowledgeBases,
+  listKnowledgeDocumentsForBases: mocks.listKnowledgeDocumentsForBases,
 }));
 
 vi.mock("./knowledge-service", () => ({
@@ -22,7 +24,7 @@ import {
   selectAutomaticKnowledgeBases,
 } from "./knowledge-context";
 import { buildExpertHandoffRuntimeMessage } from "../../shared/expert-handoff-context";
-import type { KnowledgeBaseRecord } from "../db";
+import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "../db";
 
 const readyBase: KnowledgeBaseRecord = {
   id: 1,
@@ -47,14 +49,44 @@ const readyBase: KnowledgeBaseRecord = {
   updatedAt: new Date(0).toISOString(),
 };
 
+function readyDocument(knowledgeBaseId: number): KnowledgeDocumentRecord {
+  return {
+    id: knowledgeBaseId,
+    publicId: `doc_policy${String(knowledgeBaseId).padStart(3, "0")}`,
+    knowledgeBaseId,
+    name: "差旅制度.pdf",
+    extension: "pdf",
+    mimeType: "application/pdf",
+    storagePath: `documents/${knowledgeBaseId}.pdf`,
+    sizeBytes: 10,
+    sha256: "a".repeat(64),
+    versionLabel: "1.0",
+    lifecycle: "active",
+    sourceDepartment: "",
+    classification: "internal",
+    authority: "reference",
+    externalProcessingAllowed: true,
+    effectiveAt: null,
+    expiresAt: null,
+    status: "ready",
+    chunkCount: 1,
+    lastError: null,
+    parserVersion: "2.1",
+    indexVersion: "v1",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
 describe("knowledge chat context", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getUserById.mockResolvedValue({ id: 7, groupId: 3 });
+    mocks.getUserById.mockResolvedValue({ id: 7, groupId: 3, role: "user" });
     mocks.listAccessibleKnowledgeBases.mockResolvedValue([
       readyBase,
       { ...readyBase, id: 2, publicId: "kb_processing1", status: "indexing" },
     ]);
+    mocks.listKnowledgeDocumentsForBases.mockImplementation(async (ids: number[]) => ids.map(readyDocument));
     mocks.retrieveAcrossKnowledgeBases.mockResolvedValue({
       triggered: true,
       retrieval: "hybrid",
@@ -81,7 +113,10 @@ describe("knowledge chat context", () => {
       query: "住宿标准是多少",
     });
 
-    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith([readyBase], "住宿标准是多少", 6, "forced");
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith(
+      [readyBase], "住宿标准是多少", 6, "forced",
+      expect.objectContaining({ documentIds: ["doc_policy001"] }),
+    );
     expect(result.mode).toBe("manual");
     expect(result.context).toContain("不可信数据");
     expect(result.context).toContain("[知识1]");
@@ -109,7 +144,10 @@ describe("knowledge chat context", () => {
       query: "客户适当性要求",
     });
 
-    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith([role, enterprise], "客户适当性要求", 4, "auto");
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith(
+      [role, enterprise], "客户适当性要求", 4, "auto",
+      expect.objectContaining({ documentIds: ["doc_policy003", "doc_policy004"] }),
+    );
     expect(result.mode).toBe("auto");
     expect(result.metrics.routeReason).toBe("governed-topic");
     expect(result.metrics.routedBaseCount).toBe(2);
@@ -256,6 +294,7 @@ describe("knowledge chat context", () => {
       "根据模型风险管理规范说明模型验证要求",
       4,
       "auto",
+      expect.objectContaining({ documentIds: ["doc_policy003"] }),
     );
   });
 
@@ -307,6 +346,7 @@ describe("knowledge chat context", () => {
       "你怎么看本行客户信息分级制度",
       4,
       "auto",
+      expect.objectContaining({ documentIds: ["doc_policy003"] }),
     );
   });
 
@@ -323,7 +363,25 @@ describe("knowledge chat context", () => {
       "这是我们第一次对话吗",
       6,
       "forced",
+      expect.objectContaining({ documentIds: ["doc_policy001"] }),
     );
+  });
+
+  it("does not call retrieval when governance excludes every selected document", async () => {
+    mocks.listKnowledgeDocumentsForBases.mockResolvedValue([
+      { ...readyDocument(1), expiresAt: "2025-01-01T00:00:00.000Z" },
+    ]);
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [readyBase.publicId],
+      query: "住宿标准是多少",
+    });
+
+    expect(result.retrieval).toBe("governed-empty");
+    expect(result.metrics.eligibleFilteredOut).toBe(1);
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
   });
 
   it("merges repeated chunks from the same displayed document", async () => {

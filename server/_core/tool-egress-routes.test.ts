@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const mocks = vi.hoisted(() => ({ recordAuditBestEffort: vi.fn().mockResolvedValue(null) }));
 vi.mock("./audit-events", () => ({
-  recordAuditBestEffort: vi.fn().mockResolvedValue(null),
+  recordAuditBestEffort: mocks.recordAuditBestEffort,
 }));
 
 import {
@@ -12,6 +13,7 @@ import {
 
 describe("Jiuwen PreToolUse egress evaluation", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.stubEnv("EA_DATA_GUARDRAIL_MODE", "enforce");
   });
 
@@ -86,6 +88,35 @@ describe("Jiuwen PreToolUse egress evaluation", () => {
     ).resolves.toEqual({ decision: "allow" });
   });
 
+  it("does not block registered local code execution before Policy Core is enabled", async () => {
+    await expect(evaluateJiuwenPreToolUse({
+      tool_name: "bash",
+      tool_input: { command: "python report.py" },
+    })).resolves.toEqual({ decision: "allow" });
+  });
+
+  it("fails closed for an unregistered tool that can write business state", async () => {
+    await expect(evaluateJiuwenPreToolUse({
+      tool_name: "create_portfolio",
+      tool_input: { customerId: "c1", productId: "p1", amount: 100000 },
+    })).resolves.toMatchObject({
+      decision: "block",
+      policyCode: "EA_TOOL_GOVERNANCE_UNREGISTERED",
+    });
+  });
+
+  it("audits allow and block decisions without persisting raw tool input", async () => {
+    await evaluateJiuwenPreToolUse({ tool_name: "read_file", tool_input: { path: "report.md" } });
+    await evaluateJiuwenPreToolUse({ tool_name: "submit_credit_review", tool_input: { customerId: "c1" } });
+
+    expect(mocks.recordAuditBestEffort).toHaveBeenCalledTimes(2);
+    for (const [event] of mocks.recordAuditBestEffort.mock.calls) {
+      expect(event.metadata.policyDecisionId).toMatch(/^pdec_/);
+      expect(event.metadata.toolInputHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.stringify(event.metadata)).not.toContain("customerId");
+    }
+  });
+
   it("fails closed only when an outbound policy check is unavailable", () => {
     expect(policyUnavailableDecision({
       tool_name: "read_file",
@@ -96,7 +127,7 @@ describe("Jiuwen PreToolUse egress evaluation", () => {
       tool_input: { content: "hello" },
     })).toMatchObject({
       decision: "block",
-      policyCode: "EA_TOOL_EGRESS_UNAVAILABLE",
+      policyCode: "EA_TOOL_GOVERNANCE_UNAVAILABLE",
     });
   });
 

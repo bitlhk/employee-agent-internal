@@ -79,6 +79,8 @@ class SearchRequest(BaseModel):
 
 class MultiSearchRequest(BaseModel):
     knowledge_base_ids: list[str] = Field(min_length=1, max_length=8)
+    # None preserves legacy unfiltered callers; [] explicitly authorizes no documents.
+    eligible_document_ids: list[str] | None = Field(default=None, max_length=16000)
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=4, ge=1, le=12)
     mode: Literal["auto", "forced"] = "auto"
@@ -111,6 +113,12 @@ def _authorize(value: str | None) -> None:
 def _kb_id(value: str) -> str:
     if not KB_ID_RE.fullmatch(value):
         raise HTTPException(status_code=400, detail="invalid knowledge base id")
+    return value
+
+
+def _document_id(value: str) -> str:
+    if not DOCUMENT_ID_RE.fullmatch(value):
+        raise HTTPException(status_code=400, detail="invalid document id")
     return value
 
 
@@ -540,9 +548,22 @@ class RuntimeIndex:
     bm25: BM25Retriever
     vector_index: VectorStoreIndex | None
     external_query_allowed: bool
+    document_external_allowed: dict[str, bool]
 
 
 _query_cache: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+
+
+def _document_external_permissions(nodes: list[TextNode]) -> dict[str, bool]:
+    permissions: dict[str, bool] = {}
+    for node in nodes:
+        document_id = str(node.metadata.get("document_id") or "")
+        if not document_id:
+            permissions["__missing_document_id__"] = False
+            continue
+        allowed = bool(node.metadata.get("external_processing_allowed", False))
+        permissions[document_id] = permissions.get(document_id, True) and allowed
+    return permissions
 
 
 @lru_cache(maxsize=32)
@@ -568,6 +589,7 @@ def _runtime_index(knowledge_base_id: str, version: str) -> RuntimeIndex:
             vector_index = load_index_from_storage(storage_context, embed_model=embed_model)
         except Exception:
             vector_index = None
+    document_external_allowed = _document_external_permissions(nodes)
     return RuntimeIndex(
         version=version,
         target=target,
@@ -579,7 +601,21 @@ def _runtime_index(knowledge_base_id: str, version: str) -> RuntimeIndex:
             int(manifest.get("vector_document_count", manifest.get("document_count", 0)))
             >= int(manifest.get("document_count", 0))
         ),
+        document_external_allowed=document_external_allowed,
     )
+
+
+def _vector_policy_allowed(
+    targets: list[tuple[str, RuntimeIndex]],
+    eligible_document_ids: frozenset[str] | None,
+) -> bool:
+    for _, runtime in targets:
+        for document_id, allowed in runtime.document_external_allowed.items():
+            if eligible_document_ids is not None and document_id not in eligible_document_ids:
+                continue
+            if not allowed:
+                return False
+    return True
 
 
 def _query_cache_get(key: tuple[Any, ...]) -> dict[str, Any] | None:
@@ -604,6 +640,12 @@ def _query_cache_put(key: tuple[Any, ...], payload: dict[str, Any]) -> None:
     _query_cache[key] = (time.monotonic(), payload)
 
 
+def _authority_rank(node: TextNode) -> int:
+    return {"official": 4, "approved": 3, "reference": 2, "personal": 1}.get(
+        str(node.metadata.get("authority") or "reference"), 0,
+    )
+
+
 def _rrf(result_sets: list[list[NodeWithScore]], top_k: int) -> list[tuple[TextNode, float]]:
     scores: dict[str, float] = {}
     nodes: dict[str, TextNode] = {}
@@ -613,7 +655,11 @@ def _rrf(result_sets: list[list[NodeWithScore]], top_k: int) -> list[tuple[TextN
             node_id = str(node.node_id)
             scores[node_id] = scores.get(node_id, 0.0) + 1.0 / (60 + rank)
             nodes[node_id] = node
-    ordered = sorted(scores.items(), key=lambda item: item[1], reverse=True)[:top_k]
+    ordered = sorted(
+        scores.items(),
+        key=lambda item: (item[1], _authority_rank(nodes[item[0]])),
+        reverse=True,
+    )[:top_k]
     return [(nodes[node_id], score) for node_id, score in ordered]
 
 
@@ -755,6 +801,8 @@ def _auto_trigger_decision(
     bm25_signal: bool,
     vector_signal: bool,
 ) -> tuple[bool, str]:
+    # Automatic knowledge injection requires lexical evidence. Vector-only similarity
+    # previously caused unrelated enterprise documents to leak into open conversation.
     if forced:
         return True, "forced"
     if bm25_signal and vector_signal:
@@ -809,6 +857,28 @@ def _heading_anchor_mismatch(query: str, metadata: dict[str, Any]) -> bool:
 
 def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     knowledge_base_ids = list(dict.fromkeys(_kb_id(value) for value in request.knowledge_base_ids))
+    eligible_document_ids = (
+        None if request.eligible_document_ids is None
+        else frozenset(_document_id(value) for value in request.eligible_document_ids)
+    )
+    if eligible_document_ids is not None and not eligible_document_ids:
+        return {
+            "ok": True,
+            "triggered": False,
+            "results": [],
+            "retrieval": "governed-empty",
+            "engine": "local",
+            "metrics": {
+                "knowledge_base_count": 0, "bm25_max_score": 0,
+                "vector_min_distance": None, "reranker": "disabled", "cache_hit": False,
+                "eligible_document_count": 0, "eligible_filtered_out": 0,
+                "eligible_ratio": 0, "candidate_exhausted": False,
+            },
+        }
+
+    def document_is_eligible(node: TextNode) -> bool:
+        return eligible_document_ids is None or str(node.metadata.get("document_id") or "") in eligible_document_ids
+
     targets: list[tuple[str, RuntimeIndex]] = []
     for knowledge_base_id in knowledge_base_ids:
         version = _current_index_version(knowledge_base_id)
@@ -847,6 +917,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         bm25_threshold,
         vector_threshold,
         lexical_minimum_coverage,
+        tuple(sorted(eligible_document_ids)) if eligible_document_ids is not None else None,
     )
     cached = _query_cache_get(cache_key)
     if cached is not None:
@@ -854,25 +925,37 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
 
     auto_candidate = request.mode == "forced" or _auto_query_candidate(request.query)
     candidate_k = max(request.top_k * 3, request.top_k)
+    governed_candidate_k = max(candidate_k * 4, 200) if eligible_document_ids is not None else candidate_k
+    eligible_seen = 0
+    eligible_filtered_out = 0
     bm25_candidates: list[NodeWithScore] = []
     bm25_max_score = 0.0
     for knowledge_base_id, runtime in targets:
         nodes_by_id = {str(node.node_id): node for node in runtime.nodes}
-        for result in runtime.bm25.retrieve(QueryBundle(_bm25_text(request.query)))[:candidate_k]:
+        runtime.bm25.similarity_top_k = min(max(runtime.bm25.similarity_top_k, governed_candidate_k), len(runtime.nodes))
+        accepted_for_base = 0
+        for result in runtime.bm25.retrieve(QueryBundle(_bm25_text(request.query))):
             score = float(result.score or 0)
             original = nodes_by_id.get(str(result.node.node_id))
             if original is None or score <= 0:
+                continue
+            eligible_seen += 1
+            if not document_is_eligible(original):
+                eligible_filtered_out += 1
                 continue
             if request.mode == "auto" and not _auto_source_candidate(original):
                 continue
             bm25_max_score = max(bm25_max_score, score)
             bm25_candidates.append(NodeWithScore(node=_tag_node(original, knowledge_base_id), score=score))
+            accepted_for_base += 1
+            if accepted_for_base >= candidate_k:
+                break
     bm25_candidates.sort(key=lambda item: float(item.score or 0), reverse=True)
 
     vector_candidates: list[NodeWithScore] = []
     vector_min_distance: float | None = None
     embed_model = _embedding_model()
-    vector_policy_allowed = all(runtime.external_query_allowed for _, runtime in targets)
+    vector_policy_allowed = _vector_policy_allowed(targets, eligible_document_ids)
     if auto_candidate and vector_policy_allowed and embed_model is not None and any(runtime.vector_index is not None for _, runtime in targets):
         try:
             query_embedding = embed_model.get_query_embedding(request.query)
@@ -880,14 +963,22 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             for knowledge_base_id, runtime in targets:
                 if runtime.vector_index is None:
                     continue
-                retriever = runtime.vector_index.as_retriever(similarity_top_k=min(candidate_k, len(runtime.nodes)))
+                retriever = runtime.vector_index.as_retriever(similarity_top_k=min(governed_candidate_k, len(runtime.nodes)))
+                accepted_for_base = 0
                 for result in retriever.retrieve(query_bundle):
+                    eligible_seen += 1
+                    if not document_is_eligible(result.node):
+                        eligible_filtered_out += 1
+                        continue
                     if request.mode == "auto" and not _auto_source_candidate(result.node):
                         continue
                     distance = float(result.score) if result.score is not None else None
                     if distance is not None:
                         vector_min_distance = distance if vector_min_distance is None else min(vector_min_distance, distance)
                     vector_candidates.append(NodeWithScore(node=_tag_node(result.node, knowledge_base_id), score=result.score))
+                    accepted_for_base += 1
+                    if accepted_for_base >= candidate_k:
+                        break
             vector_candidates.sort(key=lambda item: float(item.score if item.score is not None else 1e9))
         except Exception:
             vector_candidates = []
@@ -917,6 +1008,18 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         forced=forced,
         bm25_signal=bm25_signal,
         vector_signal=vector_signal,
+    )
+    eligible_candidate_ids = {
+        str(candidate.node.node_id) for candidate in [*bm25_candidates, *vector_candidates]
+    }
+    eligible_ratio = (
+        1.0 if eligible_document_ids is None or eligible_seen == 0
+        else max(0.0, min(1.0, (eligible_seen - eligible_filtered_out) / eligible_seen))
+    )
+    candidate_exhausted = bool(
+        eligible_document_ids is not None
+        and eligible_filtered_out > 0
+        and len(eligible_candidate_ids) < request.top_k
     )
     result_sets: list[list[NodeWithScore]] = []
     if forced:
@@ -948,6 +1051,10 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
                 "lexical_match_count": lexical_match_count,
                 "lexical_coverage": round(lexical_coverage, 6),
                 "auto_gate": auto_gate,
+                "eligible_document_count": len(eligible_document_ids) if eligible_document_ids is not None else None,
+                "eligible_filtered_out": eligible_filtered_out,
+                "eligible_ratio": round(eligible_ratio, 6),
+                "candidate_exhausted": candidate_exhausted,
             },
         }
         _query_cache_put(cache_key, payload)
@@ -1024,6 +1131,10 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             "lexical_match_count": lexical_match_count,
             "lexical_coverage": round(lexical_coverage, 6),
             "auto_gate": auto_gate,
+            "eligible_document_count": len(eligible_document_ids) if eligible_document_ids is not None else None,
+            "eligible_filtered_out": eligible_filtered_out,
+            "eligible_ratio": round(eligible_ratio, 6),
+            "candidate_exhausted": candidate_exhausted,
         },
     }
     _query_cache_put(cache_key, payload)
