@@ -749,6 +749,23 @@ def _auto_source_candidate(node: TextNode) -> bool:
     return document_name not in _AUTO_REFERENCE_ONLY_DOCUMENTS
 
 
+def _auto_trigger_decision(
+    *,
+    forced: bool,
+    bm25_signal: bool,
+    vector_signal: bool,
+) -> tuple[bool, str]:
+    if forced:
+        return True, "forced"
+    if bm25_signal and vector_signal:
+        return True, "bm25+vector"
+    if bm25_signal:
+        return True, "bm25"
+    if vector_signal:
+        return False, "vector-rejected"
+    return False, "rejected"
+
+
 def _tag_node(node: TextNode, knowledge_base_id: str) -> TextNode:
     node.metadata = {**node.metadata, "knowledge_base_id": knowledge_base_id}
     return node
@@ -896,13 +913,10 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         candidate for candidate in vector_candidates
         if candidate.score is not None and float(candidate.score) <= vector_threshold
     ]
-    triggered = forced or bm25_signal or vector_signal
-    auto_gate = (
-        "forced" if forced
-        else "bm25+vector" if bm25_signal and vector_signal
-        else "bm25" if bm25_signal
-        else "vector" if vector_signal
-        else "rejected"
+    triggered, auto_gate = _auto_trigger_decision(
+        forced=forced,
+        bm25_signal=bm25_signal,
+        vector_signal=vector_signal,
     )
     result_sets: list[list[NodeWithScore]] = []
     if forced:
@@ -913,7 +927,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     else:
         if bm25_signal and relevant_bm25_candidates:
             result_sets.append(relevant_bm25_candidates)
-        if vector_signal and relevant_vector_candidates:
+        if bm25_signal and vector_signal and relevant_vector_candidates:
             result_sets.append(relevant_vector_candidates)
     if not triggered or not result_sets:
         payload = {

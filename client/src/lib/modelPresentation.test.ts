@@ -26,6 +26,26 @@ describe("presentModel", () => {
     });
   });
 
+  it("presents Nemotron Nano with the NVIDIA provider icon", () => {
+    expect(
+      presentModel({
+        id: "Nemotron Nano",
+        name: "Nemotron Nano",
+        provider: "OpenRouter",
+      })
+    ).toMatchObject({
+      displayName: "Nemotron Nano",
+      brand: "nvidia",
+      iconSrc: "/images/model-providers/nvidia.svg",
+    });
+
+    expect(
+      presentModel({
+        id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+      }).displayName
+    ).toBe("Nemotron 3 Nano");
+  });
+
   it("presents automatic selection as a first-class option", () => {
     expect(presentModel({ id: "__auto", name: "自动" })).toMatchObject({
       displayName: "自动",

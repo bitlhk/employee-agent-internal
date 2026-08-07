@@ -1,4 +1,4 @@
-import { getUserById, listAccessibleKnowledgeBases } from "../db";
+import { getUserById, listAccessibleKnowledgeBases, type KnowledgeBaseRecord } from "../db";
 import { retrieveAcrossKnowledgeBases, type KnowledgeRetrievalMode } from "./knowledge-service";
 import { stripEaInternalRuntimeContext } from "../../shared/ea-runtime-context";
 import { stripExpertHandoffRuntimeMessage } from "../../shared/expert-handoff-context";
@@ -38,25 +38,94 @@ export type ChatKnowledgeResult = {
     lexicalMatchCount?: number;
     lexicalCoverage?: number;
     autoGate?: string;
+    routeReason?: AutomaticKnowledgeRouteReason;
+    routedBaseCount?: number;
   };
 };
 
+type AutomaticKnowledgeRouteReason =
+  | "explicit-source"
+  | "enterprise-scope"
+  | "governed-topic"
+  | "skipped-empty"
+  | "skipped-realtime"
+  | "skipped-conversation-meta"
+  | "skipped-platform-meta"
+  | "skipped-open-discussion"
+  | "skipped-no-intent";
+
 const REALTIME_QUERY_RE = /(天气|气温|温度|下雨|降雨|降水|空气质量|台风|几点|现在时间|今天几号|星期几|实时路况)/i;
 const CONVERSATION_META_QUERY_RE = /(?:第[一二三四五六七八九十\d]+次(?:见面|对话|聊天)|(?:我们|你和我).{0,10}(?:以前|之前|曾经).{0,10}(?:聊过|对话过|见过)|(?:你)?(?:还)?记得(?:我|我们|之前|上次)|(?:之前|刚才|上次).{0,10}(?:说了|聊了|问了|对话)|(?:会话|对话|聊天)(?:记录|历史|上下文)|(?:身份|记忆)(?:文件|状态|为空|是空的)|你是谁|自我介绍)/i;
+const PLATFORM_META_QUERY_RE = /(?:你(?:现在|当前)?(?:用|使用|运行|选择)(?:了|的)?(?:是)?(?:什么|哪个|哪种)?模型|你是(?:什么|哪个|哪种)?模型|你的模型(?:名称|版本|标识|ID)?(?:是)?(?:什么|多少|哪个)?|(?:当前|本次|这次)(?:对话|会话|回答)?(?:正在)?(?:用|使用|运行|选择)(?:了|的)?(?:是)?(?:什么|哪个|哪种)?模型|这个(?:助手|智能体)(?:正在)?(?:用|使用|运行)(?:了|的)?(?:是)?(?:什么|哪个|哪种)?模型)/i;
 const OPEN_DISCUSSION_QUERY_RE = /(?:你怎么看|你(?:怎么)?认为|你觉得|如何看待|谈谈|聊聊|我(?:个人)?感觉|我(?:个人)?认为|发展趋势|未来趋势|最近.{0,12}趋势|趋势.{0,8}(?:如何|怎样|怎么看))/i;
-const ENTERPRISE_KNOWLEDGE_SIGNAL_RE = /(?:根据|依据|知识库|资料|文档|附件|文件|制度|办法|规范|流程|政策|规定|手册|指引|合同|条款|报告|报销|审批|客户|产品|业务|合规|风控|本行|我司|本公司|公司内部|企业内部|我们(?:公司|单位|部门|团队))/i;
+const EXPLICIT_KNOWLEDGE_SOURCE_RE = /(?:知识库|(?:根据|依据|结合|查阅|查询|检索|参照).{0,18}(?:资料|文档|附件|文件|制度|办法|规范|流程|政策|规定|标准|手册|指引|合同|条款|报告|年报|招股书)|(?:这份|上述|上传的|附件中的).{0,10}(?:资料|文档|文件|制度|报告|年报|招股书|合同))/i;
+const KNOWLEDGE_ARTIFACT_RE = /(?:制度|办法|规范|政策|规定|手册|指引|合同|条款|年报|招股书|操作规程|审批流程|报销标准)/i;
+const ENTERPRISE_SCOPE_RE = /(?:本行|我行|我司|本公司|公司内部|企业内部|单位内部|部门内部|我们(?:公司|单位|部门|团队))/i;
+const GOVERNED_TOPIC_RE = /(?:差旅|报销|住宿|酒店|机票|交通|请假|审批|客户信息|数据外发|数据分级|反洗钱|尽职调查|适当性|双录|授信|贷后|岗位职责|权限边界|服务入口|产品准入|风险评级|合规要求|风控要求|客户.{0,8}适当性|模型.{0,8}(?:验证|风险管理))/i;
+const GOVERNANCE_QUESTION_RE = /(?:标准|上限|流程|要求|规定|规则|职责|权限|口径|边界|分级|保护|外发|审批|准入|风险|怎么|如何|是否|能否|可以|是什么|多少)/i;
+const KNOWLEDGE_BASE_TERM_STOPWORDS = new Set([
+  "知识", "知识库", "企业", "岗位", "专业", "通用", "演示", "相关", "资料", "文档",
+  "管理", "平台", "助手", "智能体", "内部", "默认", "规则", "规范",
+]);
 
 export function knowledgeRetrievalQuery(value: unknown): string {
   const withoutInternalContext = stripExpertHandoffRuntimeMessage(stripEaInternalRuntimeContext(value));
   return parseUploadedAttachmentRuntimeMessage(withoutInternalContext).text.trim().slice(0, 2000);
 }
 
-function shouldAttemptAutomaticRetrieval(query: string): boolean {
+function automaticKnowledgeRoute(query: string): AutomaticKnowledgeRouteReason {
   const compact = query.replace(/\s+/g, "");
-  if (!compact || REALTIME_QUERY_RE.test(compact) || CONVERSATION_META_QUERY_RE.test(compact)) {
-    return false;
+  if (!compact) return "skipped-empty";
+  if (REALTIME_QUERY_RE.test(compact)) return "skipped-realtime";
+  if (CONVERSATION_META_QUERY_RE.test(compact)) return "skipped-conversation-meta";
+  if (PLATFORM_META_QUERY_RE.test(compact)) return "skipped-platform-meta";
+  if (EXPLICIT_KNOWLEDGE_SOURCE_RE.test(compact)) return "explicit-source";
+  if (ENTERPRISE_SCOPE_RE.test(compact) && (KNOWLEDGE_ARTIFACT_RE.test(compact) || GOVERNANCE_QUESTION_RE.test(compact))) {
+    return "enterprise-scope";
   }
-  return !OPEN_DISCUSSION_QUERY_RE.test(compact) || ENTERPRISE_KNOWLEDGE_SIGNAL_RE.test(compact);
+  if (GOVERNED_TOPIC_RE.test(compact) && GOVERNANCE_QUESTION_RE.test(compact)) return "governed-topic";
+  if (OPEN_DISCUSSION_QUERY_RE.test(compact)) return "skipped-open-discussion";
+  if (KNOWLEDGE_ARTIFACT_RE.test(compact)) return "explicit-source";
+  return "skipped-no-intent";
+}
+
+function normalizedKnowledgeText(value: string): string {
+  return value.toLocaleLowerCase("zh-CN").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function knowledgeBaseTerms(base: KnowledgeBaseRecord): string[] {
+  const text = `${base.name} ${base.description}`.trim();
+  if (!text) return [];
+  const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
+  const terms = new Set<string>();
+  for (const item of segmenter.segment(text)) {
+    const term = normalizedKnowledgeText(item.segment);
+    if (term.length < 2 || KNOWLEDGE_BASE_TERM_STOPWORDS.has(term)) continue;
+    terms.add(term);
+  }
+  return Array.from(terms);
+}
+
+export function selectAutomaticKnowledgeBases(
+  bases: KnowledgeBaseRecord[],
+  query: string,
+  limit = 2,
+): KnowledgeBaseRecord[] {
+  const normalizedQuery = normalizedKnowledgeText(query);
+  const boundedLimit = Math.max(1, Math.min(limit, 2));
+  return bases
+    .map((base, index) => {
+      const normalizedName = normalizedKnowledgeText(base.name)
+        .replace(/(?:知识库|岗位知识|企业知识|演示)$/u, "");
+      const directNameMatch = normalizedName.length >= 2 && normalizedQuery.includes(normalizedName);
+      const matchedTerms = knowledgeBaseTerms(base).filter((term) => normalizedQuery.includes(term));
+      const termScore = matchedTerms.reduce((score, term) => score + Math.min(term.length, 8), 0);
+      const scopeScore = base.scope === "role" ? 2 : 1;
+      return { base, index, score: (directNameMatch ? 100 : 0) + termScore + scopeScore };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .slice(0, boundedLimit)
+    .map(({ base }) => base);
 }
 
 export async function buildChatKnowledgeContext(input: {
@@ -75,32 +144,50 @@ export async function buildChatKnowledgeContext(input: {
     roleTemplate: input.roleTemplate,
   });
   const manual = requestedIds.length > 0;
-  const selected = accessible.filter((base) => (
+  const eligible = accessible.filter((base) => (
     base.status === "ready" && (manual
       ? requestedIds.includes(base.publicId)
       : base.scope === "enterprise" || base.scope === "role")
   ));
+  const routeReason = manual ? undefined : automaticKnowledgeRoute(input.query);
   const mode = manual ? "manual" as const : "auto" as const;
-  if (!selected.length) {
+  if (!eligible.length) {
     return {
       context: "",
       sources: [],
       mode: "none",
       retrieval: "unavailable",
       candidateBaseCount: 0,
-      metrics: { bm25MaxScore: 0, vectorMinDistance: null, queryCount: 0, queryExpansion: "skipped", reranker: "disabled" },
+      metrics: {
+        bm25MaxScore: 0,
+        vectorMinDistance: null,
+        queryCount: 0,
+        queryExpansion: "skipped",
+        reranker: "disabled",
+        routeReason,
+        routedBaseCount: 0,
+      },
     };
   }
-  if (!manual && !shouldAttemptAutomaticRetrieval(input.query)) {
+  if (!manual && routeReason?.startsWith("skipped-")) {
     return {
       context: "",
       sources: [],
       mode,
       retrieval: "skipped",
-      candidateBaseCount: selected.length,
-      metrics: { bm25MaxScore: 0, vectorMinDistance: null, queryCount: 0, queryExpansion: "skipped", reranker: "disabled" },
+      candidateBaseCount: eligible.length,
+      metrics: {
+        bm25MaxScore: 0,
+        vectorMinDistance: null,
+        queryCount: 0,
+        queryExpansion: "skipped",
+        reranker: "disabled",
+        routeReason,
+        routedBaseCount: 0,
+      },
     };
   }
+  const selected = manual ? eligible : selectAutomaticKnowledgeBases(eligible, input.query);
   const retrievalMode: KnowledgeRetrievalMode = manual ? "forced" : "auto";
   const retrieval = await retrieveAcrossKnowledgeBases(selected, input.query, manual ? 6 : 4, retrievalMode);
   const totalBudget = manual ? 8000 : 4800;
@@ -150,7 +237,7 @@ export async function buildChatKnowledgeContext(input: {
       sources: [],
       mode,
       retrieval: retrieval.retrieval,
-      candidateBaseCount: selected.length,
+      candidateBaseCount: eligible.length,
       metrics: {
         bm25MaxScore: retrieval.metrics.bm25MaxScore,
         bm25RelevantMaxScore: retrieval.metrics.bm25RelevantMaxScore,
@@ -162,6 +249,8 @@ export async function buildChatKnowledgeContext(input: {
         lexicalMatchCount: retrieval.metrics.lexicalMatchCount,
         lexicalCoverage: retrieval.metrics.lexicalCoverage,
         autoGate: retrieval.metrics.autoGate,
+        routeReason,
+        routedBaseCount: selected.length,
       },
     };
   }
@@ -184,7 +273,7 @@ export async function buildChatKnowledgeContext(input: {
     sources,
     mode,
     retrieval: retrieval.retrieval,
-    candidateBaseCount: selected.length,
+    candidateBaseCount: eligible.length,
     metrics: {
       bm25MaxScore: retrieval.metrics.bm25MaxScore,
       bm25RelevantMaxScore: retrieval.metrics.bm25RelevantMaxScore,
@@ -196,6 +285,8 @@ export async function buildChatKnowledgeContext(input: {
       lexicalMatchCount: retrieval.metrics.lexicalMatchCount,
       lexicalCoverage: retrieval.metrics.lexicalCoverage,
       autoGate: retrieval.metrics.autoGate,
+      routeReason,
+      routedBaseCount: selected.length,
     },
     context: [
       "<ea_knowledge_context>",

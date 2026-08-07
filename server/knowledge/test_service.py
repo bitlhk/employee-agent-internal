@@ -298,6 +298,36 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertFalse(service._auto_source_candidate(source_index))
         self.assertTrue(service._auto_source_candidate(policy))
 
+    def test_auto_trigger_rejects_vector_only_similarity(self):
+        triggered, gate = service._auto_trigger_decision(
+            forced=False,
+            bm25_signal=False,
+            vector_signal=True,
+        )
+
+        self.assertFalse(triggered)
+        self.assertEqual(gate, "vector-rejected")
+
+    def test_auto_trigger_uses_vector_only_as_bm25_support(self):
+        triggered, gate = service._auto_trigger_decision(
+            forced=False,
+            bm25_signal=True,
+            vector_signal=True,
+        )
+
+        self.assertTrue(triggered)
+        self.assertEqual(gate, "bm25+vector")
+
+    def test_forced_retrieval_is_not_subject_to_automatic_signals(self):
+        triggered, gate = service._auto_trigger_decision(
+            forced=True,
+            bm25_signal=False,
+            vector_signal=False,
+        )
+
+        self.assertTrue(triggered)
+        self.assertEqual(gate, "forced")
+
 
 if __name__ == "__main__":
     unittest.main()

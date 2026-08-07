@@ -3163,7 +3163,6 @@ export default function Home() {
       })).filter((source: ChatKnowledgeSource) => (
         source.index > 0 && source.knowledgeBaseId && source.documentId && source.documentName
       )).slice(0, 12);
-      if (!sources.length) return;
       setLingxiaMsgs((previous) => previous.map((item) => (
         item.id === assistantMessageId ? { ...item, knowledgeSources: sources } : item
       )));

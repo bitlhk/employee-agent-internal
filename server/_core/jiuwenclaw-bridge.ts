@@ -30,7 +30,7 @@ import {
 } from "./jiuwen-session-artifacts";
 import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwenswarm-mcp-metrics";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
-import { validateKnowledgeCitations } from "@shared/knowledge-citations";
+import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { detectInstructionAttackSignals } from "./instruction-attack";
 import { classifyPermissionRisk } from "./permission-risk";
 import {
@@ -1195,9 +1195,15 @@ export async function forwardToJiuwenClaw(
           logEnd("chat_stream_artifact_manifest_failed", { error: String(error?.message || error).slice(0, 500) });
         }
       }
-      const validatedAssistantText = validateKnowledgeCitations(memoryAssistantText, knowledgeCitationIndexes).text;
+      const citationValidation = validateKnowledgeCitations(memoryAssistantText, knowledgeCitationIndexes);
+      const validatedAssistantText = citationValidation.text;
       if (validatedAssistantText && validatedAssistantText !== memoryAssistantText) {
         writeData({ __final_text: validatedAssistantText });
+      }
+      if (opts.knowledgeSources?.length) {
+        writeData({
+          __knowledge_sources: filterCitedKnowledgeSources(opts.knowledgeSources, citationValidation.citedIndexes),
+        });
       }
       memoryAssistantText = validatedAssistantText;
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });

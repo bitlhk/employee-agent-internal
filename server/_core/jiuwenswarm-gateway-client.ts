@@ -27,7 +27,7 @@ import { appendLogAsync, JIUWENCLAW_HOME, jiuwenClawSessionsDir, resolveRuntimeW
 import { privateMessageLogFields } from "./log-privacy";
 import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
-import { validateKnowledgeCitations } from "@shared/knowledge-citations";
+import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
@@ -419,9 +419,15 @@ export async function forwardToJiuwenGateway(
         reason,
       });
       const rawAssistantMessage = finalAssistantText.trim() || memoryAssistantText.trim();
-      const validatedAssistantMessage = validateKnowledgeCitations(rawAssistantMessage, knowledgeCitationIndexes).text;
+      const citationValidation = validateKnowledgeCitations(rawAssistantMessage, knowledgeCitationIndexes);
+      const validatedAssistantMessage = citationValidation.text;
       if (reason === "done" && validatedAssistantMessage && validatedAssistantMessage !== rawAssistantMessage && !clientClosed) {
         writeSseData(res, { __final_text: validatedAssistantMessage });
+      }
+      if (reason === "done" && opts.knowledgeSources?.length && !clientClosed) {
+        writeSseData(res, {
+          __knowledge_sources: filterCitedKnowledgeSources(opts.knowledgeSources, citationValidation.citedIndexes),
+        });
       }
       const assistantMessage = validatedAssistantMessage;
       if (reason === "done" && assistantMessage) {

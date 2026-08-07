@@ -3,6 +3,7 @@ export type KnowledgeCitationValidation = {
   normalizedCount: number;
   removedCount: number;
   markdownNormalizedCount: number;
+  citedIndexes: number[];
 };
 
 const KNOWLEDGE_CITATION_RE = /\[\s*知识\s*(\d+)([^\]]{0,32})\]/g;
@@ -14,11 +15,12 @@ export function validateKnowledgeCitations(
 ): KnowledgeCitationValidation {
   const text = String(value || "");
   const allowed = new Set(Array.from(allowedIndexes).filter((index) => Number.isInteger(index) && index > 0));
-  if (!text) return { text, normalizedCount: 0, removedCount: 0, markdownNormalizedCount: 0 };
+  if (!text) return { text, normalizedCount: 0, removedCount: 0, markdownNormalizedCount: 0, citedIndexes: [] };
 
   let normalizedCount = 0;
   let removedCount = 0;
   let markdownNormalizedCount = 0;
+  const citedIndexes = new Set<number>();
   const segments = text.split(CODE_SEGMENT_RE);
   const validated = segments.map((segment) => {
     if (segment.startsWith("`")) return segment;
@@ -32,13 +34,28 @@ export function validateKnowledgeCitations(
         removedCount += 1;
         return "";
       }
+      citedIndexes.add(index);
       const normalized = `[知识${index}]`;
       if (match !== normalized) normalizedCount += 1;
       return normalized;
     });
   }).join("");
 
-  return { text: validated, normalizedCount, removedCount, markdownNormalizedCount };
+  return {
+    text: validated,
+    normalizedCount,
+    removedCount,
+    markdownNormalizedCount,
+    citedIndexes: Array.from(citedIndexes),
+  };
+}
+
+export function filterCitedKnowledgeSources<T extends { index?: unknown }>(
+  sources: readonly T[],
+  citedIndexes: Iterable<number>,
+): T[] {
+  const cited = new Set(Array.from(citedIndexes));
+  return sources.filter((source) => cited.has(Number(source.index)));
 }
 
 export function formatKnowledgeCitations(

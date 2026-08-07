@@ -135,7 +135,7 @@ describe("ChatMessage tool timeline", () => {
       React.createElement(ChatMessage, {
         messageId: "msg-weather",
         role: "assistant",
-        text: "天气结果不应依赖这些资料。",
+        text: "结论一[知识1]，结论二[知识2]，结论三[知识3]，结论四[知识4]。",
         isLast: true,
         isPlaceholder: false,
         streaming: false,
@@ -158,6 +158,34 @@ describe("ChatMessage tool timeline", () => {
     expect((html.match(/SOURCES\.md/g) || [])).toHaveLength(2);
     expect(html).toContain("正文 · 4 处");
     expect(html).toContain('id="ea-knowledge-source-msg-weather-4"');
+  });
+
+  it("does not display retrieved knowledge sources that the response never cites", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatMessage, {
+        role: "assistant",
+        text: "这条回答没有使用知识库资料。",
+        isLast: true,
+        isPlaceholder: false,
+        streaming: false,
+        displayName: "测试助手",
+        modelId: "test-model",
+        timeLabel: "09:01",
+        knowledgeSources: [{
+          index: 1,
+          chunkId: "doc-1:c1",
+          parentId: "doc-1:p1",
+          knowledgeBaseId: "kb-1",
+          knowledgeBaseName: "企业知识",
+          documentId: "doc-1",
+          documentName: "不相关资料.md",
+          position: "正文",
+        }],
+      }),
+    );
+
+    expect(html).not.toContain("参考资料");
+    expect(html).not.toContain("不相关资料.md");
   });
 
   it("does not display a model-authored knowledge marker without source metadata", () => {

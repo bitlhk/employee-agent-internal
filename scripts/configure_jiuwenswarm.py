@@ -92,7 +92,7 @@ def main() -> int:
         config = pyyaml.safe_load(handle) or {}
 
     react = config.setdefault("react", {})
-    react["skill_mode"] = "auto_list"
+    react["skill_mode"] = "all"
 
     channels = config.setdefault("channels", {})
     linggan = channels.setdefault("linggan", {})

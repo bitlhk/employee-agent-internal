@@ -581,6 +581,8 @@ export function registerChatStreamRoutes(app: express.Express) {
             lexicalMatchCount: knowledge.metrics.lexicalMatchCount,
             lexicalCoverage: knowledge.metrics.lexicalCoverage,
             autoGate: knowledge.metrics.autoGate,
+            routeReason: knowledge.metrics.routeReason,
+            routedBaseCount: knowledge.metrics.routedBaseCount,
           });
         } catch (error) {
           appendLogAsync("jiuwenclaw-exec.log", {

@@ -9,7 +9,11 @@ import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
 import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { extractChatWebSources } from "@/lib/web-sources";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
-import { formatKnowledgeCitations, validateKnowledgeCitations } from "@shared/knowledge-citations";
+import {
+  filterCitedKnowledgeSources,
+  formatKnowledgeCitations,
+  validateKnowledgeCitations,
+} from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
@@ -747,15 +751,20 @@ function ChatMessageInner({
       .filter((index) => Number.isInteger(index) && index > 0),
     [knowledgeSources],
   );
-  const displayText = useMemo(() => {
+  const citationValidation = useMemo(() => {
     const publicText = sanitizePublicRuntimePaths(cleanLeakedToolTags(displayedSourceText));
     return streaming
-      ? publicText
-      : validateKnowledgeCitations(publicText, knowledgeSourceIndexes).text;
+      ? { text: publicText, citedIndexes: [] as number[] }
+      : validateKnowledgeCitations(publicText, knowledgeSourceIndexes);
   }, [displayedSourceText, knowledgeSourceIndexes, streaming]);
+  const displayText = citationValidation.text;
+  const citedKnowledgeSources = useMemo(
+    () => filterCitedKnowledgeSources(knowledgeSources || [], citationValidation.citedIndexes),
+    [citationValidation.citedIndexes, knowledgeSources],
+  );
   const knowledgeSourceGroups = useMemo(() => {
     const groups = new Map<string, { source: ChatKnowledgeSource; indexes: number[]; knowledgeBaseNames: string[] }>();
-    for (const source of knowledgeSources || []) {
+    for (const source of citedKnowledgeSources) {
       const key = `${source.documentName.trim().toLocaleLowerCase("zh-CN")}\u0000${source.position.trim().toLocaleLowerCase("zh-CN")}`;
       const existing = groups.get(key);
       if (existing) {
@@ -766,7 +775,7 @@ function ChatMessageInner({
       groups.set(key, { source, indexes: [source.index], knowledgeBaseNames: [source.knowledgeBaseName] });
     }
     return Array.from(groups.values());
-  }, [knowledgeSources]);
+  }, [citedKnowledgeSources]);
   const knowledgeCitationLabels = useMemo(() => {
     const labels: Record<number, string> = {};
     for (const source of knowledgeSources || []) {
@@ -919,7 +928,7 @@ function ChatMessageInner({
           onOpenArtifacts={onOpenAgentArtifact}
         />
         {!streaming && webSources.length > 0 ? <WebSourceCard sources={webSources} /> : null}
-        {!streaming && knowledgeSources?.length ? (
+        {!streaming && citedKnowledgeSources.length ? (
           <div className="lingxia-knowledge-sources" aria-label="知识来源">
             <span className="lingxia-knowledge-sources__label"><BookOpen />参考资料</span>
             {knowledgeSourceGroups.map(({ source, indexes, knowledgeBaseNames }) => (

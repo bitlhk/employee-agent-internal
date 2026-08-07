@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { formatKnowledgeCitations, validateKnowledgeCitations } from "@shared/knowledge-citations";
+import {
+  filterCitedKnowledgeSources,
+  formatKnowledgeCitations,
+  validateKnowledgeCitations,
+} from "@shared/knowledge-citations";
 
 describe("knowledge citation validation", () => {
   it("normalizes valid references and removes unknown source ids", () => {
@@ -10,6 +14,7 @@ describe("knowledge citation validation", () => {
     expect(result.text).toBe("结论一[知识1]，结论二，结论三[知识2]。");
     expect(result.normalizedCount).toBe(1);
     expect(result.removedCount).toBe(1);
+    expect(result.citedIndexes).toEqual([1, 2]);
   });
 
   it("removes knowledge markers when the current turn has no knowledge sources", () => {
@@ -20,6 +25,7 @@ describe("knowledge citation validation", () => {
 
     expect(result.text).toBe("工具返回了公开信息，但本轮没有知识库来源。");
     expect(result.removedCount).toBe(1);
+    expect(result.citedIndexes).toEqual([]);
   });
 
   it("does not rewrite examples inside fenced code blocks", () => {
@@ -39,5 +45,11 @@ describe("knowledge citation validation", () => {
     expect(formatKnowledgeCitations("结论[知识2]，`[知识2]`", { 2: "第 27 页" })).toBe(
       "结论[2 · 第 27 页]，`[知识2]`",
     );
+  });
+
+  it("keeps only sources actually cited by the final response", () => {
+    const sources = [{ index: 1, name: "制度" }, { index: 2, name: "手册" }];
+    expect(filterCitedKnowledgeSources(sources, [2])).toEqual([{ index: 2, name: "手册" }]);
+    expect(filterCitedKnowledgeSources(sources, [])).toEqual([]);
   });
 });

@@ -22,6 +22,7 @@ export type ModelBrand =
   | "glm"
   | "pangu"
   | "deepseek"
+  | "nvidia"
   | "qwen"
   | "openai"
   | "generic";
@@ -37,6 +38,7 @@ export type ModelPresentation = {
 const BRAND_ICON_SRC: Partial<Record<ModelBrand, string>> = {
   deepseek: "/images/model-providers/deepseek.svg",
   glm: "/images/model-providers/glm.png",
+  nvidia: "/images/model-providers/nvidia.svg",
   pangu: "/images/model-providers/pangu.png",
 };
 
@@ -77,6 +79,15 @@ function formatKnownModelName(token: string, brand: ModelBrand) {
     return name ? `DeepSeek-${name}` : "DeepSeek";
   }
 
+  if (brand === "nvidia") {
+    if (/^nemotron[ -]nano(?:\s|$)/i.test(token)) return token;
+    if (/nemotron/i.test(normalized)) {
+      const version = normalized.match(/nemotron-([\d.]+)-nano/i)?.[1];
+      return version ? `Nemotron ${version} Nano` : "Nemotron Nano";
+    }
+    return "NVIDIA";
+  }
+
   if (brand === "qwen") {
     return normalized
       .replace(/^qwen-?/i, "")
@@ -108,6 +119,8 @@ function identifyBrand(token: string): ModelBrand {
   if (normalized.includes("openpangu") || normalized.includes("pangu"))
     return "pangu";
   if (normalized.includes("deepseek")) return "deepseek";
+  if (normalized.includes("nvidia") || normalized.includes("nemotron"))
+    return "nvidia";
   if (normalized.includes("qwen")) return "qwen";
   if (normalized.includes("glm")) return "glm";
   if (/(^|[-_/])(gpt|o\d|codex)([-_/]|$)/i.test(normalized)) return "openai";

@@ -15,10 +15,16 @@ vi.mock("./knowledge-service", () => ({
   retrieveAcrossKnowledgeBases: mocks.retrieveAcrossKnowledgeBases,
 }));
 
-import { buildChatKnowledgeContext, knowledgeRetrievalQuery, publicChatKnowledgeSources } from "./knowledge-context";
+import {
+  buildChatKnowledgeContext,
+  knowledgeRetrievalQuery,
+  publicChatKnowledgeSources,
+  selectAutomaticKnowledgeBases,
+} from "./knowledge-context";
 import { buildExpertHandoffRuntimeMessage } from "../../shared/expert-handoff-context";
+import type { KnowledgeBaseRecord } from "../db";
 
-const readyBase = {
+const readyBase: KnowledgeBaseRecord = {
   id: 1,
   publicId: "kb_readybase1",
   ownerUserId: 7,
@@ -28,10 +34,14 @@ const readyBase = {
   roleTemplate: null,
   name: "制度库",
   description: "",
+  classification: "internal",
+  externalProcessingAllowed: true,
   status: "ready",
   documentCount: 1,
   chunkCount: 2,
   lastError: null,
+  indexVersion: null,
+  indexSchemaVersion: 2,
   indexedAt: null,
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
@@ -99,8 +109,66 @@ describe("knowledge chat context", () => {
       query: "客户适当性要求",
     });
 
-    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith([enterprise, role], "客户适当性要求", 4, "auto");
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith([role, enterprise], "客户适当性要求", 4, "auto");
     expect(result.mode).toBe("auto");
+    expect(result.metrics.routeReason).toBe("governed-topic");
+    expect(result.metrics.routedBaseCount).toBe(2);
+  });
+
+  it("does not treat general substantive questions or broad business nouns as knowledge intent", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    for (const query of [
+      "最新的 Kimi K3 为什么比较强",
+      "人工智能实施行动计划已经发布了吗",
+      "帮我分析一下这个客户的产品偏好",
+      "这个业务未来会怎么发展",
+    ]) {
+      const result = await buildChatKnowledgeContext({
+        userId: 7,
+        roleTemplate: "wealth-manager",
+        requestedIds: [],
+        query,
+      });
+      expect(result.retrieval).toBe("skipped");
+      expect(result.metrics.routeReason).toMatch(/^skipped-/);
+    }
+
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("routes only the two most relevant automatic knowledge bases", () => {
+    const role: KnowledgeBaseRecord = {
+      ...readyBase,
+      id: 4,
+      publicId: "kb_rolebase001",
+      scope: "role",
+      roleTemplate: "wealth-manager",
+      name: "财富经理岗位知识",
+      description: "客户经营与资产配置",
+    };
+    const travel: KnowledgeBaseRecord = {
+      ...readyBase,
+      id: 5,
+      publicId: "kb_travel001",
+      scope: "enterprise",
+      name: "差旅报销制度",
+      description: "住宿、机票和审批标准",
+    };
+    const aml: KnowledgeBaseRecord = {
+      ...readyBase,
+      id: 6,
+      publicId: "kb_aml000001",
+      scope: "enterprise",
+      name: "反洗钱指引",
+      description: "客户尽职调查与可疑交易",
+    };
+
+    expect(selectAutomaticKnowledgeBases([role, aml, travel], "差旅报销的住宿标准是多少")).toEqual([
+      travel,
+      role,
+    ]);
   });
 
   it("does not inject sources when automatic relevance gating does not trigger", async () => {
@@ -155,6 +223,42 @@ describe("knowledge chat context", () => {
     expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
   });
 
+  it("skips automatic retrieval for platform model questions", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    for (const query of ["你用的什么模型啊", "你现在使用的是哪个模型", "当前对话选择了什么模型", "你的模型版本是什么"]) {
+      const result = await buildChatKnowledgeContext({
+        userId: 7,
+        roleTemplate: "wealth-manager",
+        requestedIds: [],
+        query,
+      });
+      expect(result.retrieval).toBe("skipped");
+      expect(result.sources).toEqual([]);
+    }
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("keeps automatic retrieval for business questions about model governance", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [],
+      query: "根据模型风险管理规范说明模型验证要求",
+    });
+
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith(
+      [enterprise],
+      "根据模型风险管理规范说明模型验证要求",
+      4,
+      "auto",
+    );
+  });
+
   it("skips automatic retrieval for open-ended trend discussion without enterprise context", async () => {
     const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
     mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
@@ -168,6 +272,22 @@ describe("knowledge chat context", () => {
 
     expect(result.retrieval).toBe("skipped");
     expect(result.sources).toEqual([]);
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("does not let a generic policy word override an open-ended discussion", async () => {
+    const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [],
+      query: "你怎么看全球人工智能政策的未来趋势",
+    });
+
+    expect(result.retrieval).toBe("skipped");
+    expect(result.metrics.routeReason).toBe("skipped-open-discussion");
     expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
   });
 

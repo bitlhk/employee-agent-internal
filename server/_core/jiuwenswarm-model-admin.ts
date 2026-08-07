@@ -331,6 +331,7 @@ export async function validateJiuwenModel(draft: JiuwenModelDraft): Promise<void
     api_key: model.apiKey,
     model: model.modelName,
     model_provider: model.provider,
+    verify_ssl: model.verifySsl,
     ...(model.reasoningLevel ? { reasoning_level: model.reasoningLevel } : {}),
   });
 }

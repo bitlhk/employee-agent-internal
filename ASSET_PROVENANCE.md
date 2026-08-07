@@ -60,6 +60,20 @@ package solely to identify the configured model provider:
 DeepSeek and its associated mark remain the property of their respective
 owner. This nominative use does not imply sponsorship or endorsement.
 
+The NVIDIA provider icon is distributed from the Lobe Icons static SVG
+package solely to identify the configured NVIDIA Nemotron model provider:
+
+- Distributed asset: `client/public/images/model-providers/nvidia.svg`
+- Upstream source: `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/nvidia-color.svg`
+- Upstream project: `https://github.com/lobehub/lobe-icons`
+- Retrieved: 2026-08-07
+- License: MIT; the license text is distributed at
+  `client/public/licenses/Lobe-Icons-MIT.txt`
+
+NVIDIA, Nemotron, and their associated marks remain the property of their
+respective owner. This nominative use does not imply sponsorship or
+endorsement.
+
 ## Connector identification
 
 The public connector catalog uses project-selected neutral Lucide icons rather
