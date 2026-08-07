@@ -74,6 +74,33 @@ NVIDIA, Nemotron, and their associated marks remain the property of their
 respective owner. This nominative use does not imply sponsorship or
 endorsement.
 
+The Gemma and OpenAI provider icons are distributed from the Lobe Icons static
+SVG package solely to identify their configured models:
+
+- Distributed assets: `client/public/images/model-providers/gemma.svg` and
+  `client/public/images/model-providers/openai.svg`
+- Upstream sources: `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/gemma-color.svg`
+  and `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/openai.svg`
+- Upstream project: `https://github.com/lobehub/lobe-icons`
+- Retrieved: 2026-08-07
+- License: MIT; the license text is distributed at
+  `client/public/licenses/Lobe-Icons-MIT.txt`
+
+Gemma, Google, OpenAI, and their associated marks remain the property of their
+respective owners. This nominative use does not imply sponsorship or
+endorsement.
+
+The Poolside icon is retrieved from Poolside's official public website solely
+to identify the configured Laguna model:
+
+- Distributed asset: `client/public/images/model-providers/poolside.svg`
+- Upstream source: `https://poolside.ai/favicon/favicon.svg`
+- Retrieved: 2026-08-07
+
+Poolside, Laguna, and their associated marks remain the property of their
+respective owner. This nominative use does not imply sponsorship or
+endorsement.
+
 ## Connector identification
 
 The public connector catalog uses project-selected neutral Lucide icons rather

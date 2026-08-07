@@ -36,6 +36,13 @@ copyright and license metadata remains available in each installed package.
   license text is distributed at `client/public/licenses/Lobe-Icons-MIT.txt`.
   The provider mark is used solely for identification and remains the property
   of its respective owner.
+- Lobe Icons Gemma and OpenAI provider icons, Copyright 2023 LobeHub, MIT
+  License. The license text is distributed at
+  `client/public/licenses/Lobe-Icons-MIT.txt`. Provider marks are used solely
+  for identification and remain the property of their respective owners.
+- Poolside provider icon, retrieved from the official Poolside website and
+  redistributed solely to identify the configured Laguna model. Poolside and
+  its associated marks remain the property of their respective owner.
 
 ## Integration Names and Trademarks
 

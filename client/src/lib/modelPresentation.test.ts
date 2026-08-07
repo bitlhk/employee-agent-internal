@@ -46,6 +46,30 @@ describe("presentModel", () => {
     ).toBe("Nemotron 3 Nano");
   });
 
+  it("uses distinct provider icons for OpenRouter models", () => {
+    expect(
+      presentModel({ id: "Gemma 4 26B", name: "Gemma 4 26B", provider: "OpenRouter" })
+    ).toMatchObject({
+      displayName: "Gemma 4 26B",
+      brand: "gemma",
+      iconSrc: "/images/model-providers/gemma.svg",
+    });
+    expect(
+      presentModel({ id: "Laguna S 2.1", name: "Laguna S 2.1", provider: "OpenRouter" })
+    ).toMatchObject({
+      displayName: "Laguna S 2.1",
+      brand: "poolside",
+      iconSrc: "/images/model-providers/poolside.svg",
+    });
+    expect(
+      presentModel({ id: "GPT-5.6 Luna", name: "GPT-5.6 Luna", provider: "OpenRouter" })
+    ).toMatchObject({
+      displayName: "GPT-5.6 Luna",
+      brand: "openai",
+      iconSrc: "/images/model-providers/openai.svg",
+    });
+  });
+
   it("presents automatic selection as a first-class option", () => {
     expect(presentModel({ id: "__auto", name: "自动" })).toMatchObject({
       displayName: "自动",
