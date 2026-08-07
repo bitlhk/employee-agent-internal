@@ -181,6 +181,7 @@ type ChatMessageProps = {
   knowledgeSources?: ChatKnowledgeSource[];
   toolCalls?: ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
+  processingDurationMs?: number;
   agentTasks?: AgentTask[];
   showToolCalls?: boolean;
   usage?: { input: number; output: number };
@@ -399,7 +400,15 @@ function toolTimelineActivityLabel(status: string | undefined, calls: ToolCallEn
   return clean;
 }
 
-function toolTimelineDurationLabel(calls: ToolCallEntry[], now: number): string {
+function toolTimelineDurationLabel(
+  calls: ToolCallEntry[],
+  now: number,
+  processingDurationMs?: number,
+): string {
+  if (Number.isFinite(processingDurationMs) && Number(processingDurationMs) > 0) {
+    const seconds = Math.max(0, Math.round(Number(processingDurationMs) / 1000));
+    return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  }
   const startedAt = Math.min(...calls.map((call) => Number(call.ts || now)).filter(Number.isFinite));
   if (!Number.isFinite(startedAt)) return "";
   const running = calls.some((call) => call.status === "running");
@@ -411,14 +420,19 @@ function toolTimelineDurationLabel(calls: ToolCallEntry[], now: number): string 
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function toolCallSummaryLabel(calls: ToolCallEntry[], activityLabel: string, now: number): string {
+function toolCallSummaryLabel(
+  calls: ToolCallEntry[],
+  activityLabel: string,
+  now: number,
+  processingDurationMs?: number,
+): string {
   const running = calls.filter((tc) => tc.status === "running").length;
   const errors = calls.filter((tc) => tc.status === "error").length;
   const currentCall = [...calls].reverse().find((call) => call.status === "running");
   const stage = activityLabel
     || (currentCall ? `正在${toolCallLabel(currentCall).replace(/^正在/, "")}` : "")
     || (errors ? "处理遇到问题" : `处理完成 · ${calls.length} 个步骤`);
-  const duration = toolTimelineDurationLabel(calls, now);
+  const duration = toolTimelineDurationLabel(calls, now, processingDurationMs);
   return [
     stage,
     running > 1 ? `${running} 个步骤执行中` : "",
@@ -504,10 +518,12 @@ function ToolCallTimeline({
   toolCalls,
   status,
   contentStarted = false,
+  processingDurationMs,
 }: {
   toolCalls: ToolCallEntry[];
   status?: string;
   contentStarted?: boolean;
+  processingDurationMs?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -559,7 +575,7 @@ function ToolCallTimeline({
           )}
         </span>
         <span className="lingxia-tool-summary__text" aria-live="polite">
-          {toolCallSummaryLabel(visibleCalls, activityLabel, now)}
+          {toolCallSummaryLabel(visibleCalls, activityLabel, now, processingDurationMs)}
         </span>
         <ChevronDown className="lingxia-tool-summary__chevron" size={12} strokeWidth={2} aria-hidden="true" />
       </button>
@@ -692,6 +708,7 @@ function ChatMessageInner({
   knowledgeSources,
   toolCalls,
   messageEvents,
+  processingDurationMs,
   agentTasks,
   showToolCalls = true,
   onDelete,
@@ -868,7 +885,11 @@ function ChatMessageInner({
         <div className="min-w-0 w-full">
           {showToolTimeline && (
             <div className="mb-2">
-              <ToolCallTimeline toolCalls={timelineToolCalls} status={streaming ? status : undefined} />
+              <ToolCallTimeline
+                toolCalls={timelineToolCalls}
+                status={streaming ? status : undefined}
+                processingDurationMs={processingDurationMs}
+              />
             </div>
           )}
           {!showToolTimeline ? (
@@ -895,6 +916,7 @@ function ChatMessageInner({
               toolCalls={timelineToolCalls}
               status={streaming ? status : undefined}
               contentStarted={Boolean(displayText.trim())}
+              processingDurationMs={processingDurationMs}
             />
           </div>
         )}
@@ -1317,6 +1339,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     JSON.stringify(prev.attachments || []) === JSON.stringify(next.attachments || []) &&
     JSON.stringify(prev.knowledgeSources || []) === JSON.stringify(next.knowledgeSources || []) &&
     prev.showToolCalls === next.showToolCalls &&
+    prev.processingDurationMs === next.processingDurationMs &&
     toolCallsRenderSignature(prev.toolCalls) === toolCallsRenderSignature(next.toolCalls) &&
     messageEventsRenderSignature(prev.messageEvents) === messageEventsRenderSignature(next.messageEvents) &&
     agentTasksRenderSignature(prev.agentTasks) === agentTasksRenderSignature(next.agentTasks) &&

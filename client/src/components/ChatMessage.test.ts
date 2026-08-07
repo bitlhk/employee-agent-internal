@@ -8,7 +8,7 @@ const { ChatMessage, ToolExecutionReceipt } = await import("./ChatMessage");
 
 function renderToolTimeline(
   toolCalls: ToolCallEntry[],
-  options: { status?: string; streaming?: boolean } = {},
+  options: { status?: string; streaming?: boolean; processingDurationMs?: number } = {},
 ) {
   return renderToStaticMarkup(
     React.createElement(ChatMessage, {
@@ -22,6 +22,7 @@ function renderToolTimeline(
       modelId: "test-model",
       timeLabel: "09:00",
       toolCalls,
+      processingDurationMs: options.processingDurationMs,
     }),
   );
 }
@@ -101,6 +102,26 @@ describe("ChatMessage tool timeline", () => {
     expect(html).toContain("is-done");
     expect(html).toContain("lucide-search");
     expect(html).toContain("完成");
+  });
+
+  it("uses the authoritative end-to-end duration after a runtime timeout", () => {
+    const html = renderToolTimeline(
+      [
+        {
+          id: "call-timeout",
+          name: "fetch_webpage",
+          arguments: '{"url":"https://example.com"}',
+          result: "ok",
+          status: "done",
+          durationMs: 1200,
+          ts: Date.now() - 1200,
+        },
+      ],
+      { streaming: false, processingDurationMs: 300_000 },
+    );
+
+    expect(html).toContain("5m 0s");
+    expect(html).not.toContain("1s");
   });
 
   it("renders a compact source trigger for completed web results", () => {

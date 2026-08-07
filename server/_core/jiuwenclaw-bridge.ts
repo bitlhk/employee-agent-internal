@@ -979,11 +979,14 @@ export async function forwardToJiuwenClaw(
   };
 
   let doneEmitted = false;
-  const emitDone = () => {
+  const emitDone = (durationMs?: number) => {
     if (doneEmitted) return;
     doneEmitted = true;
     if (!res.writableEnded) {
-      res.write(`data: ${JSON.stringify({ __stream_end: true })}\n\n`);
+      res.write(`data: ${JSON.stringify({
+        __stream_end: true,
+        ...(Number.isFinite(durationMs) ? { durationMs: Math.max(0, Math.round(Number(durationMs))) } : {}),
+      })}\n\n`);
       res.write("data: [DONE]\n\n");
       res.end();
     }
@@ -1009,6 +1012,8 @@ export async function forwardToJiuwenClaw(
     emitDone();
     return;
   }
+
+  const overallStartedAt = Date.now();
 
   if (opts.model) writeData({ __model_selected: opts.model });
   if (opts.knowledgeSources?.length) writeData({ __knowledge_sources: opts.knowledgeSources });
@@ -1155,11 +1160,17 @@ export async function forwardToJiuwenClaw(
       cleanup();
       resolve(outcome);
     };
-    const fail = (error: string) => {
+    const fail = (error: string, reasonCode?: string) => {
+      const durationMs = Date.now() - overallStartedAt;
       logEnd("chat_stream_failed", { error: error.slice(0, 1000) });
       opts.onRuntimeOutcome?.("error");
-      writeData({ __stream_error: true, error });
-      emitDone();
+      writeData({
+        __stream_error: true,
+        error,
+        durationMs,
+        ...(reasonCode ? { reasonCode } : {}),
+      });
+      emitDone(durationMs);
       settle();
     };
     const complete = () => {
@@ -1223,7 +1234,7 @@ export async function forwardToJiuwenClaw(
           toolNames: Array.from(memoryToolNames),
         })).catch(() => {});
       }
-      emitDone();
+      emitDone(Date.now() - overallStartedAt);
       logEnd("chat_stream_complete", {
         recentFiles: recentFiles.length,
         sawText,
@@ -1255,10 +1266,9 @@ export async function forwardToJiuwenClaw(
     } else {
       timeoutTimer = setTimeout(() => {
         if (settled) return;
-        const seconds = Math.round(maxRunMs / 1000);
-        const error = `JiuwenClaw 本次任务执行超过 ${seconds} 秒，已停止以避免连接超时。请缩小问题范围，或切换“快速”模式后重试。`;
+        const error = "模型或网页服务响应较慢，可重试或切换其他模型。";
         try { ws.close(1000, "timeout"); } catch {}
-        fail(error);
+        fail(error, "runtime_timeout");
       }, maxRunMs);
     }
 
@@ -1398,7 +1408,7 @@ export async function forwardToJiuwenClaw(
               sawText = true;
               writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
               opts.onRuntimeOutcome?.("success");
-              emitDone();
+              emitDone(Date.now() - overallStartedAt);
               try { ws.close(1000, "human approval required"); } catch {}
               settle();
               return;
@@ -1526,7 +1536,7 @@ export async function forwardToJiuwenClaw(
       });
     }
   }
-  emitDone();
+  emitDone(Date.now() - overallStartedAt);
 }
 
 export async function answerJiuwenPermission(

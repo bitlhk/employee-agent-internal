@@ -158,9 +158,12 @@ function writeSseEvent(res: Response, event: string, obj: any): void {
   if (!res.destroyed && !res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(obj)}\n\n`);
 }
 
-function emitSseDone(res: Response): void {
+function emitSseDone(res: Response, durationMs?: number): void {
   if (res.destroyed || res.writableEnded) return;
-  res.write(`data: ${JSON.stringify({ __stream_end: true })}\n\n`);
+  res.write(`data: ${JSON.stringify({
+    __stream_end: true,
+    ...(Number.isFinite(durationMs) ? { durationMs: Math.max(0, Math.round(Number(durationMs))) } : {}),
+  })}\n\n`);
   res.write("data: [DONE]\n\n");
   res.end();
 }
@@ -447,11 +450,16 @@ export async function forwardToJiuwenGateway(
         })).catch(() => {});
       }
       try { ws.close(1000, reason); } catch {}
-      if (!clientClosed) emitSseDone(res);
+      if (!clientClosed) emitSseDone(res, Date.now() - startedAt);
       resolve();
     };
     const timeout = setTimeout(() => {
-      writeSseData(res, { __stream_error: true, error: "JiuwenSwarm gateway 响应超时。" });
+      writeSseData(res, {
+        __stream_error: true,
+        error: "模型或网页服务响应较慢，可重试或切换其他模型。",
+        reasonCode: "runtime_timeout",
+        durationMs: Date.now() - startedAt,
+      });
       settle("timeout");
     }, timeoutMs);
     res.on("close", () => {

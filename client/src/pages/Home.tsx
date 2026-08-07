@@ -218,6 +218,7 @@ type LxMsg = {
   knowledgeSources?: ChatKnowledgeSource[];
   toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
+  processingDurationMs?: number;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   // 2026-04-29 批次 2 A3：截断恢复状态（仅 assistant 用）
   recovering?: boolean;
@@ -3222,6 +3223,15 @@ export default function Home() {
               // ── 统一语义：流结束 ──
               if (chunk.__stream_end) {
                 console.log("[DIAG] ✅ WSS 收到 __stream_end，流结束");
+                const durationMs = Number(chunk.durationMs);
+                if (Number.isFinite(durationMs) && durationMs > 0) {
+                  setLingxiaMsgs((prev) => {
+                    const next = [...prev];
+                    const last = next[next.length - 1];
+                    if (last?.role === "assistant") next[next.length - 1] = { ...last, processingDurationMs: durationMs };
+                    return next;
+                  });
+                }
                 setLingxiaStreaming(false);
                 wsClient.setRawHandler(null);
                 if (conversationIdAtSend) void reconcileStreamedConversation({ conversationId: conversationIdAtSend, assistantMessageId, streamSeq: myStreamSeq, sessionKey: runtimeSessionKey || undefined });
@@ -3246,7 +3256,7 @@ export default function Home() {
               // ── 统一语义：终止性错误 ──
               if (chunk.__stream_error) {
                 console.log("[DIAG] ❌ WSS 收到 __stream_error:", chunk.error);
-                setLingxiaMsgs((prev) => { const n = [...prev]; const last = n[n.length-1]; if (last?.role === "assistant") n[n.length-1] = { ...last, text: `（${chunk.error || "连接异常"}）` }; return n; });
+                setLingxiaMsgs((prev) => { const n = [...prev]; const last = n[n.length-1]; if (last?.role === "assistant") n[n.length-1] = { ...last, text: `（${chunk.error || "连接异常"}）`, status: undefined, processingDurationMs: Number(chunk.durationMs) || undefined }; return n; });
                 setLingxiaStreaming(false);
                 wsClient.setRawHandler(null);
                 return;
@@ -3811,6 +3821,15 @@ export default function Home() {
             if (chunk.__stream_end) {
               console.log("[DIAG] ✅ 收到 __stream_end，流结束");
               flushDelta();
+              const durationMs = Number(chunk.durationMs);
+              if (Number.isFinite(durationMs) && durationMs > 0) {
+                setLingxiaMsgs((prev) => {
+                  const next = [...prev];
+                  const last = next[next.length - 1];
+                  if (last?.role === "assistant") next[next.length - 1] = { ...last, processingDurationMs: durationMs };
+                  return next;
+                });
+              }
               shouldReconcileCanonical = true;
               sseDone = true;
               break;
@@ -3843,7 +3862,12 @@ export default function Home() {
               setLingxiaMsgs((prev) => {
                 const next = [...prev];
                 if (next.length === 0 || next[next.length - 1].role !== "assistant") return prev;
-                next[next.length - 1] = { ...next[next.length - 1], text: `（${chunk.error || "连接异常"}）` };
+                next[next.length - 1] = {
+                  ...next[next.length - 1],
+                  text: `（${chunk.error || "连接异常"}）`,
+                  status: undefined,
+                  processingDurationMs: Number(chunk.durationMs) || undefined,
+                };
                 return next;
               });
               sseDone = true;
@@ -4649,6 +4673,7 @@ export default function Home() {
                     knowledgeSources={m.role === "assistant" ? m.knowledgeSources : undefined}
                     toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
                     messageEvents={m.role === "assistant" ? (m as LxMsg).messageEvents : undefined}
+                    processingDurationMs={m.role === "assistant" ? m.processingDurationMs : undefined}
                     agentTasks={messageAgentTasks}
                     showToolCalls={lingxiaShowToolCalls}
                     usage={m.usage}
