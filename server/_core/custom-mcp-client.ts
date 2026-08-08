@@ -38,6 +38,7 @@ const BLOCKED_AUTH_HEADERS = new Set([
 export type CustomMcpEndpointConfig = {
   endpointUrl: string;
   authType: CustomMcpAuthType;
+  timeoutMs?: number;
   authHeaderName?: string | null;
   credential?: string;
   oauthData?: CustomMcpOAuthData | null;
@@ -161,6 +162,9 @@ export function safeMcpFetch(timeoutMs = MCP_REQUEST_TIMEOUT_MS, allowedSensitiv
 async function withMcpClient<T>(config: CustomMcpEndpointConfig, run: (client: Client) => Promise<T>): Promise<T> {
   const url = parseCustomMcpEndpoint(config.endpointUrl);
   validateCustomMcpAuth(config);
+  const timeoutMs = Number.isFinite(config.timeoutMs)
+    ? Math.min(120_000, Math.max(1_000, Math.floor(Number(config.timeoutMs))))
+    : MCP_REQUEST_TIMEOUT_MS;
   const queryParam = queryAuthParam(config);
   if (queryParam) url.searchParams.set(queryParam, String(config.credential || "").trim());
   const authProvider = config.authType === "oauth" && config.oauthData
@@ -168,7 +172,7 @@ async function withMcpClient<T>(config: CustomMcpEndpointConfig, run: (client: C
     : undefined;
   const transport = new StreamableHTTPClientTransport(url, {
     ...(authProvider ? { authProvider } : { requestInit: { headers: authHeaders(config) } }),
-    fetch: safeMcpFetch(MCP_REQUEST_TIMEOUT_MS, queryParam),
+    fetch: safeMcpFetch(timeoutMs, queryParam),
     reconnectionOptions: {
       maxReconnectionDelay: 1_000,
       initialReconnectionDelay: 250,
@@ -178,7 +182,7 @@ async function withMcpClient<T>(config: CustomMcpEndpointConfig, run: (client: C
   });
   const client = new Client({ name: "employee-agent-custom-mcp", version: "1.0.0" }, { capabilities: {} });
   try {
-    await client.connect(transport, { timeout: MCP_REQUEST_TIMEOUT_MS });
+    await client.connect(transport, { timeout: timeoutMs });
     return await run(client);
   } finally {
     await client.close().catch(() => undefined);
@@ -190,17 +194,18 @@ function plainObject(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-function normalizeTool(raw: any): CustomMcpToolSnapshot {
-  const name = String(raw?.name || "").trim();
+function normalizeTool(raw: unknown): CustomMcpToolSnapshot {
+  const source = plainObject(raw);
+  const name = String(source?.name || "").trim();
   if (!name || name.length > 256) throw new Error("远程 MCP 返回了无效工具名");
-  const inputSchema = plainObject(raw?.inputSchema) || { type: "object", properties: {} };
+  const inputSchema = plainObject(source?.inputSchema) || { type: "object", properties: {} };
   const normalized: CustomMcpToolSnapshot = {
     name,
-    description: String(raw?.description || "").trim().slice(0, 2_000),
+    description: String(source?.description || "").trim().slice(0, 2_000),
     inputSchema,
   };
-  const outputSchema = plainObject(raw?.outputSchema);
-  const annotations = plainObject(raw?.annotations);
+  const outputSchema = plainObject(source?.outputSchema);
+  const annotations = plainObject(source?.annotations);
   if (outputSchema) normalized.outputSchema = outputSchema;
   if (annotations) normalized.annotations = annotations;
   if (Buffer.byteLength(JSON.stringify(normalized)) > MAX_TOOL_SCHEMA_BYTES) {
@@ -211,7 +216,7 @@ function normalizeTool(raw: any): CustomMcpToolSnapshot {
 
 export async function discoverCustomMcpTools(config: CustomMcpEndpointConfig): Promise<CustomMcpToolSnapshot[]> {
   return await withMcpClient(config, async (client) => {
-    const result = await client.listTools(undefined, { timeout: MCP_REQUEST_TIMEOUT_MS });
+    const result = await client.listTools(undefined, { timeout: config.timeoutMs || MCP_REQUEST_TIMEOUT_MS });
     if (!Array.isArray(result.tools)) throw new Error("远程 MCP 未返回工具列表");
     if (result.tools.length > MAX_CUSTOM_MCP_DISCOVERED_TOOLS) {
       throw new Error(`远程 MCP 工具超过 ${MAX_CUSTOM_MCP_DISCOVERED_TOOLS} 个，请拆分连接`);
@@ -235,7 +240,7 @@ export async function callCustomMcpTool(
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const result = await withMcpClient(config, async (client) => (
-    await client.callTool({ name, arguments: args }, undefined, { timeout: MCP_REQUEST_TIMEOUT_MS })
+    await client.callTool({ name, arguments: args }, undefined, { timeout: config.timeoutMs || MCP_REQUEST_TIMEOUT_MS })
   ));
   if (Buffer.byteLength(JSON.stringify(result)) > MAX_TOOL_RESULT_BYTES) {
     return {

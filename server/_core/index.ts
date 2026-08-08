@@ -59,6 +59,8 @@ import { registerAgentTaskRoutes, startAgentTaskRuntime } from "./claw-agent-tas
 import { registerPersonalExpertRoutes } from "./personal-experts";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
+import { registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
+import { reconcileEnterpriseMcpRuntimeScopes } from "./enterprise-mcp-runtime-reconcile";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
 import { registerToolsPolicyRoutes } from "./claw-tools-policy";
 import { registerCoreFileRoutes } from "./claw-core-files";
@@ -451,6 +453,7 @@ async function startServer() {
   startManagedWorker("agent_health", startAgentHealthMonitor);
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);
+  registerEnterpriseMcpGatewayRoutes(app);
   registerSkillConfigRoutes(app);
   registerToolsPolicyRoutes(app);
   registerCoreFileRoutes(app);
@@ -865,6 +868,9 @@ async function startServer() {
           await startManagedWorkerAsync("agent_tasks", startAgentTaskRuntime);
           startManagedWorker("agent_memory", startAgentMemoryRuntime);
           startManagedWorker("knowledge_recovery", startKnowledgeIndexRecovery);
+          void reconcileEnterpriseMcpRuntimeScopes()
+            .then((summary) => logInfo("enterprise_mcp.runtime_scopes_reconciled", summary))
+            .catch((error) => logError("enterprise_mcp.runtime_scopes_failed", error));
         }
       })
       .catch((error) => {

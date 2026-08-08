@@ -298,7 +298,7 @@ const operationalActivityActive = new Gauge({
 
 export type ChatRuntime = "jiuwenswarm";
 export type ChatOutcome = "success" | "error" | "timeout" | "cancelled";
-export type McpKind = "platform" | "custom";
+export type McpKind = "platform" | "custom" | "enterprise";
 export type BackgroundWorkerName =
   | "log_retention"
   | "agent_health"

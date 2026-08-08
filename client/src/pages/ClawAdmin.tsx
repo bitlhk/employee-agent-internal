@@ -1,9 +1,3 @@
-/**
- * ClawAdmin — 智能体管理工作台（独立页面）
- * 风格：白色主题，与灵感官网/ClawHome 一致
- * Tab: 实例管理 / 系统设置 / 组织协作
- */
-
 import { useState, useEffect } from "react";
 import { BrandIcon } from "@/components/BrandIcon";
 import { useLocation } from "wouter";
@@ -33,7 +27,7 @@ import {
 } from "@/components/ui/confirmation-dialog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText, Gauge } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText, Gauge, Cable } from "lucide-react";
 import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
 import { CollaborationTab } from "@/components/pages/CollaborationTab";
 import { toast } from "sonner";
@@ -44,7 +38,7 @@ import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
 import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
 import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
 import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/MonitoringPanel";
-
+import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
   { value: "creating", label: "创建中" },
@@ -53,12 +47,10 @@ const STATUS_OPTIONS = [
   { value: "recycled", label: "停用" },
   { value: "failed", label: "失败" },
 ] as const;
-
 const PERMISSION_OPTIONS = [
   { value: "plus", label: "员工" },
   { value: "internal", label: "管理员" },
 ] as const;
-
 const INDUSTRY_LABELS: Record<string, string> = {
   general: "通用",
   banking: "银行",
@@ -112,12 +104,14 @@ const formatAuditJson = (value: unknown) => {
   }
 };
 
-const getAuditMeta = (event: any, path: string) => {
-  const root = event?.metadataJson;
-  if (!root || typeof root !== "object") return undefined;
-  return path.split(".").reduce<any>((acc, key) => (acc && typeof acc === "object" ? acc[key] : undefined), root);
+const getAuditMeta = (event: unknown, path: string) => {
+  const root = event && typeof event === "object" && !Array.isArray(event) ? (event as Record<string, unknown>).metadataJson : undefined;
+  return path.split(".").reduce<unknown>((current, key) => {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    return (current as Record<string, unknown>)[key];
+  }, root);
 };
-
+const formatAuditMetaList = (value: unknown) => Array.isArray(value) ? value.map(String).join(", ") : "-";
 const auditCategoryLabel = (category?: string) => {
   const map: Record<string, string> = {
     auth: "认证",
@@ -318,7 +312,7 @@ function BrandSettingsPanel() {
       toast.success("品牌设置已保存，刷新页面后生效");
       setSaving(false);
     },
-    onError: (e: any) => {
+    onError: (e) => {
       toast.error(e?.message || "保存失败");
       setSaving(false);
     },
@@ -517,19 +511,19 @@ export default function ClawAdmin() {
   const updateMutation = trpc.claw.adminUpdate.useMutation({
     retry: false,
     onSuccess: () => { refetchList(); toast.success("已更新"); },
-    onError: (e: any) => toast.error(e?.message || "更新失败"),
+    onError: (e) => toast.error(e?.message || "更新失败"),
   });
 
   const deleteMutation = trpc.claw.adminDelete.useMutation({
     retry: false,
     onSuccess: () => { setDeleteTarget(null); refetchList(); toast.success("智能体实例已删除"); },
-    onError: (e: any) => toast.error(e?.message || "删除失败"),
+    onError: (e) => toast.error(e?.message || "删除失败"),
   });
 
   const batchUpdateMutation = trpc.claw.adminBatchUpdate.useMutation({
     retry: false,
     onSuccess: () => { refetchList(); setSelectedIds([]); toast.success("批量更新完成"); },
-    onError: (e: any) => toast.error(e?.message || "批量更新失败"),
+    onError: (e) => toast.error(e?.message || "批量更新失败"),
   });
 
   // ── 系统配置 ──
@@ -560,7 +554,7 @@ export default function ClawAdmin() {
       setAssetGrantTarget(null);
       setAssetGrantDraft({});
     },
-    onError: (e: any) => toast.error(e?.message || "岗位授权更新失败"),
+    onError: (e) => toast.error(e?.message || "岗位授权更新失败"),
   });
   const grantsForAsset = (assetType: "skill" | "mcp_server", assetId: string) =>
     roleAssetGrants.filter((grant: any) => grant.assetType === assetType && grant.assetId === assetId && grant.enabled);
@@ -607,15 +601,15 @@ export default function ClawAdmin() {
   };
   const publishSkillMutation = trpc.claw.adminPublishSkill.useMutation({
     onSuccess: () => { refetchMarket(); toast.success("发布成功"); },
-    onError: (e: any) => toast.error(e?.message || "发布失败"),
+    onError: (e) => toast.error(e?.message || "发布失败"),
   });
   const reviewSkillMutation = trpc.claw.adminReviewSkill.useMutation({
     onSuccess: () => { refetchMarket(); toast.success("已更新"); },
-    onError: (e: any) => toast.error(e?.message || "操作失败"),
+    onError: (e) => toast.error(e?.message || "操作失败"),
   });
   const deleteMarketSkillMutation = trpc.claw.adminDeleteMarketSkill.useMutation({
     onSuccess: () => { refetchMarket(); toast.success("已删除"); },
-    onError: (e: any) => toast.error(e?.message || "删除失败"),
+    onError: (e) => toast.error(e?.message || "删除失败"),
   });
   const handleDeleteMarketSkill = async (id: number) => {
     const ok = await confirm({
@@ -712,7 +706,7 @@ export default function ClawAdmin() {
   const setConfigMutation = trpc.claw.adminSetConfig.useMutation({
     retry: false,
     onSuccess: () => { refetchConfig(); toast.success("配置已保存"); },
-    onError: (e: any) => toast.error(e?.message || "保存失败"),
+    onError: (e) => toast.error(e?.message || "保存失败"),
   });
 
   const { data: authUsersData, refetch: refetchAuthUsers } = trpc.auth.listUsers.useQuery(undefined, {
@@ -763,7 +757,7 @@ export default function ClawAdmin() {
       refetchAuditEvents();
       toast.success(`导出已生成：${data.rowCount} 行`);
     },
-    onError: (e: any) => toast.error(e?.message || "导出失败"),
+    onError: (e) => toast.error(e?.message || "导出失败"),
   });
   const auditRows = Array.isArray((auditEventsData as any)?.rows) ? (auditEventsData as any).rows : [];
   const auditTotal = Number((auditEventsData as any)?.total || 0);
@@ -787,7 +781,7 @@ export default function ClawAdmin() {
       setNewPassword("");
       refetchAuthUsers();
     },
-    onError: (e: any) => toast.error(e?.message || "更新失败"),
+    onError: (e) => toast.error(e?.message || "更新失败"),
   });
   const submitPassword = () => {
     if (!passwordTarget) return;
@@ -885,6 +879,7 @@ export default function ClawAdmin() {
     { value: "usage", label: "使用统计", description: "访问与使用趋势", icon: BarChart3 },
     { value: "feedback", label: "质量反馈", description: "满意度与问题归因", icon: MessageSquareText },
     { value: "accounts", label: "账号管理", description: "管理员与登录密码", icon: UserCog },
+    { value: "enterprise-mcp", label: "企业连接器", description: "MCP、身份与工具策略", icon: Cable },
     { value: "health", label: "系统健康", description: "平台、Runtime 与连接状态", icon: Activity },
     ...(monitoringStatus?.configured
       ? [{ value: "monitoring", label: "运行监控", description: "性能、容量与趋势", icon: Gauge }]
@@ -1536,6 +1531,7 @@ export default function ClawAdmin() {
               </div>
             </Card>
           </TabsContent>
+          <TabsContent value="enterprise-mcp" className="space-y-4"><EnterpriseMcpPanel /></TabsContent>
           <TabsContent value="health" className="space-y-4">
             <Card className="admin-panel-card p-6">
               <div className="mb-5 flex items-center justify-between gap-3">
@@ -2099,7 +2095,7 @@ export default function ClawAdmin() {
                       ["Args Bytes", getAuditMeta(selectedAuditEvent, "args.argsBytes") ?? "-"],
                       ["Duration", getAuditMeta(selectedAuditEvent, "durationMs") ? `${getAuditMeta(selectedAuditEvent, "durationMs")} ms` : "-"],
                       ["Response Bytes", getAuditMeta(selectedAuditEvent, "responseBytes") ?? "-"],
-                      ["Fields", Array.isArray(getAuditMeta(selectedAuditEvent, "args.fieldNames")) ? getAuditMeta(selectedAuditEvent, "args.fieldNames").join(", ") : "-"],
+                      ["Fields", formatAuditMetaList(getAuditMeta(selectedAuditEvent, "args.fieldNames"))],
                       ["Message Bytes", getAuditMeta(selectedAuditEvent, "args.messageBytes") ?? "-"],
                     ].map(([label, value]) => (
                       <div key={label} className="rounded-lg border border-blue-100 bg-white px-3 py-2 text-xs">

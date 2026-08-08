@@ -14,6 +14,7 @@ describe("JiuwenSwarm MCP metrics", () => {
       inferMcpServerForJiuwenTool("mcp_wealth_assistant_customer_wealth_assistant_customer_list"),
     ).toBe("wealth_assistant_customer");
     expect(inferMcpServerForJiuwenTool("mcp_platform_tools_create_scheduled_task")).toBe("platform_tools");
+    expect(inferMcpServerForJiuwenTool("mcp_enterprise_mcp_gateway_enterprise_ab12_lookup")).toBe("enterprise_mcp_gateway");
     expect(inferMcpServerForJiuwenTool("mcp_custom_user_42_lookup_customer")).toBe("custom_user_42");
   });
 

@@ -1087,6 +1087,106 @@ export const customMcpConnections = mysqlTable("custom_mcp_connections", {
 export type CustomMcpConnection = typeof customMcpConnections.$inferSelect;
 export type InsertCustomMcpConnection = typeof customMcpConnections.$inferInsert;
 
+// Organization-managed MCP registry. Unlike customMcpConnections, these
+// records are centrally governed and assigned to roles by role_asset_grants.
+export const enterpriseMcpConnections = mysqlTable("enterprise_mcp_connections", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  serverId: varchar("server_id", { length: 128 }).notNull(),
+  displayName: varchar("display_name", { length: 128 }).notNull(),
+  description: text("description"),
+  icon: varchar("icon", { length: 512 }),
+  businessDomain: varchar("business_domain", { length: 64 }).notNull(),
+  endpointUrl: varchar("endpoint_url", { length: 2048 }).notNull(),
+  resourceUri: varchar("resource_uri", { length: 2048 }).notNull(),
+  protocolVersion: mysqlEnum("protocol_version", ["2025-11-25", "2026-07-28"]).default("2025-11-25").notNull(),
+  identityMode: mysqlEnum("identity_mode", ["platform", "tenant", "user"]).default("platform").notNull(),
+  authMode: mysqlEnum("auth_mode", ["oauth2_access_token", "static_bearer_legacy", "none_shadow"]).default("none_shadow").notNull(),
+  credentialEncrypted: text("credential_encrypted"),
+  dataClassification: mysqlEnum("data_classification", ["public", "internal", "sensitive", "restricted"]).default("internal").notNull(),
+  environment: mysqlEnum("environment", ["dev", "test", "prod"]).default("prod").notNull(),
+  lifecycleState: mysqlEnum("lifecycle_state", ["legacy", "shadow", "enforced", "disabled"]).default("shadow").notNull(),
+  timeoutMs: int("timeout_ms").default(30000).notNull(),
+  ownerDepartment: varchar("owner_department", { length: 128 }),
+  ownerContact: varchar("owner_contact", { length: 256 }),
+  healthUrl: varchar("health_url", { length: 2048 }),
+  healthStatus: mysqlEnum("health_status", ["unknown", "ready", "error"]).default("unknown").notNull(),
+  lastError: text("last_error"),
+  toolsJson: json("tools_json").$type<Array<Record<string, unknown>> | null>(),
+  lastTestedAt: timestamp("last_tested_at"),
+  createdBy: varchar("created_by", { length: 128 }),
+  updatedBy: varchar("updated_by", { length: 128 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqServerId: uniqueIndex("uk_enterprise_mcp_server_id").on(table.serverId),
+  domainStateIdx: index("idx_enterprise_mcp_domain_state").on(table.businessDomain, table.lifecycleState),
+  healthIdx: index("idx_enterprise_mcp_health").on(table.healthStatus, table.lastTestedAt),
+}));
+
+export type EnterpriseMcpConnection = typeof enterpriseMcpConnections.$inferSelect;
+export type InsertEnterpriseMcpConnection = typeof enterpriseMcpConnections.$inferInsert;
+
+export const enterpriseMcpToolPolicies = mysqlTable("enterprise_mcp_tool_policies", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  serverId: varchar("server_id", { length: 128 }).notNull(),
+  toolName: varchar("tool_name", { length: 256 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  sideEffect: mysqlEnum("side_effect", ["read", "compute", "workspace_write", "write", "external_send", "financial_action", "approval_action", "admin_action"]).default("read").notNull(),
+  requiredScopes: json("required_scopes").$type<string[]>().notNull(),
+  allowedRoles: json("allowed_roles").$type<string[] | null>(),
+  identityModeOverride: mysqlEnum("identity_mode_override", ["platform", "tenant", "user"]),
+  approvalMode: mysqlEnum("approval_mode", ["never", "conditional", "always"]).default("never").notNull(),
+  auditLevel: mysqlEnum("audit_level", ["normal", "strong", "highest"]).default("normal").notNull(),
+  idempotencyRequired: boolean("idempotency_required").default(false).notNull(),
+  argumentPolicyJson: json("argument_policy_json").$type<Record<string, unknown> | null>(),
+  createdBy: varchar("created_by", { length: 128 }),
+  updatedBy: varchar("updated_by", { length: 128 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqToolPolicy: uniqueIndex("uk_enterprise_mcp_tool_policy").on(table.serverId, table.toolName),
+  serverEnabledIdx: index("idx_enterprise_mcp_tool_server").on(table.serverId, table.enabled),
+  sideEffectIdx: index("idx_enterprise_mcp_tool_side_effect").on(table.sideEffect),
+}));
+
+export type EnterpriseMcpToolPolicy = typeof enterpriseMcpToolPolicies.$inferSelect;
+export type InsertEnterpriseMcpToolPolicy = typeof enterpriseMcpToolPolicies.$inferInsert;
+
+// Durable execution receipts make MCP retries, incident review and bilateral
+// audit correlation independent from the in-process Agent runtime.
+export const enterpriseMcpCallReceipts = mysqlTable("enterprise_mcp_call_receipts", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  requestId: varchar("request_id", { length: 64 }).notNull(),
+  policyDecisionId: varchar("policy_decision_id", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }),
+  status: mysqlEnum("status", ["started", "completed", "failed", "blocked"]).default("started").notNull(),
+  serverId: varchar("server_id", { length: 128 }).notNull(),
+  toolName: varchar("tool_name", { length: 256 }).notNull(),
+  userId: int("user_id").notNull(),
+  tenantId: varchar("tenant_id", { length: 80 }).notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  roleKey: varchar("role_key", { length: 64 }).notNull(),
+  identityMode: mysqlEnum("identity_mode", ["platform", "tenant", "user"]).notNull(),
+  argsHash: varchar("args_hash", { length: 64 }).notNull(),
+  resultHash: varchar("result_hash", { length: 64 }),
+  externalRequestId: varchar("external_request_id", { length: 128 }),
+  durationMs: int("duration_ms"),
+  errorCode: varchar("error_code", { length: 128 }),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqRequest: uniqueIndex("uk_enterprise_mcp_call_request").on(table.requestId),
+  uniqIdempotency: uniqueIndex("uk_enterprise_mcp_call_idempotency").on(table.adoptId, table.serverId, table.toolName, table.idempotencyKey),
+  actorStartedIdx: index("idx_enterprise_mcp_call_actor_started").on(table.userId, table.startedAt),
+  serverStartedIdx: index("idx_enterprise_mcp_call_server_started").on(table.serverId, table.startedAt),
+  statusStartedIdx: index("idx_enterprise_mcp_call_status_started").on(table.status, table.startedAt),
+}));
+
+export type EnterpriseMcpCallReceipt = typeof enterpriseMcpCallReceipts.$inferSelect;
+export type InsertEnterpriseMcpCallReceipt = typeof enterpriseMcpCallReceipts.$inferInsert;
+
 // ── 用户记忆 (平台级) ──
 export const userMemories = mysqlTable("user_memories", {
   id:           int("id").autoincrement().primaryKey(),

@@ -22,7 +22,7 @@ import { normalizeSkillRuntimePermissions } from "./skills/skill-runtime-permiss
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
 export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
-export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools", "custom_mcp_gateway"];
+export const JIUWENSWARM_PLATFORM_MCP_SERVER_IDS = ["platform_tools", "custom_mcp_gateway", "enterprise_mcp_gateway"];
 const CONTENT_COMPLIANCE_BLOCK_START = "<!-- EA_CONTENT_COMPLIANCE_START -->";
 const CONTENT_COMPLIANCE_BLOCK_END = "<!-- EA_CONTENT_COMPLIANCE_END -->";
 const DEFAULT_IDENTITY_MARKERS = [

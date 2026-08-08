@@ -33,6 +33,14 @@ export const FAIL_CLOSE_AUDIT_ACTIONS = new Set([
   "skill.market.approved.requested",
   "skill.market.approved.completed",
   "config.security_critical_changed",
+  "mcp.connector.config_change.requested",
+  "mcp.connector.config_change.completed",
+  "mcp.tool_policy.change.requested",
+  "mcp.tool_policy.change.completed",
+  "mcp.role_grants.change.requested",
+  "mcp.role_grants.change.completed",
+  "mcp.enterprise_tool.requested",
+  "mcp.enterprise_tool.completed",
 ]);
 
 export type AuditRecordMode = "sync" | "async" | "auto";

@@ -11,6 +11,7 @@ import { collabRouter } from "./collab";
 import { coopRouter } from "./coop";
 import { auditRouter } from "./audit";
 import { knowledgeRouter } from "./knowledge";
+import { enterpriseMcpRouter } from "./enterprise-mcp";
 
 export const appRouter = router({
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -29,6 +30,7 @@ export const appRouter = router({
   coop: coopRouter,
   audit: auditRouter,
   knowledge: knowledgeRouter,
+  enterpriseMcp: enterpriseMcpRouter,
 });
 
 export type AppRouter = typeof appRouter;

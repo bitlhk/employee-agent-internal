@@ -112,6 +112,7 @@ const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
   { id: "wealth_assistant_product", name: "财富产品数据", category: "内部业务 MCP", description: "查询财富产品详情、风险等级与适配条件，完成产品筛选和客户匹配。", serverIds: ["wealth_assistant_product"] },
   { id: "platform_tools", name: "平台协作工具", category: "平台能力", description: "管理投递通道、定时任务和跨智能体协作，让对话结果进入后续工作流程。", serverIds: ["platform_tools"] },
   { id: "custom_mcp_gateway", name: "自定义连接网关", category: "平台能力", description: "将用户添加的 MCP 安全接入当前智能体，并按用户和智能体实例隔离调用。", serverIds: ["custom_mcp_gateway"] },
+  { id: "enterprise_mcp_gateway", name: "企业连接网关", category: "平台能力", description: "按岗位、用户和工具策略调用组织 MCP，并统一执行身份传递、数据护栏和审计。", serverIds: ["enterprise_mcp_gateway"] },
 ];
 
 function readableMcpName(serverId: string): string {

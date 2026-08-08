@@ -8,6 +8,7 @@ import {
 
 export type ToolEgressChannel =
   | "custom_mcp"
+  | "enterprise_mcp"
   | "mcp_adapter"
   | "a2a"
   | "managed_browser"
