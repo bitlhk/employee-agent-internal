@@ -88,7 +88,9 @@ def upsert_governance_hook(config: dict) -> None:
     if not isinstance(pre_tool_hooks, list):
         pre_tool_hooks = []
         hooks["PreToolUse"] = pre_tool_hooks
-    hook_client = Path(__file__).with_name("jiuwen_pre_tool_hook.py").resolve()
+    # Preserve a versioned deployment's stable `current` symlink. Resolving it
+    # here would pin the runtime to a release directory that is later pruned.
+    hook_client = Path(__file__).with_name("jiuwen_pre_tool_hook.py").absolute()
     desired = {
         "matcher": "*",
         "hooks": [{
