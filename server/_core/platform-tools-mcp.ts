@@ -18,6 +18,12 @@ import {
 } from "./agent-memory";
 import { beginMcpCall } from "./observability/metrics";
 import { fetchWithTimeout } from "./fetch-timeout";
+import { evaluateGovernance } from "./governance/contracts";
+import { platformMcpPolicyAdapter } from "./governance/platform-mcp-policy";
+import { resolveRuntimePrincipal } from "./governance/principal";
+import { capabilitySetFingerprint } from "./governance/capability-registry";
+import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
+import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -102,6 +108,7 @@ const TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
 ];
+const TOOL_NAMES = new Set(TOOLS.map(tool => tool.name));
 
 function ok(id: unknown, result: unknown) {
   return { jsonrpc: "2.0", id: id ?? null, result };
@@ -256,6 +263,63 @@ async function callTool(
     throw error;
   }
   if (!adoptId) return textResult("Error: adoptId is missing from JiuwenSwarm user context.", { isError: true });
+  const claw = await getClawByAdoptId(adoptId);
+  if (!claw || !["active", "expiring"].includes(String(claw.status || ""))) {
+    return textResult("Error: employee agent is not active.", { isError: true });
+  }
+  const profile = resolveToolGovernance(`mcp_platform_tools_${name}`);
+  const principal = resolveRuntimePrincipal({
+    adoption: claw,
+    sessionId: pickHeader(req, ["x-linggan-session-id", "x-jiuwen-session-id"]),
+  });
+  const governance = await evaluateGovernance({
+    principal: principal.principal,
+    operation: {
+      capabilityId: "platform.mcp",
+      operation: name,
+      sideEffect: profile.sideEffect,
+      resource: `platform-tool:${name}`,
+      payloadHash: stableToolInputHash(args),
+    },
+  }, [platformMcpPolicyAdapter({
+    knownTool: TOOL_NAMES.has(name),
+    profile,
+    principal,
+    runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+  })], {
+    effect: "DENY",
+    policyCode: "EA_PLATFORM_MCP_POLICY_UNAVAILABLE",
+    ruleVersion: "platform-mcp-v1",
+    reason: "Platform MCP policy is unavailable.",
+    obligations: [{ type: "AUDIT", level: "strong" }],
+  });
+  await recordAuditBestEffort({
+    action: governance.effect === "ALLOW" ? "governance.platform_mcp.allowed" : "governance.platform_mcp.blocked",
+    result: governance.effect === "ALLOW" ? "success" : "denied",
+    severity: governance.effect === "ALLOW" ? "info" : "high",
+    actorType: "agent",
+    actorUserId: principal.principal.userId || null,
+    actorRole: principal.principal.roleTemplate || null,
+    targetType: "platform_tool",
+    targetId: name,
+    workspaceId: principal.principal.workspaceId || null,
+    agentInstanceId: principal.principal.adoptionId || null,
+    runtimeAgentId: principal.principal.agentId || null,
+    sessionId: principal.principal.sessionId || null,
+    toolName: name,
+    policyCode: governance.policyCode,
+    source: "platform_tools_mcp",
+    ...auditRequest(req),
+    metadata: {
+      policyDecisionId: governance.decisionId,
+      ruleVersion: governance.ruleVersion,
+      principalFingerprint: governance.principalFingerprint,
+      operationFingerprint: governance.operationFingerprint,
+      capabilitySetFingerprint: capabilitySetFingerprint(),
+      sideEffect: profile.sideEffect,
+    },
+  });
+  if (governance.effect !== "ALLOW") return textResult(governance.reason, { isError: true });
 
   if (name === "remember_preference") {
     const content = String(args.content || "").trim();
@@ -293,8 +357,6 @@ async function callTool(
   }
 
   if (name === "forget_preference") {
-    const claw = await getClawByAdoptId(adoptId);
-    if (!claw) return textResult("Error: employee agent not found", { isError: true });
     const memoryId = Number(args.memory_id || args.memoryId || 0) || undefined;
     const query = String(args.query || args.content || "").trim() || undefined;
     if (!memoryId && !query) return textResult("Error: memory_id or query is required", { isError: true });
@@ -325,8 +387,6 @@ async function callTool(
   }
 
   if (name === "list_learned_preferences") {
-    const claw = await getClawByAdoptId(adoptId);
-    if (!claw) return textResult("Error: employee agent not found", { isError: true });
     const view = await listAgentMemoryView({
       userId: Number(claw.userId),
       adoptId,
@@ -481,13 +541,16 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
       return res.status(403).json({ ok: false, authorized: false, reason: "agent_not_active" });
     }
 
-    const roleId = String(claw.roleTemplate || "general-assistant").trim();
+    const roleId = String(claw.roleTemplate || "").trim();
+    if (!roleId) {
+      return res.status(403).json({ ok: false, authorized: false, reason: "principal_role_missing" });
+    }
     const assets = await resolveEffectiveRoleAssets(roleId);
     const allowedMcpServers = new Set([
       ...assets.mcpServers.default,
       ...assets.mcpServers.optional,
     ]);
-    const authorized = roleId === "wealth-manager" && allowedMcpServers.has(mcpServerId);
+    const authorized = allowedMcpServers.has(mcpServerId);
 
     return res.status(authorized ? 200 : 403).json({
       ok: authorized,

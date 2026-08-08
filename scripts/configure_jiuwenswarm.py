@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 from pathlib import Path
 
 import yaml as pyyaml
@@ -80,6 +81,43 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             server.update(desired)
 
 
+def upsert_governance_hook(config: dict) -> None:
+    hooks = config.setdefault("hooks", {})
+    hooks["disable_all_hooks"] = False
+    pre_tool_hooks = hooks.setdefault("PreToolUse", [])
+    if not isinstance(pre_tool_hooks, list):
+        pre_tool_hooks = []
+        hooks["PreToolUse"] = pre_tool_hooks
+    hook_client = Path(__file__).with_name("jiuwen_pre_tool_hook.py").resolve()
+    desired = {
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": f"python3 {shlex.quote(str(hook_client))}",
+            "timeout": 5,
+            "shell": "bash",
+            "status_message": "Checking tool governance...",
+        }],
+    }
+    existing = next(
+        (
+            entry for entry in pre_tool_hooks
+            if isinstance(entry, dict)
+            and any(
+                isinstance(hook, dict)
+                and "jiuwen_pre_tool_hook.py" in str(hook.get("command") or "")
+                for hook in entry.get("hooks", [])
+            )
+        ),
+        None,
+    )
+    if existing is None:
+        pre_tool_hooks.append(desired)
+    else:
+        existing.clear()
+        existing.update(desired)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
@@ -115,6 +153,7 @@ def main() -> int:
         }
     )
     upsert_managed_mcp_servers(config, args.port)
+    upsert_governance_hook(config)
 
     with config_path.open("w", encoding="utf-8") as handle:
         yaml.dump(config, handle)
@@ -130,6 +169,8 @@ def main() -> int:
             "LINGGAN_CALLBACK_TOKEN": internal_key,
             "JIUWENSWARM_WORKSPACE_ISOLATION": "deny",
             "JIUWENSWARM_DISABLED_SKILL_TOOLS": "search_skill,install_skill,uninstall_skill",
+            "JIUWENSWARM_RUNTIME_ID": "jiuwenswarm-local",
+            "EA_GOVERNANCE_RULE_VERSION": "ea-governance-v1",
         },
     )
     os.chmod(config_path.parent, 0o700)

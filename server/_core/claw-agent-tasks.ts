@@ -1,4 +1,5 @@
 import express from "express";
+import type { BusinessAgent, ClawAdoption } from "../../drizzle/schema";
 import { createHash, randomUUID } from "crypto";
 import { sql } from "drizzle-orm";
 import {
@@ -54,6 +55,14 @@ import {
   type OperationalOutcome,
 } from "./observability/metrics";
 import { guardToolEgress } from "./tool-egress-policy";
+import { auditRequest, recordAuditBestEffort } from "./audit-events";
+import { resolveRuntimePrincipal } from "./governance/principal";
+import {
+  delegationEvidence,
+  delegationScopeFromMetadata,
+  evaluateDelegationPolicy,
+  type DelegationPolicyResult,
+} from "./governance/delegation-policy";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 
@@ -217,6 +226,46 @@ function routeReason(agent: any) {
   const endpointConfig = parseJsonRecord(agent?.endpointConfigJson);
   if (endpointConfig.authRequired === true && !agent?.apiToken) return "缺少 Agent 凭据";
   return "";
+}
+
+async function authorizeAgentDelegation(input: {
+  req: express.Request;
+  claw: ClawAdoption;
+  agent: BusinessAgent;
+  requestedScope?: unknown;
+  sessionId?: unknown;
+}): Promise<DelegationPolicyResult> {
+  const principal = resolveRuntimePrincipal({
+    adoption: input.claw,
+    sessionId: input.sessionId,
+  });
+  const endpointConfig = parseJsonRecord(input.agent.endpointConfigJson);
+  const decision = await evaluateDelegationPolicy({
+    principal: principal.principal,
+    childCapabilityIds: parseJsonArray(input.agent.capabilitiesJson),
+    endpointConfig,
+    requestedScope: input.requestedScope,
+  });
+  await recordAuditBestEffort({
+    action: decision.allowed ? "governance.delegation.allowed" : "governance.delegation.blocked",
+    result: decision.allowed ? "success" : "denied",
+    severity: decision.allowed ? "info" : "high",
+    actorType: "agent",
+    actorUserId: principal.principal.userId || null,
+    actorRole: principal.principal.roleTemplate || null,
+    targetType: "business_agent",
+    targetId: String(input.agent.id || ""),
+    targetName: String(input.agent.name || input.agent.id || ""),
+    workspaceId: principal.principal.workspaceId || null,
+    agentInstanceId: principal.principal.adoptionId || null,
+    runtimeAgentId: principal.principal.agentId || null,
+    sessionId: principal.principal.sessionId || null,
+    policyCode: decision.decision.policyCode,
+    source: "a2a_delegation",
+    ...auditRequest(input.req),
+    metadata: delegationEvidence(decision),
+  });
+  return decision;
 }
 
 function publicAgent(agent: any, usageCount = 0) {
@@ -700,6 +749,21 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
       const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
       const runtime = storedAgentTaskRuntime(task);
+      const delegation = await authorizeAgentDelegation({
+        req,
+        claw,
+        agent,
+        requestedScope: delegationScopeFromMetadata(runtime.dataPartMetadata),
+        sessionId: task.sourceSessionId,
+      });
+      if (!delegation.allowed) {
+        observeAgentTaskRetry("blocked");
+        return res.status(403).json({ error: "DELEGATION_NOT_ALLOWED", reason: delegation.decision.reason });
+      }
+      runtime.dataPartMetadata = {
+        ...(runtime.dataPartMetadata || {}),
+        "ea.governance": delegationEvidence(delegation),
+      };
       if (!runtime.input.trim()) {
         observeAgentTaskRetry("blocked");
         return res.status(409).json({ error: "原任务缺少可重试的输入" });
@@ -807,6 +871,17 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const sourceSessionId = req.body?.sessionId
         ? String(req.body.sessionId).slice(0, 160)
         : null;
+      const delegation = await authorizeAgentDelegation({
+        req,
+        claw,
+        agent,
+        requestedScope: req.body?.delegationScope,
+        sessionId: sourceSessionId,
+      });
+      if (!delegation.allowed) {
+        return res.status(403).json({ error: "DELEGATION_NOT_ALLOWED", reason: delegation.decision.reason });
+      }
+      const governanceMetadata = delegationEvidence(delegation);
       const runtime = {
         contextId: a2aRuntimeContextId(
           endpointConfig,
@@ -819,7 +894,14 @@ export function registerAgentTaskRoutes(app: express.Express) {
             schema: "ea.investment-team.request.v1",
             scenarioId,
           },
-          dataPartMetadata: { "ea.investment-team": true, version: "1.0.0" },
+          dataPartMetadata: {
+            "ea.investment-team": true,
+            version: "1.0.0",
+            "ea.governance": governanceMetadata,
+          },
+        } : {}),
+        ...(!(scenarioId && agentId === "a-share-research-committee") ? {
+          dataPartMetadata: { "ea.governance": governanceMetadata },
         } : {}),
       };
       const taskRecord = {
@@ -935,6 +1017,17 @@ export function registerAgentTaskRoutes(app: express.Express) {
 
       const responseText = agentInteractionResponseText(interaction, responseValue);
       const remoteInput = agentInteractionAgentInput(interaction, responseValue);
+      const sourceRuntime = storedAgentTaskRuntime(sourceTask);
+      const delegation = await authorizeAgentDelegation({
+        req,
+        claw,
+        agent,
+        requestedScope: delegationScopeFromMetadata(sourceRuntime.dataPartMetadata),
+        sessionId: sourceTask.sourceSessionId,
+      });
+      if (!delegation.allowed) {
+        return res.status(403).json({ error: "DELEGATION_NOT_ALLOWED", reason: delegation.decision.reason });
+      }
       const continuationId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
       const continuationRuntime = {
         contextId: a2aRuntimeContextId(
@@ -948,7 +1041,11 @@ export function registerAgentTaskRoutes(app: express.Express) {
           kind: "response",
           response: responseValue,
         },
-        dataPartMetadata: { "ea.interaction": true, version: "1.0.0" },
+        dataPartMetadata: {
+          "ea.interaction": true,
+          version: "1.0.0",
+          "ea.governance": delegationEvidence(delegation),
+        },
       };
       const continuation = {
         id: continuationId,

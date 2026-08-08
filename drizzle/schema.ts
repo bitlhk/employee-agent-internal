@@ -1187,6 +1187,45 @@ export const enterpriseMcpCallReceipts = mysqlTable("enterprise_mcp_call_receipt
 export type EnterpriseMcpCallReceipt = typeof enterpriseMcpCallReceipts.$inferSelect;
 export type InsertEnterpriseMcpCallReceipt = typeof enterpriseMcpCallReceipts.$inferInsert;
 
+// Governance approvals are bound to an exact principal, capability and payload.
+// activeBindingKey is nullable so MySQL can enforce at most one live approval
+// while retaining immutable terminal records for audit.
+export const governanceApprovals = mysqlTable("governance_approvals", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  approvalId: varchar("approval_id", { length: 64 }).notNull(),
+  activeBindingKey: varchar("active_binding_key", { length: 64 }),
+  status: mysqlEnum("status", ["pending", "approved", "rejected", "consumed", "expired"]).default("pending").notNull(),
+  policyDecisionId: varchar("policy_decision_id", { length: 64 }).notNull(),
+  policyCode: varchar("policy_code", { length: 128 }).notNull(),
+  ruleVersion: varchar("rule_version", { length: 64 }).notNull(),
+  principalFingerprint: varchar("principal_fingerprint", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  capabilityId: varchar("capability_id", { length: 128 }).notNull(),
+  operation: varchar("operation", { length: 256 }).notNull(),
+  resource: varchar("resource", { length: 512 }),
+  payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }),
+  reason: text("reason").notNull(),
+  decisionReason: text("decision_reason"),
+  expiresAt: timestamp("expires_at").notNull(),
+  decidedBy: int("decided_by"),
+  approvedAt: timestamp("approved_at"),
+  rejectedAt: timestamp("rejected_at"),
+  consumedAt: timestamp("consumed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqApprovalId: uniqueIndex("uk_governance_approval_id").on(table.approvalId),
+  uniqActiveBinding: uniqueIndex("uk_governance_approval_active_binding").on(table.activeBindingKey),
+  actorStatusIdx: index("idx_governance_approval_actor_status").on(table.userId, table.adoptId, table.status),
+  expiryStatusIdx: index("idx_governance_approval_expiry_status").on(table.expiresAt, table.status),
+  policyDecisionIdx: index("idx_governance_approval_policy_decision").on(table.policyDecisionId),
+}));
+
+export type GovernanceApproval = typeof governanceApprovals.$inferSelect;
+export type InsertGovernanceApproval = typeof governanceApprovals.$inferInsert;
+
 // ── 用户记忆 (平台级) ──
 export const userMemories = mysqlTable("user_memories", {
   id:           int("id").autoincrement().primaryKey(),

@@ -33,6 +33,10 @@ export type ChatKnowledgeResult = {
   mode: "none" | "auto" | "manual";
   retrieval: string;
   candidateBaseCount: number;
+  evidence?: {
+    contextEligibilityFingerprint: string;
+    selectedKnowledgeIds: string[];
+  };
   metrics: {
     bm25MaxScore: number;
     bm25RelevantMaxScore?: number;
@@ -325,6 +329,10 @@ export async function buildChatKnowledgeContext(input: {
     mode,
     retrieval: retrieval.retrieval,
     candidateBaseCount: eligible.length,
+    evidence: {
+      contextEligibilityFingerprint: eligibility.fingerprint,
+      selectedKnowledgeIds: sources.map(source => source.chunkId).filter(Boolean),
+    },
     metrics: {
       bm25MaxScore: retrieval.metrics.bm25MaxScore,
       bm25RelevantMaxScore: retrieval.metrics.bm25RelevantMaxScore,

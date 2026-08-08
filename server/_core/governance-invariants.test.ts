@@ -12,6 +12,11 @@ import {
   TOOL_GOVERNANCE_REGISTRY,
   resolveToolGovernance,
 } from "./tool-governance";
+import {
+  CAPABILITY_REGISTRY,
+  capabilitySetFingerprint,
+  uncoveredActiveSideEffects,
+} from "./governance/capability-registry";
 
 const RUNTIME_TOOLS = [
   "ask_user", "bash", "code", "edit_file", "edit_memory", "evolve_review_task",
@@ -37,6 +42,12 @@ function serverTypeScriptFiles(directory: string): string[] {
 }
 
 describe("governance invariants", () => {
+  it("keeps every active side-effect capability behind a deterministic fail-close PEP", () => {
+    expect(uncoveredActiveSideEffects()).toEqual([]);
+    expect(new Set(CAPABILITY_REGISTRY.map(item => item.id)).size).toBe(CAPABILITY_REGISTRY.length);
+    expect(capabilitySetFingerprint()).toMatch(/^[a-f0-9]{64}$/);
+  });
+
   it("keeps every known runtime tool in the governance registry", () => {
     for (const tool of RUNTIME_TOOLS) expect(resolveToolGovernance(tool).registered, tool).toBe(true);
   });
@@ -52,6 +63,15 @@ describe("governance invariants", () => {
     expect(resolveToolGovernance("create_portfolio")).toMatchObject({ sideEffect: "write", policyRequired: true });
     expect(resolveToolGovernance("bash")).toMatchObject({ sideEffect: "compute", policyRequired: true, registered: true });
     expect(resolveToolGovernance("a2a_expert_call")).toMatchObject({ sideEffect: "external_send", policyRequired: true });
+    expect(resolveToolGovernance("mcp_platform_tools_get_user_channels")).toMatchObject({ sideEffect: "read" });
+    expect(resolveToolGovernance("mcp_platform_tools_create_scheduled_task")).toMatchObject({ sideEffect: "write", idempotencyRequired: true });
+    expect(resolveToolGovernance("mcp_platform_tools_submit_agent_task")).toMatchObject({ sideEffect: "external_send", idempotencyRequired: true });
+    expect(resolveToolGovernance("mcp_custom_mcp_gateway_custom_1_update_customer")).toMatchObject({
+      sideEffect: "write", registered: true, policyRequired: true,
+    });
+    expect(resolveToolGovernance("mcp_enterprise_mcp_gateway_enterprise_ab12_update_customer")).toMatchObject({
+      sideEffect: "write", registered: true, policyRequired: true,
+    });
   });
 
   it("fails closed for a newly introduced side-effect tool", async () => {

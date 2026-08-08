@@ -536,6 +536,40 @@ const agentTaskRetries = new Counter({
   registers: [metricsRegistry],
 });
 
+const governanceDecisions = new Counter({
+  name: "ea_governance_decisions_total",
+  help: "Deterministic governance decisions by bounded capability and effect.",
+  labelNames: ["capability", "effect"] as const,
+  registers: [metricsRegistry],
+});
+
+const governanceApprovalTransitions = new Counter({
+  name: "ea_governance_approval_transitions_total",
+  help: "Durable governance approval state transitions by bounded transition and outcome.",
+  labelNames: ["transition", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const governancePepCapabilities = new Gauge({
+  name: "ea_governance_pep_capabilities",
+  help: "Active side-effect capabilities by deterministic PEP coverage state.",
+  labelNames: ["coverage"] as const,
+  registers: [metricsRegistry],
+});
+
+const governancePepCoverageRatio = new Gauge({
+  name: "ea_governance_pep_coverage_ratio",
+  help: "Ratio of active side-effect capabilities with deterministic fail-close PEP coverage.",
+  registers: [metricsRegistry],
+});
+
+const runtimeGovernanceAttested = new Gauge({
+  name: "ea_runtime_governance_attested",
+  help: "Whether an Agent runtime recently proved that its governance hook is active.",
+  labelNames: ["runtime"] as const,
+  registers: [metricsRegistry],
+});
+
 export function beginHttpRequest(): void {
   httpInflight.inc();
 }
@@ -611,6 +645,35 @@ export function observeCapabilityPreflight(input: {
 
 export function observeAgentTaskRetry(outcome: "created" | "blocked" | "error"): void {
   agentTaskRetries.inc({ outcome });
+}
+
+export function observeGovernanceDecision(input: {
+  capabilityId: string;
+  effect: "ALLOW" | "DENY" | "REQUIRE_APPROVAL";
+}): void {
+  governanceDecisions.inc({
+    capability: input.capabilityId.slice(0, 64),
+    effect: input.effect.toLowerCase(),
+  });
+}
+
+export function observeGovernanceApprovalTransition(
+  transition: "created" | "reused" | "approved" | "rejected" | "consumed" | "consume_conflict",
+  outcome: "success" | "failed" = "success",
+): void {
+  governanceApprovalTransitions.inc({ transition, outcome });
+}
+
+export function setGovernancePepCoverage(input: { total: number; covered: number }): void {
+  const total = Math.max(0, input.total);
+  const covered = Math.min(total, Math.max(0, input.covered));
+  governancePepCapabilities.set({ coverage: "covered" }, covered);
+  governancePepCapabilities.set({ coverage: "uncovered" }, total - covered);
+  governancePepCoverageRatio.set(total > 0 ? covered / total : 1);
+}
+
+export function setRuntimeGovernanceAttested(runtimeId: string, attested: boolean): void {
+  runtimeGovernanceAttested.set({ runtime: runtimeId.slice(0, 64) }, attested ? 1 : 0);
 }
 
 export function beginOperationalActivity(activity: OperationalActivity): () => void {

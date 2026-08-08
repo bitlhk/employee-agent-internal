@@ -81,6 +81,9 @@ import { registerDesktopRoutes } from "./desktop";
 import { registerKnowledgeRoutes } from "./knowledge-routes";
 import { registerMonitoringRoutes } from "./monitoring-routes";
 import { registerToolEgressRoutes } from "./tool-egress-routes";
+import { registerRuntimeGovernanceAttestationRoutes } from "./runtime-governance-attestation";
+import { registerGovernanceApprovalRoutes } from "./governance-approval-routes";
+import { publishCapabilityPepCoverage } from "./governance/capability-registry";
 import { registerWebFaviconRoutes } from "./web-favicon";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
 import { getRoleSkillMcpBaseline, listAgentRoleTemplates } from "./role-templates";
@@ -127,6 +130,7 @@ logInfo("role_template.baseline_loaded", {
   defaultRole: roleBaseline.schema.defaultRole,
   roles: listAgentRoleTemplates().length,
 });
+logInfo("governance.pep_coverage", publishCapabilityPepCoverage());
 
 function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}): void {
   if (!iosLoadDebugEnabled) return;
@@ -463,6 +467,8 @@ async function startServer() {
   registerSandboxRoutes(app);
   registerManagedBrowserRoutes(app);
   registerToolEgressRoutes(app);
+  registerRuntimeGovernanceAttestationRoutes(app);
+  registerGovernanceApprovalRoutes(app);
   registerMiniExperienceRoutes(app);
   registerChatStreamRoutes(app);
   registerCoopUploadRoutes(app);

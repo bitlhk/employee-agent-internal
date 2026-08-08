@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   remoteCall: vi.fn(),
   guardEgress: vi.fn(),
   audit: vi.fn(),
+  enforceApproval: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -50,6 +51,7 @@ vi.mock("../db/claw", () => ({
     agentId: "jiuwen_lgj-insurance",
     userId: 7,
     roleTemplate: "insurance-advisor",
+    permissionProfile: "plus",
     status: "active",
   })),
   getClawByAgentId: vi.fn(async () => null),
@@ -68,9 +70,24 @@ vi.mock("./enterprise-mcp-identity", () => ({
   enterpriseMcpTenantId: vi.fn(() => "tn_test"),
   issueEnterpriseMcpAccessToken: vi.fn(),
 }));
-vi.mock("./helpers", () => ({ isAuthorizedInternalRequest: vi.fn(() => true) }));
-vi.mock("./observability/metrics", () => ({ beginMcpCall: vi.fn(() => () => undefined) }));
+vi.mock("./helpers", () => ({
+  isAuthorizedInternalRequest: vi.fn(() => true),
+  resolveRuntimeWorkspaceByIds: vi.fn((adoptId: string) => `/workspace/${adoptId}`),
+}));
+vi.mock("./observability/metrics", () => ({
+  beginMcpCall: vi.fn(() => () => undefined),
+  observeGovernanceDecision: vi.fn(),
+}));
 vi.mock("./tool-egress-policy", () => ({ guardToolEgress: mocks.guardEgress }));
+vi.mock("./governance/approval-service", () => ({
+  enforceGovernanceApproval: mocks.enforceApproval,
+  approvalRequiredToolResult: (input: { approvalId: string; expiresAt: Date }) => ({
+    content: [{ type: "text", text: `该操作需要人工审批。审批编号：${input.approvalId}` }],
+    isError: true,
+    _meta: { eaGovernance: { code: "EA_APPROVAL_REQUIRED", approvalId: input.approvalId } },
+  }),
+}));
+vi.mock("./runtime-governance-attestation", () => ({ runtimeGovernanceIsAttested: vi.fn(() => true) }));
 
 import { enterpriseMcpGatewayToolName, registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
 
@@ -116,6 +133,7 @@ beforeEach(async () => {
   mocks.guardEgress.mockResolvedValue({ ok: true });
   mocks.audit.mockResolvedValue(undefined);
   mocks.remoteCall.mockResolvedValue({ content: [{ type: "text", text: "ok" }] });
+  mocks.enforceApproval.mockResolvedValue({ effect: "ALLOW", approval: null });
   const app = express();
   app.use(express.json());
   registerEnterpriseMcpGatewayRoutes(app);
@@ -155,7 +173,7 @@ describe("enterprise MCP gateway", () => {
     const response = await callGateway({ password: "must-not-leave" });
     expect(response.result?.isError).toBe(true);
     expect(resultText(response)).toMatch(/password/);
-    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ status: "blocked", errorCode: "ARGUMENT_POLICY_DENIED" }));
+    expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 
@@ -165,17 +183,27 @@ describe("enterprise MCP gateway", () => {
     const response = await callGateway({ customerId: "customer-1" });
     expect(response.result?.isError).toBe(true);
     expect(resultText(response)).toMatch(/idempotency_key/);
-    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ status: "blocked", errorCode: "IDEMPOTENCY_KEY_REQUIRED" }));
+    expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 
   it("fails closed when durable approval is required", async () => {
     mocks.policy.sideEffect = "write";
     mocks.policy.approvalMode = "always";
+    mocks.enforceApproval.mockResolvedValue({
+      effect: "REQUIRE_APPROVAL",
+      reason: "需要人工审批",
+      requirement: {
+        approvalId: "apr_00000000-0000-4000-8000-000000000001",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000),
+        created: true,
+      },
+    });
     const response = await callGateway({ idempotency_key: "idem-1" });
     expect(response.result?.isError).toBe(true);
     expect(resultText(response)).toMatch(/人工审批/);
-    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ status: "blocked", errorCode: "APPROVAL_REQUIRED" }));
+    expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 
@@ -184,7 +212,7 @@ describe("enterprise MCP gateway", () => {
     const response = await callGateway({ note: "secret" });
     expect(response.result?.isError).toBe(true);
     expect(resultText(response)).toContain("检测到敏感凭据");
-    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({ status: "blocked", errorCode: "DATA_GUARDRAIL_DENIED" }));
+    expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 

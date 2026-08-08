@@ -22,3 +22,4 @@ export * from "./enterprise-mcp";
 export * from "./knowledge";
 export * from "./channel-identities";
 export * from "./cron-job-creations";
+export * from "./governance-approvals";

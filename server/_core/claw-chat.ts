@@ -40,6 +40,9 @@ import {
 import { parseUploadedAttachmentRuntimeMessage } from "../../shared/uploaded-attachment-context";
 import { summarizeCapabilityPreflight, type CapabilityPreflight } from "../../shared/capability-preflight";
 import { classifyPermissionRisk } from "./permission-risk";
+import { capabilitySetFingerprint } from "./governance/capability-registry";
+import { principalFingerprint } from "./governance/contracts";
+import { resolveRuntimePrincipal } from "./governance/principal";
 import {
   listChatSkillAffinities,
   recordChatSkillSelection,
@@ -583,7 +586,41 @@ export function registerChatStreamRoutes(app: express.Express) {
             autoGate: knowledge.metrics.autoGate,
             routeReason: knowledge.metrics.routeReason,
             routedBaseCount: knowledge.metrics.routedBaseCount,
+            contextEligibilityFingerprint: knowledge.evidence?.contextEligibilityFingerprint,
+            selectedKnowledgeIds: knowledge.evidence?.selectedKnowledgeIds,
           });
+          if (knowledge.evidence) {
+            const principal = resolveRuntimePrincipal({
+              adoption,
+              sessionId: conversationId,
+            });
+            await recordAuditBestEffort({
+              category: "governance",
+              action: "governance.knowledge_context.selected",
+              result: "success",
+              severity: "info",
+              actorType: "agent",
+              actorUserId: Number(adoption.userId),
+              actorRole: roleTemplate,
+              ...auditRequest(req),
+              targetType: "knowledge_context",
+              targetId: clientRunId || String(conversationId || "chat").slice(0, 128),
+              workspaceId: principal.principal.workspaceId || null,
+              agentInstanceId: String(adoption.adoptId),
+              runtimeAgentId: agentId,
+              sessionId: String(conversationId || "").slice(0, 128) || null,
+              correlationId: clientRunId,
+              policyCode: "EA_KNOWLEDGE_ELIGIBILITY_V1",
+              source: "knowledge_context",
+              metadata: {
+                ruleVersion: "knowledge-eligibility-v1",
+                principalFingerprint: principalFingerprint(principal.principal),
+                contextEligibilityFingerprint: knowledge.evidence.contextEligibilityFingerprint,
+                capabilitySetFingerprint: capabilitySetFingerprint(),
+                selectedKnowledgeIds: knowledge.evidence.selectedKnowledgeIds,
+              },
+            });
+          }
         } catch (error) {
           appendLogAsync("jiuwenclaw-exec.log", {
             ts: new Date().toISOString(),

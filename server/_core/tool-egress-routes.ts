@@ -12,6 +12,8 @@ import {
   stableToolInputHash,
   type ToolGovernanceProfile,
 } from "./tool-governance";
+import { capabilitySetFingerprint } from "./governance/capability-registry";
+import { RUNTIME_GOVERNANCE_RULE_VERSION, recordRuntimeGovernanceInvocation } from "./runtime-governance-attestation";
 
 type JiuwenPreToolInput = {
   event?: unknown;
@@ -29,6 +31,7 @@ const NETWORK_COMMAND_RE =
 const URL_FIELD_RE = /(?:^|_)(?:url|uri|endpoint|webhook)(?:$|_)/i;
 const DEFAULT_TRUSTED_TOOL_PREFIXES = [
   "mcp_platform_tools_",
+  "mcp_enterprise_mcp_gateway_",
   "mcp_wind_",
   "mcp_wealth_assistant_",
   "mcp_market_data__",
@@ -111,6 +114,8 @@ async function auditGovernanceDecision(input: {
     policyCode: input.policyCode,
     metadata: {
       policyDecisionId: input.policyDecisionId,
+      ruleVersion: RUNTIME_GOVERNANCE_RULE_VERSION,
+      capabilitySetFingerprint: capabilitySetFingerprint(),
       sideEffect: input.profile.sideEffect,
       policyRequired: input.profile.policyRequired,
       approvalMode: input.profile.approvalMode,
@@ -181,6 +186,10 @@ export function registerToolEgressRoutes(app: Express): void {
       res.status(401).json({ decision: "block", reason: "unauthorized" });
       return;
     }
+    recordRuntimeGovernanceInvocation({
+      runtimeId: req.headers["x-linggan-runtime-id"],
+      hookVersion: req.headers["x-linggan-hook-version"],
+    });
     try {
       res.json(await evaluateJiuwenPreToolUse(req.body || {}));
     } catch {

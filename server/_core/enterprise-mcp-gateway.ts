@@ -29,6 +29,12 @@ import { isAuthorizedInternalRequest } from "./helpers";
 import { beginMcpCall } from "./observability/metrics";
 import { stableToolInputHash } from "./tool-governance";
 import { guardToolEgress } from "./tool-egress-policy";
+import { evaluateGovernance, type GovernanceOperation } from "./governance/contracts";
+import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
+import { enterpriseMcpPolicyAdapter } from "./governance/enterprise-mcp-policy-adapter";
+import { resolveRuntimePrincipal, type PrincipalResolution } from "./governance/principal";
+import { capabilitySetFingerprint } from "./governance/capability-registry";
+import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 
 const SERVICE_NAME = "enterprise-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -44,6 +50,7 @@ type RuntimeContext = {
   roleKey: string;
   user: NonNullable<Awaited<ReturnType<typeof getUserById>>>;
   enabledServerIds: Set<string>;
+  principal: PrincipalResolution;
 };
 
 type ExposedTool = {
@@ -127,6 +134,10 @@ async function runtimeContext(req: Request): Promise<RuntimeContext> {
     roleKey,
     user,
     enabledServerIds: new Set(selection.enabledServerIds),
+    principal: resolveRuntimePrincipal({
+      adoption: claw,
+      sessionId: req.headers["x-linggan-session-id"],
+    }),
   };
 }
 
@@ -230,7 +241,11 @@ async function auditCall(input: {
     toolName: input.entry.tool.name,
     policyCode: "EA_ENTERPRISE_MCP_POLICY_V1",
     source: "enterprise_mcp_gateway",
-    metadata: { policyDecisionId: input.policyDecisionId, ...input.metadata },
+    metadata: {
+      policyDecisionId: input.policyDecisionId,
+      capabilitySetFingerprint: capabilitySetFingerprint(),
+      ...input.metadata,
+    },
   };
   await recordAuditRequired(event);
 }
@@ -243,6 +258,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
   let metricOutcome: "success" | "empty" | "error" = "empty";
   const startedAt = Date.now();
   let requestId = "";
+  let receiptReserved = false;
   let auditState: {
     entry: ExposedTool;
     policyDecisionId: string;
@@ -257,10 +273,105 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
     const policy = policyDraft(entry.policy);
     const identityMode = policy.identityModeOverride || entry.connection.identityMode;
     requestId = `emcp_${randomUUID()}`;
-    const policyDecisionId = `pdec_${randomUUID()}`;
     const tenantId = enterpriseMcpTenantId(context.user.organization, context.user.id);
     const argsHash = stableToolInputHash(args);
     const idemKey = idempotencyKey(args);
+    const operation: GovernanceOperation = {
+      capabilityId: "enterprise.mcp",
+      operation: entry.tool.name,
+      sideEffect: policy.sideEffect,
+      resource: `enterprise-mcp:${entry.connection.serverId}`,
+      payloadHash: argsHash,
+    };
+    const governance = await evaluateGovernance({
+      principal: context.principal.principal,
+      operation,
+      context: { serverId: entry.connection.serverId, approvalMode: policy.approvalMode },
+    }, [enterpriseMcpPolicyAdapter({
+      policy,
+      principal: context.principal,
+      runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+    })], {
+      effect: "DENY",
+      policyCode: "EA_ENTERPRISE_MCP_POLICY_UNAVAILABLE",
+      ruleVersion: "enterprise-mcp-v2",
+      reason: "企业 MCP 治理策略不可用，已阻止执行。",
+      obligations: [{ type: "AUDIT", level: "strong" }],
+    });
+    const policyDecisionId = governance.decisionId;
+
+    await auditCall({
+      phase: "requested", entry, context, req, requestId, policyDecisionId, result: "success",
+      metadata: {
+        argsHash,
+        sideEffect: policy.sideEffect,
+        identityMode,
+        tenantId,
+        scopes: policy.requiredScopes,
+        auditLevel: policy.auditLevel,
+        ruleVersion: governance.ruleVersion,
+        principalFingerprint: governance.principalFingerprint,
+        operationFingerprint: governance.operationFingerprint,
+      },
+    });
+    auditState = { entry, policyDecisionId, argsHash, identityMode, tenantId, sideEffect: policy.sideEffect };
+
+    const block = async (reason: string, errorCode: string) => {
+      if (receiptReserved) {
+        await completeEnterpriseMcpCall({ requestId, status: "blocked", durationMs: Date.now() - startedAt, errorCode });
+      }
+      await auditCall({
+        phase: "completed", entry, context, req, requestId, policyDecisionId, result: "denied",
+        metadata: { reason, errorCode, argsHash, sideEffect: policy.sideEffect, identityMode },
+      });
+      metricOutcome = "error";
+      return textResult(reason, true);
+    };
+
+    try {
+      validateEnterpriseMcpToolArguments(policy, args);
+    } catch (error) {
+      return await block(cleanError(error), "ARGUMENT_POLICY_DENIED");
+    }
+    if (policy.idempotencyRequired && !idemKey) return await block("该工具需要 idempotency_key，已阻止无幂等保护的调用。", "IDEMPOTENCY_KEY_REQUIRED");
+
+    const egress = await guardToolEgress({
+      channel: "enterprise_mcp",
+      payload: args,
+      adoptId: context.adoptId,
+      toolName: entry.tool.name,
+      destinationUrl: entry.connection.endpointUrl,
+      destinationTrust: "platform",
+    });
+    if (!egress.ok) return await block(egress.error || "工具参数未通过数据护栏。", "DATA_GUARDRAIL_DENIED");
+
+    const approval = await enforceGovernanceApproval({
+      decision: governance,
+      principal: context.principal.principal,
+      operation,
+      approvalId: String(req.headers["x-ea-approval-id"] || "").trim() || null,
+      idempotencyKey: idemKey || null,
+    });
+    if (approval.effect === "REQUIRE_APPROVAL") {
+      await auditCall({
+        phase: "completed", entry, context, req, requestId, policyDecisionId, result: "denied",
+        metadata: {
+          errorCode: "APPROVAL_REQUIRED",
+          approvalId: approval.requirement.approvalId,
+          argsHash,
+          sideEffect: policy.sideEffect,
+          identityMode,
+        },
+      });
+      metricOutcome = "error";
+      return approvalRequiredToolResult({
+        approvalId: approval.requirement.approvalId,
+        expiresAt: approval.requirement.expiresAt,
+        reason: approval.reason,
+      });
+    }
+    if (approval.effect === "DENY") return await block(approval.reason, "APPROVAL_DENIED");
+
     const reservation = await reserveEnterpriseMcpCall({
       requestId,
       policyDecisionId,
@@ -278,47 +389,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
       metricOutcome = "error";
       return textResult(`重复请求已阻止（${reservation.receipt.requestId}）。`, true);
     }
-
-    await auditCall({
-      phase: "requested", entry, context, req, requestId, policyDecisionId, result: "success",
-      metadata: {
-        argsHash,
-        sideEffect: policy.sideEffect,
-        identityMode,
-        tenantId,
-        scopes: policy.requiredScopes,
-        auditLevel: policy.auditLevel,
-      },
-    });
-    auditState = { entry, policyDecisionId, argsHash, identityMode, tenantId, sideEffect: policy.sideEffect };
-
-    const block = async (reason: string, errorCode: string) => {
-      await completeEnterpriseMcpCall({ requestId, status: "blocked", durationMs: Date.now() - startedAt, errorCode });
-      await auditCall({
-        phase: "completed", entry, context, req, requestId, policyDecisionId, result: "denied",
-        metadata: { reason, errorCode, argsHash, sideEffect: policy.sideEffect, identityMode },
-      });
-      metricOutcome = "error";
-      return textResult(reason, true);
-    };
-
-    try {
-      validateEnterpriseMcpToolArguments(policy, args);
-    } catch (error) {
-      return await block(cleanError(error), "ARGUMENT_POLICY_DENIED");
-    }
-    if (policy.idempotencyRequired && !idemKey) return await block("该工具需要 idempotency_key，已阻止无幂等保护的调用。", "IDEMPOTENCY_KEY_REQUIRED");
-    if (policy.approvalMode !== "never") return await block("该工具需要持久化人工审批，当前未获授权，已阻止执行。", "APPROVAL_REQUIRED");
-
-    const egress = await guardToolEgress({
-      channel: "enterprise_mcp",
-      payload: args,
-      adoptId: context.adoptId,
-      toolName: entry.tool.name,
-      destinationUrl: entry.connection.endpointUrl,
-      destinationTrust: "platform",
-    });
-    if (!egress.ok) return await block(egress.error || "工具参数未通过数据护栏。", "DATA_GUARDRAIL_DENIED");
+    receiptReserved = true;
 
     const identityStatus = await enterpriseMcpIdentityStatus();
     const issued = identityStatus.configured
@@ -358,7 +429,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
     return result;
   } catch (error) {
     metricOutcome = "error";
-    if (requestId) {
+    if (requestId && receiptReserved) {
       await completeEnterpriseMcpCall({
         requestId,
         status: "failed",

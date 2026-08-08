@@ -44,6 +44,18 @@ describe("Jiuwen PreToolUse egress evaluation", () => {
         session_id: "lgj-test",
       })
     ).resolves.toEqual({ decision: "allow" });
+    await expect(evaluateJiuwenPreToolUse({
+      event: "PreToolUse",
+      tool_name: "mcp_custom_mcp_gateway_custom_1_update_customer",
+      tool_input: { customerId: "c1", status: "reviewed" },
+      session_id: "lgj-test",
+    })).resolves.toEqual({ decision: "allow" });
+    await expect(evaluateJiuwenPreToolUse({
+      event: "PreToolUse",
+      tool_name: "mcp_enterprise_mcp_gateway_enterprise_ab12_update_customer",
+      tool_input: { customerId: "c1", phone: "13800138000" },
+      session_id: "lgj-test",
+    })).resolves.toEqual({ decision: "allow" });
   });
 
   it("blocks a credential in MCP arguments", async () => {

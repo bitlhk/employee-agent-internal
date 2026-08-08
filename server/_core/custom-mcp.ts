@@ -40,7 +40,14 @@ import { resolveAgentRoleTemplate } from "./role-templates";
 import { finishCustomMcpOAuth, startCustomMcpOAuth } from "./custom-mcp-oauth";
 import { resolvePublicBaseUrl } from "./public-base-url";
 import { beginMcpCall } from "./observability/metrics";
+import { evaluateGovernance } from "./governance/contracts";
+import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
+import { customMcpPolicyAdapter, resolveCustomMcpToolGovernance } from "./governance/custom-mcp-policy";
+import { resolveRuntimePrincipal } from "./governance/principal";
+import { stableToolInputHash } from "./tool-governance";
 import { guardToolEgress } from "./tool-egress-policy";
+import { capabilitySetFingerprint } from "./governance/capability-registry";
+import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 
 const SERVICE_NAME = "custom-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -274,7 +281,13 @@ async function gatewayTools(adoptId: string) {
   })));
 }
 
-async function gatewayCall(adoptId: string, exposedName: string, args: Record<string, unknown>, req: Request) {
+async function gatewayCall(
+  adoptId: string,
+  exposedName: string,
+  args: Record<string, unknown>,
+  req: Request,
+  adoption: NonNullable<Awaited<ReturnType<typeof getClawByAdoptId>>>,
+) {
   if (Buffer.byteLength(JSON.stringify(args)) > 512 * 1024) {
     return textResult("工具参数超过 512KB，请缩小输入范围。", true);
   }
@@ -291,6 +304,84 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
       const tool = toolsForRow(row).find((item) => customMcpGatewayToolName(row.id, item.name) === exposedName);
       if (!tool) continue;
       try {
+        const profile = resolveCustomMcpToolGovernance(tool);
+        const principal = resolveRuntimePrincipal({
+          adoption,
+          sessionId: req.headers["x-linggan-session-id"],
+        });
+        const governance = await evaluateGovernance({
+          principal: principal.principal,
+          operation: {
+            capabilityId: "custom.mcp",
+            operation: tool.name,
+            sideEffect: profile.sideEffect,
+            resource: `custom-mcp:${row.id}`,
+            payloadHash: stableToolInputHash(args),
+          },
+        }, [customMcpPolicyAdapter({
+          profile,
+          principal,
+          runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+        })], {
+          effect: "DENY",
+          policyCode: "EA_CUSTOM_MCP_POLICY_UNAVAILABLE",
+          ruleVersion: "custom-mcp-v1",
+          reason: "自定义 MCP 治理策略不可用，已阻止执行。",
+          obligations: [{ type: "AUDIT", level: "strong" }],
+        });
+        const approval = await enforceGovernanceApproval({
+          decision: governance,
+          principal: principal.principal,
+          operation: {
+            capabilityId: "custom.mcp",
+            operation: tool.name,
+            sideEffect: profile.sideEffect,
+            resource: `custom-mcp:${row.id}`,
+            payloadHash: stableToolInputHash(args),
+          },
+          idempotencyKey: String(args.idempotency_key || args.idempotencyKey || "").trim() || null,
+        });
+        if (approval.effect !== "ALLOW") {
+          metricOutcome = "error";
+          await recordAuditBestEffort({
+            action: "agent.custom_mcp.blocked",
+            result: "denied",
+            severity: "high",
+            actorType: "agent",
+            actorUserId: principal.principal.userId || null,
+            actorRole: principal.principal.roleTemplate || null,
+            targetType: "mcp_server",
+            targetId: String(row.id),
+            targetName: row.displayName,
+            workspaceId: principal.principal.workspaceId || null,
+            agentInstanceId: adoptId,
+            runtimeAgentId: principal.principal.agentId || null,
+            sessionId: principal.principal.sessionId || null,
+            toolName: tool.name,
+            policyCode: governance.policyCode,
+            source: "custom_mcp_gateway",
+            ...auditRequest(req),
+            metadata: {
+              policyDecisionId: governance.decisionId,
+              ruleVersion: governance.ruleVersion,
+              principalFingerprint: governance.principalFingerprint,
+              operationFingerprint: governance.operationFingerprint,
+              capabilitySetFingerprint: capabilitySetFingerprint(),
+              sideEffect: profile.sideEffect,
+              approvalId: approval.effect === "REQUIRE_APPROVAL"
+                ? approval.requirement.approvalId
+                : approval.approval?.approvalId || null,
+            },
+          });
+          if (approval.effect === "REQUIRE_APPROVAL") {
+            return approvalRequiredToolResult({
+              approvalId: approval.requirement.approvalId,
+              expiresAt: approval.requirement.expiresAt,
+              reason: approval.reason,
+            });
+          }
+          return textResult(approval.reason, true);
+        }
         const egress = await guardToolEgress({
           channel: "custom_mcp",
           payload: args,
@@ -317,7 +408,16 @@ async function gatewayCall(adoptId: string, exposedName: string, args: Record<st
           toolName: tool.name,
           source: "custom_mcp_gateway",
           ...auditRequest(req),
-          metadata: { durationMs: Date.now() - startedAt },
+          metadata: {
+            durationMs: Date.now() - startedAt,
+            policyDecisionId: governance.decisionId,
+            ruleVersion: governance.ruleVersion,
+            principalFingerprint: governance.principalFingerprint,
+            operationFingerprint: governance.operationFingerprint,
+            capabilitySetFingerprint: capabilitySetFingerprint(),
+            sideEffect: profile.sideEffect,
+            approvalId: approval.approval?.approvalId || null,
+          },
         });
         return result;
       } catch (error) {
@@ -378,6 +478,7 @@ async function handleGatewayMessage(req: Request, message: any) {
       String(message.params?.name || ""),
       message.params?.arguments && typeof message.params.arguments === "object" ? message.params.arguments : {},
       req,
+      claw,
     );
     return ok(id, result);
   }

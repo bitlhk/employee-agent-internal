@@ -59,6 +59,7 @@ vi.mock("./helpers", () => ({
     userId: 1,
     agentId: "runtime-1",
     roleTemplate: "general",
+    permissionProfile: "plus",
   })),
   resolveRuntimeWorkspaceByIds: vi.fn(() => "/tmp"),
 }));
@@ -84,6 +85,7 @@ vi.mock("./observability/metrics", () => ({
   observeAgentTaskRetry: vi.fn(),
   observeCapabilityPreflight: vi.fn(),
   observeOperationalActivity: vi.fn(),
+  observeGovernanceDecision: vi.fn(),
 }));
 
 import { registerAgentTaskRoutes, startAgentTaskRuntime } from "./claw-agent-tasks";
