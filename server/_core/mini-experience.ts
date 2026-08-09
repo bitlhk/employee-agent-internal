@@ -61,6 +61,10 @@ function experienceToken(): string {
   return String(process.env.MINIPROGRAM_EXPERIENCE_TOKEN || "").trim();
 }
 
+function miniExperienceModelId(): string {
+  return String(process.env.MINIPROGRAM_EXPERIENCE_MODEL_ID || "modelarts-maas/glm-5.2").trim();
+}
+
 function isExperienceRequestAuthorized(req: Request): boolean {
   const token = experienceToken();
   return token.length >= 32 && isAuthorizedInternalRequest(req, token);
@@ -423,6 +427,7 @@ async function proxyRestrictedChat(
         clientRunId: randomUUID(),
         channel: "miniprogram",
         runtimeMode: "fast",
+        model: miniExperienceModelId(),
         experienceMode: registered ? "mini_owner" : "mini_trial",
         ...(registered ? {} : { selectedSkillIds: [], knowledgeBaseIds: [] }),
       }),
