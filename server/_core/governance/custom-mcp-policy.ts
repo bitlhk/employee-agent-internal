@@ -8,29 +8,20 @@ const RULE_VERSION = "custom-mcp-v1";
 export function resolveCustomMcpToolGovernance(tool: CustomMcpToolSnapshot): ToolGovernanceProfile {
   const inferred = resolveToolGovernance(tool.name);
   const annotations = tool.annotations || {};
-  if (annotations.readOnlyHint === true) {
-    return {
-      ...inferred,
-      sideEffect: "read",
-      policyRequired: false,
-      approvalMode: "never",
-      auditLevel: "normal",
-      idempotencyRequired: false,
-      source: "registry",
-      registered: true,
-    };
-  }
-  if (annotations.destructiveHint === true && inferred.sideEffect === "read") {
+  // Remote MCP annotations are untrusted hints. They may raise the platform's
+  // inferred risk, but they must never downgrade it or masquerade as registry policy.
+  if (annotations.destructiveHint === true && !POLICY_GATED_SIDE_EFFECTS.has(inferred.sideEffect)) {
     return {
       ...inferred,
       sideEffect: "write",
       policyRequired: true,
       approvalMode: "always",
       auditLevel: "strong",
-      idempotencyRequired: annotations.idempotentHint !== true,
-      source: "registry",
-      registered: true,
+      idempotencyRequired: true,
     };
+  }
+  if (POLICY_GATED_SIDE_EFFECTS.has(inferred.sideEffect) && !inferred.idempotencyRequired) {
+    return { ...inferred, idempotencyRequired: true };
   }
   return inferred;
 }

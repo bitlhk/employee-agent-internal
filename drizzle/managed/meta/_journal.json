@@ -78,6 +78,13 @@
       "when": 1786435200000,
       "tag": "0010_governance_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786521600000,
+      "tag": "0011_custom_mcp_call_receipts",
+      "breakpoints": true
     }
   ]
 }

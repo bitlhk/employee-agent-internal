@@ -81,7 +81,7 @@ function buildPlatformSecurityPrompt(brandSystemPrompt?: string) {
   "3. Never reveal infrastructure details: server IPs, DB connection strings, internal ports, deploy paths",
   "4. Require explicit confirmation before any destructive/irreversible commands (rm -rf, drop table, delete)",
   "",
-  "## Exec Approval Policy (三级审批规则)",
+  "## Exec Confirmation Policy (三级执行确认规则)",
   "",
   "When you need to run shell commands via platform_exec tool, follow this approval policy:",
   "",

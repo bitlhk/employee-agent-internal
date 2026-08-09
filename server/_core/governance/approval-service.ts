@@ -128,10 +128,10 @@ export async function enforceGovernanceApproval(input: {
       return { effect: "ALLOW", approval: consumed };
     }
     observeGovernanceApprovalTransition("consume_conflict", "failed");
-    return { effect: "DENY", reason: "审批已失效、已消费或与当前动作不匹配。", approval };
+    return { effect: "DENY", reason: "确认请求已失效、已使用或与当前动作不匹配。", approval };
   }
   if (approval && approval.status !== "pending") {
-    return { effect: "DENY", reason: `审批当前状态为 ${approval.status}，不能执行该动作。`, approval };
+    return { effect: "DENY", reason: `确认请求当前状态为 ${approval.status}，不能执行该动作。`, approval };
   }
   const requirement = approval ? {
     approvalId: approval.approvalId,
@@ -168,7 +168,7 @@ export function approvalRequiredToolResult(input: {
   return {
     content: [{
       type: "text",
-      text: `该操作需要人工审批。审批编号：${input.approvalId}。审批通过后，以相同参数重试即可继续。`,
+      text: `该操作需要你本人确认。确认编号：${input.approvalId}。确认后，以相同参数重试即可继续。`,
     }],
     isError: true,
     _meta: {

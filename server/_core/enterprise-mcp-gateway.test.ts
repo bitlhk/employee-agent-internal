@@ -82,7 +82,7 @@ vi.mock("./tool-egress-policy", () => ({ guardToolEgress: mocks.guardEgress }));
 vi.mock("./governance/approval-service", () => ({
   enforceGovernanceApproval: mocks.enforceApproval,
   approvalRequiredToolResult: (input: { approvalId: string; expiresAt: Date }) => ({
-    content: [{ type: "text", text: `该操作需要人工审批。审批编号：${input.approvalId}` }],
+    content: [{ type: "text", text: `该操作需要人工确认。确认编号：${input.approvalId}` }],
     isError: true,
     _meta: { eaGovernance: { code: "EA_APPROVAL_REQUIRED", approvalId: input.approvalId } },
   }),
@@ -192,7 +192,7 @@ describe("enterprise MCP gateway", () => {
     mocks.policy.approvalMode = "always";
     mocks.enforceApproval.mockResolvedValue({
       effect: "REQUIRE_APPROVAL",
-      reason: "需要人工审批",
+      reason: "需要人工确认",
       requirement: {
         approvalId: "apr_00000000-0000-4000-8000-000000000001",
         status: "pending",
@@ -202,7 +202,7 @@ describe("enterprise MCP gateway", () => {
     });
     const response = await callGateway({ idempotency_key: "idem-1" });
     expect(response.result?.isError).toBe(true);
-    expect(resultText(response)).toMatch(/人工审批/);
+    expect(resultText(response)).toMatch(/人工确认/);
     expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });

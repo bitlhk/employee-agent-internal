@@ -111,7 +111,7 @@ export function validateEnterpriseMcpToolPolicy(input: EnterpriseMcpToolPolicyDr
     throw new Error(`工具 ${input.toolName} 具有写入副作用，必须启用幂等保护`);
   }
   if (input.sideEffect === "financial_action" && input.approvalMode === "never") {
-    throw new Error(`工具 ${input.toolName} 涉及金融动作，必须配置审批`);
+    throw new Error(`工具 ${input.toolName} 涉及金融动作，必须配置人工确认`);
   }
 }
 

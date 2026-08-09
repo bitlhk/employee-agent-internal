@@ -69,7 +69,7 @@
     "http-proxy-middleware": "^4.2.0",
     "jose": "6.1.0",
     "mysql2": "^3.15.0",
-    "nanoid": "^5.1.5",
+    "nanoid": "^5.1.16",
     "nodemailer": "^9.0.3",
     "pdfjs-dist": "6.2.108",
     "pino": "10.3.1",
@@ -148,6 +148,8 @@
   "packageManager": "pnpm@10.34.4+sha512.8768be55200ae3f2226b6527fcca2687e14bc4e5f12d7721a0f25da3df47915177058648db4177baf348120fa0ba2752d8d8d93f6beaf1fe64ae18da8de961af",
   "pnpm": {
     "overrides": {
+      "fast-uri": "3.1.5",
+      "ip-address": "10.3.1",
       "tailwindcss>nanoid": "3.3.7",
       "express>path-to-regexp": "0.1.13",
       "express>qs": "6.15.3",

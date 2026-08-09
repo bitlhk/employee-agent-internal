@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { Express, Request, Response } from "express";
 import {
+  completeCustomMcpCall,
   createCustomMcpConnection,
   deleteCustomMcpConnection,
   getClawByAdoptId,
@@ -8,6 +10,7 @@ import {
   listCustomMcpConnections,
   revealCustomMcpOAuthData,
   resolveEffectiveRoleAssets,
+  reserveCustomMcpCall,
   revealCustomMcpCredential,
   toPublicCustomMcpConnection,
   updateCustomMcpConnection,
@@ -192,6 +195,50 @@ function toolsForRow(row: NonNullable<Awaited<ReturnType<typeof getCustomMcpConn
   return tools.filter((tool) => selected.has(tool.name)).slice(0, MAX_CUSTOM_MCP_SELECTED_TOOLS);
 }
 
+function customMcpIdempotencyKey(args: Record<string, unknown>): string {
+  return String(args.idempotency_key || args.idempotencyKey || "").trim().slice(0, 191);
+}
+
+function gatewayInputSchema(tool: CustomMcpToolSnapshot): Record<string, unknown> {
+  const profile = resolveCustomMcpToolGovernance(tool);
+  const schema = tool.inputSchema && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema)
+    ? tool.inputSchema as Record<string, unknown>
+    : { type: "object", properties: {} };
+  if (!profile.idempotencyRequired) return schema;
+  const properties = schema.properties && typeof schema.properties === "object" && !Array.isArray(schema.properties)
+    ? schema.properties as Record<string, unknown>
+    : {};
+  const required = Array.isArray(schema.required)
+    ? schema.required.map(item => String(item)).filter(Boolean)
+    : [];
+  return {
+    ...schema,
+    type: "object",
+    properties: {
+      ...properties,
+      idempotency_key: properties.idempotency_key || {
+        type: "string",
+        minLength: 8,
+        maxLength: 191,
+        description: "Stable retry key required by the EA gateway for this side-effect operation.",
+      },
+    },
+    required: Array.from(new Set([...required, "idempotency_key"])),
+  };
+}
+
+function remoteToolArguments(tool: CustomMcpToolSnapshot, args: Record<string, unknown>): Record<string, unknown> {
+  const properties = tool.inputSchema && typeof tool.inputSchema === "object" && !Array.isArray(tool.inputSchema)
+    && "properties" in tool.inputSchema
+    && tool.inputSchema.properties && typeof tool.inputSchema.properties === "object" && !Array.isArray(tool.inputSchema.properties)
+    ? tool.inputSchema.properties as Record<string, unknown>
+    : {};
+  const remoteArgs = { ...args };
+  if (!("idempotency_key" in properties)) delete remoteArgs.idempotency_key;
+  if (!("idempotencyKey" in properties)) delete remoteArgs.idempotencyKey;
+  return remoteArgs;
+}
+
 type CustomMcpConnectionRow = Awaited<ReturnType<typeof listCustomMcpConnections>>[number];
 
 export function customMcpServerId(connectionId: number): string {
@@ -272,13 +319,21 @@ export async function toggleCustomMcpConnection(input: {
 
 async function gatewayTools(adoptId: string) {
   const rows = await listCustomMcpConnections({ adoptId, enabledOnly: true });
-  return rows.filter((row) => row.healthStatus === "ready").flatMap((row) => toolsForRow(row).map((tool) => ({
-    name: customMcpGatewayToolName(row.id, tool.name),
-    description: `[${row.displayName}] ${tool.description || tool.name}`.slice(0, 2_000),
-    inputSchema: tool.inputSchema || { type: "object", properties: {} },
-    ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
-    ...(tool.annotations ? { annotations: tool.annotations } : {}),
-  })));
+  return rows.filter((row) => row.healthStatus === "ready").flatMap((row) => toolsForRow(row).map((tool) => {
+    const profile = resolveCustomMcpToolGovernance(tool);
+    return {
+      name: customMcpGatewayToolName(row.id, tool.name),
+      description: `[${row.displayName}] ${tool.description || tool.name}`.slice(0, 2_000),
+      inputSchema: gatewayInputSchema(tool),
+      ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+      annotations: {
+        ...(tool.annotations || {}),
+        readOnlyHint: profile.sideEffect === "read",
+        destructiveHint: profile.sideEffect !== "read" && profile.sideEffect !== "compute",
+        idempotentHint: false,
+      },
+    };
+  }));
 }
 
 async function gatewayCall(
@@ -303,8 +358,13 @@ async function gatewayCall(
       if (row.healthStatus !== "ready") continue;
       const tool = toolsForRow(row).find((item) => customMcpGatewayToolName(row.id, item.name) === exposedName);
       if (!tool) continue;
+      const requestId = `cmcp_${randomUUID()}`;
+      let receiptReserved = false;
       try {
         const profile = resolveCustomMcpToolGovernance(tool);
+        const idempotencyKey = customMcpIdempotencyKey(args);
+        const remoteArgs = remoteToolArguments(tool, args);
+        const argsHash = stableToolInputHash(remoteArgs);
         const principal = resolveRuntimePrincipal({
           adoption,
           sessionId: req.headers["x-linggan-session-id"],
@@ -316,7 +376,7 @@ async function gatewayCall(
             operation: tool.name,
             sideEffect: profile.sideEffect,
             resource: `custom-mcp:${row.id}`,
-            payloadHash: stableToolInputHash(args),
+            payloadHash: argsHash,
           },
         }, [customMcpPolicyAdapter({
           profile,
@@ -329,6 +389,51 @@ async function gatewayCall(
           reason: "自定义 MCP 治理策略不可用，已阻止执行。",
           obligations: [{ type: "AUDIT", level: "strong" }],
         });
+        const idempotencyRequired = profile.idempotencyRequired
+          || governance.obligations.some(obligation => obligation.type === "IDEMPOTENCY_KEY");
+        if (idempotencyRequired && !idempotencyKey) {
+          metricOutcome = "error";
+          await recordAuditBestEffort({
+            action: "agent.custom_mcp.blocked",
+            result: "denied",
+            severity: "high",
+            actorType: "agent",
+            actorUserId: principal.principal.userId || null,
+            actorRole: principal.principal.roleTemplate || null,
+            targetType: "mcp_server",
+            targetId: String(row.id),
+            targetName: row.displayName,
+            workspaceId: principal.principal.workspaceId || null,
+            agentInstanceId: adoptId,
+            runtimeAgentId: principal.principal.agentId || null,
+            sessionId: principal.principal.sessionId || null,
+            toolName: tool.name,
+            policyCode: "EA_CUSTOM_MCP_IDEMPOTENCY_KEY_REQUIRED",
+            source: "custom_mcp_gateway",
+            ...auditRequest(req),
+            metadata: {
+              policyDecisionId: governance.decisionId,
+              ruleVersion: governance.ruleVersion,
+              principalFingerprint: governance.principalFingerprint,
+              operationFingerprint: governance.operationFingerprint,
+              capabilitySetFingerprint: capabilitySetFingerprint(),
+              sideEffect: profile.sideEffect,
+            },
+          });
+          return textResult("该工具需要 idempotency_key，已阻止无幂等保护的调用。", true);
+        }
+        const egress = await guardToolEgress({
+          channel: "custom_mcp",
+          payload: remoteArgs,
+          adoptId,
+          toolName: tool.name,
+          destinationUrl: row.endpointUrl,
+          destinationTrust: "user",
+        });
+        if (!egress.ok) {
+          metricOutcome = "error";
+          return textResult(egress.error || "工具参数未通过数据护栏。", true);
+        }
         const approval = await enforceGovernanceApproval({
           decision: governance,
           principal: principal.principal,
@@ -337,9 +442,9 @@ async function gatewayCall(
             operation: tool.name,
             sideEffect: profile.sideEffect,
             resource: `custom-mcp:${row.id}`,
-            payloadHash: stableToolInputHash(args),
+            payloadHash: argsHash,
           },
-          idempotencyKey: String(args.idempotency_key || args.idempotencyKey || "").trim() || null,
+          idempotencyKey: idempotencyKey || null,
         });
         if (approval.effect !== "ALLOW") {
           metricOutcome = "error";
@@ -382,24 +487,40 @@ async function gatewayCall(
           }
           return textResult(approval.reason, true);
         }
-        const egress = await guardToolEgress({
-          channel: "custom_mcp",
-          payload: args,
-          adoptId,
-          toolName: tool.name,
-          destinationUrl: row.endpointUrl,
-          destinationTrust: "user",
-        });
-        if (!egress.ok) {
-          metricOutcome = "error";
-          return textResult(egress.error || "工具参数未通过数据护栏。", true);
+        if (idempotencyRequired) {
+          const reservation = await reserveCustomMcpCall({
+            requestId,
+            policyDecisionId: governance.decisionId,
+            idempotencyKey,
+            connectionId: row.id,
+            toolName: tool.name,
+            userId: principal.principal.userId,
+            adoptId,
+            argsHash,
+          });
+          if (!reservation.reserved) {
+            metricOutcome = "error";
+            return textResult(reservation.conflict
+              ? `idempotency_key 已用于不同参数的请求（${reservation.receipt.requestId}）。`
+              : `重复请求已阻止（${reservation.receipt.requestId}）。`, true);
+          }
+          receiptReserved = true;
         }
-        const result = await callCustomMcpTool(configFromRow(row), tool.name, args);
+        const result = await callCustomMcpTool(configFromRow(row), tool.name, remoteArgs);
         metricOutcome = result.isError === true ? "error" : "success";
+        if (receiptReserved) {
+          await completeCustomMcpCall({
+            requestId,
+            status: result.isError === true ? "failed" : "completed",
+            resultHash: stableToolInputHash(result),
+            durationMs: Date.now() - startedAt,
+            errorCode: result.isError === true ? "REMOTE_TOOL_ERROR" : null,
+          });
+        }
         await recordAuditBestEffort({
           action: "agent.custom_mcp.called",
-          result: "success",
-          severity: "info",
+          result: result.isError === true ? "failed" : "success",
+          severity: result.isError === true ? "medium" : "info",
           actorType: "agent",
           targetType: "mcp_server",
           targetId: String(row.id),
@@ -422,6 +543,14 @@ async function gatewayCall(
         return result;
       } catch (error) {
         metricOutcome = "error";
+        if (receiptReserved) {
+          await completeCustomMcpCall({
+            requestId,
+            status: "failed",
+            durationMs: Date.now() - startedAt,
+            errorCode: "CUSTOM_MCP_CALL_FAILED",
+          }).catch(() => undefined);
+        }
         await recordAuditBestEffort({
           action: "agent.custom_mcp.called",
           result: "failed",

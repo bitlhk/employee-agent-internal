@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   reservation: { kind: "created" } as any,
+  permissionProfile: "plus",
+  reserveCalls: 0,
+  remoteRunCalls: 0,
   recoverLeaseCalls: 0,
   failOwnedLeaseCalls: 0,
   task: { status: "running" } as Record<string, unknown>,
@@ -43,7 +46,10 @@ vi.mock("../db/agents", () => ({
   listAgentTasksByIds: vi.fn(async () => []),
   listAgentTaskCounts: vi.fn(async () => ({})),
   listEnabledBusinessAgentsForContext: vi.fn(async () => []),
-  reserveAgentTask: vi.fn(async () => state.reservation),
+  reserveAgentTask: vi.fn(async () => {
+    state.reserveCalls++;
+    return state.reservation;
+  }),
   updateActiveAgentTask: vi.fn(),
   updateLeasedAgentTask: vi.fn(async () => true),
 }));
@@ -59,7 +65,7 @@ vi.mock("./helpers", () => ({
     userId: 1,
     agentId: "runtime-1",
     roleTemplate: "general",
-    permissionProfile: "plus",
+    permissionProfile: state.permissionProfile,
   })),
   resolveRuntimeWorkspaceByIds: vi.fn(() => "/tmp"),
 }));
@@ -75,7 +81,10 @@ vi.mock("./agent-health", () => ({
 
 vi.mock("./a2a-expert-client", () => ({
   cancelA2AExpertTask: vi.fn(async () => false),
-  runA2AExpertTask: vi.fn(async () => ({ state: "completed", text: "done", rawEvents: [] })),
+  runA2AExpertTask: vi.fn(async () => {
+    state.remoteRunCalls++;
+    return { state: "completed", text: "done", rawEvents: [] };
+  }),
   summarizeA2AEvents: vi.fn(() => null),
 }));
 
@@ -104,6 +113,9 @@ async function startServer(): Promise<string> {
 
 afterEach(async () => {
   state.reservation = { kind: "created" };
+  state.permissionProfile = "plus";
+  state.reserveCalls = 0;
+  state.remoteRunCalls = 0;
   state.task = { status: "running" };
   if (server) {
     await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
@@ -112,6 +124,26 @@ afterEach(async () => {
 });
 
 describe("agent task consistency", () => {
+  it("never reserves or executes an A2A task when delegation governance denies it", async () => {
+    state.permissionProfile = "starter";
+    const base = await startServer();
+    const response = await fetch(`${base}/api/claw/agent-tasks/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adoptId: "lgj-owner",
+        agentId: "expert-1",
+        task: "分析材料",
+      }),
+    });
+    const body = await response.json() as { error?: string };
+
+    expect(response.status).toBe(403);
+    expect(body.error).toBe("DELEGATION_NOT_ALLOWED");
+    expect(state.reserveCalls).toBe(0);
+    expect(state.remoteRunCalls).toBe(0);
+  });
+
   it("returns the existing task when the database idempotency reservation wins", async () => {
     state.reservation = {
       kind: "existing",

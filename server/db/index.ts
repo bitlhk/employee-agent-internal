@@ -18,6 +18,7 @@ export * from "./agent-memory";
 export * from "./agent-memory-conflicts";
 export * from "./agent-mcp-preferences";
 export * from "./custom-mcp-connections";
+export * from "./custom-mcp-receipts";
 export * from "./enterprise-mcp";
 export * from "./knowledge";
 export * from "./channel-identities";

@@ -372,7 +372,7 @@ export function normalizeJiuwenPermissionRequest(eventType: string, delta: any, 
   const question = String(firstQuestion?.question || delta?.question || delta?.message || delta?.query || "").trim();
   const kind = source === "ask_user_interrupt" ? "question" : "permission";
   const interactionQuestions = kind === "question" ? normalizeInteractionQuestions(delta?.questions) : [];
-  const titleFallback = kind === "question" ? "需要补充信息" : "权限审批";
+  const titleFallback = kind === "question" ? "需要补充信息" : "权限确认";
   const title = String(firstQuestion?.header || delta?.header || titleFallback).trim() || titleFallback;
   const command = extractCommandFromQuestion(question || stableJson(delta));
   const toolName = String(delta?.tool_name || delta?.toolName || firstQuestion?.tool_name || "").trim()

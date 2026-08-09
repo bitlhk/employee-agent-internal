@@ -1022,7 +1022,7 @@ function ChatMessageInner({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{jiuwenPermission.title || "权限审批"}</div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{jiuwenPermission.title || "权限确认"}</div>
                 <div className="mt-0.5 truncate" style={{ color: "var(--oc-text-secondary)" }}>
                   {jiuwenPermission.toolName ? `工具：${jiuwenPermission.toolName}` : "JiuwenSwarm 请求授权后继续执行"}
                 </div>

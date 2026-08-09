@@ -1087,6 +1087,38 @@ export const customMcpConnections = mysqlTable("custom_mcp_connections", {
 export type CustomMcpConnection = typeof customMcpConnections.$inferSelect;
 export type InsertCustomMcpConnection = typeof customMcpConnections.$inferInsert;
 
+// Local receipts enforce idempotency even when a user-managed MCP server does
+// not understand or honor EA's gateway idempotency key.
+export const customMcpCallReceipts = mysqlTable("custom_mcp_call_receipts", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  requestId: varchar("request_id", { length: 64 }).notNull(),
+  policyDecisionId: varchar("policy_decision_id", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
+  status: mysqlEnum("status", ["started", "completed", "failed", "blocked"]).default("started").notNull(),
+  connectionId: bigint("connection_id", { mode: "number" }).notNull(),
+  toolName: varchar("tool_name", { length: 256 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  argsHash: varchar("args_hash", { length: 64 }).notNull(),
+  resultHash: varchar("result_hash", { length: 64 }),
+  externalRequestId: varchar("external_request_id", { length: 128 }),
+  durationMs: int("duration_ms"),
+  errorCode: varchar("error_code", { length: 128 }),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqRequest: uniqueIndex("uk_custom_mcp_call_request").on(table.requestId),
+  uniqIdempotency: uniqueIndex("uk_custom_mcp_call_idempotency").on(table.adoptId, table.connectionId, table.toolName, table.idempotencyKey),
+  actorStartedIdx: index("idx_custom_mcp_call_actor_started").on(table.userId, table.startedAt),
+  connectionStartedIdx: index("idx_custom_mcp_call_connection_started").on(table.connectionId, table.startedAt),
+  statusStartedIdx: index("idx_custom_mcp_call_status_started").on(table.status, table.startedAt),
+}));
+
+export type CustomMcpCallReceipt = typeof customMcpCallReceipts.$inferSelect;
+export type InsertCustomMcpCallReceipt = typeof customMcpCallReceipts.$inferInsert;
+
 // Organization-managed MCP registry. Unlike customMcpConnections, these
 // records are centrally governed and assigned to roles by role_asset_grants.
 export const enterpriseMcpConnections = mysqlTable("enterprise_mcp_connections", {

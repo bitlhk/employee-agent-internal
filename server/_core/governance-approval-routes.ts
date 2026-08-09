@@ -46,7 +46,7 @@ export function registerGovernanceApprovalRoutes(app: Express): void {
     try {
     const adoptId = String(req.body?.adoptId || "").trim();
     const approvalId = String(req.params.approvalId || "").trim();
-    if (!APPROVAL_ID_RE.test(approvalId)) return res.status(400).json({ error: "审批编号格式不正确" });
+    if (!APPROVAL_ID_RE.test(approvalId)) return res.status(400).json({ error: "确认编号格式不正确" });
     const claw = await requireClawOwner(req, res, adoptId);
     if (!claw) return;
     const rawDecision = String(req.body?.decision || "").trim().toLowerCase();
@@ -61,7 +61,7 @@ export function registerGovernanceApprovalRoutes(app: Express): void {
       || existing.status !== "pending"
       || existing.expiresAt.getTime() <= Date.now()
     ) {
-      return res.status(409).json({ error: "审批不存在、已处理或已过期" });
+      return res.status(409).json({ error: "确认请求不存在、已处理或已过期" });
     }
     const auditBase = {
       ...auditActor({ id: Number(claw.userId), role: "user" }),
@@ -93,7 +93,7 @@ export function registerGovernanceApprovalRoutes(app: Express): void {
       decision: rawDecision,
       reason: String(req.body?.reason || "").trim().slice(0, 1000) || null,
     });
-    if (!item) return res.status(409).json({ error: "审批不存在、已处理或已过期" });
+    if (!item) return res.status(409).json({ error: "确认请求不存在、已处理或已过期" });
     await recordAuditBestEffort({
       action: "governance.approval.decision_completed",
       result: "success",
@@ -104,7 +104,7 @@ export function registerGovernanceApprovalRoutes(app: Express): void {
     res.json({ item: publicApproval(item) });
     } catch {
       if (!res.headersSent) {
-        res.status(503).json({ error: "审批服务暂时不可用，未执行审批决定" });
+        res.status(503).json({ error: "确认服务暂时不可用，未执行本次决定" });
       }
     }
   });

@@ -79,7 +79,7 @@ describe("jiuwenclaw bridge audit helpers", () => {
       question: "工具 bash 需要授权",
     }, "fallback");
 
-    expect(request).toMatchObject({ kind: "permission", title: "权限审批" });
+    expect(request).toMatchObject({ kind: "permission", title: "权限确认" });
     expect(request?.options.map((option) => option.value)).toEqual(["本次允许", "拒绝"]);
     expect(request).toMatchObject({ riskLevel: "medium", allowAlways: false });
   });

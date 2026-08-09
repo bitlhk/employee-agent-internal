@@ -48,8 +48,8 @@ function normalizeCronCallbackContent(content: string): {
     || (text.includes("interrupt_ids") && text.includes("__interaction__"));
   if (!isInterrupt) return { output: text };
   const output = [
-    "定时任务执行时触发了工具权限审批，后台任务无法继续自动执行。",
-    "建议调整任务提示词，避免使用需要人工审批的工具；或在确认安全后调整 JiuwenSwarm 的工具权限策略。",
+    "定时任务执行时触发了工具权限确认，后台任务无法继续自动执行。",
+    "建议调整任务提示词，避免使用需要人工确认的工具；或在确认安全后调整 JiuwenSwarm 的工具权限策略。",
   ].join("\n");
   return {
     statusOverride: "error",

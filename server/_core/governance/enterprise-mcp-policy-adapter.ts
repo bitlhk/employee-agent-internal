@@ -45,7 +45,7 @@ export function enterpriseMcpPolicyAdapter(input: {
           effect: "REQUIRE_APPROVAL",
           policyCode: "EA_ENTERPRISE_MCP_APPROVAL_REQUIRED",
           ruleVersion: RULE_VERSION,
-          reason: "该企业工具按组织策略需要人工审批。",
+          reason: "该企业工具按组织策略需要当前用户人工确认。",
           obligations,
         };
       }

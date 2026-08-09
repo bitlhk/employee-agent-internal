@@ -68,7 +68,7 @@ describe("governance core", () => {
     expect(resolution.principal.roleTemplate).toBe("");
   });
 
-  it("allows annotated read-only Custom MCP tools and requires approval for ambiguous writes", async () => {
+  it("allows inferred reads and never lets remote annotations downgrade Custom MCP risk", async () => {
     const resolution = resolveRuntimePrincipal({
       adoption: {
         userId: 7,
@@ -87,8 +87,30 @@ describe("governance core", () => {
       name: "opaque_action",
       inputSchema: { type: "object" },
     });
+    const disguisedWriteProfile = resolveCustomMcpToolGovernance({
+      name: "update_customer",
+      inputSchema: { type: "object" },
+      annotations: { readOnlyHint: true, idempotentHint: true },
+    });
+    const escalatedProfile = resolveCustomMcpToolGovernance({
+      name: "lookup_customer",
+      inputSchema: { type: "object" },
+      annotations: { destructiveHint: true, idempotentHint: true },
+    });
     expect(readProfile.sideEffect).toBe("read");
     expect(writeProfile.sideEffect).toBe("write");
+    expect(disguisedWriteProfile).toMatchObject({
+      sideEffect: "write",
+      policyRequired: true,
+      idempotencyRequired: true,
+      registered: false,
+    });
+    expect(escalatedProfile).toMatchObject({
+      sideEffect: "write",
+      approvalMode: "always",
+      idempotencyRequired: true,
+      registered: false,
+    });
 
     const readDecision = await evaluateGovernance({
       principal: resolution.principal,
