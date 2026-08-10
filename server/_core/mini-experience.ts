@@ -17,6 +17,10 @@ import {
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "../routers/role-runtime-adapters";
 import type { EffectiveRoleAssets } from "./role-asset-grants";
 import { isAuthorizedInternalRequest, resolveRuntimeWorkspaceByIds } from "./helpers";
+import {
+  listClawChatHistorySessionRecords,
+  readModernChatHistorySessionMessages,
+} from "./chat-history";
 import { writeJiuwenSwarmRoleScopeManifest } from "./jiuwenswarm-role-scope";
 import { logError, logInfo, logWarn } from "./observability/logger";
 import { resolvePublicBaseUrl } from "./public-base-url";
@@ -65,6 +69,12 @@ type MobileExperienceCapabilities = {
     enabled: true;
   }>;
 };
+
+const MiniExperienceAccountInput = MiniExperienceInput.pick({
+  subject: true,
+  identity: true,
+  adoptionId: true,
+});
 
 const provisioning = new Map<string, Promise<MiniExperienceAdoption>>();
 const registeredProvisioning = new Map<number, Promise<MiniExperienceAdoption>>();
@@ -149,6 +159,45 @@ async function resolveMobileExperienceCapabilities(
       enabled: true as const,
     })),
   };
+}
+
+function capabilityInventoryIntent(message: string): "skills" | "mcp" | "all" | null {
+  const normalized = String(message || "").trim().replace(/\s+/gu, " ");
+  if (!normalized || normalized.length > 80) return null;
+  const skill = /(?:哪些|什么|列出|查看|介绍|可用).{0,16}(?:技能|skills?)|(?:技能|skills?).{0,12}(?:哪些|什么|列表|可用)/iu.test(normalized);
+  const mcp = /(?:哪些|什么|列出|查看|介绍|可用).{0,16}(?:mcp|连接工具|连接器)|(?:mcp|连接工具|连接器).{0,12}(?:哪些|什么|列表|可用)/iu.test(normalized);
+  if (skill && mcp) return "all";
+  if (skill) return "skills";
+  if (mcp) return "mcp";
+  return null;
+}
+
+function capabilityInventoryAnswer(
+  capabilities: MobileExperienceCapabilities,
+  intent: "skills" | "mcp" | "all",
+): string {
+  const sections: string[] = [];
+  if (intent === "skills" || intent === "all") {
+    const skills = capabilities.skills.filter(skill => skill.ready);
+    sections.push(skills.length
+      ? `当前岗位可用技能（${skills.length} 个）：\n${skills.map((skill, index) => `${index + 1}. ${skill.name}`).join("\n")}`
+      : "当前岗位暂无可运行技能。");
+  }
+  if (intent === "mcp" || intent === "all") {
+    sections.push(capabilities.mcpServers.length
+      ? `当前岗位已授权连接（${capabilities.mcpServers.length} 个）：\n${capabilities.mcpServers.map((server, index) => `${index + 1}. ${server.name}`).join("\n")}`
+      : "当前岗位暂无已授权连接。");
+  }
+  return `${sections.join("\n\n")}\n\n手机 App 可在输入框上方查看；未手动选择技能时，Agent 会按任务自动匹配。`;
+}
+
+function sendMiniExperienceSseAnswer(res: Response, answer: string): void {
+  res.status(200);
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("content-type", "text/event-stream; charset=utf-8");
+  res.write(`data: ${JSON.stringify({ __final_text: answer })}\n\n`);
+  res.write(`data: ${JSON.stringify({ __stream_end: true })}\n\n`);
+  res.end("data: [DONE]\n\n");
 }
 
 async function ensureMiniExperienceUser(openId: string): Promise<number> {
@@ -482,6 +531,18 @@ async function proxyRestrictedChat(
   const internalKey = String(process.env.INTERNAL_API_KEY || "").trim();
   if (internalKey.length < 16) throw new Error("INTERNAL_API_KEY 未配置");
 
+  if (registered) {
+    const inventoryIntent = capabilityInventoryIntent(input.message);
+    if (inventoryIntent) {
+      const capabilities = await resolveMobileExperienceCapabilities(adoption);
+      sendMiniExperienceSseAnswer(
+        res,
+        capabilityInventoryAnswer(capabilities, inventoryIntent),
+      );
+      return;
+    }
+  }
+
   const port = Number.parseInt(String(process.env.PORT || "5174"), 10) || 5174;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), MINI_EXPERIENCE_TIMEOUT_MS);
@@ -542,7 +603,7 @@ export function registerMiniExperienceRoutes(app: Express): void {
       return;
     }
     try {
-      const accountInput = MiniExperienceInput.pick({ subject: true, identity: true }).extend({
+      const accountInput = MiniExperienceAccountInput.extend({
         ensure: z.boolean().default(true),
       }).parse(req.body);
       const resolved = await resolveRegisteredAdoption({
@@ -578,6 +639,103 @@ export function registerMiniExperienceRoutes(app: Express): void {
       }
       logError("miniprogram_account.failed", error);
       res.status(503).json({ error: "岗位智能体账号暂时不可用" });
+    }
+  });
+
+  app.post("/api/internal/miniprogram/experience/history", async (req, res) => {
+    if (!isExperienceRequestAuthorized(req)) {
+      res.status(experienceToken() ? 401 : 503).json({ error: "渠道账号服务未配置" });
+      return;
+    }
+    try {
+      const input = MiniExperienceAccountInput.extend({
+        limit: z.number().int().min(1).max(30).default(20),
+      }).parse(req.body);
+      const resolved = await resolveRegisteredAdoption({
+        ...input,
+        message: "history",
+        conversationId: "channel-history-list",
+        selectedSkillIds: [],
+      }, false);
+      if (!resolved.adoption) {
+        res.json({ sessions: [] });
+        return;
+      }
+      const payload = await listClawChatHistorySessionRecords({
+        adoptId: String(resolved.adoption.adoptId),
+        claw: resolved.adoption,
+        limit: input.limit,
+      });
+      const sessions = (Array.isArray(payload.sessions) ? payload.sessions : [])
+        .map(session => ({
+          conversationId: String(session?.conversationId || ""),
+          sessionKey: String(session?.sessionKey || ""),
+          title: String(session?.title || "新对话").slice(0, 80),
+          preview: String(session?.preview || "").slice(0, 160),
+          messageCount: Math.max(0, Number(session?.messageCount || 0)),
+          updatedAt: Math.max(0, Number(session?.updatedAt || 0)),
+        }))
+        .filter(session => session.conversationId && session.sessionKey && session.messageCount > 0);
+      res.setHeader("cache-control", "no-store");
+      res.json({ sessions });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: error.issues[0]?.message || "请求参数无效" });
+        return;
+      }
+      logError("miniprogram_experience.history_failed", error);
+      res.status(503).json({ error: "历史会话暂时不可用" });
+    }
+  });
+
+  app.post("/api/internal/miniprogram/experience/history/messages", async (req, res) => {
+    if (!isExperienceRequestAuthorized(req)) {
+      res.status(experienceToken() ? 401 : 503).json({ error: "渠道账号服务未配置" });
+      return;
+    }
+    try {
+      const input = MiniExperienceAccountInput.extend({
+        sessionKey: z.string().trim().min(1).max(240).regex(/^[A-Za-z0-9:_-]+$/u),
+      }).parse(req.body);
+      const resolved = await resolveRegisteredAdoption({
+        ...input,
+        message: "history",
+        conversationId: "channel-history-messages",
+        selectedSkillIds: [],
+      }, false);
+      if (!resolved.adoption) {
+        res.status(404).json({ error: "历史会话不存在" });
+        return;
+      }
+      const adoption = resolved.adoption;
+      const history = await readModernChatHistorySessionMessages({
+        adoptId: String(adoption.adoptId),
+        dbAgentId: String(adoption.agentId || ""),
+        sessionKey: input.sessionKey,
+        workspaceDir: resolveRuntimeWorkspaceByIds(String(adoption.adoptId), String(adoption.agentId || "")),
+        maxMessages: 100,
+      });
+      if (!history) {
+        res.status(404).json({ error: "历史会话不存在" });
+        return;
+      }
+      res.setHeader("cache-control", "no-store");
+      res.json({
+        conversationId: history.conversationId,
+        messages: history.messages.map(message => ({
+          id: String(message.id || randomUUID()),
+          role: message.role,
+          text: String(message.text || "").slice(0, 12_000),
+          timestamp: Math.max(0, Number(message.timestamp || 0)),
+        })).filter(message => message.text),
+      });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: error.issues[0]?.message || "请求参数无效" });
+        return;
+      }
+      logError("miniprogram_experience.history_messages_failed", error);
+      res.status(503).json({ error: "历史消息暂时不可用" });
     }
   });
 
