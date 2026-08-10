@@ -1,0 +1,6 @@
+{
+  "name": "privbank-previsit",
+  "displayName": "财富客户访前准备",
+  "description": "通过授权客户数据、当前有效岗位知识和适当性前置条件生成财富客户访前简报。",
+  "version": "1.1.0"
+}

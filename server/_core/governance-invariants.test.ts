@@ -64,6 +64,11 @@ describe("governance invariants", () => {
     expect(resolveToolGovernance("bash")).toMatchObject({ sideEffect: "compute", policyRequired: true, registered: true });
     expect(resolveToolGovernance("a2a_expert_call")).toMatchObject({ sideEffect: "external_send", policyRequired: true });
     expect(resolveToolGovernance("mcp_platform_tools_get_user_channels")).toMatchObject({ sideEffect: "read" });
+    expect(resolveToolGovernance("mcp_platform_tools_prepare_wealth_allocation_context")).toMatchObject({
+      sideEffect: "read",
+      policyRequired: false,
+      registered: true,
+    });
     expect(resolveToolGovernance("mcp_platform_tools_create_scheduled_task")).toMatchObject({ sideEffect: "write", idempotencyRequired: true });
     expect(resolveToolGovernance("mcp_platform_tools_submit_agent_task")).toMatchObject({ sideEffect: "external_send", idempotencyRequired: true });
     expect(resolveToolGovernance("mcp_custom_mcp_gateway_custom_1_update_customer")).toMatchObject({

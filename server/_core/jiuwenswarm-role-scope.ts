@@ -69,6 +69,10 @@ function uniqueSorted(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort();
 }
 
+function uniqueInOrder(values: string[]): string[] {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
+}
+
 function readManagedSkillsManifest(workspaceDir: string): JiuwenSwarmManagedSkillsManifest {
   const manifestPath = path.join(workspaceDir, JIUWENSWARM_MANAGED_SKILLS_MANIFEST);
   try {
@@ -221,7 +225,7 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
   const identityChanged = writeJiuwenSwarmIdentityFilesIfMissing(workspaceDir, args.role, args.effectiveAssets).identityChanged;
   const userChanged = writeJiuwenSwarmUserFileIfMissing(workspaceDir, args.role).userChanged;
 
-  const skillSourceDirs = uniqueSorted([
+  const skillSourceDirs = uniqueInOrder([
     ...(args.skillSourceDirs || []),
     ...(args.sharedSkillsDir ? [args.sharedSkillsDir] : []),
   ]);
@@ -425,7 +429,7 @@ export function reconcileJiuwenSwarmSharedSkillLinks(params: {
   const managedManifestPath = path.join(params.workspaceDir, JIUWENSWARM_MANAGED_SKILLS_MANIFEST);
   const previousManaged = readManagedSkillsManifest(params.workspaceDir);
   const nextManaged: JiuwenSwarmManagedSkillsManifest = { version: 1, skills: {} };
-  const sharedSkillsDirs = uniqueSorted([
+  const sharedSkillsDirs = uniqueInOrder([
     ...(params.sharedSkillsDirs || []),
     ...(params.sharedSkillsDir ? [params.sharedSkillsDir] : []),
   ]).filter((dir) => existsSync(dir));

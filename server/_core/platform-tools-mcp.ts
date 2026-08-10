@@ -4,7 +4,7 @@ import path from "path";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { isAuthorizedInternalRequest, resolveRuntimeAgentId, resolveRuntimeWorkspaceByIds } from "./helpers";
 import type { SkillSource } from "../../shared/types/skill";
-import { getClawByAdoptId, getClawByAgentId } from "../db";
+import { getClawByAdoptId, getClawByAgentId, getUserById } from "../db";
 import { resolveEffectiveRoleAssets } from "../db/role-assets";
 import { parseSkillSourceDirectory, sanitizeSkillId } from "./skills/skill-source";
 import { skillInstaller } from "./skills/skill-installer";
@@ -24,6 +24,9 @@ import { resolveRuntimePrincipal } from "./governance/principal";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
+import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
+import { prepareWealthAllocationContext } from "./wealth-allocation-context";
+import { resolveWealthSuitabilityPolicySource } from "./wealth-policy-source";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -106,6 +109,28 @@ const TOOLS = [
     name: "list_learned_preferences",
     description: "List active work preferences learned by the current EA employee agent. Use when the user asks what is remembered about their work style.",
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "prepare_wealth_allocation_context",
+    description: [
+      "Prepare governed wealth-allocation context for one authorized customer.",
+      "This is the only platform tool that may produce a formal candidate-product set for a wealth allocation task.",
+      "It loads current customer and product data, verifies the currently effective suitability policy, and returns only products allowed by deterministic policy.",
+      "Use eligibleProducts for recommendations; excludedProducts are reason-only and must never be recommended.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        customer_id: { type: "string", description: "Customer id from the authorized wealth customer MCP." },
+        amount: { type: "number", description: "Optional proposed allocation amount." },
+        horizon_months: { type: "number", description: "Optional customer investment horizon in months." },
+        channel: { type: "string", description: "Optional sales channel, for example branch or mobile." },
+        keyword: { type: "string", description: "Optional product search keyword." },
+        product_type: { type: "string", description: "Optional product type filter." },
+        max_products: { type: "number", description: "Maximum candidates to evaluate, default 10 and maximum 20." },
+      },
+      required: ["customer_id"],
+    },
   },
 ];
 const TOOL_NAMES = new Set(TOOLS.map(tool => tool.name));
@@ -419,6 +444,99 @@ async function callTool(
   if (name === "list_available_agents") {
     const data = await internalJson(`/api/claw/agents/available?adoptId=${encodeURIComponent(adoptId)}`);
     return textResult(summarizeAgents(data));
+  }
+
+  if (name === "prepare_wealth_allocation_context") {
+    const customerId = String(args.customer_id || args.customerId || "").trim().slice(0, 128);
+    if (!customerId) return textResult("需要先选择本人授权范围内的客户，再准备资产配置建议。", { isError: true });
+    const optionalPositiveNumber = (value: unknown, maximum: number): number | null => {
+      if (value === undefined || value === null || value === "") return null;
+      const number = Number(value);
+      return Number.isFinite(number) && number > 0 && number <= maximum ? number : null;
+    };
+    const amount = optionalPositiveNumber(args.amount, 10_000_000_000);
+    const horizonMonths = optionalPositiveNumber(args.horizon_months || args.horizonMonths, 1_200);
+    const channel = String(args.channel || "").trim().slice(0, 64);
+    const keyword = String(args.keyword || "").trim().slice(0, 120);
+    const productType = String(args.product_type || args.productType || "").trim().slice(0, 64);
+    const maxProducts = Math.min(20, Math.max(1, Math.floor(Number(args.max_products || args.maxProducts || 10)) || 10));
+    const customerEndpoint = String(process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp").trim();
+    const productEndpoint = String(process.env.WEALTH_PRODUCT_MCP_URL || "http://127.0.0.1:18007/mcp").trim();
+    try {
+      const user = await getUserById(Number(claw.userId));
+      if (!user) throw new Error("当前用户身份不可用");
+      const result = await prepareWealthAllocationContext({
+        principal: principal.principal,
+        request: { customerId, amount, horizonMonths, channel, keyword, productType, maxProducts },
+        dependencies: {
+          loadCustomer: async (requestedCustomerId) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: customerEndpoint,
+            toolName: "wealth_assistant_customer_detail",
+            args: { customerId: requestedCustomerId },
+            agentId: principal.principal.agentId,
+            adoptId,
+            sessionId: principal.principal.sessionId,
+          })),
+          searchProducts: async (search) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: productEndpoint,
+            toolName: "wealth_assistant_product_search",
+            args: {
+              keyword: search.keyword || undefined,
+              type: search.type || undefined,
+              page: 1,
+              pageSize: search.pageSize,
+            },
+            agentId: principal.principal.agentId,
+            adoptId,
+            sessionId: principal.principal.sessionId,
+          })),
+          resolvePolicySource: async () => resolveWealthSuitabilityPolicySource({
+            userId: Number(user.id),
+            groupId: Number(user.groupId || 0),
+            actorRole: String(user.role || "user"),
+            roleTemplate: principal.principal.roleTemplate,
+          }),
+        },
+      });
+      await recordAuditBestEffort({
+        action: "governance.wealth_suitability.evaluated",
+        result: result.status === "ready" ? "success" : "denied",
+        severity: result.status === "ready" ? "info" : "medium",
+        actorType: "agent",
+        actorUserId: Number(user.id),
+        actorRole: principal.principal.roleTemplate,
+        targetType: "wealth_allocation_context",
+        targetId: stableToolInputHash({ customerId }),
+        agentInstanceId: adoptId,
+        runtimeAgentId: principal.principal.agentId,
+        sessionId: principal.principal.sessionId,
+        toolName: name,
+        policyCode: "WEALTH_SUITABILITY_MATCH",
+        source: "platform_tools_mcp",
+        ...auditRequest(req),
+        metadata: {
+          ruleVersion: result.evidence.ruleVersion,
+          policySourceAssetId: result.policySource.sourceAssetId,
+          policySourceVersion: result.policySource.versionLabel,
+          contextEligibilityFingerprint: result.policySource.eligibilityFingerprint,
+          policyDecisionIds: result.evidence.policyDecisionIds,
+          eligibleProductCount: result.eligibleProducts.length,
+          excludedProductCount: result.excludedProducts.length,
+        },
+      });
+      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify(result)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || "");
+      const policyUnavailable = /policy|制度|knowledge/i.test(message);
+      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({
+        schema: "ea.wealth-allocation-context.v1",
+        status: "degraded",
+        errorCode: policyUnavailable ? "POLICY_CONTEXT_UNAVAILABLE" : "BUSINESS_CONTEXT_UNAVAILABLE",
+        message: policyUnavailable
+          ? "当前有效适当性制度不可用，暂不能形成正式产品推荐。"
+          : "客户或产品数据服务暂时不可用，可以先完成不依赖当前产品的资产结构分析。",
+      })}`, { isError: true });
+    }
   }
 
   if (name === "submit_agent_task") {

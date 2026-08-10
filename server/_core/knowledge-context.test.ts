@@ -153,6 +153,36 @@ describe("knowledge chat context", () => {
     expect(result.metrics.routedBaseCount).toBe(2);
   });
 
+  it("routes governed wealth-manager task requests through role knowledge", async () => {
+    const role = {
+      ...readyBase,
+      id: 4,
+      publicId: "kb_rolebase001",
+      scope: "role" as const,
+      isGlobal: true,
+      roleTemplate: "wealth-manager",
+      name: "财富经理岗位操作规范",
+      description: "客户访前准备、资产配置与客户经营",
+    };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([role]);
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [],
+      query: "明天下午要拜访这位客户，帮我准备访前简报和沟通提纲",
+    });
+
+    expect(mocks.retrieveAcrossKnowledgeBases).toHaveBeenCalledWith(
+      [role],
+      "明天下午要拜访这位客户，帮我准备访前简报和沟通提纲",
+      4,
+      "auto",
+      expect.objectContaining({ documentIds: ["doc_policy004"] }),
+    );
+    expect(result.metrics.routeReason).toBe("governed-topic");
+  });
+
   it("does not treat general substantive questions or broad business nouns as knowledge intent", async () => {
     const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
     mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);
@@ -381,7 +411,37 @@ describe("knowledge chat context", () => {
 
     expect(result.retrieval).toBe("governed-empty");
     expect(result.metrics.eligibleFilteredOut).toBe(1);
+    expect(result.context).toContain("未通过当前有效性校验");
+    expect(result.context).toContain("不得使用模型参数知识");
+    expect(result.evidence).toEqual(expect.objectContaining({
+      contextEligibilityFingerprint: expect.any(String),
+      selectedKnowledgeIds: [],
+    }));
     expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal restricted knowledge details when every candidate is denied", async () => {
+    const restrictedBase = {
+      ...readyBase,
+      scope: "role" as const,
+      roleTemplate: "wealth-manager",
+      ownerUserId: 99,
+    };
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([restrictedBase]);
+    mocks.listKnowledgeDocumentsForBases.mockResolvedValue([
+      { ...readyDocument(1), classification: "restricted" },
+    ]);
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [restrictedBase.publicId],
+      query: "根据制度准备客户访前材料",
+    });
+
+    expect(result.context).toContain("没有可授权用于本次任务的企业知识依据");
+    expect(result.context).not.toContain("restricted");
+    expect(result.context).not.toContain("差旅制度");
   });
 
   it("merges repeated chunks from the same displayed document", async () => {

@@ -77,6 +77,7 @@ const KNOWLEDGE_ARTIFACT_RE = /(?:制度|办法|规范|政策|规定|手册|指�
 const ENTERPRISE_SCOPE_RE = /(?:本行|我行|我司|本公司|公司内部|企业内部|单位内部|部门内部|我们(?:公司|单位|部门|团队))/i;
 const GOVERNED_TOPIC_RE = /(?:差旅|报销|住宿|酒店|机票|交通|请假|审批|客户信息|数据外发|数据分级|反洗钱|尽职调查|适当性|双录|授信|贷后|岗位职责|权限边界|服务入口|产品准入|风险评级|合规要求|风控要求|客户.{0,8}适当性|模型.{0,8}(?:验证|风险管理))/i;
 const GOVERNANCE_QUESTION_RE = /(?:标准|上限|流程|要求|规定|规则|职责|权限|口径|边界|分级|保护|外发|审批|准入|风险|怎么|如何|是否|能否|可以|是什么|多少)/i;
+const GOVERNED_ROLE_TASK_RE = /(?:(?:访前|客户拜访|资产配置|产品推荐|适配产品|销售话术|客户跟进|到期客户|持仓).{0,24}(?:准备|生成|制定|分析|建议|方案|判断|筛选|梳理|检查)|(?:准备|生成|制定|分析|建议|筛选|梳理).{0,24}(?:访前|客户拜访|资产配置|产品推荐|适配产品|销售话术|客户跟进|到期客户|持仓))/i;
 const KNOWLEDGE_BASE_TERM_STOPWORDS = new Set([
   "知识", "知识库", "企业", "岗位", "专业", "通用", "演示", "相关", "资料", "文档",
   "管理", "平台", "助手", "智能体", "内部", "默认", "规则", "规范",
@@ -97,10 +98,34 @@ function automaticKnowledgeRoute(query: string): AutomaticKnowledgeRouteReason {
   if (ENTERPRISE_SCOPE_RE.test(compact) && (KNOWLEDGE_ARTIFACT_RE.test(compact) || GOVERNANCE_QUESTION_RE.test(compact))) {
     return "enterprise-scope";
   }
+  if (GOVERNED_ROLE_TASK_RE.test(compact)) return "governed-topic";
   if (GOVERNED_TOPIC_RE.test(compact) && GOVERNANCE_QUESTION_RE.test(compact)) return "governed-topic";
   if (OPEN_DISCUSSION_QUERY_RE.test(compact)) return "skipped-open-discussion";
   if (KNOWLEDGE_ARTIFACT_RE.test(compact)) return "explicit-source";
   return "skipped-no-intent";
+}
+
+function governedEmptyKnowledgeContext(excludedByReason: Record<string, number>): string {
+  const denied = Number(excludedByReason.classification_denied || 0) + Number(excludedByReason.role_mismatch || 0);
+  const unavailable = Number(excludedByReason.base_not_ready || 0) + Number(excludedByReason.document_not_ready || 0);
+  const future = Number(excludedByReason.not_effective || 0);
+  const inactive = Number(excludedByReason.expired || 0) + Number(excludedByReason.lifecycle_inactive || 0);
+  const message = denied > 0
+    ? "当前没有可授权用于本次任务的企业知识依据。"
+    : future > 0 && inactive === 0
+      ? "相关企业知识尚未生效，本次不能将其作为现行依据。"
+      : inactive > 0
+        ? "相关企业知识未通过当前有效性校验，本次不能将其作为现行依据。"
+        : unavailable > 0
+          ? "相关企业知识尚未完成发布或索引，本次暂不可用。"
+          : "当前没有通过治理校验、可用于本次任务的企业知识依据。";
+  return [
+    "<ea_knowledge_governance_notice>",
+    message,
+    "不得使用模型参数知识、历史回答或未提供的企业资料补写本企业制度、流程或业务口径。",
+    "如任务依赖企业正式依据，应向用户说明当前资料不可用，并建议联系知识管理员确认现行版本。",
+    "</ea_knowledge_governance_notice>",
+  ].join("\n");
 }
 
 function normalizedKnowledgeText(value: string): string {
@@ -214,11 +239,15 @@ export async function buildChatKnowledgeContext(input: {
   const eligibleFilteredOut = Object.values(eligibility.excludedByReason).reduce((sum, count) => sum + count, 0);
   if (!eligibility.documentIds.length) {
     return {
-      context: "",
+      context: governedEmptyKnowledgeContext(eligibility.excludedByReason),
       sources: [],
       mode,
       retrieval: "governed-empty",
       candidateBaseCount: eligible.length,
+      evidence: {
+        contextEligibilityFingerprint: eligibility.fingerprint,
+        selectedKnowledgeIds: [],
+      },
       metrics: {
         bm25MaxScore: 0,
         vectorMinDistance: null,

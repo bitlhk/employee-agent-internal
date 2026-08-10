@@ -315,6 +315,31 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("preserves shared skill source precedence when multiple stores contain the same skill", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-precedence-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const preferred = path.join(root, "z-preferred-store");
+      const fallback = path.join(root, "a-legacy-store");
+      for (const [store, content] of [[preferred, "# Current\n"], [fallback, "# Legacy\n"]] as const) {
+        mkdirSync(path.join(store, "wealth-manager-assistant"), { recursive: true });
+        writeFileSync(path.join(store, "wealth-manager-assistant", "SKILL.md"), content, "utf8");
+      }
+
+      writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: workspace,
+        role,
+        effectiveAssets,
+        skillSourceDirs: [preferred, fallback],
+      });
+
+      expect(readFileSync(path.join(workspace, "skills", "wealth-manager-assistant", "SKILL.md"), "utf8"))
+        .toBe("# Current\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects a shared skill whose root is a symbolic link", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-source-link-"));
     try {
