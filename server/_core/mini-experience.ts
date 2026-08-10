@@ -8,6 +8,7 @@ import {
   getClawByAdoptId,
   getUserByOpenId,
   listClawsByUserId,
+  resolvePersistedAgentMcpSelection,
   resolveEffectiveRoleAssets,
   resolveTrustedChannelUser,
   updateClawAdoptionStatus,
@@ -21,6 +22,7 @@ import { logError, logInfo, logWarn } from "./observability/logger";
 import { resolvePublicBaseUrl } from "./public-base-url";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { onboardBuiltinSkillsForAdopt } from "./skills/skill-onboarding";
+import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 
 const MINI_EXPERIENCE_TTL_DAYS = 30;
 const MINI_EXPERIENCE_TIMEOUT_MS = 120_000;
@@ -40,9 +42,29 @@ const MiniExperienceInput = z.object({
   adoptionId: z.string().regex(/^lgj-[A-Za-z0-9_-]{4,60}$/u).optional(),
   message: z.string().trim().min(1, "请输入问题").max(2000, "问题不能超过 2000 字"),
   conversationId: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/u, "conversationId 无效"),
+  selectedSkillIds: z.array(
+    z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9._-]+$/u),
+  ).max(8).default([]),
 });
 
 type MiniExperienceAdoption = NonNullable<Awaited<ReturnType<typeof getClawByAdoptId>>>;
+
+type MobileExperienceCapabilities = {
+  skillSelection: boolean;
+  mcpSelection: false;
+  skills: Array<{
+    id: string;
+    name: string;
+    description: string;
+    enabled: boolean;
+    ready: boolean;
+  }>;
+  mcpServers: Array<{
+    id: string;
+    name: string;
+    enabled: true;
+  }>;
+};
 
 const provisioning = new Map<string, Promise<MiniExperienceAdoption>>();
 const registeredProvisioning = new Map<number, Promise<MiniExperienceAdoption>>();
@@ -72,6 +94,61 @@ function isExperienceRequestAuthorized(req: Request): boolean {
 
 function expiresAt(): Date {
   return new Date(Date.now() + MINI_EXPERIENCE_TTL_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function readableCapabilityName(value: string): string {
+  return value
+    .split(/[-_.]+/u)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ") || value;
+}
+
+async function resolveMobileExperienceCapabilities(
+  adoption: MiniExperienceAdoption,
+): Promise<MobileExperienceCapabilities> {
+  const roleTemplate = String(adoption.roleTemplate || "general-assistant");
+  const agentId = String(adoption.agentId || `jiuwen_${adoption.adoptId}`);
+  const [listedSkills, effectiveAssets] = await Promise.all([
+    listSkillsWithRoleDefaults({
+      adoptId: String(adoption.adoptId),
+      agentId,
+      roleTemplate,
+    }),
+    resolveEffectiveRoleAssets(roleTemplate),
+  ]);
+  const mcpSelection = await resolvePersistedAgentMcpSelection(
+    String(adoption.adoptId),
+    effectiveAssets,
+  ).catch(error => {
+    logWarn("miniprogram_account.mcp_selection_unavailable", {
+      adoptId: String(adoption.adoptId),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {
+      enabledServerIds: effectiveAssets.mcpServers.default,
+      disabledServerIds: effectiveAssets.mcpServers.optional,
+    };
+  });
+
+  return {
+    skillSelection: true,
+    mcpSelection: false,
+    skills: listedSkills.ok
+      ? listedSkills.value.map(skill => ({
+          id: skill.id,
+          name: String(skill.source.displayName || skill.id),
+          description: String(skill.source.description || "智能体技能").slice(0, 300),
+          enabled: Boolean(skill.enabled),
+          ready: Boolean(skill.enabled && skill.state === "ready"),
+        }))
+      : [],
+    mcpServers: mcpSelection.enabledServerIds.map(id => ({
+      id,
+      name: readableCapabilityName(id),
+      enabled: true as const,
+    })),
+  };
 }
 
 async function ensureMiniExperienceUser(openId: string): Promise<number> {
@@ -429,7 +506,9 @@ async function proxyRestrictedChat(
         runtimeMode: "fast",
         model: miniExperienceModelId(),
         experienceMode: registered ? "mini_owner" : "mini_trial",
-        ...(registered ? {} : { selectedSkillIds: [], knowledgeBaseIds: [] }),
+        ...(registered
+          ? (input.selectedSkillIds.length ? { selectedSkillIds: input.selectedSkillIds } : {})
+          : { selectedSkillIds: [], knowledgeBaseIds: [] }),
       }),
       signal: controller.signal,
     });
@@ -471,10 +550,21 @@ export function registerMiniExperienceRoutes(app: Express): void {
         identity: accountInput.identity,
         message: "status",
         conversationId: "channel-account-status",
+        selectedSkillIds: [],
       }, accountInput.ensure);
       res.setHeader("cache-control", "no-store");
+      const capabilities = resolved.adoption
+        ? await resolveMobileExperienceCapabilities(resolved.adoption).catch(error => {
+            logWarn("miniprogram_account.capabilities_unavailable", {
+              adoptId: resolved.adoption?.adoptId || "",
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          })
+        : null;
       res.json({
         selectedAdoptionId: resolved.adoption?.adoptId || null,
+        capabilities,
         agents: resolved.adoptions.map(adoption => ({
           adoptionId: adoption.adoptId,
           roleTemplate: adoption.roleTemplate,

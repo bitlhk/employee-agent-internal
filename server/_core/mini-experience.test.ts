@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   getUserByOpenId: vi.fn(async () => undefined),
   listClawsByUserId: vi.fn(async () => []),
   resolveEffectiveRoleAssets: vi.fn(async () => ({ skills: { default: [], optional: [] }, mcpServers: { default: [], optional: [] } })),
+  resolvePersistedAgentMcpSelection: vi.fn(async () => ({ enabledServerIds: [], disabledServerIds: [] })),
   resolveTrustedChannelUser: vi.fn(async () => ({ id: 77, name: "已注册用户", email: "user@example.com" })),
   updateClawAdoptionStatus: vi.fn(async () => undefined),
   upsertClawProfileSettings: vi.fn(async () => undefined),
@@ -29,6 +30,7 @@ vi.mock("../db", () => ({
   getUserByOpenId: mocks.getUserByOpenId,
   listClawsByUserId: mocks.listClawsByUserId,
   resolveEffectiveRoleAssets: mocks.resolveEffectiveRoleAssets,
+  resolvePersistedAgentMcpSelection: mocks.resolvePersistedAgentMcpSelection,
   resolveTrustedChannelUser: mocks.resolveTrustedChannelUser,
   updateClawAdoptionStatus: mocks.updateClawAdoptionStatus,
   upsertClawProfileSettings: mocks.upsertClawProfileSettings,
@@ -49,6 +51,10 @@ vi.mock("./jiuwenswarm-role-scope", () => ({
 
 vi.mock("./skills/skill-onboarding", () => ({
   onboardBuiltinSkillsForAdopt: vi.fn(async () => undefined),
+}));
+
+vi.mock("./skills/role-default-skills", () => ({
+  listSkillsWithRoleDefaults: vi.fn(async () => ({ ok: true, value: [] })),
 }));
 
 vi.mock("./observability/logger", () => ({
@@ -197,6 +203,42 @@ describe("EA Mini Program experience route", () => {
       model: "modelarts-maas/glm-5.2",
     });
     expect(body).not.toHaveProperty("selectedSkillIds");
+  });
+
+  it("passes registered mobile skill selections to the owned runtime", async () => {
+    const registeredAdoption = {
+      ...adoption,
+      userId: 77,
+      adoptId: "lgj-existing1234",
+      agentId: "jiuwen_lgj-existing1234",
+      permissionProfile: "plus",
+      ttlDays: 0,
+      expiresAt: null,
+    };
+    mocks.listClawsByUserId.mockResolvedValue([registeredAdoption]);
+
+    const response = await post(
+      `${baseUrl}/api/internal/miniprogram/experience/chat`,
+      {
+        subject: "d".repeat(64),
+        identity: {
+          name: "已注册用户",
+          verifiedEmail: "user@example.com",
+          onboardingComplete: true,
+        },
+        message: "使用财富技能生成方案",
+        conversationId: "mini-conversation-789",
+        selectedSkillIds: ["wealth-manager-assistant"],
+      },
+      process.env.MINIPROGRAM_EXPERIENCE_TOKEN
+    );
+
+    expect(response.status, response.body).toBe(200);
+    const upstreamRequest = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(upstreamRequest.body))).toMatchObject({
+      experienceMode: "mini_owner",
+      selectedSkillIds: ["wealth-manager-assistant"],
+    });
   });
 
   it("provisions one deterministic adoption for a registered user without one", async () => {
