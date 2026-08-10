@@ -42,6 +42,7 @@ const RULES: readonly GovernanceRule[] = [
       "mcp_platform_tools_get_user_channels",
       "mcp_platform_tools_list_available_agents",
       "mcp_platform_tools_list_learned_preferences",
+      "mcp_platform_tools_get_wealth_policy_basis",
       "mcp_platform_tools_prepare_wealth_allocation_context",
     ],
     prefixes: ["mcp_wind_", "mcp_market_data__", "mcp_wealth_assistant_"],

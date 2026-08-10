@@ -5,7 +5,7 @@ description: >-
   面向财富经理的客户访前准备技能。用于客户拜访、季度回顾、产品到期沟通和资产配置会谈前，
   通过授权客户 MCP 获取当前画像、持仓、风险测评、到期事项和历史沟通，并结合当前有效岗位制度，
   生成内部访前简报、3至5条谈话要点、待核实事项和会后行动清单。
-version: 1.1.0
+version: 1.2.0
 category: 财富管理
 tags: [wealth-manager, banking, customer-previsit, governed-context]
 ---
@@ -38,6 +38,7 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 | `wealth_assistant_context_probe` | 核验当前财富经理身份和数据范围 |
 | `wealth_assistant_customer_list` | 在授权范围内选择客户 |
 | `wealth_assistant_customer_detail` | 获取当前客户画像、持仓、风险测评、到期事项和近期互动 |
+| `get_wealth_policy_basis` | 核验当前岗位适用的现行销售与适当性制度版本 |
 | `prepare_wealth_allocation_context` | 获取客户、产品和当前有效制度，并返回经过确定性适当性 Policy 筛选的候选产品 |
 
 市场背景只使用当前岗位已授权的数据工具。客户事实和产品事实不得通过网页搜索补齐。
@@ -66,7 +67,7 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 
 ### 4. 应用当前有效岗位依据
 
-结合本轮平台提供的当前有效知识，检查访前准备、客户信息保护、适当性和销售合规要求。
+先调用 `get_wealth_policy_basis` 核验现行制度版本，再结合本轮平台提供的当前有效知识，检查访前准备、客户信息保护、适当性和销售合规要求。
 
 如果平台说明没有可授权或当前有效的企业依据：
 

@@ -4,6 +4,7 @@ import {
   WEALTH_SUITABILITY_RULE_VERSION,
   wealthRiskOrdinal,
   wealthSuitabilityPolicyAdapter,
+  wealthSuitabilityUserGuidance,
   type WealthSuitabilityRequestContext,
 } from "./wealth-suitability-policy";
 
@@ -103,5 +104,21 @@ describe("wealth suitability policy", () => {
   it("does not let a non-wealth role reuse the adapter", async () => {
     const result = await evaluate(context(), "general-assistant");
     expect(result).toMatchObject({ effect: "DENY", policyCode: "WEALTH_SUITABILITY_MATCH:ROLE_NOT_ALLOWED" });
+  });
+
+  it("presents a business reason and recovery action without exposing policy codes", () => {
+    expect(wealthSuitabilityUserGuidance(
+      "WEALTH_SUITABILITY_MATCH:RISK_MISMATCH",
+      "产品风险等级 R4 高于客户风险承受等级 C3。",
+    )).toEqual({
+      title: "暂不能形成正式推荐",
+      reason: "产品风险等级 R4 高于客户风险承受等级 C3。",
+      nextStep: "请改选风险等级不高于客户当前有效风险等级的产品。",
+      retryable: false,
+    });
+    expect(wealthSuitabilityUserGuidance(
+      "WEALTH_SUITABILITY_MATCH:ASSESSMENT_EXPIRED",
+      "客户风险测评已过期。",
+    ).nextStep).toContain("更新客户风险测评");
   });
 });

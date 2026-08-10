@@ -2,5 +2,5 @@
   "name": "wealth-manager-assistant",
   "displayName": "客户经理财富助手",
   "description": "组合客户数据、产品数据、当前有效岗位知识和确定性适当性 Policy，完成财富客户经营、资产配置和产品适配任务。",
-  "version": "1.1.0"
+  "version": "1.2.0"
 }

@@ -6,6 +6,7 @@ import {
 import {
   WEALTH_SUITABILITY_RULE_VERSION,
   wealthSuitabilityPolicyAdapter,
+  wealthSuitabilityUserGuidance,
   type WealthCustomerSuitabilityContext,
   type WealthPolicySource,
   type WealthProductSuitabilityContext,
@@ -28,14 +29,22 @@ export type WealthAllocationContextResult = {
   schema: "ea.wealth-allocation-context.v1";
   status: "ready" | "no_eligible_products";
   customer: WealthCustomerSuitabilityContext & { name: string; aum: number | null };
-  eligibleProducts: Array<WealthProductSuitabilityContext & { policyDecisionId: string; policyCode: string }>;
-  excludedProducts: Array<{ productId: string; name: string; reason: string; policyCode: string; policyDecisionId: string }>;
+  eligibleProducts: WealthProductSuitabilityContext[];
+  excludedProducts: Array<{
+    productId: string;
+    name: string;
+    title: string;
+    reason: string;
+    nextStep: string;
+    retryable: boolean;
+  }>;
   policySource: WealthPolicySource;
   evidence: {
     ruleVersion: string;
     customerDataAsOf: string;
     productDataAsOf: string[];
     policyDecisionIds: string[];
+    decisions: Array<{ productId: string; effect: GovernanceDecision["effect"]; policyCode: string; policyDecisionId: string }>;
   };
 };
 
@@ -206,15 +215,13 @@ export async function prepareWealthAllocationContext(input: {
   })));
   const eligibleProducts = decisions
     .filter(({ decision }) => decision.effect === "ALLOW")
-    .map(({ product, decision }) => ({ ...product, policyDecisionId: decision.decisionId, policyCode: decision.policyCode }));
+    .map(({ product }) => product);
   const excludedProducts = decisions
     .filter(({ decision }) => decision.effect !== "ALLOW")
     .map(({ product, decision }) => ({
       productId: product.productId,
       name: product.name,
-      reason: decision.reason,
-      policyCode: decision.policyCode,
-      policyDecisionId: decision.decisionId,
+      ...wealthSuitabilityUserGuidance(decision.policyCode, decision.reason),
     }));
   return {
     schema: "ea.wealth-allocation-context.v1",
@@ -228,6 +235,12 @@ export async function prepareWealthAllocationContext(input: {
       customerDataAsOf: customer.dataAsOf,
       productDataAsOf: Array.from(new Set(products.map((product) => product.dataAsOf).filter(Boolean))),
       policyDecisionIds: decisions.map(({ decision }) => decision.decisionId),
+      decisions: decisions.map(({ product, decision }) => ({
+        productId: product.productId,
+        effect: decision.effect,
+        policyCode: decision.policyCode,
+        policyDecisionId: decision.decisionId,
+      })),
     },
   };
 }

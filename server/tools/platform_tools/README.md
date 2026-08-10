@@ -14,8 +14,10 @@ It lets the agent runtime call EA platform capabilities:
 - inspect user channels
 - list available external Agents
 - submit asynchronous external Agent tasks
+- resolve the current wealth suitability policy basis with Knowledge Eligibility evidence
+- prepare policy-filtered wealth allocation context
 
-This MCP server is not a business data tool and is not an external Agent itself.
+The wealth tools orchestrate governed context but do not own customer or product data. Those facts still come from authorized enterprise MCP services. This MCP server is not an external Agent itself.
 
 Do not run a separate stdio platform-tools server unless you intentionally need
 legacy runtime compatibility. The old standalone stdio implementation has been

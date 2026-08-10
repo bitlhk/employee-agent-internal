@@ -20,7 +20,8 @@ SAFE_TOOL_RE = re.compile(
     r"evolve_review_task|evolve_skill_experiences|prepare_skill_evolution|simplify_skill_experiences|"
     r"mcp_platform_tools_get_user_channels|mcp_platform_tools_list_available_agents|"
     r"mcp_platform_tools_list_learned_preferences|mcp_platform_tools_remember_preference|"
-    r"mcp_platform_tools_forget_preference|mcp_platform_tools_prepare_wealth_allocation_context)$",
+    r"mcp_platform_tools_forget_preference|mcp_platform_tools_get_wealth_policy_basis|"
+    r"mcp_platform_tools_prepare_wealth_allocation_context)$",
     re.IGNORECASE,
 )
 READ_PREFIXES = ("mcp_wind_", "mcp_market_data__", "mcp_wealth_assistant_")

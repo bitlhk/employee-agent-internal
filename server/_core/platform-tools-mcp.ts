@@ -26,7 +26,10 @@ import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
-import { resolveWealthSuitabilityPolicySource } from "./wealth-policy-source";
+import {
+  resolveWealthPolicyBasis,
+  resolveWealthSuitabilityPolicySource,
+} from "./wealth-policy-source";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -108,6 +111,15 @@ const TOOLS = [
   {
     name: "list_learned_preferences",
     description: "List active work preferences learned by the current EA employee agent. Use when the user asks what is remembered about their work style.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_wealth_policy_basis",
+    description: [
+      "Get the currently effective wealth suitability policy basis for the current wealth-manager role.",
+      "Use this before answering which sales or suitability policy is current, whether a historical version may be used, or which policy basis governs a formal recommendation.",
+      "The result contains only eligible current-policy metadata and safe aggregate filtering evidence; it never returns restricted document names or contents.",
+    ].join(" "),
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -444,6 +456,46 @@ async function callTool(
   if (name === "list_available_agents") {
     const data = await internalJson(`/api/claw/agents/available?adoptId=${encodeURIComponent(adoptId)}`);
     return textResult(summarizeAgents(data));
+  }
+
+  if (name === "get_wealth_policy_basis") {
+    const user = await getUserById(Number(claw.userId));
+    if (!user) return textResult("当前用户身份不可用，请重新登录后重试。", { isError: true });
+    const basis = await resolveWealthPolicyBasis({
+      userId: Number(user.id),
+      groupId: Number(user.groupId || 0),
+      actorRole: String(user.role || "user"),
+      roleTemplate: principal.principal.roleTemplate,
+    });
+    await recordAuditBestEffort({
+      action: basis.status === "ready"
+        ? "governance.wealth_policy_basis.selected"
+        : "governance.wealth_policy_basis.unavailable",
+      result: basis.status === "ready" ? "success" : "denied",
+      severity: basis.status === "ready" ? "info" : "medium",
+      actorType: "agent",
+      actorUserId: Number(user.id),
+      actorRole: principal.principal.roleTemplate,
+      targetType: "wealth_policy_basis",
+      targetId: basis.selected?.sourceAssetId || "unavailable",
+      workspaceId: principal.principal.workspaceId || null,
+      agentInstanceId: adoptId,
+      runtimeAgentId: principal.principal.agentId,
+      sessionId: principal.principal.sessionId,
+      toolName: name,
+      policyCode: "EA_KNOWLEDGE_ELIGIBILITY_V1",
+      source: "platform_tools_mcp",
+      ...auditRequest(req),
+      metadata: {
+        ruleVersion: "knowledge-eligibility-v1",
+        policySourceVersion: basis.selected?.versionLabel || null,
+        contextEligibilityFingerprint: basis.governance.eligibilityFingerprint,
+        historicalVersionFiltered: basis.governance.historicalVersionFiltered,
+        filteredForValidity: basis.governance.filteredForValidity,
+        accessRestricted: basis.governance.accessRestricted,
+      },
+    });
+    return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify(basis)}`);
   }
 
   if (name === "prepare_wealth_allocation_context") {

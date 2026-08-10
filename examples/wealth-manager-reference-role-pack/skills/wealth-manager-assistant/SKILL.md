@@ -3,7 +3,7 @@ name: wealth-manager-assistant
 description: >-
   客户经理财富助手主技能，面向银行客户经理的客户经营、资产配置、产品匹配、推荐理由、推荐话术和合规问答场景。
   当用户要求分析客户、查询客户列表、筛选产品、生成资产配置报告、准备产品推荐理由或营销话术时使用。
-version: 1.1.0
+version: 1.2.0
 author: 李文华
 category: 财富管理
 tags: [wealth-manager, banking, customer-management, product-recommendation, compliance]
@@ -34,6 +34,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 | `wealth_assistant_context_probe` | 确认当前客户经理身份、权限和数据范围 |
 | `wealth_assistant_customer_list` | 查询当前客户经理可见客户列表 |
 | `wealth_assistant_customer_detail` | 查询单个客户完整画像、资产、持仓、到期产品和推荐信息 |
+| `get_wealth_policy_basis` | 获取当前岗位可用的现行适当性制度版本和安全聚合的有效期过滤证据 |
 | `prepare_wealth_allocation_context` | 为指定客户准备经过当前制度和确定性适当性 Policy 筛选的正式候选产品集合 |
 | `wealth_assistant_product_search` | 搜索银行理财、基金等产品 |
 | `wealth_assistant_product_info` | 查询单个产品详情 |
@@ -47,9 +48,10 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 1. 涉及客户数据前，先调用 `wealth_assistant_context_probe` 确认身份。
 2. 不编造客户、资产、持仓、产品收益、风险等级和到期信息。
 3. 面向具体客户形成正式候选产品、推荐理由或推荐话术时，必须调用 `prepare_wealth_allocation_context`；只能推荐其 `eligibleProducts`，不得把 `excludedProducts` 或原始产品搜索结果作为推荐候选。
-4. 涉及收益表现时，只能使用历史/过往/参考表述，必须提示历史业绩不代表未来表现。
-5. 不承诺收益，不暗示保本，不替客户做最终购买决策。
-6. 不输出身份证号、手机号等敏感信息；工具返回敏感字段时，默认脱敏或摘要化。
+4. 用户询问“最新、现行、当前适用”的销售或适当性制度时，先调用 `get_wealth_policy_basis`；没有现行依据时不得使用模型先验补答企业政策。
+5. 涉及收益表现时，只能使用历史/过往/参考表述，必须提示历史业绩不代表未来表现。
+6. 不承诺收益，不暗示保本，不替客户做最终购买决策。
+7. 不输出身份证号、手机号等敏感信息；工具返回敏感字段时，默认脱敏或摘要化。
 
 ## 场景路由
 
@@ -124,9 +126,12 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 流程：
 
 1. 识别问题属于营销话术、收益承诺、适当性、代客操作还是信息披露
-2. 给出可以/不可以/需谨慎/需报合规部门确认的判断
-3. 提供合规替代表达
-4. 明确本判断不是正式法律意见
+2. 涉及现行销售或适当性制度时，先调用 `get_wealth_policy_basis` 确认当前版本；历史版本不得作为当前结论依据
+3. 给出可以/不可以/需谨慎/需报合规部门确认的判断
+4. 提供合规替代表达
+5. 明确本判断不是正式法律意见
+
+治理拒绝时只向业务用户展示工具返回的 `title`、`reason` 和 `nextStep`。Policy Code、Decision ID 和规则版本属于执行证据，不得堆入主回答。
 
 参考：`references/compliance-risk-qa/SKILL.md`
 

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   runtimeAttested: false,
   internalFetch: vi.fn(),
   prepareWealthAllocationContext: vi.fn(),
+  resolveWealthPolicyBasis: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -52,7 +53,10 @@ vi.mock("./internal-mcp-client", () => ({
 vi.mock("./wealth-allocation-context", () => ({
   prepareWealthAllocationContext: mocks.prepareWealthAllocationContext,
 }));
-vi.mock("./wealth-policy-source", () => ({ resolveWealthSuitabilityPolicySource: vi.fn() }));
+vi.mock("./wealth-policy-source", () => ({
+  resolveWealthPolicyBasis: mocks.resolveWealthPolicyBasis,
+  resolveWealthSuitabilityPolicySource: vi.fn(),
+}));
 
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 
@@ -62,6 +66,28 @@ let baseUrl = "";
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.runtimeAttested = false;
+  mocks.resolveWealthPolicyBasis.mockResolvedValue({
+    schema: "ea.wealth-policy-basis.v1",
+    status: "ready",
+    roleTemplate: "wealth-manager",
+    evaluatedAt: "2026-08-10T00:00:00.000Z",
+    selected: {
+      sourceAssetId: "doc-v22",
+      documentName: "财富产品适当性销售管理细则（V2.2现行）.md",
+      versionLabel: "V2.2",
+      sourceDepartment: "财富管理部",
+      effectiveAt: "2026-07-01T00:00:00.000Z",
+      sourceLocator: "4.1 风险等级匹配",
+    },
+    governance: {
+      eligibilityFingerprint: "a".repeat(64),
+      historicalVersionFiltered: true,
+      filteredForValidity: 1,
+      unavailableDocuments: 0,
+      accessRestricted: false,
+    },
+    userMessage: "当前适用依据为 V2.2，已过滤历史版本。",
+  });
   mocks.prepareWealthAllocationContext.mockResolvedValue({
     schema: "ea.wealth-allocation-context.v1",
     status: "ready",
@@ -85,6 +111,30 @@ afterEach(async () => {
 });
 
 describe("platform MCP PEP wiring", () => {
+  it("returns a governed current-policy basis without depending on business MCP", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "wealth-policy-basis",
+        method: "tools/call",
+        params: { name: "get_wealth_policy_basis", arguments: {} },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    expect(response.status).toBe(200);
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_POLICY_BASIS");
+    expect(body.result?.content?.[0]?.text).toContain("V2.2");
+    expect(mocks.resolveWealthPolicyBasis).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 7,
+      groupId: 3,
+      roleTemplate: "wealth-manager",
+    }));
+    expect(mocks.prepareWealthAllocationContext).not.toHaveBeenCalled();
+  });
+
   it("routes formal wealth candidates through the governed context assembler", async () => {
     const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
       method: "POST",

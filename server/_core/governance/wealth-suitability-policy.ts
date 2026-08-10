@@ -59,6 +59,41 @@ export type WealthSuitabilityReasonCode =
   | "HORIZON_TOO_SHORT"
   | "ELIGIBLE";
 
+export type WealthSuitabilityUserGuidance = {
+  title: string;
+  reason: string;
+  nextStep: string;
+  retryable: boolean;
+};
+
+export function wealthSuitabilityUserGuidance(
+  policyCode: string,
+  reason: string,
+): WealthSuitabilityUserGuidance {
+  const reasonCode = String(policyCode).split(":").pop() as WealthSuitabilityReasonCode;
+  const nextSteps: Record<WealthSuitabilityReasonCode, { nextStep: string; retryable: boolean }> = {
+    ROLE_NOT_ALLOWED: { nextStep: "请联系岗位管理员确认职责和能力授权。", retryable: false },
+    POLICY_SOURCE_UNAVAILABLE: { nextStep: "请联系知识管理员确认并发布当前有效制度后重试。", retryable: true },
+    CUSTOMER_CONTEXT_INCOMPLETE: { nextStep: "请先在客户系统补齐或核验风险等级和数据时间。", retryable: true },
+    ASSESSMENT_INVALID: { nextStep: "请先完成客户风险测评或核验测评状态。", retryable: true },
+    ASSESSMENT_EXPIRED: { nextStep: "请先更新客户风险测评，再继续正式产品适配。", retryable: true },
+    PRODUCT_CONTEXT_INCOMPLETE: { nextStep: "请在产品系统补齐风险等级、销售状态和数据时间。", retryable: true },
+    RISK_MISMATCH: { nextStep: "请改选风险等级不高于客户当前有效风险等级的产品。", retryable: false },
+    PRODUCT_NOT_SELLABLE: { nextStep: "请选择当前在售的产品，或联系产品管理员核验销售状态。", retryable: true },
+    CHANNEL_NOT_ALLOWED: { nextStep: "请改用该产品允许的渠道，或选择当前渠道可售产品。", retryable: true },
+    AMOUNT_BELOW_MINIMUM: { nextStep: "请调整拟配置金额，或选择起购金额更低的产品。", retryable: true },
+    HORIZON_TOO_SHORT: { nextStep: "请选择期限不超过客户资金安排的产品。", retryable: false },
+    ELIGIBLE: { nextStep: "可以继续形成候选方案，并保留适当性依据。", retryable: false },
+  };
+  const fallback = { nextStep: "请核验客户、产品和现行制度后重试。", retryable: true };
+  const guidance = nextSteps[reasonCode] || fallback;
+  return {
+    title: reasonCode === "ELIGIBLE" ? "已通过适当性校验" : "暂不能形成正式推荐",
+    reason,
+    ...guidance,
+  };
+}
+
 const SELLABLE_STATUSES = new Set([
   "active", "available", "on_sale", "onsale", "selling", "在售", "可售", "开放",
 ]);

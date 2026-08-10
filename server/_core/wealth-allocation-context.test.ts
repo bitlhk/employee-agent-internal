@@ -85,10 +85,15 @@ describe("wealth allocation context", () => {
 
     expect(result.status).toBe("ready");
     expect(result.eligibleProducts.map((product) => product.productId)).toEqual(["P-R2"]);
-    expect(result.excludedProducts.map((product) => product.policyCode)).toEqual([
+    expect(result.evidence.decisions.filter((decision) => decision.effect === "DENY").map((decision) => decision.policyCode)).toEqual([
       "WEALTH_SUITABILITY_MATCH:RISK_MISMATCH",
       "WEALTH_SUITABILITY_MATCH:PRODUCT_NOT_SELLABLE",
     ]);
+    expect(result.excludedProducts[0]).toMatchObject({
+      title: "暂不能形成正式推荐",
+      nextStep: "请改选风险等级不高于客户当前有效风险等级的产品。",
+    });
+    expect(JSON.stringify(result.excludedProducts)).not.toContain("WEALTH_SUITABILITY_MATCH");
     expect(JSON.stringify(result.eligibleProducts)).not.toContain("P-R4");
     expect(result.policySource.versionLabel).toBe("V2.2");
     expect(result.evidence.policyDecisionIds).toHaveLength(3);
@@ -105,7 +110,8 @@ describe("wealth allocation context", () => {
     });
     expect(result.status).toBe("no_eligible_products");
     expect(result.eligibleProducts).toEqual([]);
-    expect(result.excludedProducts.every((item) => item.policyCode.endsWith("POLICY_SOURCE_UNAVAILABLE"))).toBe(true);
+    expect(result.excludedProducts.every((item) => item.nextStep.includes("知识管理员"))).toBe(true);
+    expect(result.evidence.decisions.every((item) => item.policyCode.endsWith("POLICY_SOURCE_UNAVAILABLE"))).toBe(true);
   });
 
   it("rejects a customer response for a different customer id", async () => {

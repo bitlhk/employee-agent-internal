@@ -612,6 +612,10 @@ Reference Runtime 已实现 `WEALTH_SUITABILITY_MATCH` Policy Adapter 和 `prepa
 - DEGRADE：所有制度均失效时明确“当前无现行企业依据”，不自行编造；
 - REGRESSION：发布 V2.3 后必须重跑本任务，验证替代关系和引用切换。
 
+### 10.7 当前实现状态
+
+Reference Runtime 已实现只读平台能力 `get_wealth_policy_basis`。该能力直接使用现有 Knowledge 元数据和 Knowledge Eligibility，独立返回当前岗位可用的现行制度版本、制度资格指纹和安全聚合的有效期过滤证据，不依赖客户或产品 MCP。受限文档的名称和精确数量不会进入模型结果；没有现行依据时 fail-close，并提示联系知识管理员。
+
 ---
 
 ## 11. `WM-GT-04` 风险错配和测评过期拦截
@@ -691,7 +695,7 @@ remediation: 先完成重新测评，再进行正式推荐
 - PASS：DENY 后远端写 Executor 调用次数为 0；
 - EVIDENCE：保存 Policy Decision ID、规则版本和必要输入指纹，不保存完整敏感客户数据。
 
-当前实现说明：`WEALTH_SUITABILITY_MATCH` 已提供确定性 Policy；生产启用仍要求企业 MCP 返回完整的客户测评有效期、产品状态、渠道、期限、最低金额和数据时间，并通过联调 Eval。
+当前实现说明：`WEALTH_SUITABILITY_MATCH` 已提供确定性 Policy。拒绝结果已统一为业务可读的“暂不能形成正式推荐 + 原因 + 下一步”，Policy Code 和 Decision ID 只保留在 Evidence 与审计中。生产启用仍要求企业 MCP 返回完整的客户测评有效期、产品状态、渠道、期限、最低金额和数据时间，并通过联调 Eval。
 
 ---
 
