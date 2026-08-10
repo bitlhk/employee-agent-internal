@@ -83,6 +83,7 @@ import { registerMonitoringRoutes } from "./monitoring-routes";
 import { registerToolEgressRoutes } from "./tool-egress-routes";
 import { registerRuntimeGovernanceAttestationRoutes } from "./runtime-governance-attestation";
 import { registerGovernanceApprovalRoutes } from "./governance-approval-routes";
+import { registerGovernanceDemoMcpRoutes } from "./governance-demo-mcp";
 import { publishCapabilityPepCoverage } from "./governance/capability-registry";
 import { registerWebFaviconRoutes } from "./web-favicon";
 import { APP_ROOT, startApplicationLogRetention } from "./helpers";
@@ -469,6 +470,7 @@ async function startServer() {
   registerToolEgressRoutes(app);
   registerRuntimeGovernanceAttestationRoutes(app);
   registerGovernanceApprovalRoutes(app);
+  registerGovernanceDemoMcpRoutes(app);
   registerMiniExperienceRoutes(app);
   registerChatStreamRoutes(app);
   registerCoopUploadRoutes(app);

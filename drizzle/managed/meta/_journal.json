@@ -85,6 +85,13 @@
       "when": 1786521600000,
       "tag": "0011_custom_mcp_call_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786608000000,
+      "tag": "0012_governance_demo_evidence",
+      "breakpoints": true
     }
   ]
 }

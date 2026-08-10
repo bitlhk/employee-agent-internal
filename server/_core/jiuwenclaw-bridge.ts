@@ -35,6 +35,7 @@ import { detectInstructionAttackSignals } from "./instruction-attack";
 import { classifyPermissionRisk } from "./permission-risk";
 import {
   normalizeJiuwenToolPayload,
+  normalizeGovernanceApprovalToolEvent,
   normalizeJiuwenUsageSummary,
   stringifyJiuwenToolPayload,
 } from "./jiuwenclaw-event-normalizers";
@@ -43,6 +44,7 @@ export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
 export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 export {
+  normalizeGovernanceApprovalToolEvent,
   normalizeJiuwenToolPayload,
   normalizeJiuwenUsageSummary,
   stringifyJiuwenToolPayload,
@@ -1450,6 +1452,25 @@ export async function forwardToJiuwenClaw(
               if (tool.toolName) memoryToolNames.add(tool.toolName);
               const toolCallId = tool.callId || `jiuwen-${sha256(`${requestId}|${tool.toolName}`).slice(0, 16)}`;
               if (tool.isResult) {
+                const governanceApproval = normalizeGovernanceApprovalToolEvent(body?.delta, tool.resultPayload);
+                if (governanceApproval) {
+                  writeEvent("governance_approval_required", {
+                    requestId: governanceApproval.approvalId,
+                    source: "governance_approval",
+                    kind: "permission",
+                    title: "操作确认",
+                    question: governanceApproval.reason,
+                    toolName: governanceApproval.toolName || tool.toolName,
+                    connectorName: governanceApproval.connectorName,
+                    demo: governanceApproval.demo,
+                    riskLevel: "high",
+                    reasonCode: governanceApproval.policyCode || "EA_APPROVAL_REQUIRED",
+                    reasonText: governanceApproval.reason,
+                    allowAlways: false,
+                    expiresAt: governanceApproval.expiresAt,
+                    adoptId: claw.adoptId,
+                  });
+                }
                 writeStatus("工具执行完成，正在整理结果...");
                 writeEvent("tool_result", {
                   tool_call_id: toolCallId,

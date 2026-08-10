@@ -1093,6 +1093,7 @@ export const customMcpCallReceipts = mysqlTable("custom_mcp_call_receipts", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   requestId: varchar("request_id", { length: 64 }).notNull(),
   policyDecisionId: varchar("policy_decision_id", { length: 64 }).notNull(),
+  approvalId: varchar("approval_id", { length: 64 }),
   idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
   status: mysqlEnum("status", ["started", "completed", "failed", "blocked"]).default("started").notNull(),
   connectionId: bigint("connection_id", { mode: "number" }).notNull(),
@@ -1114,6 +1115,7 @@ export const customMcpCallReceipts = mysqlTable("custom_mcp_call_receipts", {
   actorStartedIdx: index("idx_custom_mcp_call_actor_started").on(table.userId, table.startedAt),
   connectionStartedIdx: index("idx_custom_mcp_call_connection_started").on(table.connectionId, table.startedAt),
   statusStartedIdx: index("idx_custom_mcp_call_status_started").on(table.status, table.startedAt),
+  approvalIdx: index("idx_custom_mcp_call_approval").on(table.approvalId),
 }));
 
 export type CustomMcpCallReceipt = typeof customMcpCallReceipts.$inferSelect;
@@ -1190,6 +1192,7 @@ export const enterpriseMcpCallReceipts = mysqlTable("enterprise_mcp_call_receipt
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   requestId: varchar("request_id", { length: 64 }).notNull(),
   policyDecisionId: varchar("policy_decision_id", { length: 64 }).notNull(),
+  approvalId: varchar("approval_id", { length: 64 }),
   idempotencyKey: varchar("idempotency_key", { length: 191 }),
   status: mysqlEnum("status", ["started", "completed", "failed", "blocked"]).default("started").notNull(),
   serverId: varchar("server_id", { length: 128 }).notNull(),
@@ -1214,6 +1217,7 @@ export const enterpriseMcpCallReceipts = mysqlTable("enterprise_mcp_call_receipt
   actorStartedIdx: index("idx_enterprise_mcp_call_actor_started").on(table.userId, table.startedAt),
   serverStartedIdx: index("idx_enterprise_mcp_call_server_started").on(table.serverId, table.startedAt),
   statusStartedIdx: index("idx_enterprise_mcp_call_status_started").on(table.status, table.startedAt),
+  approvalIdx: index("idx_enterprise_mcp_call_approval").on(table.approvalId),
 }));
 
 export type EnterpriseMcpCallReceipt = typeof enterpriseMcpCallReceipts.$inferSelect;
@@ -1257,6 +1261,35 @@ export const governanceApprovals = mysqlTable("governance_approvals", {
 
 export type GovernanceApproval = typeof governanceApprovals.$inferSelect;
 export type InsertGovernanceApproval = typeof governanceApprovals.$inferInsert;
+
+// Isolated records written only by the governed-runtime demonstration MCP.
+// The explicit Demo naming prevents these rows from being mistaken for CRM data.
+export const governanceDemoBusinessRecords = mysqlTable("governance_demo_business_records", {
+  id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  recordId: varchar("record_id", { length: 64 }).notNull(),
+  requestId: varchar("request_id", { length: 64 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 80 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  agentId: varchar("agent_id", { length: 128 }).notNull(),
+  roleKey: varchar("role_key", { length: 64 }).notNull(),
+  toolName: varchar("tool_name", { length: 256 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
+  customerRef: varchar("customer_ref", { length: 128 }).notNull(),
+  status: mysqlEnum("status", ["demo_draft", "demo_updated"]).notNull(),
+  payloadJson: json("payload_json").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({
+  uniqRecordId: uniqueIndex("uk_governance_demo_record_id").on(table.recordId),
+  uniqRequest: uniqueIndex("uk_governance_demo_request_id").on(table.requestId),
+  uniqIdempotency: uniqueIndex("uk_governance_demo_idempotency").on(table.tenantId, table.toolName, table.idempotencyKey),
+  actorCreatedIdx: index("idx_governance_demo_actor_created").on(table.userId, table.createdAt),
+  adoptionCreatedIdx: index("idx_governance_demo_adoption_created").on(table.adoptId, table.createdAt),
+}));
+
+export type GovernanceDemoBusinessRecord = typeof governanceDemoBusinessRecords.$inferSelect;
+export type InsertGovernanceDemoBusinessRecord = typeof governanceDemoBusinessRecords.$inferInsert;
 
 // ── 用户记忆 (平台级) ──
 export const userMemories = mysqlTable("user_memories", {

@@ -2650,21 +2650,29 @@ export default function Home() {
     )));
     try {
       const apiBase = import.meta.env.VITE_API_URL || "";
-      const resp = await fetch(`${apiBase}/api/claw/jiuwen/permission-answer`, {
+      const isGovernanceApproval = permission.source === "governance_approval";
+      const resp = await fetch(isGovernanceApproval
+        ? `${apiBase}/api/claw/governance/approvals/${encodeURIComponent(permission.requestId)}/decision`
+        : `${apiBase}/api/claw/jiuwen/permission-answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          adoptId: resolvedAdoptId,
-          requestId: permission.requestId,
-          action,
-          source: permission.source || "permission_interrupt",
-          toolName: permission.toolName,
-          command: permission.command,
-          channel: "web",
-          conversationId: webConversationId,
-          runtimeMode: chatRuntimeMode,
-        }),
+        body: JSON.stringify(isGovernanceApproval
+          ? {
+              adoptId: resolvedAdoptId,
+              decision: action === "reject" ? "rejected" : "approved",
+            }
+          : {
+              adoptId: resolvedAdoptId,
+              requestId: permission.requestId,
+              action,
+              source: permission.source || "permission_interrupt",
+              toolName: permission.toolName,
+              command: permission.command,
+              channel: "web",
+              conversationId: webConversationId,
+              runtimeMode: chatRuntimeMode,
+            }),
       });
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok || payload?.ok === false) {
@@ -2684,6 +2692,17 @@ export default function Home() {
           jiuwenPermission: nextPermission,
         };
       }));
+      if (isGovernanceApproval && action !== "reject") {
+        window.setTimeout(() => {
+          void sendLingxiaMessage(
+            `[平台操作确认已完成] 确认编号 ${permission.requestId}。请使用上一轮完全相同的工具参数和 idempotency_key 继续执行，不得修改业务参数。`,
+            {
+              displayText: "已确认本次操作，请继续执行",
+              resumeGovernanceApprovalId: permission.requestId,
+            },
+          );
+        }, 0);
+      }
     } catch (error: any) {
       const errorText = error?.message || "授权提交失败";
       setLingxiaMsgs((prev) => prev.map((msg) => (
@@ -3047,6 +3066,7 @@ export default function Home() {
       selectedSkillIds?: string[];
       displayText?: string;
       attachments?: ChatMessageAttachment[];
+      resumeGovernanceApprovalId?: string;
     },
   ) => {
     const sourceText = messageOverride ?? lingxiaInput;
@@ -3059,7 +3079,8 @@ export default function Home() {
     const shouldCancelPendingJiuwenPermission =
       isJiuwenRuntime &&
       Boolean(lastAssistantBeforeSend?.jiuwenPermission?.requestId) &&
-      lastAssistantBeforeSend?.jiuwenPermission?.state !== "rejected";
+      !opts?.resumeGovernanceApprovalId &&
+      ["pending", "submitting", "error", undefined].includes(lastAssistantBeforeSend?.jiuwenPermission?.state);
     // 2026-04-17 SSE race fix: 强制 abort 上一次的流，避免 WS 重连/网络抖动后旧 reader 还在
     // setLingxiaMsgs 写 delta，跟新流字符级交错（典型现象：英文 narrative + 中文技能列表混合）
     if (lingxiaStreamAbortRef.current) {
@@ -3110,7 +3131,13 @@ export default function Home() {
     const conversationIdAtSend = webConversationId;
     setLingxiaMsgs((prev) => [
       ...prev.map((msg) => {
-        if (msg.id !== lastAssistantBeforeSend?.id || msg.role !== "assistant" || !msg.jiuwenPermission?.requestId || msg.jiuwenPermission.state === "rejected") return msg;
+        if (
+          msg.id !== lastAssistantBeforeSend?.id
+          || msg.role !== "assistant"
+          || !msg.jiuwenPermission?.requestId
+          || opts?.resumeGovernanceApprovalId === msg.jiuwenPermission.requestId
+          || !["pending", "submitting", "error", undefined].includes(msg.jiuwenPermission.state)
+        ) return msg;
         const nextPermission = {
           ...msg.jiuwenPermission,
           state: "rejected" as const,
@@ -3268,7 +3295,7 @@ export default function Home() {
                 return;
               }
 
-              if (chunk._event === "jiuwen_permission_request") {
+              if (chunk._event === "jiuwen_permission_request" || chunk._event === "governance_approval_required") {
                 attachJiuwenPermissionToLastAssistant({
                   requestId: String(chunk.requestId || ""),
                   source: String(chunk.source || "permission_interrupt"),
@@ -3277,12 +3304,15 @@ export default function Home() {
                   question: String(chunk.question || ""),
                   command: chunk.command ? String(chunk.command) : undefined,
                   toolName: chunk.toolName ? String(chunk.toolName) : undefined,
+                  connectorName: chunk.connectorName ? String(chunk.connectorName) : undefined,
+                  demo: chunk.demo === true,
                   options: Array.isArray(chunk.options) ? chunk.options : undefined,
                   questions: Array.isArray(chunk.questions) ? chunk.questions : undefined,
                   riskLevel: ["low", "medium", "high"].includes(chunk.riskLevel) ? chunk.riskLevel : undefined,
                   reasonCode: chunk.reasonCode ? String(chunk.reasonCode) : undefined,
                   reasonText: chunk.reasonText ? String(chunk.reasonText) : undefined,
                   allowAlways: chunk.allowAlways === true,
+                  expiresAt: chunk.expiresAt ? String(chunk.expiresAt) : undefined,
                   state: "pending",
                 });
                 setLingxiaStreaming(false);
@@ -3610,7 +3640,7 @@ export default function Home() {
               setLingxiaMsgs((prev) => applyAssistantFinalSnapshot(prev, assistantMessageId, chunk.__final_text));
               continue;
             }
-            if (currentEvent === "jiuwen_permission_request") {
+            if (currentEvent === "jiuwen_permission_request" || currentEvent === "governance_approval_required") {
               flushDelta();
               attachJiuwenPermissionToLastAssistant({
                 requestId: String(chunk.requestId || ""),
@@ -3620,12 +3650,15 @@ export default function Home() {
                 question: String(chunk.question || ""),
                 command: chunk.command ? String(chunk.command) : undefined,
                 toolName: chunk.toolName ? String(chunk.toolName) : undefined,
+                connectorName: chunk.connectorName ? String(chunk.connectorName) : undefined,
+                demo: chunk.demo === true,
                 options: Array.isArray(chunk.options) ? chunk.options : undefined,
                 questions: Array.isArray(chunk.questions) ? chunk.questions : undefined,
                 riskLevel: ["low", "medium", "high"].includes(chunk.riskLevel) ? chunk.riskLevel : undefined,
                 reasonCode: chunk.reasonCode ? String(chunk.reasonCode) : undefined,
                 reasonText: chunk.reasonText ? String(chunk.reasonText) : undefined,
                 allowAlways: chunk.allowAlways === true,
+                expiresAt: chunk.expiresAt ? String(chunk.expiresAt) : undefined,
                 state: "pending",
               });
               setLingxiaStreaming(false);

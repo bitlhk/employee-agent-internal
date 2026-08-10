@@ -120,6 +120,7 @@ export async function upsertEnterpriseMcpToolPolicies(input: {
 export async function reserveEnterpriseMcpCall(input: {
   requestId: string;
   policyDecisionId: string;
+  approvalId?: string | null;
   idempotencyKey?: string | null;
   serverId: string;
   toolName: string;
@@ -149,6 +150,14 @@ export async function reserveEnterpriseMcpCall(input: {
     .where(eq(enterpriseMcpCallReceipts.requestId, input.requestId)).limit(1);
   if (!rows[0]) throw new Error("Enterprise MCP call receipt was not created");
   return { reserved: true, receipt: rows[0] };
+}
+
+export async function getEnterpriseMcpCallReceiptByApprovalId(approvalId: string): Promise<EnterpriseMcpCallReceipt | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(enterpriseMcpCallReceipts)
+    .where(eq(enterpriseMcpCallReceipts.approvalId, approvalId)).limit(1);
+  return rows[0] || null;
 }
 
 export async function completeEnterpriseMcpCall(input: {

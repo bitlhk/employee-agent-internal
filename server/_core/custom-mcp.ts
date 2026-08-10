@@ -483,6 +483,9 @@ async function gatewayCall(
               approvalId: approval.requirement.approvalId,
               expiresAt: approval.requirement.expiresAt,
               reason: approval.reason,
+              policyCode: governance.policyCode,
+              toolName: tool.name,
+              connectorName: row.displayName,
             });
           }
           return textResult(approval.reason, true);
@@ -491,6 +494,7 @@ async function gatewayCall(
           const reservation = await reserveCustomMcpCall({
             requestId,
             policyDecisionId: governance.decisionId,
+            approvalId: approval.approval?.approvalId || null,
             idempotencyKey,
             connectionId: row.id,
             toolName: tool.name,
@@ -538,6 +542,7 @@ async function gatewayCall(
             capabilitySetFingerprint: capabilitySetFingerprint(),
             sideEffect: profile.sideEffect,
             approvalId: approval.approval?.approvalId || null,
+            requestId,
           },
         });
         return result;

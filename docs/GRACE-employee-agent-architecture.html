@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>GRACE 岗位智能体技术架构</title>
+<style>
+:root{
+  --ea-red:#e51c23;
+  --ea-red-2:#ef4444;
+  --ea-red-soft:#fff4f4;
+  --ea-ink:#171717;
+  --ea-text:#333;
+  --ea-muted:#777;
+  --ea-line:#e9e9e9;
+  --ea-line-strong:#dedede;
+  --ea-card:#fff;
+  --ea-soft:#fafafa;
+  --ea-shadow:0 18px 55px rgba(0,0,0,.045);
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#fff;color:var(--ea-ink);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif}
+.ea-architecture{
+  width:min(1440px,calc(100% - 40px));
+  margin:0 auto;
+  padding:72px 0 58px;
+}
+.ea-head{
+  display:grid;
+  grid-template-columns:minmax(0,.9fr) 1.45fr;
+  gap:58px;
+  align-items:end;
+  margin-bottom:36px;
+}
+.ea-title{
+  margin:0;
+  font-size:clamp(34px,3.2vw,54px);
+  line-height:1.05;
+  letter-spacing:-1.5px;
+  font-weight:780;
+}
+.ea-title .red{color:var(--ea-red)}
+.ea-kicker{
+  margin-top:14px;
+  color:#666;
+  font-size:17px;
+  line-height:1.65;
+}
+.ea-desc{
+  border-left:1px solid #ddd;
+  padding-left:52px;
+  color:#4c4c4c;
+  font-size:18px;
+  line-height:1.85;
+  max-width:760px;
+}
+.ea-flow{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:34px;
+  align-items:stretch;
+}
+.ea-stage{
+  position:relative;
+  min-height:360px;
+  border:1px solid var(--ea-line-strong);
+  border-radius:16px;
+  background:#fff;
+  padding:24px 22px 22px;
+  box-shadow:var(--ea-shadow);
+}
+.ea-stage:not(:last-child)::after{
+  content:"";
+  position:absolute;
+  right:-27px;
+  top:50%;
+  width:21px;
+  height:1.5px;
+  background:#aaa;
+}
+.ea-stage:not(:last-child)::before{
+  content:"";
+  position:absolute;
+  right:-29px;
+  top:calc(50% - 5px);
+  border-left:8px solid #aaa;
+  border-top:5px solid transparent;
+  border-bottom:5px solid transparent;
+}
+.ea-stage-head{
+  display:flex;
+  gap:16px;
+  align-items:center;
+  margin-bottom:18px;
+}
+.ea-iconbox{
+  width:54px;height:54px;border-radius:15px;
+  display:grid;place-items:center;
+  background:linear-gradient(145deg,#fff3f3,#fff9f9);
+  color:var(--ea-red);
+  flex:0 0 auto;
+}
+.ea-iconbox svg{width:29px;height:29px;stroke:currentColor}
+.ea-stage-name{font-size:22px;font-weight:720;line-height:1.15}
+.ea-stage-en{font-size:14px;color:#8a8a8a;margin-top:6px}
+.ea-list{
+  border:1px solid var(--ea-line);
+  border-radius:13px;
+  overflow:hidden;
+  background:#fff;
+}
+.ea-item{
+  min-height:53px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:0 15px;
+  color:#333;
+  font-size:16px;
+  border-bottom:1px solid var(--ea-line);
+}
+.ea-item:last-child{border-bottom:0}
+.ea-mini{
+  width:20px;height:20px;display:grid;place-items:center;color:#666;flex:0 0 auto
+}
+.ea-mini svg{width:18px;height:18px;stroke:currentColor}
+.ea-control-wrap{
+  position:relative;
+  margin-top:38px;
+  border:1.5px dashed #ff8e8e;
+  border-radius:16px;
+  padding:20px 24px;
+  background:linear-gradient(90deg,#fffafa,#fff 50%,#fffafa);
+}
+.ea-control-wrap::before{
+  content:"";
+  position:absolute;left:7.8%;right:7.8%;top:-39px;height:39px;
+  background:
+    linear-gradient(var(--ea-red),var(--ea-red)) 9.4% 0/1.5px 39px no-repeat,
+    linear-gradient(var(--ea-red),var(--ea-red)) 29.6% 0/1.5px 39px no-repeat,
+    linear-gradient(var(--ea-red),var(--ea-red)) 50% 0/1.5px 39px no-repeat,
+    linear-gradient(var(--ea-red),var(--ea-red)) 70.4% 0/1.5px 39px no-repeat,
+    linear-gradient(var(--ea-red),var(--ea-red)) 90.6% 0/1.5px 39px no-repeat;
+  opacity:.9;
+}
+.ea-control{
+  display:grid;
+  grid-template-columns:260px repeat(7,minmax(0,1fr));
+  align-items:center;
+}
+.ea-control-title{
+  display:flex;align-items:center;gap:16px;
+  padding-right:25px;border-right:1px solid #ddd;
+}
+.ea-control-title .ea-iconbox{width:54px;height:54px}
+.ea-control-title strong{display:block;color:var(--ea-red);font-size:20px}
+.ea-control-title span{display:block;color:#777;font-size:13px;margin-top:5px}
+.ea-control-item{
+  min-height:58px;
+  display:flex;justify-content:center;align-items:center;gap:10px;
+  padding:0 12px;border-right:1px solid #e4e4e4;
+  color:#333;font-size:15px;font-weight:600;text-align:center
+}
+.ea-control-item:last-child{border-right:0}
+.ea-control-item svg{width:21px;height:21px;stroke:var(--ea-red);flex:0 0 auto}
+.ea-foundation{
+  margin-top:20px;
+  border:1px solid var(--ea-line-strong);
+  border-radius:14px;
+  display:grid;
+  grid-template-columns:240px repeat(5,1fr);
+  min-height:86px;
+  align-items:center;
+  background:#fff;
+}
+.ea-found-title{display:flex;align-items:center;gap:16px;padding-left:24px;border-right:1px solid #e5e5e5}
+.ea-found-title strong{font-size:18px}
+.ea-found-title span{font-size:13px;color:#888;display:block;margin-top:4px}
+.ea-found-item{display:flex;align-items:center;justify-content:center;gap:12px;color:#333;font-weight:600;border-right:1px solid #e5e5e5;min-height:48px}
+.ea-found-item:last-child{border-right:0}
+.ea-found-item svg{width:27px;height:27px;stroke:#555}
+.ea-legend{
+  margin:26px auto 0;
+  width:min(860px,100%);
+  border:1px solid var(--ea-line);
+  border-radius:14px;
+  min-height:72px;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  align-items:center;
+  padding:0 26px;
+  background:#fff;
+}
+.ea-legend-item{display:flex;gap:14px;align-items:center;justify-content:center}
+.ea-line-demo{width:48px;height:10px;position:relative;flex:0 0 auto}
+.ea-line-demo::before{content:"";position:absolute;left:0;right:10px;top:5px;border-top:2px solid #8b8b8b}
+.ea-line-demo::after{content:"";position:absolute;right:0;top:1px;border-left:8px solid #8b8b8b;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.ea-line-demo.red::before{border-top:2px dashed var(--ea-red)}
+.ea-line-demo.red::after{border-left-color:var(--ea-red)}
+.ea-line-demo.gray::before{border-top:2px dashed #999}
+.ea-legend-item b{display:block;font-size:14px}.ea-legend-item span{font-size:12px;color:#8b8b8b;display:block;margin-top:4px}
+
+/* ===== GRACE architecture identity ===== */
+.ea-grace-brand{
+  margin:0 0 30px;
+  border:1px solid #f1dada;
+  border-radius:16px;
+  background:linear-gradient(90deg,#fffafa 0%,#fff 48%,#fffafa 100%);
+  padding:18px 22px 17px;
+  display:grid;
+  grid-template-columns:210px 1fr;
+  gap:24px;
+  align-items:center;
+}
+.ea-grace-logo{
+  display:flex;
+  align-items:baseline;
+  gap:3px;
+  white-space:nowrap;
+}
+.ea-grace-logo .grace-word{
+  font-size:38px;
+  line-height:1;
+  font-weight:820;
+  letter-spacing:1px;
+  color:#222;
+}
+.ea-grace-logo .grace-word .g,
+.ea-grace-logo .grace-word .r,
+.ea-grace-logo .grace-word .a,
+.ea-grace-logo .grace-word .c,
+.ea-grace-logo .grace-word .e{color:var(--ea-red)}
+.ea-grace-logo small{
+  display:block;
+  margin-top:7px;
+  font-size:12px;
+  color:#888;
+  letter-spacing:.2px;
+}
+.ea-grace-map{
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:10px;
+}
+.ea-grace-term{
+  min-height:66px;
+  border-left:1px solid #ececec;
+  padding:3px 10px 0 14px;
+}
+.ea-grace-term:first-child{border-left:0}
+.ea-grace-letter{
+  display:inline-block;
+  color:var(--ea-red);
+  font-size:22px;
+  font-weight:820;
+  margin-right:6px;
+}
+.ea-grace-en{
+  font-size:14px;
+  font-weight:700;
+  color:#2f2f2f;
+}
+.ea-grace-cn{
+  display:block;
+  margin-top:7px;
+  font-size:12px;
+  line-height:1.45;
+  color:#7d7d7d;
+}
+.ea-grace-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  margin-bottom:13px;
+  padding:7px 11px;
+  border:1px solid #ffc7c7;
+  border-radius:999px;
+  background:#fff6f6;
+  color:var(--ea-red);
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:.2px;
+}
+.ea-grace-badge::before{
+  content:"";
+  width:7px;height:7px;border-radius:50%;
+  background:var(--ea-red);
+}
+.ea-stage-grace{
+  position:absolute;
+  top:12px;
+  right:14px;
+  font-size:11px;
+  font-weight:800;
+  color:#df3030;
+  border:1px solid #ffd2d2;
+  background:#fff8f8;
+  border-radius:999px;
+  padding:3px 7px;
+  letter-spacing:.2px;
+}
+.ea-execution-span{
+  margin-top:12px;
+  color:#888;
+  font-size:11px;
+  text-align:center;
+}
+@media(max-width:1100px){
+  .ea-grace-brand{grid-template-columns:1fr}
+  .ea-grace-map{grid-template-columns:repeat(5,1fr)}
+}
+@media(max-width:760px){
+  .ea-grace-map{grid-template-columns:1fr 1fr}
+  .ea-grace-term{border-left:0;border-top:1px solid #eee;padding-top:9px}
+}
+
+@media(max-width:1100px){
+  .ea-head{grid-template-columns:1fr;gap:20px}.ea-desc{border-left:0;padding-left:0}
+  .ea-flow{grid-template-columns:1fr 1fr}.ea-stage::after,.ea-stage::before{display:none}
+  .ea-control{grid-template-columns:1fr 1fr}.ea-control-title{grid-column:1/-1;border-right:0;border-bottom:1px solid #eee;padding-bottom:16px;margin-bottom:4px}
+  .ea-control-item{border-right:0;border-bottom:1px solid #eee}
+  .ea-foundation{grid-template-columns:1fr 1fr}.ea-found-title{grid-column:1/-1;border-right:0;border-bottom:1px solid #eee;padding:16px 24px}
+  .ea-found-item{border-right:0;border-bottom:1px solid #eee;padding:15px}
+}
+@media(max-width:680px){
+  .ea-architecture{width:min(100% - 24px,1440px);padding-top:42px}
+  .ea-flow{grid-template-columns:1fr}.ea-stage{min-height:auto}
+  .ea-control-wrap::before{display:none}.ea-control{grid-template-columns:1fr}
+  .ea-foundation{grid-template-columns:1fr}.ea-legend{grid-template-columns:1fr;gap:18px;padding:20px}
+}
+</style>
+</head>
+<body>
+<section class="ea-architecture" aria-label="GRACE 岗位智能体技术架构">
+  <div class="ea-head">
+    <div>
+      <div class="ea-grace-badge">GRACE Architecture · 岗位智能体方法论</div>
+      <h2 class="ea-title"><span class="red">GRACE</span> 岗位智能体技术架构</h2>
+      <div class="ea-kicker">从“能回答”走向“敢授权”，让岗位智能体在企业授权边界内完成真实业务工作</div>
+    </div>
+    <div class="ea-desc">
+      GRACE 将岗位身份、企业上下文、智能体运行、企业能力与治理机制组织成一套受控运行框架。<br>
+      系统不仅让 Agent 会做事，更确保它知道“以谁的身份、依据什么、能做到什么程度”。
+    </div>
+  </div>
+
+  <div class="ea-grace-brand" aria-label="GRACE 架构释义">
+    <div class="ea-grace-logo">
+      <div>
+        <div class="grace-word">
+          <span class="g">G</span><span class="r">R</span><span class="a">A</span><span class="c">C</span><span class="e">E</span>
+        </div>
+        <small>Governed Role-based Agent Context &amp; Execution</small>
+      </div>
+    </div>
+    <div class="ea-grace-map">
+      <div class="ea-grace-term">
+        <span class="ea-grace-letter">G</span><span class="ea-grace-en">Governance</span>
+        <span class="ea-grace-cn">治理控制 · 权限、策略、PEP、确认与证据</span>
+      </div>
+      <div class="ea-grace-term">
+        <span class="ea-grace-letter">R</span><span class="ea-grace-en">Role Identity</span>
+        <span class="ea-grace-cn">岗位身份 · 用户、岗位实例、工作区与权限画像</span>
+      </div>
+      <div class="ea-grace-term">
+        <span class="ea-grace-letter">A</span><span class="ea-grace-en">Agent Runtime</span>
+        <span class="ea-grace-cn">智能执行 · 模型、Skill、规划、工具与多智能体协作</span>
+      </div>
+      <div class="ea-grace-term">
+        <span class="ea-grace-letter">C</span><span class="ea-grace-en">Context</span>
+        <span class="ea-grace-cn">企业上下文 · 知识、数据、记忆、状态与能力元数据</span>
+      </div>
+      <div class="ea-grace-term">
+        <span class="ea-grace-letter">E</span><span class="ea-grace-en">Execution</span>
+        <span class="ea-grace-cn">受控执行 · Capability 调用并形成可验证业务结果</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="ea-flow">
+    <!-- Identity -->
+    <article class="ea-stage">
+      <div class="ea-stage-grace">R · Role</div>
+      <div class="ea-stage-head">
+        <div class="ea-iconbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="7" r="4"/><path d="M5 21c0-4 3-7 7-7s7 3 7 7"/></svg>
+        </div>
+        <div><div class="ea-stage-name">身份层</div><div class="ea-stage-en">Identity</div></div>
+      </div>
+      <div class="ea-list">
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4"/><path d="M5 21c0-4 3-7 7-7s7 3 7 7"/></svg></span>用户</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 5V3h8v2M8 10h8"/></svg></span>岗位模板</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 5 7v10l7 4 7-4V7z"/><path d="m9 12 2 2 4-4"/></svg></span>岗位实例</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M3 7h7l2 2h9v10H3z"/></svg></span>工作区</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2-7 6-7 2 0 3 .6 4 1.6"/><path d="m17 13 4 2v3c0 2-1.4 3.6-4 5-2.6-1.4-4-3-4-5v-3z"/></svg></span>权限画像</div>
+      </div>
+    </article>
+
+    <!-- Context -->
+    <article class="ea-stage">
+      <div class="ea-stage-grace">C · Context</div>
+      <div class="ea-stage-head">
+        <div class="ea-iconbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m12 2 7 4-7 4-7-4z"/><path d="m5 10 7 4 7-4M5 14l7 4 7-4"/></svg>
+        </div>
+        <div><div class="ea-stage-name">上下文层</div><div class="ea-stage-en">Context</div></div>
+      </div>
+      <div class="ea-list">
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 7 4-7 4-7-4z"/><path d="M5 7v9l7 4 7-4V7"/></svg></span>知识</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="5" rx="7" ry="3"/><path d="M5 5v7c0 2 3 3 7 3s7-1 7-3V5M5 12v7c0 2 3 3 7 3s7-1 7-3v-7"/></svg></span>数据 / 状态</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M12 21a8 8 0 1 0-8-8c0 2.5 1.1 4.7 3 6.2"/><path d="M12 9v5l3 2"/></svg></span>记忆 / 任务状态</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span>能力元数据</div>
+      </div>
+    </article>
+
+    <!-- Agent -->
+    <article class="ea-stage">
+      <div class="ea-stage-grace">A · Agent</div>
+      <div class="ea-stage-head">
+        <div class="ea-iconbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><rect x="5" y="7" width="14" height="11" rx="4"/><path d="M12 3v4M8 12h.01M16 12h.01M9 16h6"/></svg>
+        </div>
+        <div><div class="ea-stage-name">智能体层</div><div class="ea-stage-en">Agent Runtime</div></div>
+      </div>
+      <div class="ea-list">
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg></span>模型</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="m13 2-8 12h7l-1 8 8-12h-7z"/></svg></span>技能</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M7 4v6M17 14v6M4 17h16"/></svg></span>规划</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="18" r="3"/><circle cx="19" cy="18" r="3"/><path d="m10 8-3 7M14 8l3 7M8 18h8"/></svg></span>多智能体协作</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="m14.7 6.3 3-3 3 3-3 3M9.3 17.7l-3 3-3-3 3-3M8 16l8-8"/></svg></span>工具使用</div>
+      </div>
+    </article>
+
+    <!-- Capability -->
+    <article class="ea-stage">
+      <div class="ea-stage-grace">E · Execution</div>
+      <div class="ea-stage-head">
+        <div class="ea-iconbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M9 3h6v4h4v6h-4v4H9v-4H5V7h4z"/></svg>
+        </div>
+        <div><div class="ea-stage-name">能力层</div><div class="ea-stage-en">Capability</div></div>
+      </div>
+      <div class="ea-list">
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M4 5h16v14H4z"/><path d="M8 9h8M8 13h5"/></svg></span>MCP</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M7 12h10M12 7l5 5-5 5"/></svg></span>A2A</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M8 8 4 12l4 4M16 8l4 4-4 4M14 5l-4 14"/></svg></span>API / 工作流</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg></span>沙箱 / 浏览器</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7M10 20h4"/></svg></span>通知</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2-7 6-7s6 3 6 7M18 9v6M15 12h6"/></svg></span>人工任务</div>
+      </div>
+    </article>
+
+    <!-- Outcome -->
+    <article class="ea-stage">
+      <div class="ea-stage-grace">E · Execution</div>
+      <div class="ea-stage-head">
+        <div class="ea-iconbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M15 9l5-5"/></svg>
+        </div>
+        <div><div class="ea-stage-name">结果层</div><div class="ea-stage-en">Outcome</div></div>
+      </div>
+      <div class="ea-list">
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg></span>查询结果</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M5 4h11l3 3v13H5z"/><path d="M12 11v6M9 14h6"/></svg></span>创建记录</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16M15 7l5 5-5 5"/></svg></span>状态变更</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="M5 4v16M5 5h11l-2 4 2 4H5"/></svg></span>发起任务</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="m3 11 18-8-8 18-2-7z"/></svg></span>对外发送</div>
+        <div class="ea-item"><span class="ea-mini"><svg viewBox="0 0 24 24" fill="none"><path d="m5 12 4 4 10-10"/></svg></span>业务完成</div>
+      </div>
+    </article>
+  </div>
+
+  <div class="ea-control-wrap">
+    <div class="ea-control">
+      <div class="ea-control-title">
+        <div class="ea-iconbox">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+        </div>
+        <div><strong><span style="font-size:24px;margin-right:5px">G</span>治理控制面</strong><span>Governance Control Plane</span></div>
+      </div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="9" width="14" height="11" rx="2"/><path d="M8 9V6a4 4 0 0 1 8 0v3"/></svg>权限管理</div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18H6z"/><path d="M9 7h6M9 11h6"/></svg>策略管理</div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="9" r="5"/><path d="m9 14-2 7 5-3 5 3-2-7"/></svg>知识资格</div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><path d="M14 6 5 15l4 4 9-9M15 5l4-4 4 4-4 4"/></svg>工具治理 / PEP</div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="18" r="3"/><circle cx="19" cy="18" r="3"/><path d="m10 8-3 7M14 8l3 7M8 18h8"/></svg>委托治理</div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></svg>操作确认</div>
+      <div class="ea-control-item"><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h12v18H6z"/><path d="M9 7h6M9 11h6M9 15h4"/></svg>证据与审计</div>
+    </div>
+  </div>
+
+  <div class="ea-foundation">
+    <div class="ea-found-title">
+      <div class="ea-iconbox"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="m12 3 8 4-8 4-8-4z"/><path d="m4 11 8 4 8-4M4 15l8 4 8-4"/></svg></div>
+      <div><strong>底座</strong><span>Foundation</span></div>
+    </div>
+    <div class="ea-found-item"><svg viewBox="0 0 24 24" fill="none"><path d="M5 3h11l3 3v15H5z"/><circle cx="15" cy="15" r="3"/><path d="m17 17 3 3"/></svg>审计 <small>Audit</small></div>
+    <div class="ea-found-item"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10M10 20V4M16 20v-7M22 20V7"/></svg>可观测性 <small>Observability</small></div>
+    <div class="ea-found-item"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3 20 6v6c0 5-3 8-8 10-5-2-8-5-8-10V6z"/><path d="M12 8v8M8 12h8"/></svg>安全 <small>Security</small></div>
+    <div class="ea-found-item"><svg viewBox="0 0 24 24" fill="none"><path d="m12 3 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/></svg>隔离 <small>Isolation</small></div>
+    <div class="ea-found-item"><svg viewBox="0 0 24 24" fill="none"><path d="M4 4h16v16H4z"/><path d="M8 16v-5M12 16V8M16 16v-2"/></svg>评估 <small>Eval</small></div>
+  </div>
+</section>
+</body>
+</html>

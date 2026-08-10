@@ -131,6 +131,8 @@ export type JiuwenPermissionRequestCard = {
   question: string;
   command?: string;
   toolName?: string;
+  connectorName?: string;
+  demo?: boolean;
   options?: Array<{ label: string; description?: string; value?: string }>;
   questions?: Array<{
     header: string;
@@ -142,9 +144,62 @@ export type JiuwenPermissionRequestCard = {
   reasonCode?: string;
   reasonText?: string;
   allowAlways?: boolean;
+  expiresAt?: string;
   state?: "pending" | "submitting" | "approved" | "rejected" | "answered" | "error";
   error?: string;
 };
+
+type GovernanceEvidence = {
+  approval?: { approvalId?: string; status?: string; createdAt?: string };
+  identity?: { user?: string; roleKey?: string; adoptionId?: string; workspace?: string };
+  decision?: {
+    policyCode?: string;
+    ruleVersion?: string;
+    payloadFingerprint?: string;
+    operation?: string;
+    reason?: string;
+  };
+  confirmation?: {
+    status?: string;
+    decidedBy?: string;
+    approvedAt?: string;
+    rejectedAt?: string;
+    consumedAt?: string;
+  };
+  connector?: { name?: string; type?: string; demo?: boolean };
+  receipt?: {
+    requestId?: string;
+    status?: string;
+    toolName?: string;
+    idempotencyFingerprint?: string;
+    externalRequestId?: string;
+    durationMs?: number;
+    completedAt?: string;
+  } | null;
+  businessOutcome?: {
+    recordId?: string;
+    status?: string;
+    customerRef?: string;
+    createdAt?: string;
+    demo?: boolean;
+  } | null;
+};
+
+function governanceEvidenceTime(value?: string): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function governanceStatusLabel(value?: string): string {
+  if (value === "pending") return "待确认";
+  if (value === "approved") return "已确认，待执行";
+  if (value === "rejected") return "已拒绝";
+  if (value === "consumed" || value === "succeeded" || value === "completed") return "已执行";
+  if (value === "failed") return "执行失败";
+  if (value === "expired") return "已过期";
+  return value || "-";
+}
 
 const TOOL_VISUAL_ICONS: Record<ToolVisualKind, LucideIcon> = {
   agent: Bot,
@@ -749,8 +804,31 @@ function ChatMessageInner({
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackReasonDraft, setFeedbackReasonDraft] = useState<MessageFeedbackReasonCode[]>([]);
   const [feedbackCommentDraft, setFeedbackCommentDraft] = useState("");
+  const [governanceEvidenceOpen, setGovernanceEvidenceOpen] = useState(false);
+  const [governanceEvidenceLoading, setGovernanceEvidenceLoading] = useState(false);
+  const [governanceEvidenceError, setGovernanceEvidenceError] = useState("");
+  const [governanceEvidence, setGovernanceEvidence] = useState<GovernanceEvidence | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsUrlRef = useRef<string | null>(null);
+
+  const openGovernanceEvidence = async () => {
+    if (!adoptId || !jiuwenPermission?.requestId) return;
+    setGovernanceEvidenceOpen(true);
+    setGovernanceEvidenceLoading(true);
+    setGovernanceEvidenceError("");
+    try {
+      const response = await fetch(`/api/claw/governance/approvals/${encodeURIComponent(jiuwenPermission.requestId)}/evidence?adoptId=${encodeURIComponent(adoptId)}`, {
+        credentials: "include",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.item) throw new Error(payload?.error || `执行依据加载失败 (${response.status})`);
+      setGovernanceEvidence(payload.item);
+    } catch (error) {
+      setGovernanceEvidenceError(error instanceof Error ? error.message : "执行依据加载失败");
+    } finally {
+      setGovernanceEvidenceLoading(false);
+    }
+  };
   useEffect(() => () => {
     ttsAudioRef.current?.pause();
     if (ttsUrlRef.current) URL.revokeObjectURL(ttsUrlRef.current);
@@ -1022,9 +1100,16 @@ function ChatMessageInner({
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{jiuwenPermission.title || "权限确认"}</div>
+                <div className="flex items-center gap-2" style={{ fontSize: 13, fontWeight: 600 }}>
+                  <span>{jiuwenPermission.title || "权限确认"}</span>
+                  {jiuwenPermission.demo ? (
+                    <span className="rounded px-1.5 py-0.5 text-[10px]" style={{ background: "rgba(217,119,6,0.10)", color: "#a16207" }}>Demo</span>
+                  ) : null}
+                </div>
                 <div className="mt-0.5 truncate" style={{ color: "var(--oc-text-secondary)" }}>
-                  {jiuwenPermission.toolName ? `工具：${jiuwenPermission.toolName}` : "JiuwenSwarm 请求授权后继续执行"}
+                  {jiuwenPermission.connectorName
+                    ? `${jiuwenPermission.connectorName}${jiuwenPermission.toolName ? ` · ${jiuwenPermission.toolName}` : ""}`
+                    : jiuwenPermission.toolName ? `工具：${jiuwenPermission.toolName}` : "JiuwenSwarm 请求授权后继续执行"}
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -1126,9 +1211,90 @@ function ChatMessageInner({
               >
                 {jiuwenPermission.state === "rejected" ? "已拒绝" : "拒绝"}
               </button>
+              {jiuwenPermission.source === "governance_approval" ? (
+                <button
+                  type="button"
+                  onClick={() => void openGovernanceEvidence()}
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5"
+                  style={{
+                    background: "transparent",
+                    color: "var(--oc-text-secondary)",
+                    border: "1px solid var(--oc-border)",
+                    fontSize: 12,
+                    fontWeight: 500,
+                  }}
+                >
+                  <ShieldCheck size={14} aria-hidden="true" />
+                  执行依据
+                </button>
+              ) : null}
             </div>
           </div>
         )}
+        <Dialog open={governanceEvidenceOpen} onOpenChange={setGovernanceEvidenceOpen}>
+          <DialogContent className="max-w-xl" aria-describedby="governance-evidence-description">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ShieldCheck size={18} aria-hidden="true" />
+                执行依据
+                {governanceEvidence?.connector?.demo ? (
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: "rgba(217,119,6,0.10)", color: "#a16207" }}>
+                    Demo
+                  </span>
+                ) : null}
+              </DialogTitle>
+              <DialogDescription id="governance-evidence-description">
+                展示本次操作的身份、治理判断和执行回执，不包含原始敏感参数。
+              </DialogDescription>
+            </DialogHeader>
+            {governanceEvidenceLoading ? (
+              <div className="flex min-h-32 items-center justify-center gap-2 text-sm" style={{ color: "var(--oc-text-secondary)" }}>
+                <Loader2 className="animate-spin" size={16} /> 正在加载
+              </div>
+            ) : governanceEvidenceError ? (
+              <div className="py-6 text-sm" style={{ color: "#dc2626" }}>{governanceEvidenceError}</div>
+            ) : governanceEvidence ? (
+              <div className="max-h-[60vh] overflow-y-auto text-sm">
+                {[
+                  ["操作", governanceEvidence.decision?.operation || governanceEvidence.receipt?.toolName],
+                  ["连接", governanceEvidence.connector?.name || "待执行"],
+                  ["状态", governanceStatusLabel(governanceEvidence.receipt?.status || governanceEvidence.confirmation?.status)],
+                  ["操作人", governanceEvidence.identity?.user],
+                  ["岗位", governanceEvidence.identity?.roleKey],
+                  ["岗位实例", governanceEvidence.identity?.adoptionId],
+                  ["治理规则", governanceEvidence.decision?.policyCode],
+                  ["规则版本", governanceEvidence.decision?.ruleVersion],
+                  ["确认人", governanceEvidence.confirmation?.decidedBy],
+                  ["确认时间", governanceEvidenceTime(governanceEvidence.confirmation?.approvedAt || governanceEvidence.confirmation?.rejectedAt)],
+                  ["参数指纹", governanceEvidence.decision?.payloadFingerprint],
+                  ["幂等指纹", governanceEvidence.receipt?.idempotencyFingerprint],
+                  ["执行耗时", governanceEvidence.receipt?.durationMs != null ? `${governanceEvidence.receipt.durationMs} ms` : undefined],
+                  ["业务回执", governanceEvidence.businessOutcome?.recordId || governanceEvidence.receipt?.externalRequestId],
+                ].filter((row) => row[1]).map(([label, value]) => (
+                  <div key={String(label)} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 border-b py-2.5 last:border-b-0" style={{ borderColor: "var(--oc-border)" }}>
+                    <span style={{ color: "var(--oc-text-tertiary)" }}>{label}</span>
+                    <span className="break-all" style={{ color: "var(--oc-text-primary)" }}>{String(value)}</span>
+                  </div>
+                ))}
+                {governanceEvidence.businessOutcome?.demo ? (
+                  <p className="mt-3 text-xs leading-5" style={{ color: "var(--oc-text-secondary)" }}>
+                    本次结果仅写入隔离演示表，未连接真实 CRM，也未修改真实客户数据。
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            <DialogFooter>
+              <button
+                type="button"
+                onClick={() => setGovernanceEvidenceOpen(false)}
+                className="rounded-md px-3 py-1.5 text-sm"
+                style={{ border: "1px solid var(--oc-border)", color: "var(--oc-text-primary)" }}
+              >
+                关闭
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         {agentTasks && agentTasks.length > 0 ? (
           <div className="agent-task-card-list agent-task-card-list--inline">
             {agentTasks.map((task) => (

@@ -17,6 +17,7 @@ import {
   normalizeJiuwenFileEvent,
   normalizeJiuwenPermissionRequest,
   normalizeJiuwenToolPayload,
+  normalizeGovernanceApprovalToolEvent,
   normalizeJiuwenUsageSummary,
   normalizeJiuwenMode,
   stringifyJiuwenToolPayload,
@@ -271,6 +272,27 @@ async function handleGatewayEvent(args: {
     });
     const resultText = stringifyJiuwenToolPayload(tool.resultPayload);
     const publicResultText = sanitizePublicRuntimePaths(resultText, args.workspaceDir);
+    const governanceApproval = tool.isResult
+      ? normalizeGovernanceApprovalToolEvent(payload, tool.resultPayload)
+      : null;
+    if (governanceApproval && args.res) {
+      writeSseEvent(args.res, "governance_approval_required", {
+        requestId: governanceApproval.approvalId,
+        source: "governance_approval",
+        kind: "permission",
+        title: "操作确认",
+        question: governanceApproval.reason,
+        toolName: governanceApproval.toolName || tool.toolName,
+        connectorName: governanceApproval.connectorName,
+        demo: governanceApproval.demo,
+        riskLevel: "high",
+        reasonCode: governanceApproval.policyCode || "EA_APPROVAL_REQUIRED",
+        reasonText: governanceApproval.reason,
+        allowAlways: false,
+        expiresAt: governanceApproval.expiresAt,
+        adoptId: args.claw.adoptId,
+      });
+    }
     const shouldEmitToolResult = !tool.isResult || tool.isError || resultText.trim().length > 0;
     if (args.res) {
       if (tool.isResult) {

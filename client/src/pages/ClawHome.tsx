@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   Code2,
   Copy,
-  Cpu,
   Database,
   ExternalLink,
   FolderOpen,
@@ -35,6 +34,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { BrandIcon } from "@/components/BrandIcon";
+import { GraceArchitectureOverview } from "@/components/GraceArchitectureOverview";
 import { RoleAdoptionDialog } from "@/components/RoleAdoptionDialog";
 import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
 import { Button } from "@/components/ui/action-button";
@@ -80,33 +80,33 @@ function isArchivedRuntimeAdoption(adoption: any) {
 const features = [
   {
     icon: MessageCircle,
-    title: "持续对话",
-    desc: "理解上下文与岗位目标，在多轮任务中持续推进，而不是只回答单个问题。",
+    title: "多轮任务",
+    desc: "理解岗位目标和历史上下文，在多轮协作中持续推进，直到形成可交付结果。",
+  },
+  {
+    icon: Database,
+    title: "企业知识",
+    desc: "按岗位、密级、有效期和作用域装配知识，让 Agent 使用此刻真正有效的信息。",
   },
   {
     icon: Zap,
-    title: "技能扩展",
-    desc: "按岗位安装和管理技能，把团队方法、流程与经验沉淀为可复用能力。",
+    title: "岗位技能",
+    desc: "把团队方法、流程和经验沉淀为可复用技能，按岗位稳定调用并持续演进。",
   },
   {
     icon: Network,
-    title: "MCP 工具",
-    desc: "连接客户、产品与内部业务系统，让 Agent 能查询数据并执行实际工作。",
+    title: "业务工具",
+    desc: "通过 MCP、API、工作流、浏览器和沙箱连接业务系统，完成查询、创建与写回。",
+  },
+  {
+    icon: UsersRound,
+    title: "智能体协作",
+    desc: "按任务委托专家 Agent 协同处理，继承当前身份和任务边界，权限只收窄不扩大。",
   },
   {
     icon: Brain,
-    title: "持续学习",
-    desc: "从明确确认和重复协作中学习工作偏好，跨会话复用，也支持随时查看、修正和忘记。",
-  },
-  {
-    icon: Cpu,
-    title: "多模型支持",
-    desc: "模型目录由运行时动态提供，可按任务选择模型，也可由平台自动调度。",
-  },
-  {
-    icon: ShieldCheck,
-    title: "安全治理",
-    desc: "围绕身份、数据护栏、技能、工具与审计建立治理链路，关键状态可在管理后台持续核验。",
+    title: "成长记忆",
+    desc: "从明确确认和重复协作中沉淀偏好、事实与工作方法，支持查看、修正和忘记。",
   },
 ];
 
@@ -114,26 +114,26 @@ const securityCapabilities = [
   {
     icon: Fingerprint,
     label: "身份",
-    title: "身份与管理员保护",
-    desc: "Agent 与 MCP 调用绑定可信身份；管理员支持 TOTP 和敏感操作二次验证。",
+    title: "身份与权限绑定",
+    desc: "每次执行绑定用户、岗位实例、工作区和权限画像；身份不完整时，高风险操作直接停止。",
   },
   {
-    icon: LockKeyhole,
-    label: "输入",
-    title: "输入与外联防护",
-    desc: "上传内容经过类型校验并可接入 ClamAV；浏览器和 Webhook 阻断内网 SSRF。",
+    icon: Database,
+    label: "上下文",
+    title: "知识与数据资格",
+    desc: "按岗位、密级、有效期和作用域筛选上下文，让 Agent 只看到当前任务有资格使用的信息。",
   },
   {
-    icon: PackageSearch,
-    label: "执行",
-    title: "技能与工具治理",
-    desc: "技能上架先审核，危险包直接阻断；工具策略决策和执行结果全程留痕。",
+    icon: UsersRound,
+    label: "委托",
+    title: "能力与委托收窄",
+    desc: "技能、MCP 和子 Agent 按任务授权；委托只能缩小权限，不能借其他 Agent 完成越权操作。",
   },
   {
     icon: ScrollText,
-    label: "数据",
-    title: "数据护栏与审计",
-    desc: "高置信识别凭据、私钥和个人信息；外发时阻断或脱敏，并将处置结果写入审计账本。",
+    label: "执行",
+    title: "确认、防重与执行依据",
+    desc: "写入和外发在执行前确定性判断；必要时人工确认，以幂等键防重，并保留策略、参数与结果回执。",
   },
 ];
 
@@ -625,14 +625,14 @@ export default function ClawHome() {
           </button>
 
           <nav className="hidden items-center gap-8 text-sm font-medium text-[#5d5b54] lg:flex">
+            <button type="button" onClick={() => scrollToSection("grace")}>
+              GRACE
+            </button>
             <button type="button" onClick={() => scrollToSection("features")}>
               能力
             </button>
             <button type="button" onClick={() => scrollToSection("security")}>
-              安全
-            </button>
-            <button type="button" onClick={() => scrollToSection("steps")}>
-              流程
+              治理
             </button>
             <a
               href={EA_ATOMGIT_URL}
@@ -735,10 +735,10 @@ export default function ClawHome() {
                 <span className="mt-2 block text-primary">配一个智能体</span>
               </h1>
               <p className="mt-5 max-w-[560px] text-base font-semibold leading-7 text-[#34322e] sm:text-lg">
-                会做事、可交付，也会在协作中持续成长
+                会做事、能交付，也始终在岗位授权边界内
               </p>
               <p className="mt-2 max-w-[560px] text-sm leading-7 text-[#68655f] sm:text-base">
-                连接企业知识、专业技能与业务系统，理解工作偏好，逐步沉淀岗位工作方法。执行过程可见，能力与数据权限可控。
+                连接企业知识、岗位技能与业务系统，理解当前身份和工作现场，持续推进任务。关键写入支持人工确认、幂等防重与执行依据。
               </p>
 
               <div
@@ -943,6 +943,8 @@ export default function ClawHome() {
           </div>
         </section>
 
+        <GraceArchitectureOverview />
+
         <section
           id="features"
           className="claw-home-v2__features scroll-mt-16 border-b border-[#ede9e4] bg-white px-5 pb-20 pt-16 sm:px-8 sm:pb-24 sm:pt-20"
@@ -953,10 +955,10 @@ export default function ClawHome() {
                 能力一览
               </div>
               <h2 className="text-3xl font-bold text-[#1a1a1a] sm:text-4xl">
-                每个实例，都是完整的 Agent
+                每个实例，都是完整的岗位 Agent
               </h2>
               <p className="mt-3 text-sm text-[#787671] sm:text-base">
-                不止对话，还能调用技能、连接工具并持续完成岗位任务。
+                带着独立身份、上下文和工作空间，能使用知识、技能与工具持续推进任务。
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -979,16 +981,16 @@ export default function ClawHome() {
         >
           <div className="mx-auto grid max-w-[1120px] gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:gap-16">
             <div className="self-start lg:sticky lg:top-24">
-              <div className="mb-3 text-xs font-bold text-primary">企业级安全</div>
+              <div className="mb-3 text-xs font-bold text-primary">治理落地</div>
               <h2 className="m-0 max-w-[430px] text-3xl font-bold leading-tight text-[#1a1a1a] sm:text-4xl">
-                让 Agent 能工作，也能被治理
+                不是提醒它守规则，而是在执行前真正拦得住
               </h2>
               <p className="mt-4 max-w-[480px] text-sm leading-7 text-[#68655f] sm:text-base">
-                从身份绑定、输入防护、数据护栏、技能审核到不可篡改审计，把企业关心的边界落实到每一次调用。
+                GRACE 治理控制面把身份、上下文、委托和业务副作用落实到确定性执行点。普通查询保持顺畅，关键动作才进入确认与防重流程。
               </p>
               <div className="mt-6 flex items-center gap-2 text-xs font-medium text-[#68655f]">
                 <ShieldCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
-                安全状态可在管理后台持续验证
+                治理状态与执行证据可在管理后台持续验证
               </div>
             </div>
 
@@ -996,7 +998,7 @@ export default function ClawHome() {
               {securityCapabilities.map(capability => (
                 <article
                   key={capability.title}
-                  className="group grid gap-3 border-b border-[#e3dfd9] py-5 last:border-b-0 sm:grid-cols-[42px_minmax(0,1fr)_48px] sm:items-start sm:gap-4"
+                  className="group grid gap-3 border-b border-[#e3dfd9] py-5 last:border-b-0 sm:grid-cols-[42px_minmax(0,1fr)_64px] sm:items-start sm:gap-4"
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#dedad4] bg-white text-[#3f3d38] transition group-hover:border-[#c9c4bd] group-hover:shadow-sm">
                     <capability.icon className="h-4 w-4" aria-hidden="true" />
@@ -1005,7 +1007,7 @@ export default function ClawHome() {
                     <strong className="block text-sm font-semibold text-[#24231f]">{capability.title}</strong>
                     <span className="mt-1.5 block text-sm leading-6 text-[#77736c]">{capability.desc}</span>
                   </span>
-                  <span className="w-fit rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-[#77736c] ring-1 ring-inset ring-[#dedad4] sm:justify-self-end">
+                  <span className="w-fit whitespace-nowrap rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-[#77736c] ring-1 ring-inset ring-[#dedad4] sm:justify-self-end">
                     {capability.label}
                   </span>
                 </article>

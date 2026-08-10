@@ -24,3 +24,4 @@ export * from "./knowledge";
 export * from "./channel-identities";
 export * from "./cron-job-creations";
 export * from "./governance-approvals";
+export * from "./governance-demo";

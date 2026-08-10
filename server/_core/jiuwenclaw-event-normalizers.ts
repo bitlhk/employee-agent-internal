@@ -142,3 +142,61 @@ export function stringifyJiuwenToolPayload(value: unknown): string {
     return String(value);
   }
 }
+
+export type GovernanceApprovalToolEvent = {
+  approvalId: string;
+  expiresAt?: string;
+  reason: string;
+  policyCode?: string;
+  toolName?: string;
+  connectorName?: string;
+  demo?: boolean;
+};
+
+function governanceMetadata(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || depth > 5) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = governanceMetadata(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  const source = value as Record<string, unknown>;
+  const meta = source._meta && typeof source._meta === "object" && !Array.isArray(source._meta)
+    ? source._meta as Record<string, unknown>
+    : null;
+  const direct = source.eaGovernance && typeof source.eaGovernance === "object" && !Array.isArray(source.eaGovernance)
+    ? source.eaGovernance as Record<string, unknown>
+    : null;
+  const nested = meta?.eaGovernance && typeof meta.eaGovernance === "object" && !Array.isArray(meta.eaGovernance)
+    ? meta.eaGovernance as Record<string, unknown>
+    : null;
+  if (direct || nested) return direct || nested;
+  for (const key of ["tool_result", "result", "output", "content", "data", "delta"]) {
+    const found = governanceMetadata(source[key], depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+export function normalizeGovernanceApprovalToolEvent(
+  delta: unknown,
+  resultPayload: unknown,
+): GovernanceApprovalToolEvent | null {
+  const metadata = governanceMetadata(delta) || governanceMetadata(resultPayload);
+  const text = stringifyJiuwenToolPayload(resultPayload);
+  const approvalId = String(metadata?.approvalId || text.match(/apr_[0-9a-f-]{36}/i)?.[0] || "").trim();
+  const code = String(metadata?.code || "").trim();
+  if (!/^apr_[0-9a-f-]{36}$/i.test(approvalId)) return null;
+  if (code && code !== "EA_APPROVAL_REQUIRED") return null;
+  return {
+    approvalId,
+    expiresAt: String(metadata?.expiresAt || "").trim() || undefined,
+    reason: String(metadata?.reason || "").trim() || "该操作会修改演示业务数据，需要你按次确认。",
+    policyCode: String(metadata?.policyCode || "").trim() || undefined,
+    toolName: String(metadata?.toolName || "").trim() || undefined,
+    connectorName: String(metadata?.connectorName || "").trim() || undefined,
+    demo: metadata?.demo === true,
+  };
+}

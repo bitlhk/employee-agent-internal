@@ -164,6 +164,10 @@ export function approvalRequiredToolResult(input: {
   approvalId: string;
   expiresAt: Date;
   reason: string;
+  policyCode?: string;
+  toolName?: string;
+  connectorName?: string;
+  demo?: boolean;
 }) {
   return {
     content: [{
@@ -177,6 +181,10 @@ export function approvalRequiredToolResult(input: {
         approvalId: input.approvalId,
         expiresAt: input.expiresAt.toISOString(),
         reason: input.reason,
+        policyCode: input.policyCode || undefined,
+        toolName: input.toolName || undefined,
+        connectorName: input.connectorName || undefined,
+        demo: input.demo === true,
       },
     },
   };

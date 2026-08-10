@@ -193,7 +193,9 @@ function idempotencyKey(args: Record<string, unknown>): string {
 
 function externalRequestId(result: Record<string, unknown>): string | null {
   const meta = result._meta && typeof result._meta === "object" ? result._meta as Record<string, unknown> : null;
-  const value = result.requestId || result.request_id || meta?.requestId || meta?.request_id;
+  const value = result.externalRequestId || result.external_request_id || result.recordId
+    || meta?.externalRequestId || meta?.external_request_id || meta?.recordId
+    || result.requestId || result.request_id || meta?.requestId || meta?.request_id;
   return value ? String(value).slice(0, 128) : null;
 }
 
@@ -368,6 +370,10 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
         approvalId: approval.requirement.approvalId,
         expiresAt: approval.requirement.expiresAt,
         reason: approval.reason,
+        policyCode: governance.policyCode,
+        toolName: entry.tool.name,
+        connectorName: entry.connection.displayName,
+        demo: entry.connection.environment === "test" || entry.connection.displayName.includes("Demo"),
       });
     }
     if (approval.effect === "DENY") return await block(approval.reason, "APPROVAL_DENIED");
@@ -375,6 +381,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
     const reservation = await reserveEnterpriseMcpCall({
       requestId,
       policyDecisionId,
+      approvalId: approval.approval?.approvalId || null,
       idempotencyKey: idemKey || null,
       serverId: entry.connection.serverId,
       toolName: entry.tool.name,
@@ -423,7 +430,15 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
     });
     await auditCall({
       phase: "completed", entry, context, req, requestId, policyDecisionId, result: failed ? "failed" : "success",
-      metadata: { resultHash, externalRequestId: externalId, durationMs: Date.now() - startedAt },
+      metadata: {
+        resultHash,
+        externalRequestId: externalId,
+        durationMs: Date.now() - startedAt,
+        approvalId: approval.approval?.approvalId || null,
+        ruleVersion: governance.ruleVersion,
+        principalFingerprint: governance.principalFingerprint,
+        operationFingerprint: governance.operationFingerprint,
+      },
     });
     metricOutcome = failed ? "error" : "success";
     return result;

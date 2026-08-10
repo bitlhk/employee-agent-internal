@@ -17,6 +17,7 @@ function isDuplicateEntry(error: unknown): boolean {
 export async function reserveCustomMcpCall(input: {
   requestId: string;
   policyDecisionId: string;
+  approvalId?: string | null;
   idempotencyKey: string;
   connectionId: number;
   toolName: string;
@@ -44,6 +45,14 @@ export async function reserveCustomMcpCall(input: {
     .where(eq(customMcpCallReceipts.requestId, input.requestId)).limit(1);
   if (!rows[0]) throw new Error("Custom MCP call receipt was not created");
   return { reserved: true, conflict: false, receipt: rows[0] };
+}
+
+export async function getCustomMcpCallReceiptByApprovalId(approvalId: string): Promise<CustomMcpCallReceipt | null> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.select().from(customMcpCallReceipts)
+    .where(eq(customMcpCallReceipts.approvalId, approvalId)).limit(1);
+  return rows[0] || null;
 }
 
 export async function completeCustomMcpCall(input: {
