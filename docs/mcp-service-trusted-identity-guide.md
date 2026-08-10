@@ -17,13 +17,13 @@ MCP 服务不得信任客户端自行传入的 `X-User-Id`、`X-Tenant-Id`、`ro
 
 ## 2. 当前联调参数
 
-| 项目 | 本地 EA |
-|---|---|
-| Issuer | `https://work.linggan.top` |
-| JWKS | `https://work.linggan.top/api/enterprise-mcp/.well-known/jwks.json` |
-| 签名算法 | `ES256` |
-| Token 类型 | `at+jwt` |
-| 默认有效期 | 120 秒 |
+| 项目 | 上海环境 | 本地/新加坡环境 |
+|---|---|---|
+| Issuer | `https://ling-claw.demo.linggan.top` | `https://work.linggan.top` |
+| JWKS | `https://ling-claw.demo.linggan.top/api/enterprise-mcp/.well-known/jwks.json` | `https://work.linggan.top/api/enterprise-mcp/.well-known/jwks.json` |
+| 签名算法 | `ES256` | `ES256` |
+| Token 类型 | `at+jwt` | `at+jwt` |
+| 默认有效期 | 120 秒 | 120 秒 |
 
 每个环境有独立的 Issuer 和签名密钥。MCP 服务应维护允许的 Issuer/JWKS 列表，不得共享私钥。
 
@@ -127,7 +127,9 @@ def verify_ea_token(token: str, expected_server: str, expected_tool: str, requir
 ## 6. 切换顺序
 
 1. 服务端先在测试环境完成验签、scope 和行级过滤。
-2. 保持 EA 连接器为 `none_shadow + shadow`，验证服务能够接收并校验 EA 已随请求发送的短期令牌。
+2. EA 连接器改为 `oauth2_access_token + shadow`，服务端完成验签后由管理员执行“验证身份”。
 3. 对比新旧结果、双侧请求号、行级过滤和失败告警。
 4. EA 后台将认证方式改为“EA 短期令牌”，安全和业务验收后切换 `enforced`。
 5. 最后限制源站端口只允许统一网关访问。
+
+平台会同时验证有效 Token、无 Token、错误 audience、缺少 scope 和错误 tool binding。任一负向请求被服务接受，都不能进入 `enforced`。完整交付清单见 [enterprise-mcp-developer-handoff-v1.md](./enterprise-mcp-developer-handoff-v1.md)。

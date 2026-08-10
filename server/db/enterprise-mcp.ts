@@ -45,7 +45,7 @@ export async function getEnterpriseMcpConnection(serverId: string): Promise<Ente
 }
 
 export async function createEnterpriseMcpConnection(
-  input: Omit<InsertEnterpriseMcpConnection, "id" | "credentialEncrypted" | "healthStatus" | "lastError" | "toolsJson" | "lastTestedAt"> & {
+  input: Omit<InsertEnterpriseMcpConnection, "id" | "credentialEncrypted" | "healthStatus" | "identityVerificationStatus" | "identityVerificationError" | "identityVerifiedAt" | "lastError" | "toolsJson" | "lastTestedAt"> & {
     credential?: string | null;
   },
 ): Promise<EnterpriseMcpConnection> {

@@ -42,6 +42,7 @@
     "db:add-blocked-enum": "tsx scripts/add-blocked-to-ip-management-enum.ts",
     "db:backup-users": "tsx scripts/backup-user-data.ts",
     "mcp:identity:init": "node scripts/generate-enterprise-mcp-keypair.mjs",
+    "mcp:markers:configure": "tsx scripts/configure-insurance-marker-mcps.ts",
     "mcp:demo:configure": "tsx scripts/configure-governance-demo-mcp.ts",
     "audit:drain-dlq": "tsx scripts/drain-audit-dlq.ts",
     "audit:dependencies": "pnpm audit --prod --audit-level high",

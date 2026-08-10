@@ -15,7 +15,7 @@
 - 两项保险标杆服务已启用标准地址，旧地址继续内部兼容:
   - `https://mcp.demo.linggan.top/insurance/customer-profile/mcp`
   - `https://mcp.demo.linggan.top/insurance/product-exam-points/mcp`
-- 两项服务已通过 `2025-11-25` 初始化和 `tools/list` 联调，仍登记为 `none_shadow + shadow`。
+- 两项服务已通过 `2025-11-25` 初始化和 `tools/list` 联调；平台目标配置为 `oauth2_access_token + shadow`，待服务端通过可信身份负向验证后进入 `enforced`。
 
 当前尚未完成，不能将两项标杆服务切换为生产可信接入:
 
@@ -23,7 +23,7 @@
 - `save_product` 的持久化人工审批与 MCP 服务端幂等结果复用。
 - 原始 MCP 源站仅允许网关访问，并通过安全组或防火墙完成网络收口。
 
-因此当前两项连接器可用于 EA 内部的岗位授权、只读调用、身份传递和审计联调，但仍保持 `none_shadow + shadow`，不应在服务端验签前承载真实客户敏感数据。
+因此当前两项连接器可用于岗位授权、工具策略和可信身份联调，但不应在服务端验签前承载真实客户敏感数据。平台已增加有效 Token、无 Token、错误 audience、缺 scope 和错误 tool binding 的强制验收；任一负向探测被接受都不能切换为生产强制态。
 
 > 适用对象:岗位智能体平台管理员、MCP 服务开发者、平台开发者、安全与审计人员
 >

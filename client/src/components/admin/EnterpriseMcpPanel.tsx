@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
-import { Cable, CheckCircle2, KeyRound, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
+import { Cable, CheckCircle2, Fingerprint, KeyRound, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 type EnterpriseList = RouterOutputs["enterpriseMcp"]["list"];
@@ -125,6 +125,10 @@ export function EnterpriseMcpPanel() {
     onSuccess: async result => { toast.success(`连接成功，发现 ${result.tools.length} 个工具`); await invalidate(); },
     onError: error => toast.error(error.message),
   });
+  const verifyIdentityMutation = trpc.enterpriseMcp.verifyIdentity.useMutation({
+    onSuccess: async result => { toast.success(`可信身份验证通过（${result.checks.length} 项）`); await invalidate(); },
+    onError: error => toast.error(error.message),
+  });
   const grantsMutation = trpc.enterpriseMcp.setRoleGrants.useMutation({
     onSuccess: async () => { toast.success("岗位授权已更新"); setRolesTarget(null); await invalidate(); },
     onError: error => toast.error(error.message),
@@ -171,6 +175,7 @@ export function EnterpriseMcpPanel() {
       <div className="grid gap-3">
         {connectors.map(connector => {
           const ready = connector.healthStatus === "ready";
+          const identityVerified = connector.identityVerificationStatus === "verified";
           return (
             <Card key={connector.serverId} className="gap-0 overflow-hidden py-0">
               <div className="flex flex-col gap-4 p-5 xl:flex-row xl:items-center">
@@ -180,16 +185,20 @@ export function EnterpriseMcpPanel() {
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-base font-semibold text-gray-900">{connector.displayName}</h3>
                       <Badge variant="outline" className={ready ? "border-green-200 bg-green-50 text-green-700" : connector.healthStatus === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-gray-200 text-gray-600"}>{ready ? "可连接" : connector.healthStatus === "error" ? "连接异常" : "待检测"}</Badge>
+                      <Badge variant="outline" className={identityVerified ? "border-green-200 bg-green-50 text-green-700" : connector.identityVerificationStatus === "failed" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-700"}>{identityVerified ? "身份已验证" : connector.identityVerificationStatus === "failed" ? "身份验证失败" : "身份待验证"}</Badge>
                       <Badge variant="outline" className={connector.lifecycleState === "shadow" ? "border-amber-200 bg-amber-50 text-amber-700" : connector.lifecycleState === "enforced" ? "border-green-200 bg-green-50 text-green-700" : "border-gray-200 text-gray-600"}>{LIFECYCLE_LABELS[connector.lifecycleState]}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-gray-600">{connector.description || "暂无说明"}</p>
                     <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"><span className="font-mono">{connector.serverId}</span><span>{IDENTITY_LABELS[connector.identityMode]}</span><span>{AUTH_LABELS[connector.authMode]}</span><span>{connector.policies.length} 个工具策略</span><span>{connector.grants.length} 个岗位授权</span></div>
                     <div className="mt-2 truncate font-mono text-[11px] text-gray-400" title={connector.endpointUrl}>{connector.endpointUrl}</div>
                     {connector.lastError ? <div className="mt-2 text-xs text-red-600">{connector.lastError}</div> : null}
+                    {connector.identityVerificationError ? <div className="mt-2 text-xs text-red-600">{connector.identityVerificationError}</div> : null}
+                    {!connector.readiness.readyForEnforcement ? <div className="mt-2 text-xs text-amber-700">进入强制运行前：{connector.readiness.blockers.join("；")}</div> : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => discoverMutation.mutate({ serverId: connector.serverId })} disabled={discoverMutation.isPending}>{discoverMutation.isPending && discoverMutation.variables?.serverId === connector.serverId ? <Loader2 className="animate-spin" /> : <RefreshCw />}检测</Button>
+                  <Button variant="outline" size="sm" onClick={() => verifyIdentityMutation.mutate({ serverId: connector.serverId })} disabled={verifyIdentityMutation.isPending || connector.authMode !== "oauth2_access_token" || !data?.identityProvider.configured}>{verifyIdentityMutation.isPending && verifyIdentityMutation.variables?.serverId === connector.serverId ? <Loader2 className="animate-spin" /> : <Fingerprint />}验证身份</Button>
                   <Button variant="outline" size="sm" onClick={() => { setToolDrafts(connector.policies.map(policyDraft)); setToolsTarget(connector); }}><Wrench />工具策略</Button>
                   <Button variant="outline" size="sm" onClick={() => openRoles(connector)}><ShieldCheck />岗位权限</Button>
                   <Button variant="ghost" size="icon-sm" title="编辑连接器" onClick={() => { setEditingId(connector.serverId); setForm(connectorForm(connector)); setEditOpen(true); }}><Pencil /></Button>

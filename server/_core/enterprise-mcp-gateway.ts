@@ -170,6 +170,7 @@ async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
     if (connection.lifecycleState === "shadow" && !shadowRuntimeEnabled()) continue;
     if (connection.healthStatus !== "ready") continue;
     if (connection.authMode === "oauth2_access_token" && !identity.configured) continue;
+    if (connection.authMode === "oauth2_access_token" && connection.lifecycleState === "enforced" && connection.identityVerificationStatus !== "verified") continue;
     if (connection.authMode === "none_shadow" && connection.lifecycleState !== "shadow") continue;
     const snapshots = Array.isArray(connection.toolsJson) ? connection.toolsJson as CustomMcpToolSnapshot[] : [];
     const policyByName = new Map((await listEnterpriseMcpToolPolicies(connection.serverId)).map(policy => [policy.toolName, policy]));

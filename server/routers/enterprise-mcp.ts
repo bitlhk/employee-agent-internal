@@ -12,6 +12,7 @@ import {
 } from "../_core/enterprise-mcp-policy";
 import { listAgentRoleTemplates } from "../_core/role-templates";
 import { enterpriseMcpIdentityStatus, issueEnterpriseMcpAccessToken } from "../_core/enterprise-mcp-identity";
+import { verifyEnterpriseMcpIdentityEnforcement } from "../_core/enterprise-mcp-identity-verification";
 import { reconcileEnterpriseMcpRuntimeScopes } from "../_core/enterprise-mcp-runtime-reconcile";
 import {
   createEnterpriseMcpConnection,
@@ -129,13 +130,15 @@ function storedPolicyDraft(policy: Awaited<ReturnType<typeof listEnterpriseMcpTo
 
 async function requiredAudit(
   phase: "requested" | "completed",
-  kind: "connector.config_change" | "tool_policy.change" | "role_grants.change",
+  kind: "connector.config_change" | "tool_policy.change" | "role_grants.change" | "identity_verification",
   ctx: { user: Parameters<typeof auditActor>[0]; req: Parameters<typeof auditRequest>[0] },
   serverId: string,
   metadata: Record<string, unknown>,
+  result: "success" | "failed" = "success",
 ) {
   return await recordAuditRequired({
     action: `mcp.${kind}.${phase}`,
+    result,
     severity: "high",
     ...auditActor(ctx.user),
     ...auditRequest(ctx.req),
@@ -154,11 +157,24 @@ export const enterpriseMcpRouter = router({
       listRoleAssetGrants(),
       enterpriseMcpIdentityStatus(),
     ]);
-    const items = await Promise.all(connections.map(async connection => ({
-      ...toPublicEnterpriseMcpConnection(connection),
-      policies: await listEnterpriseMcpToolPolicies(connection.serverId),
-      grants: grants.filter(grant => grant.assetType === "mcp_server" && grant.assetId === connection.serverId && grant.enabled),
-    })));
+    const items = await Promise.all(connections.map(async connection => {
+      const policies = await listEnterpriseMcpToolPolicies(connection.serverId);
+      const connectionGrants = grants.filter(grant => grant.assetType === "mcp_server" && grant.assetId === connection.serverId && grant.enabled);
+      const tools = Array.isArray(connection.toolsJson) ? connection.toolsJson : [];
+      const blockers: string[] = [];
+      if (connection.healthStatus !== "ready" || tools.length === 0) blockers.push("尚未完成工具发现");
+      if (connection.authMode !== "oauth2_access_token") blockers.push("尚未使用 EA 短期令牌");
+      if (!identityProvider.configured) blockers.push("平台短期令牌签发未配置");
+      if (connection.identityVerificationStatus !== "verified") blockers.push("服务端可信身份验证未通过");
+      if (!policies.some(policy => policy.enabled)) blockers.push("没有启用的工具策略");
+      if (connectionGrants.length === 0) blockers.push("尚未授权给岗位");
+      return {
+        ...toPublicEnterpriseMcpConnection(connection),
+        policies,
+        grants: connectionGrants,
+        readiness: { readyForEnforcement: blockers.length === 0, blockers },
+      };
+    }));
     return {
       items,
       identityProvider: {
@@ -191,8 +207,19 @@ export const enterpriseMcpRouter = router({
     if (input.authMode === "static_bearer_legacy" && !credentialConfigured) {
       throw new TRPCError({ code: "BAD_REQUEST", message: "静态 Bearer 方式必须配置访问令牌" });
     }
-    if (input.authMode === "oauth2_access_token" && input.lifecycleState === "enforced" && !(await enterpriseMcpIdentityStatus()).configured) {
-      throw new TRPCError({ code: "BAD_REQUEST", message: "EA 统一短期令牌签发尚未启用，该连接器暂不能进入强制运行态" });
+    const identityContractChanged = !existing
+      || existing.endpointUrl !== input.endpointUrl
+      || existing.resourceUri !== input.resourceUri
+      || existing.authMode !== input.authMode
+      || existing.identityMode !== input.identityMode
+      || existing.protocolVersion !== input.protocolVersion;
+    if (input.authMode === "oauth2_access_token" && input.lifecycleState === "enforced") {
+      if (!(await enterpriseMcpIdentityStatus()).configured) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "EA 统一短期令牌签发尚未启用，该连接器暂不能进入强制运行态" });
+      }
+      if (identityContractChanged || existing?.identityVerificationStatus !== "verified") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "请先保存为影子态并通过服务端可信身份验证，再切换为强制运行" });
+      }
     }
 
     const safeMetadata = {
@@ -226,6 +253,11 @@ export const enterpriseMcpRouter = router({
         ownerDepartment: input.ownerDepartment?.trim() || null,
         ownerContact: input.ownerContact?.trim() || null,
         healthUrl: input.healthUrl?.trim() || null,
+        ...((identityContractChanged || input.authMode !== "oauth2_access_token") ? {
+          identityVerificationStatus: "unknown" as const,
+          identityVerificationError: null,
+          identityVerifiedAt: null,
+        } : {}),
         updatedBy: actor,
       } as const;
       const credential = input.authMode !== "static_bearer_legacy" || input.clearCredential
@@ -293,6 +325,71 @@ export const enterpriseMcpRouter = router({
         updatedBy: actorName(ctx.user),
       });
       throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "MCP 探测失败" });
+    }
+  }),
+
+  verifyIdentity: adminProcedure.input(z.object({ serverId: z.string().min(3).max(128) })).mutation(async ({ input, ctx }) => {
+    const row = await getEnterpriseMcpConnection(input.serverId);
+    if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "企业 MCP 不存在" });
+    if (row.authMode !== "oauth2_access_token") {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "请先将认证方式设置为 EA 短期令牌" });
+    }
+    const requestMetadata = { endpointOrigin: new URL(row.endpointUrl).origin, checks: ["valid_token", "missing_token", "wrong_audience", "missing_scope", "wrong_tool"] };
+    await requiredAudit("requested", "identity_verification", ctx, row.serverId, requestMetadata);
+    try {
+      const result = await verifyEnterpriseMcpIdentityEnforcement({
+        connection: row,
+        caller: {
+          userId: Number(ctx.user?.id || 0),
+          organization: ctx.user?.organization || null,
+          adoptId: "lgj-admin-identity-probe",
+          agentId: "employee-agent-admin",
+          roleKey: "platform-admin",
+        },
+      });
+      const error = result.passed
+        ? null
+        : result.checks.filter(check => !check.passed).map(check => `${check.code}: ${check.detail}`).join("; ").slice(0, 2000);
+      await updateEnterpriseMcpConnection(row.serverId, {
+        toolsJson: result.tools,
+        healthStatus: result.tools.length > 0 ? "ready" : "error",
+        identityVerificationStatus: result.passed ? "verified" : "failed",
+        identityVerificationError: error,
+        identityVerifiedAt: result.passed ? new Date() : null,
+        lastTestedAt: new Date(),
+        updatedBy: actorName(ctx.user),
+      });
+      await requiredAudit("completed", "identity_verification", ctx, row.serverId, {
+        ...requestMetadata,
+        passed: result.passed,
+        toolCount: result.tools.length,
+        checks: result.checks.map(check => ({ code: check.code, passed: check.passed })),
+      }, result.passed ? "success" : "failed");
+      if (!result.passed) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: `可信身份验证未通过：${error}` });
+      }
+      return { ok: true, checks: result.checks, tools: result.tools };
+    } catch (error) {
+      if (!(error instanceof TRPCError)) {
+        const message = (error instanceof Error ? error.message : String(error))
+          .replace(/Bearer\s+[^\s]+/gi, "Bearer <redacted>")
+          .slice(0, 2000);
+        await updateEnterpriseMcpConnection(row.serverId, {
+          identityVerificationStatus: "failed",
+          identityVerificationError: message,
+          identityVerifiedAt: null,
+          lastTestedAt: new Date(),
+          updatedBy: actorName(ctx.user),
+        });
+        await requiredAudit("completed", "identity_verification", ctx, row.serverId, {
+          ...requestMetadata,
+          passed: false,
+          error: message,
+        }, "failed");
+      }
+      throw error instanceof TRPCError
+        ? error
+        : new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "可信身份验证失败" });
     }
   }),
 

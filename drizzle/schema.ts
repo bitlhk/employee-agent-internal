@@ -1144,6 +1144,9 @@ export const enterpriseMcpConnections = mysqlTable("enterprise_mcp_connections",
   ownerContact: varchar("owner_contact", { length: 256 }),
   healthUrl: varchar("health_url", { length: 2048 }),
   healthStatus: mysqlEnum("health_status", ["unknown", "ready", "error"]).default("unknown").notNull(),
+  identityVerificationStatus: mysqlEnum("identity_verification_status", ["unknown", "verified", "failed"]).default("unknown").notNull(),
+  identityVerificationError: text("identity_verification_error"),
+  identityVerifiedAt: timestamp("identity_verified_at"),
   lastError: text("last_error"),
   toolsJson: json("tools_json").$type<Array<Record<string, unknown>> | null>(),
   lastTestedAt: timestamp("last_tested_at"),
@@ -1155,6 +1158,7 @@ export const enterpriseMcpConnections = mysqlTable("enterprise_mcp_connections",
   uniqServerId: uniqueIndex("uk_enterprise_mcp_server_id").on(table.serverId),
   domainStateIdx: index("idx_enterprise_mcp_domain_state").on(table.businessDomain, table.lifecycleState),
   healthIdx: index("idx_enterprise_mcp_health").on(table.healthStatus, table.lastTestedAt),
+  identityVerificationIdx: index("idx_enterprise_mcp_identity_verification").on(table.identityVerificationStatus, table.identityVerifiedAt),
 }));
 
 export type EnterpriseMcpConnection = typeof enterpriseMcpConnections.$inferSelect;
