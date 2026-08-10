@@ -1280,7 +1280,7 @@ export const governanceDemoBusinessRecords = mysqlTable("governance_demo_busines
   toolName: varchar("tool_name", { length: 256 }).notNull(),
   idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
   customerRef: varchar("customer_ref", { length: 128 }).notNull(),
-  status: mysqlEnum("status", ["demo_draft", "demo_updated"]).notNull(),
+  status: mysqlEnum("status", ["demo_draft", "demo_updated", "demo_followup"]).notNull(),
   payloadJson: json("payload_json").$type<Record<string, unknown>>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),

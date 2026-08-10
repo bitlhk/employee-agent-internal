@@ -99,6 +99,13 @@
       "when": 1786694400000,
       "tag": "0013_enterprise_mcp_identity_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786780800000,
+      "tag": "0014_governance_demo_followup",
+      "breakpoints": true
     }
   ]
 }

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     adopt_id: "lgj-demo",
     agent_id: "jiuwen_lgj-demo",
     request_id: "req-demo",
-    scp: ["demo.portfolio.read", "demo.portfolio.write", "demo.customer.write"],
+    scp: ["demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
   } as Record<string, unknown>,
   createRecord: vi.fn(),
   getRecord: vi.fn(),
@@ -63,7 +63,7 @@ beforeEach(async () => {
     adopt_id: "lgj-demo",
     agent_id: "jiuwen_lgj-demo",
     request_id: "req-demo",
-    scp: ["demo.portfolio.read", "demo.portfolio.write", "demo.customer.write"],
+    scp: ["demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
   });
   mocks.createRecord.mockResolvedValue({
     created: true,
@@ -154,5 +154,60 @@ describe("governance Demo MCP", () => {
       externalRequestId: "DEMO-PLAN-123",
     }));
     expect(JSON.stringify(payload)).toContain("未连接真实 CRM");
+  });
+
+  it("creates a governed Demo follow-up task with a business receipt", async () => {
+    mocks.claims.tool_name = "demo_create_followup_task";
+    mocks.createRecord.mockResolvedValue({
+      created: true,
+      record: {
+        recordId: "DEMO-FOLLOWUP-123",
+        customerRef: "张先生（Demo）",
+        status: "demo_followup",
+      },
+    });
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_followup_task",
+      arguments: {
+        customer_ref: "张先生（Demo）",
+        objective: "沟通到期资金安排并核验风险测评状态",
+        due_at: "2026-08-20T09:00:00+08:00",
+        priority: "high",
+        source_event_ref: "MATURITY-DEMO-001",
+        idempotency_key: "demo-followup-001",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.createRecord).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "demo_create_followup_task",
+      status: "demo_followup",
+      payloadJson: expect.objectContaining({
+        objective: "沟通到期资金安排并核验风险测评状态",
+        dueAt: "2026-08-20T01:00:00.000Z",
+        priority: "high",
+      }),
+    }));
+    expect(payload.result._meta).toEqual(expect.objectContaining({
+      demo: true,
+      externalRequestId: "DEMO-FOLLOWUP-123",
+    }));
+    expect(JSON.stringify(payload)).toContain("客户跟进任务已创建");
+  });
+
+  it("rejects a customer reference that could be mistaken for real CRM data", async () => {
+    mocks.claims.tool_name = "demo_create_followup_task";
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_followup_task",
+      arguments: {
+        customer_ref: "张先生",
+        objective: "创建跟进任务",
+        due_at: "2026-08-20T09:00:00+08:00",
+        priority: "high",
+        idempotency_key: "demo-followup-real-ref",
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(payload)).toContain("明确标注 Demo");
+    expect(mocks.createRecord).not.toHaveBeenCalled();
   });
 });

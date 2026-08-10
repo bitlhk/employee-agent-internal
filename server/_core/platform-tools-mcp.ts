@@ -26,6 +26,7 @@ import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
+import { prepareWealthMaturityContext } from "./wealth-maturity-context";
 import {
   resolveWealthPolicyBasis,
   resolveWealthSuitabilityPolicySource,
@@ -121,6 +122,22 @@ const TOOLS = [
       "The result contains only eligible current-policy metadata and safe aggregate filtering evidence; it never returns restricted document names or contents.",
     ].join(" "),
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "prepare_wealth_maturity_context",
+    description: [
+      "Prepare a bounded list of upcoming maturity events for customers authorized to the current wealth manager.",
+      "Use for 7/14/30/90-day maturity operations, prioritization, and follow-up planning.",
+      "It never recommends replacement products and never creates tasks; any product recommendation requires prepare_wealth_allocation_context, and any write requires a separate governed tool call.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        window_days: { type: "number", minimum: 1, maximum: 90, description: "Maturity window in days, default 30." },
+        max_customers: { type: "number", minimum: 1, maximum: 30, description: "Maximum authorized customers to scan, default 20." },
+        max_items: { type: "number", minimum: 1, maximum: 50, description: "Maximum maturity events returned, default 30." },
+      },
+    },
   },
   {
     name: "prepare_wealth_allocation_context",
@@ -496,6 +513,74 @@ async function callTool(
       },
     });
     return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify(basis)}`);
+  }
+
+  if (name === "prepare_wealth_maturity_context") {
+    const boundedInteger = (value: unknown, fallback: number, maximum: number) => {
+      const number = Math.floor(Number(value || fallback));
+      return Number.isFinite(number) ? Math.min(maximum, Math.max(1, number)) : fallback;
+    };
+    const windowDays = boundedInteger(args.window_days || args.windowDays, 30, 90);
+    const maxCustomers = boundedInteger(args.max_customers || args.maxCustomers, 20, 30);
+    const maxItems = boundedInteger(args.max_items || args.maxItems, 30, 50);
+    const customerEndpoint = String(process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp").trim();
+    try {
+      const result = await prepareWealthMaturityContext({
+        roleTemplate: principal.principal.roleTemplate,
+        request: { windowDays, maxCustomers, maxItems },
+        dependencies: {
+          listCustomers: async (query) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: customerEndpoint,
+            toolName: "wealth_assistant_customer_list",
+            args: query,
+            agentId: principal.principal.agentId,
+            adoptId,
+            sessionId: principal.principal.sessionId,
+          })),
+          loadCustomer: async (customerId) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: customerEndpoint,
+            toolName: "wealth_assistant_customer_detail",
+            args: { customerId },
+            agentId: principal.principal.agentId,
+            adoptId,
+            sessionId: principal.principal.sessionId,
+          })),
+        },
+      });
+      await recordAuditBestEffort({
+        action: "governance.wealth_maturity_context.prepared",
+        result: result.status === "unavailable" ? "failed" : "success",
+        severity: result.status === "unavailable" ? "medium" : "info",
+        actorType: "agent",
+        actorUserId: principal.principal.userId || null,
+        actorRole: principal.principal.roleTemplate,
+        targetType: "wealth_maturity_context",
+        targetId: stableToolInputHash({ windowDays, maxCustomers, maxItems }),
+        workspaceId: principal.principal.workspaceId || null,
+        agentInstanceId: adoptId,
+        runtimeAgentId: principal.principal.agentId,
+        sessionId: principal.principal.sessionId,
+        toolName: name,
+        policyCode: "EA_WEALTH_MATURITY_SCOPE_V1",
+        source: "platform_tools_mcp",
+        ...auditRequest(req),
+        metadata: {
+          windowDays,
+          customersScanned: result.summary.customersScanned,
+          customersFailed: result.summary.customersFailed,
+          returnedItems: result.summary.returnedItems,
+          truncated: result.summary.truncated,
+          scope: result.evidence.scope,
+        },
+      });
+      return textResult(`EA_WEALTH_MATURITY_CONTEXT:${JSON.stringify(result)}`, result.status === "unavailable" ? { isError: true } : {});
+    } catch {
+      return textResult(`EA_WEALTH_MATURITY_CONTEXT:${JSON.stringify({
+        schema: "ea.wealth-maturity-context.v1",
+        status: "unavailable",
+        message: "客户数据服务暂时不可用，不能形成具体客户到期经营结论。可以先整理通用跟进检查表。",
+      })}`, { isError: true });
+    }
   }
 
   if (name === "prepare_wealth_allocation_context") {

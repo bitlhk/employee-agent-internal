@@ -26,7 +26,7 @@ async function main() {
   const existing = await getEnterpriseMcpConnection(GOVERNANCE_DEMO_MCP_SERVER_ID);
   const common = {
     displayName: "财富业务演示 MCP（Demo）",
-    description: "Governed Runtime 演示连接：创建方案草稿、更新演示客户标签；所有写入仅进入隔离 Demo 表。",
+    description: "Governed Runtime 演示连接：创建方案草稿、客户跟进任务和更新演示客户标签；所有写入仅进入隔离 Demo 表。",
     icon: null,
     businessDomain: "wealth-demo",
     endpointUrl,
@@ -82,6 +82,18 @@ async function main() {
         enabled: true,
         sideEffect: "write",
         requiredScopes: ["demo.portfolio.write"],
+        allowedRoles: ["wealth-manager"],
+        identityModeOverride: "user",
+        approvalMode: "always",
+        auditLevel: "highest",
+        idempotencyRequired: true,
+        argumentPolicyJson: null,
+      },
+      {
+        toolName: "demo_create_followup_task",
+        enabled: true,
+        sideEffect: "write",
+        requiredScopes: ["demo.followup.write"],
         allowedRoles: ["wealth-manager"],
         identityModeOverride: "user",
         approvalMode: "always",

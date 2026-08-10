@@ -786,6 +786,10 @@ REQUIRE_APPROVAL
 - PASS：Demo 写入处处标注 Demo，绝不连接真实 CRM；
 - EVIDENCE：执行依据展示 Principal、Policy、确认和脱敏回执。
 
+### 12.6 当前实现状态
+
+Reference Runtime 已扩展隔离 `wealth_governance_demo` Enterprise MCP，提供 `demo_create_portfolio_draft` 和 `demo_create_followup_task`。两项写能力均要求财富经理可信用户身份、人工确认和幂等键；业务回执写入 `governance_demo_business_records`，明确标注 Demo 且不连接真实 CRM。Demo 写工具拒绝未显式标注 Demo 的客户称谓。企业部署时应将相同 Contract 绑定到本行 CRM，并由 CRM 服务端完成客户归属和组织范围校验。
+
 ---
 
 ## 13. `WM-GT-06` 产品到期客户经营
@@ -848,6 +852,10 @@ Data：
 - DENY：跨用户批量查询被服务端拒绝；
 - DEGRADE：产品服务不可用时仍可形成联系计划，但不输出产品推荐；
 - EVIDENCE：记录查询范围、数据时间和写入回执。
+
+### 13.7 当前实现状态
+
+Reference Runtime 已实现只读平台能力 `prepare_wealth_maturity_context`。该能力只从当前用户身份授权的客户列表取客户标识，再核验逐一详情返回的客户标识；默认扫描 20 人，硬上限 30 人，并发上限 5，结果上限 50 条。平台按到期时间、金额和最近联系情况生成确定性优先级，部分失败时显式返回失败数量；该结果不包含替代产品推荐，也不会自动创建任务。
 
 ---
 

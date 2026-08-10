@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   runtimeAttested: false,
   internalFetch: vi.fn(),
   prepareWealthAllocationContext: vi.fn(),
+  prepareWealthMaturityContext: vi.fn(),
   resolveWealthPolicyBasis: vi.fn(),
 }));
 
@@ -53,6 +54,9 @@ vi.mock("./internal-mcp-client", () => ({
 vi.mock("./wealth-allocation-context", () => ({
   prepareWealthAllocationContext: mocks.prepareWealthAllocationContext,
 }));
+vi.mock("./wealth-maturity-context", () => ({
+  prepareWealthMaturityContext: mocks.prepareWealthMaturityContext,
+}));
 vi.mock("./wealth-policy-source", () => ({
   resolveWealthPolicyBasis: mocks.resolveWealthPolicyBasis,
   resolveWealthSuitabilityPolicySource: vi.fn(),
@@ -66,6 +70,15 @@ let baseUrl = "";
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.runtimeAttested = false;
+  mocks.prepareWealthMaturityContext.mockResolvedValue({
+    schema: "ea.wealth-maturity-context.v1",
+    status: "ready",
+    window: { from: "2026-08-10T00:00:00.000Z", to: "2026-09-09T00:00:00.000Z", days: 30 },
+    summary: { customersScanned: 2, customersFailed: 0, matchingItems: 1, returnedItems: 1, truncated: false },
+    items: [{ customerId: "C-001", customerName: "演示客户", productId: "P-001", priority: "high" }],
+    guidance: { productRecommendationAllowed: false, writeRequiresSeparateConfirmation: true, message: "仅用于跟进" },
+    evidence: { sourceTools: ["wealth_assistant_customer_list", "wealth_assistant_customer_detail"], scope: "current-user-authorized-customers", dataAsOf: ["2026-08-10T00:00:00.000Z"], generatedAt: "2026-08-10T00:00:00.000Z" },
+  });
   mocks.resolveWealthPolicyBasis.mockResolvedValue({
     schema: "ea.wealth-policy-basis.v1",
     status: "ready",
@@ -156,6 +169,27 @@ describe("platform MCP PEP wiring", () => {
     expect(body.result?.content?.[0]?.text).toContain("P-R2");
     expect(mocks.prepareWealthAllocationContext).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({ customerId: "C-001", amount: 500000, horizonMonths: 36, channel: "branch" }),
+    }));
+  });
+
+  it("routes bounded maturity operations through the authorized context assembler", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "wealth-maturity",
+        method: "tools/call",
+        params: { name: "prepare_wealth_maturity_context", arguments: { window_days: 30, max_customers: 20, max_items: 30 } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    expect(response.status).toBe(200);
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_MATURITY_CONTEXT");
+    expect(mocks.prepareWealthMaturityContext).toHaveBeenCalledWith(expect.objectContaining({
+      roleTemplate: "wealth-manager",
+      request: { windowDays: 30, maxCustomers: 20, maxItems: 30 },
     }));
   });
 

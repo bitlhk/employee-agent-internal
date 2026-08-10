@@ -34,13 +34,15 @@ describe("wealth manager reference role pack", () => {
     const skillDir = path.join(root, "skills", "wealth-manager-assistant");
     const parsed = parseSkillSourceDirectory(skillDir, "wealth-manager-assistant");
     expect(parsed.skillId).toBe("wealth-manager-assistant");
-    expect(parsed.manifest?.version).toBe("1.2.0");
+    expect(parsed.manifest?.version).toBe("1.3.0");
     expect(parsed.warnings).toEqual([]);
     const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("正式候选产品、推荐理由或推荐话术");
     expect(skillMarkdown).toContain("只能推荐其 `eligibleProducts`");
     expect(skillMarkdown).toContain("仅做产品资料查询时才使用原始产品只读工具");
     expect(skillMarkdown).toContain("Policy Code、Decision ID 和规则版本属于执行证据");
+    expect(skillMarkdown).toContain("prepare_wealth_maturity_context");
+    expect(skillMarkdown).toContain("确认前不得声称任务已创建");
   });
 
   it("defines normal, deny and degraded benchmark paths without static business data", () => {
@@ -101,6 +103,41 @@ describe("wealth manager reference role pack", () => {
       "technical_policy_code_is_evidence_only",
       "risk_reassessment_is_required",
     ]));
+  });
+
+  it("defines confirmed business writes and bounded maturity operations", () => {
+    const writeText = readFileSync(path.join(root, "eval", "wm-gt-05-cases.json"), "utf8");
+    const writeSuite = JSON.parse(writeText) as {
+      taskId: string;
+      requiredCapabilities: string[];
+      cases: Array<{ path: string; assertions: string[] }>;
+    };
+    expect(writeSuite.taskId).toBe("WM-GT-05");
+    expect(writeSuite.requiredCapabilities).toEqual(expect.arrayContaining([
+      "demo_create_portfolio_draft",
+      "demo_create_followup_task",
+    ]));
+    expect(writeSuite.cases.flatMap((item) => item.assertions)).toEqual(expect.arrayContaining([
+      "remote_executor_is_not_called_before_confirmation",
+      "missing_idempotency_key_is_blocked_at_pep",
+      "demo_tool_rejects_real_looking_customer_reference",
+    ]));
+
+    const maturityText = readFileSync(path.join(root, "eval", "wm-gt-06-cases.json"), "utf8");
+    const maturitySuite = JSON.parse(maturityText) as {
+      taskId: string;
+      requiredCapabilities: string[];
+      cases: Array<{ path: string; assertions: string[] }>;
+    };
+    expect(maturitySuite.taskId).toBe("WM-GT-06");
+    expect(maturitySuite.requiredCapabilities).toEqual(["prepare_wealth_maturity_context"]);
+    expect(maturitySuite.cases.flatMap((item) => item.assertions)).toEqual(expect.arrayContaining([
+      "all_customers_come_from_current_user_authorized_list",
+      "data_as_of_is_present",
+      "detail_customer_id_must_match_authorized_list",
+      "followup_write_requires_separate_confirmation",
+    ]));
+    expect(`${writeText}\n${maturityText}`).not.toMatch(/(?:customer|客户画像|产品池).+\.json/i);
   });
 
   it("ships an employee-style SOP with lifecycle and exception handling", () => {

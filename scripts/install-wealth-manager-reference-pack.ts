@@ -44,7 +44,11 @@ const SKILLS = [
         "wealth_assistant_customer_list",
         "wealth_assistant_customer_detail",
       ],
-      platform_tools: ["get_wealth_policy_basis", "prepare_wealth_allocation_context"],
+      platform_tools: [
+        "get_wealth_policy_basis",
+        "prepare_wealth_maturity_context",
+        "prepare_wealth_allocation_context",
+      ],
     },
   },
 ] as const;

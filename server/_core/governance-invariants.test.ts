@@ -69,6 +69,11 @@ describe("governance invariants", () => {
       policyRequired: false,
       registered: true,
     });
+    expect(resolveToolGovernance("mcp_platform_tools_prepare_wealth_maturity_context")).toMatchObject({
+      sideEffect: "read",
+      policyRequired: false,
+      registered: true,
+    });
     expect(resolveToolGovernance("mcp_platform_tools_prepare_wealth_allocation_context")).toMatchObject({
       sideEffect: "read",
       policyRequired: false,
