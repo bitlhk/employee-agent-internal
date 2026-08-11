@@ -1,0 +1,6 @@
+{
+  "name": "auto-insurance-advisor",
+  "displayName": "车险顾问岗位助手",
+  "description": "通过授权客户画像、车险产品考点、当前有效岗位知识和既有外呼陪练技能，完成车险顾问的查询、讲解、异议处理与合规转人工任务。",
+  "version": "1.0.0"
+}

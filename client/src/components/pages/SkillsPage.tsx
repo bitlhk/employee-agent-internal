@@ -127,7 +127,7 @@ type CatalogView = "market" | "mine";
 type SourceFilter = "all" | SourceKind;
 type StateFilter = "all" | "ready" | "attention" | "disabled";
 const SKILL_TAB_CACHE_KEY = "employee-agent:skills:last-tab";
-const MCP_TOOLS_CACHE_PREFIX = "employee-agent:mcp-tools:v4:";
+const MCP_TOOLS_CACHE_PREFIX = "employee-agent:mcp-tools:v5:";
 const AGENT_TOOLS_CACHE_PREFIX = "employee-agent:agent-tools:v5:";
 
 type McpServerStatus = "available" | "disabled" | "missing";

@@ -1,8 +1,6 @@
 import "dotenv/config";
-import { randomUUID } from "node:crypto";
 import { recordAuditRequired } from "../server/_core/audit-events";
 import { discoverCustomMcpTools } from "../server/_core/custom-mcp-client";
-import { enterpriseMcpIdentityStatus, issueEnterpriseMcpAccessToken } from "../server/_core/enterprise-mcp-identity";
 import { reconcileEnterpriseMcpRuntimeScopes } from "../server/_core/enterprise-mcp-runtime-reconcile";
 import type { EnterpriseMcpToolPolicyDraft } from "../server/_core/enterprise-mcp-policy";
 import {
@@ -42,7 +40,7 @@ const markers: MarkerDefinition[] = [
   {
     serverId: "insurance_customer_profile",
     displayName: "保险客户画像",
-    description: "查询保险客户画像与客户基础信息；生产调用必须按租户和用户做行级过滤。",
+    description: "Demo/Shadow：查询 Mock 保险客户画像与客户基础信息；生产调用必须完成可信身份验证和用户行级过滤。",
     endpointUrl: "https://mcp.demo.linggan.top/insurance/customer-profile/mcp",
     identityMode: "user",
     dataClassification: "sensitive",
@@ -54,7 +52,7 @@ const markers: MarkerDefinition[] = [
   {
     serverId: "insurance_product_exam_points",
     displayName: "保险产品考点",
-    description: "查询保险产品、产品详情与培训考点；生产调用必须按租户隔离产品库。",
+    description: "Demo/Shadow：查询 Mock 保险产品、产品详情与培训考点；生产调用必须完成可信身份验证和租户隔离。",
     endpointUrl: "https://mcp.demo.linggan.top/insurance/product-exam-points/mcp",
     identityMode: "tenant",
     dataClassification: "internal",
@@ -91,35 +89,25 @@ async function configureMarker(marker: MarkerDefinition) {
     resourceUri: marker.endpointUrl,
     protocolVersion: "2025-11-25" as const,
     identityMode: marker.identityMode,
-    authMode: "oauth2_access_token" as const,
+    authMode: "none_shadow" as const,
     dataClassification: marker.dataClassification,
-    environment: "prod" as const,
+    environment: "test" as const,
     lifecycleState: "shadow" as const,
     timeoutMs: 30_000,
     ownerDepartment: "保险业务团队",
     ownerContact: "待业务团队确认",
     healthUrl: null,
     identityVerificationStatus: "unknown" as const,
-    identityVerificationError: null,
+    identityVerificationError: "Demo/Shadow 服务未启用可信身份验证，不得升级为企业生产 Enforced。",
     identityVerifiedAt: null,
     updatedBy: actor,
   };
   if (existing) await updateEnterpriseMcpConnection(marker.serverId, common);
   else await createEnterpriseMcpConnection({ serverId: marker.serverId, ...common, createdBy: actor });
 
-  const issued = await issueEnterpriseMcpAccessToken({
-    caller: { userId: 0, organization: "linggan-platform", adoptId: "lgj-platform-bootstrap", agentId: "employee-agent-platform", roleKey: "platform-admin" },
-    identityMode: "platform",
-    resourceUri: marker.endpointUrl,
-    serverId: marker.serverId,
-    toolName: "tools/list",
-    scopes: ["mcp.tools.read"],
-    requestId: `emcp_bootstrap_${randomUUID()}`,
-  });
   const tools = await discoverCustomMcpTools({
     endpointUrl: marker.endpointUrl,
-    authType: "bearer",
-    credential: issued.token,
+    authType: "none",
     timeoutMs: 30_000,
   });
   await updateEnterpriseMcpConnection(marker.serverId, {
@@ -149,7 +137,8 @@ async function configureMarker(marker: MarkerDefinition) {
     source: "deployment_script",
     metadata: {
       endpointOrigin: new URL(marker.endpointUrl).origin,
-      authMode: "oauth2_access_token",
+      authMode: "none_shadow",
+      environment: "test",
       lifecycleState: "shadow",
       identityMode: marker.identityMode,
       toolNames: tools.map(tool => tool.name),
@@ -159,17 +148,16 @@ async function configureMarker(marker: MarkerDefinition) {
 }
 
 async function main() {
-  const identity = await enterpriseMcpIdentityStatus();
-  if (!identity.configured) throw new Error("Configure the enterprise MCP signing identity before bootstrapping marker services");
   const configured = [];
   for (const marker of markers) configured.push(await configureMarker(marker));
   const runtimeRefresh = await reconcileEnterpriseMcpRuntimeScopes({ roleKeys: [role], forceRefresh: true });
   console.log(JSON.stringify({
-    issuer: identity.issuer,
-    keyId: identity.keyId,
     markers: configured,
+    environment: "test",
+    authMode: "none_shadow",
     lifecycleState: "shadow",
-    identityVerification: "pending_service_remediation",
+    readiness: "demo_shadow_ready",
+    productionReadiness: "blocked_until_jwks_and_row_level_filtering",
     runtimeRefresh,
   }, null, 2));
 }

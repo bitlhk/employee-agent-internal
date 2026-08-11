@@ -160,12 +160,11 @@ function shadowRuntimeEnabled(): boolean {
   return String(process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW || "").trim().toLowerCase() === "true";
 }
 
-async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
+async function catalogTools(): Promise<ExposedTool[]> {
   const identity = await enterpriseMcpIdentityStatus();
   const connections = await listEnterpriseMcpConnections();
   const exposed: ExposedTool[] = [];
   for (const connection of connections) {
-    if (!context.enabledServerIds.has(connection.serverId)) continue;
     if (connection.lifecycleState === "disabled") continue;
     if (connection.lifecycleState === "shadow" && !shadowRuntimeEnabled()) continue;
     if (connection.healthStatus !== "ready") continue;
@@ -176,7 +175,7 @@ async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
     const policyByName = new Map((await listEnterpriseMcpToolPolicies(connection.serverId)).map(policy => [policy.toolName, policy]));
     for (const tool of snapshots) {
       const policy = policyByName.get(tool.name);
-      if (!policy?.enabled || !enterpriseMcpRoleAllowed(policyDraft(policy), context.roleKey)) continue;
+      if (!policy?.enabled) continue;
       exposed.push({
         exposedName: enterpriseMcpGatewayToolName(connection.serverId, tool.name),
         connection,
@@ -186,6 +185,13 @@ async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
     }
   }
   return exposed;
+}
+
+async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
+  return (await catalogTools()).filter((entry) =>
+    context.enabledServerIds.has(entry.connection.serverId)
+    && enterpriseMcpRoleAllowed(policyDraft(entry.policy), context.roleKey)
+  );
 }
 
 function idempotencyKey(args: Record<string, unknown>): string {
@@ -497,11 +503,12 @@ async function handleMessage(req: Request, message: unknown) {
   if (rpc.method === "ping") return hasRequestId(id) ? ok(id, {}) : null;
   if (rpc.method === "resources/list") return hasRequestId(id) ? ok(id, { resources: [] }) : null;
   if (rpc.method === "prompts/list") return hasRequestId(id) ? ok(id, { prompts: [] }) : null;
-  const context = await runtimeContext(req);
   if (rpc.method === "tools/list") {
-    const tools = (await exposedTools(context)).map(entry => ({
+    const adoptId = await trustedAdoptId(req);
+    const entries = adoptId ? await exposedTools(await runtimeContext(req)) : await catalogTools();
+    const tools = entries.map(entry => ({
       name: entry.exposedName,
-      description: `[${entry.connection.displayName}${entry.connection.lifecycleState === "shadow" ? "·影子" : ""}] ${entry.tool.description || entry.tool.name}`.slice(0, 2_000),
+      description: `[${entry.connection.displayName}] ${entry.tool.description || entry.tool.name}`.slice(0, 2_000),
       inputSchema: entry.tool.inputSchema || { type: "object", properties: {} },
       ...(entry.tool.outputSchema ? { outputSchema: entry.tool.outputSchema } : {}),
       annotations: {
@@ -514,6 +521,7 @@ async function handleMessage(req: Request, message: unknown) {
   }
   if (rpc.method === "tools/call") {
     if (!hasRequestId(id)) return null;
+    const context = await runtimeContext(req);
     const rawArguments = rpc.params?.arguments;
     const args = rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)
       ? rawArguments as Record<string, unknown>

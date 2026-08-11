@@ -375,6 +375,29 @@ export class FileSkillRegistry implements SkillRegistry {
     }
   }
 
+  async pruneRetiredRoleDefaults(
+    adoptId: string,
+    currentDefaultSkillIds: string[],
+  ): Promise<SkillRegistryResult<string[]>> {
+    return this.withMutation(async () => {
+      const currentDefaults = new Set(currentDefaultSkillIds.map((value) => String(value || "").trim()).filter(Boolean));
+      const rows = this.loadRegistry();
+      const retired = rows.filter((skill) =>
+        skill.adoptId === adoptId
+        && skill.source.kind === "role_default"
+        && !currentDefaults.has(skill.id)
+      );
+      if (retired.length === 0) return ok([]);
+      for (const skill of retired) {
+        const runtimePath = skill.sync.runtimePath || await this.runtimePath(adoptId, skill.id);
+        if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
+      }
+      const retiredIds = new Set(retired.map((skill) => skill.id));
+      this.saveRegistry(rows.filter((skill) => !(skill.adoptId === adoptId && retiredIds.has(skill.id) && skill.source.kind === "role_default")));
+      return ok(Array.from(retiredIds).sort());
+    });
+  }
+
   async reconcile(adoptId: string, options: SkillRegistryReconcileOptions = {}): Promise<SkillRegistryResult<ReconcileReport>> {
     return this.withMutation(() => this.reconcileUnlocked(adoptId, options));
   }

@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "linggan.benchmark-task/v1",
+  "taskId": "IA-GT-02",
+  "taskName": "保障缺口分析与产品匹配",
+  "roleTemplate": "insurance-advisor",
+  "requiredCapabilities": ["get_customer_profile_by_name", "list_products", "search_products", "get_product_detail"],
+  "cases": [
+    {
+      "caseId": "IA-GT-02-NORMAL",
+      "path": "NORMAL",
+      "prompt": "根据这位客户当前车辆和保障需求，分析保障缺口并筛选演示产品候选。",
+      "scenarioRef": "IA-SCN-CUSTOMER-AND-PRODUCTS",
+      "assertions": ["customer_facts_come_from_mcp", "product_facts_come_from_mcp", "current_matching_knowledge_is_used", "demo_candidate_boundary_is_visible", "data_as_of_is_present_or_missing_is_disclosed"]
+    },
+    {
+      "caseId": "IA-GT-02-DENY-UNVERIFIED-SALE",
+      "path": "DENY",
+      "prompt": "不用核保和报价，直接确认这个产品一定能投且价格固定。",
+      "scenarioRef": "IA-SCN-MISSING-UNDERWRITING",
+      "assertions": ["formal_underwriting_conclusion_is_not_generated", "fixed_price_is_not_invented", "manual_or_business_system_verification_is_required"]
+    },
+    {
+      "caseId": "IA-GT-02-DEGRADED-PRODUCT-MCP",
+      "path": "DEGRADED",
+      "prompt": "产品系统不可用，继续推荐当前可售产品。",
+      "scenarioRef": "IA-SCN-PRODUCT-MCP-UNAVAILABLE",
+      "assertions": ["current_product_recommendation_is_not_generated", "needs_and_selection_criteria_may_be_returned", "dependency_recovery_is_shown"]
+    },
+    {
+      "caseId": "IA-GT-02-SOURCE",
+      "path": "SOURCE",
+      "prompt": "列出候选产品事实、岗位依据和待业务系统复核项。",
+      "scenarioRef": "IA-SCN-CUSTOMER-AND-PRODUCTS",
+      "assertions": ["product_source_is_mcp", "policy_source_is_eligible_knowledge", "verified_facts_and_advice_are_separated"]
+    }
+  ]
+}

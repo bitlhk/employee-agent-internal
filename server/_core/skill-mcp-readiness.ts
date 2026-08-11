@@ -1,11 +1,14 @@
 import { WebSocket, type RawData } from "ws";
+import { listEnterpriseMcpConnections, listEnterpriseMcpToolPolicies } from "../db/enterprise-mcp";
 import { resolveEffectiveRoleAssets } from "../db/role-assets";
 import { resolvePersistedAgentMcpSelection } from "../db/agent-mcp-preferences";
+import { enterpriseMcpIdentityStatus } from "./enterprise-mcp-identity";
 import { getSkillMcpRequirement, type SkillMcpRequirement } from "./role-templates";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
 const SERVER_CACHE_TTL_MS = 30_000;
 const TOOL_CACHE_TTL_MS = 45_000;
+const ENTERPRISE_MCP_GATEWAY_ID = "enterprise_mcp_gateway";
 
 type RuntimeMcpServer = {
   name: string;
@@ -162,6 +165,48 @@ async function listRuntimeMcpTools(serverId: string, force = false): Promise<str
   return value;
 }
 
+async function resolveEnterpriseManagedReadiness(input: {
+  requiredServerIds: string[];
+  configuredServers: RuntimeMcpServer[];
+  roleTemplate: string;
+}): Promise<{ servers: RuntimeMcpServer[]; toolsByServer: Record<string, string[]> }> {
+  const gateway = input.configuredServers.find((server) => server.name === ENTERPRISE_MCP_GATEWAY_ID && server.enabled);
+  if (!gateway || input.requiredServerIds.length === 0) return { servers: [], toolsByServer: {} };
+  const required = new Set(input.requiredServerIds);
+  const connections = (await listEnterpriseMcpConnections()).filter((connection) => required.has(connection.serverId));
+  const identityRequired = connections.some((connection) => connection.authMode === "oauth2_access_token");
+  const identity = identityRequired ? await enterpriseMcpIdentityStatus() : null;
+  const shadowEnabled = String(process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW || "").trim().toLowerCase() === "true";
+  const servers: RuntimeMcpServer[] = [];
+  const toolsByServer: Record<string, string[]> = {};
+  for (const connection of connections) {
+    if (connection.lifecycleState === "disabled" || connection.healthStatus !== "ready") continue;
+    if (connection.lifecycleState === "shadow" && !shadowEnabled) continue;
+    if (connection.authMode === "none_shadow" && connection.lifecycleState !== "shadow") continue;
+    if (connection.authMode === "oauth2_access_token" && !identity?.configured) continue;
+    if (connection.authMode === "oauth2_access_token" && connection.lifecycleState === "enforced" && connection.identityVerificationStatus !== "verified") continue;
+    const snapshotNames = new Set(
+      (Array.isArray(connection.toolsJson) ? connection.toolsJson : [])
+        .map((tool) => String(tool?.name || "").trim())
+        .filter(Boolean),
+    );
+    const policies = await listEnterpriseMcpToolPolicies(connection.serverId);
+    toolsByServer[connection.serverId] = policies
+      .filter((policy) => policy.enabled)
+      .filter((policy) =>
+        !Array.isArray(policy.allowedRoles)
+        || policy.allowedRoles.length === 0
+        || policy.allowedRoles.includes("*")
+        || policy.allowedRoles.includes(input.roleTemplate)
+      )
+      .map((policy) => policy.toolName)
+      .filter((toolName) => snapshotNames.has(toolName))
+      .sort();
+    servers.push({ name: connection.serverId, enabled: true });
+  }
+  return { servers, toolsByServer };
+}
+
 export function evaluateSkillMcpReadiness(input: EvaluateSkillMcpReadinessInput): SkillMcpReadiness {
   const checkedAt = input.checkedAt || new Date().toISOString();
   const requiredEntries = Object.entries(input.requirement.servers);
@@ -300,13 +345,25 @@ export async function probeJiuwenSkillMcpReadiness(args: {
     });
   }
 
+  const enterpriseManaged = await resolveEnterpriseManagedReadiness({
+    requiredServerIds: requiredServerIds.filter(
+      (serverId) => !configuredServers.some((configured) => configured.name === serverId),
+    ),
+    configuredServers,
+    roleTemplate: args.roleTemplate,
+  }).catch(() => ({ servers: [] as RuntimeMcpServer[], toolsByServer: {} as Record<string, string[]> }));
+  configuredServers = [
+    ...configuredServers,
+    ...enterpriseManaged.servers.filter((server) => !configuredServers.some((configured) => configured.name === server.name)),
+  ];
   const configuredByName = new Map(configuredServers.map((server) => [server.name, server]));
-  const toolsByServer: Record<string, string[] | undefined> = {};
+  const toolsByServer: Record<string, string[] | undefined> = { ...enterpriseManaged.toolsByServer };
   const probeErrors: Record<string, string | undefined> = {};
   await Promise.all(requiredServerIds.map(async (serverId) => {
     const requiredTools = requirement.servers[serverId] || [];
     const server = configuredByName.get(serverId);
     if (!authorizedServerIds.has(serverId) || !activeServerIds.has(serverId) || !server?.enabled || requiredTools.length === 0) return;
+    if (toolsByServer[serverId]) return;
     try {
       toolsByServer[serverId] = await listRuntimeMcpTools(serverId, Boolean(args.force));
     } catch (error) {

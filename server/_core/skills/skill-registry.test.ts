@@ -111,6 +111,37 @@ describe("FileSkillRegistry.reconcile", () => {
     }
   });
 
+  it("prunes only retired role-default skills and preserves user-installed skills", async () => {
+    const root = tempRoot();
+    try {
+      const retired = makeSkill(root, "retired-default");
+      retired.source.kind = "role_default";
+      retired.sync.runtimePath = path.join(root, "runtime", "retired-default");
+      const current = makeSkill(root, "current-default");
+      current.source.kind = "role_default";
+      current.sync.runtimePath = path.join(root, "runtime", "current-default");
+      const userInstalled = makeSkill(root, "user-installed");
+      userInstalled.sync.runtimePath = path.join(root, "runtime", "user-installed");
+      for (const skill of [retired, current, userInstalled]) {
+        mkdirSync(skill.sync.runtimePath!, { recursive: true });
+        writeFileSync(path.join(skill.sync.runtimePath!, "SKILL.md"), `# ${skill.id}\n`, "utf8");
+      }
+      writeJson(path.join(root, "data", "skill-registry.json"), [retired, current, userInstalled]);
+      const reg = registry(root);
+
+      const result = await reg.pruneRetiredRoleDefaults("lgc-test", ["current-default"]);
+
+      expect(result).toEqual({ ok: true, value: ["retired-default"] });
+      expect(existsSync(retired.sync.runtimePath!)).toBe(false);
+      expect(existsSync(current.sync.runtimePath!)).toBe(true);
+      expect(existsSync(userInstalled.sync.runtimePath!)).toBe(true);
+      const listed = await reg.listSkills("lgc-test");
+      expect(listed.ok && listed.value.map((skill) => skill.id).sort()).toEqual(["current-default", "user-installed"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("refreshes the skill list from disk after the cache TTL expires", async () => {
     const root = tempRoot();
     let nowMs = Date.parse("2026-05-01T01:00:00.000Z");

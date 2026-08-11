@@ -92,7 +92,7 @@ vi.mock("./runtime-governance-attestation", () => ({ runtimeGovernanceIsAttested
 import { enterpriseMcpGatewayToolName, registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
 
 type GatewayResponse = {
-  result?: { content?: Array<{ type: string; text: string }>; isError?: boolean };
+  result?: { content?: Array<{ type: string; text: string }>; isError?: boolean; tools?: Array<{ name: string; description: string }> };
   error?: { code: number; message: string };
 };
 
@@ -157,6 +157,42 @@ describe("enterprise MCP gateway", () => {
     expect(first).toMatch(/^enterprise_[a-f0-9]{8}_get_customer_profile_[a-f0-9]{8}$/);
     expect(first).not.toContain("insurance_customer_profile");
     expect(enterpriseMcpGatewayToolName("server", "x".repeat(500)).length).toBeLessThanOrEqual(128);
+  });
+
+  it("allows the internal runtime to register a safe catalog before user context exists", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/enterprise-mcp/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "catalog", method: "tools/list", params: {} }),
+    });
+    expect(response.status).toBe(200);
+    const payload = await response.json() as GatewayResponse;
+    expect(payload.result?.tools).toEqual([
+      expect.objectContaining({
+        name: enterpriseMcpGatewayToolName("insurance_customer_profile", "list_customer_profiles"),
+        description: "[客户画像] 查询客户画像",
+      }),
+    ]);
+  });
+
+  it("never executes a catalog tool without trusted Agent identity", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/enterprise-mcp/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "anonymous-call",
+        method: "tools/call",
+        params: {
+          name: enterpriseMcpGatewayToolName("insurance_customer_profile", "list_customer_profiles"),
+          arguments: {},
+        },
+      }),
+    });
+    expect(response.status).toBe(200);
+    const payload = await response.json() as GatewayResponse;
+    expect(payload.error?.message).toContain("trusted Agent identity is missing");
+    expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 
   it("blocks tools not granted to the current role", async () => {

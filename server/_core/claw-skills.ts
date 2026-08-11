@@ -27,6 +27,8 @@ import {
   deleteAgentMcpPreference,
   getAgentMcpPreference,
   listCustomMcpConnections,
+  listEnterpriseMcpConnections,
+  listEnterpriseMcpToolPolicies,
   listMcpInvocationCounts,
   resolveEffectiveRoleAssets,
   resolvePersistedAgentMcpSelection,
@@ -91,6 +93,18 @@ type McpToolGroupOverride = {
 };
 
 const DEFAULT_MCP_CATEGORY = "MCP 工具";
+
+export type ManagedMcpServerStatus = {
+  serverId: string;
+  displayName: string;
+  description: string;
+  category: string;
+  enabled: boolean;
+  ready: boolean;
+  tools: Array<{ name: string; description: string }>;
+  checkedAt: string | null;
+  error: string | null;
+};
 
 const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
   { id: "wind_stock_data", name: "Wind A股数据", category: "公共金融数据", description: "查询 A 股行情、K 线、公司档案、财务、股东、事件、技术与风险指标。", serverIds: ["wind_stock_data"] },
@@ -249,10 +263,13 @@ export function listMcpToolGroups(options: {
   allowedServerIds?: Set<string> | null;
   invocationCounts?: Record<string, { total: number; tools: Record<string, number> }> | null;
   liveStatuses?: Record<string, McpLiveStatus> | null;
+  managedServers?: ManagedMcpServerStatus[] | null;
 } = {}) {
   const allowedServerIds = options.allowedServerIds || null;
   const invocationCounts = options.invocationCounts || {};
   const liveStatuses = options.liveStatuses || {};
+  const managedServers = options.managedServers || [];
+  const managedById = new Map(managedServers.map((server) => [server.serverId, server]));
   const config = readOpenClawConfig();
   const servers = readOpenClawMcpServers(config);
   const serverRows = Object.entries(servers).map(([serverId, raw]) => {
@@ -265,6 +282,22 @@ export function listMcpToolGroups(options: {
       existsOnDisk: mcpServerExistsOnDisk(serverId, raw),
     };
   });
+  for (const managed of managedServers) {
+    const existing = serverRows.find((server) => server.serverId === managed.serverId);
+    if (existing) {
+      existing.configured = true;
+      existing.enabled = managed.enabled;
+      existing.status = managed.enabled ? "available" : "disabled";
+      continue;
+    }
+    serverRows.push({
+      serverId: managed.serverId,
+      configured: true,
+      enabled: managed.enabled,
+      status: managed.enabled ? "available" : "disabled",
+      existsOnDisk: false,
+    });
+  }
   const byId = new Map(serverRows.map(row => [row.serverId, row]));
   const serverIds = allowedServerIds
     ? Array.from(allowedServerIds).sort()
@@ -273,12 +306,13 @@ export function listMcpToolGroups(options: {
 
   for (const serverId of serverIds) {
     const override = mcpGroupOverrideFor(serverId);
+    const managed = managedById.get(serverId);
     const groupId = override?.id || serverId;
     const group = grouped.get(groupId) || {
       id: groupId,
-      name: override?.name || readableMcpName(serverId),
-      category: override?.category || DEFAULT_MCP_CATEGORY,
-      description: override?.description || "MCP 服务能力，工具明细由服务实时声明。",
+      name: override?.name || managed?.displayName || readableMcpName(serverId),
+      category: override?.category || managed?.category || DEFAULT_MCP_CATEGORY,
+      description: override?.description || managed?.description || "MCP 服务能力，工具明细由服务实时声明。",
       recommendedSkills: override?.recommendedSkills || [],
       children: [] as any[],
     };
@@ -292,7 +326,15 @@ export function listMcpToolGroups(options: {
         status: "missing",
         existsOnDisk: existsSync(path.join(OPENCLAW_HOME, "mcp", serverId)),
       };
-    const liveRow = liveStatuses[serverId];
+    const liveRow = managed
+      ? {
+          serverId,
+          status: managed.ready ? "live" as const : "unavailable" as const,
+          tools: managed.tools,
+          checkedAt: managed.checkedAt || new Date().toISOString(),
+          ...(managed.error ? { error: managed.error } : {}),
+        }
+      : liveStatuses[serverId];
     const liveTools = liveRow?.status === "live" ? liveRow.tools || [] : [];
     const liveToolNames = new Set<string>();
     const tools = liveTools.length > 0
@@ -326,8 +368,8 @@ export function listMcpToolGroups(options: {
 
     group.children.push({
       id: serverId,
-      name: readableMcpName(serverId),
-      description: "MCP 服务，工具明细以实时 tools/list 声明为准。",
+      name: managed?.displayName || readableMcpName(serverId),
+      description: managed?.description || "MCP 服务，工具明细以实时 tools/list 声明为准。",
       serverId,
       configured: server.configured,
       enabled: server.enabled,
@@ -505,7 +547,7 @@ export function registerSkillRoutes(app: express.Express) {
         const config = readOpenClawConfig();
         const servers = readOpenClawMcpServers(config);
         const userId = Number((claw as any).userId || 0);
-        const [liveStatuses, invocationCounts, customRows] = await Promise.all([
+        const [liveStatuses, invocationCounts, customRows, enterpriseRows] = await Promise.all([
           fetchMcpLiveStatuses(servers, allowedServerIds, { force }).catch((e) => {
             console.warn("[mcp tools] live probe failed", e);
             return {} as Record<string, McpLiveStatus>;
@@ -514,8 +556,40 @@ export function registerSkillRoutes(app: express.Express) {
             () => ({} as Record<string, { total: number; tools: Record<string, number> }>)
           ),
           listCustomMcpConnections({ adoptId, userId }),
+          listEnterpriseMcpConnections(),
         ]);
-        const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses });
+        const shadowEnabled = String(process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW || "").trim().toLowerCase() === "true";
+        const managedServers = await Promise.all(enterpriseRows
+          .filter((connection) => allowedServerIds.has(connection.serverId))
+          .map(async (connection): Promise<ManagedMcpServerStatus> => {
+            const policies = await listEnterpriseMcpToolPolicies(connection.serverId);
+            const enabledToolNames = new Set(policies.filter((policy) => policy.enabled).map((policy) => policy.toolName));
+            const tools = (Array.isArray(connection.toolsJson) ? connection.toolsJson : [])
+              .filter((tool) => enabledToolNames.has(String(tool?.name || "")))
+              .map((tool) => ({
+                name: String(tool?.name || "").trim(),
+                description: String(tool?.description || "").trim(),
+              }))
+              .filter((tool) => tool.name);
+            const lifecycleReady = connection.lifecycleState === "enforced"
+              || (connection.lifecycleState === "shadow" && shadowEnabled);
+            const identityReady = connection.authMode !== "oauth2_access_token"
+              || connection.lifecycleState !== "enforced"
+              || connection.identityVerificationStatus === "verified";
+            const ready = lifecycleReady && identityReady && connection.healthStatus === "ready";
+            return {
+              serverId: connection.serverId,
+              displayName: connection.displayName,
+              description: String(connection.description || "企业岗位托管的 MCP 服务能力。"),
+              category: "内部业务 MCP",
+              enabled: connection.lifecycleState !== "disabled",
+              ready,
+              tools,
+              checkedAt: connection.lastTestedAt?.toISOString() || null,
+              error: ready ? null : connection.lastError || connection.identityVerificationError || "企业 MCP 尚未就绪",
+            };
+          }));
+        const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses, managedServers });
         return buildMcpStatusResponse({
           rawPayload,
           selection,
