@@ -19,6 +19,7 @@ import { projectEffectiveAssetsToMcpSelection } from "./agent-mcp-selection";
 import { PLATFORM_UNTRUSTED_CONTENT_POLICY } from "./instruction-attack";
 import { PLATFORM_CONTENT_COMPLIANCE_POLICY } from "./platform-content-compliance";
 import { normalizeSkillRuntimePermissions } from "./skills/skill-runtime-permissions";
+import { normalizeJiuwenSwarmWorkspaceRuntimePermissions } from "./jiuwenswarm-permissions";
 
 export const JIUWENSWARM_ROLE_SCOPE_MANIFEST = ".linggan-role-scope.json";
 export const JIUWENSWARM_MANAGED_SKILLS_MANIFEST = ".linggan-managed-skills.json";
@@ -242,9 +243,13 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
     })
     : { linkedSharedSkills: [], removedSharedSkills: [] };
 
-  if (current === next) return { manifestPath, changed: false, identityChanged, userChanged, ...linkResult };
+  if (current === next) {
+    normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir);
+    return { manifestPath, changed: false, identityChanged, userChanged, ...linkResult };
+  }
 
   writeTextFileAtomic(manifestPath, next);
+  normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir);
   return { manifestPath, changed: true, identityChanged, userChanged, ...linkResult };
 }
 

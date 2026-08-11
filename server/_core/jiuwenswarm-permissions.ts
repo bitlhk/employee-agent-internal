@@ -1,12 +1,97 @@
 import path from "path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  chmodSync,
+  chownSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "fs";
 import { JIUWENCLAW_HOME } from "./helpers";
+
+const DEFAULT_JIUWENBOX_RUNTIME_GROUP = "jiuwenswarm";
 
 export type JiuwenSwarmWorkspacePermissionResult = {
   configPath: string;
   workspaceDir: string;
   changed: boolean;
+  filesystemChanged: boolean;
 };
+
+function resolveRuntimeGid(): number | null {
+  const configured = String(
+    process.env.JIUWENBOX_RUNTIME_GROUP || DEFAULT_JIUWENBOX_RUNTIME_GROUP,
+  ).trim();
+  if (!configured) return null;
+  if (/^\d+$/.test(configured)) return Number(configured);
+
+  try {
+    for (const line of readFileSync("/etc/group", "utf8").split(/\r?\n/)) {
+      const fields = line.split(":");
+      if (fields[0] === configured && /^\d+$/.test(fields[2] || "")) {
+        return Number(fields[2]);
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function runtimeReadableMode(mode: number, directory: boolean): number {
+  if (directory) return 0o750;
+  const owner = mode & 0o700;
+  const groupReadExecute = (owner & 0o500) >> 3;
+  return owner | groupReadExecute;
+}
+
+function normalizeRuntimePath(target: string, runtimeGid: number): boolean {
+  if (!existsSync(target)) return false;
+  const stats = lstatSync(target);
+  if (stats.isSymbolicLink()) return false;
+  let changed = false;
+  if (stats.gid !== runtimeGid) {
+    chownSync(target, stats.uid, runtimeGid);
+    changed = true;
+  }
+  const currentMode = stats.mode & 0o777;
+  const nextMode = runtimeReadableMode(currentMode, stats.isDirectory());
+  if (currentMode !== nextMode) {
+    chmodSync(target, nextMode);
+    changed = true;
+  }
+  return changed;
+}
+
+function workspaceRuntimeAncestors(workspaceDir: string): string[] {
+  const result = [workspaceDir];
+  let current = path.dirname(workspaceDir);
+  while (current !== path.dirname(current)) {
+    result.push(current);
+    if (path.basename(current).startsWith("agent_jiuwen_")) return result.reverse();
+    current = path.dirname(current);
+  }
+  return [workspaceDir];
+}
+
+/** Make a JiuwenBox workspace traversable without granting world access. */
+export function normalizeJiuwenSwarmWorkspaceRuntimePermissions(
+  workspaceDirRaw: string,
+  options: { runtimeGid?: number | null } = {},
+): boolean {
+  const workspaceDir = path.resolve(workspaceDirRaw);
+  const runtimeGid = options.runtimeGid === undefined ? resolveRuntimeGid() : options.runtimeGid;
+  if (runtimeGid === null || !existsSync(workspaceDir)) return false;
+
+  let changed = false;
+  for (const target of workspaceRuntimeAncestors(workspaceDir)) {
+    changed = normalizeRuntimePath(target, runtimeGid) || changed;
+  }
+  for (const entry of readdirSync(workspaceDir)) {
+    changed = normalizeRuntimePath(path.join(workspaceDir, entry), runtimeGid) || changed;
+  }
+  return changed;
+}
 
 function jiuwenSwarmConfigPath(): string {
   return path.resolve(
@@ -73,8 +158,9 @@ function externalDirectoryRange(permissionsBlock: string): { start: number; end:
 export function ensureJiuwenSwarmWorkspacePermission(workspaceDirRaw: string): JiuwenSwarmWorkspacePermissionResult {
   const configPath = jiuwenSwarmConfigPath();
   const workspaceDir = normalizeYamlPath(workspaceDirRaw);
+  const filesystemChanged = normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir);
   if (!existsSync(configPath)) {
-    return { configPath, workspaceDir, changed: false };
+    return { configPath, workspaceDir, changed: filesystemChanged, filesystemChanged };
   }
 
   const current = readFileSync(configPath, "utf8");
@@ -83,7 +169,7 @@ export function ensureJiuwenSwarmWorkspacePermission(workspaceDirRaw: string): J
     const next = `${current.replace(/\s*$/, "\n")}permissions:\n  enabled: true\n  schema: tiered_policy\n${renderExternalDirectoryBlock(new Map([["*", "deny"], [workspaceDir, "allow"]]))}\n`;
     mkdirSync(path.dirname(configPath), { recursive: true });
     writeFileSync(configPath, next, "utf8");
-    return { configPath, workspaceDir, changed: true };
+    return { configPath, workspaceDir, changed: true, filesystemChanged };
   }
 
   const beforePerm = current.slice(0, permRange.start);
@@ -100,7 +186,9 @@ export function ensureJiuwenSwarmWorkspacePermission(workspaceDirRaw: string): J
     ? `${permissionsBlock.slice(0, extRange.start)}${nextExternal}${permissionsBlock.slice(extRange.end).replace(/^\n+/, "")}`
     : `${permissionsBlock.replace(/\s*$/, "\n")}${nextExternal}`;
   const next = `${beforePerm}${nextPermissionsBlock}${afterPerm}`;
-  if (next === current) return { configPath, workspaceDir, changed: false };
+  if (next === current) {
+    return { configPath, workspaceDir, changed: filesystemChanged, filesystemChanged };
+  }
   writeFileSync(configPath, next, "utf8");
-  return { configPath, workspaceDir, changed: true };
+  return { configPath, workspaceDir, changed: true, filesystemChanged };
 }
