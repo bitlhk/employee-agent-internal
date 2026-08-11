@@ -1,7 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 import type { Express, Request } from "express";
 import type { SkillSource } from "../../../../shared/types/skill";
 import { getClawByAdoptId } from "../../../db";
@@ -18,14 +19,18 @@ import { logError } from "../../observability/logger";
 import { scanUploadForMalware } from "../../upload-security";
 import { skillInstaller } from "../skill-installer";
 import {
+  appendSkillPackageIndexRow,
+  mutateSkillPackageIndex,
   readSkillPackageIndex,
   removeSkillPackageIndexRows,
-  writeSkillPackageIndex,
   type SkillPackageIndexRow,
 } from "../skill-package-index";
 import { skillRegistry } from "../skill-registry";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "../skill-source";
 import { remapLegacySkillMarketPath, skillStoreUploadedDir } from "../skill-store";
+import { runSkillWork, WorkQueueFullError } from "../skill-work-queues";
+
+const execFileAsync = promisify(execFile);
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -49,9 +54,22 @@ function registryErrorStatus(kind?: string): number {
 }
 
 function errorStatus(error: unknown, fallback: number): number {
+  if (error instanceof WorkQueueFullError) return 503;
   if (!error || typeof error !== "object" || !("statusCode" in error)) return fallback;
   const value = Number(error.statusCode);
   return Number.isInteger(value) && value >= 400 && value <= 599 ? value : fallback;
+}
+
+function applyQueueRetryHeader(res: import("express").Response, error: unknown): void {
+  if (error instanceof WorkQueueFullError) {
+    res.setHeader("Retry-After", String(error.retryAfterSeconds));
+  }
+}
+
+function skillUploadMaxBytes(): number {
+  const configured = Number.parseInt(String(process.env.EA_SKILL_UPLOAD_MAX_BYTES || ""), 10);
+  if (!Number.isFinite(configured) || configured < 1024) return MAX_SKILL_PACKAGE_BYTES;
+  return Math.min(configured, MAX_SKILL_PACKAGE_BYTES);
 }
 
 async function readSkillPackagePayload(req: Request): Promise<{
@@ -88,8 +106,8 @@ async function readSkillPackagePayload(req: Request): Promise<{
         ? Buffer.from(chunk)
         : Buffer.from(chunk as Uint8Array);
     total += buffer.length;
-    if (total > MAX_SKILL_PACKAGE_BYTES) {
-      const error = new Error("file too large (max 50MB)") as Error & { statusCode: number };
+    if (total > skillUploadMaxBytes()) {
+      const error = new Error(`file too large (max ${Math.floor(skillUploadMaxBytes() / 1024 / 1024)}MB)`) as Error & { statusCode: number };
       error.statusCode = 413;
       throw error;
     }
@@ -107,7 +125,9 @@ async function readSkillPackagePayload(req: Request): Promise<{
 function validatePackageInput(input: { filename: string; fileBuf: Buffer }): string | null {
   if (!/\.(zip|skill)$/i.test(input.filename)) return "only .zip or .skill allowed";
   if (input.fileBuf.length <= 0) return "file content required";
-  if (input.fileBuf.length > MAX_SKILL_PACKAGE_BYTES) return "file too large (max 50MB)";
+  if (input.fileBuf.length > skillUploadMaxBytes()) {
+    return `file too large (max ${Math.floor(skillUploadMaxBytes() / 1024 / 1024)}MB)`;
+  }
   return null;
 }
 
@@ -126,7 +146,7 @@ export function registerSkillPackageRoutes(app: Express): void {
         res.status(400).json({ error: invalid });
         return;
       }
-      const parsed = await parseSkillPackageBuffer(payload.fileBuf, payload.filename);
+      const parsed = await runSkillWork("scan", () => parseSkillPackageBuffer(payload.fileBuf, payload.filename));
       res.json({
         ok: true,
         skill: {
@@ -141,8 +161,10 @@ export function registerSkillPackageRoutes(app: Express): void {
       });
     } catch (error) {
       logError("skill_package.inspect_failed", error);
+      applyQueueRetryHeader(res, error);
       res.status(errorStatus(error, 400)).json({
-        error: error instanceof Error ? error.message : "inspect skill package failed",
+        error: error instanceof WorkQueueFullError ? "当前技能检查请求较多，请稍后重试" : error instanceof Error ? error.message : "inspect skill package failed",
+        code: error instanceof WorkQueueFullError ? error.code : undefined,
       });
     }
   });
@@ -161,12 +183,16 @@ export function registerSkillPackageRoutes(app: Express): void {
         res.status(400).json({ error: invalid });
         return;
       }
-      const malwareScan = await scanUploadForMalware(payload.fileBuf);
-      if (!malwareScan.ok) {
-        res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
-        return;
-      }
-      const parsed = await parseSkillPackageBuffer(payload.fileBuf, payload.filename);
+      const parsed = await runSkillWork("scan", async () => {
+        const malwareScan = await scanUploadForMalware(payload.fileBuf);
+        if (!malwareScan.ok) {
+          const error = new Error(malwareScan.error || "malware scan failed") as Error & { statusCode: number; code: string };
+          error.statusCode = 400;
+          error.code = "file_malware_scan_failed";
+          throw error;
+        }
+        return parseSkillPackageBuffer(payload.fileBuf, payload.filename);
+      });
       const displayName = payload.displayName || parsed.displayName;
       if (!displayName || displayName.length < 2) {
         res.status(400).json({ error: "displayName must be at least 2 characters" });
@@ -175,16 +201,8 @@ export function registerSkillPackageRoutes(app: Express): void {
       const displayDescription = payload.description || parsed.description;
       const safeName = payload.filename.replace(/[^a-zA-Z0-9._-]/g, "_");
       const sourceDir = skillStoreUploadedDir(payload.adoptId, parsed.skillId);
-      const temporaryZip = path.join("/tmp", `skill-upload-${payload.adoptId}-${parsed.skillId}-${Date.now()}.zip`);
-      writeFileSync(temporaryZip, payload.fileBuf);
-      try {
-        skillInstaller.installFromSource(temporaryZip, sourceDir);
-      } finally {
-        try { rmSync(temporaryZip, { force: true }); } catch {}
-      }
-
+      const temporaryZip = path.join("/tmp", `skill-upload-${randomUUID()}.zip`);
       const sha256 = createHash("sha256").update(payload.fileBuf).digest("hex");
-      const indexRows = readSkillPackageIndex();
       const indexRow: SkillPackageIndexRow = {
         adoptId: payload.adoptId,
         filename: safeName,
@@ -199,9 +217,6 @@ export function registerSkillPackageRoutes(app: Express): void {
         installedAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
       };
-      indexRows.push(indexRow);
-      writeSkillPackageIndex(indexRows);
-
       const source: SkillSource = {
         kind: "uploaded",
         skillId: parsed.skillId,
@@ -210,26 +225,37 @@ export function registerSkillPackageRoutes(app: Express): void {
         sourcePath: sourceDir,
         version: String(parsed.manifest?.version || ""),
       };
-      const installed = await skillRegistry.install(payload.adoptId, source);
-      if (!installed.ok) {
-        res.status(registryErrorStatus(installed.error.kind)).json({
-          error: installed.error.detail,
-          kind: installed.error.kind,
-        });
-        return;
-      }
-      await skillRegistry.updateScan(payload.adoptId, parsed.skillId, {
-        warnings: parsed.warnings,
-        scannedAt: new Date().toISOString(),
+      const { installed, reconciled } = await runSkillWork("install", async () => {
+        writeFileSync(temporaryZip, payload.fileBuf);
+        try {
+          await skillInstaller.installFromSource(temporaryZip, sourceDir);
+          await appendSkillPackageIndexRow(indexRow);
+          const installedResult = await skillRegistry.install(payload.adoptId, source);
+          if (!installedResult.ok) {
+            const failure = new Error(installedResult.error.detail) as Error & { statusCode: number; code: string };
+            failure.statusCode = registryErrorStatus(installedResult.error.kind);
+            failure.code = installedResult.error.kind;
+            throw failure;
+          }
+          await skillRegistry.updateScan(payload.adoptId, parsed.skillId, {
+            warnings: parsed.warnings,
+            scannedAt: new Date().toISOString(),
+          });
+          const reconciledResult = await skillRegistry.reconcile(payload.adoptId, { skillId: parsed.skillId });
+          if (!reconciledResult.ok) {
+            const failure = new Error(reconciledResult.error.detail) as Error & { statusCode: number; code: string };
+            failure.statusCode = registryErrorStatus(reconciledResult.error.kind);
+            failure.code = reconciledResult.error.kind;
+            throw failure;
+          }
+          return { installed: installedResult, reconciled: reconciledResult };
+        } catch (error) {
+          await removeSkillPackageIndexRows(payload.adoptId, { sha256 }).catch(() => []);
+          throw error;
+        } finally {
+          try { rmSync(temporaryZip, { force: true }); } catch {}
+        }
       });
-      const reconciled = await skillRegistry.reconcile(payload.adoptId, { skillId: parsed.skillId });
-      if (!reconciled.ok) {
-        res.status(registryErrorStatus(reconciled.error.kind)).json({
-          error: reconciled.error.detail,
-          kind: reconciled.error.kind,
-        });
-        return;
-      }
 
       res.json({
         ok: true,
@@ -241,8 +267,10 @@ export function registerSkillPackageRoutes(app: Express): void {
       });
     } catch (error) {
       logError("skill_package.upload_failed", error);
+      applyQueueRetryHeader(res, error);
       res.status(errorStatus(error, 500)).json({
-        error: error instanceof Error ? error.message : "skill package upload failed",
+        error: error instanceof WorkQueueFullError ? "当前技能上传请求较多，请稍后重试" : error instanceof Error ? error.message : "skill package upload failed",
+        code: error instanceof WorkQueueFullError ? error.code : (error as { code?: string })?.code,
       });
     }
   });
@@ -287,7 +315,7 @@ export function registerSkillPackageRoutes(app: Express): void {
         return;
       }
 
-      removeSkillPackageIndexRows(adoptId, {
+      await removeSkillPackageIndexRows(adoptId, {
         filename,
         skillId: skillId || String(found.installedSkillId || ""),
         sha256,
@@ -381,11 +409,16 @@ with zipfile.ZipFile(${JSON.stringify(zipPath)}, 'r') as z:
   sid=re.sub(r'^[0-9]+-','',raw).lower()
  sid=re.sub(r'[^a-z0-9-]+','-',sid).strip('-')[:48] or 'uploaded-skill'
  print(json.dumps({'skillId':sid}))`;
-      const probePath = `/tmp/claw_probe_${Date.now()}.py`;
+      const probePath = `/tmp/claw_probe_${randomUUID()}.py`;
       writeFileSync(probePath, probe, "utf-8");
       let probeRaw = "";
       try {
-        probeRaw = execFileSync("python3", [probePath], { encoding: "utf-8", timeout: 5_000 });
+        const result = await runSkillWork("scan", () => execFileAsync("python3", [probePath], {
+          encoding: "utf-8",
+          timeout: 5_000,
+          maxBuffer: 256 * 1024,
+        }));
+        probeRaw = result.stdout;
       } finally {
         try { rmSync(probePath, { force: true }); } catch {}
       }
@@ -417,10 +450,14 @@ with zipfile.ZipFile(zip_path, 'r') as z:
   with z.open(n) as src, open(out,'wb') as fw:
    fw.write(src.read())
 print(json.dumps({'ok':True}))`;
-      const installPath = `/tmp/claw_install_${Date.now()}.py`;
+      const installPath = `/tmp/claw_install_${randomUUID()}.py`;
       writeFileSync(installPath, install, "utf-8");
       try {
-        execFileSync("python3", [installPath], { encoding: "utf-8", timeout: 12_000 });
+        await runSkillWork("install", () => execFileAsync("python3", [installPath], {
+          encoding: "utf-8",
+          timeout: 12_000,
+          maxBuffer: 256 * 1024,
+        }));
       } finally {
         try { rmSync(installPath, { force: true }); } catch {}
       }
@@ -439,12 +476,14 @@ print(json.dumps({'ok':True}))`;
         );
       }
 
-      rows = rows.map((row) => (
-        String(row.adoptId || "") === adoptId && String(row.filename || "") === filename
-          ? { ...row, installedSkillId, installedAt: new Date().toISOString() }
-          : row
-      ));
-      writeSkillPackageIndex(rows);
+      await mutateSkillPackageIndex((currentRows) => ({
+        rows: currentRows.map((row) => (
+          String(row.adoptId || "") === adoptId && String(row.filename || "") === filename
+            ? { ...row, installedSkillId, installedAt: new Date().toISOString() }
+            : row
+        )),
+        value: undefined,
+      }));
       clearAgentSessionsCache(runtimeAgentId, OPENCLAW_BASE_HOME);
       if (isJiuwenClawAdoptId(adoptId)) {
         await refreshJiuwenRuntimeCapabilities(adoptId);
@@ -452,7 +491,11 @@ print(json.dumps({'ok':True}))`;
       res.json({ ok: true, skillId: installedSkillId, path: skillDirectory });
     } catch (error) {
       logError("skill_package.legacy_install_failed", error);
-      res.status(500).json({ error: "install package failed" });
+      applyQueueRetryHeader(res, error);
+      res.status(errorStatus(error, 500)).json({
+        error: error instanceof WorkQueueFullError ? "当前技能安装请求较多，请稍后重试" : "install package failed",
+        code: error instanceof WorkQueueFullError ? error.code : undefined,
+      });
     }
   });
 }

@@ -96,7 +96,7 @@ export function registerSkillMarketRoutes(app: Express): void {
       }
 
       const pendingDir = `${skillStoreMarketplaceDir()}/pending/${skill.id}-${Date.now()}`;
-      skillInstaller.installFromSource(skill.source.sourcePath, pendingDir);
+      await skillInstaller.installFromSource(skill.source.sourcePath, pendingDir);
       const parsed = parseSkillSourceDirectory(pendingDir, skill.id);
       const marketItemId = await insertSkillMarketItem({
         skillId: parsed.skillId || skill.id,

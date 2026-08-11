@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { FileSystemSkillInstaller } from "./skill-installer";
 
 describe("FileSystemSkillInstaller", () => {
-  it("copies a physical skill directory into a physical runtime directory", () => {
+  it("copies a physical skill directory into a physical runtime directory", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "skill-installer-copy-"));
     try {
       const source = path.join(root, "source");
@@ -13,7 +13,7 @@ describe("FileSystemSkillInstaller", () => {
       mkdirSync(source, { recursive: true });
       writeFileSync(path.join(source, "SKILL.md"), "# Skill\n", "utf8");
 
-      new FileSystemSkillInstaller().installFromSource(source, runtime);
+      await new FileSystemSkillInstaller().installFromSource(source, runtime);
 
       expect(lstatSync(runtime).isSymbolicLink()).toBe(false);
       expect(existsSync(path.join(runtime, "SKILL.md"))).toBe(true);
@@ -22,7 +22,7 @@ describe("FileSystemSkillInstaller", () => {
     }
   });
 
-  it("normalizes runtime permissions while preserving executable scripts", () => {
+  it("normalizes runtime permissions while preserving executable scripts", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "skill-installer-mode-"));
     try {
       const source = path.join(root, "source");
@@ -35,7 +35,7 @@ describe("FileSystemSkillInstaller", () => {
       chmodSync(path.join(source, "SKILL.md"), 0o600);
       chmodSync(executable, 0o700);
 
-      new FileSystemSkillInstaller().installFromSource(source, runtime);
+      await new FileSystemSkillInstaller().installFromSource(source, runtime);
 
       expect(lstatSync(runtime).mode & 0o777).toBe(0o750);
       expect(lstatSync(path.join(runtime, "SKILL.md")).mode & 0o777).toBe(0o640);
@@ -45,7 +45,7 @@ describe("FileSystemSkillInstaller", () => {
     }
   });
 
-  it("rejects root and nested symbolic links", () => {
+  it("rejects root and nested symbolic links", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "skill-installer-links-"));
     try {
       const source = path.join(root, "source");
@@ -59,10 +59,10 @@ describe("FileSystemSkillInstaller", () => {
 
       const installer = new FileSystemSkillInstaller();
       expect(installer.canInstall(linkedSource)).toBe(false);
-      expect(() => installer.installFromSource(linkedSource, runtime)).toThrow("must not be a symbolic link");
+      await expect(installer.installFromSource(linkedSource, runtime)).rejects.toThrow("must not be a symbolic link");
 
       symlinkSync(external, path.join(source, "reference.txt"));
-      expect(() => installer.installFromSource(source, runtime)).toThrow("must not contain symbolic links");
+      await expect(installer.installFromSource(source, runtime)).rejects.toThrow("must not contain symbolic links");
       expect(existsSync(runtime)).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });

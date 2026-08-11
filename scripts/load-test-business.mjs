@@ -17,19 +17,27 @@ const mutationOrigin = String(process.env.EA_BUSINESS_LOAD_TEST_ORIGIN || "").tr
 const stages = String(process.env.EA_BUSINESS_LOAD_TEST_STAGES || "5,10,20")
   .split(",")
   .map((value) => Number(value.trim()))
-  .filter((value) => Number.isInteger(value) && value > 0 && value <= 50);
+  .filter((value) => Number.isInteger(value) && value > 0 && value <= 100);
 const durationMs = Math.max(5_000, Number(process.env.EA_BUSINESS_LOAD_TEST_STAGE_SECONDS || 15) * 1000);
 const timeoutMs = Math.max(1_000, Number(process.env.EA_BUSINESS_LOAD_TEST_TIMEOUT_MS || 10_000));
 const outputDir = path.resolve(process.env.EA_BUSINESS_LOAD_TEST_OUTPUT_DIR || "data/load-tests");
 const chatEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_CHAT === "1";
-const chatRequests = Math.min(5, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS || 0) || 0));
+const chatRequests = Math.min(100, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS || 0) || 0));
+const chatConcurrency = Math.min(
+  100,
+  Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_CONCURRENCY || Math.min(chatRequests || 1, 10)) || 1),
+);
 const chatMessage = String(
   process.env.EA_BUSINESS_LOAD_TEST_CHAT_MESSAGE
   || "这是一次受控运行检查。请只回复：运行正常。",
 ).slice(0, 1000);
 const requireChatToolEvent = process.env.EA_BUSINESS_LOAD_TEST_REQUIRE_TOOL_EVENT === "1";
 const sandboxEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_SANDBOX === "1";
-const sandboxRequests = Math.min(5, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_REQUESTS || 0) || 0));
+const sandboxRequests = Math.min(100, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_REQUESTS || 0) || 0));
+const sandboxConcurrency = Math.min(
+  100,
+  Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_CONCURRENCY || Math.min(sandboxRequests || 1, 5)) || 1),
+);
 const internalKey = String(process.env.EA_BUSINESS_LOAD_TEST_INTERNAL_KEY || "").trim();
 const maxErrorRate = Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_ERROR_RATE || 0.01));
 const maxP95Ms = Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_P95_MS || 1500));
@@ -115,6 +123,20 @@ function latencySummary(items) {
   };
 }
 
+async function runBoundedBatch(count, concurrency, worker) {
+  const results = new Array(count);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(count, concurrency) }, async () => {
+    while (true) {
+      const index = next++;
+      if (index >= count) return;
+      results[index] = await worker(index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 async function runReadStage(concurrency) {
   const deadline = Date.now() + durationMs;
   const samples = [];
@@ -184,6 +206,7 @@ async function runChatSmoke(index, profile) {
         channel: "web",
         conversationId,
         clientRunId: `loadtest-${conversationId}`,
+        ...(profile.selectedSkillId ? { selectedSkillIds: [profile.selectedSkillId] } : {}),
       }),
       signal: AbortSignal.timeout(Math.max(timeoutMs, 300_000)),
     });
@@ -291,17 +314,19 @@ for (const concurrency of stages) {
   await new Promise((resolve) => setTimeout(resolve, 2_000));
 }
 
-for (let index = 1; index <= chatRequests; index += 1) {
-  const result = await runChatSmoke(index, profiles[(index - 1) % profiles.length]);
-  report.chatSmoke.push(result);
+report.chatSmoke = await runBoundedBatch(chatRequests, chatConcurrency, async (offset) => {
+  const index = offset + 1;
+  const result = await runChatSmoke(index, profiles[offset % profiles.length]);
   console.log(`chat request=${index} status=${result.status || "error"} duration=${result.durationMs}ms bytes=${result.bytes}`);
-}
+  return result;
+});
 
-for (let index = 1; index <= sandboxRequests; index += 1) {
-  const result = await runSandboxSmoke(index, profiles[(index - 1) % profiles.length]);
-  report.sandboxSmoke.push(result);
+report.sandboxSmoke = await runBoundedBatch(sandboxRequests, sandboxConcurrency, async (offset) => {
+  const index = offset + 1;
+  const result = await runSandboxSmoke(index, profiles[offset % profiles.length]);
   console.log(`sandbox request=${index} status=${result.status || "error"} duration=${result.durationMs}ms marker=${result.markerObserved}`);
-}
+  return result;
+});
 
 const failedStages = report.stages.filter(
   (stage) => (

@@ -38,7 +38,7 @@ function registry(root: string): FileSkillRegistry {
   return new FileSkillRegistry({
     appRoot: root,
     openclawHome: path.join(root, ".openclaw"),
-    resolveRuntimeAgentId: async () => "trial_lgc-test",
+    resolveRuntimeAgentId: async (adoptId) => `trial_${adoptId}`,
     now: () => new Date("2026-05-01T01:00:00.000Z"),
   });
 }
@@ -56,6 +56,32 @@ with zipfile.ZipFile(zip_path, "w") as z:
 }
 
 describe("FileSkillRegistry.reconcile", () => {
+  it("preserves concurrent installs from separate Agent instances", async () => {
+    const root = tempRoot();
+    try {
+      const sources = ["lgc-one", "lgc-two"].map((adoptId) => {
+        const source = path.join(root, "sources", adoptId, "shared-skill");
+        mkdirSync(source, { recursive: true });
+        writeFileSync(path.join(source, "SKILL.md"), `# ${adoptId}\n`, "utf-8");
+        return { adoptId, source };
+      });
+
+      const results = await Promise.all(sources.map(({ adoptId, source }) => registry(root).install(adoptId, {
+        kind: "uploaded",
+        skillId: "shared-skill",
+        displayName: `Skill ${adoptId}`,
+        sourcePath: source,
+      })));
+
+      expect(results.every((result) => result.ok)).toBe(true);
+      const rows = JSON.parse(readFileSync(path.join(root, "data", "skill-registry.json"), "utf-8"));
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((row: Skill) => row.adoptId))).toEqual(new Set(["lgc-one", "lgc-two"]));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("copies source to runtime when runtime copy is missing", async () => {
     const root = tempRoot();
     try {

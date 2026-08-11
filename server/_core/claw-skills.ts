@@ -933,7 +933,7 @@ export function registerSkillRoutes(app: express.Express) {
         return;
       }
       if (skill?.source.kind === "uploaded") {
-        removeSkillPackageIndexRows(adoptId, {
+        await removeSkillPackageIndexRows(adoptId, {
           skillId,
           sourcePath: skill.source.sourcePath,
         });

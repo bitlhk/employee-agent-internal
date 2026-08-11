@@ -27,6 +27,7 @@
     "knowledge:evaluate": "bash -lc '[[ \"$1\" == \"--\" ]] && shift; \"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" server/knowledge/evaluate.py \"$@\"' knowledge-evaluate",
     "load:capacity": "node scripts/load-test-capacity.mjs",
     "load:business": "node scripts/load-test-business.mjs",
+    "load:training": "node scripts/load-test-business.mjs",
     "test:load-config": "node --test scripts/lib/load-test-profiles.test.mjs",
     "db:push": "drizzle-kit push",
     "db:deploy": "tsx scripts/db-deploy.ts",

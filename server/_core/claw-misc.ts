@@ -720,7 +720,7 @@ export function registerMiscRoutes(app: express.Express) {
 
           writeFileSync(tmpZip, buf);
           try {
-            skillInstaller.installFromSource(tmpZip, finalDir);
+            await skillInstaller.installFromSource(tmpZip, finalDir);
           } finally {
             try { rmSync(tmpZip, { force: true }); } catch {}
           }

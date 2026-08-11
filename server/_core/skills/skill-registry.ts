@@ -23,6 +23,8 @@ import type {
 } from "../../../shared/types/skill";
 import { APP_ROOT, OPENCLAW_HOME, clearAgentSessionsCache, resolveRuntimeAgentId, isJiuwenClawAdoptId, jiuwenClawWorkspaceDir } from "../helpers";
 import { refreshJiuwenRuntimeCapabilities } from "../jiuwenswarm-runtime-refresh";
+import { writeJsonFileAtomicSync } from "../atomic-json-file";
+import { withSerializedFileMutation } from "../serialized-file-mutation";
 import { skillInstaller, type SkillInstaller } from "./skill-installer";
 import { parseSkillSourceDirectory } from "./skill-source";
 import { skillSourceDirsForRuntime, skillStoreAgentDir, skillStoreMarketplaceInstallDir } from "./skill-store";
@@ -86,8 +88,7 @@ function readJsonFile<T>(filePath: string, fallback: T): T {
 }
 
 function writeJsonFile(filePath: string, value: unknown): void {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(value, null, 2), "utf-8");
+  writeJsonFileAtomicSync(filePath, value);
 }
 
 function readOpenClawConfig(filePath: string): OpenClawConfig | null {
@@ -231,6 +232,10 @@ export class FileSkillRegistry implements SkillRegistry {
     writeJsonFile(this.registryPath(), rows);
   }
 
+  private withMutation<T>(action: () => Promise<T>): Promise<T> {
+    return withSerializedFileMutation(this.registryPath(), action);
+  }
+
   private async runtimeAgentId(adoptId: string): Promise<string> {
     if (this.resolveRuntimeAgentIdOverride) return this.resolveRuntimeAgentIdOverride(adoptId);
     const { getClawByAdoptId } = await import("../../db");
@@ -262,7 +267,7 @@ export class FileSkillRegistry implements SkillRegistry {
     return path.join(await this.runtimeRoot(adoptId), skillId);
   }
 
-  private prepareInstallSource(adoptId: string, source: SkillSource): SkillSource {
+  private async prepareInstallSource(adoptId: string, source: SkillSource): Promise<SkillSource> {
     if (source.kind !== "marketplace") return source;
     if (!source.sourcePath || !existsSync(source.sourcePath)) {
       throw new Error("marketplace skill source is missing");
@@ -271,7 +276,7 @@ export class FileSkillRegistry implements SkillRegistry {
     if (path.resolve(source.sourcePath) === path.resolve(agentSourcePath)) return source;
     if (existsSync(agentSourcePath)) rmSync(agentSourcePath, { recursive: true, force: true });
     mkdirSync(path.dirname(agentSourcePath), { recursive: true });
-    this.installer.installFromSource(source.sourcePath, agentSourcePath);
+    await this.installer.installFromSource(source.sourcePath, agentSourcePath);
     return { ...source, sourcePath: agentSourcePath };
   }
 
@@ -300,6 +305,10 @@ export class FileSkillRegistry implements SkillRegistry {
   }
 
   async reconcile(adoptId: string, options: SkillRegistryReconcileOptions = {}): Promise<SkillRegistryResult<ReconcileReport>> {
+    return this.withMutation(() => this.reconcileUnlocked(adoptId, options));
+  }
+
+  private async reconcileUnlocked(adoptId: string, options: SkillRegistryReconcileOptions = {}): Promise<SkillRegistryResult<ReconcileReport>> {
     const startedAt = iso(this.now);
     let rows = this.loadRegistry();
     const nextRows: Skill[] = [];
@@ -345,7 +354,7 @@ export class FileSkillRegistry implements SkillRegistry {
             reason = "source is not a directory; installer support required";
             failed++;
           } else {
-            this.installer.installFromSource(skill.source.sourcePath, runtimePath);
+            await this.installer.installFromSource(skill.source.sourcePath, runtimePath);
             action = "copied_to_runtime";
             after = skill.enabled ? "ready" : "disabled";
           }
@@ -356,7 +365,7 @@ export class FileSkillRegistry implements SkillRegistry {
             reason = "source is not a directory; installer support required";
             failed++;
           } else {
-            this.installer.installFromSource(skill.source.sourcePath, runtimePath);
+            await this.installer.installFromSource(skill.source.sourcePath, runtimePath);
             action = "refreshed_runtime";
             after = skill.enabled ? "ready" : "disabled";
           }
@@ -402,6 +411,10 @@ export class FileSkillRegistry implements SkillRegistry {
   }
 
   async install(adoptId: string, source: SkillSource): Promise<SkillRegistryResult<Skill>> {
+    return this.withMutation(() => this.installUnlocked(adoptId, source));
+  }
+
+  private async installUnlocked(adoptId: string, source: SkillSource): Promise<SkillRegistryResult<Skill>> {
     const rows = this.loadRegistry();
     const now = iso(this.now);
     const existing = rows.find((x) => x.adoptId === adoptId && x.id === source.skillId);
@@ -421,7 +434,7 @@ export class FileSkillRegistry implements SkillRegistry {
     }
     let preparedSource = source;
     try {
-      preparedSource = this.prepareInstallSource(adoptId, source);
+      preparedSource = await this.prepareInstallSource(adoptId, source);
     } catch (e: any) {
       return err("source_missing", String(e?.message || e));
     }
@@ -442,7 +455,7 @@ export class FileSkillRegistry implements SkillRegistry {
     const next = rows.filter((x) => !(x.adoptId === adoptId && x.id === preparedSource.skillId));
     next.push(skill);
     this.saveRegistry(next);
-    const report = await this.reconcile(adoptId, { skillId: preparedSource.skillId });
+    const report = await this.reconcileUnlocked(adoptId, { skillId: preparedSource.skillId });
     if (!report.ok) {
       this.saveRegistry(rows);
       return report as SkillRegistryResult<Skill>;
@@ -461,46 +474,52 @@ export class FileSkillRegistry implements SkillRegistry {
   }
 
   async updateScan(adoptId: string, skillId: string, scan: SkillScanInfo): Promise<SkillRegistryResult<Skill>> {
-    const rows = this.loadRegistry();
-    const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
-    if (!skill) return err("not_found", "skill not found");
-    const nextSkill = { ...skill, scan, updatedAt: iso(this.now) };
-    this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));
-    return ok(nextSkill);
+    return this.withMutation(async () => {
+      const rows = this.loadRegistry();
+      const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
+      if (!skill) return err("not_found", "skill not found");
+      const nextSkill = { ...skill, scan, updatedAt: iso(this.now) };
+      this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));
+      return ok(nextSkill);
+    });
   }
 
   async uninstall(adoptId: string, skillId: string): Promise<SkillRegistryResult<void>> {
-    const rows = this.loadRegistry();
-    const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
-    if (!skill) return err("not_found", "skill not found");
-    if (skill.source.kind === "role_default") {
-      return err("permission_denied", "role default skills are controlled by the role configuration");
-    }
-    const runtimePath = skill.sync.runtimePath || await this.runtimePath(adoptId, skillId);
-    if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
-    if (skill.source.kind === "marketplace" && isAgentScopedSkillSource(adoptId, skill.source.sourcePath) && existsSync(skill.source.sourcePath!)) {
-      rmSync(skill.source.sourcePath!, { recursive: true, force: true });
-    }
-    const next = skill.source.kind === "marketplace"
-      ? rows.filter((x) => x !== skill)
-      : rows.map((x) => x === skill ? { ...x, enabled: false, state: "disabled" as const, updatedAt: iso(this.now) } : x);
-    this.saveRegistry(next);
-    await this.invalidateRuntime(adoptId);
-    return ok(undefined);
+    return this.withMutation(async () => {
+      const rows = this.loadRegistry();
+      const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
+      if (!skill) return err("not_found", "skill not found");
+      if (skill.source.kind === "role_default") {
+        return err("permission_denied", "role default skills are controlled by the role configuration");
+      }
+      const runtimePath = skill.sync.runtimePath || await this.runtimePath(adoptId, skillId);
+      if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
+      if (skill.source.kind === "marketplace" && isAgentScopedSkillSource(adoptId, skill.source.sourcePath) && existsSync(skill.source.sourcePath!)) {
+        rmSync(skill.source.sourcePath!, { recursive: true, force: true });
+      }
+      const next = skill.source.kind === "marketplace"
+        ? rows.filter((x) => x !== skill)
+        : rows.map((x) => x === skill ? { ...x, enabled: false, state: "disabled" as const, updatedAt: iso(this.now) } : x);
+      this.saveRegistry(next);
+      await this.invalidateRuntime(adoptId);
+      return ok(undefined);
+    });
   }
 
   async destroy(adoptId: string, skillId: string): Promise<SkillRegistryResult<void>> {
-    const rows = this.loadRegistry();
-    const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
-    if (!skill) return err("not_found", "skill not found");
-    if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
-      return err("permission_denied", "only uploaded, generated or runtime-imported skills can be destroyed");
-    }
-    await this.removeRuntimeSkillCopies(adoptId, skill);
-    if (skill.source.sourcePath && existsSync(skill.source.sourcePath)) rmSync(skill.source.sourcePath, { recursive: true, force: true });
-    this.saveRegistry(rows.filter((x) => x !== skill));
-    await this.invalidateRuntime(adoptId);
-    return ok(undefined);
+    return this.withMutation(async () => {
+      const rows = this.loadRegistry();
+      const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
+      if (!skill) return err("not_found", "skill not found");
+      if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
+        return err("permission_denied", "only uploaded, generated or runtime-imported skills can be destroyed");
+      }
+      await this.removeRuntimeSkillCopies(adoptId, skill);
+      if (skill.source.sourcePath && existsSync(skill.source.sourcePath)) rmSync(skill.source.sourcePath, { recursive: true, force: true });
+      this.saveRegistry(rows.filter((x) => x !== skill));
+      await this.invalidateRuntime(adoptId);
+      return ok(undefined);
+    });
   }
 
   private async removeRuntimeSkillCopies(adoptId: string, skill: Skill): Promise<void> {
@@ -532,6 +551,10 @@ export class FileSkillRegistry implements SkillRegistry {
   }
 
   async setEnabled(adoptId: string, skillId: string, enabled: boolean): Promise<SkillRegistryResult<Skill>> {
+    return this.withMutation(() => this.setEnabledUnlocked(adoptId, skillId, enabled));
+  }
+
+  private async setEnabledUnlocked(adoptId: string, skillId: string, enabled: boolean): Promise<SkillRegistryResult<Skill>> {
     if (!enabled) {
       const rows = this.loadRegistry();
       const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
@@ -550,7 +573,7 @@ export class FileSkillRegistry implements SkillRegistry {
     const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
     if (!skill) return err("not_found", "skill not found");
     this.saveRegistry(rows.map((x) => x === skill ? { ...x, enabled: true, state: "syncing" as const, updatedAt: iso(this.now) } : x));
-    const report = await this.reconcile(adoptId, { skillId });
+    const report = await this.reconcileUnlocked(adoptId, { skillId });
     if (!report.ok) return report as SkillRegistryResult<Skill>;
     const listed = await this.listSkills(adoptId);
     if (!listed.ok) return listed;
@@ -559,17 +582,19 @@ export class FileSkillRegistry implements SkillRegistry {
   }
 
   async rename(adoptId: string, skillId: string, displayName: string): Promise<SkillRegistryResult<Skill>> {
-    const name = displayName.trim();
-    if (!name) return err("validation_failed", "displayName is required");
-    const rows = this.loadRegistry();
-    const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
-    if (!skill) return err("not_found", "skill not found");
-    if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
-      return err("permission_denied", "only uploaded, generated or runtime-imported skills can be renamed");
-    }
-    const nextSkill = { ...skill, source: { ...skill.source, displayName: name }, updatedAt: iso(this.now) };
-    this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));
-    return ok(nextSkill);
+    return this.withMutation(async () => {
+      const name = displayName.trim();
+      if (!name) return err("validation_failed", "displayName is required");
+      const rows = this.loadRegistry();
+      const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
+      if (!skill) return err("not_found", "skill not found");
+      if (!["uploaded", "generated", "runtime_imported"].includes(skill.source.kind)) {
+        return err("permission_denied", "only uploaded, generated or runtime-imported skills can be renamed");
+      }
+      const nextSkill = { ...skill, source: { ...skill.source, displayName: name }, updatedAt: iso(this.now) };
+      this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));
+      return ok(nextSkill);
+    });
   }
 
   private async syncOpenClawAgentSkillFilter(adoptId: string): Promise<void> {
@@ -676,6 +701,16 @@ export class FileSkillRegistry implements SkillRegistry {
       // invalidation failed.
     }
   }
+}
+
+export async function pruneSkillRegistryForAdopt(adoptId: string, appRoot = APP_ROOT): Promise<number> {
+  const registryPath = path.join(appRoot, "data", "skill-registry.json");
+  return withSerializedFileMutation(registryPath, () => {
+    const rows = readJsonFile<Skill[]>(registryPath, []);
+    const next = rows.filter((row) => row.adoptId !== adoptId);
+    if (next.length !== rows.length) writeJsonFile(registryPath, next);
+    return rows.length - next.length;
+  });
 }
 
 export const skillRegistry: SkillRegistry = new FileSkillRegistry();

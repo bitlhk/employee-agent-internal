@@ -5,6 +5,7 @@ function normalizeProfile(raw, index) {
   const adoptId = String(raw?.adoptId || "").trim();
   const cookie = String(raw?.cookie || "").trim();
   const knowledgeBaseId = String(raw?.knowledgeBaseId || "").trim();
+  const selectedSkillId = String(raw?.selectedSkillId || "").trim();
   if (!/^lgj-[A-Za-z0-9_-]{4,64}$/.test(adoptId)) {
     throw new Error(`Load-test profile ${index + 1} has an invalid adoptId`);
   }
@@ -14,10 +15,14 @@ function normalizeProfile(raw, index) {
   if (knowledgeBaseId && !/^kb_[A-Za-z0-9_-]{4,64}$/.test(knowledgeBaseId)) {
     throw new Error(`Load-test profile ${index + 1} has an invalid knowledgeBaseId`);
   }
+  if (selectedSkillId && !/^[A-Za-z0-9._-]{1,128}$/.test(selectedSkillId)) {
+    throw new Error(`Load-test profile ${index + 1} has an invalid selectedSkillId`);
+  }
   return {
     adoptId,
     cookie,
     ...(knowledgeBaseId ? { knowledgeBaseId } : {}),
+    ...(selectedSkillId ? { selectedSkillId } : {}),
   };
 }
 

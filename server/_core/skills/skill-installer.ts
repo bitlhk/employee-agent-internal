@@ -1,7 +1,9 @@
-import { execFileSync } from "child_process";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "fs";
+import { execFile } from "child_process";
+import { existsSync, lstatSync, readdirSync } from "fs";
+import { cp, mkdir, mkdtemp, rm } from "fs/promises";
 import os from "os";
 import path from "path";
+import { promisify } from "util";
 import {
   MAX_SKILL_ZIP_COMPRESSION_RATIO,
   MAX_SKILL_ZIP_ENTRIES,
@@ -19,9 +21,11 @@ export type SkillInstallResult = {
 };
 
 export interface SkillInstaller {
-  installFromSource(sourcePath: string, runtimePath: string): SkillInstallResult;
+  installFromSource(sourcePath: string, runtimePath: string): Promise<SkillInstallResult>;
   canInstall(sourcePath: string): boolean;
 }
+
+const execFileAsync = promisify(execFile);
 
 function isZipSource(sourcePath: string): boolean {
   const ext = path.extname(sourcePath).toLowerCase();
@@ -65,7 +69,7 @@ function assertPhysicalDirectoryTree(rootDir: string): void {
   walk(rootDir, "");
 }
 
-function safeExtractZip(zipPath: string, destPath: string): void {
+async function safeExtractZip(zipPath: string, destPath: string): Promise<void> {
   const script = `
 import os, stat, sys, zipfile
 zip_path, dest = sys.argv[1], sys.argv[2]
@@ -125,14 +129,14 @@ with zipfile.ZipFile(zip_path) as z:
                     raise RuntimeError("zip actual extracted size exceeds limit")
                 output.write(chunk)
 `;
-  execFileSync("python3", [
+  await execFileAsync("python3", [
     "-c", script, zipPath, destPath,
     String(MAX_SKILL_ZIP_ENTRIES),
     String(MAX_SKILL_ZIP_UNCOMPRESSED_BYTES),
     String(MAX_SKILL_ZIP_COMPRESSION_RATIO),
     String(MAX_SKILL_ZIP_PATH_DEPTH),
     String(MAX_SKILL_ZIP_PATH_BYTES),
-  ], { stdio: "pipe" });
+  ], { timeout: 60_000, maxBuffer: 256 * 1024 });
 }
 
 export class FileSystemSkillInstaller implements SkillInstaller {
@@ -146,16 +150,16 @@ export class FileSystemSkillInstaller implements SkillInstaller {
     }
   }
 
-  installFromSource(sourcePath: string, runtimePath: string): SkillInstallResult {
+  async installFromSource(sourcePath: string, runtimePath: string): Promise<SkillInstallResult> {
     if (!existsSync(sourcePath)) throw new Error("skill source is missing");
     const stat = lstatSync(sourcePath);
     if (stat.isSymbolicLink()) throw new Error("skill source must not be a symbolic link");
     if (stat.isDirectory()) assertPhysicalDirectoryTree(sourcePath);
-    rmSync(runtimePath, { recursive: true, force: true });
-    mkdirSync(path.dirname(runtimePath), { recursive: true });
+    await rm(runtimePath, { recursive: true, force: true });
+    await mkdir(path.dirname(runtimePath), { recursive: true });
 
     if (stat.isDirectory()) {
-      cpSync(sourcePath, runtimePath, { recursive: true });
+      await cp(sourcePath, runtimePath, { recursive: true });
       normalizeSkillRuntimePermissions(runtimePath);
       return { kind: "directory", sourceRoot: sourcePath };
     }
@@ -164,16 +168,16 @@ export class FileSystemSkillInstaller implements SkillInstaller {
       throw new Error("unsupported skill source; expected directory or .zip package");
     }
 
-    const tempRoot = mkdtempSync(path.join(os.tmpdir(), "lingxia-skill-"));
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "lingxia-skill-"));
     try {
-      safeExtractZip(sourcePath, tempRoot);
+      await safeExtractZip(sourcePath, tempRoot);
       const skillRoot = findSkillRoot(tempRoot);
       if (!skillRoot) throw new Error("zip package does not contain SKILL.md");
-      cpSync(skillRoot, runtimePath, { recursive: true });
+      await cp(skillRoot, runtimePath, { recursive: true });
       normalizeSkillRuntimePermissions(runtimePath);
       return { kind: "zip", sourceRoot: skillRoot };
     } finally {
-      rmSync(tempRoot, { recursive: true, force: true });
+      await rm(tempRoot, { recursive: true, force: true });
     }
   }
 }

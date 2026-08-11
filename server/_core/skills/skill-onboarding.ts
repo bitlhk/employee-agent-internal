@@ -1,7 +1,9 @@
 import path from "path";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import type { Skill, SkillSource } from "../../../shared/types/skill";
 import { APP_ROOT, OPENCLAW_HOME, resolveRuntimeAgentId } from "../helpers";
+import { writeJsonFileAtomicSync } from "../atomic-json-file";
+import { withSerializedFileMutation } from "../serialized-file-mutation";
 import { skillRegistry } from "./skill-registry";
 
 type OnboardResult = {
@@ -24,8 +26,7 @@ function readJson<T>(filePath: string, fallback: T): T {
 }
 
 function writeJson(filePath: string, value: unknown): void {
-  mkdirSync(path.dirname(filePath), { recursive: true });
-  writeFileSync(filePath, JSON.stringify(value, null, 2), "utf-8");
+  writeJsonFileAtomicSync(filePath, value);
 }
 
 function registryPath(): string {
@@ -91,63 +92,57 @@ export async function onboardBuiltinSkillsForAdopt(adoptId: string, agentId?: st
   const allowlist = readBuiltinAllowlist();
   const runtimeAgentId = resolveRuntimeAgentId(adoptId, agentId || `trial_${adoptId}`);
   const skillsDir = runtimeSkillsDir(runtimeAgentId);
-  const registry = readJson<Skill[]>(registryPath(), []);
-  const existing = new Set(registry.map((skill) => `${skill.adoptId}:${skill.id}`));
   const now = new Date().toISOString();
-  const created: Skill[] = [];
+  let created: Skill[] = [];
   let skipped = 0;
 
   if (!skillsDir) {
     return { adoptId, created: 0, ready: 0, skipped: 0, failed: 0 };
   }
 
-  for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const skillId = entry.name;
-    if (!allowlist.has(skillId)) {
-      skipped++;
-      continue;
+  const targetRegistryPath = registryPath();
+  await withSerializedFileMutation(targetRegistryPath, () => {
+    const registry = readJson<Skill[]>(targetRegistryPath, []);
+    const existing = new Set(registry.map((skill) => `${skill.adoptId}:${skill.id}`));
+    const discovered: Skill[] = [];
+    let skippedWithinLock = 0;
+    for (const entry of readdirSync(skillsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const skillId = entry.name;
+      if (!allowlist.has(skillId) || existing.has(`${adoptId}:${skillId}`)) {
+        skippedWithinLock++;
+        continue;
+      }
+      const sourcePath = path.join(skillsDir, skillId);
+      const { displayName, description } = parseSkillMetadata(sourcePath, skillId);
+      const stats = safeStat(sourcePath);
+      const source: SkillSource = { kind: "builtin", skillId, displayName, description, sourcePath };
+      discovered.push({
+        id: skillId,
+        adoptId,
+        source,
+        state: "ready",
+        enabled: true,
+        review: { state: "none" },
+        sync: {
+          runtimePath: sourcePath,
+          sourceMtimeMs: stats.mtimeMs,
+          sourceSizeBytes: stats.size,
+          runtimeMtimeMs: stats.mtimeMs,
+          runtimeSizeBytes: stats.size,
+          lastSyncedAt: now,
+          reason: "new adopt builtin allowlist onboarding",
+        },
+        capabilities: [],
+        examples: [],
+        createdAt: now,
+        updatedAt: now,
+      });
     }
-    if (existing.has(`${adoptId}:${skillId}`)) {
-      skipped++;
-      continue;
-    }
-    const sourcePath = path.join(skillsDir, skillId);
-    const { displayName, description } = parseSkillMetadata(sourcePath, skillId);
-    const stats = safeStat(sourcePath);
-    const source: SkillSource = {
-      kind: "builtin",
-      skillId,
-      displayName,
-      description,
-      sourcePath,
-    };
-    created.push({
-      id: skillId,
-      adoptId,
-      source,
-      state: "ready",
-      enabled: true,
-      review: { state: "none" },
-      sync: {
-        runtimePath: sourcePath,
-        sourceMtimeMs: stats.mtimeMs,
-        sourceSizeBytes: stats.size,
-        runtimeMtimeMs: stats.mtimeMs,
-        runtimeSizeBytes: stats.size,
-        lastSyncedAt: now,
-        reason: "new adopt builtin allowlist onboarding",
-      },
-      capabilities: [],
-      examples: [],
-      createdAt: now,
-      updatedAt: now,
-    });
-  }
-
-  if (created.length > 0) {
-    writeJson(registryPath(), [...registry, ...created]);
-  }
+    created = discovered;
+    skipped = skippedWithinLock;
+    if (discovered.length > 0) writeJson(targetRegistryPath, [...registry, ...discovered]);
+  });
 
   const reconcile = await skillRegistry.reconcile(adoptId);
   const failed = reconcile.ok ? reconcile.value.failed : created.length;

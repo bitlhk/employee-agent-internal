@@ -17,7 +17,7 @@ import {
 import { isActiveJiuwenAdoptId, retiredRuntimeMessage } from "./runtime-policy";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { probeJiuwenSkillMcpReadiness } from "./skill-mcp-readiness";
-import { capacityGuard } from "./operational-capacity";
+import { capacityQueueGuard } from "./operational-capacity";
 import {
   beginChatRequest,
   beginRuntimeCall,
@@ -315,7 +315,10 @@ export function registerChatStreamRoutes(app: express.Express) {
   app.post(
     "/api/claw/chat-stream",
     clawChatLimiter,
-    capacityGuard("chat_http"),
+    capacityQueueGuard("chat_http", {
+      maxQueued: Number.parseInt(process.env.EA_CHAT_HTTP_MAX_QUEUE || "50", 10) || 50,
+      maxWaitMs: Number.parseInt(process.env.EA_CHAT_HTTP_QUEUE_WAIT_MS || "60000", 10) || 60_000,
+    }),
     async (req, res) => {
       const {
         adoptId,

@@ -75,6 +75,20 @@ const capacityRejections = new Counter({
   registers: [metricsRegistry],
 });
 
+const capacityQueued = new Gauge({
+  name: "ea_capacity_queued",
+  help: "Requests waiting in a bounded capacity lane queue.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
+const capacityQueueLimit = new Gauge({
+  name: "ea_capacity_queue_limit",
+  help: "Configured waiting queue limit for a bounded capacity lane.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
 const readinessChecks = new Counter({
   name: "ea_readiness_checks_total",
   help: "Readiness dependency check outcomes.",
@@ -442,6 +456,49 @@ const sandboxActive = new Gauge({
   registers: [metricsRegistry],
 });
 
+const skillWorkActive = new Gauge({
+  name: "ea_skill_work_active",
+  help: "Active bounded Skill preparation work by lane.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
+const skillWorkQueued = new Gauge({
+  name: "ea_skill_work_queued",
+  help: "Queued bounded Skill preparation work by lane.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
+const skillWorkLimit = new Gauge({
+  name: "ea_skill_work_limit",
+  help: "Configured active and queued limits for Skill preparation work.",
+  labelNames: ["lane", "kind"] as const,
+  registers: [metricsRegistry],
+});
+
+const skillWorkTotal = new Counter({
+  name: "ea_skill_work_total",
+  help: "Completed Skill preparation work by lane and outcome.",
+  labelNames: ["lane", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const skillWorkDuration = new Histogram({
+  name: "ea_skill_work_duration_seconds",
+  help: "Queued plus execution duration for Skill preparation work.",
+  labelNames: ["lane", "outcome"] as const,
+  buckets: [0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120],
+  registers: [metricsRegistry],
+});
+
+const skillWorkRejections = new Counter({
+  name: "ea_skill_work_rejections_total",
+  help: "Skill preparation requests rejected because a bounded queue was full.",
+  labelNames: ["lane"] as const,
+  registers: [metricsRegistry],
+});
+
 const dbPoolConnections = new Gauge({
   name: "ea_db_pool_connections",
   help: "Database pool connection counts by bounded state.",
@@ -622,6 +679,12 @@ export function observeCapacityRejection(lane: string): void {
   capacityRejections.inc({ lane: lane.slice(0, 32) });
 }
 
+export function setCapacityQueue(lane: string, queued: number, limit: number): void {
+  const boundedLane = lane.slice(0, 32);
+  capacityQueued.set({ lane: boundedLane }, Math.max(0, queued));
+  capacityQueueLimit.set({ lane: boundedLane }, Math.max(0, limit));
+}
+
 export function observeMemoryRetrieval(input: {
   outcome: "selected" | "empty" | "disabled" | "error";
   durationMs: number;
@@ -786,6 +849,34 @@ export function beginSandboxExecution(): (outcome: OperationalOutcome, durationM
     sandboxExecutions.inc({ outcome });
     sandboxDuration.observe({ outcome }, Math.max(0, durationMs ?? Date.now() - startedAt) / 1000);
   };
+}
+
+export function setSkillWorkQueue(input: {
+  lane: "scan" | "install";
+  active: number;
+  queued: number;
+  concurrency: number;
+  maxQueued: number;
+}): void {
+  skillWorkActive.set({ lane: input.lane }, Math.max(0, input.active));
+  skillWorkQueued.set({ lane: input.lane }, Math.max(0, input.queued));
+  skillWorkLimit.set({ lane: input.lane, kind: "active" }, Math.max(0, input.concurrency));
+  skillWorkLimit.set({ lane: input.lane, kind: "queued" }, Math.max(0, input.maxQueued));
+}
+
+export function beginSkillWork(lane: "scan" | "install"): (outcome: "success" | "error") => void {
+  const startedAt = Date.now();
+  let finished = false;
+  return (outcome) => {
+    if (finished) return;
+    finished = true;
+    skillWorkTotal.inc({ lane, outcome });
+    skillWorkDuration.observe({ lane, outcome }, Math.max(0, Date.now() - startedAt) / 1000);
+  };
+}
+
+export function observeSkillWorkRejection(lane: "scan" | "install"): void {
+  skillWorkRejections.inc({ lane });
 }
 
 export function configureDbPoolMetrics(input: { connectionLimit: number; maxIdle: number; queueLimit: number }): void {

@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { APP_ROOT } from "../helpers";
+import { writeJsonFileAtomicSync } from "../atomic-json-file";
+import { withSerializedFileMutation } from "../serialized-file-mutation";
 
 export type SkillPackageIndexRow = Record<string, unknown> & {
   adoptId?: string;
@@ -38,25 +40,50 @@ export function readSkillPackageIndex(): SkillPackageIndexRow[] {
 }
 
 export function writeSkillPackageIndex(rows: SkillPackageIndexRow[]): void {
-  const indexPath = skillPackageIndexPath();
-  mkdirSync(path.dirname(indexPath), { recursive: true });
-  writeFileSync(indexPath, JSON.stringify(rows, null, 2), "utf-8");
+  writeJsonFileAtomicSync(skillPackageIndexPath(), rows);
 }
 
-export function removeSkillPackageIndexRows(adoptId: string, match: SkillPackageIndexMatch): SkillPackageIndexRow[] {
-  const rows = readSkillPackageIndex();
-  const removed: SkillPackageIndexRow[] = [];
-  const retained = rows.filter((row) => {
-    if (String(row.adoptId || "") !== adoptId) return true;
-    const matches = (
-      (match.skillId && String(row.installedSkillId || "") === match.skillId)
-      || (match.sourcePath && String(row.path || "") === match.sourcePath)
-      || (match.sha256 && String(row.sha256 || "") === match.sha256)
-      || (match.filename && String(row.filename || "") === match.filename)
-    );
-    if (matches) removed.push(row);
-    return !matches;
+export async function mutateSkillPackageIndex<T>(
+  mutate: (rows: SkillPackageIndexRow[]) => { rows: SkillPackageIndexRow[]; value: T },
+): Promise<T> {
+  const indexPath = skillPackageIndexPath();
+  return withSerializedFileMutation(indexPath, () => {
+    const result = mutate(readSkillPackageIndex());
+    writeSkillPackageIndex(result.rows);
+    return result.value;
   });
-  if (removed.length > 0) writeSkillPackageIndex(retained);
-  return removed;
+}
+
+export async function appendSkillPackageIndexRow(row: SkillPackageIndexRow): Promise<void> {
+  await mutateSkillPackageIndex((rows) => ({
+    rows: [
+      ...rows.filter((current) => !(
+        String(current.adoptId || "") === String(row.adoptId || "")
+        && (
+          (row.installedSkillId && String(current.installedSkillId || "") === String(row.installedSkillId))
+          || (row.filename && String(current.filename || "") === String(row.filename))
+        )
+      )),
+      row,
+    ],
+    value: undefined,
+  }));
+}
+
+export async function removeSkillPackageIndexRows(adoptId: string, match: SkillPackageIndexMatch): Promise<SkillPackageIndexRow[]> {
+  return mutateSkillPackageIndex((rows) => {
+    const removed: SkillPackageIndexRow[] = [];
+    const retained = rows.filter((row) => {
+      if (String(row.adoptId || "") !== adoptId) return true;
+      const matches = (
+        (match.skillId && String(row.installedSkillId || "") === match.skillId)
+        || (match.sourcePath && String(row.path || "") === match.sourcePath)
+        || (match.sha256 && String(row.sha256 || "") === match.sha256)
+        || (match.filename && String(row.filename || "") === match.filename)
+      );
+      if (matches) removed.push(row);
+      return !matches;
+    });
+    return { rows: retained, value: removed };
+  });
 }

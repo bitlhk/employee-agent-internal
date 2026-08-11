@@ -873,7 +873,7 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
       const sourceDir = skillStoreRuntimeImportedDir(adoptId, skillId);
       if (existsSync(sourceDir)) rmSync(sourceDir, { recursive: true, force: true });
       mkdirSync(path.dirname(sourceDir), { recursive: true });
-      skillInstaller.installFromSource(runtimePath, sourceDir);
+      await skillInstaller.installFromSource(runtimePath, sourceDir);
 
       const source: SkillSource = {
         kind: "runtime_imported",

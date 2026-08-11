@@ -55,7 +55,7 @@ import { getAdminSystemHealth } from "../_core/admin-system-health";
 import { logDebug, logWarn } from "../_core/observability/logger";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
-import { skillRegistry } from "../_core/skills/skill-registry";
+import { pruneSkillRegistryForAdopt, skillRegistry } from "../_core/skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
 import { roleSkillPreferences } from "../_core/skills/role-skill-preferences";
 import { setAgentSkillEnabled } from "../_core/skills/skill-enable-service";
@@ -186,25 +186,6 @@ const getAvailableModelsForRuntime = async (adoptId?: unknown): Promise<RuntimeM
 };
 
 const skillMarketDir = () => skillStoreMarketplaceDir();
-
-function pruneSkillRegistryForAdopt(adoptId: string): number {
-  const registryPath = `${APP_ROOT}/data/skill-registry.json`;
-  try {
-    if (!existsSync(registryPath)) return 0;
-    const rows = JSON.parse(String(readFileSync(registryPath, "utf-8") || "[]"));
-    if (!Array.isArray(rows)) return 0;
-    const next = rows.filter((row: any) => String(row?.adoptId || "") !== adoptId);
-    if (next.length === rows.length) return 0;
-    writeFileSync(registryPath, JSON.stringify(next, null, 2), "utf-8");
-    return rows.length - next.length;
-  } catch (e: any) {
-    logWarn("agent.delete.skill_registry_prune_failed", {
-      adoptId,
-      error: String(e?.message || e),
-    });
-    return 0;
-  }
-}
 
 export const clawRouter = router({
     me: protectedProcedure.query(async ({ ctx }) => {
@@ -921,7 +902,13 @@ export const clawRouter = router({
         const jiuwenRuntime = isJiuwenClawAdoptId(adoptId);
         const workspacePath = jiuwenRuntime ? jiuwenClawWorkspaceDir(adoptId, row.agentId) : "";
         const agentStatePath = jiuwenRuntime ? path.dirname(jiuwenClawAgentDir(adoptId, row.agentId)) : "";
-        const skillsRemoved = pruneSkillRegistryForAdopt(adoptId);
+        const skillsRemoved = await pruneSkillRegistryForAdopt(adoptId).catch((e: any) => {
+          logWarn("agent.delete.skill_registry_prune_failed", {
+            adoptId,
+            error: String(e?.message || e),
+          });
+          return 0;
+        });
         const configPruned = false;
         try {
           if (existsSync(agentStatePath)) rmSync(agentStatePath, { recursive: true, force: true });
