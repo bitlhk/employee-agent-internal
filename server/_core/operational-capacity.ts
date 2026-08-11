@@ -14,6 +14,18 @@ const LANE_CONFIG: Record<CapacityLane, { env: string; defaultValue: number; max
   chat_ws: { env: "EA_CHAT_WS_MAX_CONNECTIONS", defaultValue: 120, maxValue: 2_000 },
 };
 
+const INTERNAL_MCP_STREAM_PATHS = new Set([
+  "/api/internal/platform-tools/mcp",
+  "/api/internal/custom-mcp/mcp",
+  "/api/internal/enterprise-mcp/mcp",
+]);
+
+export function isLongLivedInternalMcpStreamRequest(req: Pick<Request, "method" | "originalUrl" | "path">): boolean {
+  if (String(req.method || "").toUpperCase() !== "GET") return false;
+  const rawPath = String(req.originalUrl || req.path || "").split("?", 1)[0];
+  return INTERNAL_MCP_STREAM_PATHS.has(rawPath);
+}
+
 function boundedPositiveInteger(value: string | undefined, fallback: number, maxValue: number): number {
   const parsed = Number.parseInt(String(value || ""), 10);
   if (!Number.isFinite(parsed) || parsed < 1) return fallback;
@@ -170,7 +182,14 @@ export function capacityQueueGuard(
 }
 
 export function capacityGuard(lane: CapacityLane) {
-  return (_req: Request, res: Response, next: NextFunction): void => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    // Streamable HTTP MCP listeners are intentionally long-lived. Charging
+    // them to the short API lane would let idle runtime listeners exhaust all
+    // request capacity during a large training session.
+    if (lane === "api" && isLongLivedInternalMcpStreamRequest(req)) {
+      next();
+      return;
+    }
     const release = tryAcquireCapacity(lane);
     if (!release) {
       res.setHeader("Retry-After", "2");

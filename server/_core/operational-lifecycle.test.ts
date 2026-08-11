@@ -48,6 +48,20 @@ describe("operational lifecycle", () => {
     expect(getServerLifecycleSnapshot().activeRequests).toBe(0);
   });
 
+  it("does not treat a long-lived internal MCP listener as unfinished business work", () => {
+    markServerReady();
+    const response = new FakeResponse();
+    const next = vi.fn();
+    trackedRequestMiddleware({
+      method: "GET",
+      originalUrl: "/api/internal/enterprise-mcp/mcp",
+      path: "/api/internal/enterprise-mcp/mcp",
+    } as never, response as never, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(getServerLifecycleSnapshot().activeRequests).toBe(0);
+  });
+
   it("rejects new work after draining starts", () => {
     markServerReady();
     beginServerDrain("SIGTERM");

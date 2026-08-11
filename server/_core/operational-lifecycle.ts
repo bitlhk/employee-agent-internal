@@ -5,6 +5,7 @@ import {
   setServerTrackedRequests,
   type ServerLifecycleState,
 } from "./observability/metrics";
+import { isLongLivedInternalMcpStreamRequest } from "./operational-capacity";
 
 const DRAIN_RETRY_AFTER_SECONDS = 2;
 
@@ -57,6 +58,14 @@ export function trackedRequestMiddleware(req: Request, res: Response, next: Next
       code: "SERVER_DRAINING",
       retryAfter: DRAIN_RETRY_AFTER_SECONDS,
     });
+    return;
+  }
+
+  // MCP GET streams remain open for the lifetime of a runtime client. They
+  // are connections, not unfinished business requests, and must not prevent
+  // graceful deploys from draining real in-flight work.
+  if (isLongLivedInternalMcpStreamRequest(req)) {
+    next();
     return;
   }
 

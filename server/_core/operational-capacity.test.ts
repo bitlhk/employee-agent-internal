@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import {
+  capacityGuard,
   capacityQueueGuard,
   getCapacitySnapshot,
+  isLongLivedInternalMcpStreamRequest,
   resetCapacityForTests,
   tryAcquireCapacity,
   waitForCapacityToDrain,
@@ -11,6 +13,43 @@ import {
 afterEach(() => resetCapacityForTests());
 
 describe("operational capacity", () => {
+  it("recognizes only internal MCP GET listeners as long-lived streams", () => {
+    expect(isLongLivedInternalMcpStreamRequest({
+      method: "GET",
+      originalUrl: "/api/internal/platform-tools/mcp?adoptId=lgj-test",
+      path: "/internal/platform-tools/mcp",
+    })).toBe(true);
+    expect(isLongLivedInternalMcpStreamRequest({
+      method: "POST",
+      originalUrl: "/api/internal/platform-tools/mcp",
+      path: "/internal/platform-tools/mcp",
+    })).toBe(false);
+    expect(isLongLivedInternalMcpStreamRequest({
+      method: "GET",
+      originalUrl: "/api/claw/chat-stream",
+      path: "/claw/chat-stream",
+    })).toBe(false);
+  });
+
+  it("does not charge internal MCP listeners to the short API lane", () => {
+    resetCapacityForTests({ api: 1 });
+    const guard = capacityGuard("api");
+    const next = vi.fn();
+    const response = Object.assign(new EventEmitter(), {
+      setHeader() {},
+      status() { return this; },
+      json() { return this; },
+    });
+    guard({
+      method: "GET",
+      originalUrl: "/api/internal/custom-mcp/mcp",
+      path: "/internal/custom-mcp/mcp",
+    } as any, response as any, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(getCapacitySnapshot().api.active).toBe(0);
+  });
+
   it("queues a short chat burst and dispatches in FIFO order", async () => {
     resetCapacityForTests({ chat_http: 1 });
     const guard = capacityQueueGuard("chat_http", { maxQueued: 1, maxWaitMs: 5_000 });
