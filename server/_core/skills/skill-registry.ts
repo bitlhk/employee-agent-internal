@@ -34,9 +34,19 @@ type RegistryOptions = {
   appRoot?: string;
   openclawHome?: string;
   now?: () => Date;
+  listCacheTtlMs?: number;
   resolveRuntimeAgentId?: (adoptId: string) => Promise<string>;
   installer?: SkillInstaller;
 };
+
+type SkillListCacheEntry = {
+  expiresAt: number;
+  generation: number;
+  value: Skill[];
+};
+
+const DEFAULT_SKILL_LIST_CACHE_TTL_MS = 5_000;
+const MAX_SKILL_LIST_CACHE_ENTRIES = 500;
 
 type FileSummary = {
   exists: boolean;
@@ -208,13 +218,18 @@ export class FileSkillRegistry implements SkillRegistry {
   private readonly appRoot: string;
   private readonly openclawHome: string;
   private readonly now: () => Date;
+  private readonly listCacheTtlMs: number;
   private readonly resolveRuntimeAgentIdOverride?: (adoptId: string) => Promise<string>;
   private readonly installer: SkillInstaller;
+  private readonly listCache = new Map<string, SkillListCacheEntry>();
+  private readonly listInFlight = new Map<string, Promise<SkillRegistryResult<Skill[]>>>();
+  private listCacheGeneration = 0;
 
   constructor(options: RegistryOptions = {}) {
     this.appRoot = options.appRoot || APP_ROOT;
     this.openclawHome = normalizeOpenclawHome(options.openclawHome || OPENCLAW_HOME);
     this.now = options.now || (() => new Date());
+    this.listCacheTtlMs = Math.max(0, options.listCacheTtlMs ?? DEFAULT_SKILL_LIST_CACHE_TTL_MS);
     this.resolveRuntimeAgentIdOverride = options.resolveRuntimeAgentId;
     this.installer = options.installer || skillInstaller;
   }
@@ -230,6 +245,34 @@ export class FileSkillRegistry implements SkillRegistry {
 
   private saveRegistry(rows: Skill[]): void {
     writeJsonFile(this.registryPath(), rows);
+    this.invalidateListCache();
+  }
+
+  invalidateListCache(adoptId?: string): void {
+    this.listCacheGeneration++;
+    if (adoptId) {
+      this.listCache.delete(adoptId);
+      this.listInFlight.delete(adoptId);
+      return;
+    }
+    this.listCache.clear();
+    this.listInFlight.clear();
+  }
+
+  private cacheSkillList(adoptId: string, generation: number, value: Skill[]): void {
+    const nowMs = this.now().getTime();
+    for (const [key, entry] of this.listCache) {
+      if (entry.expiresAt <= nowMs || entry.generation !== this.listCacheGeneration) this.listCache.delete(key);
+    }
+    if (!this.listCache.has(adoptId) && this.listCache.size >= MAX_SKILL_LIST_CACHE_ENTRIES) {
+      const oldestKey = this.listCache.keys().next().value;
+      if (oldestKey) this.listCache.delete(oldestKey);
+    }
+    this.listCache.set(adoptId, {
+      expiresAt: nowMs + this.listCacheTtlMs,
+      generation,
+      value: structuredClone(value),
+    });
   }
 
   private withMutation<T>(action: () => Promise<T>): Promise<T> {
@@ -297,11 +340,39 @@ export class FileSkillRegistry implements SkillRegistry {
     };
   }
 
-  async listSkills(adoptId: string): Promise<SkillRegistryResult<Skill[]>> {
+  private async readSkills(adoptId: string): Promise<SkillRegistryResult<Skill[]>> {
     const rows = this.loadRegistry().filter((x) => x.adoptId === adoptId);
     const out: Skill[] = [];
     for (const skill of rows) out.push(await this.finalizeSkill(adoptId, skill));
     return ok(out);
+  }
+
+  async listSkills(adoptId: string): Promise<SkillRegistryResult<Skill[]>> {
+    const nowMs = this.now().getTime();
+    const cached = this.listCache.get(adoptId);
+    if (cached && cached.expiresAt > nowMs && cached.generation === this.listCacheGeneration) {
+      return ok(structuredClone(cached.value));
+    }
+    if (cached) this.listCache.delete(adoptId);
+
+    const pending = this.listInFlight.get(adoptId);
+    if (pending) {
+      const result = await pending;
+      return result.ok ? ok(structuredClone(result.value)) : result;
+    }
+
+    const generation = this.listCacheGeneration;
+    const read = this.readSkills(adoptId);
+    this.listInFlight.set(adoptId, read);
+    try {
+      const result = await read;
+      if (result.ok && this.listCacheTtlMs > 0 && generation === this.listCacheGeneration) {
+        this.cacheSkillList(adoptId, generation, result.value);
+      }
+      return result.ok ? ok(structuredClone(result.value)) : result;
+    } finally {
+      if (this.listInFlight.get(adoptId) === read) this.listInFlight.delete(adoptId);
+    }
   }
 
   async reconcile(adoptId: string, options: SkillRegistryReconcileOptions = {}): Promise<SkillRegistryResult<ReconcileReport>> {
@@ -708,9 +779,12 @@ export async function pruneSkillRegistryForAdopt(adoptId: string, appRoot = APP_
   return withSerializedFileMutation(registryPath, () => {
     const rows = readJsonFile<Skill[]>(registryPath, []);
     const next = rows.filter((row) => row.adoptId !== adoptId);
-    if (next.length !== rows.length) writeJsonFile(registryPath, next);
+    if (next.length !== rows.length) {
+      writeJsonFile(registryPath, next);
+      if (path.resolve(appRoot) === path.resolve(APP_ROOT)) skillRegistry.invalidateListCache(adoptId);
+    }
     return rows.length - next.length;
   });
 }
 
-export const skillRegistry: SkillRegistry = new FileSkillRegistry();
+export const skillRegistry = new FileSkillRegistry();

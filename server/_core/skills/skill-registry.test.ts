@@ -2,7 +2,7 @@ import { execFileSync } from "child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "fs";
 import os from "os";
 import path from "path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Skill } from "../../../shared/types/skill";
 import { FileSkillRegistry } from "./skill-registry";
 
@@ -43,6 +43,20 @@ function registry(root: string): FileSkillRegistry {
   });
 }
 
+function cachedRegistry(root: string, options: {
+  now?: () => Date;
+  listCacheTtlMs?: number;
+  resolveRuntimeAgentId?: (adoptId: string) => Promise<string>;
+} = {}): FileSkillRegistry {
+  return new FileSkillRegistry({
+    appRoot: root,
+    openclawHome: path.join(root, ".openclaw"),
+    resolveRuntimeAgentId: options.resolveRuntimeAgentId || (async (adoptId) => `trial_${adoptId}`),
+    now: options.now || (() => new Date()),
+    listCacheTtlMs: options.listCacheTtlMs,
+  });
+}
+
 function createSkillZip(zipPath: string, skillId: string, body = "# Skill\n"): void {
   mkdirSync(path.dirname(zipPath), { recursive: true });
   const script = `
@@ -56,6 +70,71 @@ with zipfile.ZipFile(zip_path, "w") as z:
 }
 
 describe("FileSkillRegistry.reconcile", () => {
+  it("coalesces concurrent skill list scans and returns isolated cached values", async () => {
+    const root = tempRoot();
+    try {
+      const source = path.join(root, "workspace", "lgc-test", "skills", "cached-skill");
+      mkdirSync(source, { recursive: true });
+      writeFileSync(path.join(source, "SKILL.md"), "# Cached Skill\n", "utf-8");
+      writeJson(path.join(root, "data", "skill-registry.json"), [makeSkill(root, "cached-skill")]);
+      const resolveAgent = vi.fn(async (adoptId: string) => `trial_${adoptId}`);
+      const reg = cachedRegistry(root, { resolveRuntimeAgentId: resolveAgent });
+
+      const results = await Promise.all(Array.from({ length: 50 }, () => reg.listSkills("lgc-test")));
+
+      expect(results.every((result) => result.ok && result.value.length === 1)).toBe(true);
+      expect(resolveAgent).toHaveBeenCalledTimes(1);
+      const first = results[0];
+      if (first?.ok) first.value[0]!.source.displayName = "mutated-by-caller";
+      const cached = await reg.listSkills("lgc-test");
+      expect(cached.ok && cached.value[0]?.source.displayName).toBe("cached-skill");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("invalidates the skill list cache immediately after a registry mutation", async () => {
+    const root = tempRoot();
+    try {
+      const skill = makeSkill(root, "rename-me");
+      writeJson(path.join(root, "data", "skill-registry.json"), [skill]);
+      const reg = cachedRegistry(root, { listCacheTtlMs: 60_000 });
+      const before = await reg.listSkills("lgc-test");
+      expect(before.ok && before.value[0]?.source.displayName).toBe("rename-me");
+
+      const renamed = await reg.rename("lgc-test", "rename-me", "Renamed Skill");
+      expect(renamed.ok).toBe(true);
+      const after = await reg.listSkills("lgc-test");
+      expect(after.ok && after.value[0]?.source.displayName).toBe("Renamed Skill");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refreshes the skill list from disk after the cache TTL expires", async () => {
+    const root = tempRoot();
+    let nowMs = Date.parse("2026-05-01T01:00:00.000Z");
+    try {
+      writeJson(path.join(root, "data", "skill-registry.json"), [makeSkill(root, "alpha")]);
+      const reg = cachedRegistry(root, {
+        now: () => new Date(nowMs),
+        listCacheTtlMs: 5_000,
+      });
+
+      const first = await reg.listSkills("lgc-test");
+      expect(first.ok && first.value[0]?.id).toBe("alpha");
+      writeJson(path.join(root, "data", "skill-registry.json"), [makeSkill(root, "beta")]);
+      const stillCached = await reg.listSkills("lgc-test");
+      expect(stillCached.ok && stillCached.value[0]?.id).toBe("alpha");
+
+      nowMs += 5_001;
+      const refreshed = await reg.listSkills("lgc-test");
+      expect(refreshed.ok && refreshed.value[0]?.id).toBe("beta");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("preserves concurrent installs from separate Agent instances", async () => {
     const root = tempRoot();
     try {
