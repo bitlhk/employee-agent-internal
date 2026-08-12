@@ -408,10 +408,15 @@ export function ChatInput({
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      const recorder = new MediaRecorder(stream, { mimeType });
+      const mimeType = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+        "audio/ogg;codecs=opus",
+      ].find(candidate => MediaRecorder.isTypeSupported(candidate));
+      const recorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       chunksRef.current = [];
 
       recorder.ondataavailable = (e) => {
@@ -420,14 +425,16 @@ export function ChatInput({
 
       recorder.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
-        const audioBlob = new Blob(chunksRef.current, { type: mimeType });
+        const recordedMimeType = recorder.mimeType || mimeType || "application/octet-stream";
+        const audioBlob = new Blob(chunksRef.current, { type: recordedMimeType });
         if (audioBlob.size < 100) return;
 
         setTranscribing(true);
         try {
           const res = await fetch("/api/claw/voice/transcribe", {
             method: "POST",
-            headers: { "Content-Type": mimeType },
+            credentials: "include",
+            headers: { "Content-Type": recordedMimeType },
             body: audioBlob,
           });
           if (!res.ok) {

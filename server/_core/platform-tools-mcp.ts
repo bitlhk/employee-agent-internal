@@ -38,16 +38,21 @@ const SERVICE_VERSION = "1.0.0";
 const TOOLS = [
   {
     name: "create_scheduled_task",
-    description: "Create a recurring scheduled task for reminders, periodic checks, or automated reports. Results should be tracked in the EA schedule task record unless the user explicitly asks for another delivery channel.",
+    description: "Create either a one-time or recurring scheduled task for reminders, periodic checks, or automated reports. Use run_at for one-time tasks and cron_expr for recurring tasks. Results should be tracked in the EA schedule task record unless the user explicitly asks for another delivery channel.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Short task name" },
         message: { type: "string", description: "Instruction to execute on each run" },
-        cron_expr: { type: "string", description: "Cron expression, for example '30 10 * * *' for daily 10:30" },
+        run_at: { type: "string", description: "ISO 8601 timestamp with timezone for a one-time task, for example '2026-08-13T14:00:00+08:00'" },
+        cron_expr: { type: "string", description: "Cron expression for a recurring task, for example '30 10 * * *' for daily 10:30" },
         delivery_channel: { type: "string", enum: ["conversation", "weixin", "wecom", "feishu", "webhook"], description: "Where to deliver results" },
       },
-      required: ["name", "message", "cron_expr"],
+      required: ["name", "message"],
+      oneOf: [
+        { required: ["run_at"] },
+        { required: ["cron_expr"] },
+      ],
     },
   },
   {
@@ -697,14 +702,29 @@ async function callTool(
   }
 
   if (name === "create_scheduled_task") {
-    const cronExpr = String(args.cron_expr || args.cronExpr || "0 9 * * *").trim();
+    const runAt = String(args.run_at || args.runAt || "").trim();
+    const cronExpr = String(args.cron_expr || args.cronExpr || "").trim();
+    if (Boolean(runAt) === Boolean(cronExpr)) {
+      return textResult("请且仅提供 run_at（单次任务）或 cron_expr（周期任务）中的一个。", { isError: true });
+    }
+    if (runAt) {
+      const parsedRunAt = new Date(runAt);
+      if (!Number.isFinite(parsedRunAt.getTime()) || !/(?:z|[+-]\d{2}:\d{2})$/i.test(runAt)) {
+        return textResult("run_at 必须是包含时区的 ISO 8601 时间，例如 2026-08-13T14:00:00+08:00。", { isError: true });
+      }
+      if (parsedRunAt.getTime() <= Date.now()) {
+        return textResult("run_at 必须晚于当前时间。", { isError: true });
+      }
+    }
     const deliveryChannel = String(args.delivery_channel || args.deliveryChannel || "conversation").trim();
     const channelId = deliveryChannel === "conversation" ? "web" : deliveryChannel === "weixin" ? "wechat" : deliveryChannel;
     const job = {
       name: String(args.name || "scheduled task"),
       description: String(args.message || "").slice(0, 100),
       enabled: true,
-      schedule: { kind: "cron", expr: cronExpr },
+      schedule: runAt
+        ? { kind: "once", runAt, display: runAt }
+        : { kind: "cron", cronExpr, display: cronExpr },
       payload: { kind: "agentTurn", message: String(args.message || "") },
       sessionTarget: "isolated",
       delivery: {
@@ -724,7 +744,8 @@ async function callTool(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ adoptId, job, idempotencyKey }),
     });
-    return textResult(`Scheduled task "${job.name}" created. Cron: ${cronExpr}, delivery: ${deliveryChannel}.`);
+    const scheduleSummary = runAt ? `one-time: ${runAt}` : `recurring cron: ${cronExpr}`;
+    return textResult(`Scheduled task "${job.name}" created. Schedule: ${scheduleSummary}, delivery: ${deliveryChannel}.`);
   }
 
   return textResult(`Unknown tool: ${name}`, { isError: true });

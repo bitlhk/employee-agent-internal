@@ -15,7 +15,9 @@ MAX_INPUT_BYTES = 1024 * 1024
 SAFE_TOOL_RE = re.compile(
     r"^(?:read_file|read_memory|memory_get|memory_search|glob|grep|list_files|list_skill|"
     r"list_skill_experiences|read_skill_experiences|search_tools|todo_get|todo_list|"
-    r"ask_user|load_tools|skill_tool|task_tool|bash|code|exec_command|execute_command|"
+    r"audio_metadata|experience_retrieve|skill_branch_explore|skill_branch_peek|wiki_lint|wiki_query|"
+    r"ask_user|audio_question_answering|generate_image|load_tools|skill_tool|task_tool|"
+    r"video_understanding|visual_question_answering|bash|code|exec_command|execute_command|"
     r"edit_file|write_file|edit_memory|write_memory|todo_create|todo_modify|"
     r"evolve_review_task|evolve_skill_experiences|prepare_skill_evolution|simplify_skill_experiences|"
     r"mcp_platform_tools_get_user_channels|mcp_platform_tools_list_available_agents|"

@@ -39,6 +39,8 @@ const RULES: readonly GovernanceRule[] = [
       "glob", "grep", "list_files", "list_skill", "list_skill_experiences",
       "memory_get", "memory_search", "read_file", "read_memory",
       "read_skill_experiences", "search_tools", "todo_get", "todo_list",
+      "audio_metadata", "experience_retrieve", "skill_branch_explore", "skill_branch_peek",
+      "wiki_lint", "wiki_query",
       "mcp_platform_tools_get_user_channels",
       "mcp_platform_tools_list_available_agents",
       "mcp_platform_tools_list_learned_preferences",
@@ -86,7 +88,10 @@ const RULES: readonly GovernanceRule[] = [
     idempotencyRequired: true,
   },
   {
-    exact: ["ask_user", "load_tools", "skill_tool", "task_tool"],
+    exact: [
+      "ask_user", "audio_question_answering", "generate_image", "load_tools", "skill_tool",
+      "task_tool", "video_understanding", "visual_question_answering",
+    ],
     sideEffect: "compute",
     policyRequired: false,
     approvalMode: "never",

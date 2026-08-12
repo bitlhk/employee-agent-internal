@@ -217,4 +217,69 @@ describe("platform MCP PEP wiring", () => {
     expect(body.result?.content?.[0]?.text).toMatch(/治理挂钩/);
     expect(mocks.internalFetch).not.toHaveBeenCalled();
   });
+
+  it("creates a one-time task through the identity-scoped platform scheduler", async () => {
+    mocks.runtimeAttested = true;
+    mocks.internalFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const runAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-agent-adopt-id": "lgj-platform",
+        "x-ea-runtime-id": "jiuwenswarm-local",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "platform-once",
+        method: "tools/call",
+        params: {
+          name: "create_scheduled_task",
+          arguments: { name: "拜访提醒", message: "提醒我准备客户拜访", run_at: runAt },
+        },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("one-time");
+    const init = mocks.internalFetch.mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(String(init.body)) as { job: { schedule: unknown } };
+    expect(payload.job.schedule).toEqual({ kind: "once", runAt, display: runAt });
+  });
+
+  it("rejects ambiguous scheduled task input before execution", async () => {
+    mocks.runtimeAttested = true;
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-agent-adopt-id": "lgj-platform",
+        "x-ea-runtime-id": "jiuwenswarm-local",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "platform-ambiguous",
+        method: "tools/call",
+        params: {
+          name: "create_scheduled_task",
+          arguments: {
+            name: "冲突任务",
+            message: "不应执行",
+            run_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+            cron_expr: "0 9 * * *",
+          },
+        },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("且仅提供");
+    expect(mocks.internalFetch).not.toHaveBeenCalled();
+  });
 });
