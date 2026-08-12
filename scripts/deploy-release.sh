@@ -112,6 +112,14 @@ done
 
 mv "$staging" "$release_dir"
 trap - EXIT
+
+# Production hosts commonly use umask 077. Monitoring containers run as
+# non-root users, so their bind-mounted configuration must remain readable
+# after the release archive is extracted.
+if [[ -d "$release_dir/ops/monitoring" ]]; then
+  chmod -R a+rX "$release_dir/ops/monitoring"
+fi
+
 release_log "Installing dependencies for $release_id"
 (cd "$release_dir" && pnpm install --frozen-lockfile)
 (cd "$release_dir" && pnpm build)

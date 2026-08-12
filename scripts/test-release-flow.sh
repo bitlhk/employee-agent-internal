@@ -25,8 +25,9 @@ make_bundle() {
   local verify_exit="$2"
   local source="$ROOT/source-$release_id"
   local bundle="$bundle_root/employee-agent-$release_id.tar.gz"
-  mkdir -p "$source/scripts"
+  mkdir -p "$source/scripts" "$source/ops/monitoring/grafana/dashboards"
   printf 'module.exports={source:"release",apps:[]};\n' > "$source/ecosystem.config.cjs.example"
+  printf '{"title":"Model routing"}\n' > "$source/ops/monitoring/grafana/dashboards/model-routing.json"
   printf '{"schema":1,"releaseId":"%s","sourceCommit":"test","createdAt":"2026-01-01T00:00:00Z"}\n' "$release_id" > "$source/release-manifest.json"
   printf '#!/usr/bin/env bash\nexit %s\n' "$verify_exit" > "$source/scripts/verify-production-release.sh"
   chmod +x "$source/scripts/verify-production-release.sh"
@@ -47,15 +48,20 @@ if PATH="$fake_bin:$PATH" RELEASE_REQUIRE_MIGRATION_URL=true "$SCRIPT_DIR/deploy
 fi
 
 bundle_v1="$(make_bundle release-v1 0)"
+previous_umask="$(umask)"
+umask 077
 PATH="$fake_bin:$PATH" DATABASE_MIGRATION_URL=mysql://unused "$SCRIPT_DIR/deploy-release.sh" \
   --bundle "$bundle_v1" \
   --deploy-root "$deploy_root" \
   --shared-root "$shared_root" \
   --skip-backup
+umask "$previous_umask"
 
 [[ "$(readlink -f "$deploy_root/current")" == "$deploy_root/releases/release-v1" ]]
 [[ "$(readlink -f "$deploy_root/previous")" == "$shared_root" ]]
 [[ "$(readlink -f "$deploy_root/current/data")" == "$shared_root/data" ]]
+[[ "$(stat -c %a "$deploy_root/current/ops/monitoring/grafana/dashboards")" == "755" ]]
+[[ "$(stat -c %a "$deploy_root/current/ops/monitoring/grafana/dashboards/model-routing.json")" == "644" ]]
 grep -F 'source:"release"' "$deploy_root/current/ecosystem.config.cjs" >/dev/null
 
 bundle_v2="$(make_bundle release-v2 1)"
