@@ -31,6 +31,7 @@ const chatMessage = String(
   process.env.EA_BUSINESS_LOAD_TEST_CHAT_MESSAGE
   || "这是一次受控运行检查。请只回复：运行正常。",
 ).slice(0, 1000);
+const chatModel = String(process.env.EA_BUSINESS_LOAD_TEST_CHAT_MODEL || "__auto").trim().slice(0, 120);
 const requireChatToolEvent = process.env.EA_BUSINESS_LOAD_TEST_REQUIRE_TOOL_EVENT === "1";
 const sandboxEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_SANDBOX === "1";
 const sandboxRequests = Math.min(100, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_REQUESTS || 0) || 0));
@@ -196,6 +197,7 @@ async function runChatSmoke(index, profile) {
   let observedToolEvent = false;
   let firstByteMs = 0;
   let firstToolEventMs = 0;
+  let selectedModel = "";
   try {
     const response = await fetch(new URL("/api/claw/chat-stream", baseUrl), {
       method: "POST",
@@ -203,6 +205,7 @@ async function runChatSmoke(index, profile) {
       body: JSON.stringify({
         adoptId: profile.adoptId,
         message: chatMessage,
+        model: chatModel,
         channel: "web",
         conversationId,
         clientRunId: `loadtest-${conversationId}`,
@@ -234,6 +237,7 @@ async function runChatSmoke(index, profile) {
     }
     completed = body.includes("data: [DONE]");
     observedToolEvent = body.includes("event: tool_call");
+    selectedModel = body.match(/"__model_selected"\s*:\s*"([^"]+)"/)?.[1] || "";
     if (status < 200 || status >= 400) {
       error = body.slice(0, 200);
     } else if (!completed) {
@@ -253,6 +257,7 @@ async function runChatSmoke(index, profile) {
     firstToolEventMs: Number(firstToolEventMs.toFixed(1)),
     completed,
     observedToolEvent,
+    selectedModel,
     error,
   };
 }
@@ -320,6 +325,8 @@ report.chatSmoke = await runBoundedBatch(chatRequests, chatConcurrency, async (o
   console.log(`chat request=${index} status=${result.status || "error"} duration=${result.durationMs}ms bytes=${result.bytes}`);
   return result;
 });
+report.chatModel = chatModel;
+report.chatModelDistribution = countBy(report.chatSmoke, (sample) => sample.selectedModel || "unknown");
 
 report.sandboxSmoke = await runBoundedBatch(sandboxRequests, sandboxConcurrency, async (offset) => {
   const index = offset + 1;

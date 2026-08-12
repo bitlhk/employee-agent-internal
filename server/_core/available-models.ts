@@ -1,5 +1,6 @@
 import { inferModelCapabilities, type ModelCapabilities } from "../../shared/model-capabilities";
 import { logWarn } from "./observability/logger";
+import { automaticModelRoutingEnabled } from "./automatic-model-router";
 import {
   JIUWEN_AUTO_MODEL_ID,
   listSelectableJiuwenModels,
@@ -25,7 +26,10 @@ export async function getAvailableJiuwenModels(): Promise<RuntimeModelOption[]> 
         : models;
       return [
         {
-          id: JIUWEN_AUTO_MODEL_ID, name: "自动", desc: automaticModel?.name || "由系统选择", isDefault: true,
+          id: JIUWEN_AUTO_MODEL_ID,
+          name: "自动",
+          desc: automaticModelRoutingEnabled() ? "按当前负载自动选择" : automaticModel?.name || "由系统选择",
+          isDefault: true,
           capabilities: automaticModel?.capabilities || inferModelCapabilities({ id: "automatic" }),
         },
         ...orderedModels.map((model) => ({

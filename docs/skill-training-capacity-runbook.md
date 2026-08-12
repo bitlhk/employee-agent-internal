@@ -21,6 +21,14 @@ EA_CHAT_HTTP_MAX_CONCURRENCY=60
 EA_CHAT_HTTP_MAX_QUEUE=50
 EA_CHAT_HTTP_QUEUE_WAIT_MS=60000
 
+# Let attendees select “Automatic”; keep each turn on one model while spreading
+# concurrent conversations across bounded provider lanes.
+JIUWEN_AUTO_ROUTING_ENABLED=true
+JIUWEN_AUTO_MODEL_POOL=deepseek-v4-flash:35:24,hy3:25:18,doubao-seed-2.1-pro:20:14,glm-5.2:15:12,openpangu-2.0-flash:5:8
+JIUWEN_AUTO_MODEL_FAILURE_THRESHOLD=3
+JIUWEN_AUTO_MODEL_CIRCUIT_MS=30000
+JIUWEN_AUTO_MODEL_STICKY_MS=900000
+
 # Keep workshop packages small. The product maximum remains 50 MB.
 EA_SKILL_UPLOAD_MAX_BYTES=5242880
 EA_SKILL_SCAN_CONCURRENCY=4
@@ -31,6 +39,10 @@ EA_SKILL_INSTALL_MAX_QUEUE=100
 
 Do not raise `EA_CHAT_HTTP_MAX_CONCURRENCY` until the real model/Skill stages
 below pass. A larger number cannot create upstream MaaS or MCP quota.
+
+The model-lane limits total 76 so the normal 60-request chat lane can spill
+between providers without allowing one model to absorb the whole class. Confirm
+the provider RPM/TPM/concurrency quota before raising either limit.
 
 JiuwenSwarm should run with at least 65,535 open files:
 
@@ -90,6 +102,7 @@ EA_BUSINESS_LOAD_TEST_STAGE_SECONDS=5 \
 EA_BUSINESS_LOAD_TEST_ENABLE_CHAT=1 \
 EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS=25 \
 EA_BUSINESS_LOAD_TEST_CHAT_CONCURRENCY=10 \
+EA_BUSINESS_LOAD_TEST_CHAT_MODEL=__auto \
 EA_BUSINESS_LOAD_TEST_CHAT_MESSAGE='使用所选技能完成培训检查，只返回 TRAINING_OK。' \
 pnpm load:training
 ```
@@ -130,6 +143,12 @@ ea_skill_work_active
 ea_skill_work_queued
 ea_skill_work_rejections_total
 ea_chat_first_token_duration_seconds
+ea_model_auto_selections_total
+ea_model_auto_circuit_open
+ea_model_active_requests
+ea_model_requests_total
+ea_model_ttft_seconds
+ea_model_tpot_seconds
 ea_chat_requests_total
 ea_mcp_calls_total
 ```

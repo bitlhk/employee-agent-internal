@@ -312,6 +312,8 @@ const operationalActivityActive = new Gauge({
 
 export type ChatRuntime = "jiuwenswarm";
 export type ChatOutcome = "success" | "error" | "timeout" | "cancelled";
+export type ModelSelectionMode = "automatic" | "manual";
+export type AutomaticModelRouteReason = "sticky" | "least_loaded" | "fallback";
 export type McpKind = "platform" | "custom" | "enterprise";
 export type BackgroundWorkerName =
   | "log_retention"
@@ -352,6 +354,58 @@ const chatActive = new Gauge({
   name: "ea_chat_active_requests",
   help: "Chat requests currently in progress by runtime.",
   labelNames: ["runtime"] as const,
+  registers: [metricsRegistry],
+});
+
+const modelSelections = new Counter({
+  name: "ea_model_auto_selections_total",
+  help: "Automatic model routing decisions by model and bounded reason.",
+  labelNames: ["model", "reason"] as const,
+  registers: [metricsRegistry],
+});
+
+const modelCircuitOpen = new Gauge({
+  name: "ea_model_auto_circuit_open",
+  help: "Whether an automatic model route is temporarily ejected by its circuit breaker.",
+  labelNames: ["model"] as const,
+  registers: [metricsRegistry],
+});
+
+const modelRequests = new Counter({
+  name: "ea_model_requests_total",
+  help: "Completed model-backed Agent requests by selected model, selection mode, and outcome.",
+  labelNames: ["model", "selection", "outcome"] as const,
+  registers: [metricsRegistry],
+});
+
+const modelDuration = new Histogram({
+  name: "ea_model_request_duration_seconds",
+  help: "End-to-end model-backed Agent request duration by selected model.",
+  labelNames: ["model", "selection", "outcome"] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120, 180, 300],
+  registers: [metricsRegistry],
+});
+
+const modelFirstToken = new Histogram({
+  name: "ea_model_ttft_seconds",
+  help: "Time from model route acquisition to first visible response token.",
+  labelNames: ["model", "selection"] as const,
+  buckets: [0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60, 120],
+  registers: [metricsRegistry],
+});
+
+const modelTimePerOutputToken = new Histogram({
+  name: "ea_model_tpot_seconds",
+  help: "Approximate end-to-end seconds per output token after first visible token when runtime usage is available.",
+  labelNames: ["model", "selection"] as const,
+  buckets: [0.001, 0.0025, 0.005, 0.01, 0.02, 0.04, 0.08, 0.15, 0.3, 0.6, 1, 2],
+  registers: [metricsRegistry],
+});
+
+const modelActive = new Gauge({
+  name: "ea_model_active_requests",
+  help: "Model-backed Agent requests currently in progress by selected model and selection mode.",
+  labelNames: ["model", "selection"] as const,
   registers: [metricsRegistry],
 });
 
@@ -780,6 +834,62 @@ export function beginChatRequest(runtime: ChatRuntime): {
       const labels = { runtime, outcome };
       chatRequests.inc(labels);
       chatDuration.observe(labels, Math.max(0, Date.now() - startedAt) / 1000);
+    },
+  };
+}
+
+function boundedModelLabel(value: string): string {
+  const normalized = String(value || "unknown").trim().toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return normalized || "unknown";
+}
+
+export function observeAutomaticModelSelection(model: string, reason: AutomaticModelRouteReason): void {
+  modelSelections.inc({ model: boundedModelLabel(model), reason });
+}
+
+export function observeAutomaticModelCircuit(model: string, open: boolean): void {
+  modelCircuitOpen.set({ model: boundedModelLabel(model) }, open ? 1 : 0);
+}
+
+export function beginModelRequest(model: string, selection: ModelSelectionMode): {
+  observeFirstToken: () => void;
+  observeUsage: (usage: Record<string, number>) => void;
+  finish: (outcome: ChatOutcome) => void;
+} {
+  const labels = { model: boundedModelLabel(model), selection };
+  const startedAt = Date.now();
+  let firstTokenAt = 0;
+  let outputTokens = 0;
+  let finished = false;
+  modelActive.inc(labels);
+  return {
+    observeFirstToken() {
+      if (firstTokenAt > 0 || finished) return;
+      firstTokenAt = Date.now();
+      modelFirstToken.observe(labels, Math.max(0, firstTokenAt - startedAt) / 1000);
+    },
+    observeUsage(usage) {
+      if (finished) return;
+      const value = Number(usage?.output ?? usage?.outputTokens ?? 0);
+      if (Number.isFinite(value) && value > outputTokens) outputTokens = value;
+    },
+    finish(outcome) {
+      if (finished) return;
+      finished = true;
+      const finishedAt = Date.now();
+      modelActive.dec(labels);
+      const outcomeLabels = { ...labels, outcome };
+      modelRequests.inc(outcomeLabels);
+      modelDuration.observe(outcomeLabels, Math.max(0, finishedAt - startedAt) / 1000);
+      if (firstTokenAt > 0 && outputTokens > 1) {
+        modelTimePerOutputToken.observe(
+          labels,
+          Math.max(0, finishedAt - firstTokenAt) / 1000 / (outputTokens - 1),
+        );
+      }
     },
   };
 }

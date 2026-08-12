@@ -47,6 +47,7 @@ import {
   listChatSkillAffinities,
   recordChatSkillSelection,
 } from "../db/chat-skill-session-state";
+import type { ModelRequestLease } from "./automatic-model-router";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -386,6 +387,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         return;
       }
       const trackedClientRunId = chatRun?.status === "started" ? chatRun.run.clientRunId : undefined;
+      let modelLease: ModelRequestLease | undefined;
       try {
       const instructionAttack = detectInstructionAttackSignals(userMessage);
       if (instructionAttack.detected) {
@@ -502,7 +504,6 @@ export function registerChatStreamRoutes(app: express.Express) {
       const {
         JIUWEN_AUTO_MODEL_ID,
         listSelectableJiuwenModels,
-        resolveAutomaticSelectableJiuwenModel,
       } = await import("./jiuwenswarm-model-admin");
       let selectableModels;
       try {
@@ -511,28 +512,28 @@ export function registerChatStreamRoutes(app: express.Express) {
         res.status(503).json({ error: "模型目录暂时不可用，请稍后重试" });
         return;
       }
-      let selectedModel = requestedModelId === JIUWEN_AUTO_MODEL_ID
-        ? resolveAutomaticSelectableJiuwenModel(selectableModels)
-        : requestedModelId
-          ? selectableModels.find((item) => item.id === requestedModelId)
-          : undefined;
-      if (requestedModelId && !selectedModel) {
+      let automaticModelSelection = requestedModelId === JIUWEN_AUTO_MODEL_ID;
+      let selectedModel = requestedModelId && !automaticModelSelection
+        ? selectableModels.find((item) => item.id === requestedModelId)
+        : undefined;
+      if (requestedModelId && !automaticModelSelection && !selectedModel) {
         observeCapabilityPreflight({ kind: "model", outcome: "blocked" });
         res.status(400).json({ error: "所选模型已不可用，请刷新模型列表后重试" });
         return;
       }
-      if (!selectedModel) {
+      if (!requestedModelId) {
         const { getClawProfileSettings } = await import("../db");
         const settings = await getClawProfileSettings(Number(adoption.id));
         const preferredModelId = String((settings as any)?.model || "").trim();
-        selectedModel = preferredModelId === JIUWEN_AUTO_MODEL_ID
-          ? resolveAutomaticSelectableJiuwenModel(selectableModels)
+        automaticModelSelection = !preferredModelId || preferredModelId === JIUWEN_AUTO_MODEL_ID;
+        selectedModel = automaticModelSelection
+          ? undefined
           : selectableModels.find((item) => item.id === preferredModelId);
-        selectedModel ||= resolveAutomaticSelectableJiuwenModel(selectableModels);
+        if (!selectedModel) automaticModelSelection = true;
       }
-      if (!selectedModel) {
+      if (!automaticModelSelection && !selectedModel) {
         observeCapabilityPreflight({ kind: "model", outcome: "blocked" });
-        res.status(503).json({ error: "尚未配置可用的 Agent 模型" });
+        res.status(400).json({ error: "所选模型已不可用，请刷新模型列表后重试" });
         return;
       }
       observeCapabilityPreflight({ kind: "model", outcome: "ready" });
@@ -678,6 +679,34 @@ export function registerChatStreamRoutes(app: express.Express) {
         }
       }
 
+      const { acquireAutomaticModel, beginManualModelRequest } = await import("./automatic-model-router");
+      modelLease = automaticModelSelection
+        ? acquireAutomaticModel({
+            models: selectableModels,
+            stickyKey: conversationId ? `${String(adoption.adoptId)}:${String(conversationId)}` : undefined,
+          }) || undefined
+        : selectedModel
+          ? beginManualModelRequest(selectedModel)
+          : undefined;
+      const activeModelLease = modelLease;
+      selectedModel = activeModelLease?.model;
+      if (!selectedModel || !activeModelLease) {
+        observeCapabilityPreflight({ kind: "model", outcome: "blocked" });
+        res.status(503).json({ error: "自动模型池暂时不可用，请稍后重试" });
+        return;
+      }
+      appendLogAsync("jiuwenclaw-exec.log", {
+        ts: new Date().toISOString(),
+        event: "model_route_selected",
+        adoptId: String(adoption.adoptId),
+        userId: Number(adoption.userId),
+        clientRunId,
+        requestedModel: requestedModelId || "profile_default",
+        selectedModel: selectedModel.runtimeModelId,
+        selectionMode: activeModelLease.selectionMode,
+        routeReason: activeModelLease.routeReason,
+      });
+
       if (selectedSkills?.ok) {
         appendLogAsync("jiuwenclaw-exec.log", {
           ts: new Date().toISOString(),
@@ -738,11 +767,19 @@ export function registerChatStreamRoutes(app: express.Express) {
           selectedSkills: selectedSkills?.ok ? selectedSkills.metadata : [],
           knowledgeSources,
           memoryUserMessage: restrictedMiniExperience ? undefined : userMessage,
-          onFirstToken: chatMetric.observeFirstToken,
-          onRuntimeOutcome: observePublicModelTraffic,
+          onFirstToken: () => {
+            chatMetric.observeFirstToken();
+            modelLease?.observeFirstToken();
+          },
+          onUsage: (usage) => modelLease?.observeUsage(usage),
+          onRuntimeOutcome: (outcome) => {
+            observePublicModelTraffic(outcome);
+            modelLease?.complete(outcome);
+          },
         },
       );
       } finally {
+        modelLease?.complete("cancelled");
         if (trackedClientRunId) {
           markChatRunComplete(chatLifecycleKey, trackedClientRunId, "http_done");
         }

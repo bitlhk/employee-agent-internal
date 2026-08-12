@@ -623,7 +623,9 @@ export const clawRouter = router({
           metadata: {
             previousModel: previousModel || null,
             model: input.modelId,
-            runtimeModel: jiuwenSelection.runtimeModelId || input.modelId,
+            runtimeModel: input.modelId === JIUWEN_AUTO_MODEL_ID
+              ? "automatic_pool"
+              : jiuwenSelection.runtimeModelId || input.modelId,
             applied: false,
             effectiveFrom: "next_request",
             runtimeManaged: true,

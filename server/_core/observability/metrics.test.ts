@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   beginChatRequest,
+  beginModelRequest,
   beginMcpCall,
   beginOperationalActivity,
   beginRuntimeCall,
@@ -56,6 +57,10 @@ describe("operational metrics", () => {
     chat.observeFirstToken();
     chat.observeFirstToken();
     chat.finish("success");
+    const model = beginModelRequest("DeepSeek V4 Flash", "automatic");
+    model.observeFirstToken();
+    model.observeUsage({ output: 10 });
+    model.finish("success");
     beginRuntimeCall("jiuwenswarm")("success");
     beginMcpCall("platform")("error");
     recordMcpStatusCacheRequest("hit");
@@ -68,6 +73,10 @@ describe("operational metrics", () => {
 
     const output = await metricsRegistry.metrics();
     expect(output).toContain('ea_chat_requests_total{runtime="jiuwenswarm",outcome="success"} 1');
+    expect(output).toContain('ea_model_requests_total{model="deepseek-v4-flash",selection="automatic",outcome="success"} 1');
+    expect(output).toContain('ea_model_active_requests{model="deepseek-v4-flash",selection="automatic"} 0');
+    expect(output).toContain("ea_model_ttft_seconds");
+    expect(output).toContain("ea_model_tpot_seconds");
     expect(output).toContain('ea_runtime_calls_total{runtime="jiuwenswarm",outcome="success"} 1');
     expect(output).toContain('ea_mcp_calls_total{kind="platform",outcome="error"} 1');
     expect(output).toContain('ea_mcp_status_cache_requests_total{outcome="hit"} 1');

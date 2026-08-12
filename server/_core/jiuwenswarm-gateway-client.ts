@@ -196,6 +196,7 @@ async function handleGatewayEvent(args: {
   workspaceDir: string;
   collectText?: (text: string) => void;
   collectFiles?: (files: JiuwenSessionArtifactFile[]) => void;
+  collectUsage?: (usage: Record<string, number>) => void;
   knowledgeCitationIndexes?: number[];
 }): Promise<"permission" | "done" | "continue"> {
   const { eventType, payload } = args;
@@ -217,8 +218,9 @@ async function handleGatewayEvent(args: {
 
   if (eventType === "chat.usage_summary" || eventType === "chat.usage_metadata" || eventType === "context.usage") {
     const usageSummary = normalizeJiuwenUsageSummary(payload);
-    if (usageSummary && args.res) {
-      writeSseData(args.res, {
+    if (usageSummary) {
+      args.collectUsage?.(usageSummary.usage);
+      if (args.res) writeSseData(args.res, {
         __perf: {
           usage: usageSummary.usage,
           ...(usageSummary.model ? { model: usageSummary.model } : {}),
@@ -406,6 +408,8 @@ export async function forwardToJiuwenGateway(
       opts.onRuntimeOutcome?.(
         reason === "done" || reason === "permission-required"
           ? "success"
+          : reason === "timeout"
+            ? "timeout"
           : reason === "client-closed"
             ? "cancelled"
             : "error",
@@ -540,6 +544,7 @@ export async function forwardToJiuwenGateway(
             emittedFilePaths.add(file.path);
           }
         },
+        collectUsage: opts.onUsage,
         knowledgeCitationIndexes,
       });
       if (action === "permission") {

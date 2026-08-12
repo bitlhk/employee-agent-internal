@@ -70,9 +70,9 @@ export type JiuwenForwardOptions = {
   knowledgeSources?: Array<Record<string, unknown>>;
   memoryUserMessage?: string;
   onFirstToken?: () => void;
-  onRuntimeOutcome?: (outcome: "success" | "error" | "cancelled") => void;
+  onRuntimeOutcome?: (outcome: "success" | "error" | "timeout" | "cancelled") => void;
+  onUsage?: (usage: Record<string, number>) => void;
 };
-
 export type JiuwenSelectedSkillMetadata = {
   id: string;
   name?: string;
@@ -82,7 +82,6 @@ export type JiuwenSelectedSkillMetadata = {
   sourceKind?: string;
   version?: string;
 };
-
 export type JiuwenRunDescriptor = {
   runId: string;
   requestId: string;
@@ -1165,7 +1164,7 @@ export async function forwardToJiuwenClaw(
     const fail = (error: string, reasonCode?: string) => {
       const durationMs = Date.now() - overallStartedAt;
       logEnd("chat_stream_failed", { error: error.slice(0, 1000) });
-      opts.onRuntimeOutcome?.("error");
+      opts.onRuntimeOutcome?.(reasonCode === "runtime_timeout" ? "timeout" : "error");
       writeData({
         __stream_error: true,
         error,
@@ -1350,6 +1349,7 @@ export async function forwardToJiuwenClaw(
           if (eventType === "chat.usage_summary") {
             const usageSummary = normalizeJiuwenUsageSummary(body?.delta);
             if (usageSummary) {
+              opts.onUsage?.(usageSummary.usage);
               writeData({
                 __perf: {
                   usage: usageSummary.usage,
