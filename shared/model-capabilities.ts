@@ -7,7 +7,9 @@ export type ModelCapabilities = {
   source: "runtime" | "inferred";
 };
 
-export type ModelCapabilityRequirements = Partial<Pick<ModelCapabilities, "tools" | "vision" | "parallelTools" | "streaming">>;
+export type ModelCapabilityRequirements = Partial<
+  Pick<ModelCapabilities, "tools" | "vision" | "parallelTools" | "streaming">
+>;
 
 type ModelCapabilityInput = {
   id?: string | null;
@@ -17,30 +19,44 @@ type ModelCapabilityInput = {
   contextWindowTokens?: number | null;
 };
 
-const NON_CHAT_MODEL_RE = /(?:embedding|embed|rerank|re-rank|tts|speech|audio|image[-_ ]?(?:gen|generation)|text-to-image)/i;
-const VISION_MODEL_RE = /(?:qwen[^\s/]*[-_ ]?(?:vl|vision)|qvq|gpt-(?:4(?:o|\.1)?|5)|o[134](?:\b|-)|claude-(?:3|4)|gemini|glm-(?:4v|4\.\d+v)|vision|multimodal)/i;
-const PARALLEL_TOOL_MODEL_RE = /(?:openpangu|pangu|glm|deepseek|qwen|gpt|o[134](?:\b|-)|claude|gemini)/i;
+const NON_CHAT_MODEL_RE =
+  /(?:embedding|embed|rerank|re-rank|tts|speech|audio|image[-_ ]?(?:gen|generation)|text-to-image)/i;
+const VISION_MODEL_RE =
+  /(?:qwen[^\s/]*[-_ ]?(?:vl|vision)|qvq|gpt-(?:4(?:o|\.1)?|5)|o[134](?:\b|-)|claude-(?:3|4)|gemini|glm-(?:4v|4\.\d+v)|vision|multimodal)/i;
+const PARALLEL_TOOL_MODEL_RE =
+  /(?:openpangu|pangu|glm|deepseek|qwen|gpt|o[134](?:\b|-)|claude|gemini)/i;
 
 function modelFingerprint(input: ModelCapabilityInput): string {
   return [input.id, input.modelName, input.alias, input.provider]
-    .map((value) => String(value || "").trim())
+    .map(value => String(value || "").trim())
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
 }
 
 function inferredContextWindow(fingerprint: string): number {
-  if (/gemini/.test(fingerprint)) return 1_000_000;
+  if (/(?:gemini|minimax[ -]?m3)/.test(fingerprint)) return 1_000_000;
   if (/gpt-5/.test(fingerprint)) return 400_000;
   if (/claude/.test(fingerprint)) return 200_000;
-  if (/(?:openpangu|pangu|glm|deepseek|qwen|gpt-4|o[134](?:\b|-))/.test(fingerprint)) return 128_000;
+  if (
+    /(?:openpangu|pangu|glm|deepseek|qwen|gpt-4|o[134](?:\b|-))/.test(
+      fingerprint
+    )
+  )
+    return 128_000;
   return 0;
 }
 
-export function inferModelCapabilities(input: ModelCapabilityInput): ModelCapabilities {
+export function inferModelCapabilities(
+  input: ModelCapabilityInput
+): ModelCapabilities {
   const fingerprint = modelFingerprint(input);
-  const runtimeContext = Math.max(0, Number(input.contextWindowTokens || 0) || 0);
-  const chatModel = Boolean(fingerprint) && !NON_CHAT_MODEL_RE.test(fingerprint);
+  const runtimeContext = Math.max(
+    0,
+    Number(input.contextWindowTokens || 0) || 0
+  );
+  const chatModel =
+    Boolean(fingerprint) && !NON_CHAT_MODEL_RE.test(fingerprint);
   return {
     tools: chatModel,
     vision: chatModel && VISION_MODEL_RE.test(fingerprint),
@@ -53,13 +69,17 @@ export function inferModelCapabilities(input: ModelCapabilityInput): ModelCapabi
 
 export function modelMeetsCapabilities(
   capabilities: ModelCapabilities,
-  requirements: ModelCapabilityRequirements = {},
+  requirements: ModelCapabilityRequirements = {}
 ): boolean {
-  return Object.entries(requirements).every(([key, required]) => (
-    required !== true || capabilities[key as keyof ModelCapabilityRequirements] === true
-  ));
+  return Object.entries(requirements).every(
+    ([key, required]) =>
+      required !== true ||
+      capabilities[key as keyof ModelCapabilityRequirements] === true
+  );
 }
 
 export function isImageAttachmentName(value: string): boolean {
-  return /\.(?:png|jpe?g|webp|gif|bmp|tiff?)$/i.test(String(value || "").trim());
+  return /\.(?:png|jpe?g|webp|gif|bmp|tiff?)$/i.test(
+    String(value || "").trim()
+  );
 }

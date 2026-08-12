@@ -60,6 +60,24 @@ package solely to identify the configured model provider:
 DeepSeek and its associated mark remain the property of their respective
 owner. This nominative use does not imply sponsorship or endorsement.
 
+The Doubao, MiniMax, and Hunyuan provider icons are distributed from the Lobe
+Icons static SVG package solely to identify the configured model providers:
+
+- Distributed assets: `client/public/images/model-providers/doubao.svg`,
+  `client/public/images/model-providers/minimax.svg`, and
+  `client/public/images/model-providers/hunyuan.svg`
+- Upstream sources: `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/doubao-color.svg`,
+  `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/minimax-color.svg`,
+  and `https://unpkg.com/@lobehub/icons-static-svg@1.94.0/icons/hunyuan-color.svg`
+- Upstream project: `https://github.com/lobehub/lobe-icons`
+- Retrieved: 2026-08-12
+- License: MIT; the license text is distributed at
+  `client/public/licenses/Lobe-Icons-MIT.txt`
+
+Doubao, MiniMax, Hunyuan, and their associated marks remain the property of
+their respective owners. This nominative use does not imply sponsorship or
+endorsement.
+
 The NVIDIA provider icon is distributed from the Lobe Icons static SVG
 package solely to identify the configured NVIDIA Nemotron model provider:
 

@@ -22,6 +22,9 @@ export type ModelBrand =
   | "glm"
   | "pangu"
   | "deepseek"
+  | "doubao"
+  | "minimax"
+  | "hunyuan"
   | "gemma"
   | "nvidia"
   | "poolside"
@@ -39,8 +42,11 @@ export type ModelPresentation = {
 
 const BRAND_ICON_SRC: Partial<Record<ModelBrand, string>> = {
   deepseek: "/images/model-providers/deepseek.svg",
+  doubao: "/images/model-providers/doubao.svg",
   gemma: "/images/model-providers/gemma.svg",
   glm: "/images/model-providers/glm.png",
+  hunyuan: "/images/model-providers/hunyuan.svg",
+  minimax: "/images/model-providers/minimax.svg",
   nvidia: "/images/model-providers/nvidia.svg",
   openai: "/images/model-providers/openai.svg",
   pangu: "/images/model-providers/pangu.png",
@@ -66,7 +72,9 @@ function formatKnownModelName(token: string, brand: ModelBrand) {
   }
 
   if (brand === "pangu") {
-    const name = normalized.replace(/^openpangu-?/i, "").replace(/^pangu-?/i, "");
+    const name = normalized
+      .replace(/^openpangu-?/i, "")
+      .replace(/^pangu-?/i, "");
     return name ? `openPangu-${name}` : "openPangu";
   }
 
@@ -82,6 +90,26 @@ function formatKnownModelName(token: string, brand: ModelBrand) {
       )
       .join("-");
     return name ? `DeepSeek-${name}` : "DeepSeek";
+  }
+
+  if (brand === "doubao") {
+    const name = normalized.replace(/^doubao(?:[-\s]+)?/i, "").trim();
+    return name
+      ? `Doubao ${name
+          .split("-")
+          .filter(Boolean)
+          .map(part => part[0].toUpperCase() + part.slice(1))
+          .join(" ")}`
+      : "Doubao";
+  }
+
+  if (brand === "minimax") {
+    const name = normalized.replace(/^minimax(?:[-\s]+)?/i, "").trim();
+    return name ? `MiniMax ${name.toUpperCase()}` : "MiniMax";
+  }
+
+  if (brand === "hunyuan") {
+    return /^hy3$/i.test(normalized) ? "HY3" : "Hunyuan";
   }
 
   if (brand === "nvidia") {
@@ -136,6 +164,13 @@ function identifyBrand(token: string): ModelBrand {
   if (normalized.includes("openpangu") || normalized.includes("pangu"))
     return "pangu";
   if (normalized.includes("deepseek")) return "deepseek";
+  if (normalized.includes("doubao")) return "doubao";
+  if (normalized.includes("minimax")) return "minimax";
+  if (
+    normalized.includes("hunyuan") ||
+    /(?:^|[-_/\s])hy3(?:$|[-_/\s])/.test(normalized)
+  )
+    return "hunyuan";
   if (normalized.includes("gemma")) return "gemma";
   if (normalized.includes("nvidia") || normalized.includes("nemotron"))
     return "nvidia";

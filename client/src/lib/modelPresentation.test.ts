@@ -26,6 +26,24 @@ describe("presentModel", () => {
     });
   });
 
+  it("presents the additional Volcengine models with distinct provider icons", () => {
+    expect(presentModel({ id: "Doubao Seed 2.1 Pro" })).toMatchObject({
+      displayName: "Doubao Seed 2.1 Pro",
+      brand: "doubao",
+      iconSrc: "/images/model-providers/doubao.svg",
+    });
+    expect(presentModel({ id: "MiniMax M3" })).toMatchObject({
+      displayName: "MiniMax M3",
+      brand: "minimax",
+      iconSrc: "/images/model-providers/minimax.svg",
+    });
+    expect(presentModel({ id: "HY3" })).toMatchObject({
+      displayName: "HY3",
+      brand: "hunyuan",
+      iconSrc: "/images/model-providers/hunyuan.svg",
+    });
+  });
+
   it("presents Nemotron Nano with the NVIDIA provider icon", () => {
     expect(
       presentModel({
@@ -48,21 +66,33 @@ describe("presentModel", () => {
 
   it("uses distinct provider icons for OpenRouter models", () => {
     expect(
-      presentModel({ id: "Gemma 4 26B", name: "Gemma 4 26B", provider: "OpenRouter" })
+      presentModel({
+        id: "Gemma 4 26B",
+        name: "Gemma 4 26B",
+        provider: "OpenRouter",
+      })
     ).toMatchObject({
       displayName: "Gemma 4 26B",
       brand: "gemma",
       iconSrc: "/images/model-providers/gemma.svg",
     });
     expect(
-      presentModel({ id: "Laguna S 2.1", name: "Laguna S 2.1", provider: "OpenRouter" })
+      presentModel({
+        id: "Laguna S 2.1",
+        name: "Laguna S 2.1",
+        provider: "OpenRouter",
+      })
     ).toMatchObject({
       displayName: "Laguna S 2.1",
       brand: "poolside",
       iconSrc: "/images/model-providers/poolside.svg",
     });
     expect(
-      presentModel({ id: "GPT-5.6 Luna", name: "GPT-5.6 Luna", provider: "OpenRouter" })
+      presentModel({
+        id: "GPT-5.6 Luna",
+        name: "GPT-5.6 Luna",
+        provider: "OpenRouter",
+      })
     ).toMatchObject({
       displayName: "GPT-5.6 Luna",
       brand: "openai",

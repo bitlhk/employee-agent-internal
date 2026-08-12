@@ -47,6 +47,7 @@
     "mcp:identity:init": "node scripts/generate-enterprise-mcp-keypair.mjs",
     "mcp:markers:configure": "tsx scripts/configure-insurance-marker-mcps.ts",
     "mcp:demo:configure": "tsx scripts/configure-governance-demo-mcp.ts",
+    "models:catalog:volc": "tsx scripts/configure-volc-model-catalog.ts",
     "rolepack:wealth:install": "tsx scripts/install-wealth-manager-reference-pack.ts",
     "rolepack:insurance:install": "tsx scripts/install-insurance-advisor-reference-pack.ts",
     "audit:drain-dlq": "tsx scripts/drain-audit-dlq.ts",
