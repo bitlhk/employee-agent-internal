@@ -211,7 +211,7 @@ describe("EA Mini Program experience route", () => {
     expect(body).toMatchObject({
       adoptId: "lgj-existing1234",
       experienceMode: "mini_owner",
-      model: "modelarts-maas/glm-5.2",
+      model: "__auto",
     });
     expect(body).not.toHaveProperty("selectedSkillIds");
   });
@@ -413,7 +413,7 @@ describe("EA Mini Program experience route", () => {
       .calls[0]?.[1] as RequestInit;
     expect(JSON.parse(String(upstreamRequest.body))).toMatchObject({
       experienceMode: "mini_trial",
-      model: "modelarts-maas/glm-5.2",
+      model: "__auto",
       selectedSkillIds: [],
       knowledgeBaseIds: [],
     });

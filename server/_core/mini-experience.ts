@@ -94,7 +94,7 @@ function experienceToken(): string {
 }
 
 function miniExperienceModelId(): string {
-  return String(process.env.MINIPROGRAM_EXPERIENCE_MODEL_ID || "modelarts-maas/glm-5.2").trim();
+  return String(process.env.MINIPROGRAM_EXPERIENCE_MODEL_ID || "__auto").trim();
 }
 
 function isExperienceRequestAuthorized(req: Request): boolean {
