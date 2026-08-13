@@ -34,7 +34,7 @@ const PRIMARY_SKILL = {
 } as const;
 const DEFAULT_SKILLS = [PRIMARY_SKILL.id, "insurance-telesales-recommend", "goldencoach-stage-evaluation"];
 const OPTIONAL_SKILLS = ["insurance-advisor-pro"];
-const DEFAULT_MCP_SERVERS = ["insurance_customer_profile", "insurance_product_exam_points"];
+const DEFAULT_MCP_SERVERS = ["insurance_customer_profile", "insurance_product_exam_points", "wealth_governance_demo"];
 
 type InstallOptions = { apply: boolean; adoptIds: string[] };
 type Baseline = {

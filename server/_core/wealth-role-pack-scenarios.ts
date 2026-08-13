@@ -476,6 +476,7 @@ export async function runWealthRolePackControlledScenarios(root = process.cwd())
     executionLevel: "controlled_scenario" as const,
     scenarioExecution: true,
     rolePackId: contract.rolePackId,
+    roleTemplate: "wealth-manager",
     releaseCandidateId: contract.releaseCandidateId,
     assetSetFingerprint: contract.assetSetFingerprint,
     evalSuiteVersion: WEALTH_EVAL_SUITE_VERSION,

@@ -25,19 +25,19 @@ const receipt: ContextReceiptV1 = {
 
 describe("context receipt history parser", () => {
   it("restores a receipt from trusted platform metadata", () => {
-    const result = JSON.stringify({ content: [{ type: "text", text: "ready" }], _meta: { eaContextReceipt: receipt } });
+    const result = JSON.stringify({ content: [{ type: "text", text: "ready" }], _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt } });
     expect(latestContextReceipt([{ name: "get_wealth_policy_basis", result }])).toEqual(receipt);
   });
 
   it("keeps interaction grants separate from the immutable receipt", () => {
     const grant = { schema: "ea.context-interaction-grant.v1", receiptId: "crpt_test", token: "signed-token", expiresAt: "2026-09-13T08:00:00.000Z" };
-    const result = JSON.stringify({ content: [], _meta: { eaContextReceipt: receipt, eaInteractionGrant: grant } });
+    const result = JSON.stringify({ content: [], _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt, eaInteractionGrant: grant } });
     expect(extractContextInteractionGrants([{ name: "get_wealth_policy_basis", result }]).get("crpt_test")).toEqual(grant);
     expect(JSON.stringify(receipt)).not.toContain("signed-token");
   });
 
   it("restores a receipt from enterprise MCP _meta", () => {
-    const result = JSON.stringify({ content: [{ type: "text", text: "ok" }], _meta: { eaContextReceipt: receipt } });
+    const result = JSON.stringify({ content: [{ type: "text", text: "ok" }], _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt } });
     expect(latestContextReceipt([{ name: "enterprise_abcd_demo_create_followup_task_1234", result }])?.receiptId).toBe("crpt_test");
   });
 

@@ -3,6 +3,7 @@ type AssistantHistoryMessage = {
   text?: string;
   toolCalls?: unknown[];
   knowledgeSources?: unknown[];
+  receiptBundle?: unknown;
 };
 
 function hasItems(value: unknown): value is unknown[] {
@@ -16,7 +17,7 @@ export function mergeCachedAssistantMetadata<T extends AssistantHistoryMessage>(
 ): T[] {
   const cachedAssistants = cachedMessages
     .filter((message) => message.role === "assistant" && (
-      hasItems(message.toolCalls) || hasItems(message.knowledgeSources)
+      hasItems(message.toolCalls) || hasItems(message.knowledgeSources) || Boolean(message.receiptBundle)
     ))
     .reverse();
   if (!cachedAssistants.length) return historyMessages;
@@ -36,11 +37,13 @@ export function mergeCachedAssistantMetadata<T extends AssistantHistoryMessage>(
     const cached = cachedAssistants[matchIndex];
     const mergeTools = !hasItems(message.toolCalls) && hasItems(cached.toolCalls);
     const mergeSources = !hasItems(message.knowledgeSources) && hasItems(cached.knowledgeSources);
-    if (!mergeTools && !mergeSources) continue;
+    const mergeReceiptBundle = !message.receiptBundle && Boolean(cached.receiptBundle);
+    if (!mergeTools && !mergeSources && !mergeReceiptBundle) continue;
     next[messageIndex] = {
       ...message,
       ...(mergeTools ? { toolCalls: cached.toolCalls } : {}),
       ...(mergeSources ? { knowledgeSources: cached.knowledgeSources } : {}),
+      ...(mergeReceiptBundle ? { receiptBundle: cached.receiptBundle } : {}),
     };
   }
   return next;

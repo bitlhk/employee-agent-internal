@@ -167,6 +167,12 @@ export async function handleWealthPrevisitTool(input: {
     });
     const contextReceipt = buildContextReceiptFromEnvelope({
       envelope: executionEnvelope,
+      taskLabel: "客户访前准备",
+      outcomeLabels: {
+        customer_specific_previsit_brief: "客户访前简报",
+        generic_previsit_checklist: "通用访前检查清单",
+        verified_customer_facts_summary: "已核实客户事实摘要",
+      },
       knowledgeLabels: result.knowledgeBasis.selected ? [{
         assetId: result.knowledgeBasis.selected.sourceAssetId,
         label: `财富客户访前准备作业依据 ${result.knowledgeBasis.selected.versionLabel}`.trim(),

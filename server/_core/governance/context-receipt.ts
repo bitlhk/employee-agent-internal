@@ -23,35 +23,6 @@ type ReceiptMemoryRef = {
   usageType?: ContextReceiptV1["provided"]["memory"][number]["usageType"];
 };
 
-const TASK_LABELS: Record<string, string> = {
-  "WM-GT-01": "客户访前准备",
-  "WM-GT-02": "资产配置建议",
-  "WM-GT-03": "现行政策判断",
-  "WM-GT-04": "风险错配拦截",
-  "WM-GT-05": "客户跟进创建",
-  "WM-GT-06": "产品到期经营",
-};
-
-const OUTCOME_LABELS: Record<string, string> = {
-  customer_specific_previsit_brief: "客户访前简报",
-  generic_previsit_checklist: "通用访前检查清单",
-  verified_customer_facts_summary: "已核实客户事实摘要",
-  governed_asset_allocation_candidates: "受治理的资产配置候选",
-  verified_customer_analysis: "已核实客户分析",
-  allocation_constraints: "资产配置约束",
-  product_screening_criteria: "产品筛选条件",
-  current_enterprise_policy_conclusion: "现行企业政策结论",
-  knowledge_admin_remediation: "知识管理员修复建议",
-  formal_product_recommendation: "正式产品推荐",
-  risk_reassessment_next_step: "风险测评更新指引",
-  confirmed_business_followup_write: "创建客户跟进任务",
-  followup_draft: "客户跟进草稿",
-  confirmation_request: "操作确认请求",
-  maturity_customer_followup_plan: "到期客户跟进计划",
-  generic_maturity_checklist: "通用到期检查清单",
-  partial_verified_maturity_list: "部分已核实到期清单",
-};
-
 export type ContextReceiptAppliedPolicy = ContextReceiptV1["applied"]["policyDecisions"][number];
 export type ContextReceiptCapabilityExecution = Omit<
   ContextReceiptV1["applied"]["capabilityExecutions"][number],
@@ -77,8 +48,11 @@ function freeze<T>(value: T): T {
   return value;
 }
 
-function compactReadiness(readiness: TaskReadinessDecision): ContextReceiptV1["readiness"] {
-  const labels = (values: string[]) => values.map((value) => OUTCOME_LABELS[value] || value);
+function compactReadiness(
+  readiness: TaskReadinessDecision,
+  outcomeLabels: Record<string, string>,
+): ContextReceiptV1["readiness"] {
+  const labels = (values: string[]) => values.map((value) => outcomeLabels[value] || value);
   return {
     status: readiness.status,
     requestedOutcome: readiness.requestedOutcome,
@@ -99,8 +73,8 @@ function normalizeReadiness(readiness: ContextReceiptReadinessInput): ContextRec
   return {
     ...readiness,
     presentation: readiness.presentation || {
-      completed: readiness.allowedOutcomes.map((value) => OUTCOME_LABELS[value] || value),
-      unavailable: readiness.deniedOutcomes.map((value) => OUTCOME_LABELS[value] || value),
+      completed: readiness.allowedOutcomes,
+      unavailable: readiness.deniedOutcomes,
       nextSteps: readiness.remediation,
     },
   };
@@ -131,7 +105,7 @@ export function buildContextReceipt(input: {
     schema: CONTEXT_RECEIPT_SCHEMA,
     receiptId,
     taskId: String(input.taskId || "").trim(),
-    taskLabel: String(input.taskLabel || TASK_LABELS[input.taskId] || input.taskId || "岗位任务").trim(),
+    taskLabel: String(input.taskLabel || input.taskId || "岗位任务").trim(),
     ...(input.envelopeId ? { envelopeId: input.envelopeId } : {}),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
     principalFingerprint: String(input.principalFingerprint || "").trim(),
@@ -157,6 +131,8 @@ export function buildContextReceipt(input: {
 
 export function buildContextReceiptFromEnvelope(input: {
   envelope: Readonly<TaskExecutionEnvelope>;
+  taskLabel: string;
+  outcomeLabels?: Record<string, string>;
   knowledgeLabels?: ReceiptKnowledgeLabel[];
   businessDataLabels?: ReceiptBusinessDataLabel[];
   memoryRefs?: ReceiptMemoryRef[];
@@ -172,6 +148,7 @@ export function buildContextReceiptFromEnvelope(input: {
     || input.envelope.context.memory.memoryRefs.map((memoryId) => ({ memoryId }));
   return buildContextReceipt({
     taskId: input.envelope.readiness.taskId,
+    taskLabel: input.taskLabel,
     envelopeId: input.envelope.envelopeId,
     correlationId: input.envelope.correlationId,
     principalFingerprint: input.envelope.context.principalFingerprint,
@@ -206,7 +183,7 @@ export function buildContextReceiptFromEnvelope(input: {
     policyDecisions: input.policyDecisions,
     capabilityExecutions: input.capabilityExecutions,
     excluded: input.excluded,
-    readiness: compactReadiness(input.envelope.readiness),
+    readiness: compactReadiness(input.envelope.readiness, input.outcomeLabels || {}),
     now: input.now,
   });
 }

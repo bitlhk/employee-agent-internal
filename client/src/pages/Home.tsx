@@ -78,6 +78,7 @@ import {
   type ExpertAgentsResponse,
 } from "@/lib/expert-agents";
 import { mergeCachedAssistantMetadata } from "@/lib/chat-history-metadata";
+import { isTaskReceiptBundleV1, type TaskReceiptBundleV1 } from "@shared/context-evidence";
 import {
   arrayBufferToBase64,
   buildExpertHandoff,
@@ -216,6 +217,7 @@ type LxMsg = {
   agentTaskIds?: string[];
   attachments?: ChatMessageAttachment[];
   knowledgeSources?: ChatKnowledgeSource[];
+  receiptBundle?: TaskReceiptBundleV1;
   toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   processingDurationMs?: number;
@@ -3205,6 +3207,16 @@ export default function Home() {
       )));
     };
 
+    const attachResponseEvidence = (value: unknown) => {
+      const candidate = value && typeof value === "object" && !Array.isArray(value)
+        ? (value as { receiptBundle?: unknown }).receiptBundle
+        : null;
+      if (!isTaskReceiptBundleV1(candidate)) return;
+      setLingxiaMsgs((previous) => previous.map((item) => (
+        item.id === assistantMessageId ? { ...item, receiptBundle: candidate } : item
+      )));
+    };
+
     let wsOk = false;
     let runtimeSessionKey = "";
     try {
@@ -3248,6 +3260,11 @@ export default function Home() {
 
               if (chunk.__knowledge_sources) {
                 attachKnowledgeSources(chunk.__knowledge_sources);
+                return;
+              }
+
+              if (chunk.__context_response_evidence) {
+                attachResponseEvidence(chunk.__context_response_evidence);
                 return;
               }
 
@@ -3641,6 +3658,10 @@ export default function Home() {
             }
             if (chunk.__knowledge_sources) {
               attachKnowledgeSources(chunk.__knowledge_sources);
+              continue;
+            }
+            if (chunk.__context_response_evidence) {
+              attachResponseEvidence(chunk.__context_response_evidence);
               continue;
             }
             if (typeof chunk.__final_text === "string") {
@@ -4713,6 +4734,7 @@ export default function Home() {
                       adoptId: file.adoptId || resolvedAdoptId,
                     }))}
                     knowledgeSources={m.role === "assistant" ? m.knowledgeSources : undefined}
+                    receiptBundle={m.role === "assistant" ? m.receiptBundle : undefined}
                     toolCalls={m.role === "assistant" ? (m.toolCalls ?? (isLast && lingxiaStreaming ? lingxiaToolCalls : [])) : undefined}
                     messageEvents={m.role === "assistant" ? (m as LxMsg).messageEvents : undefined}
                     processingDurationMs={m.role === "assistant" ? m.processingDurationMs : undefined}

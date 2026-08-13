@@ -56,7 +56,7 @@ export function governanceDemoMcpTools() {
   return [
     {
       name: "demo_get_business_record",
-      description: "【Demo】查询由财富业务演示 MCP 创建的演示记录；不读取真实 CRM。",
+      description: "【Demo】查询由岗位业务演示 MCP 创建的隔离演示记录；不读取真实业务系统。",
       inputSchema: {
         type: "object",
         properties: { record_id: { type: "string", description: "DEMO 开头的演示记录编号" } },
@@ -170,7 +170,9 @@ async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdent
   const tokenTool = String(claims.tool_name || "");
   if (toolName && tokenTool !== toolName && tokenTool !== "tools/list") throw new Error("身份令牌工具范围不匹配");
   const roleKey = String(claims.role || "");
-  if (roleKey !== "wealth-manager" && roleKey !== "platform-admin") throw new Error("当前岗位无权访问该 Demo MCP");
+  if (!["wealth-manager", "insurance-advisor", "platform-admin"].includes(roleKey)) {
+    throw new Error("当前岗位无权访问该 Demo MCP");
+  }
   const scopes = new Set(Array.isArray(claims.scp)
     ? claims.scp.map(String)
     : String(claims.scope || "").split(/\s+/).filter(Boolean));
@@ -334,7 +336,7 @@ function sendError(res: Response, id: unknown, error: unknown): void {
 export function registerGovernanceDemoMcpRoutes(app: Express): void {
   app.get(`${GOVERNANCE_DEMO_MCP_PATH}/health`, (_req, res) => {
     if (!demoEnabled()) return res.status(404).json({ status: "disabled" });
-    res.json({ status: "ok", name: "财富业务演示 MCP（Demo）", version: SERVICE_VERSION, demo: true });
+    res.json({ status: "ok", name: "岗位业务演示 MCP（Demo）", version: SERVICE_VERSION, demo: true });
   });
   app.post(GOVERNANCE_DEMO_MCP_PATH, async (req, res) => {
     if (!demoEnabled()) return res.status(404).json(rpcError(req.body?.id, -32004, "Demo MCP is disabled"));

@@ -9,12 +9,6 @@ import {
 import { recordAuditRequired } from "../audit-events";
 import { governanceFingerprint } from "./contracts";
 
-const TRUSTED_PLATFORM_TOOLS = new Set([
-  "prepare_wealth_previsit_context",
-  "prepare_wealth_allocation_context",
-  "get_wealth_policy_basis",
-]);
-
 function contextReceiptMetadata(value: unknown, depth = 0): { receipt: ContextReceiptV1; issuedByEa: boolean } | null {
   if (!value || typeof value !== "object" || depth > 5) return null;
   if (Array.isArray(value)) {
@@ -41,8 +35,8 @@ function contextReceiptMetadata(value: unknown, depth = 0): { receipt: ContextRe
 export function extractTrustedContextReceipt(toolName: string, resultPayload: unknown): ContextReceiptV1 | null {
   const metadata = contextReceiptMetadata(resultPayload);
   if (!metadata) return null;
-  const trusted = metadata.issuedByEa || TRUSTED_PLATFORM_TOOLS.has(toolName) || toolName.startsWith("enterprise_");
-  return trusted ? metadata.receipt : null;
+  void toolName;
+  return metadata.issuedByEa ? metadata.receipt : null;
 }
 
 function buildTaskReceiptBundle(input: {

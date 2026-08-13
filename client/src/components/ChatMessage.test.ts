@@ -61,7 +61,7 @@ describe("ChatMessage tool timeline", () => {
         id: "call-context",
         name: "prepare_wealth_allocation_context",
         arguments: "{}",
-        result: JSON.stringify({ content: [{ type: "text", text: "EA_WEALTH_ALLOCATION_CONTEXT:{}" }], _meta: { eaContextReceipt: contextReceipt } }),
+        result: JSON.stringify({ content: [{ type: "text", text: "EA_WEALTH_ALLOCATION_CONTEXT:{}" }], _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: contextReceipt } }),
         status: "done",
         ts: Date.now(),
       }],

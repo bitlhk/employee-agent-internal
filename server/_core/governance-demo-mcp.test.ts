@@ -99,7 +99,7 @@ describe("governance Demo MCP", () => {
     const response = await fetch(`${baseUrl}${GOVERNANCE_DEMO_MCP_PATH}/health`);
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({
-      name: "财富业务演示 MCP（Demo）",
+      name: "岗位业务演示 MCP（Demo）",
       demo: true,
     }));
   });
@@ -192,6 +192,33 @@ describe("governance Demo MCP", () => {
       externalRequestId: "DEMO-FOLLOWUP-123",
     }));
     expect(JSON.stringify(payload)).toContain("客户跟进任务已创建");
+  });
+
+  it("lets the insurance advisor use only the shared governed follow-up path", async () => {
+    mocks.claims.role = "insurance-advisor";
+    mocks.claims.tool_name = "demo_create_followup_task";
+    mocks.claims.scp = ["demo.followup.write"];
+    mocks.createRecord.mockResolvedValue({
+      created: true,
+      record: { recordId: "DEMO-INSURANCE-FOLLOWUP-1", customerRef: "李女士（Demo）", status: "demo_followup" },
+    });
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_followup_task",
+      arguments: {
+        customer_ref: "李女士（Demo）",
+        objective: "确认续保需求并补充车辆使用情况",
+        due_at: "2026-08-21T09:00:00+08:00",
+        priority: "high",
+        idempotency_key: "demo-insurance-followup-001",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.createRecord).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "demo_create_followup_task",
+      roleKey: "insurance-advisor",
+      idempotencyKey: "demo-insurance-followup-001",
+    }));
+    expect(payload.result._meta.externalRequestId).toBe("DEMO-INSURANCE-FOLLOWUP-1");
   });
 
   it("rejects a customer reference that could be mistaken for real CRM data", async () => {

@@ -17,6 +17,7 @@ import {
 } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import { extractContextInteractionGrants, extractContextReceipts } from "@/lib/context-receipt";
+import type { TaskReceiptBundleV1 } from "@shared/context-evidence";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
   MESSAGE_FEEDBACK_REASON_LABELS,
@@ -236,6 +237,7 @@ type ChatMessageProps = {
   timeLabel: string;
   attachments?: ChatMessageAttachment[];
   knowledgeSources?: ChatKnowledgeSource[];
+  receiptBundle?: TaskReceiptBundleV1;
   toolCalls?: ToolCallEntry[];
   messageEvents?: MessageEventEntry[];
   processingDurationMs?: number;
@@ -776,6 +778,7 @@ function ChatMessageInner({
   timeLabel,
   attachments,
   knowledgeSources,
+  receiptBundle,
   toolCalls,
   messageEvents,
   processingDurationMs,
@@ -808,10 +811,16 @@ function ChatMessageInner({
     }
     return null;
   }, [effectiveToolCalls]);
-  const contextReceipts = useMemo(
-    () => extractContextReceipts(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
-    [effectiveToolCalls],
-  );
+  const contextReceipts = useMemo(() => {
+    const receipts = extractContextReceipts(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result })));
+    if (!receiptBundle) return receipts;
+    const byId = new Map(receipts.map((receipt) => [receipt.receiptId, receipt]));
+    return receiptBundle.stages
+      .slice()
+      .sort((left, right) => left.sequence - right.sequence)
+      .map((stage) => byId.get(stage.receiptId))
+      .filter((receipt): receipt is NonNullable<typeof receipt> => Boolean(receipt));
+  }, [effectiveToolCalls, receiptBundle]);
   const contextInteractionGrants = useMemo(
     () => extractContextInteractionGrants(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
     [effectiveToolCalls],

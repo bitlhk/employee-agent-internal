@@ -47,7 +47,10 @@ describe("insurance advisor reference role pack", () => {
       };
       expect(suite.taskId).toBe(taskId);
       expect(suite.roleTemplate).toBe("insurance-advisor");
-      expect(new Set(suite.cases.map((item) => item.path))).toEqual(new Set(["NORMAL", "DENY", "DEGRADED", "SOURCE"]));
+      const expectedPaths = index === 1
+        ? new Set(["NORMAL", "DENY", "DEGRADED", "SOURCE", "CONFIRM"])
+        : new Set(["NORMAL", "DENY", "DEGRADED", "SOURCE"]);
+      expect(new Set(suite.cases.map((item) => item.path))).toEqual(expectedPaths);
       expect(suite.cases.every((item) => item.assertions.length >= 3)).toBe(true);
     }
   });

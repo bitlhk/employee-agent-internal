@@ -51,6 +51,25 @@ export function isContextInteractionGrantV1(value: unknown): value is ContextInt
     && typeof grant.expiresAt === "string";
 }
 
+export function isTaskReceiptBundleV1(value: unknown): value is TaskReceiptBundleV1 {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const bundle = value as Partial<TaskReceiptBundleV1>;
+  return bundle.schema === TASK_RECEIPT_BUNDLE_SCHEMA
+    && typeof bundle.bundleId === "string"
+    && typeof bundle.correlationId === "string"
+    && typeof bundle.assistantMessageId === "string"
+    && typeof bundle.bundleFingerprint === "string"
+    && Array.isArray(bundle.stages)
+    && bundle.stages.every((stage) => (
+      Boolean(stage)
+      && typeof stage.sequence === "number"
+      && typeof stage.taskId === "string"
+      && typeof stage.taskLabel === "string"
+      && typeof stage.receiptId === "string"
+      && typeof stage.receiptFingerprint === "string"
+    ));
+}
+
 export type ContextReceiptStage = Pick<
   ContextReceiptV1,
   "taskId" | "taskLabel" | "receiptId" | "envelopeId" | "correlationId" | "receiptFingerprint"

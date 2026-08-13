@@ -290,6 +290,15 @@ describe("enterprise MCP gateway", () => {
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 
+  it("returns an IA-GT-01 Context Receipt for the governed insurance customer route", async () => {
+    const response = await callGateway({ page: 1 });
+    expect(response.result?.isError, JSON.stringify(response)).not.toBe(true);
+    expect(JSON.stringify(response.result)).toContain('"eaMetadataIssuer":"employee-agent"');
+    expect(JSON.stringify(response.result)).toContain('"taskId":"IA-GT-01"');
+    expect(JSON.stringify(response.result)).toContain('"sourceSystem":"insurance_customer_profile"');
+    expect(JSON.stringify(response.result)).not.toContain('"page":1');
+  });
+
   it("returns a WM-GT-05 Context Receipt after confirmed idempotent follow-up execution", async () => {
     mocks.serverId = "wealth_governance_demo";
     mocks.displayName = "财富业务治理 Demo";
@@ -316,6 +325,30 @@ describe("enterprise MCP gateway", () => {
     expect(JSON.stringify(response.result)).toContain('"taskId":"WM-GT-05"');
     expect(JSON.stringify(response.result)).toContain('"approvalId":"apr_followup_1"');
     expect(JSON.stringify(response.result)).toContain('"idempotencyProtected":true');
+  });
+
+  it("reuses the same confirmed follow-up route for the insurance Reference Role Pack", async () => {
+    mocks.serverId = "wealth_governance_demo";
+    mocks.displayName = "岗位业务治理 Demo";
+    mocks.roleKey = "insurance-advisor";
+    Object.assign(mocks.policy, {
+      toolName: "demo_create_followup_task",
+      sideEffect: "write",
+      requiredScopes: ["demo.followup.write"],
+      allowedRoles: ["wealth-manager", "insurance-advisor"],
+      approvalMode: "always",
+      idempotencyRequired: 1,
+    });
+    mocks.enforceApproval.mockResolvedValue({ effect: "ALLOW", approval: { approvalId: "apr_insurance_1" } });
+    mocks.remoteCall.mockResolvedValue({
+      content: [{ type: "text", text: "保险客户跟进任务已创建" }],
+      _meta: { externalRequestId: "DEMO-INSURANCE-FOLLOWUP-1" },
+    });
+    const response = await callGateway({ idempotency_key: "idem-insurance-followup-1" });
+    expect(response.result?.isError, JSON.stringify(response)).not.toBe(true);
+    expect(JSON.stringify(response.result)).toContain('"taskId":"IA-GT-01"');
+    expect(JSON.stringify(response.result)).toContain('"approvalId":"apr_insurance_1"');
+    expect(JSON.stringify(response.result)).toContain('"externalRequestId":"DEMO-INSURANCE-FOLLOWUP-1"');
   });
 
   it("does not execute an enterprise write after current authority is revoked", async () => {

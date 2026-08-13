@@ -6,6 +6,20 @@ import {
 import type { WealthAllocationContextResult } from "./wealth-allocation-context";
 import type { WealthPolicyBasis } from "./wealth-policy-source";
 
+const WEALTH_OUTCOME_LABELS: Record<string, string> = {
+  customer_specific_previsit_brief: "客户访前简报",
+  generic_previsit_checklist: "通用访前检查清单",
+  verified_customer_facts_summary: "已核实客户事实摘要",
+  governed_asset_allocation_candidates: "受治理的资产配置候选",
+  verified_customer_analysis: "已核实客户分析",
+  allocation_constraints: "资产配置约束",
+  product_screening_criteria: "产品筛选条件",
+  current_enterprise_policy_conclusion: "现行企业政策结论",
+  knowledge_admin_remediation: "知识管理员修复建议",
+  formal_product_recommendation: "正式产品推荐",
+  risk_reassessment_next_step: "风险测评更新指引",
+};
+
 export function buildWealthPolicyContextReceipt(input: {
   envelope: Readonly<TaskExecutionEnvelope>;
   basis: WealthPolicyBasis;
@@ -13,6 +27,8 @@ export function buildWealthPolicyContextReceipt(input: {
 }) {
   return buildContextReceiptFromEnvelope({
     envelope: input.envelope,
+    taskLabel: "现行政策判断",
+    outcomeLabels: WEALTH_OUTCOME_LABELS,
     knowledgeLabels: input.basis.selected ? [{
       assetId: input.basis.selected.sourceAssetId,
       label: `${input.basis.selected.documentName.replace(/\.md$/i, "")} ${input.basis.selected.versionLabel}`.trim(),
@@ -50,6 +66,8 @@ export function buildWealthAllocationContextReceipt(input: {
   }));
   return buildContextReceiptFromEnvelope({
     envelope: input.envelope,
+    taskLabel: input.envelope.readiness.taskId === "WM-GT-04" ? "风险错配拦截" : "资产配置建议",
+    outcomeLabels: WEALTH_OUTCOME_LABELS,
     knowledgeLabels: input.result.policySource.sourceAssetId ? [{
       assetId: input.result.policySource.sourceAssetId,
       label: `财富产品适当性销售依据 ${input.result.policySource.versionLabel}`.trim(),

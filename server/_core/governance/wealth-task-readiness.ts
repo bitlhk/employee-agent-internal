@@ -1,19 +1,17 @@
-import {
-  governanceFingerprint,
-} from "./contracts";
 import type {
   ReadinessCheck,
-  TaskReadinessDecision,
-  TaskReadinessStatus,
 } from "./task-execution-envelope";
+import {
+  evaluateTaskReadiness,
+  readinessCheck,
+  type TaskReadinessProfile,
+} from "./task-readiness";
+
+export { readinessCheck } from "./task-readiness";
 
 export type WealthGoldenTaskId = "WM-GT-01" | "WM-GT-02" | "WM-GT-03" | "WM-GT-04" | "WM-GT-05" | "WM-GT-06";
 
-const PROFILES: Record<WealthGoldenTaskId, {
-  requestedOutcome: string;
-  requiredChecks: string[];
-  fallbackOutcomes: string[];
-}> = {
+const PROFILES: Record<WealthGoldenTaskId, Omit<TaskReadinessProfile, "taskId">> = {
   "WM-GT-01": {
     requestedOutcome: "customer_specific_previsit_brief",
     requiredChecks: ["identity", "knowledge", "customerData", "skill", "evidence"],
@@ -46,48 +44,14 @@ const PROFILES: Record<WealthGoldenTaskId, {
   },
 };
 
-export function readinessCheck(
-  status: ReadinessCheck["status"],
-  code: string,
-  message: string,
-  options: Pick<ReadinessCheck, "retryable" | "asOf"> = {},
-): ReadinessCheck {
-  return { status, code, message, ...options };
-}
-
 export function evaluateWealthTaskReadiness(input: {
   taskId: WealthGoldenTaskId;
   checks: Record<string, ReadinessCheck>;
   requestedOutcome?: string;
-}): TaskReadinessDecision {
-  const profile = PROFILES[input.taskId];
-  const checks: Record<string, ReadinessCheck> = { ...input.checks };
-  for (const name of profile.requiredChecks) {
-    checks[name] ||= readinessCheck("BLOCKED", "READINESS_CHECK_MISSING", `${name} 就绪检查缺失。`);
-  }
-  const relevant = profile.requiredChecks.map((name) => checks[name]);
-  const status: TaskReadinessStatus = relevant.some((check) => check.status === "BLOCKED")
-    ? "BLOCKED"
-    : relevant.some((check) => check.status === "DEGRADED")
-      ? "DEGRADED"
-      : "READY";
-  const requestedOutcome = String(input.requestedOutcome || profile.requestedOutcome).trim();
-  const fallbackOutcomes = status === "READY" ? [] : profile.fallbackOutcomes;
-  const body = {
-    taskId: input.taskId,
-    status,
-    requestedOutcome,
-    checks,
-    allowedOutcomes: status === "READY" ? [requestedOutcome] : fallbackOutcomes,
-    deniedOutcomes: status === "READY" ? [] : [requestedOutcome],
-    fallbackOutcomes,
-    reasons: relevant
-      .filter((check) => check.status === "BLOCKED" || check.status === "DEGRADED")
-      .map((check) => check.message),
-    remediation: relevant
-      .filter((check) => check.status !== "READY" && check.status !== "NOT_REQUIRED")
-      .map((check) => check.retryable ? "依赖恢复后重试。" : check.message)
-      .filter((value, index, values) => values.indexOf(value) === index),
-  };
-  return { ...body, decisionFingerprint: governanceFingerprint(body) };
+}) {
+  return evaluateTaskReadiness({
+    profile: { taskId: input.taskId, ...PROFILES[input.taskId] },
+    checks: input.checks,
+    requestedOutcome: input.requestedOutcome,
+  });
 }

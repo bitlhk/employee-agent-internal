@@ -37,11 +37,12 @@ function receipt(id: string, taskId: string, createdAt: string): ContextReceiptV
 describe("response evidence", () => {
   beforeEach(() => mocks.audit.mockReset().mockResolvedValue({ id: 1 }));
 
-  it("accepts receipt metadata only from controlled platform and enterprise tools", () => {
-    const value = { _meta: { eaContextReceipt: receipt("r1", "WM-GT-01", "2026-08-13T08:00:00.000Z") } };
-    expect(extractTrustedContextReceipt("prepare_wealth_previsit_context", value)?.receiptId).toBe("r1");
-    expect(extractTrustedContextReceipt("enterprise_abcd_tool_1234", value)?.receiptId).toBe("r1");
-    expect(extractTrustedContextReceipt("custom_remote_tool", value)).toBeNull();
+  it("accepts receipt metadata only when EA signed the metadata channel", () => {
+    const unsigned = { _meta: { eaContextReceipt: receipt("r1", "WM-GT-01", "2026-08-13T08:00:00.000Z") } };
+    const issued = { _meta: { ...unsigned._meta, eaMetadataIssuer: "employee-agent" } };
+    expect(extractTrustedContextReceipt("any_platform_tool", issued)?.receiptId).toBe("r1");
+    expect(extractTrustedContextReceipt("enterprise_abcd_tool_1234", unsigned)).toBeNull();
+    expect(extractTrustedContextReceipt("custom_remote_tool", unsigned)).toBeNull();
   });
 
   it("links stage receipts without copying their bodies and binds final citations", async () => {

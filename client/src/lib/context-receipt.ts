@@ -9,18 +9,6 @@ import {
 
 type ContextReceiptToolResult = { name: string; result?: string };
 
-const LEGACY_PLATFORM_RECEIPT_PREFIXES = [
-  "EA_WEALTH_PREVISIT_CONTEXT:",
-  "EA_WEALTH_ALLOCATION_CONTEXT:",
-  "EA_WEALTH_POLICY_BASIS:",
-] as const;
-
-const TRUSTED_PLATFORM_TOOLS = new Set([
-  "prepare_wealth_previsit_context",
-  "prepare_wealth_allocation_context",
-  "get_wealth_policy_basis",
-]);
-
 function parseJsonCandidate(value: string): unknown {
   const text = String(value || "").trim();
   if (!text) return null;
@@ -100,22 +88,18 @@ function normalizeReceipt(receipt: ContextReceiptV1): ContextReceiptV1 {
 }
 
 function trustedMetadata(tool: ContextReceiptToolResult): Record<string, unknown> {
+  void tool.name;
   const result = String(tool.result || "").trim();
   const payload = object(parseJsonCandidate(result));
   const metadata = object(payload._meta);
   if (metadata.eaMetadataIssuer === "employee-agent") return metadata;
-  if (!TRUSTED_PLATFORM_TOOLS.has(tool.name) && !tool.name.startsWith("enterprise_")) return {};
-  return metadata;
+  return {};
 }
 
 function receiptFromTrustedTool(tool: ContextReceiptToolResult): ContextReceiptV1 | null {
   const metadata = trustedMetadata(tool);
   if (isContextReceiptV1(metadata.eaContextReceipt)) return normalizeReceipt(metadata.eaContextReceipt);
-  const result = String(tool.result || "").trim();
-  const legacyPrefix = LEGACY_PLATFORM_RECEIPT_PREFIXES.find((prefix) => result.startsWith(prefix));
-  if (!legacyPrefix || !TRUSTED_PLATFORM_TOOLS.has(tool.name)) return null;
-  const payload = object(parseJsonCandidate(result.slice(legacyPrefix.length)));
-  return isContextReceiptV1(payload.contextReceipt) ? normalizeReceipt(payload.contextReceipt) : null;
+  return null;
 }
 
 export function extractContextReceipts(tools: ContextReceiptToolResult[]): ContextReceiptV1[] {

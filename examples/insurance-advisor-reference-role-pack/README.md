@@ -9,6 +9,7 @@
 - 八份文档是可替换的 Reference Knowledge，不代替客户企业自己的制度和操作手册。
 - 两个 MCP 当前为无鉴权 Mock 服务，只能标记 `Demo/Shadow Ready`。
 - `save_product` 保持停用；投保、报价、核保、理赔和投诉结案不在 V1 执行范围内。
+- 客户跟进写入复用平台 `wealth_governance_demo` 中的通用 Demo 跟进工具，必须经过操作确认、幂等和业务回执；不连接真实 CRM。
 - 生产升级必须完成 JWKS 验签、租户/用户身份校验、客户行级过滤、数据责任人与 SLA 确认。
 
 ## 组成

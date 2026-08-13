@@ -71,6 +71,7 @@ describe("Context Receipt V1", () => {
   it.each(["WM-GT-01", "WM-GT-02", "WM-GT-03"] as const)("binds %s to immutable provided and applied evidence", (taskId) => {
     const receipt = buildContextReceiptFromEnvelope({
       envelope: envelope(taskId),
+      taskLabel: taskId,
       knowledgeLabels: [{ assetId: "policy-current", label: "现行制度 V2.2" }],
       policyDecisions: [{ policyCode: "EA_KNOWLEDGE_ELIGIBILITY_V1", ruleVersion: "v1", effect: "ALLOW" }],
       capabilityExecutions: [{ capabilityId: "wealth_context", operation: "prepare", status: "completed" }],
@@ -85,6 +86,7 @@ describe("Context Receipt V1", () => {
   it("rejects citations that were not provided to the task", () => {
     expect(() => buildContextReceipt({
       taskId: "WM-GT-03",
+      taskLabel: "现行政策判断",
       principalFingerprint: "p".repeat(64),
       provided: { knowledge: [], businessData: [], memory: [], capabilities: [] },
       citedKnowledgeAssetIds: ["not-provided"],
@@ -103,6 +105,7 @@ describe("Context Receipt V1", () => {
   it("represents WM-GT-05 without retaining raw customer or tool arguments", () => {
     const receipt = buildContextReceipt({
       taskId: "WM-GT-05",
+      taskLabel: "客户跟进创建",
       principalFingerprint: "p".repeat(64),
       provided: {
         knowledge: [], businessData: [], memory: [],

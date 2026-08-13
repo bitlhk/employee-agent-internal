@@ -25,7 +25,7 @@ async function main() {
 
   const existing = await getEnterpriseMcpConnection(GOVERNANCE_DEMO_MCP_SERVER_ID);
   const common = {
-    displayName: "财富业务演示 MCP（Demo）",
+    displayName: "岗位业务演示 MCP（Demo）",
     description: "Governed Runtime 演示连接：创建方案草稿、客户跟进任务和更新演示客户标签；所有写入仅进入隔离 Demo 表。",
     icon: null,
     businessDomain: "wealth-demo",
@@ -94,7 +94,7 @@ async function main() {
         enabled: true,
         sideEffect: "write",
         requiredScopes: ["demo.followup.write"],
-        allowedRoles: ["wealth-manager"],
+        allowedRoles: ["wealth-manager", "insurance-advisor"],
         identityModeOverride: "user",
         approvalMode: "always",
         auditLevel: "highest",
@@ -118,17 +118,20 @@ async function main() {
   await replaceAdminRoleAssetGrantsForAsset({
     assetType: "mcp_server",
     assetId: GOVERNANCE_DEMO_MCP_SERVER_ID,
-    grants: [{ roleKey: "wealth-manager", grantMode: "default" }],
+    grants: [
+      { roleKey: "wealth-manager", grantMode: "default" },
+      { roleKey: "insurance-advisor", grantMode: "default" },
+    ],
     actor: "governance-demo-bootstrap",
   });
   const refresh = await reconcileEnterpriseMcpRuntimeScopes({
     serverId: GOVERNANCE_DEMO_MCP_SERVER_ID,
-    roleKeys: ["wealth-manager"],
+    roleKeys: ["wealth-manager", "insurance-advisor"],
     forceRefresh: true,
   });
   console.log(JSON.stringify({
     configured: true,
-    displayName: "财富业务演示 MCP（Demo）",
+    displayName: "岗位业务演示 MCP（Demo）",
     endpointUrl,
     tools: tools.map(tool => tool.name),
     runtimeRefresh: refresh,

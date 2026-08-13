@@ -31,13 +31,12 @@ import { stableToolInputHash } from "./tool-governance";
 import { guardToolEgress } from "./tool-egress-policy";
 import { evaluateGovernance, type GovernanceOperation } from "./governance/contracts";
 import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
-import { attachContextReceipt, buildContextReceipt } from "./governance/context-receipt";
 import { enterpriseMcpPolicyAdapter } from "./governance/enterprise-mcp-policy-adapter";
-import { evaluateWealthTaskReadiness, readinessCheck } from "./governance/wealth-task-readiness";
 import { resolveRuntimePrincipal, resolveRuntimePrincipalV2, type PrincipalResolution } from "./governance/principal";
 import { authorizeExecutionAuthority, requiresExecutionAuthority } from "./governance/execution-authority";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
+import { attachReferenceRoleTaskReceipt } from "./reference-role-task-evidence";
 
 const SERVICE_NAME = "enterprise-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -538,68 +537,28 @@ async function gatewayCall(
       },
     });
     metricOutcome = failed ? "error" : "success";
-    if (entry.tool.name === "demo_create_followup_task") {
-      const readiness = evaluateWealthTaskReadiness({
-        taskId: "WM-GT-05",
-        checks: {
-          identity: readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已核验。"),
-          policy: readinessCheck("READY", "FOLLOWUP_POLICY_APPLIED", "客户跟进写入策略已执行。"),
-          capability: readinessCheck("READY", "FOLLOWUP_CAPABILITY_READY", "客户跟进写入能力已就绪。"),
-          approval: approval.approval?.approvalId
-            ? readinessCheck("READY", "HUMAN_CONFIRMATION_CONSUMED", "本次操作确认已绑定并消费。")
-            : readinessCheck("BLOCKED", "HUMAN_CONFIRMATION_MISSING", "本次操作缺少有效确认。"),
-          idempotency: idemKey
-            ? readinessCheck("READY", "IDEMPOTENCY_RESERVED", "幂等键已绑定业务调用回执。")
-            : readinessCheck("BLOCKED", "IDEMPOTENCY_KEY_MISSING", "写入缺少幂等保护。"),
-          receipt: failed
-            ? readinessCheck("BLOCKED", "BUSINESS_RECEIPT_FAILED", "下游业务执行失败，可根据回执安全重试。", { retryable: true })
-            : readinessCheck("READY", "BUSINESS_RECEIPT_COMPLETED", "业务执行回执已生成。"),
-          evidence: readinessCheck("READY", "EXECUTION_EVIDENCE_READY", "治理判断和执行证据已留痕。"),
-        },
-      });
-      const contextReceipt = buildContextReceipt({
-        taskId: "WM-GT-05",
-        principalFingerprint: governance.principalFingerprint,
-        provided: {
-          knowledge: [],
-          businessData: [],
-          memory: [],
-          capabilities: [{
-            capabilityId: "demo_create_followup_task",
-            label: "创建客户跟进任务（Demo）",
-            version: SERVICE_VERSION,
-            sideEffect: policy.sideEffect,
-          }],
-        },
-        policyDecisions: [{
-          decisionId: governance.decisionId,
-          policyCode: governance.policyCode,
-          ruleVersion: governance.ruleVersion,
-          effect: governance.effect,
-        }],
-        capabilityExecutions: [{
-          capabilityId: "demo_create_followup_task",
-          label: "创建客户跟进任务（Demo）",
-          operation: entry.tool.name,
-          status: failed ? "failed" : "completed",
-          requestId,
-          ...(externalId ? { externalRequestId: externalId } : {}),
-          ...(approval.approval?.approvalId ? { approvalId: approval.approval.approvalId } : {}),
-          idempotencyProtected: Boolean(idemKey),
-        }],
-        readiness: {
-          status: readiness.status,
-          requestedOutcome: readiness.requestedOutcome,
-          allowedOutcomes: readiness.allowedOutcomes,
-          deniedOutcomes: readiness.deniedOutcomes,
-          reasons: readiness.reasons,
-          remediation: readiness.remediation,
-          decisionFingerprint: readiness.decisionFingerprint,
-        },
-      });
-      return attachContextReceipt(result, contextReceipt);
-    }
-    return result;
+    return attachReferenceRoleTaskReceipt({
+      result,
+      roleTemplate: context.roleKey,
+      serverId: entry.connection.serverId,
+      toolName: entry.tool.name,
+      principalFingerprint: governance.principalFingerprint,
+      sideEffect: policy.sideEffect,
+      capabilityVersion: SERVICE_VERSION,
+      policyDecision: {
+        decisionId: governance.decisionId,
+        policyCode: governance.policyCode,
+        ruleVersion: governance.ruleVersion,
+        effect: governance.effect,
+      },
+      requestId,
+      resultFingerprint: resultHash,
+      argumentsFingerprint: stableHash(args),
+      failed,
+      externalRequestId: externalId,
+      approvalId: approval.approval?.approvalId || null,
+      idempotencyProtected: Boolean(idemKey),
+    });
   } catch (error) {
     metricOutcome = "error";
     if (requestId && receiptReserved) {
