@@ -19,6 +19,8 @@ import { skillRegistry } from "./skills/skill-registry";
 import { parseSkillSourceFiles, sanitizeSkillId, type SkillSourceFile } from "./skills/skill-source";
 import { skillStoreGeneratedDir } from "./skills/skill-store";
 import { fetchWithTimeout } from "./fetch-timeout";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 function channelName(channelId: string): string {
   if (channelId === "wechat" || channelId === "weixin") return "微信";
@@ -39,6 +41,29 @@ async function resolveAdoptUserId(adoptId: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+async function authorizeIntentExecution(adoptId: string, input: {
+  capabilityId: string;
+  operation: string;
+  sideEffect: "workspace_write" | "external_send";
+  resource: string;
+  payload: unknown;
+}) {
+  const { getClawByAdoptId } = await import("../db");
+  const claw = await getClawByAdoptId(adoptId);
+  if (!claw) return { allowed: false, reason: "当前岗位智能体不可用。" } as const;
+  return authorizeClawRouteExecution({
+    claw,
+    source: "intent_executor",
+    operation: {
+      capabilityId: input.capabilityId,
+      operation: input.operation,
+      sideEffect: input.sideEffect,
+      resource: input.resource,
+      payloadHash: stableToolInputHash(input.payload),
+    },
+  });
 }
 
 function normalizeGeneratedFiles(files: any[]): SkillSourceFile[] {
@@ -104,6 +129,18 @@ export async function executePlatformIntent(
     }
     if (!files.some((file) => file.path.toLowerCase() === "skill.md")) {
       writer.writeError("技能生成失败：缺少 SKILL.md");
+      return;
+    }
+
+    const authority = await authorizeIntentExecution(adoptId, {
+      capabilityId: "workspace.files",
+      operation: "create_generated_skill",
+      sideEffect: "workspace_write",
+      resource: `generated-skill:${name}`,
+      payload: { name, description, files },
+    });
+    if (!authority.allowed) {
+      writer.writeError(authority.reason || "当前执行权限不可用，已停止创建技能。");
       return;
     }
 
@@ -302,6 +339,17 @@ export async function executePlatformIntent(
     try {
       const provider = getChannelProvider(channel);
       if (!provider) { writer.writeError(`${channelName(channel)}暂不支持发送`); return; }
+      const authority = await authorizeIntentExecution(adoptId, {
+        capabilityId: channel === "feishu" ? "feishu.send" : "notification.send",
+        operation: "send_channel_message",
+        sideEffect: "external_send",
+        resource: `channel:${channel}`,
+        payload: { channel, content },
+      });
+      if (!authority.allowed) {
+        writer.writeError(authority.reason || "当前执行权限不可用，已停止发送。");
+        return;
+      }
       const userId = await resolveAdoptUserId(adoptId);
       const result = await provider.send(
         { adoptId, channelId: channel, userId },

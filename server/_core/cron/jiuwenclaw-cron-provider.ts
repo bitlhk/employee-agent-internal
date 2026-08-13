@@ -62,6 +62,8 @@ type JiuwenCronMeta = {
     description?: string;
     channelId?: ChannelId;
     createdBy?: number;
+    taskAuthorizationSnapshotId?: string;
+    executionAuthorityFingerprint?: string;
     updatedAt?: string;
   }>;
 };
@@ -127,15 +129,25 @@ function getMeta(adoptId: string, taskId: string) {
   return (readMeta().jobs || []).find((job) => job.adoptId === adoptId && job.taskId === taskId);
 }
 
-export function getJiuwenCronRouteMeta(adoptId: string, taskId: string): { channelId?: ChannelId } | null {
+export function getJiuwenCronRouteMeta(adoptId: string, taskId: string): {
+  channelId?: ChannelId;
+  taskAuthorizationSnapshotId?: string;
+} | null {
   const meta = getMeta(String(adoptId || ""), String(taskId || ""));
   if (!meta) return null;
   return {
     channelId: meta.channelId,
+    taskAuthorizationSnapshotId: meta.taskAuthorizationSnapshotId,
   };
 }
 
-export function findJiuwenCronRouteMeta(taskId: string): { adoptId: string; channelId?: ChannelId; name?: string } | null {
+export function findJiuwenCronRouteMeta(taskId: string): {
+  adoptId: string;
+  channelId?: ChannelId;
+  name?: string;
+  taskAuthorizationSnapshotId?: string;
+  executionAuthorityFingerprint?: string;
+} | null {
   const id = String(taskId || "").trim();
   if (!id) return null;
   const meta = (readMeta().jobs || []).find((job) => job.taskId === id);
@@ -144,6 +156,8 @@ export function findJiuwenCronRouteMeta(taskId: string): { adoptId: string; chan
     adoptId: meta.adoptId,
     channelId: meta.channelId,
     name: meta.name,
+    taskAuthorizationSnapshotId: meta.taskAuthorizationSnapshotId,
+    executionAuthorityFingerprint: meta.executionAuthorityFingerprint,
   };
 }
 
@@ -246,6 +260,12 @@ function upsertMeta(handle: CronProviderHandle, taskId: string, input: CronJobIn
     description: input.description,
     channelId,
     createdBy: handle.userId,
+    taskAuthorizationSnapshotId: String(
+      input.meta?.taskAuthorizationSnapshotId || existing?.taskAuthorizationSnapshotId || "",
+    ).trim() || undefined,
+    executionAuthorityFingerprint: String(
+      input.meta?.executionAuthorityFingerprint || existing?.executionAuthorityFingerprint || "",
+    ).trim() || undefined,
     updatedAt: new Date().toISOString(),
   };
   if (existing) Object.assign(existing, next);
@@ -488,6 +508,8 @@ function buildCronCallbackMetadata(handle: CronProviderHandle, input: CronJobInp
     adoptId: handle.adoptId,
     agentId: handle.agentId,
     userId: handle.userId,
+    taskAuthorizationSnapshotId: String(input.meta?.taskAuthorizationSnapshotId || "").trim() || undefined,
+    executionAuthorityFingerprint: String(input.meta?.executionAuthorityFingerprint || "").trim() || undefined,
     delivery: {
       channelId,
       targetId: target?.targetId,

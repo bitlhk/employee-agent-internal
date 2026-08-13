@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   guard: vi.fn(),
   postWebhook: vi.fn(),
+  authority: vi.fn(),
 }));
 
 vi.mock("node:fs", () => ({
@@ -32,6 +33,15 @@ vi.mock("./secret-protection", () => ({
 }));
 vi.mock("./external-delivery-guard", () => ({ guardExternalDelivery: mocks.guard }));
 vi.mock("./fetch-timeout", () => ({ fetchWithTimeout: vi.fn() }));
+vi.mock("../db", () => ({
+  getClawByAdoptId: vi.fn(async () => ({
+    adoptId: "lgj-notify", userId: 1, agentId: "agent-notify",
+    roleTemplate: "general-assistant", permissionProfile: "plus",
+  })),
+}));
+vi.mock("./governance/claw-route-execution-authority", () => ({
+  authorizeClawRouteExecution: mocks.authority,
+}));
 
 import { registerNotifyRoutes } from "./claw-notify";
 
@@ -40,6 +50,12 @@ let baseUrl = "";
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.authority.mockResolvedValue({
+    allowed: true,
+    policyCode: "EA_EXECUTION_AUTHORITY_INTERSECTION_V1",
+    reason: "allowed",
+    taskSnapshotId: "auth-current",
+  });
   mocks.guard.mockResolvedValue({ ok: false, error: "检测到敏感信息，已阻止外发" });
   const app = express();
   app.use(express.json());
@@ -64,6 +80,27 @@ describe("notification PEP wiring", () => {
     const body = await response.json() as { ok?: boolean; error?: string };
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ ok: false, error: "检测到敏感信息，已阻止外发" });
+    expect(mocks.postWebhook).not.toHaveBeenCalled();
+  });
+
+  it("never reaches the delivery guard or webhook when execution authority denies", async () => {
+    mocks.authority.mockResolvedValueOnce({
+      allowed: false,
+      policyCode: "EA_EXECUTION_AUTHORITY_REVOKED",
+      reason: "任务授权已失效",
+      taskSnapshotId: "auth-task",
+    });
+    const response = await fetch(`${baseUrl}/api/claw/notify/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adoptId: "lgj-notify", message: "hello", channel: "webhook" }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      ok: false,
+      code: "EA_EXECUTION_AUTHORITY_REVOKED",
+    });
+    expect(mocks.guard).not.toHaveBeenCalled();
     expect(mocks.postWebhook).not.toHaveBeenCalled();
   });
 });

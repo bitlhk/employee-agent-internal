@@ -31,6 +31,8 @@ import {
   upsertChannelBinding,
 } from "../db/channel-bindings";
 import { guardExternalDelivery } from "./external-delivery-guard";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 const FEISHU_ACCOUNTS_URL = "https://accounts.feishu.cn";
 const LARK_ACCOUNTS_URL = "https://accounts.larksuite.com";
@@ -742,7 +744,23 @@ export function registerFeishuRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
-      const result = await sendFeishuDeliveryMessage(adoptId, "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。");
+      const message = "岗位智能体频道测试\n\n飞书频道已连接，后续定时任务可投递到这里。";
+      const authority = await authorizeClawRouteExecution({
+        req,
+        claw,
+        source: "claw_feishu_route",
+        operation: {
+          capabilityId: "feishu.send",
+          operation: "send_feishu_test",
+          sideEffect: "external_send",
+          resource: "channel:feishu",
+          payloadHash: stableToolInputHash({ message }),
+        },
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ ok: false, error: authority.reason, code: authority.policyCode });
+      }
+      const result = await sendFeishuDeliveryMessage(adoptId, message);
       res.json(result.ok ? { ok: true } : { ok: false, error: result.error });
     } catch (error: any) {
       res.status(500).json({ ok: false, error: error?.message || "feishu test failed" });

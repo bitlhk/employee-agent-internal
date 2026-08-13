@@ -934,7 +934,10 @@ async function callTool(
           channelLabel: channelId === "web" ? "定时任务记录" : channelId,
         }],
       },
-      meta: {},
+      meta: {
+        taskAuthorizationSnapshotId: executionAuthority?.taskSnapshotId,
+        executionAuthorityFingerprint: executionAuthority?.effectiveAuthorityFingerprint,
+      },
     };
     const suppliedKey = String(args.idempotency_key || args.idempotencyKey || "").trim();
     const idempotencyKey = suppliedKey || `mcp:${createHash("sha256")
@@ -942,7 +945,12 @@ async function callTool(
       .digest("hex")}`;
     await internalJson("/api/claw/cron/add", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(executionAuthority?.taskSnapshotId
+          ? { "X-EA-Authorization-Snapshot-Id": executionAuthority.taskSnapshotId }
+          : {}),
+      },
       body: JSON.stringify({ adoptId, job, idempotencyKey }),
     });
     const scheduleSummary = runAt ? `one-time: ${runAt}` : `recurring cron: ${cronExpr}`;

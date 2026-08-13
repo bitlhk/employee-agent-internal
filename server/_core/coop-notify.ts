@@ -12,6 +12,9 @@ import { getDb } from "../db/connection";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import { clawAdoptions, users } from "../../drizzle/schema";
 import { resolvePublicBaseUrl } from "./public-base-url";
+import { getClawByAdoptId } from "../db";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 const PUBLIC_BASE_URL = resolvePublicBaseUrl();
 
@@ -33,6 +36,26 @@ async function getActiveAdoptIdByUserId(userId: number): Promise<string | null> 
 
 async function sendBestEffortFeishu(adoptId: string, text: string, context: string): Promise<void> {
   try {
+    const claw = await getClawByAdoptId(adoptId);
+    if (!claw) {
+      console.log(`[coop-notify] adoption missing (${context}, adopt ${adoptId})`);
+      return;
+    }
+    const authority = await authorizeClawRouteExecution({
+      claw,
+      source: "coop_notify",
+      operation: {
+        capabilityId: "feishu.send",
+        operation: "send_collaboration_notification",
+        sideEffect: "external_send",
+        resource: `collaboration:${context}`,
+        payloadHash: stableToolInputHash({ text, context }),
+      },
+    });
+    if (!authority.allowed) {
+      console.log(`[coop-notify] authority denied (${context}, adopt ${adoptId}): ${authority.policyCode}`);
+      return;
+    }
     const result = await sendFeishuBridgeMessage(adoptId, text);
     if (!result.ok) {
       console.log(`[coop-notify] feishu skipped (${context}, adopt ${adoptId}): ${result.error || "unknown"}`);

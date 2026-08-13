@@ -9,6 +9,8 @@ import {
 } from "./cron/jiuwenclaw-cron-provider";
 import { getChannelProvider, normalizeChannelId } from "./cron/channel-provider-registry";
 import { isAuthorizedInternalRequest } from "./helpers";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 type JiuwenCallbackBody = {
   content?: unknown;
@@ -114,6 +116,22 @@ export function registerJiuwenWebhookRoutes(app: express.Express) {
       if (!content && status !== "running") return res.status(400).json({ ok: false, error: "content required" });
       const delivery = callbackDelivery(meta, routeMetaByTask?.channelId);
       const externalDeliveryPending = status === "ok" && delivery.channelId !== "web";
+      const deliveryAuthority = externalDeliveryPending
+        ? await authorizeClawRouteExecution({
+            req,
+            claw,
+            source: "jiuwen_cron_delivery",
+            taskAuthorizationSnapshotId: routeMetaByTask?.taskAuthorizationSnapshotId || null,
+            operation: {
+              capabilityId: "cron.delivery",
+              operation: "deliver_cron_result",
+              sideEffect: "external_send",
+              resource: `cron:${taskId}:channel:${delivery.channelId}`,
+              payloadHash: stableToolInputHash({ taskId, runId, content: normalized.output }),
+            },
+          })
+        : null;
+      const externalDeliveryAllowed = externalDeliveryPending && deliveryAuthority?.allowed === true;
       const result = recordJiuwenCronRun({
         adoptId,
         taskId,
@@ -124,10 +142,21 @@ export function registerJiuwenWebhookRoutes(app: express.Express) {
         triggeredBy: "schedule",
         startedAt: Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp).toISOString() : undefined,
         finishedAt: status === "running" ? undefined : new Date().toISOString(),
-        deliveryStatus: externalDeliveryPending ? "pending" : undefined,
+        deliveryStatus: externalDeliveryPending
+          ? externalDeliveryAllowed ? "pending" : "failed"
+          : undefined,
       });
 
-      if (externalDeliveryPending && !result.duplicate) {
+      if (externalDeliveryPending && !externalDeliveryAllowed) {
+        console.warn("[JIUWEN-WEBHOOK] delivery authority denied", {
+          adoptId,
+          taskId,
+          channelId: delivery.channelId,
+          policyCode: deliveryAuthority?.policyCode,
+        });
+      }
+
+      if (externalDeliveryAllowed && !result.duplicate) {
         setImmediate(() => {
           const provider = getChannelProvider(delivery.channelId);
           if (!provider) {
@@ -145,7 +174,7 @@ export function registerJiuwenWebhookRoutes(app: express.Express) {
             {
               adoptId,
               channelId: delivery.channelId,
-              userId: Number((claw as any).userId || 0),
+              userId: Number(claw.userId || 0),
               targetId: delivery.targetId,
             },
             {
@@ -170,13 +199,13 @@ export function registerJiuwenWebhookRoutes(app: express.Express) {
                 error: sent.error.kind,
               });
             }
-          }).catch((error: any) => {
+          }).catch((error: unknown) => {
             updateJiuwenCronRunDelivery({ adoptId, taskId, runId, deliveryStatus: "failed" });
             console.warn("[JIUWEN-WEBHOOK] delivery failed", {
               adoptId,
               taskId,
               channelId: delivery.channelId,
-              error: error?.message || String(error),
+              error: error instanceof Error ? error.message : String(error),
             });
           });
         });
@@ -188,11 +217,14 @@ export function registerJiuwenWebhookRoutes(app: express.Express) {
         adoptId,
         taskId,
         runId,
-        delivery: externalDeliveryPending ? (result.duplicate ? "duplicate" : "queued") : "recorded",
+        delivery: externalDeliveryPending
+          ? result.duplicate ? "duplicate" : externalDeliveryAllowed ? "queued" : "blocked"
+          : "recorded",
       });
-    } catch (error: any) {
-      console.error("[JIUWEN-WEBHOOK] callback failed", error?.message || error);
-      return res.status(500).json({ ok: false, error: error?.message || "callback failed" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error || "callback failed");
+      console.error("[JIUWEN-WEBHOOK] callback failed", message);
+      return res.status(500).json({ ok: false, error: message });
     }
   };
 

@@ -14,7 +14,7 @@ The active rollout scope is:
 - reference knowledge source, series, and replacement versions;
 - role-pack contract validation;
 - persisted role-pack release evidence and stale-asset detection;
-- execution-time authority intersection on Custom MCP, Enterprise MCP, Platform MCP, and A2A external execution;
+- execution-time authority intersection on Custom MCP, Enterprise MCP, Platform MCP, A2A, notification, Feishu, Cron, and workspace writes;
 - A2A side-effect closure through local-governance Capability Intents.
 
 Ordinary chat and unrelated roles continue to use the existing Runtime Principal V1 path.
@@ -114,6 +114,10 @@ Platform MCP forwards the bounded task snapshot when it submits an A2A task. A2A
 
 Platform-created A2A tasks also derive a stable `sourceMessageId` from the MCP request identity when the caller does not provide one. The database reservation uses it as the downstream idempotency boundary.
 
+Direct notification, Feishu test delivery, Cron mutation, and workspace upload/delete routes use the same execution-time authority intersection immediately before their executor. Their existing egress, path, malware, quota, ownership, and idempotency controls remain independent obligations rather than being replaced by identity authorization.
+
+New Cron jobs persist the bounded task authorization snapshot in private Jiuwen Cron metadata. A completed scheduled run that targets an external channel re-resolves current authority and intersects it with that stored snapshot before invoking the channel provider. If authority was revoked after scheduling, the run result remains recorded while external delivery is marked failed and the provider is not called. Older Cron jobs without a stored task snapshot use the current snapshot as a compatibility ceiling until they are updated or recreated.
+
 ## 7. A2A Side-effect Closure
 
 Delegated remote agents are restricted to `read` and `compute`. A direct side-effect delegation request is denied. A remote result may propose an `ea.capability-intent.v1`, but the proposal is persisted as `pending_local_governance`, omitted from ordinary result text, and recorded in audit evidence as not remotely executed.
@@ -138,7 +142,7 @@ Migration `0015` backfills stable organizations and memberships from existing no
 The following are explicitly not claimed by this increment:
 
 - model-driven coverage for `WM-GT-02`, `WM-GT-05`, and `WM-GT-06`, or multi-model regression coverage;
-- execution-time authorization snapshot intersection on remaining direct notification, Feishu, cron, and workspace-write paths;
+- execution-time authorization for channel binding/configuration administration remains ownership-based rather than task-envelope-based;
 - a governed local executor for approved A2A Capability Intents where a business use case requires it;
 - enterprise MCP server-side row-level identity conformance beyond its current external contract;
 - complete route-level execution proof for every boundary-only Capability;
@@ -146,8 +150,7 @@ The following are explicitly not claimed by this increment:
 
 Recommended next order:
 
-1. extend execution-time authority intersection to remaining direct external-delivery and cron side-effect paths;
-2. add an explicitly governed local A2A intent executor only for registered business capabilities;
-3. complete route-level PEP execution proofs for boundary-only capabilities;
-4. expand model scenarios to the remaining wealth-manager tasks and supported release models;
-5. productize Enterprise Asset Onboarding outside the chat hot path.
+1. add an explicitly governed local A2A intent executor only for registered business capabilities;
+2. complete route-level PEP execution proofs for remaining boundary-only capabilities;
+3. expand model scenarios to the remaining wealth-manager tasks and supported release models;
+4. productize Enterprise Asset Onboarding outside the chat hot path.

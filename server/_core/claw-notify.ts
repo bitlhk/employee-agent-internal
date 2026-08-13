@@ -1,10 +1,13 @@
 import express from "express";
+import type { ClawAdoption } from "../../drizzle/schema";
 import { isAuthorizedInternalRequest, requireClawOwner } from "./helpers";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync, existsSync } from "fs";
 import { safePostWebhookJson, validateWebhookTarget } from "./safe-webhook";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-protection";
 import { guardExternalDelivery } from "./external-delivery-guard";
 import { fetchWithTimeout } from "./fetch-timeout";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 const APP_ROOT = process.env.APP_ROOT || process.cwd();
 const NOTIFY_CONFIG_PATH = `${APP_ROOT}/data/claw-notify-configs.json`;
@@ -167,7 +170,7 @@ export function registerNotifyRoutes(app: express.Express) {
     try {
       const adoptId = String(req.query.adoptId || "").trim();
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
-      let claw: any;
+      let claw: ClawAdoption | null | undefined;
       if (isAuthorizedInternalRequest(req)) {
         const { getClawByAdoptId } = await import("../db");
         claw = await getClawByAdoptId(adoptId);
@@ -223,8 +226,13 @@ export function registerNotifyRoutes(app: express.Express) {
       if (!adoptId) return res.status(400).json({ error: "adoptId required" });
 
       // 支持内部调用（X-Internal-Key）和用户调用（requireClawOwner）
-      if (!isAuthorizedInternalRequest(req)) {
-        const claw = await requireClawOwner(req, res, adoptId);
+      let claw: ClawAdoption | null | undefined;
+      if (isAuthorizedInternalRequest(req)) {
+        const { getClawByAdoptId } = await import("../db");
+        claw = await getClawByAdoptId(adoptId);
+        if (!claw) return res.status(404).json({ error: "NOT_FOUND" });
+      } else {
+        claw = await requireClawOwner(req, res, adoptId);
         if (!claw) return;
       }
 
@@ -233,6 +241,21 @@ export function registerNotifyRoutes(app: express.Express) {
         || "\u{1F99E} \u8fd9\u662f\u4e00\u6761\u6d4b\u8bd5\u6d88\u606f\n\n\u5982\u679c\u4f60\u770b\u5230\u4e86\uff0c\u8bf4\u660e\u7075\u867e\u901a\u77e5\u914d\u7f6e\u6210\u529f\uff01";
       const title = String(req.body?.title || "\u7075\u867e\u901a\u77e5").trim();
       const channel = String(req.body?.channel || "").trim();
+      const authority = await authorizeClawRouteExecution({
+        req,
+        claw,
+        source: "claw_notify_route",
+        operation: {
+          capabilityId: "notification.send",
+          operation: "send_notification",
+          sideEffect: "external_send",
+          resource: `notification:${channel || "configured"}`,
+          payloadHash: stableToolInputHash({ message, title, channel: channel || null }),
+        },
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ ok: false, error: authority.reason, code: authority.policyCode });
+      }
 
       const result = await sendNotification(adoptId, message, title, channel || undefined);
       res.json(result);

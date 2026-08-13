@@ -1,5 +1,6 @@
 import express from "express";
 import type { CronJobInput, CronProviderHandle, CronSchedule } from "@shared/types/cron";
+import type { ClawAdoption } from "../../drizzle/schema";
 import {
   isAuthorizedInternalRequest,
   isJiuwenClawAdoptId,
@@ -18,6 +19,8 @@ import {
   normalizeCronIdempotencyKey,
 } from "./cron/cron-idempotency";
 import { withCronCreationScopeLock } from "../db/cron-job-creations";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 const cronProvider = new JiuwenClawCronProvider();
 
@@ -33,7 +36,7 @@ function archivedRuntimeError() {
   return Object.assign(new Error("Legacy runtime has been archived"), { status: 410 });
 }
 
-function toCronHandle(claw: any): CronProviderHandle {
+function toCronHandle(claw: ClawAdoption): CronProviderHandle {
   const adoptId = String(claw.adoptId || "");
   return {
     adoptId,
@@ -43,7 +46,7 @@ function toCronHandle(claw: any): CronProviderHandle {
   };
 }
 
-async function capabilitiesForClaw(claw: any) {
+async function capabilitiesForClaw(claw: ClawAdoption) {
   const adoptId = String(claw?.adoptId || "").trim();
   return resolveCronCapabilities(adoptId, cronProvider.capabilities());
 }
@@ -152,7 +155,28 @@ function providerError(error: any) {
   });
 }
 
-export async function listCronJobsForClaw(claw: any, options?: {
+async function authorizeCronMutation(input: {
+  req: express.Request;
+  claw: ClawAdoption;
+  operation: string;
+  resource: string;
+  payload: unknown;
+}) {
+  return authorizeClawRouteExecution({
+    req: input.req,
+    claw: input.claw,
+    source: "claw_cron_route",
+    operation: {
+      capabilityId: "cron.write",
+      operation: input.operation,
+      sideEffect: "write",
+      resource: input.resource,
+      payloadHash: stableToolInputHash(input.payload),
+    },
+  });
+}
+
+export async function listCronJobsForClaw(claw: ClawAdoption, options?: {
   limit?: number;
   offset?: number;
   query?: string;
@@ -193,7 +217,7 @@ export async function listCronJobsForClaw(claw: any, options?: {
   };
 }
 
-export async function listCronRunsForClaw(claw: any, options?: {
+export async function listCronRunsForClaw(claw: ClawAdoption, options?: {
   limit?: number;
   offset?: number;
   jobId?: string;
@@ -342,6 +366,21 @@ export function registerCronRoutes(app: express.Express) {
 
       const handle = toCronHandle(claw);
       const input = cronJobInputFromRequest(job);
+      const authority = await authorizeCronMutation({
+        req,
+        claw,
+        operation: "create_cron_job",
+        resource: `cron:${input.name}`,
+        payload: input,
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ error: authority.reason, code: authority.policyCode });
+      }
+      input.meta = {
+        ...(input.meta || {}),
+        taskAuthorizationSnapshotId: authority.taskSnapshotId,
+        executionAuthorityFingerprint: authority.effectiveAuthorityFingerprint,
+      };
       const idempotencyKey = normalizeCronIdempotencyKey(
         req.get("Idempotency-Key") || req.body?.idempotencyKey || req.body?.idempotency_key,
       );
@@ -389,6 +428,17 @@ export function registerCronRoutes(app: express.Express) {
       if (!claw) return;
       if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
+      const authority = await authorizeCronMutation({
+        req,
+        claw,
+        operation: "update_cron_job",
+        resource: `cron:${id}`,
+        payload: patch,
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ error: authority.reason, code: authority.policyCode });
+      }
+
       let deliveryTarget: CronJobInput["delivery"]["targets"][number] | undefined;
       if (patch.delivery !== undefined) {
         deliveryTarget = cronDeliveryFromRequest(patch.delivery).targets[0];
@@ -421,6 +471,17 @@ export function registerCronRoutes(app: express.Express) {
       if (!claw) return;
       if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
 
+      const authority = await authorizeCronMutation({
+        req,
+        claw,
+        operation: "run_cron_job",
+        resource: `cron:${id}`,
+        payload: { id },
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ error: authority.reason, code: authority.policyCode });
+      }
+
       const result = await cronProvider.runJobNow(toCronHandle(claw), id);
       if (!result.ok) {
         return res.status(providerErrorStatus(result.error.kind)).json({ error: result.error.detail });
@@ -439,6 +500,17 @@ export function registerCronRoutes(app: express.Express) {
       const claw = await resolveClaw(req, res, adoptId);
       if (!claw) return;
       if (isLegacyArchivedAdopt(adoptId)) return archivedRuntimeResponse(res);
+
+      const authority = await authorizeCronMutation({
+        req,
+        claw,
+        operation: "remove_cron_job",
+        resource: `cron:${id}`,
+        payload: { id },
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ error: authority.reason, code: authority.policyCode });
+      }
 
       const result = await cronProvider.removeJob(toCronHandle(claw), id);
       if (!result.ok) {

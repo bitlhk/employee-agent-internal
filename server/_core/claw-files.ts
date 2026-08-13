@@ -11,6 +11,8 @@ import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, re
 import { resolveExistingWorkspacePath, resolveWorkspaceDeletePath, resolveWorkspaceWritePath } from "./file-path-security";
 import { skillSourceDirsForRuntime, skillStoreAgentDir } from "./skills/skill-store";
 import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
+import { stableToolInputHash } from "./tool-governance";
+import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
 
 type LinggFileNode = {
   name: string;
@@ -490,6 +492,21 @@ export function registerFilesRoutes(app: express.Express) {
         });
         return res.status(400).json({ error: "path_not_allowed" });
       }
+      const authority = await authorizeClawRouteExecution({
+        req,
+        claw,
+        source: "claw_files_route",
+        operation: {
+          capabilityId: "workspace.files",
+          operation: "upload_workspace_file",
+          sideEffect: "workspace_write",
+          resource: `workspace-file:${targetRel}`,
+          payloadHash: stableToolInputHash({ path: targetRel, sha256, size: buf.length }),
+        },
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ error: authority.reason, code: authority.policyCode });
+      }
       try {
         writeFileSync(abs, buf);
         await recordFileAudit({
@@ -570,6 +587,21 @@ export function registerFilesRoutes(app: express.Express) {
       if (!abs || !existsSync(abs)) return res.status(404).json({ error: "file not found" });
       if (path.resolve(abs) === path.resolve(ws)) return res.status(400).json({ error: "refuse to delete workspace root" });
       const st = lstatSync(abs);
+      const authority = await authorizeClawRouteExecution({
+        req,
+        claw,
+        source: "claw_files_route",
+        operation: {
+          capabilityId: "workspace.files",
+          operation: "delete_workspace_file",
+          sideEffect: "workspace_write",
+          resource: `workspace-file:${normalized}`,
+          payloadHash: stableToolInputHash({ path: normalized, type: st.isDirectory() ? "directory" : "file" }),
+        },
+      });
+      if (!authority.allowed) {
+        return res.status(403).json({ error: authority.reason, code: authority.policyCode });
+      }
       try {
         if (st.isDirectory()) {
           rmSync(abs, { recursive: true, force: true });
