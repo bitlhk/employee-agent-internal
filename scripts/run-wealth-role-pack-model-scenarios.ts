@@ -1,10 +1,27 @@
 import "dotenv/config";
 import { runWealthRolePackContractChecks } from "../server/_core/reference-role-pack-contracts";
-import { runWealthRolePackModelScenarios } from "../server/_core/wealth-role-pack-model-scenarios";
+import { callEaAssistantModelWithConfig, resolveEaAssistantModelConfig } from "../server/_core/ea-assistant-model";
+import { runWealthRolePackModelScenarios, runWealthRolePackMultiModelScenarios } from "../server/_core/wealth-role-pack-model-scenarios";
 
 const { closeDbConnection } = await import("../server/db/connection");
 try {
-  const report = await runWealthRolePackModelScenarios();
+  const modelArg = process.argv.find(argument => argument.startsWith("--models="));
+  const modelIds = modelArg?.slice("--models=".length).split(",").map(value => value.trim()).filter(Boolean) || [];
+  const report = modelIds.length > 0
+    ? await (async () => {
+        const base = await resolveEaAssistantModelConfig();
+        return runWealthRolePackMultiModelScenarios({
+          models: modelIds.map(modelId => ({
+            modelId,
+            invokeModel: options => callEaAssistantModelWithConfig({
+              ...base,
+              model: modelId,
+              tokenParam: /^openpangu-/i.test(modelId) ? "max_tokens" : "max_completion_tokens",
+            }, options),
+          })),
+        });
+      })()
+    : await runWealthRolePackModelScenarios();
   const persist = process.argv.includes("--persist");
   if (persist) {
     const { persistRolePackRelease } = await import("../server/db/role-pack-releases");
@@ -24,10 +41,15 @@ try {
         status: report.status,
         releaseCandidateId: report.releaseCandidateId,
         evalSuiteVersion: report.evalSuiteVersion,
-        scenarioCount: report.scenarioCount,
-        passedScenarioCount: report.passedScenarioCount,
-        models: report.models,
-        totalElapsedMs: report.totalElapsedMs,
+        ...("scenarioCount" in report ? {
+          scenarioCount: report.scenarioCount,
+          passedScenarioCount: report.passedScenarioCount,
+          models: report.models,
+          totalElapsedMs: report.totalElapsedMs,
+        } : {
+          modelCount: report.modelCount,
+          passedModelCount: report.passedModelCount,
+        }),
         errors: report.errors,
         persisted: persist,
       }

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { collectA2ACapabilityIntents } from "./a2a-capability-intent";
-import { A2ACapabilityIntentBindingError, resolveA2ACapabilityIntentBinding } from "./a2a-capability-intent-bindings";
+import {
+  A2ACapabilityIntentBindingError,
+  assertProductionA2ABindingRuntime,
+  parseProductionA2ACapabilityBindings,
+  resolveA2ACapabilityIntentBinding,
+} from "./a2a-capability-intent-bindings";
 
 function intent(overrides: Record<string, unknown> = {}) {
   return collectA2ACapabilityIntents({
@@ -54,5 +59,66 @@ describe("A2A capability intent bindings", () => {
     expect(() => resolveA2ACapabilityIntentBinding(intent({
       idempotencyKey: "short",
     }))).toThrow("幂等键");
+  });
+
+  it("accepts only explicit production contracts with identity, approval and idempotency", () => {
+    const [binding] = parseProductionA2ACapabilityBindings(JSON.stringify([{
+      schema: "ea.a2a-capability-binding.v1",
+      mode: "production",
+      bindingId: "bank.crm.create-followup",
+      bindingVersion: "1.0.0",
+      capabilityId: "bank.crm",
+      operation: "create_followup",
+      sideEffect: "write",
+      displayName: "创建客户跟进",
+      targetServerId: "bank_crm",
+      targetToolName: "create_followup",
+      argumentMap: { customerId: "customer_id", objective: "objective" },
+      requiredArguments: ["customerId", "objective"],
+      approvalRequired: true,
+      idempotencyRequired: true,
+      identityRequired: true,
+    }]));
+    const productionIntent = intent({
+      capabilityId: "bank.crm",
+      arguments: { customerId: "C-001", objective: "到期沟通", injected: "must-not-forward" },
+      idempotencyKey: "prod-followup-001",
+    });
+    const resolved = resolveA2ACapabilityIntentBinding(productionIntent, [binding]);
+    expect(resolved.arguments).toEqual({ customer_id: "C-001", objective: "到期沟通", idempotency_key: "prod-followup-001" });
+  });
+
+  it("rejects production contracts that weaken mandatory controls", () => {
+    expect(() => parseProductionA2ACapabilityBindings(JSON.stringify([{
+      schema: "ea.a2a-capability-binding.v1",
+      mode: "production",
+      bindingId: "unsafe",
+      bindingVersion: "1",
+      capabilityId: "bank.crm",
+      operation: "write",
+      sideEffect: "write",
+      displayName: "Unsafe",
+      targetServerId: "bank_crm",
+      targetToolName: "write",
+      argumentMap: { value: "value" },
+      requiredArguments: [],
+      approvalRequired: false,
+      idempotencyRequired: true,
+      identityRequired: true,
+    }]))).toThrow();
+  });
+
+  it("activates production bindings only against an enforced verified MCP policy", () => {
+    const [binding] = parseProductionA2ACapabilityBindings(JSON.stringify([{
+      schema: "ea.a2a-capability-binding.v1", mode: "production", bindingId: "bank.crm.write", bindingVersion: "1",
+      capabilityId: "bank.crm", operation: "write", sideEffect: "write", displayName: "写 CRM",
+      targetServerId: "bank_crm", targetToolName: "write", argumentMap: { value: "value" }, requiredArguments: ["value"],
+      approvalRequired: true, idempotencyRequired: true, identityRequired: true,
+    }]));
+    const connection = { environment: "prod", lifecycleState: "enforced", authMode: "oauth2_access_token", identityVerificationStatus: "verified" };
+    const policy = { toolName: "write", enabled: true, sideEffect: "write", approvalMode: "always", idempotencyRequired: true };
+    expect(() => assertProductionA2ABindingRuntime({ binding, connection, policy })).not.toThrow();
+    expect(() => assertProductionA2ABindingRuntime({ binding, connection: { ...connection, lifecycleState: "shadow" }, policy })).toThrow(/强制治理/u);
+    expect(() => assertProductionA2ABindingRuntime({ binding, connection, policy: { ...policy, approvalMode: "never" } })).toThrow(/确认和幂等/u);
   });
 });

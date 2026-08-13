@@ -215,7 +215,7 @@ export async function callEaAssistantModel(opts: EaAssistantCallOptions): Promis
   return callEaAssistantModelWithConfig(config, opts);
 }
 
-async function callEaAssistantModelWithConfig(config: EaAssistantModelConfig, opts: EaAssistantCallOptions): Promise<{
+export async function callEaAssistantModelWithConfig(config: EaAssistantModelConfig, opts: EaAssistantCallOptions): Promise<{
   content: string;
   model: string;
   elapsedMs: number;

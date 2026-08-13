@@ -56,6 +56,19 @@ describe("governance invariants", () => {
     expect(capabilitySetFingerprint()).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it("requires real route integration proof for every active HTTP side-effect PEP", () => {
+    const httpCapabilities = CAPABILITY_REGISTRY.filter(item => (
+      item.active
+      && item.sideEffect !== "read"
+      && item.entry.startsWith("/api/")
+      && item.pep?.kind !== "sandbox"
+    ));
+    expect(httpCapabilities.length).toBeGreaterThan(0);
+    for (const capability of httpCapabilities) {
+      expect(capability.executionProof?.kind, capability.id).toBe("route_integration");
+    }
+  });
+
   it("keeps every known runtime tool in the governance registry", () => {
     for (const tool of RUNTIME_TOOLS) expect(resolveToolGovernance(tool).registered, tool).toBe(true);
   });

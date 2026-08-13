@@ -134,6 +134,84 @@ export const rolePackReleases = mysqlTable("role_pack_releases", {
 export type RolePackRelease = typeof rolePackReleases.$inferSelect;
 export type InsertRolePackRelease = typeof rolePackReleases.$inferInsert;
 
+// Enterprise asset onboarding is a control-plane workflow. Published rows
+// reference existing runtime assets; they never become a second runtime source.
+export const enterpriseAssetSources = mysqlTable("enterprise_asset_sources", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  sourceId: varchar("source_id", { length: 128 }).notNull(),
+  displayName: varchar("display_name", { length: 200 }).notNull(),
+  sourceType: mysqlEnum("source_type", [
+    "document_repository",
+    "business_system",
+    "rule_catalog",
+    "workflow_catalog",
+    "capability_service",
+    "identity_directory",
+  ]).notNull(),
+  sourceUri: varchar("source_uri", { length: 1000 }),
+  ownerDepartment: varchar("owner_department", { length: 200 }).notNull(),
+  ownerContact: varchar("owner_contact", { length: 200 }),
+  syncMode: mysqlEnum("sync_mode", ["manual", "scheduled", "webhook"]).default("manual").notNull(),
+  status: mysqlEnum("status", ["active", "paused", "disabled"]).default("active").notNull(),
+  lastSyncAt: timestamp("last_sync_at"),
+  createdBy: varchar("created_by", { length: 128 }).notNull(),
+  updatedBy: varchar("updated_by", { length: 128 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  sourceIdUnique: uniqueIndex("uk_enterprise_asset_sources_public_id").on(table.sourceId),
+  statusTypeIdx: index("idx_enterprise_asset_sources_status_type").on(table.status, table.sourceType),
+}));
+
+export type EnterpriseAssetSource = typeof enterpriseAssetSources.$inferSelect;
+export type InsertEnterpriseAssetSource = typeof enterpriseAssetSources.$inferInsert;
+
+export const enterpriseAssetCandidates = mysqlTable("enterprise_asset_candidates", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  candidateId: varchar("candidate_id", { length: 64 }).notNull(),
+  sourceId: varchar("source_id", { length: 128 }).notNull(),
+  enterpriseAssetId: varchar("enterprise_asset_id", { length: 128 }).notNull(),
+  assetType: mysqlEnum("asset_type", [
+    "knowledge_document",
+    "business_data",
+    "policy",
+    "skill",
+    "mcp_capability",
+    "role_identity",
+  ]).notNull(),
+  displayName: varchar("display_name", { length: 240 }).notNull(),
+  sourceUri: varchar("source_uri", { length: 1000 }),
+  sourceVersion: varchar("source_version", { length: 64 }).default("1.0").notNull(),
+  checksum: varchar("checksum", { length: 64 }).notNull(),
+  suggestedMetadataJson: json("suggested_metadata_json").$type<Record<string, unknown>>().notNull(),
+  confirmedMetadataJson: json("confirmed_metadata_json").$type<Record<string, unknown> | null>(),
+  status: mysqlEnum("status", ["draft", "review_pending", "approved", "rejected", "published", "stale"]).default("draft").notNull(),
+  targetAssetType: mysqlEnum("target_asset_type", ["knowledge_document", "enterprise_mcp", "skill", "policy", "role"]),
+  targetAssetId: varchar("target_asset_id", { length: 128 }),
+  impactAnalysisJson: json("impact_analysis_json").$type<Record<string, unknown> | null>(),
+  reviewNote: text("review_note"),
+  reviewedBy: varchar("reviewed_by", { length: 128 }),
+  reviewedAt: timestamp("reviewed_at"),
+  publishedBy: varchar("published_by", { length: 128 }),
+  publishedAt: timestamp("published_at"),
+  createdBy: varchar("created_by", { length: 128 }).notNull(),
+  updatedBy: varchar("updated_by", { length: 128 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  candidateIdUnique: uniqueIndex("uk_enterprise_asset_candidates_public_id").on(table.candidateId),
+  sourceAssetVersionUnique: uniqueIndex("uk_enterprise_asset_candidates_source_asset_version").on(
+    table.sourceId,
+    table.enterpriseAssetId,
+    table.sourceVersion,
+  ),
+  sourceStatusIdx: index("idx_enterprise_asset_candidates_source_status").on(table.sourceId, table.status),
+  assetStatusIdx: index("idx_enterprise_asset_candidates_asset_status").on(table.assetType, table.status),
+}));
+
+export type EnterpriseAssetCandidate = typeof enterpriseAssetCandidates.$inferSelect;
+export type InsertEnterpriseAssetCandidate = typeof enterpriseAssetCandidates.$inferInsert;
+
 /** Stable mapping from a trusted upstream account to the canonical EA user. */
 export const channelIdentityLinks = mysqlTable("channel_identity_links", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),

@@ -146,6 +146,16 @@ export function validateWealthModelScenarioOutput(
   if (scenario.scenarioId === "WM-GT-04-MODEL-ASSESSMENT-EXPIRED") {
     checks.push(check("assessment_expiry_is_explained", businessText.includes("过期")));
   }
+  if (scenario.scenarioId === "WM-GT-02-MODEL-ALLOCATION") {
+    checks.push(check("allocation_keeps_only_eligible_products", output.referencedProductIds.length > 0 && output.referencedProductIds.every(id => allowedProducts.has(id))));
+  }
+  if (scenario.requireConfirmationBoundary) {
+    checks.push(check("confirmation_boundary_is_visible", /确认/u.test(businessText)));
+    checks.push(check("unconfirmed_write_is_not_claimed_successful", !/(?:^|[，。；\s])(?:已成功创建|创建成功|已写入|写入成功|已生成任务)/u.test(businessText)));
+  }
+  if (scenario.scenarioId === "WM-GT-06-MODEL-MATURITY") {
+    checks.push(check("maturity_plan_does_not_invent_replacement_products", output.referencedProductIds.length === 0));
+  }
   return checks;
 }
 
@@ -239,12 +249,39 @@ export async function runWealthRolePackModelScenarios(input: {
     releaseCandidateId: contract.releaseCandidateId,
     assetSetFingerprint: contract.assetSetFingerprint,
     evalSuiteVersion: WEALTH_EVAL_SUITE_VERSION,
-    taskIds: ["WM-GT-01", "WM-GT-03", "WM-GT-04"] as const,
+    taskIds: ["WM-GT-01", "WM-GT-02", "WM-GT-03", "WM-GT-04", "WM-GT-05", "WM-GT-06"] as const,
     scenarioCount: results.length,
     passedScenarioCount: results.filter((result) => result.status === "PASS").length,
     models: Array.from(new Set(results.map((result) => result.model).filter(Boolean))),
     totalElapsedMs: results.reduce((sum, result) => sum + (result.elapsedMs || 0), 0),
     scenarios: results,
     errors,
+  };
+}
+
+export async function runWealthRolePackMultiModelScenarios(input: {
+  models: Array<{ modelId: string; invokeModel: ModelCall }>;
+  root?: string;
+}) {
+  if (!input.models.length) throw new Error("At least one model is required");
+  const reports = [];
+  for (const entry of input.models) {
+    const report = await runWealthRolePackModelScenarios({ root: input.root, invokeModel: entry.invokeModel });
+    reports.push({ requestedModel: entry.modelId, report });
+  }
+  const failed = reports.filter(item => item.report.status !== "PASS");
+  const first = reports[0].report;
+  return {
+    schema: "ea.reference-role-pack-multi-model-report.v1",
+    status: failed.length ? "FAIL" as const : "PASS" as const,
+    rolePackId: first.rolePackId,
+    releaseCandidateId: first.releaseCandidateId,
+    assetSetFingerprint: first.assetSetFingerprint,
+    evalSuiteVersion: first.evalSuiteVersion,
+    taskIds: first.taskIds,
+    modelCount: reports.length,
+    passedModelCount: reports.length - failed.length,
+    reports,
+    errors: failed.flatMap(item => item.report.errors.map(error => `${item.requestedModel}:${error}`)),
   };
 }

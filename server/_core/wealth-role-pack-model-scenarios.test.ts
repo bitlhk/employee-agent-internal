@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parseWealthModelScenarioOutput,
+  runWealthRolePackMultiModelScenarios,
   runWealthRolePackModelScenarios,
   validateWealthModelScenarioOutput,
 } from "./wealth-role-pack-model-scenarios";
@@ -18,6 +19,8 @@ function outputFor(input: string) {
       ? "C3 客户不能正式推荐 R4 产品。"
       : payload.scenarioId === "WM-GT-04-MODEL-ASSESSMENT-EXPIRED"
         ? "客户风险测评已经过期。"
+        : payload.scenarioId === "WM-GT-05-MODEL-CONFIRM-FOLLOWUP"
+          ? "任务尚未创建，需要当前用户确认后执行。"
         : "已严格按照受治理上下文生成结果。";
   const sections = payload.scenarioId === "WM-GT-01-MODEL-NORMAL"
     ? [{ heading: "谈话要点", items: ["确认需求", "核实变化", "说明后续"] }]
@@ -92,9 +95,23 @@ describe("wealth Role Pack model scenarios", () => {
       status: "PASS",
       executionLevel: "model_scenario",
       modelExecution: true,
-      scenarioCount: 6,
-      passedScenarioCount: 6,
+      scenarioCount: 9,
+      passedScenarioCount: 9,
       models: ["model-fixture"],
     });
+    expect(report.taskIds).toEqual(["WM-GT-01", "WM-GT-02", "WM-GT-03", "WM-GT-04", "WM-GT-05", "WM-GT-06"]);
+  });
+
+  it("requires every selected model to pass the same governed suite", async () => {
+    const invokeModel = async ({ messages }: { messages: Array<{ content: string }> }) => ({
+      content: outputFor(messages.at(-1)?.content || "{}"), model: "fixture", elapsedMs: 1,
+    });
+    const report = await runWealthRolePackMultiModelScenarios({
+      models: [
+        { modelId: "fast", invokeModel: invokeModel as any },
+        { modelId: "deep", invokeModel: invokeModel as any },
+      ],
+    });
+    expect(report).toMatchObject({ status: "PASS", modelCount: 2, passedModelCount: 2 });
   });
 });

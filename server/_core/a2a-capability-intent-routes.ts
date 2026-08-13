@@ -5,12 +5,15 @@ import {
   completeA2ACapabilityIntentExecution,
   getA2ACapabilityIntentExecution,
   getAgentTask,
+  getEnterpriseMcpConnection,
+  listEnterpriseMcpToolPolicies,
   listA2ACapabilityIntentExecutions,
   reserveA2ACapabilityIntentExecution,
 } from "../db";
 import { collectA2ACapabilityIntents, type A2ACapabilityIntent } from "./a2a-capability-intent";
 import {
   A2ACapabilityIntentBindingError,
+  assertProductionA2ABindingRuntime,
   resolveA2ACapabilityIntentBinding,
   type ResolvedA2ACapabilityIntentBinding,
 } from "./a2a-capability-intent-bindings";
@@ -136,13 +139,25 @@ async function ownedTask(req: Request, res: Parameters<typeof requireClawOwner>[
   return { claw, task: task as Record<string, unknown> };
 }
 
-function resolveIntent(task: Record<string, unknown>, intentId: string): {
+async function resolveIntent(task: Record<string, unknown>, intentId: string): Promise<{
   intent: A2ACapabilityIntent;
   resolved: ResolvedA2ACapabilityIntentBinding;
-} {
+}> {
   const intent = parseStoredIntents(task).find(item => item.intentId === intentId);
   if (!intent) throw new A2ACapabilityIntentBindingError("UNSUPPORTED_INTENT", "远端业务动作不存在或已失效。");
-  return { intent, resolved: resolveA2ACapabilityIntentBinding(intent) };
+  const resolved = resolveA2ACapabilityIntentBinding(intent);
+  if (resolved.binding.mode === "production") {
+    const [connection, policies] = await Promise.all([
+      getEnterpriseMcpConnection(resolved.binding.targetServerId),
+      listEnterpriseMcpToolPolicies(resolved.binding.targetServerId),
+    ]);
+    assertProductionA2ABindingRuntime({
+      binding: resolved.binding,
+      connection,
+      policy: policies.find(policy => policy.toolName === resolved.binding.targetToolName) || null,
+    });
+  }
+  return { intent, resolved };
 }
 
 export function registerA2ACapabilityIntentRoutes(app: Express): void {
@@ -186,7 +201,7 @@ export function registerA2ACapabilityIntentRoutes(app: Express): void {
       let intent: A2ACapabilityIntent;
       let resolved: ResolvedA2ACapabilityIntentBinding;
       try {
-        ({ intent, resolved } = resolveIntent(owned.task, intentId));
+        ({ intent, resolved } = await resolveIntent(owned.task, intentId));
       } catch (error) {
         await recordAuditRequired({
           action: "a2a.capability_intent.execution_blocked",

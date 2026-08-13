@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/confirmation-dialog";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText, Gauge, Cable } from "lucide-react";
+import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText, Gauge, Cable, PackageOpen } from "lucide-react";
 import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
 import { CollaborationTab } from "@/components/pages/CollaborationTab";
 import { toast } from "sonner";
@@ -39,6 +39,7 @@ import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
 import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
 import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/MonitoringPanel";
 import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
+import { EnterpriseAssetsPanel } from "@/components/admin/EnterpriseAssetsPanel";
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
   { value: "creating", label: "创建中" },
@@ -57,10 +58,8 @@ const INDUSTRY_LABELS: Record<string, string> = {
   insurance: "保险",
   securities: "证券",
 };
-
 const formatStatus = (status?: string) =>
   STATUS_OPTIONS.find((s) => s.value === status)?.label || status || "-";
-
 const STATUS_COLORS: Record<string, string> = {
   total: "#6366f1",
   active: "#22c55e",
@@ -69,7 +68,6 @@ const STATUS_COLORS: Record<string, string> = {
   recycled: "#9ca3af",
   failed: "#ef4444",
 };
-
 const formatBytes = (value?: number) => {
   const n = Number(value || 0);
   if (n <= 0) return "0 B";
@@ -880,6 +878,7 @@ export default function ClawAdmin() {
     { value: "feedback", label: "质量反馈", description: "满意度与问题归因", icon: MessageSquareText },
     { value: "accounts", label: "账号管理", description: "管理员与登录密码", icon: UserCog },
     { value: "enterprise-mcp", label: "企业连接器", description: "MCP、身份与工具策略", icon: Cable },
+    { value: "enterprise-assets", label: "岗位资产接入", description: "登记、审核、发布与影响", icon: PackageOpen },
     { value: "health", label: "系统健康", description: "平台、Runtime 与连接状态", icon: Activity },
     ...(monitoringStatus?.configured
       ? [{ value: "monitoring", label: "运行监控", description: "性能、容量与趋势", icon: Gauge }]
@@ -1532,6 +1531,7 @@ export default function ClawAdmin() {
             </Card>
           </TabsContent>
           <TabsContent value="enterprise-mcp" className="space-y-4"><EnterpriseMcpPanel /></TabsContent>
+          <TabsContent value="enterprise-assets" className="space-y-4"><EnterpriseAssetsPanel /></TabsContent>
           <TabsContent value="health" className="space-y-4">
             <Card className="admin-panel-card p-6">
               <div className="mb-5 flex items-center justify-between gap-3">

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
-export const WEALTH_EVAL_SUITE_VERSION = "wm-golden-task-v2";
+export const WEALTH_EVAL_SUITE_VERSION = "wm-golden-task-v3";
 
 type BenchmarkCase = {
   caseId: string;

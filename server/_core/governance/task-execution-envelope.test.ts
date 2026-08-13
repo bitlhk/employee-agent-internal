@@ -95,4 +95,14 @@ describe("task execution envelope", () => {
     expect(decision.deniedOutcomes).toContain("customer_specific_previsit_brief");
     expect(decision.allowedOutcomes).toContain("generic_previsit_checklist");
   });
+
+  it("defines fail-closed readiness contracts for all six wealth benchmark tasks", () => {
+    const taskIds = ["WM-GT-01", "WM-GT-02", "WM-GT-03", "WM-GT-04", "WM-GT-05", "WM-GT-06"] as const;
+    for (const taskId of taskIds) {
+      const decision = evaluateWealthTaskReadiness({ taskId, checks: {} });
+      expect(decision.status).toBe("BLOCKED");
+      expect(decision.deniedOutcomes).toHaveLength(1);
+      expect(decision.fallbackOutcomes.length).toBeGreaterThan(0);
+    }
+  });
 });

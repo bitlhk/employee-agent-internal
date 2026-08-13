@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   execution: null as Record<string, unknown> | null,
   gatewayResult: {} as Record<string, unknown>,
   intents: [] as Array<Record<string, unknown>>,
+  taskAuthorizationSnapshotId: "authz_task_1",
 }));
 
 vi.mock("../db", () => ({
@@ -20,7 +21,7 @@ vi.mock("../db", () => ({
     agentId: "expert-1",
     status: "succeeded",
     sourceSessionId: "session-1",
-    requestContextJson: JSON.stringify({ taskAuthorizationSnapshotId: "authz_task_1" }),
+    requestContextJson: JSON.stringify({ taskAuthorizationSnapshotId: state.taskAuthorizationSnapshotId }),
     capabilityIntentsJson: JSON.stringify(state.intents),
   }),
   listA2ACapabilityIntentExecutions: async () => state.execution ? [state.execution] : [],
@@ -41,6 +42,8 @@ vi.mock("../db", () => ({
     state.execution = { ...(state.execution || {}), ...input };
     return state.execution;
   },
+  getEnterpriseMcpConnection: async () => null,
+  listEnterpriseMcpToolPolicies: async () => [],
 }));
 
 vi.mock("./helpers", () => ({
@@ -107,6 +110,7 @@ beforeEach(() => {
   state.execution = null;
   state.gatewayResult = {};
   state.intents = [followupIntent()];
+  state.taskAuthorizationSnapshotId = "authz_task_1";
 });
 
 afterEach(async () => {
@@ -120,6 +124,14 @@ describe("A2A capability intent routes", () => {
     state.intents = [followupIntent("delete_customer")];
     const response = await execute(await startServer());
     expect(response.status).toBe(422);
+    expect(state.reserveCalls).toBe(0);
+    expect(state.gatewayCalls).toHaveLength(0);
+  });
+
+  it("fails closed before reservation when the parent task has no durable authority snapshot", async () => {
+    state.taskAuthorizationSnapshotId = "";
+    const response = await execute(await startServer());
+    expect(response.status).toBe(409);
     expect(state.reserveCalls).toBe(0);
     expect(state.gatewayCalls).toHaveLength(0);
   });
