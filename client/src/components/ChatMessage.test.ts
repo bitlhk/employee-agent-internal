@@ -33,6 +33,7 @@ describe("ChatMessage tool timeline", () => {
       schema: "ea.context-receipt.v1",
       receiptId: "crpt_test",
       taskId: "WM-GT-02",
+      taskLabel: "资产配置建议",
       principalFingerprint: "p".repeat(64),
       provided: {
         knowledge: [{ assetId: "policy-v22", label: "适当性制度 V2.2", version: "V2.2", contentHash: "h".repeat(64) }],
@@ -43,7 +44,7 @@ describe("ChatMessage tool timeline", () => {
       cited: { knowledgeAssetIds: [] },
       applied: { policyDecisions: [], capabilityExecutions: [] },
       excluded: [],
-      readiness: { status: "READY", requestedOutcome: "allocation", allowedOutcomes: ["allocation"], deniedOutcomes: [], reasons: [], remediation: [], decisionFingerprint: "r".repeat(64) },
+      readiness: { status: "READY", requestedOutcome: "allocation", allowedOutcomes: ["allocation"], deniedOutcomes: [], reasons: [], remediation: [], presentation: { completed: ["资产配置建议"], unavailable: [], nextSteps: [] }, decisionFingerprint: "r".repeat(64) },
       createdAt: "2026-08-13T08:00:00.000Z",
       receiptFingerprint: "f".repeat(64),
     };
@@ -60,7 +61,7 @@ describe("ChatMessage tool timeline", () => {
         id: "call-context",
         name: "prepare_wealth_allocation_context",
         arguments: "{}",
-        result: `EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({ contextReceipt })}`,
+        result: JSON.stringify({ content: [{ type: "text", text: "EA_WEALTH_ALLOCATION_CONTEXT:{}" }], _meta: { eaContextReceipt: contextReceipt } }),
         status: "done",
         ts: Date.now(),
       }],

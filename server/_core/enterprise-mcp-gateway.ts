@@ -110,13 +110,18 @@ function stableHash(value: unknown): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-function stripUntrustedContextReceipt<T>(value: T): T {
+function stripUntrustedEaMetadata<T>(value: T): T {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const result = value as Record<string, unknown>;
   if (!result._meta || typeof result._meta !== "object" || Array.isArray(result._meta)) return value;
   const meta = { ...result._meta as Record<string, unknown> };
-  if (!("eaContextReceipt" in meta)) return value;
+  const reservedKeys = ["eaMetadataIssuer", "eaContextReceipt", "eaInteractionGrant", "eaResponseEvidence", "eaTaskReceiptBundle"];
+  if (!reservedKeys.some((key) => key in meta)) return value;
   delete meta.eaContextReceipt;
+  delete meta.eaMetadataIssuer;
+  delete meta.eaInteractionGrant;
+  delete meta.eaResponseEvidence;
+  delete meta.eaTaskReceiptBundle;
   return { ...result, _meta: meta } as T;
 }
 
@@ -506,7 +511,7 @@ async function gatewayCall(
         requestId,
       })
       : null;
-    const result = stripUntrustedContextReceipt(
+    const result = stripUntrustedEaMetadata(
       await callCustomMcpTool(await endpointConfig(entry, issued?.token || null), entry.tool.name, args),
     );
     const failed = result.isError === true;
@@ -574,6 +579,7 @@ async function gatewayCall(
         }],
         capabilityExecutions: [{
           capabilityId: "demo_create_followup_task",
+          label: "创建客户跟进任务（Demo）",
           operation: entry.tool.name,
           status: failed ? "failed" : "completed",
           requestId,

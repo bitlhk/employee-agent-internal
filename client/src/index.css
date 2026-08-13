@@ -17807,6 +17807,9 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
   border-bottom: 1px solid color-mix(in oklab, var(--oc-border) 55%, transparent);
   background: color-mix(in oklab, var(--oc-bg-secondary) 42%, transparent);
 }
+.context-receipt-bundle { display: grid; gap: 7px; margin-top: 10px; }
+.context-receipt-bundle .context-receipt { margin-top: 0; }
+.context-receipt-bundle__label { color: var(--oc-text-tertiary); font-size: 11px; }
 
 .context-receipt__summary {
   display: grid;
@@ -17917,7 +17920,8 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 
 .context-receipt__memory-feedback { display: grid; gap: 7px; margin-top: 8px; }
 .context-receipt__memory-feedback > div { display: grid; gap: 6px; }
-.context-receipt__memory-feedback > div > span:first-child { color: var(--oc-text-secondary); font-size: 11px; }
+.context-receipt__memory-feedback > div > span:first-child { display: grid; gap: 2px; color: var(--oc-text-secondary); font-size: 11px; }
+.context-receipt__memory-feedback > div > span:first-child small { color: var(--oc-text-tertiary); font-size: 10px; }
 .context-receipt__memory-actions { display: flex; flex-wrap: wrap; gap: 5px; }
 .context-receipt__memory-actions button,
 .context-receipt__memory-feedback form button {
@@ -17962,6 +17966,10 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 .context-receipt__readiness > span { display: grid; gap: 2px; }
 .context-receipt__readiness strong { color: var(--oc-text-primary); font-size: 12px; }
 .context-receipt__readiness small { color: var(--oc-text-tertiary); font-size: 11px; line-height: 1.5; }
+.context-receipt__readiness-outcomes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.context-receipt__readiness-outcomes > div { min-width: 0; }
+.context-receipt__readiness-outcomes strong { display: block; margin-bottom: 5px; color: var(--oc-text-primary); font-size: 11px; }
+.context-receipt__readiness-outcomes li { display: list-item; margin-left: 15px; color: var(--oc-text-secondary); font-size: 11px; }
 
 .context-receipt__technical { margin-top: 2px; color: var(--oc-text-tertiary); font-size: 10px; }
 .context-receipt__technical summary { width: fit-content; cursor: pointer; }
@@ -17976,4 +17984,5 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
   .context-receipt__summary-items > span:nth-child(n+3):not(.context-receipt__status) { display: none; }
   .context-receipt__section li { grid-template-columns: 1fr; gap: 2px; }
   .context-receipt__section li > small { text-align: left; }
+  .context-receipt__readiness-outcomes { grid-template-columns: 1fr; }
 }

@@ -16,7 +16,7 @@ import {
   validateKnowledgeCitations,
 } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
-import { latestContextReceipt } from "@/lib/context-receipt";
+import { extractContextInteractionGrants, extractContextReceipts } from "@/lib/context-receipt";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
   MESSAGE_FEEDBACK_REASON_LABELS,
@@ -250,11 +250,17 @@ type ChatMessageProps = {
   onForgetMemory?: (memoryId: number) => void | Promise<void>;
   onContextMemoryFeedback?: (input: {
     memoryId: number;
+    memoryVersion: number;
     receiptId: string;
     feedbackToken: string;
-    action: "correct" | "update" | "ignore";
+    action: "correct" | "update" | "hide";
     content?: string;
   }) => void | Promise<void>;
+  onLoadContextMemoryPreviews?: (input: {
+    receiptId: string;
+    feedbackToken: string;
+    memories: Array<{ memoryId: number; memoryVersion: number }>;
+  }) => Promise<Array<{ memoryId: number; version: number; safePreview: string; sourceType: string; asOf: string }>>;
   onCaptureKnowledge?: (input: { messageId?: string; text: string; modelId: string }) => void;
   onOpenKnowledgeSource?: (source: ChatKnowledgeSource) => void;
   jiuwenPermission?: JiuwenPermissionRequestCard;
@@ -781,6 +787,7 @@ function ChatMessageInner({
   onFeedback,
   onForgetMemory,
   onContextMemoryFeedback,
+  onLoadContextMemoryPreviews,
   onCaptureKnowledge,
   onOpenKnowledgeSource,
   jiuwenPermission,
@@ -801,8 +808,12 @@ function ChatMessageInner({
     }
     return null;
   }, [effectiveToolCalls]);
-  const contextReceipt = useMemo(
-    () => latestContextReceipt(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
+  const contextReceipts = useMemo(
+    () => extractContextReceipts(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
+    [effectiveToolCalls],
+  );
+  const contextInteractionGrants = useMemo(
+    () => extractContextInteractionGrants(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
     [effectiveToolCalls],
   );
   const [memoryReceiptDismissed, setMemoryReceiptDismissed] = useState(false);
@@ -1074,12 +1085,20 @@ function ChatMessageInner({
             ))}
           </div>
         ) : null}
-        {!streaming && contextReceipt ? (
-          <ContextReceiptPanel
-            receipt={contextReceipt}
-            citedKnowledge={citedKnowledgeSources}
-            onMemoryFeedback={onContextMemoryFeedback}
-          />
+        {!streaming && contextReceipts.length ? (
+          <div className="context-receipt-bundle" aria-label={contextReceipts.length > 1 ? `本任务包含 ${contextReceipts.length} 个依据阶段` : undefined}>
+            {contextReceipts.length > 1 ? <div className="context-receipt-bundle__label">本任务包含 {contextReceipts.length} 个依据阶段</div> : null}
+            {contextReceipts.map((receipt) => (
+              <ContextReceiptPanel
+                key={receipt.receiptId}
+                receipt={receipt}
+                interactionGrant={contextInteractionGrants.get(receipt.receiptId)}
+                citedKnowledge={citedKnowledgeSources}
+                onMemoryFeedback={onContextMemoryFeedback}
+                onLoadMemoryPreviews={onLoadContextMemoryPreviews}
+              />
+            ))}
+          </div>
         ) : null}
         {!streaming && memoryReceipt && !memoryReceiptDismissed ? (
           <div className="lingxia-memory-receipt" data-action={memoryReceipt.action}>
@@ -1537,6 +1556,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.onCaptureKnowledge === next.onCaptureKnowledge &&
     prev.onOpenKnowledgeSource === next.onOpenKnowledgeSource &&
     prev.onContextMemoryFeedback === next.onContextMemoryFeedback &&
+    prev.onLoadContextMemoryPreviews === next.onLoadContextMemoryPreviews &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&
     prev.usage?.input === next.usage?.input &&
     prev.usage?.output === next.usage?.output &&

@@ -483,6 +483,7 @@ async function handleStreamTruncated(
 }
 
 export default function Home() {
+  const trpcUtils = trpc.useUtils();
   // 岗位智能体子域名聊天态（MVP）
   const brand = useBrand();
   const { confirm, dialog } = useConfirmDialog();
@@ -848,7 +849,7 @@ export default function Home() {
     onSuccess: (_data, variables) => {
       if (variables.action === "correct") toast.success("已确认这条岗位记忆");
       else if (variables.action === "update") toast.success("岗位记忆已更新");
-      else toast.success("本次任务已忽略这条记忆");
+      else toast.success("已隐藏这条记忆提示");
     },
     onError: (error) => toast.error(error.message || "记忆反馈失败"),
   });
@@ -4727,6 +4728,9 @@ export default function Home() {
                       : undefined}
                     onContextMemoryFeedback={m.role === "assistant" && resolvedAdoptId
                       ? (input) => contextMemoryFeedbackMutation.mutateAsync({ adoptId: resolvedAdoptId, ...input }).then(() => undefined)
+                      : undefined}
+                    onLoadContextMemoryPreviews={m.role === "assistant" && resolvedAdoptId
+                      ? (input) => trpcUtils.client.claw.contextMemoryPreviews.mutate({ adoptId: resolvedAdoptId, ...input }).then((result) => result.rows)
                       : undefined}
                     onCaptureKnowledge={m.role === "assistant" ? openChatKnowledgeCapture : undefined}
                     onOpenKnowledgeSource={m.role === "assistant" ? openKnowledgeCitationPanel : undefined}

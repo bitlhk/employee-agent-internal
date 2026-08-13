@@ -24,6 +24,7 @@ export function buildWealthPolicyContextReceipt(input: {
     }],
     capabilityExecutions: [{
       capabilityId: "get_wealth_policy_basis",
+      label: "核验现行政策",
       operation: "resolve_current_policy",
       status: input.policyReady ? "completed" : "blocked",
     }],
@@ -32,6 +33,7 @@ export function buildWealthPolicyContextReceipt(input: {
       reasonCode: "HISTORICAL_VERSION_FILTERED",
       count: input.basis.governance.filteredForValidity,
       message: `已过滤 ${input.basis.governance.filteredForValidity} 份失效或尚未生效的同系列资料。`,
+      disclosure: "exact_count",
     }] : [],
   });
 }
@@ -59,6 +61,7 @@ export function buildWealthAllocationContextReceipt(input: {
     policyDecisions,
     capabilityExecutions: [{
       capabilityId: "prepare_wealth_allocation_context",
+      label: "筛选资产配置候选",
       operation: "evaluate_allocation_candidates",
       status: input.result.status === "ready" ? "completed" : "blocked",
     }],
@@ -67,6 +70,7 @@ export function buildWealthAllocationContextReceipt(input: {
       reasonCode: "SUITABILITY_POLICY_FILTERED",
       count: input.result.excludedProducts.length,
       message: `已排除 ${input.result.excludedProducts.length} 个不满足当前适当性规则的产品候选。`,
+      disclosure: "exact_count",
     }] : [],
   });
 }

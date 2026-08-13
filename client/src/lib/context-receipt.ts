@@ -2,14 +2,24 @@ import {
   isContextReceiptV1,
   type ContextReceiptV1,
 } from "@shared/context-receipt";
+import {
+  isContextInteractionGrantV1,
+  type ContextInteractionGrantV1,
+} from "@shared/context-evidence";
 
 type ContextReceiptToolResult = { name: string; result?: string };
 
-const PLATFORM_RECEIPT_PREFIXES = [
+const LEGACY_PLATFORM_RECEIPT_PREFIXES = [
   "EA_WEALTH_PREVISIT_CONTEXT:",
   "EA_WEALTH_ALLOCATION_CONTEXT:",
   "EA_WEALTH_POLICY_BASIS:",
 ] as const;
+
+const TRUSTED_PLATFORM_TOOLS = new Set([
+  "prepare_wealth_previsit_context",
+  "prepare_wealth_allocation_context",
+  "get_wealth_policy_basis",
+]);
 
 function parseJsonCandidate(value: string): unknown {
   const text = String(value || "").trim();
@@ -52,17 +62,60 @@ function object(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function receiptFromTrustedTool(tool: ContextReceiptToolResult): ContextReceiptV1 | null {
+function normalizeReceipt(receipt: ContextReceiptV1): ContextReceiptV1 {
+  const readiness = receipt.readiness as ContextReceiptV1["readiness"] & { presentation?: ContextReceiptV1["readiness"]["presentation"] };
+  return {
+    ...receipt,
+    taskLabel: receipt.taskLabel || receipt.taskId,
+    provided: {
+      ...receipt.provided,
+      memory: receipt.provided.memory.map((item) => ({
+        ...item,
+        version: Number(item.version || 1),
+        contentHash: item.contentHash || "",
+        usageType: item.usageType || "relationship_observation",
+        assurance: "REFERENCE_ONLY",
+      })),
+    },
+    applied: {
+      ...receipt.applied,
+      capabilityExecutions: receipt.applied.capabilityExecutions.map((item) => ({
+        ...item,
+        label: item.label || item.operation,
+      })),
+    },
+    excluded: receipt.excluded.map((item) => ({
+      ...item,
+      disclosure: item.disclosure || "aggregate_only",
+    })),
+    readiness: {
+      ...readiness,
+      presentation: readiness.presentation || {
+        completed: readiness.allowedOutcomes,
+        unavailable: readiness.deniedOutcomes,
+        nextSteps: readiness.remediation,
+      },
+    },
+  };
+}
+
+function trustedMetadata(tool: ContextReceiptToolResult): Record<string, unknown> {
   const result = String(tool.result || "").trim();
-  const platformPrefix = PLATFORM_RECEIPT_PREFIXES.find((prefix) => result.startsWith(prefix));
-  if (platformPrefix) {
-    const payload = object(parseJsonCandidate(result.slice(platformPrefix.length)));
-    return isContextReceiptV1(payload.contextReceipt) ? payload.contextReceipt : null;
-  }
-  if (!tool.name.startsWith("enterprise_")) return null;
   const payload = object(parseJsonCandidate(result));
-  const meta = object(payload._meta);
-  return isContextReceiptV1(meta.eaContextReceipt) ? meta.eaContextReceipt : null;
+  const metadata = object(payload._meta);
+  if (metadata.eaMetadataIssuer === "employee-agent") return metadata;
+  if (!TRUSTED_PLATFORM_TOOLS.has(tool.name) && !tool.name.startsWith("enterprise_")) return {};
+  return metadata;
+}
+
+function receiptFromTrustedTool(tool: ContextReceiptToolResult): ContextReceiptV1 | null {
+  const metadata = trustedMetadata(tool);
+  if (isContextReceiptV1(metadata.eaContextReceipt)) return normalizeReceipt(metadata.eaContextReceipt);
+  const result = String(tool.result || "").trim();
+  const legacyPrefix = LEGACY_PLATFORM_RECEIPT_PREFIXES.find((prefix) => result.startsWith(prefix));
+  if (!legacyPrefix || !TRUSTED_PLATFORM_TOOLS.has(tool.name)) return null;
+  const payload = object(parseJsonCandidate(result.slice(legacyPrefix.length)));
+  return isContextReceiptV1(payload.contextReceipt) ? normalizeReceipt(payload.contextReceipt) : null;
 }
 
 export function extractContextReceipts(tools: ContextReceiptToolResult[]): ContextReceiptV1[] {
@@ -76,4 +129,15 @@ export function extractContextReceipts(tools: ContextReceiptToolResult[]): Conte
 
 export function latestContextReceipt(tools: ContextReceiptToolResult[]): ContextReceiptV1 | null {
   return extractContextReceipts(tools).at(-1) || null;
+}
+
+export function extractContextInteractionGrants(
+  tools: ContextReceiptToolResult[],
+): Map<string, ContextInteractionGrantV1> {
+  const grants = new Map<string, ContextInteractionGrantV1>();
+  for (const tool of tools) {
+    const candidate = trustedMetadata(tool).eaInteractionGrant;
+    if (isContextInteractionGrantV1(candidate)) grants.set(candidate.receiptId, candidate);
+  }
+  return grants;
 }

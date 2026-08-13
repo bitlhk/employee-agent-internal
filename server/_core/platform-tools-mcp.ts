@@ -37,8 +37,10 @@ import {
   buildWealthAllocationContextReceipt,
   buildWealthPolicyContextReceipt,
 } from "./wealth-context-receipts";
+import { attachContextReceipt } from "./governance/context-receipt";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
 import { handleWealthPrevisitTool } from "./wealth-previsit-tool-handler";
+import { wealthAllocationModelContent, wealthPolicyModelContent } from "./wealth-model-content";
 import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } from "./wealth-role-pack-release";
 import {
   resolveWealthPolicyBasis,
@@ -606,7 +608,11 @@ async function callTool(
         accessRestricted: basis.governance.accessRestricted,
       },
     });
-    return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify({ ...basis, readiness, executionEnvelope, contextReceipt })}`, principalV2.complete ? {} : { isError: true });
+    const modelResult = textResult(
+      `EA_WEALTH_POLICY_BASIS:${JSON.stringify(wealthPolicyModelContent(basis, readiness))}`,
+      principalV2.complete ? {} : { isError: true },
+    );
+    return contextReceipt ? attachContextReceipt(modelResult, contextReceipt) : modelResult;
   }
 
   if (name === "prepare_wealth_previsit_context") {
@@ -854,7 +860,10 @@ async function callTool(
           excludedProductCount: result.excludedProducts.length,
         },
       });
-      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({ ...result, readiness, executionEnvelope, contextReceipt })}`);
+      return attachContextReceipt(
+        textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify(wealthAllocationModelContent(result, readiness))}`),
+        contextReceipt,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "");
       const policyUnavailable = /policy|制度|knowledge/i.test(message);

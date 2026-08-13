@@ -5,11 +5,45 @@ import {
   type AgentMemoryRecord,
 } from "../db";
 import { observeMemoryRetrieval } from "./observability/metrics";
+import { governanceFingerprint } from "./governance/contracts";
 
 const CORE_MEMORY_LIMIT = 8;
 const RELATED_MEMORY_LIMIT = 6;
 const MAX_RELATED_CONTEXT_CHARS = 1800;
 const GENERIC_TERMS = new Set(["用户", "客户", "今天", "问题", "方案", "工作", "需要", "这个", "那个", "怎么", "什么", "是否", "可以"]);
+
+export type SelectedAgentMemoryRef = {
+  memoryId: number;
+  kind: AgentMemoryRecord["kind"];
+  version: number;
+  contentHash: string;
+  sourceType: AgentMemoryRecord["source"];
+  asOf: string;
+  usageType: "preference" | "relationship_observation" | "procedure" | "inference";
+};
+
+function memoryUsageType(kind: AgentMemoryRecord["kind"]): SelectedAgentMemoryRef["usageType"] {
+  if (kind === "preference" || kind === "instruction") return "preference";
+  if (kind === "procedure") return "procedure";
+  return "relationship_observation";
+}
+
+function memoryRef(item: AgentMemoryRecord): SelectedAgentMemoryRef {
+  return {
+    memoryId: item.id,
+    kind: item.kind,
+    version: item.version,
+    contentHash: governanceFingerprint({
+      memoryId: item.id,
+      version: item.version,
+      kind: item.kind,
+      content: item.content,
+    }),
+    sourceType: item.source,
+    asOf: new Date(item.updatedAt).toISOString(),
+    usageType: memoryUsageType(item.kind),
+  };
+}
 
 function normalized(value: unknown): string {
   return String(value || "").normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
@@ -109,12 +143,12 @@ export async function buildRelevantAgentMemoryContext(input: {
   adoptId: string;
   adoptionId: number;
   query: string;
-}): Promise<{ context: string; selectedIds: number[]; activeCount: number }> {
+}): Promise<{ context: string; selectedIds: number[]; selectedRefs: SelectedAgentMemoryRef[]; activeCount: number }> {
   const startedAt = Date.now();
   const enabled = !/^(0|false|no|off)$/i.test(String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"));
   if (!enabled || await getAgentMemoryMode(input.adoptionId) === "off") {
     observeMemoryRetrieval({ outcome: "disabled", durationMs: Date.now() - startedAt });
-    return { context: "", selectedIds: [], activeCount: 0 };
+    return { context: "", selectedIds: [], selectedRefs: [], activeCount: 0 };
   }
   try {
     const memories = await listAgentMemories({ userId: input.userId, adoptId: input.adoptId, statuses: ["active"], limit: 300 });
@@ -127,7 +161,12 @@ export async function buildRelevantAgentMemoryContext(input: {
       durationMs: Date.now() - startedAt,
       selectedCount: selectedIds.length,
     });
-    return { context: renderRelevantAgentMemoryContext(relevant), selectedIds, activeCount: memories.length };
+    return {
+      context: renderRelevantAgentMemoryContext(relevant),
+      selectedIds,
+      selectedRefs: relevant.map(memoryRef),
+      activeCount: memories.length,
+    };
   } catch (error) {
     observeMemoryRetrieval({ outcome: "error", durationMs: Date.now() - startedAt });
     throw error;

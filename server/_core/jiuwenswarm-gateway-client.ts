@@ -29,6 +29,7 @@ import { privateMessageLogFields } from "./log-privacy";
 import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
+import { createResponseEvidenceCollector } from "./governance/response-evidence";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
@@ -395,6 +396,7 @@ export async function forwardToJiuwenGateway(
     const generatedFiles = new Map<string, JiuwenSessionArtifactFile>();
     const emittedFilePaths = new Set<string>();
     const memoryToolNames = new Set<string>();
+    const responseEvidence = createResponseEvidenceCollector(claw, agentId, sessionId, requestId);
     let memoryAssistantText = "";
     let finalAssistantText = "";
     let settled = false;
@@ -453,12 +455,19 @@ export async function forwardToJiuwenGateway(
       if (reason === "done" && validatedAssistantMessage && validatedAssistantMessage !== rawAssistantMessage && !clientClosed) {
         writeSseData(res, { __final_text: validatedAssistantMessage });
       }
-      if (reason === "done" && opts.knowledgeSources?.length && !clientClosed) {
+      const citedKnowledgeSources = reason === "done" && opts.knowledgeSources?.length
+        ? filterCitedKnowledgeSources(opts.knowledgeSources, citationValidation.citedIndexes)
+        : [];
+      if (citedKnowledgeSources.length && !clientClosed) {
         writeSseData(res, {
-          __knowledge_sources: filterCitedKnowledgeSources(opts.knowledgeSources, citationValidation.citedIndexes),
+          __knowledge_sources: citedKnowledgeSources,
         });
       }
       const assistantMessage = validatedAssistantMessage;
+      if (reason === "done" && assistantMessage) {
+        const finalizedEvidence = responseEvidence.finalize(assistantMessage, citedKnowledgeSources);
+        if (finalizedEvidence && !clientClosed) writeSseData(res, { __context_response_evidence: finalizedEvidence });
+      }
       if (reason === "done" && assistantMessage) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
           userId: claw.userId,
@@ -523,6 +532,9 @@ export async function forwardToJiuwenGateway(
       }
       const memoryTool = normalizeJiuwenToolPayload(eventType, payload);
       if (memoryTool?.toolName) memoryToolNames.add(memoryTool.toolName);
+      if (memoryTool?.isResult) {
+        responseEvidence.capture(memoryTool.toolName, memoryTool.resultPayload);
+      }
       const action = await handleGatewayEvent({
         claw,
         req: opts.req,

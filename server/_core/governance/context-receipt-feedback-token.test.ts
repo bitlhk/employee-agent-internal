@@ -21,7 +21,7 @@ describe("context receipt memory feedback token", () => {
       userId: 7,
       adoptId: "lgj-test",
       receiptId: "crpt-1",
-      memoryIds: ["11", "12"],
+      memoryRefs: [{ memoryId: "11", version: 2 }, { memoryId: "12", version: 1 }],
       createdAt: "2026-08-13T08:00:00.000Z",
     });
     expect(signed).not.toBeNull();
@@ -31,6 +31,7 @@ describe("context receipt memory feedback token", () => {
       adoptId: "lgj-test",
       receiptId: "crpt-1",
       memoryId: 11,
+      memoryVersion: 2,
       now: new Date("2026-08-14T08:00:00.000Z"),
     })).toBe(true);
     expect(verifyContextReceiptMemoryFeedbackToken({
@@ -39,6 +40,7 @@ describe("context receipt memory feedback token", () => {
       adoptId: "lgj-test",
       receiptId: "crpt-1",
       memoryId: 99,
+      memoryVersion: 1,
       now: new Date("2026-08-14T08:00:00.000Z"),
     })).toBe(false);
   });
@@ -48,7 +50,7 @@ describe("context receipt memory feedback token", () => {
       userId: 7,
       adoptId: "lgj-test",
       receiptId: "crpt-1",
-      memoryIds: ["11"],
+      memoryRefs: [{ memoryId: "11", version: 2 }],
       createdAt: "2026-08-13T08:00:00.000Z",
       ttlDays: 1,
     })!;
@@ -58,6 +60,7 @@ describe("context receipt memory feedback token", () => {
       adoptId: "lgj-test",
       receiptId: "crpt-1",
       memoryId: 11,
+      memoryVersion: 2,
       now: new Date("2026-08-13T09:00:00.000Z"),
     })).toBe(false);
     expect(verifyContextReceiptMemoryFeedbackToken({
@@ -66,6 +69,7 @@ describe("context receipt memory feedback token", () => {
       adoptId: "lgj-test",
       receiptId: "crpt-1",
       memoryId: 11,
+      memoryVersion: 2,
       now: new Date("2026-08-15T08:00:00.000Z"),
     })).toBe(false);
   });

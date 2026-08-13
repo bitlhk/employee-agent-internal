@@ -411,6 +411,42 @@ export async function addAgentMemoryEvidence(input: {
   return count;
 }
 
+export async function addAgentMemoryEvidenceOnce(input: Parameters<typeof addAgentMemoryEvidence>[0]): Promise<{
+  inserted: boolean;
+  evidenceCount: number;
+}> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return db.transaction(async (tx) => {
+    const result: unknown = await tx.execute(sql`
+      INSERT IGNORE INTO agent_memory_evidence (
+        memory_id, conflict_id, user_id, adopt_id, source_type, channel, session_id, request_id,
+        conversation_id, message_id, source_hash, snippet, metadata_json
+      ) VALUES (
+        ${input.memoryId}, ${input.conflictId || null}, ${input.userId}, ${input.adoptId}, ${input.sourceType}, ${input.channel},
+        ${input.sessionId || null}, ${input.requestId || null}, ${input.conversationId || null},
+        ${input.messageId || null}, ${input.sourceHash}, ${input.snippet || null},
+        ${input.metadata ? JSON.stringify(input.metadata) : null}
+      )
+    `);
+    const first = Array.isArray(result) ? result[0] as { affectedRows?: unknown } | undefined : undefined;
+    const inserted = Number(first?.affectedRows || 0) === 1;
+    const countResult: unknown = await tx.execute(sql`
+      SELECT COUNT(DISTINCT COALESCE(NULLIF(session_id, ''), source_hash)) AS evidence_count
+      FROM agent_memory_evidence
+      WHERE memory_id = ${input.memoryId} AND conflict_id IS NULL
+    `);
+    const evidenceCount = Number(rowsFromResult(countResult)[0]?.evidence_count || 0);
+    await tx.execute(sql`
+      UPDATE agent_memory_items
+      SET evidence_count = ${evidenceCount}, last_observed_at = CURRENT_TIMESTAMP,
+          confidence = LEAST(100, confidence + ${inserted ? 5 : 0})
+      WHERE id = ${input.memoryId} AND user_id = ${input.userId} AND adopt_id = ${input.adoptId}
+    `);
+    return { inserted, evidenceCount };
+  });
+}
+
 export async function setAgentMemoryStatus(id: number, userId: number, adoptId: string, status: AgentMemoryStatus): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

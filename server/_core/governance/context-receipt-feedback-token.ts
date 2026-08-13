@@ -4,7 +4,7 @@ type MemoryFeedbackBinding = {
   userId: number;
   adoptId: string;
   receiptId: string;
-  memoryIds: string[];
+  memoryRefs: Array<{ memoryId: string; version: number }>;
   expiresAt: string;
 };
 
@@ -20,12 +20,12 @@ export function createContextReceiptMemoryFeedbackToken(input: {
   userId: number;
   adoptId: string;
   receiptId: string;
-  memoryIds: string[];
+  memoryRefs: Array<{ memoryId: string; version: number }>;
   createdAt: string;
   ttlDays?: number;
 }): { token: string; expiresAt: string } | null {
   const secret = signingSecret();
-  if (!secret || input.memoryIds.length === 0) return null;
+  if (!secret || input.memoryRefs.length === 0) return null;
   const expiresAt = new Date(
     new Date(input.createdAt).getTime() + (input.ttlDays || 30) * 24 * 60 * 60 * 1000,
   ).toISOString();
@@ -33,7 +33,10 @@ export function createContextReceiptMemoryFeedbackToken(input: {
     userId: input.userId,
     adoptId: input.adoptId,
     receiptId: input.receiptId,
-    memoryIds: Array.from(new Set(input.memoryIds.map(String))).sort(),
+    memoryRefs: Array.from(new Map(input.memoryRefs.map((item) => [
+      `${String(item.memoryId)}:${Number(item.version)}`,
+      { memoryId: String(item.memoryId), version: Number(item.version) },
+    ])).values()).sort((left, right) => left.memoryId.localeCompare(right.memoryId) || left.version - right.version),
     expiresAt,
   };
   const payload = Buffer.from(JSON.stringify(binding)).toString("base64url");
@@ -46,6 +49,7 @@ export function verifyContextReceiptMemoryFeedbackToken(input: {
   adoptId: string;
   receiptId: string;
   memoryId: number;
+  memoryVersion: number;
   now?: Date;
 }): boolean {
   const secret = signingSecret();
@@ -61,8 +65,8 @@ export function verifyContextReceiptMemoryFeedbackToken(input: {
     return binding.userId === input.userId
       && binding.adoptId === input.adoptId
       && binding.receiptId === input.receiptId
-      && Array.isArray(binding.memoryIds)
-      && binding.memoryIds.includes(String(input.memoryId))
+      && Array.isArray(binding.memoryRefs)
+      && binding.memoryRefs.some((item) => item.memoryId === String(input.memoryId) && item.version === input.memoryVersion)
       && typeof binding.expiresAt === "string"
       && new Date(binding.expiresAt).getTime() > (input.now || new Date()).getTime();
   } catch {

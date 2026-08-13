@@ -39,7 +39,7 @@ import {
   normalizeJiuwenUsageSummary,
   stringifyJiuwenToolPayload,
 } from "./jiuwenclaw-event-normalizers";
-
+import { createResponseEvidenceCollector } from "./governance/response-evidence";
 export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
 export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
@@ -49,14 +49,12 @@ export {
   normalizeJiuwenUsageSummary,
   stringifyJiuwenToolPayload,
 } from "./jiuwenclaw-event-normalizers";
-
 export type JiuwenClawRuntimeClaw = {
   adoptId: string;
   agentId: string;
   userId: number;
   roleTemplate?: string;
 };
-
 export type JiuwenForwardOptions = {
   model?: string;
   req?: Request;
@@ -968,7 +966,6 @@ export async function forwardToJiuwenClaw(
     const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
     return forwardToJiuwenGateway(claw, message, res, opts);
   }
-
   const msgTrim = String(message || "").trim();
   initSse(res);
 
@@ -1102,7 +1099,7 @@ export async function forwardToJiuwenClaw(
     let finalGraceTimer: NodeJS.Timeout | null = null;
     const emittedWorkspaceFiles = new Map<string, JiuwenSessionArtifactFile>();
     const memoryToolNames = new Set<string>();
-
+    const responseEvidence = createResponseEvidenceCollector(claw, agentId, sessionId, requestId);
     const logEnd = (event: string, extra: Record<string, unknown> = {}) => {
       appendLogAsync("jiuwenclaw-exec.log", {
         ts: new Date().toISOString(),
@@ -1218,6 +1215,8 @@ export async function forwardToJiuwenClaw(
         });
       }
       memoryAssistantText = validatedAssistantText;
+      const finalizedEvidence = responseEvidence.finalize(memoryAssistantText, opts.knowledgeSources || [], citationValidation.citedIndexes);
+      if (finalizedEvidence) writeData({ __context_response_evidence: finalizedEvidence });
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
       if (sawText && memoryAssistantText.trim()) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
@@ -1452,6 +1451,7 @@ export async function forwardToJiuwenClaw(
               if (tool.toolName) memoryToolNames.add(tool.toolName);
               const toolCallId = tool.callId || `jiuwen-${sha256(`${requestId}|${tool.toolName}`).slice(0, 16)}`;
               if (tool.isResult) {
+                responseEvidence.capture(tool.toolName, tool.resultPayload);
                 const governanceApproval = normalizeGovernanceApprovalToolEvent(body?.delta, tool.resultPayload);
                 if (governanceApproval) {
                   writeEvent("governance_approval_required", {

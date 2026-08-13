@@ -7,6 +7,11 @@ export type ContextReceiptReadiness = {
   deniedOutcomes: string[];
   reasons: string[];
   remediation: string[];
+  presentation: {
+    completed: string[];
+    unavailable: string[];
+    nextSteps: string[];
+  };
   decisionFingerprint: string;
 };
 
@@ -14,6 +19,9 @@ export type ContextReceiptV1 = {
   schema: typeof CONTEXT_RECEIPT_SCHEMA;
   receiptId: string;
   taskId: string;
+  taskLabel: string;
+  envelopeId?: string;
+  correlationId?: string;
   principalFingerprint: string;
   provided: {
     knowledge: Array<{
@@ -32,6 +40,12 @@ export type ContextReceiptV1 = {
     memory: Array<{
       memoryId: string;
       kind?: string;
+      version: number;
+      contentHash: string;
+      sourceType?: string;
+      asOf?: string;
+      usageType: "preference" | "relationship_observation" | "procedure" | "inference";
+      assurance: "REFERENCE_ONLY";
     }>;
     capabilities: Array<{
       capabilityId: string;
@@ -52,6 +66,7 @@ export type ContextReceiptV1 = {
     }>;
     capabilityExecutions: Array<{
       capabilityId: string;
+      label: string;
       operation: string;
       status: "planned" | "approval_required" | "completed" | "blocked" | "failed";
       requestId?: string;
@@ -65,12 +80,9 @@ export type ContextReceiptV1 = {
     reasonCode: string;
     count: number;
     message: string;
+    disclosure: "exact_count" | "aggregate_only" | "hidden";
   }>;
   readiness: ContextReceiptReadiness;
-  memoryFeedback?: {
-    token: string;
-    expiresAt: string;
-  };
   createdAt: string;
   receiptFingerprint: string;
 };

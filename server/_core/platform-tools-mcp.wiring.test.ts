@@ -42,6 +42,15 @@ vi.mock("./agent-memory-retrieval", () => ({
   buildRelevantAgentMemoryContext: vi.fn(async () => ({
     context: "<ea_relevant_memory>客户更关注流动性</ea_relevant_memory>",
     selectedIds: [42],
+    selectedRefs: [{
+      memoryId: 42,
+      kind: "preference",
+      version: 3,
+      contentHash: "9".repeat(64),
+      sourceType: "explicit",
+      asOf: "2026-08-10T00:00:00.000Z",
+      usageType: "preference",
+    }],
     activeCount: 1,
   })),
 }));
@@ -115,6 +124,7 @@ let server: ReturnType<ReturnType<typeof express>["listen"]> | undefined;
 let baseUrl = "";
 
 beforeEach(async () => {
+  process.env.JWT_SECRET = "platform-mcp-context-receipt-test-secret";
   vi.clearAllMocks();
   mocks.runtimeAttested = false;
   mocks.authorizeExecutionAuthority.mockResolvedValue({
@@ -220,12 +230,17 @@ describe("platform MCP PEP wiring", () => {
         params: { name: "get_wealth_policy_basis", arguments: {} },
       }),
     });
-    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }>; _meta?: {
+      eaContextReceipt?: { schema?: string };
+    } } };
     expect(response.status).toBe(200);
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_POLICY_BASIS");
     expect(body.result?.content?.[0]?.text).toContain("V2.2");
-    expect(body.result?.content?.[0]?.text).toContain('"schema":"ea.context-receipt.v1"');
+    expect(body.result?.content?.[0]?.text).not.toContain("contextReceipt");
+    expect(body.result?.content?.[0]?.text).not.toContain("executionEnvelope");
+    expect(body.result?.content?.[0]?.text).not.toContain("decisionFingerprint");
+    expect(body.result?._meta?.eaContextReceipt?.schema).toBe("ea.context-receipt.v1");
     expect(mocks.resolveWealthPolicyBasis).toHaveBeenCalledWith(expect.objectContaining({
       userId: 7,
       groupId: 3,
@@ -248,12 +263,17 @@ describe("platform MCP PEP wiring", () => {
         },
       }),
     });
-    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }>; _meta?: {
+      eaContextReceipt?: { schema?: string; taskId?: string };
+    } } };
     expect(response.status).toBe(200);
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_ALLOCATION_CONTEXT");
-    expect(body.result?.content?.[0]?.text).toContain('"taskId":"WM-GT-02"');
-    expect(body.result?.content?.[0]?.text).toContain('"schema":"ea.context-receipt.v1"');
+    expect(body.result?._meta?.eaContextReceipt?.taskId).toBe("WM-GT-02");
+    expect(body.result?.content?.[0]?.text).not.toContain("contextReceipt");
+    expect(body.result?.content?.[0]?.text).not.toContain("executionEnvelope");
+    expect(body.result?.content?.[0]?.text).not.toContain("decisionFingerprint");
+    expect(body.result?._meta?.eaContextReceipt?.schema).toBe("ea.context-receipt.v1");
     expect(body.result?.content?.[0]?.text).toContain("P-R2");
     expect(mocks.prepareWealthAllocationContext).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({ customerId: "C-001", amount: 500000, horizonMonths: 36, channel: "branch" }),
@@ -271,12 +291,20 @@ describe("platform MCP PEP wiring", () => {
         params: { name: "prepare_wealth_previsit_context", arguments: { customer_id: "C-001" } },
       }),
     });
-    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }>; _meta?: {
+      eaContextReceipt?: { taskId?: string; provided?: { memory?: Array<{ memoryId?: string; version?: number }> } };
+      eaInteractionGrant?: { schema?: string };
+    } } };
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_PREVISIT_CONTEXT");
-    expect(body.result?.content?.[0]?.text).toContain('"taskId":"WM-GT-01"');
-    expect(body.result?.content?.[0]?.text).toContain('"schema":"ea.context-receipt.v1"');
-    expect(body.result?.content?.[0]?.text).toContain('"memoryId":"42"');
+    expect(body.result?._meta?.eaContextReceipt?.taskId).toBe("WM-GT-01");
+    expect(body.result?.content?.[0]?.text).not.toContain("contextReceipt");
+    expect(body.result?.content?.[0]?.text).not.toContain("executionEnvelope");
+    expect(body.result?.content?.[0]?.text).not.toContain("eaInteractionGrant");
+    expect(body.result?.content?.[0]?.text).not.toContain("receiptFingerprint");
+    expect(body.result?.content?.[0]?.text).not.toContain("eligibilityFingerprint");
+    expect(body.result?._meta?.eaContextReceipt?.provided?.memory?.[0]).toMatchObject({ memoryId: "42", version: 3 });
+    expect(body.result?._meta?.eaInteractionGrant?.schema).toBe("ea.context-interaction-grant.v1");
     expect(body.result?.content?.[0]?.text).toContain('"status":"READY"');
     expect(mocks.prepareWealthPrevisitContext).toHaveBeenCalledWith(expect.objectContaining({ customerId: "C-001" }));
   });

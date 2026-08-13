@@ -555,7 +555,15 @@ async function gatewayCall(
           }
           receiptReserved = true;
         }
-        const result = await callCustomMcpTool(configFromRow(row), tool.name, remoteArgs);
+        const remoteResult = await callCustomMcpTool(configFromRow(row), tool.name, remoteArgs);
+        const result = (() => {
+          if (!remoteResult || typeof remoteResult !== "object" || Array.isArray(remoteResult)) return remoteResult;
+          const source = remoteResult as Record<string, unknown>;
+          if (!source._meta || typeof source._meta !== "object" || Array.isArray(source._meta)) return remoteResult;
+          const meta = { ...source._meta as Record<string, unknown> };
+          for (const key of ["eaMetadataIssuer", "eaContextReceipt", "eaInteractionGrant", "eaResponseEvidence", "eaTaskReceiptBundle"]) delete meta[key];
+          return { ...source, _meta: meta } as typeof remoteResult;
+        })();
         metricOutcome = result.isError === true ? "error" : "success";
         if (receiptReserved) {
           await completeCustomMcpCall({

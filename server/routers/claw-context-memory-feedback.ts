@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { protectedProcedure } from "../_core/trpc";
-import { feedbackOnUsedAgentMemory } from "../_core/agent-memory-context-feedback";
+import { feedbackOnUsedAgentMemory, previewUsedAgentMemories } from "../_core/agent-memory-context-feedback";
 import { auditActor, recordAuditBestEffort } from "../_core/audit-events";
 import { assertClawOwnerOrThrow } from "./helpers";
 
@@ -8,9 +8,10 @@ export const contextMemoryFeedbackProcedure = protectedProcedure
   .input(z.object({
     adoptId: z.string().min(1).max(64),
     memoryId: z.number().int().positive(),
+    memoryVersion: z.number().int().positive(),
     receiptId: z.string().trim().min(1).max(96),
     feedbackToken: z.string().trim().min(32).max(4096),
-    action: z.enum(["correct", "update", "ignore"]),
+    action: z.enum(["correct", "update", "hide"]),
     content: z.string().trim().min(4).max(800).optional(),
   }).superRefine((value, ctx) => {
     if (value.action === "update" && !value.content) {
@@ -19,10 +20,11 @@ export const contextMemoryFeedbackProcedure = protectedProcedure
   }))
   .mutation(async ({ input, ctx }) => {
     await assertClawOwnerOrThrow(ctx, input.adoptId);
-    const memory = await feedbackOnUsedAgentMemory({
+    const feedback = await feedbackOnUsedAgentMemory({
       userId: Number(ctx.user!.id),
       adoptId: input.adoptId,
       memoryId: input.memoryId,
+      memoryVersion: input.memoryVersion,
       receiptId: input.receiptId,
       feedbackToken: input.feedbackToken,
       action: input.action,
@@ -40,5 +42,25 @@ export const contextMemoryFeedbackProcedure = protectedProcedure
       source: "claw_router",
       metadata: { receiptId: input.receiptId },
     });
-    return { ok: true, memory };
+    return { ok: true, ...feedback };
+  });
+
+export const contextMemoryPreviewsProcedure = protectedProcedure
+  .input(z.object({
+    adoptId: z.string().min(1).max(64),
+    receiptId: z.string().trim().min(1).max(96),
+    feedbackToken: z.string().trim().min(32).max(4096),
+    memories: z.array(z.object({
+      memoryId: z.number().int().positive(),
+      memoryVersion: z.number().int().positive(),
+    })).min(1).max(12),
+  }))
+  .mutation(async ({ input, ctx }) => {
+    await assertClawOwnerOrThrow(ctx, input.adoptId);
+    return {
+      rows: await previewUsedAgentMemories({
+        userId: Number(ctx.user!.id),
+        ...input,
+      }),
+    };
   });
