@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `enterprise_asset_sources` (
   UNIQUE KEY `uk_enterprise_asset_sources_public_id` (`source_id`),
   KEY `idx_enterprise_asset_sources_status_type` (`status`,`source_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+--> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS `enterprise_asset_candidates` (
   `id` bigint unsigned NOT NULL AUTO_INCREMENT,
