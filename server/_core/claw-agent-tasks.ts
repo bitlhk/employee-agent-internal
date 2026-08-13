@@ -15,6 +15,7 @@ import {
 } from "@shared/agent-task-lifecycle";
 import { isAuthorizedInternalRequest, requireClawOwner, resolveRuntimeWorkspaceByIds } from "./helpers";
 import { materializeA2AArtifacts } from "./agent-artifacts";
+import { capabilityIntentResultNotice } from "./a2a-capability-intent";
 import {
   cancelA2AExpertTask,
   runA2AExpertTask,
@@ -472,10 +473,13 @@ async function runAgentTaskInBackground(
     if (["failed", "canceled", "cancelled"].includes(String(result.state || "").toLowerCase())) {
       throw new Error(String(result.text || "").trim() || `${String(agent.name || "专家")}任务执行失败`);
     }
-    if (!String(result.text || "").trim() && !result.interaction) {
+    if (!String(result.text || "").trim() && !result.interaction && !result.capabilityIntents?.length) {
       throw new Error("A2A Agent did not return the configured result artifact");
     }
     const cleanedText = cleanA2AText(result.text, { hasStructuredArtifacts: Boolean(result.artifacts?.length) });
+    const capabilityIntents = result.capabilityIntents || [];
+    const intentNotice = capabilityIntentResultNotice(capabilityIntents);
+    const governedResultText = [cleanedText, intentNotice].filter(Boolean).join("\n\n");
     const runtimeAgentId = String((agent as any).__runtimeAgentId || "").trim();
     const artifacts = runtimeAgentId && result.artifacts?.length
       ? await materializeA2AArtifacts({
@@ -487,16 +491,41 @@ async function runAgentTaskInBackground(
       : [];
     const completed = await updateLeasedAgentTask(taskId, AGENT_TASK_LEASE_OWNER, {
       status: "succeeded" as AgentTaskStatus,
-      resultMarkdown: cleanedText ? truncateUtf8(cleanedText, AGENT_TASK_TEXT_LIMIT_BYTES) : null,
+      resultMarkdown: governedResultText ? truncateUtf8(governedResultText, AGENT_TASK_TEXT_LIMIT_BYTES) : null,
       remoteTaskId: result.remoteTaskId || null,
       rawEventsJson: summarizeA2AEvents(result.rawEvents || [], endpointConfig, AGENT_TASK_RAW_EVENTS_LIMIT_BYTES),
       artifactsJson: artifacts.length > 0 ? JSON.stringify(artifacts) : null,
+      capabilityIntentsJson: capabilityIntents.length > 0 ? JSON.stringify(capabilityIntents) : null,
       interactionJson: result.interaction ? JSON.stringify(result.interaction) : null,
       interactionStatus: result.interaction ? "pending" : null,
       completedAt: sql`CURRENT_TIMESTAMP`,
       errorMessage: null,
     });
     if (!completed) return;
+    for (const intent of capabilityIntents) {
+      await recordAuditBestEffort({
+        action: "governance.a2a.capability_intent.received",
+        result: "success",
+        severity: "info",
+        actorType: "agent",
+        actorUserId: Number((agent as { __taskUserId?: unknown }).__taskUserId || 0) || null,
+        targetType: "capability_intent",
+        targetId: intent.intentId,
+        agentInstanceId: String((agent as { __taskAdoptId?: unknown }).__taskAdoptId || "") || null,
+        runtimeAgentId: runtimeAgentId || null,
+        toolName: intent.operation,
+        policyCode: "EA_A2A_LOCAL_EXECUTION_REQUIRED",
+        source: "a2a_delegation",
+        metadata: {
+          capabilityId: intent.capabilityId,
+          sideEffect: intent.sideEffect,
+          resource: intent.resource || null,
+          intentFingerprint: intent.intentFingerprint,
+          executionStatus: intent.executionStatus,
+          remoteExecutorCalled: false,
+        },
+      });
+    }
     const completedTask = await getAgentTask(taskId);
     if (String(completedTask?.status || "") !== "succeeded") return;
     await markAgentTaskSucceeded(agent).catch(() => undefined);

@@ -10,6 +10,7 @@
       "prompt": "明天下午要拜访这位客户，请准备一份访前简报和3至5条谈话要点。",
       "scenarioRef": "WM-SCN-NORMAL",
       "requiredCapabilities": [
+        "prepare_wealth_previsit_context",
         "wealth_assistant_context_probe",
         "wealth_assistant_customer_detail"
       ],

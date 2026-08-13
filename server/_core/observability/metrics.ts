@@ -670,7 +670,13 @@ const governancePepCapabilities = new Gauge({
 
 const governancePepCoverageRatio = new Gauge({
   name: "ea_governance_pep_coverage_ratio",
-  help: "Ratio of active side-effect capabilities with deterministic fail-close PEP coverage.",
+  help: "Ratio of active side-effect capabilities declaring deterministic fail-close PEP coverage.",
+  registers: [metricsRegistry],
+});
+
+const governancePepExecutionProofRatio = new Gauge({
+  name: "ea_governance_pep_execution_proof_ratio",
+  help: "Ratio of active side-effect capabilities with a registered execution proof.",
   registers: [metricsRegistry],
 });
 
@@ -781,12 +787,20 @@ export function observeGovernanceApprovalTransition(
   governanceApprovalTransitions.inc({ transition, outcome });
 }
 
-export function setGovernancePepCoverage(input: { total: number; covered: number }): void {
+export function setGovernancePepCoverage(input: {
+  total: number;
+  declared: number;
+  executionProven: number;
+}): void {
   const total = Math.max(0, input.total);
-  const covered = Math.min(total, Math.max(0, input.covered));
-  governancePepCapabilities.set({ coverage: "covered" }, covered);
-  governancePepCapabilities.set({ coverage: "uncovered" }, total - covered);
-  governancePepCoverageRatio.set(total > 0 ? covered / total : 1);
+  const declared = Math.min(total, Math.max(0, input.declared));
+  const executionProven = Math.min(total, Math.max(0, input.executionProven));
+  governancePepCapabilities.set({ coverage: "declared" }, declared);
+  governancePepCapabilities.set({ coverage: "undeclared" }, total - declared);
+  governancePepCapabilities.set({ coverage: "execution_proven" }, executionProven);
+  governancePepCapabilities.set({ coverage: "execution_unproven" }, total - executionProven);
+  governancePepCoverageRatio.set(total > 0 ? declared / total : 1);
+  governancePepExecutionProofRatio.set(total > 0 ? executionProven / total : 1);
 }
 
 export function setRuntimeGovernanceAttested(runtimeId: string, attested: boolean): void {

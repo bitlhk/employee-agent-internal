@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   runtimeAttested: true,
+  authorizationStatus: "active" as "active" | "revoked",
   reserve: vi.fn(),
   complete: vi.fn(),
   remoteCall: vi.fn(),
@@ -33,6 +34,7 @@ const connection = {
 
 vi.mock("../db", () => ({
   completeCustomMcpCall: mocks.complete,
+  getUserById: vi.fn(async () => ({ id: 7, groupId: 3, organization: "Example Bank" })),
   getClawByAdoptId: vi.fn(async () => ({
     id: 1,
     adoptId: "lgj-custom",
@@ -47,6 +49,24 @@ vi.mock("../db", () => ({
   revealCustomMcpCredential: vi.fn(() => ""),
   revealCustomMcpOAuthData: vi.fn(() => null),
   reserveCustomMcpCall: mocks.reserve,
+}));
+vi.mock("../db/runtime-principal", () => ({
+  resolveOrCreateAuthorizationSnapshot: vi.fn(async () => ({
+    tenantId: "tn-test", organizationId: "org-test",
+    authorizationSnapshotId: "auth-current", authorizationFingerprint: "a".repeat(64),
+  })),
+  getRuntimeAuthorizationSnapshot: vi.fn(async () => ({
+    id: 1, snapshotId: "auth-current", authorizationFingerprint: "a".repeat(64),
+    tenantId: "tn-test", organizationId: "org-test", userId: 7, adoptionId: "lgj-custom",
+    agentId: "jiuwen_lgj-custom", roleTemplate: "wealth-manager", workspaceId: "/workspace/lgj-custom",
+    permissionProfile: "plus", status: mocks.authorizationStatus, createdAt: new Date(),
+    revokedAt: mocks.authorizationStatus === "revoked" ? new Date() : null,
+    authorityJson: {
+      tenantId: "tn-test", organizationId: "org-test", userId: 7, adoptionId: "lgj-custom",
+      agentId: "jiuwen_lgj-custom", roleTemplate: "wealth-manager", workspaceId: "/workspace/lgj-custom",
+      permissionProfile: "plus", groupIds: ["3"], membershipVersion: 1,
+    },
+  })),
 }));
 
 vi.mock("./custom-mcp-client", () => ({
@@ -131,6 +151,7 @@ function resultText(response: GatewayResponse): string {
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.runtimeAttested = true;
+  mocks.authorizationStatus = "active";
   mocks.guardEgress.mockResolvedValue({ ok: true });
   mocks.enforceApproval.mockImplementation(async ({ decision }: { decision: { effect: string; reason: string } }) => (
     decision.effect === "DENY"
@@ -174,6 +195,16 @@ describe("custom MCP gateway enforcement", () => {
     const response = await callGateway({ customer_id: "customer-1", idempotency_key: "idem-denied-1" });
     expect(response.result?.isError).toBe(true);
     expect(resultText(response)).toMatch(/治理挂钩/);
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.remoteCall).not.toHaveBeenCalled();
+  });
+
+  it("never calls the remote executor after current authority is revoked", async () => {
+    mocks.authorizationStatus = "revoked";
+    const response = await callGateway({ customer_id: "customer-1", idempotency_key: "idem-revoked-1" });
+    expect(response.result?.isError).toBe(true);
+    expect(resultText(response)).toMatch(/授权已失效|停止执行/);
+    expect(mocks.enforceApproval).not.toHaveBeenCalled();
     expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });

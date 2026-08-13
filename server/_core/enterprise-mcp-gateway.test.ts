@@ -3,6 +3,7 @@ import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  authorizationStatus: "active" as "active" | "revoked",
   policy: {
     toolName: "list_customer_profiles",
     enabled: 1,
@@ -55,6 +56,24 @@ vi.mock("../db/claw", () => ({
     status: "active",
   })),
   getClawByAgentId: vi.fn(async () => null),
+}));
+vi.mock("../db/runtime-principal", () => ({
+  resolveOrCreateAuthorizationSnapshot: vi.fn(async () => ({
+    tenantId: "tn-test", organizationId: "org-test",
+    authorizationSnapshotId: "auth-current", authorizationFingerprint: "a".repeat(64),
+  })),
+  getRuntimeAuthorizationSnapshot: vi.fn(async () => ({
+    id: 1, snapshotId: "auth-current", authorizationFingerprint: "a".repeat(64),
+    tenantId: "tn-test", organizationId: "org-test", userId: 7, adoptionId: "lgj-insurance",
+    agentId: "jiuwen_lgj-insurance", roleTemplate: "insurance-advisor", workspaceId: "/workspace/lgj-insurance",
+    permissionProfile: "plus", status: mocks.authorizationStatus, createdAt: new Date(),
+    revokedAt: mocks.authorizationStatus === "revoked" ? new Date() : null,
+    authorityJson: {
+      tenantId: "tn-test", organizationId: "org-test", userId: 7, adoptionId: "lgj-insurance",
+      agentId: "jiuwen_lgj-insurance", roleTemplate: "insurance-advisor", workspaceId: "/workspace/lgj-insurance",
+      permissionProfile: "plus", groupIds: [], membershipVersion: 1,
+    },
+  })),
 }));
 
 vi.mock("./audit-events", () => ({
@@ -116,6 +135,7 @@ function resultText(response: GatewayResponse): string {
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.authorizationStatus = "active";
   process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW = "true";
   Object.assign(mocks.policy, {
     enabled: 1,
@@ -260,6 +280,18 @@ describe("enterprise MCP gateway", () => {
     expect(response.result?.isError).toBe(true);
     expect(resultText(response)).toContain("emcp_original");
     expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.remoteCall).not.toHaveBeenCalled();
+  });
+
+  it("does not execute an enterprise write after current authority is revoked", async () => {
+    mocks.policy.sideEffect = "write";
+    mocks.policy.idempotencyRequired = 1;
+    mocks.authorizationStatus = "revoked";
+    const response = await callGateway({ idempotency_key: "idem-revoked" });
+    expect(response.result?.isError).toBe(true);
+    expect(resultText(response)).toMatch(/授权已失效|停止执行/);
+    expect(mocks.enforceApproval).not.toHaveBeenCalled();
+    expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 });

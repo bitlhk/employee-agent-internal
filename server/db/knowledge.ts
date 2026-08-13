@@ -42,6 +42,9 @@ export type KnowledgeDocumentRecord = {
   storagePath: string;
   sizeBytes: number;
   sha256: string;
+  sourceAssetId?: string | null;
+  documentSeriesId?: string | null;
+  supersedesDocumentId?: string | null;
   versionLabel: string;
   lifecycle: KnowledgeDocumentLifecycle;
   sourceDepartment: string;
@@ -119,6 +122,9 @@ function mapDocument(row: any): KnowledgeDocumentRecord {
     storagePath: String(row.storage_path || ""),
     sizeBytes: Number(row.size_bytes || 0),
     sha256: String(row.sha256 || ""),
+    sourceAssetId: row.source_asset_id ? String(row.source_asset_id) : null,
+    documentSeriesId: row.document_series_id ? String(row.document_series_id) : null,
+    supersedesDocumentId: row.supersedes_document_id ? String(row.supersedes_document_id) : null,
     versionLabel: String(row.version_label || "1.0"),
     lifecycle: String(row.lifecycle || "draft") as KnowledgeDocumentLifecycle,
     sourceDepartment: String(row.source_department || ""),
@@ -146,7 +152,8 @@ const BASE_SELECT = sql.raw(`
 
 const DOCUMENT_SELECT = sql.raw(`
   id, public_id, knowledge_base_id, name, extension, mime_type, storage_path,
-  size_bytes, sha256, version_label, lifecycle, source_department, classification, authority,
+  size_bytes, sha256, source_asset_id, document_series_id, supersedes_document_id,
+  version_label, lifecycle, source_department, classification, authority,
   external_processing_allowed, effective_at, expires_at, status, chunk_count, last_error,
   parser_version, index_version, created_at, updated_at
 `);
@@ -400,6 +407,9 @@ export async function createKnowledgeDocumentRecord(input: {
   storagePath: string;
   sizeBytes: number;
   sha256: string;
+  sourceAssetId?: string | null;
+  documentSeriesId?: string | null;
+  supersedesDocumentId?: string | null;
   versionLabel?: string;
   lifecycle?: KnowledgeDocumentLifecycle;
   sourceDepartment?: string;
@@ -414,11 +424,13 @@ export async function createKnowledgeDocumentRecord(input: {
   await db.execute(sql`
     INSERT INTO knowledge_documents (
       public_id, knowledge_base_id, name, extension, mime_type, storage_path, size_bytes, sha256,
+      source_asset_id, document_series_id, supersedes_document_id,
       version_label, lifecycle, source_department, classification, authority,
       external_processing_allowed, effective_at, expires_at
     ) VALUES (
       ${input.publicId}, ${input.knowledgeBaseId}, ${input.name}, ${input.extension},
       ${input.mimeType}, ${input.storagePath}, ${input.sizeBytes}, ${input.sha256},
+      ${input.sourceAssetId || null}, ${input.documentSeriesId || null}, ${input.supersedesDocumentId || null},
       ${input.versionLabel || "1.0"}, ${input.lifecycle || "active"}, ${input.sourceDepartment || ""},
       ${input.classification || "internal"}, ${input.authority || "reference"},
       ${input.externalProcessingAllowed ?? true}, ${input.effectiveAt || null}, ${input.expiresAt || null}
@@ -464,6 +476,9 @@ export async function updateKnowledgeDocumentGovernance(input: {
   id: number;
   knowledgeBaseId: number;
   versionLabel: string;
+  sourceAssetId?: string | null;
+  documentSeriesId?: string | null;
+  supersedesDocumentId?: string | null;
   lifecycle: KnowledgeDocumentLifecycle;
   sourceDepartment: string;
   classification: KnowledgeClassification;
@@ -476,7 +491,10 @@ export async function updateKnowledgeDocumentGovernance(input: {
   if (!db) throw new Error("DB not available");
   await db.execute(sql`
     UPDATE knowledge_documents
-    SET version_label = ${input.versionLabel},
+    SET source_asset_id = COALESCE(${input.sourceAssetId ?? null}, source_asset_id),
+        document_series_id = COALESCE(${input.documentSeriesId ?? null}, document_series_id),
+        supersedes_document_id = COALESCE(${input.supersedesDocumentId ?? null}, supersedes_document_id),
+        version_label = ${input.versionLabel},
         lifecycle = ${input.lifecycle},
         source_department = ${input.sourceDepartment},
         classification = ${input.classification},

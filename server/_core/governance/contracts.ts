@@ -22,6 +22,14 @@ export type RuntimePrincipal = {
   delegationScope?: DelegationScope;
 };
 
+export type RuntimePrincipalV2 = RuntimePrincipal & {
+  tenantId: string;
+  organizationId: string;
+  authorizationSnapshotId: string;
+  authorizationFingerprint: string;
+  identityVersion: "2";
+};
+
 export type GovernanceOperation = {
   capabilityId: string;
   operation: string;
@@ -83,8 +91,14 @@ export function governanceFingerprint(value: unknown): string {
   return createHash("sha256").update(serialized).digest("hex");
 }
 
-export function principalFingerprint(principal: RuntimePrincipal): string {
+export function principalFingerprint(principal: RuntimePrincipal | RuntimePrincipalV2): string {
+  const v2 = "identityVersion" in principal ? principal : null;
   return governanceFingerprint({
+    tenantId: v2?.tenantId || null,
+    organizationId: v2?.organizationId || null,
+    authorizationSnapshotId: v2?.authorizationSnapshotId || null,
+    authorizationFingerprint: v2?.authorizationFingerprint || null,
+    identityVersion: v2?.identityVersion || "1",
     userId: principal.userId,
     adoptionId: principal.adoptionId,
     agentId: principal.agentId,

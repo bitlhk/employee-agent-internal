@@ -101,11 +101,11 @@ export async function evaluateDelegationPolicy(input: {
   const requestedCapabilities = normalizedStrings(requested.capabilityIds);
   const taskCapabilityIds = requestedCapabilities.length > 0 ? requestedCapabilities : effectiveChildCapabilities;
 
-  let childSideEffects = normalizedSideEffects(configuredChild.sideEffects);
+  // Remote Agents may analyze and propose a structured Capability Intent, but
+  // every business side effect must return to an EA-owned PEP for execution.
+  let childSideEffects = normalizedSideEffects(configuredChild.sideEffects)
+    .filter(item => item === "read" || item === "compute");
   if (childSideEffects.length === 0) childSideEffects = ["read", "compute"];
-  if (endpointConfig.governanceAttested !== true) {
-    childSideEffects = childSideEffects.filter(item => item === "read" || item === "compute");
-  }
   const requestedSideEffects = normalizedSideEffects(requested.sideEffects);
   const taskSideEffects = requestedSideEffects.length > 0 ? requestedSideEffects : childSideEffects;
   const effectiveResources = resourceIntersection(
@@ -137,6 +137,7 @@ export async function evaluateDelegationPolicy(input: {
   const allowed = completePrincipal
     && parentCanDelegate
     && effectiveScope.capabilityIds.length > 0
+    && (requestedSideEffects.length === 0 || effectiveScope.sideEffects.length > 0)
     && resourcesCompatible;
   const decision = await evaluateGovernance({
     principal: input.principal,

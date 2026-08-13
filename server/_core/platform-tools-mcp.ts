@@ -18,15 +18,23 @@ import {
 } from "./agent-memory";
 import { beginMcpCall } from "./observability/metrics";
 import { fetchWithTimeout } from "./fetch-timeout";
-import { evaluateGovernance } from "./governance/contracts";
+import { evaluateGovernance, governanceFingerprint, principalFingerprint } from "./governance/contracts";
 import { platformMcpPolicyAdapter } from "./governance/platform-mcp-policy";
-import { resolveRuntimePrincipal } from "./governance/principal";
+import { resolveRuntimePrincipal, resolveRuntimePrincipalV2 } from "./governance/principal";
+import {
+  buildCapabilitySnapshot,
+  buildTaskContextPack,
+  buildTaskExecutionEnvelope,
+} from "./governance/task-execution-envelope";
+import { evaluateWealthTaskReadiness, readinessCheck } from "./governance/wealth-task-readiness";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
+import { handleWealthPrevisitTool } from "./wealth-previsit-tool-handler";
+import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } from "./wealth-role-pack-release";
 import {
   resolveWealthPolicyBasis,
   resolveWealthSuitabilityPolicySource,
@@ -127,6 +135,21 @@ const TOOLS = [
       "The result contains only eligible current-policy metadata and safe aggregate filtering evidence; it never returns restricted document names or contents.",
     ].join(" "),
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "prepare_wealth_previsit_context",
+    description: [
+      "Prepare the governed customer and knowledge context for a wealth-manager previsit brief.",
+      "It verifies the Runtime Principal, customer data scope, current customer facts, data timestamp, and eligible previsit SOP in one call.",
+      "Use this before producing a customer-specific previsit brief. Respect readiness.allowedOutcomes and never invent missing customer facts.",
+    ].join(" "),
+    inputSchema: {
+      type: "object",
+      properties: {
+        customer_id: { type: "string", description: "Customer id selected from the current wealth manager's authorized customer list." },
+      },
+      required: ["customer_id"],
+    },
   },
   {
     name: "prepare_wealth_maturity_context",
@@ -489,6 +512,57 @@ async function callTool(
       actorRole: String(user.role || "user"),
       roleTemplate: principal.principal.roleTemplate,
     });
+    const principalV2 = await resolveRuntimePrincipalV2({
+      adoption: claw,
+      user,
+      sessionId: principal.principal.sessionId,
+    });
+    const policyReady = basis.status === "ready" && Boolean(basis.selected);
+    const releaseEvidence = await resolveWealthRolePackReleaseEvidence();
+    const readiness = evaluateWealthTaskReadiness({
+      taskId: "WM-GT-03",
+      checks: {
+        identity: principalV2.complete
+          ? readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已就绪。")
+          : readinessCheck("BLOCKED", "PRINCIPAL_V2_UNAVAILABLE", "当前岗位身份无法形成可验证授权快照。", { retryable: true }),
+        knowledge: policyReady
+          ? readinessCheck("READY", "CURRENT_POLICY_READY", "当前有效制度已通过知识资格校验。", { asOf: basis.evaluatedAt })
+          : readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", basis.userMessage),
+        policy: policyReady
+          ? readinessCheck("READY", "POLICY_SOURCE_BOUND", "政策判断已绑定现行制度版本。")
+          : readinessCheck("BLOCKED", "POLICY_SOURCE_UNAVAILABLE", "没有可用于正式判断的现行制度依据。"),
+        evidence: basis.governance.eligibilityFingerprint
+          ? readinessCheck("READY", "KNOWLEDGE_EVIDENCE_READY", "知识资格证据已生成。")
+          : readinessCheck("BLOCKED", "KNOWLEDGE_EVIDENCE_MISSING", "知识资格证据缺失。"),
+        release: wealthRolePackReleaseReadiness(releaseEvidence),
+      },
+    });
+    const executionEnvelope = principalV2.complete ? buildTaskExecutionEnvelope({
+      principal: principalV2.principal,
+      context: buildTaskContextPack({
+        knowledge: {
+          selectedAssets: basis.selected ? [{
+            assetId: basis.selected.sourceAssetId,
+            version: basis.selected.versionLabel,
+            contentHash: basis.selected.contentHash || "",
+          }] : [],
+          eligibilityFingerprint: basis.governance.eligibilityFingerprint,
+        },
+        businessData: { sources: [] },
+        memory: { memoryRefs: [] },
+        principalFingerprint: principalFingerprint(principalV2.principal),
+        assembledAt: basis.evaluatedAt,
+      }),
+      readiness,
+      capabilitySnapshot: buildCapabilitySnapshot({
+        capabilityIds: ["get_wealth_policy_basis"],
+        capabilityVersions: { get_wealth_policy_basis: "1" },
+        sideEffectProfiles: { get_wealth_policy_basis: "read" },
+        policyBindings: { get_wealth_policy_basis: ["EA_KNOWLEDGE_ELIGIBILITY_V1"] },
+      }),
+      releaseEvidence,
+      correlationId: pickHeader(req, ["x-request-id", "x-correlation-id"]) || undefined,
+    }) : null;
     await recordAuditBestEffort({
       action: basis.status === "ready"
         ? "governance.wealth_policy_basis.selected"
@@ -517,7 +591,17 @@ async function callTool(
         accessRestricted: basis.governance.accessRestricted,
       },
     });
-    return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify(basis)}`);
+    return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify({ ...basis, readiness, executionEnvelope })}`, principalV2.complete ? {} : { isError: true });
+  }
+
+  if (name === "prepare_wealth_previsit_context") {
+    return handleWealthPrevisitTool({
+      req,
+      args,
+      adoption: claw,
+      adoptId,
+      sessionId: principal.principal.sessionId,
+    });
   }
 
   if (name === "prepare_wealth_maturity_context") {
@@ -607,8 +691,27 @@ async function callTool(
     try {
       const user = await getUserById(Number(claw.userId));
       if (!user) throw new Error("当前用户身份不可用");
+      const principalV2 = await resolveRuntimePrincipalV2({
+        adoption: claw,
+        user,
+        sessionId: principal.principal.sessionId,
+      });
+      if (!principalV2.complete) {
+        const readiness = evaluateWealthTaskReadiness({
+          taskId: "WM-GT-04",
+          checks: {
+            identity: readinessCheck("BLOCKED", "PRINCIPAL_V2_UNAVAILABLE", "当前岗位身份无法形成可验证授权快照。", { retryable: true }),
+          },
+        });
+        return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({
+          schema: "ea.wealth-allocation-context.v1",
+          status: "blocked",
+          message: "当前岗位身份校验未完成，暂不能形成正式产品推荐。",
+          readiness,
+        })}`, { isError: true });
+      }
       const result = await prepareWealthAllocationContext({
-        principal: principal.principal,
+        principal: principalV2.principal,
         request: { customerId, amount, horizonMonths, channel, keyword, productType, maxProducts },
         dependencies: {
           loadCustomer: async (requestedCustomerId) => parseInternalMcpJsonResult(await callInternalMcpTool({
@@ -640,6 +743,73 @@ async function callTool(
           }),
         },
       });
+      const policyReady = result.policySource.ready && result.eligibleProducts.length > 0;
+      const productDataReady = result.evidence.productDataAsOf.length > 0;
+      const releaseEvidence = await resolveWealthRolePackReleaseEvidence();
+      const readiness = evaluateWealthTaskReadiness({
+        taskId: "WM-GT-04",
+        checks: {
+          identity: readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已就绪。"),
+          knowledge: result.policySource.ready
+            ? readinessCheck("READY", "CURRENT_POLICY_READY", "当前有效制度已通过知识资格校验。")
+            : readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", "当前有效适当性制度不可用。"),
+          customerData: result.evidence.customerDataAsOf
+            ? readinessCheck("READY", "CUSTOMER_DATA_READY", "客户数据已就绪。", { asOf: result.evidence.customerDataAsOf })
+            : readinessCheck("BLOCKED", "CUSTOMER_DATA_STALE", "客户数据缺少有效时间，不能形成正式推荐。"),
+          productData: productDataReady
+            ? readinessCheck("READY", "PRODUCT_DATA_READY", "当前产品数据已就绪。", { asOf: result.evidence.productDataAsOf[0] })
+            : readinessCheck("BLOCKED", "PRODUCT_DATA_UNAVAILABLE", "当前产品数据不可用。", { retryable: true }),
+          policy: policyReady
+            ? readinessCheck("READY", "SUITABILITY_POLICY_ALLOW", "存在通过适当性校验的产品候选。")
+            : readinessCheck("BLOCKED", "SUITABILITY_POLICY_DENY", result.excludedProducts[0]?.reason || "没有产品通过当前适当性规则。"),
+          capability: readinessCheck("READY", "WEALTH_CONTEXT_CAPABILITY_READY", "财富配置上下文能力已就绪。"),
+          evidence: result.evidence.policyDecisionIds.length
+            ? readinessCheck("READY", "POLICY_EVIDENCE_READY", "适当性判断证据已生成。")
+            : readinessCheck("BLOCKED", "POLICY_EVIDENCE_MISSING", "适当性判断证据缺失。"),
+          release: wealthRolePackReleaseReadiness(releaseEvidence),
+        },
+      });
+      const executionEnvelope = buildTaskExecutionEnvelope({
+        principal: principalV2.principal,
+        context: buildTaskContextPack({
+          knowledge: {
+            selectedAssets: result.policySource.sourceAssetId ? [{
+              assetId: result.policySource.sourceAssetId,
+              version: result.policySource.versionLabel,
+              contentHash: "",
+            }] : [],
+            eligibilityFingerprint: result.policySource.eligibilityFingerprint,
+          },
+          businessData: {
+            sources: [
+              {
+                sourceSystem: "wealth_customer_mcp",
+                entityRef: result.customer.customerId,
+                asOf: result.evidence.customerDataAsOf,
+                resultFingerprint: governanceFingerprint(result.customer),
+              },
+              {
+                sourceSystem: "wealth_product_mcp",
+                entityRef: "eligible-product-set",
+                asOf: result.evidence.productDataAsOf[0] || "",
+                resultFingerprint: governanceFingerprint({ eligible: result.eligibleProducts, excluded: result.excludedProducts }),
+              },
+            ],
+          },
+          memory: { memoryRefs: [] },
+          principalFingerprint: principalFingerprint(principalV2.principal),
+          assembledAt: new Date().toISOString(),
+        }),
+        readiness,
+        capabilitySnapshot: buildCapabilitySnapshot({
+          capabilityIds: ["prepare_wealth_allocation_context", "wealth_customer_mcp", "wealth_product_mcp"],
+          capabilityVersions: { prepare_wealth_allocation_context: "1", wealth_customer_mcp: "1", wealth_product_mcp: "1" },
+          sideEffectProfiles: { prepare_wealth_allocation_context: "read", wealth_customer_mcp: "read", wealth_product_mcp: "read" },
+          policyBindings: { prepare_wealth_allocation_context: ["WEALTH_SUITABILITY_MATCH"] },
+        }),
+        releaseEvidence,
+        correlationId: pickHeader(req, ["x-request-id", "x-correlation-id"]) || undefined,
+      });
       await recordAuditBestEffort({
         action: "governance.wealth_suitability.evaluated",
         result: result.status === "ready" ? "success" : "denied",
@@ -666,18 +836,33 @@ async function callTool(
           excludedProductCount: result.excludedProducts.length,
         },
       });
-      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify(result)}`);
+      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({ ...result, readiness, executionEnvelope })}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "");
       const policyUnavailable = /policy|制度|knowledge/i.test(message);
+      const readiness = evaluateWealthTaskReadiness({
+        taskId: "WM-GT-04",
+        checks: {
+          identity: readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已就绪。"),
+          knowledge: policyUnavailable
+            ? readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", "当前有效适当性制度不可用。", { retryable: true })
+            : readinessCheck("DEGRADED", "KNOWLEDGE_NOT_ASSEMBLED", "本轮未完成制度上下文装配。", { retryable: true }),
+          customerData: readinessCheck("BLOCKED", "CUSTOMER_DATA_UNAVAILABLE", "当前客户数据不可用，不能形成正式推荐。", { retryable: true }),
+          productData: readinessCheck("BLOCKED", "PRODUCT_DATA_UNAVAILABLE", "当前产品数据不可用，不能形成正式推荐。", { retryable: true }),
+          policy: readinessCheck("BLOCKED", "SUITABILITY_POLICY_NOT_EVALUATED", "适当性判断尚未完成。", { retryable: true }),
+          capability: readinessCheck("DEGRADED", "WEALTH_CONTEXT_DEPENDENCY_FAILED", "财富配置上下文依赖暂时不可用。", { retryable: true }),
+          evidence: readinessCheck("DEGRADED", "POLICY_EVIDENCE_PARTIAL", "本轮仅保留依赖失败证据。", { retryable: true }),
+        },
+      });
       return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({
         schema: "ea.wealth-allocation-context.v1",
-        status: "degraded",
+        status: "blocked",
         errorCode: policyUnavailable ? "POLICY_CONTEXT_UNAVAILABLE" : "BUSINESS_CONTEXT_UNAVAILABLE",
         message: policyUnavailable
           ? "当前有效适当性制度不可用，暂不能形成正式产品推荐。"
           : "客户或产品数据服务暂时不可用，可以先完成不依赖当前产品的资产结构分析。",
-      })}`, { isError: true });
+        readiness,
+      })}`);
     }
   }
 

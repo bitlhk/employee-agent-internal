@@ -106,6 +106,34 @@
       "when": 1786780800000,
       "tag": "0014_governance_demo_followup",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786867200000,
+      "tag": "0015_runtime_principal_v2",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786953600000,
+      "tag": "0016_knowledge_version_chain",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787040000000,
+      "tag": "0017_role_pack_release_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1787126400000,
+      "tag": "0018_a2a_capability_intents",
+      "breakpoints": true
     }
   ]
 }

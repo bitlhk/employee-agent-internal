@@ -1,9 +1,16 @@
-import type { ClawAdoption } from "../../../drizzle/schema";
+import type { ClawAdoption, User } from "../../../drizzle/schema";
+import { resolveOrCreateAuthorizationSnapshot } from "../../db/runtime-principal";
 import { resolveRuntimeWorkspaceByIds } from "../helpers";
-import type { DelegationScope, RuntimePrincipal } from "./contracts";
+import type { DelegationScope, RuntimePrincipal, RuntimePrincipalV2 } from "./contracts";
 
 export type PrincipalResolution = {
   principal: RuntimePrincipal;
+  complete: boolean;
+  issues: string[];
+};
+
+export type PrincipalResolutionV2 = {
+  principal: RuntimePrincipalV2;
   complete: boolean;
   issues: string[];
 };
@@ -42,6 +49,66 @@ export function resolveRuntimePrincipal(input: {
     complete: issues.length === 0,
     issues,
   };
+}
+
+export function buildRuntimePrincipalV2(input: {
+  principal: RuntimePrincipal;
+  tenantId: string;
+  organizationId: string;
+  authorizationSnapshotId: string;
+  authorizationFingerprint: string;
+}): RuntimePrincipalV2 {
+  return {
+    ...input.principal,
+    tenantId: input.tenantId,
+    organizationId: input.organizationId,
+    authorizationSnapshotId: input.authorizationSnapshotId,
+    authorizationFingerprint: input.authorizationFingerprint,
+    identityVersion: "2",
+  };
+}
+
+export async function resolveRuntimePrincipalV2(input: {
+  adoption: Pick<ClawAdoption, "userId" | "adoptId" | "agentId" | "roleTemplate" | "permissionProfile">;
+  user: Pick<User, "organization" | "groupId">;
+  sessionId?: unknown;
+  taskId?: unknown;
+  delegationScope?: DelegationScope;
+}): Promise<PrincipalResolutionV2> {
+  const base = resolveRuntimePrincipal(input);
+  const unresolved = buildRuntimePrincipalV2({
+    principal: base.principal,
+    tenantId: "",
+    organizationId: "",
+    authorizationSnapshotId: "",
+    authorizationFingerprint: "",
+  });
+  if (!base.complete) return { principal: unresolved, complete: false, issues: base.issues };
+
+  try {
+    const snapshot = await resolveOrCreateAuthorizationSnapshot({
+      userId: base.principal.userId,
+      organizationName: input.user.organization,
+      groupIds: input.user.groupId > 0 ? [input.user.groupId] : [],
+      adoptionId: base.principal.adoptionId,
+      agentId: base.principal.agentId,
+      roleTemplate: base.principal.roleTemplate,
+      workspaceId: base.principal.workspaceId,
+      permissionProfile: base.principal.permissionProfile,
+    });
+    return {
+      principal: buildRuntimePrincipalV2({ principal: base.principal, ...snapshot }),
+      complete: true,
+      issues: [],
+    };
+  } catch (error) {
+    console.error("[Governance] Failed to resolve Runtime Principal V2:", error);
+    return {
+      principal: unresolved,
+      complete: false,
+      issues: [...base.issues, "authorizationSnapshot"],
+    };
+  }
 }
 
 export function principalSupportsSideEffect(

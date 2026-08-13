@@ -4,6 +4,7 @@ import {
 } from "../db";
 import { buildKnowledgeEligibility } from "./knowledge-eligibility";
 import type { WealthPolicySource } from "./governance/wealth-suitability-policy";
+import { selectWealthPolicyDocument } from "./wealth-policy-selection";
 
 const DEFAULT_POLICY_DOCUMENT = "15-财富产品适当性销售管理细则（V2.2现行）.md";
 
@@ -14,6 +15,8 @@ export type WealthPolicyBasis = {
   evaluatedAt: string;
   selected: {
     sourceAssetId: string;
+    documentId: string;
+    contentHash: string;
     documentName: string;
     versionLabel: string;
     sourceDepartment: string;
@@ -30,14 +33,19 @@ export type WealthPolicyBasis = {
   userMessage: string;
 };
 
-function policySeriesKey(name: string): string {
-  return name
-    .replace(/\.[^.]+$/, "")
-    .replace(/[（(][^）)]*(?:现行|历史|失效|废止)[^）)]*[）)]/g, "")
-    .replace(/(?:版本)?\s*[Vv]?\d+(?:\.\d+)*/g, "")
-    .replace(/[\s_\-—]+/g, "")
-    .trim();
-}
+export type WealthPrevisitKnowledgeBasis = {
+  status: "ready" | "unavailable";
+  evaluatedAt: string;
+  selected: {
+    sourceAssetId: string;
+    documentId: string;
+    versionLabel: string;
+    contentHash: string;
+    sourceDepartment: string;
+  } | null;
+  eligibilityFingerprint: string;
+  userMessage: string;
+};
 
 export async function resolveWealthPolicyBasis(input: {
   userId: number;
@@ -82,18 +90,13 @@ export async function resolveWealthPolicyBasis(input: {
     roleTemplate: input.roleTemplate,
     now,
   });
-  const eligibleIds = new Set(eligibility.documentIds);
   const configuredName = String(process.env.WEALTH_SUITABILITY_POLICY_DOCUMENT || DEFAULT_POLICY_DOCUMENT).trim();
-  const configuredSeries = policySeriesKey(configuredName);
-  const seriesDocuments = documents.filter((document) => policySeriesKey(document.name) === configuredSeries);
-  const candidates = seriesDocuments
-    .filter((document) => eligibleIds.has(document.publicId) && document.name === configuredName)
-    .sort((left, right) => {
-      const authorityRank = { official: 4, approved: 3, reference: 2, personal: 1 } as const;
-      const authority = (authorityRank[right.authority] || 0) - (authorityRank[left.authority] || 0);
-      return authority || new Date(right.effectiveAt || right.createdAt).getTime() - new Date(left.effectiveAt || left.createdAt).getTime();
-    });
-  const selected = candidates[0];
+  const { selected, seriesDocuments } = selectWealthPolicyDocument({
+    documents,
+    eligibleDocumentIds: eligibility.documentIds,
+    configuredName,
+  });
+  const eligibleIds = new Set(eligibility.documentIds);
 
   const filtered = seriesDocuments
     .filter((document) => !eligibleIds.has(document.publicId))
@@ -125,7 +128,9 @@ export async function resolveWealthPolicyBasis(input: {
     roleTemplate: input.roleTemplate,
     evaluatedAt: now.toISOString(),
     selected: {
-      sourceAssetId: selected.publicId,
+      sourceAssetId: selected.sourceAssetId || selected.publicId,
+      documentId: selected.publicId,
+      contentHash: selected.sha256,
       documentName: selected.name,
       versionLabel: selected.versionLabel,
       sourceDepartment: selected.sourceDepartment,
@@ -157,5 +162,57 @@ export async function resolveWealthSuitabilityPolicySource(input: {
     versionLabel: selected?.versionLabel || "",
     sourceLocator: selected?.sourceLocator || "",
     eligibilityFingerprint: basis.governance.eligibilityFingerprint,
+  };
+}
+
+export async function resolveWealthPrevisitKnowledgeBasis(input: {
+  userId: number;
+  groupId: number;
+  actorRole: string;
+  roleTemplate: string;
+  now?: Date;
+}): Promise<WealthPrevisitKnowledgeBasis> {
+  const now = input.now || new Date();
+  const unavailable = (eligibilityFingerprint = ""): WealthPrevisitKnowledgeBasis => ({
+    status: "unavailable",
+    evaluatedAt: now.toISOString(),
+    selected: null,
+    eligibilityFingerprint,
+    userMessage: "当前没有通过岗位、密级和有效期校验的访前作业依据；可以整理已核验客户事实，但不能声称符合本行现行访前规范。",
+  });
+  if (input.roleTemplate !== "wealth-manager") return unavailable();
+  const bases = (await listAccessibleKnowledgeBases({
+    userId: input.userId,
+    groupId: input.groupId,
+    roleTemplate: input.roleTemplate,
+  })).filter((base) => base.status === "ready" && ["enterprise", "role"].includes(base.scope));
+  if (!bases.length) return unavailable();
+  const documents = await listKnowledgeDocumentsForBases(bases.map((base) => base.id));
+  const eligibility = buildKnowledgeEligibility({
+    bases,
+    documents,
+    userId: input.userId,
+    actorRole: input.actorRole,
+    roleTemplate: input.roleTemplate,
+    now,
+  });
+  const eligibleIds = new Set(eligibility.documentIds);
+  const selected = documents
+    .filter((document) => eligibleIds.has(document.publicId))
+    .filter((document) => document.sourceAssetId === "wm-previsit-sop" || /财富客户访前准备作业指导书/u.test(document.name))
+    .sort((left, right) => new Date(right.effectiveAt || right.createdAt).getTime() - new Date(left.effectiveAt || left.createdAt).getTime())[0];
+  if (!selected) return unavailable(eligibility.fingerprint);
+  return {
+    status: "ready",
+    evaluatedAt: now.toISOString(),
+    selected: {
+      sourceAssetId: selected.sourceAssetId || selected.publicId,
+      documentId: selected.publicId,
+      versionLabel: selected.versionLabel,
+      contentHash: selected.sha256,
+      sourceDepartment: selected.sourceDepartment,
+    },
+    eligibilityFingerprint: eligibility.fingerprint,
+    userMessage: `已使用当前有效访前作业依据 ${selected.versionLabel}。`,
   };
 }

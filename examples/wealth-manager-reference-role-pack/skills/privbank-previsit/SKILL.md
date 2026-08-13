@@ -35,6 +35,7 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 
 | 工具 | 用途 |
 |---|---|
+| `prepare_wealth_previsit_context` | 一次性核验岗位身份、客户范围、当前客户事实、数据时间和有效访前 SOP，并返回任务 Readiness |
 | `wealth_assistant_context_probe` | 核验当前财富经理身份和数据范围 |
 | `wealth_assistant_customer_list` | 在授权范围内选择客户 |
 | `wealth_assistant_customer_detail` | 获取当前客户画像、持仓、风险测评、到期事项和近期互动 |
@@ -51,11 +52,11 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 
 ### 2. 核验身份和客户归属
 
-先调用 `wealth_assistant_context_probe`，再查询客户。身份验证、客户归属或数据范围失败时停止读取，不得换工具绕过。
+优先调用 `prepare_wealth_previsit_context`。该工具不可用时，才按 `wealth_assistant_context_probe` → `wealth_assistant_customer_detail` 的兼容链路执行。身份验证、客户归属或数据范围失败时停止读取，不得换工具绕过。
 
 ### 3. 获取当前业务现场
 
-调用 `wealth_assistant_customer_detail` 获取：
+从 `prepare_wealth_previsit_context`（兼容链路为 `wealth_assistant_customer_detail`）获取：
 
 - 风险等级、测评日期和有效期；
 - AUM 和主要持仓；
@@ -64,6 +65,8 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 - 数据截止时间。
 
 缺失字段必须标记“待核实”。不得根据历史对话或常识编造。
+
+必须遵守工具返回的 `readiness.allowedOutcomes` 和 `readiness.deniedOutcomes`：`DEGRADED` 时只完成允许的事实摘要或通用检查表，`BLOCKED` 时不得形成客户专属简报。
 
 ### 4. 应用当前有效岗位依据
 

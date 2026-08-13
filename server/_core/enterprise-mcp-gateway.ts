@@ -32,7 +32,8 @@ import { guardToolEgress } from "./tool-egress-policy";
 import { evaluateGovernance, type GovernanceOperation } from "./governance/contracts";
 import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
 import { enterpriseMcpPolicyAdapter } from "./governance/enterprise-mcp-policy-adapter";
-import { resolveRuntimePrincipal, type PrincipalResolution } from "./governance/principal";
+import { resolveRuntimePrincipal, resolveRuntimePrincipalV2, type PrincipalResolution } from "./governance/principal";
+import { authorizeExecutionAuthority, requiresExecutionAuthority } from "./governance/execution-authority";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 
@@ -49,6 +50,7 @@ type RuntimeContext = {
   agentId: string;
   roleKey: string;
   user: NonNullable<Awaited<ReturnType<typeof getUserById>>>;
+  adoption: NonNullable<Awaited<ReturnType<typeof getClawByAdoptId>>>;
   enabledServerIds: Set<string>;
   principal: PrincipalResolution;
 };
@@ -133,6 +135,7 @@ async function runtimeContext(req: Request): Promise<RuntimeContext> {
     agentId: String(claw.agentId || adoptId),
     roleKey,
     user,
+    adoption: claw,
     enabledServerIds: new Set(selection.enabledServerIds),
     principal: resolveRuntimePrincipal({
       adoption: claw,
@@ -292,13 +295,58 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
       resource: `enterprise-mcp:${entry.connection.serverId}`,
       payloadHash: argsHash,
     };
+    let effectivePrincipal = context.principal;
+    let executionAuthority: Awaited<ReturnType<typeof authorizeExecutionAuthority>> | null = null;
+    if (requiresExecutionAuthority(policy.sideEffect)) {
+      const principalV2 = await resolveRuntimePrincipalV2({
+        adoption: context.adoption,
+        user: context.user,
+        sessionId: context.principal.principal.sessionId,
+      });
+      if (!principalV2.complete) {
+        metricOutcome = "error";
+        return textResult("当前执行身份无法形成可验证授权快照，已停止该操作。", true);
+      }
+      executionAuthority = await authorizeExecutionAuthority({
+        principal: principalV2.principal,
+        taskAuthorizationSnapshotId: String(req.headers["x-ea-authorization-snapshot-id"] || "").trim() || null,
+        operation,
+      });
+      if (executionAuthority.effect !== "ALLOW") {
+        metricOutcome = "error";
+        await recordAuditRequired({
+          action: "governance.execution_authority.blocked",
+          result: "denied",
+          severity: "high",
+          ...auditActor(context.user),
+          ...auditRequest(req),
+          targetType: "mcp_tool",
+          targetId: `${entry.connection.serverId}:${entry.tool.name}`.slice(0, 128),
+          workspaceId: principalV2.principal.workspaceId,
+          agentInstanceId: context.adoptId,
+          runtimeAgentId: context.agentId,
+          sessionId: principalV2.principal.sessionId,
+          toolName: entry.tool.name,
+          policyCode: executionAuthority.policyCode,
+          source: "enterprise_mcp_gateway",
+          metadata: {
+            ruleVersion: executionAuthority.ruleVersion,
+            taskSnapshotId: executionAuthority.taskSnapshotId,
+            currentSnapshotId: executionAuthority.currentSnapshotId,
+            effectiveAuthorityFingerprint: executionAuthority.effectiveAuthorityFingerprint,
+          },
+        });
+        return textResult(executionAuthority.reason, true);
+      }
+      effectivePrincipal = { principal: executionAuthority.effectivePrincipal, complete: true, issues: [] };
+    }
     const governance = await evaluateGovernance({
-      principal: context.principal.principal,
+      principal: effectivePrincipal.principal,
       operation,
       context: { serverId: entry.connection.serverId, approvalMode: policy.approvalMode },
     }, [enterpriseMcpPolicyAdapter({
       policy,
-      principal: context.principal,
+      principal: effectivePrincipal,
       runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
     })], {
       effect: "DENY",
@@ -321,6 +369,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
         ruleVersion: governance.ruleVersion,
         principalFingerprint: governance.principalFingerprint,
         operationFingerprint: governance.operationFingerprint,
+        executionAuthorityFingerprint: executionAuthority?.effectiveAuthorityFingerprint || null,
       },
     });
     auditState = { entry, policyDecisionId, argsHash, identityMode, tenantId, sideEffect: policy.sideEffect };
@@ -356,7 +405,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
 
     const approval = await enforceGovernanceApproval({
       decision: governance,
-      principal: context.principal.principal,
+      principal: effectivePrincipal.principal,
       operation,
       approvalId: String(req.headers["x-ea-approval-id"] || "").trim() || null,
       idempotencyKey: idemKey || null,

@@ -15,6 +15,7 @@ import {
 import {
   CAPABILITY_REGISTRY,
   capabilitySetFingerprint,
+  unprovenActiveSideEffects,
   uncoveredActiveSideEffects,
 } from "./governance/capability-registry";
 
@@ -44,7 +45,14 @@ function serverTypeScriptFiles(directory: string): string[] {
 describe("governance invariants", () => {
   it("keeps every active side-effect capability behind a deterministic fail-close PEP", () => {
     expect(uncoveredActiveSideEffects()).toEqual([]);
+    expect(unprovenActiveSideEffects()).toEqual([]);
     expect(new Set(CAPABILITY_REGISTRY.map(item => item.id)).size).toBe(CAPABILITY_REGISTRY.length);
+    const proofIds = CAPABILITY_REGISTRY.flatMap(item => item.executionProof?.id ? [item.executionProof.id] : []);
+    expect(new Set(proofIds).size).toBe(proofIds.length);
+    for (const capability of CAPABILITY_REGISTRY.filter(item => item.active && item.sideEffect !== "read")) {
+      expect(capability.executionProof?.testFile, capability.id).toMatch(/\.test\.ts$/);
+      expect(readFileSync(join(fileURLToPath(new URL("../../", import.meta.url)), capability.executionProof!.testFile), "utf8").length).toBeGreaterThan(0);
+    }
     expect(capabilitySetFingerprint()).toMatch(/^[a-f0-9]{64}$/);
   });
 
@@ -75,6 +83,11 @@ describe("governance invariants", () => {
       registered: true,
     });
     expect(resolveToolGovernance("mcp_platform_tools_prepare_wealth_allocation_context")).toMatchObject({
+      sideEffect: "read",
+      policyRequired: false,
+      registered: true,
+    });
+    expect(resolveToolGovernance("mcp_platform_tools_prepare_wealth_previsit_context")).toMatchObject({
       sideEffect: "read",
       policyRequired: false,
       registered: true,

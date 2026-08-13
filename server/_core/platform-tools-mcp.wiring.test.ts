@@ -7,7 +7,9 @@ const mocks = vi.hoisted(() => ({
   internalFetch: vi.fn(),
   prepareWealthAllocationContext: vi.fn(),
   prepareWealthMaturityContext: vi.fn(),
+  prepareWealthPrevisitContext: vi.fn(),
   resolveWealthPolicyBasis: vi.fn(),
+  resolveWealthPrevisitKnowledgeBasis: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -21,7 +23,7 @@ vi.mock("../db", () => ({
     status: "active",
   })),
   getClawByAgentId: vi.fn(),
-  getUserById: vi.fn(async () => ({ id: 7, groupId: 3, role: "user" })),
+  getUserById: vi.fn(async () => ({ id: 7, groupId: 3, role: "user", organization: "Example Bank" })),
 }));
 vi.mock("../db/role-assets", () => ({ resolveEffectiveRoleAssets: vi.fn(async () => ({ mcpServers: { default: [], optional: [] } })) }));
 vi.mock("./helpers", () => ({
@@ -43,6 +45,35 @@ vi.mock("./fetch-timeout", () => ({ fetchWithTimeout: mocks.internalFetch }));
 vi.mock("./runtime-governance-attestation", () => ({
   runtimeGovernanceIsAttested: vi.fn(() => mocks.runtimeAttested),
 }));
+vi.mock("./governance/principal", () => {
+  const principal = {
+    userId: 7,
+    adoptionId: "lgj-platform",
+    agentId: "jiuwen_lgj-platform",
+    roleTemplate: "wealth-manager",
+    workspaceId: "/workspace/lgj-platform",
+    permissionProfile: "plus",
+    sessionId: "",
+  };
+  return {
+    resolveRuntimePrincipal: vi.fn(() => ({ principal, complete: true, issues: [] })),
+    principalSupportsSideEffect: vi.fn((resolution: { complete: boolean }, sideEffect: string) => (
+      sideEffect === "read" || sideEffect === "compute" || resolution.complete
+    )),
+    resolveRuntimePrincipalV2: vi.fn(async () => ({
+      principal: {
+        ...principal,
+        tenantId: "tn_test",
+        organizationId: "org_test",
+        authorizationSnapshotId: "authz_test",
+        authorizationFingerprint: "f".repeat(64),
+        identityVersion: "2",
+      },
+      complete: true,
+      issues: [],
+    })),
+  };
+});
 vi.mock("./skills/skill-source", () => ({ parseSkillSourceDirectory: vi.fn(), sanitizeSkillId: vi.fn() }));
 vi.mock("./skills/skill-installer", () => ({ skillInstaller: {} }));
 vi.mock("./skills/skill-registry", () => ({ skillRegistry: {} }));
@@ -57,8 +88,12 @@ vi.mock("./wealth-allocation-context", () => ({
 vi.mock("./wealth-maturity-context", () => ({
   prepareWealthMaturityContext: mocks.prepareWealthMaturityContext,
 }));
+vi.mock("./wealth-previsit-context", () => ({
+  prepareWealthPrevisitContext: mocks.prepareWealthPrevisitContext,
+}));
 vi.mock("./wealth-policy-source", () => ({
   resolveWealthPolicyBasis: mocks.resolveWealthPolicyBasis,
+  resolveWealthPrevisitKnowledgeBasis: mocks.resolveWealthPrevisitKnowledgeBasis,
   resolveWealthSuitabilityPolicySource: vi.fn(),
 }));
 
@@ -78,6 +113,19 @@ beforeEach(async () => {
     items: [{ customerId: "C-001", customerName: "演示客户", productId: "P-001", priority: "high" }],
     guidance: { productRecommendationAllowed: false, writeRequiresSeparateConfirmation: true, message: "仅用于跟进" },
     evidence: { sourceTools: ["wealth_assistant_customer_list", "wealth_assistant_customer_detail"], scope: "current-user-authorized-customers", dataAsOf: ["2026-08-10T00:00:00.000Z"], generatedAt: "2026-08-10T00:00:00.000Z" },
+  });
+  mocks.prepareWealthPrevisitContext.mockResolvedValue({
+    schema: "ea.wealth-previsit-context.v1",
+    status: "ready",
+    customer: { customerId: "C-001", name: "演示客户", dataAsOf: "2026-08-10T00:00:00.000Z" },
+    knowledgeBasis: {
+      status: "ready",
+      evaluatedAt: "2026-08-10T00:00:00.000Z",
+      selected: { sourceAssetId: "wm-previsit-sop", documentId: "doc-previsit", versionLabel: "V1.0", contentHash: "b".repeat(64), sourceDepartment: "财富管理部" },
+      eligibilityFingerprint: "c".repeat(64),
+      userMessage: "已就绪",
+    },
+    evidence: { customerId: "C-001", customerDataAsOf: "2026-08-10T00:00:00.000Z", customerResultFingerprint: "d".repeat(64), scopeVerified: true },
   });
   mocks.resolveWealthPolicyBasis.mockResolvedValue({
     schema: "ea.wealth-policy-basis.v1",
@@ -170,6 +218,56 @@ describe("platform MCP PEP wiring", () => {
     expect(mocks.prepareWealthAllocationContext).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({ customerId: "C-001", amount: 500000, horizonMonths: 36, channel: "branch" }),
     }));
+  });
+
+  it("assembles a principal-bound previsit context and task readiness", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "wealth-previsit",
+        method: "tools/call",
+        params: { name: "prepare_wealth_previsit_context", arguments: { customer_id: "C-001" } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_PREVISIT_CONTEXT");
+    expect(body.result?.content?.[0]?.text).toContain('"status":"READY"');
+    expect(mocks.prepareWealthPrevisitContext).toHaveBeenCalledWith(expect.objectContaining({ customerId: "C-001" }));
+  });
+
+  it("returns a usable degraded previsit result when customer data is temporarily unavailable", async () => {
+    mocks.prepareWealthPrevisitContext.mockRejectedValueOnce(new Error("upstream unavailable"));
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "wealth-previsit-degraded", method: "tools/call",
+        params: { name: "prepare_wealth_previsit_context", arguments: { customer_id: "C-001" } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain('"status":"degraded"');
+    expect(body.result?.content?.[0]?.text).toContain("generic_previsit_checklist");
+  });
+
+  it("returns blocked formal recommendation with safe fallbacks instead of an MCP protocol error", async () => {
+    mocks.prepareWealthAllocationContext.mockRejectedValueOnce(new Error("product upstream unavailable"));
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "wealth-allocation-blocked", method: "tools/call",
+        params: { name: "prepare_wealth_allocation_context", arguments: { customer_id: "C-001" } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain('"status":"blocked"');
+    expect(body.result?.content?.[0]?.text).toContain("verified_customer_analysis");
   });
 
   it("routes bounded maturity operations through the authorized context assembler", async () => {

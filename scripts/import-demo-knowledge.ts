@@ -2,6 +2,7 @@ import "dotenv/config";
 import { createHash } from "crypto";
 import { chmodSync, copyFileSync, readFileSync, readdirSync, statSync } from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import {
   createKnowledgeBaseRecord,
@@ -25,8 +26,9 @@ type KnowledgeClassification = "public" | "internal" | "sensitive" | "restricted
 type KnowledgeAuthority = "official" | "approved" | "reference" | "personal";
 type KnowledgeLifecycle = "active" | "expired" | "archived";
 
-type ReferenceKnowledgeAsset = {
+export type ReferenceKnowledgeAsset = {
   assetId: string;
+  documentSeriesId?: string | null;
   file: string;
   versionLabel: string;
   sourceDepartment: string;
@@ -54,6 +56,9 @@ type ReferencePackManifest = {
 };
 
 type DocumentGovernance = {
+  sourceAssetId: string | null;
+  documentSeriesId: string | null;
+  supersedesAssetId: string | null;
   versionLabel: string;
   sourceDepartment: string;
   classification: KnowledgeClassification;
@@ -185,6 +190,67 @@ export function validateReferenceKnowledgeManifest(
       if (reference && !assetIds.has(reference)) throw new Error(`Unknown replacement asset ${reference} from ${asset.assetId}`);
     }
   }
+  validateReferenceKnowledgeVersionGraph(manifest.assets);
+}
+
+export function validateReferenceKnowledgeVersionGraph(assets: ReferenceKnowledgeAsset[]): void {
+  const assetsById = new Map(assets.map((asset) => [asset.assetId, asset]));
+  for (const asset of assets) {
+    if (asset.supersedes) {
+      const previous = assetsById.get(asset.supersedes)!;
+      if (previous.supersededBy && previous.supersededBy !== asset.assetId) {
+        throw new Error(`Inconsistent replacement chain between ${asset.assetId} and ${previous.assetId}`);
+      }
+    }
+    if (asset.supersededBy) {
+      const next = assetsById.get(asset.supersededBy)!;
+      if (next.supersedes && next.supersedes !== asset.assetId) {
+        throw new Error(`Inconsistent replacement chain between ${asset.assetId} and ${next.assetId}`);
+      }
+    }
+  }
+  const series = resolveReferenceKnowledgeSeries(assets);
+  const activeBySeries = new Map<string, ReferenceKnowledgeAsset[]>();
+  for (const asset of assets.filter((item) => item.lifecycle === "active")) {
+    const seriesId = series.get(asset.assetId)!;
+    activeBySeries.set(seriesId, [...(activeBySeries.get(seriesId) || []), asset]);
+  }
+  for (const [seriesId, assets] of activeBySeries) {
+    for (let leftIndex = 0; leftIndex < assets.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < assets.length; rightIndex += 1) {
+        const left = assets[leftIndex];
+        const right = assets[rightIndex];
+        const leftStart = left.effectiveAt ? Date.parse(left.effectiveAt) : Number.NEGATIVE_INFINITY;
+        const leftEnd = left.expiresAt ? Date.parse(left.expiresAt) : Number.POSITIVE_INFINITY;
+        const rightStart = right.effectiveAt ? Date.parse(right.effectiveAt) : Number.NEGATIVE_INFINITY;
+        const rightEnd = right.expiresAt ? Date.parse(right.expiresAt) : Number.POSITIVE_INFINITY;
+        if (Math.max(leftStart, rightStart) < Math.min(leftEnd, rightEnd)) {
+          throw new Error(`Overlapping active knowledge versions in ${seriesId}: ${left.assetId}, ${right.assetId}`);
+        }
+      }
+    }
+  }
+}
+
+export function resolveReferenceKnowledgeSeries(assets: ReferenceKnowledgeAsset[]): Map<string, string> {
+  const byId = new Map(assets.map((asset) => [asset.assetId, asset]));
+  const resolved = new Map<string, string>();
+  const visiting = new Set<string>();
+  const visit = (assetId: string): string => {
+    const cached = resolved.get(assetId);
+    if (cached) return cached;
+    if (visiting.has(assetId)) throw new Error(`Cyclic knowledge replacement chain at ${assetId}`);
+    const asset = byId.get(assetId);
+    if (!asset) throw new Error(`Unknown knowledge asset ${assetId}`);
+    visiting.add(assetId);
+    const seriesId = String(asset.documentSeriesId || "").trim()
+      || (asset.supersedes ? visit(asset.supersedes) : asset.assetId);
+    visiting.delete(assetId);
+    resolved.set(assetId, seriesId);
+    return seriesId;
+  };
+  for (const asset of assets) visit(asset.assetId);
+  return resolved;
 }
 
 function statSafeIsFile(filePath: string): boolean {
@@ -195,8 +261,11 @@ function statSafeIsFile(filePath: string): boolean {
   }
 }
 
-function governanceFromAsset(asset: ReferenceKnowledgeAsset): DocumentGovernance {
+function governanceFromAsset(asset: ReferenceKnowledgeAsset, seriesByAsset: Map<string, string>): DocumentGovernance {
   return {
+    sourceAssetId: asset.assetId,
+    documentSeriesId: seriesByAsset.get(asset.assetId) || asset.assetId,
+    supersedesAssetId: asset.supersedes || null,
     versionLabel: asset.versionLabel,
     sourceDepartment: asset.sourceDepartment,
     classification: asset.classification,
@@ -211,6 +280,7 @@ function buildReferencePackPlan(definition: ReferencePackDefinition): { manifest
   const manifest = readManifest(definition);
   validateReferenceKnowledgeManifest(manifest, definition);
   const knowledgeBase = manifest.knowledgeBase || definition.fallbackKnowledgeBase;
+  const seriesByAsset = resolveReferenceKnowledgeSeries(manifest.assets);
   if (!knowledgeBase) throw new Error(`Missing knowledgeBase metadata for ${definition.key}`);
   return {
     manifest,
@@ -224,14 +294,21 @@ function buildReferencePackPlan(definition: ReferencePackDefinition): { manifest
         externalProcessingAllowed: knowledgeBase.externalProcessingAllowed,
       },
       files: manifest.assets.map((asset) => path.join(definition.sourceDir, asset.file)),
-      governanceByFile: new Map(manifest.assets.map((asset) => [asset.file, governanceFromAsset(asset)])),
+      governanceByFile: new Map(manifest.assets.map((asset) => [asset.file, governanceFromAsset(asset, seriesByAsset)])),
     },
   };
 }
 
-function defaultGovernance(filename: string, wealthByFile: Map<string, ReferenceKnowledgeAsset>): DocumentGovernance {
+function defaultGovernance(
+  filename: string,
+  wealthByFile: Map<string, ReferenceKnowledgeAsset>,
+  wealthSeries: Map<string, string>,
+): DocumentGovernance {
   if (filename === OFFICIAL_SUITABILITY_NAME) {
     return {
+      sourceAssetId: null,
+      documentSeriesId: null,
+      supersedesAssetId: null,
       versionLabel: "国家金融监督管理总局令〔2025〕7号",
       sourceDepartment: "国家金融监督管理总局",
       classification: "public",
@@ -242,8 +319,11 @@ function defaultGovernance(filename: string, wealthByFile: Map<string, Reference
     };
   }
   const referenceAsset = wealthByFile.get(filename);
-  if (referenceAsset) return governanceFromAsset(referenceAsset);
+  if (referenceAsset) return governanceFromAsset(referenceAsset, wealthSeries);
   return {
+    sourceAssetId: null,
+    documentSeriesId: null,
+    supersedesAssetId: null,
     versionLabel: "演示版 1.0",
     sourceDepartment: "演示业务规范",
     classification: "internal",
@@ -270,6 +350,7 @@ function buildLegacyImportPlan(): ImportPlanItem[] {
   const wealthManifest = readManifest(wealthDefinition);
   validateReferenceKnowledgeManifest(wealthManifest, wealthDefinition);
   const wealthByFile = new Map(wealthManifest.assets.map((asset) => [asset.file, asset]));
+  const wealthSeries = resolveReferenceKnowledgeSeries(wealthManifest.assets);
   const wealthPrefixes = wealthManifest.assets.map((asset) => asset.file.split("-", 1)[0]);
   const collections = [
     {
@@ -335,7 +416,7 @@ function buildLegacyImportPlan(): ImportPlanItem[] {
       files,
       governanceByFile: new Map(files.map((filePath) => {
         const filename = path.basename(filePath);
-        return [filename, defaultGovernance(filename, wealthByFile)];
+        return [filename, defaultGovernance(filename, wealthByFile, wealthSeries)];
       })),
     };
   });
@@ -375,6 +456,11 @@ async function importKnowledgeBase(
     classification: item.collection.classification,
     externalProcessingAllowed: item.collection.externalProcessingAllowed,
   });
+  const documentIdByFile = new Map(item.files.map((sourcePath) => [path.basename(sourcePath), `doc_${nanoid(18)}`]));
+  const documentIdByAsset = new Map<string, string>();
+  for (const [filename, governance] of item.governanceByFile) {
+    if (governance.sourceAssetId) documentIdByAsset.set(governance.sourceAssetId, documentIdByFile.get(filename)!);
+  }
   for (const sourcePath of item.files) {
     const filename = path.basename(sourcePath);
     const extension = knowledgeExtension(filename);
@@ -385,7 +471,7 @@ async function importKnowledgeBase(
     }
     const governance = item.governanceByFile.get(filename);
     if (!governance) throw new Error(`Missing document governance metadata: ${filename}`);
-    const documentPublicId = `doc_${nanoid(18)}`;
+    const documentPublicId = documentIdByFile.get(filename)!;
     const storage = knowledgeDocumentStoragePath(base.publicId, documentPublicId, filename);
     copyFileSync(sourcePath, storage.absolute);
     chmodSync(storage.absolute, 0o600);
@@ -398,6 +484,11 @@ async function importKnowledgeBase(
       storagePath: storage.relative,
       sizeBytes: content.length,
       sha256,
+      sourceAssetId: governance.sourceAssetId,
+      documentSeriesId: governance.documentSeriesId,
+      supersedesDocumentId: governance.supersedesAssetId
+        ? documentIdByAsset.get(governance.supersedesAssetId) || null
+        : null,
       versionLabel: governance.versionLabel,
       lifecycle: governance.lifecycle,
       sourceDepartment: governance.sourceDepartment,
@@ -470,7 +561,9 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { parseAgentInteraction, type AgentInteraction } from "@shared/agent-interaction";
 import { resolveTrustedLocalProfileA2ATarget } from "./local-profile-a2a-proxy";
 import { readSafeAgentResponseText, safeAgentRequest } from "./safe-agent-http";
+import { collectA2ACapabilityIntents, type A2ACapabilityIntent } from "./a2a-capability-intent";
 
 export type A2ARequestProfile = {
   idVersion?: 4 | 7;
@@ -55,6 +56,7 @@ export type A2ATaskResult = {
   state?: string;
   interaction?: AgentInteraction;
   artifacts?: A2ARemoteArtifact[];
+  capabilityIntents?: A2ACapabilityIntent[];
   rawEvents: unknown[];
 };
 
@@ -285,6 +287,7 @@ function partText(part: any): string {
     if (payload && typeof payload === "object" && ["ea.artifact.v1", "ea.artifact-manifest.v1"].includes(String(payload.schema || ""))) {
       return "";
     }
+    if (payload && typeof payload === "object" && payload.schema === "ea.capability-intent.v1") return "";
     if (payload && typeof payload === "object" && "data" in payload) {
       return valueText(payload.data);
     }
@@ -510,6 +513,7 @@ export function extractA2ATaskResult(
   let state = "";
   let interaction: AgentInteraction | undefined;
   const artifacts = new Map<string, A2ARemoteArtifact>();
+  const capabilityIntents = new Map<string, A2ACapabilityIntent>();
 
   for (const event of events as any[]) {
     const result = a2aEventPayload(event);
@@ -523,6 +527,7 @@ export function extractA2ATaskResult(
     for (const artifact of collectA2AArtifacts(result)) {
       artifacts.set(`${artifact.id}:${artifact.uri || artifact.name}`, artifact);
     }
+    for (const intent of collectA2ACapabilityIntents(result)) capabilityIntents.set(intent.intentId, intent);
     const artifact = result.artifact || result.result?.artifact;
     if (!artifact || typeof artifact !== "object") continue;
     const artifactId = String(artifact.artifactId || artifact.artifact_id || artifact.name || "response");
@@ -544,6 +549,7 @@ export function extractA2ATaskResult(
     ...(state ? { state } : {}),
     ...(interaction ? { interaction } : {}),
     ...(artifacts.size > 0 ? { artifacts: Array.from(artifacts.values()) } : {}),
+    ...(capabilityIntents.size > 0 ? { capabilityIntents: Array.from(capabilityIntents.values()) } : {}),
   };
   if (preferred) return { text: preferred, ...meta };
   if (["failed", "canceled", "cancelled"].includes(state)) {
@@ -560,6 +566,7 @@ export function extractA2ATaskResult(
     const text = recursiveA2AText(a2aEventPayload(event));
     if (text) return { text, ...meta };
   }
+  if (capabilityIntents.size > 0) return { text: "", ...meta };
   const last = (events.at(-1) as any)?.result ?? events.at(-1) ?? {};
   return { text: interaction ? "" : valueText(last), ...meta };
 }

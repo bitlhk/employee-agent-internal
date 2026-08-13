@@ -102,7 +102,7 @@ describe("role task governance eval", () => {
     expect(result.effectiveScope.sideEffects).not.toContain("external_send");
   });
 
-  it("allows a plus parent only the attested child/task intersection", async () => {
+  it("allows a plus parent to delegate analysis while retaining side effects locally", async () => {
     const result = await evaluateDelegationPolicy({
       principal: principal("plus").principal,
       childCapabilityIds: ["stock-analysis", "web-research"],
@@ -118,7 +118,7 @@ describe("role task governance eval", () => {
     expect(result.allowed).toBe(true);
     expect(result.effectiveScope).toEqual({
       capabilityIds: ["stock-analysis"],
-      sideEffects: ["external_send", "read"],
+      sideEffects: ["read"],
     });
   });
 

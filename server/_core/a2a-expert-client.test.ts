@@ -170,6 +170,38 @@ describe("A2A expert profiles", () => {
     expect(result).toEqual({ text: "# Verified\n\nResult", remoteTaskId: "remote-1" });
   });
 
+  it("extracts remote write requests as pending local Capability Intents", () => {
+    const result = extractA2ATaskResult([{
+      result: {
+        taskId: "remote-intent-1",
+        message: {
+          parts: [{
+            kind: "data",
+            data: {
+              schema: "ea.capability-intent.v1",
+              intentId: "intent-customer-update",
+              capabilityId: "enterprise.mcp",
+              operation: "update_customer",
+              sideEffect: "write",
+              resource: "customer:C-DEMO-001",
+              arguments: { customerId: "C-DEMO-001", tag: "follow-up" },
+              idempotencyKey: "remote-intent-idem-1",
+            },
+          }],
+        },
+      },
+    }], {});
+
+    expect(result.text).toBe("");
+    expect(result.capabilityIntents).toEqual([expect.objectContaining({
+      intentId: "intent-customer-update",
+      capabilityId: "enterprise.mcp",
+      operation: "update_customer",
+      sideEffect: "write",
+      executionStatus: "pending_local_governance",
+    })]);
+  });
+
   it("does not treat unrelated data status artifacts as a configured result", () => {
     const result = extractA2ATaskResult([
       {

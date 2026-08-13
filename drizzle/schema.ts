@@ -39,6 +39,101 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+// Stable enterprise identity records. users.organization remains a legacy
+// display/source field; runtime authorization must resolve through these IDs.
+export const runtimeOrganizations = mysqlTable("runtime_organizations", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  organizationId: varchar("organization_id", { length: 64 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  displayName: varchar("display_name", { length: 200 }).notNull(),
+  identitySource: varchar("identity_source", { length: 64 }).default("legacy").notNull(),
+  externalSubject: varchar("external_subject", { length: 191 }),
+  status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  organizationIdUnique: uniqueIndex("uk_runtime_organizations_public_id").on(table.organizationId),
+  tenantIdUnique: uniqueIndex("uk_runtime_organizations_tenant_id").on(table.tenantId),
+  externalSubjectUnique: uniqueIndex("uk_runtime_organizations_external_subject").on(table.identitySource, table.externalSubject),
+  statusIdx: index("idx_runtime_organizations_status").on(table.status),
+}));
+
+export type RuntimeOrganization = typeof runtimeOrganizations.$inferSelect;
+export type InsertRuntimeOrganization = typeof runtimeOrganizations.$inferInsert;
+
+export const runtimeOrganizationMemberships = mysqlTable("runtime_organization_memberships", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  membershipId: varchar("membership_id", { length: 64 }).notNull(),
+  organizationId: varchar("organization_id", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  groupIds: json("group_ids").$type<string[]>().notNull(),
+  membershipVersion: int("membership_version").default(1).notNull(),
+  status: mysqlEnum("status", ["active", "revoked"]).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+}, table => ({
+  membershipIdUnique: uniqueIndex("uk_runtime_org_memberships_public_id").on(table.membershipId),
+  organizationUserUnique: uniqueIndex("uk_runtime_org_memberships_org_user").on(table.organizationId, table.userId),
+  userStatusIdx: index("idx_runtime_org_memberships_user_status").on(table.userId, table.status),
+}));
+
+export type RuntimeOrganizationMembership = typeof runtimeOrganizationMemberships.$inferSelect;
+export type InsertRuntimeOrganizationMembership = typeof runtimeOrganizationMemberships.$inferInsert;
+
+export const runtimeAuthorizationSnapshots = mysqlTable("runtime_authorization_snapshots", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  snapshotId: varchar("snapshot_id", { length: 64 }).notNull(),
+  authorizationFingerprint: varchar("authorization_fingerprint", { length: 64 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 64 }).notNull(),
+  organizationId: varchar("organization_id", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptionId: varchar("adoption_id", { length: 64 }).notNull(),
+  agentId: varchar("agent_id", { length: 128 }).notNull(),
+  roleTemplate: varchar("role_template", { length: 64 }).notNull(),
+  workspaceId: varchar("workspace_id", { length: 255 }).notNull(),
+  permissionProfile: varchar("permission_profile", { length: 64 }).notNull(),
+  authorityJson: json("authority_json").$type<Record<string, unknown>>().notNull(),
+  status: mysqlEnum("status", ["active", "revoked"]).default("active").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+}, table => ({
+  snapshotIdUnique: uniqueIndex("uk_runtime_authz_snapshots_public_id").on(table.snapshotId),
+  fingerprintUnique: uniqueIndex("uk_runtime_authz_snapshots_fingerprint").on(table.authorizationFingerprint),
+  actorCreatedIdx: index("idx_runtime_authz_snapshots_actor_created").on(table.userId, table.createdAt),
+  organizationCreatedIdx: index("idx_runtime_authz_snapshots_org_created").on(table.organizationId, table.createdAt),
+  statusCreatedIdx: index("idx_runtime_authz_snapshots_status_created").on(table.status, table.createdAt),
+}));
+
+export type RuntimeAuthorizationSnapshot = typeof runtimeAuthorizationSnapshots.$inferSelect;
+export type InsertRuntimeAuthorizationSnapshot = typeof runtimeAuthorizationSnapshots.$inferInsert;
+
+export const rolePackReleases = mysqlTable("role_pack_releases", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  releaseId: varchar("release_id", { length: 128 }).notNull(),
+  rolePackId: varchar("role_pack_id", { length: 128 }).notNull(),
+  evalSuiteVersion: varchar("eval_suite_version", { length: 64 }).notNull(),
+  assetSetFingerprint: varchar("asset_set_fingerprint", { length: 64 }).notNull(),
+  verificationLevel: mysqlEnum("verification_level", ["contract", "controlled_scenario", "model_scenario"]).notNull(),
+  status: mysqlEnum("status", ["candidate", "verified", "stale", "failed"]).default("candidate").notNull(),
+  contractReport: json("contract_report").$type<Record<string, unknown>>().notNull(),
+  scenarioReport: json("scenario_report").$type<Record<string, unknown> | null>(),
+  verifiedAt: timestamp("verified_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  releaseIdUnique: uniqueIndex("uk_role_pack_releases_public_id").on(table.releaseId),
+  assetSuiteUnique: uniqueIndex("uk_role_pack_releases_asset_suite").on(
+    table.rolePackId,
+    table.evalSuiteVersion,
+    table.assetSetFingerprint,
+  ),
+  roleStatusIdx: index("idx_role_pack_releases_role_status").on(table.rolePackId, table.status, table.verifiedAt),
+}));
+
+export type RolePackRelease = typeof rolePackReleases.$inferSelect;
+export type InsertRolePackRelease = typeof rolePackReleases.$inferInsert;
+
 /** Stable mapping from a trusted upstream account to the canonical EA user. */
 export const channelIdentityLinks = mysqlTable("channel_identity_links", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
@@ -901,6 +996,7 @@ export const agentTasks = mysqlTable("agent_tasks", {
   remoteTaskId: varchar("remote_task_id", { length: 128 }),
   rawEventsJson: text("raw_events_json"),
   artifactsJson: text("artifacts_json"),
+  capabilityIntentsJson: text("capability_intents_json"),
   interactionJson: text("interaction_json"),
   interactionStatus: varchar("interaction_status", { length: 16 }),
   interactionResponseJson: text("interaction_response_json"),
@@ -1503,6 +1599,9 @@ export const knowledgeDocuments = mysqlTable("knowledge_documents", {
   storagePath:        varchar("storage_path", { length: 700 }).notNull(),
   sizeBytes:          bigint("size_bytes", { mode: "number" }).default(0).notNull(),
   sha256:             varchar("sha256", { length: 64 }).notNull(),
+  sourceAssetId:      varchar("source_asset_id", { length: 128 }),
+  documentSeriesId:   varchar("document_series_id", { length: 128 }),
+  supersedesDocumentId: varchar("supersedes_document_id", { length: 64 }),
   versionLabel:       varchar("version_label", { length: 64 }).default("1.0").notNull(),
   lifecycle:          mysqlEnum("lifecycle", ["draft", "active", "expired", "archived"]).default("active").notNull(),
   sourceDepartment:   varchar("source_department", { length: 120 }).default("").notNull(),
@@ -1522,6 +1621,9 @@ export const knowledgeDocuments = mysqlTable("knowledge_documents", {
   publicIdUnique: uniqueIndex("uk_knowledge_documents_public_id").on(table.publicId),
   baseUpdatedIdx: index("idx_knowledge_documents_base_updated").on(table.knowledgeBaseId, table.updatedAt),
   baseShaIdx: index("idx_knowledge_documents_base_sha").on(table.knowledgeBaseId, table.sha256),
+  baseSourceAssetUnique: uniqueIndex("uk_knowledge_documents_base_source_asset").on(table.knowledgeBaseId, table.sourceAssetId),
+  baseSeriesLifecycleIdx: index("idx_knowledge_documents_base_series_lifecycle").on(table.knowledgeBaseId, table.documentSeriesId, table.lifecycle),
+  supersedesIdx: index("idx_knowledge_documents_supersedes").on(table.supersedesDocumentId),
   baseLifecycleIdx: index("idx_knowledge_documents_base_lifecycle").on(table.knowledgeBaseId, table.lifecycle, table.updatedAt),
 }));
 

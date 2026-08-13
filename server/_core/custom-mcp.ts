@@ -7,6 +7,7 @@ import {
   getClawByAdoptId,
   getClawByAgentId,
   getCustomMcpConnection,
+  getUserById,
   listCustomMcpConnections,
   revealCustomMcpOAuthData,
   resolveEffectiveRoleAssets,
@@ -46,7 +47,8 @@ import { beginMcpCall } from "./observability/metrics";
 import { evaluateGovernance } from "./governance/contracts";
 import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
 import { customMcpPolicyAdapter, resolveCustomMcpToolGovernance } from "./governance/custom-mcp-policy";
-import { resolveRuntimePrincipal } from "./governance/principal";
+import { resolveRuntimePrincipal, resolveRuntimePrincipalV2 } from "./governance/principal";
+import { authorizeExecutionAuthority, requiresExecutionAuthority } from "./governance/execution-authority";
 import { stableToolInputHash } from "./tool-governance";
 import { guardToolEgress } from "./tool-egress-policy";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
@@ -369,18 +371,66 @@ async function gatewayCall(
           adoption,
           sessionId: req.headers["x-linggan-session-id"],
         });
+        const operation = {
+          capabilityId: "custom.mcp",
+          operation: tool.name,
+          sideEffect: profile.sideEffect,
+          resource: `custom-mcp:${row.id}`,
+          payloadHash: argsHash,
+        } as const;
+        let effectivePrincipal = principal;
+        let executionAuthority: Awaited<ReturnType<typeof authorizeExecutionAuthority>> | null = null;
+        if (requiresExecutionAuthority(profile.sideEffect)) {
+          const user = await getUserById(Number(adoption.userId));
+          if (!user) return textResult("当前用户身份不可用，已停止该操作。", true);
+          const principalV2 = await resolveRuntimePrincipalV2({
+            adoption,
+            user,
+            sessionId: principal.principal.sessionId,
+          });
+          if (!principalV2.complete) return textResult("当前执行身份无法形成可验证授权快照，已停止该操作。", true);
+          executionAuthority = await authorizeExecutionAuthority({
+            principal: principalV2.principal,
+            taskAuthorizationSnapshotId: String(req.headers["x-ea-authorization-snapshot-id"] || "").trim() || null,
+            operation,
+          });
+          if (executionAuthority.effect !== "ALLOW") {
+            metricOutcome = "error";
+            await recordAuditBestEffort({
+              action: "governance.execution_authority.blocked",
+              result: "denied",
+              severity: "high",
+              actorType: "agent",
+              actorUserId: principalV2.principal.userId,
+              actorRole: principalV2.principal.roleTemplate,
+              targetType: "mcp_server",
+              targetId: String(row.id),
+              targetName: row.displayName,
+              workspaceId: principalV2.principal.workspaceId,
+              agentInstanceId: adoptId,
+              runtimeAgentId: principalV2.principal.agentId,
+              sessionId: principalV2.principal.sessionId,
+              toolName: tool.name,
+              policyCode: executionAuthority.policyCode,
+              source: "custom_mcp_gateway",
+              ...auditRequest(req),
+              metadata: {
+                ruleVersion: executionAuthority.ruleVersion,
+                taskSnapshotId: executionAuthority.taskSnapshotId,
+                currentSnapshotId: executionAuthority.currentSnapshotId,
+                effectiveAuthorityFingerprint: executionAuthority.effectiveAuthorityFingerprint,
+              },
+            });
+            return textResult(executionAuthority.reason, true);
+          }
+          effectivePrincipal = { principal: executionAuthority.effectivePrincipal, complete: true, issues: [] };
+        }
         const governance = await evaluateGovernance({
-          principal: principal.principal,
-          operation: {
-            capabilityId: "custom.mcp",
-            operation: tool.name,
-            sideEffect: profile.sideEffect,
-            resource: `custom-mcp:${row.id}`,
-            payloadHash: argsHash,
-          },
+          principal: effectivePrincipal.principal,
+          operation,
         }, [customMcpPolicyAdapter({
           profile,
-          principal,
+          principal: effectivePrincipal,
           runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
         })], {
           effect: "DENY",
@@ -436,14 +486,8 @@ async function gatewayCall(
         }
         const approval = await enforceGovernanceApproval({
           decision: governance,
-          principal: principal.principal,
-          operation: {
-            capabilityId: "custom.mcp",
-            operation: tool.name,
-            sideEffect: profile.sideEffect,
-            resource: `custom-mcp:${row.id}`,
-            payloadHash: argsHash,
-          },
+          principal: effectivePrincipal.principal,
+          operation,
           idempotencyKey: idempotencyKey || null,
         });
         if (approval.effect !== "ALLOW") {
@@ -473,6 +517,7 @@ async function gatewayCall(
               operationFingerprint: governance.operationFingerprint,
               capabilitySetFingerprint: capabilitySetFingerprint(),
               sideEffect: profile.sideEffect,
+              executionAuthorityFingerprint: executionAuthority?.effectiveAuthorityFingerprint || null,
               approvalId: approval.effect === "REQUIRE_APPROVAL"
                 ? approval.requirement.approvalId
                 : approval.approval?.approvalId || null,

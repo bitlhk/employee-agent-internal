@@ -46,6 +46,20 @@ describe("delegation policy", () => {
     expect(result.effectiveScope.sideEffects).toEqual(["read"]);
   });
 
+  it("requires remote write work to return as a local Capability Intent", async () => {
+    const result = await evaluateDelegationPolicy({
+      principal: plusPrincipal,
+      childCapabilityIds: ["customer-update"],
+      endpointConfig: {
+        governanceAttested: true,
+        delegationScope: { sideEffects: ["write"] },
+      },
+      requestedScope: { capabilityIds: ["customer-update"], sideEffects: ["write"] },
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.effectiveScope.sideEffects).toEqual([]);
+  });
+
   it("intersects parent, child and task resource scopes", async () => {
     const result = await evaluateDelegationPolicy({
       principal: {
