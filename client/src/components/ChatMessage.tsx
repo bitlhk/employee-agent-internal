@@ -3,6 +3,7 @@ import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { AgentTaskCard, type AgentTask } from "@/components/AgentTaskCard";
 import type { AgentArtifactView } from "@/components/AgentArtifactPanel";
 import { MessageAttachments } from "@/components/MessageAttachments";
+import { ContextReceiptPanel } from "@/components/ContextReceiptPanel";
 import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { WebSourceCard } from "@/components/WebSourceCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
@@ -15,6 +16,7 @@ import {
   validateKnowledgeCitations,
 } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
+import { latestContextReceipt } from "@/lib/context-receipt";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
   MESSAGE_FEEDBACK_REASON_LABELS,
@@ -246,6 +248,13 @@ type ChatMessageProps = {
   feedbackPending?: boolean;
   onFeedback?: (feedback: MessageFeedbackValue | null) => void | Promise<void>;
   onForgetMemory?: (memoryId: number) => void | Promise<void>;
+  onContextMemoryFeedback?: (input: {
+    memoryId: number;
+    receiptId: string;
+    feedbackToken: string;
+    action: "correct" | "update" | "ignore";
+    content?: string;
+  }) => void | Promise<void>;
   onCaptureKnowledge?: (input: { messageId?: string; text: string; modelId: string }) => void;
   onOpenKnowledgeSource?: (source: ChatKnowledgeSource) => void;
   jiuwenPermission?: JiuwenPermissionRequestCard;
@@ -771,6 +780,7 @@ function ChatMessageInner({
   feedbackPending = false,
   onFeedback,
   onForgetMemory,
+  onContextMemoryFeedback,
   onCaptureKnowledge,
   onOpenKnowledgeSource,
   jiuwenPermission,
@@ -791,6 +801,10 @@ function ChatMessageInner({
     }
     return null;
   }, [effectiveToolCalls]);
+  const contextReceipt = useMemo(
+    () => latestContextReceipt(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
+    [effectiveToolCalls],
+  );
   const [memoryReceiptDismissed, setMemoryReceiptDismissed] = useState(false);
   const [memoryUndoPending, setMemoryUndoPending] = useState(false);
   useEffect(() => {
@@ -1059,6 +1073,13 @@ function ChatMessageInner({
               </a>
             ))}
           </div>
+        ) : null}
+        {!streaming && contextReceipt ? (
+          <ContextReceiptPanel
+            receipt={contextReceipt}
+            citedKnowledge={citedKnowledgeSources}
+            onMemoryFeedback={onContextMemoryFeedback}
+          />
         ) : null}
         {!streaming && memoryReceipt && !memoryReceiptDismissed ? (
           <div className="lingxia-memory-receipt" data-action={memoryReceipt.action}>
@@ -1515,6 +1536,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.onRetryExpert === next.onRetryExpert &&
     prev.onCaptureKnowledge === next.onCaptureKnowledge &&
     prev.onOpenKnowledgeSource === next.onOpenKnowledgeSource &&
+    prev.onContextMemoryFeedback === next.onContextMemoryFeedback &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&
     prev.usage?.input === next.usage?.input &&
     prev.usage?.output === next.usage?.output &&

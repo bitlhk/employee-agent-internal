@@ -99,6 +99,7 @@ import {
   rejectAgentMemory,
   updateAgentMemory,
 } from "../_core/agent-memory";
+import { contextMemoryFeedbackProcedure } from "./claw-context-memory-feedback";
 import { restoreMemoryVersionProcedure } from "./claw-memory-version";
 import {
   acceptMemoryConflictProcedure,
@@ -338,6 +339,8 @@ export const clawRouter = router({
           adoptionId: Number(claw.id),
         });
       }),
+
+    contextMemoryFeedback: contextMemoryFeedbackProcedure,
 
     refreshMemorySynthesis: protectedProcedure
       .input(z.object({ adoptId: z.string().min(1).max(64) }))

@@ -844,6 +844,14 @@ export default function Home() {
     onSuccess: () => toast.success("已撤销这条岗位偏好"),
     onError: (error) => toast.error(error.message || "撤销失败"),
   });
+  const contextMemoryFeedbackMutation = trpc.claw.contextMemoryFeedback.useMutation({
+    onSuccess: (_data, variables) => {
+      if (variables.action === "correct") toast.success("已确认这条岗位记忆");
+      else if (variables.action === "update") toast.success("岗位记忆已更新");
+      else toast.success("本次任务已忽略这条记忆");
+    },
+    onError: (error) => toast.error(error.message || "记忆反馈失败"),
+  });
   const setMessageFeedbackMutation = trpc.claw.setMessageFeedback.useMutation();
   useEffect(() => {
     const rows = Array.isArray((messageFeedbackQuery.data as any)?.rows)
@@ -4716,6 +4724,9 @@ export default function Home() {
                     onFeedback={m.role === "assistant" ? (feedback) => updateMessageFeedback(m, feedback) : undefined}
                     onForgetMemory={m.role === "assistant" && resolvedAdoptId
                       ? (memoryId) => forgetMemoryMutation.mutateAsync({ adoptId: resolvedAdoptId, id: memoryId }).then(() => undefined)
+                      : undefined}
+                    onContextMemoryFeedback={m.role === "assistant" && resolvedAdoptId
+                      ? (input) => contextMemoryFeedbackMutation.mutateAsync({ adoptId: resolvedAdoptId, ...input }).then(() => undefined)
                       : undefined}
                     onCaptureKnowledge={m.role === "assistant" ? openChatKnowledgeCapture : undefined}
                     onOpenKnowledgeSource={m.role === "assistant" ? openKnowledgeCitationPanel : undefined}

@@ -28,6 +28,49 @@ function renderToolTimeline(
 }
 
 describe("ChatMessage tool timeline", () => {
+  it("renders a compact Context Receipt from a persisted tool result", () => {
+    const contextReceipt = {
+      schema: "ea.context-receipt.v1",
+      receiptId: "crpt_test",
+      taskId: "WM-GT-02",
+      principalFingerprint: "p".repeat(64),
+      provided: {
+        knowledge: [{ assetId: "policy-v22", label: "适当性制度 V2.2", version: "V2.2", contentHash: "h".repeat(64) }],
+        businessData: [{ sourceSystem: "wealth_customer_mcp", label: "当前客户画像", entityRef: "customer-fingerprint", asOf: "2026-08-13T08:00:00.000Z", resultFingerprint: "d".repeat(64) }],
+        memory: [],
+        capabilities: [{ capabilityId: "prepare_wealth_allocation_context", label: "配置筛选", version: "1", sideEffect: "read" }],
+      },
+      cited: { knowledgeAssetIds: [] },
+      applied: { policyDecisions: [], capabilityExecutions: [] },
+      excluded: [],
+      readiness: { status: "READY", requestedOutcome: "allocation", allowedOutcomes: ["allocation"], deniedOutcomes: [], reasons: [], remediation: [], decisionFingerprint: "r".repeat(64) },
+      createdAt: "2026-08-13T08:00:00.000Z",
+      receiptFingerprint: "f".repeat(64),
+    };
+    const html = renderToStaticMarkup(React.createElement(ChatMessage, {
+      role: "assistant",
+      text: "已完成配置建议。",
+      isLast: true,
+      isPlaceholder: false,
+      streaming: false,
+      displayName: "财富经理助手",
+      modelId: "test-model",
+      timeLabel: "16:00",
+      toolCalls: [{
+        id: "call-context",
+        name: "prepare_wealth_allocation_context",
+        arguments: "{}",
+        result: `EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({ contextReceipt })}`,
+        status: "done",
+        ts: Date.now(),
+      }],
+    }));
+    expect(html).toContain("本次依据");
+    expect(html).toContain("2 项企业上下文");
+    expect(html).toContain("当前就绪");
+    expect(html).not.toContain("适当性制度 V2.2");
+  });
+
   it("distinguishes chat roles without rendering repeated avatars or labels", () => {
     const userHtml = renderToStaticMarkup(
       React.createElement(ChatMessage, {

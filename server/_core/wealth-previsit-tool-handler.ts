@@ -2,6 +2,7 @@ import type { Request } from "express";
 import type { ClawAdoption } from "../../drizzle/schema";
 import { getUserById } from "../db";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
+import { buildRelevantAgentMemoryContext } from "./agent-memory-retrieval";
 import { principalFingerprint } from "./governance/contracts";
 import { resolveRuntimePrincipalV2 } from "./governance/principal";
 import {
@@ -9,6 +10,7 @@ import {
   buildTaskContextPack,
   buildTaskExecutionEnvelope,
 } from "./governance/task-execution-envelope";
+import { buildContextReceiptFromEnvelope } from "./governance/context-receipt";
 import { evaluateWealthTaskReadiness, readinessCheck } from "./governance/wealth-task-readiness";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthPrevisitContext } from "./wealth-previsit-context";
@@ -95,6 +97,13 @@ export async function handleWealthPrevisitTool(input: {
         }),
       },
     });
+    const customerName = String(result.customer.name || result.customer.customerName || "").trim();
+    const taskMemory = await buildRelevantAgentMemoryContext({
+      userId: Number(user.id),
+      adoptId,
+      adoptionId: Number(adoption.id),
+      query: [customerId, customerName, "访前准备", "客户沟通偏好"].filter(Boolean).join(" "),
+    }).catch(() => ({ context: "", selectedIds: [] as number[], activeCount: 0 }));
     const knowledgeReady = result.knowledgeBasis.status === "ready" && Boolean(result.knowledgeBasis.selected);
     const customerDataReady = Boolean(result.evidence.customerDataAsOf);
     const releaseEvidence = await resolveWealthRolePackReleaseEvidence();
@@ -134,7 +143,7 @@ export async function handleWealthPrevisitTool(input: {
             resultFingerprint: result.evidence.customerResultFingerprint,
           }],
         },
-        memory: { memoryRefs: [] },
+        memory: { memoryRefs: taskMemory.selectedIds.map(String) },
         principalFingerprint: principalFingerprint(principalV2.principal),
         assembledAt: new Date().toISOString(),
       }),
@@ -149,6 +158,39 @@ export async function handleWealthPrevisitTool(input: {
       }),
       releaseEvidence,
       correlationId: correlationId(req),
+    });
+    const contextReceipt = buildContextReceiptFromEnvelope({
+      envelope: executionEnvelope,
+      knowledgeLabels: result.knowledgeBasis.selected ? [{
+        assetId: result.knowledgeBasis.selected.sourceAssetId,
+        label: `财富客户访前准备作业依据 ${result.knowledgeBasis.selected.versionLabel}`.trim(),
+      }] : [],
+      businessDataLabels: [{ sourceSystem: "wealth_customer_mcp", label: "当前客户画像与持仓" }],
+      memoryRefs: taskMemory.selectedIds.map((memoryId) => ({ memoryId })),
+      memoryFeedbackBinding: { userId: Number(user.id), adoptId },
+      policyDecisions: [
+        {
+          policyCode: "EA_CUSTOMER_SCOPE_V1",
+          ruleVersion: "customer-scope-v1",
+          effect: "ALLOW",
+        },
+        ...(knowledgeReady ? [{
+          policyCode: "EA_KNOWLEDGE_ELIGIBILITY_V1",
+          ruleVersion: "knowledge-eligibility-v1",
+          effect: "ALLOW" as const,
+        }] : []),
+      ],
+      capabilityExecutions: [{
+        capabilityId: "prepare_wealth_previsit_context",
+        operation: "prepare_customer_previsit_context",
+        status: "completed",
+      }],
+      excluded: knowledgeReady ? [] : [{
+        category: "knowledge",
+        reasonCode: "PREVISIT_KNOWLEDGE_UNAVAILABLE",
+        count: 1,
+        message: "未提供不符合岗位、密级或有效期要求的访前资料。",
+      }],
     });
     await recordAuditBestEffort({
       action: "governance.wealth_previsit_context.prepared",
@@ -174,7 +216,13 @@ export async function handleWealthPrevisitTool(input: {
         contextEligibilityFingerprint: result.knowledgeBasis.eligibilityFingerprint,
       },
     });
-    return textResult(`EA_WEALTH_PREVISIT_CONTEXT:${JSON.stringify({ ...result, readiness, executionEnvelope })}`);
+    return textResult(`EA_WEALTH_PREVISIT_CONTEXT:${JSON.stringify({
+      ...result,
+      ...(taskMemory.context ? { taskMemoryContext: taskMemory.context } : {}),
+      readiness,
+      executionEnvelope,
+      contextReceipt,
+    })}`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || "");
     const authorizationDenied = /标识|范围|归属|授权/u.test(message);

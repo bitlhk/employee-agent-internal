@@ -33,6 +33,10 @@ import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
+import {
+  buildWealthAllocationContextReceipt,
+  buildWealthPolicyContextReceipt,
+} from "./wealth-context-receipts";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
 import { handleWealthPrevisitTool } from "./wealth-previsit-tool-handler";
 import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } from "./wealth-role-pack-release";
@@ -186,6 +190,7 @@ const TOOLS = [
         keyword: { type: "string", description: "Optional product search keyword." },
         product_type: { type: "string", description: "Optional product type filter." },
         max_products: { type: "number", description: "Maximum candidates to evaluate, default 10 and maximum 20." },
+        task_id: { type: "string", enum: ["WM-GT-02", "WM-GT-04"], description: "Benchmark task contract. Defaults to WM-GT-02; use WM-GT-04 for an explicit risk-mismatch enforcement task." },
       },
       required: ["customer_id"],
     },
@@ -570,6 +575,9 @@ async function callTool(
       releaseEvidence,
       correlationId: pickHeader(req, ["x-request-id", "x-correlation-id"]) || undefined,
     }) : null;
+    const contextReceipt = executionEnvelope
+      ? buildWealthPolicyContextReceipt({ envelope: executionEnvelope, basis, policyReady })
+      : null;
     await recordAuditBestEffort({
       action: basis.status === "ready"
         ? "governance.wealth_policy_basis.selected"
@@ -598,7 +606,7 @@ async function callTool(
         accessRestricted: basis.governance.accessRestricted,
       },
     });
-    return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify({ ...basis, readiness, executionEnvelope })}`, principalV2.complete ? {} : { isError: true });
+    return textResult(`EA_WEALTH_POLICY_BASIS:${JSON.stringify({ ...basis, readiness, executionEnvelope, contextReceipt })}`, principalV2.complete ? {} : { isError: true });
   }
 
   if (name === "prepare_wealth_previsit_context") {
@@ -692,6 +700,7 @@ async function callTool(
     const channel = String(args.channel || "").trim().slice(0, 64);
     const keyword = String(args.keyword || "").trim().slice(0, 120);
     const productType = String(args.product_type || args.productType || "").trim().slice(0, 64);
+    const allocationTaskId = String(args.task_id || args.taskId || "").trim() === "WM-GT-04" ? "WM-GT-04" : "WM-GT-02";
     const maxProducts = Math.min(20, Math.max(1, Math.floor(Number(args.max_products || args.maxProducts || 10)) || 10));
     const customerEndpoint = String(process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp").trim();
     const productEndpoint = String(process.env.WEALTH_PRODUCT_MCP_URL || "http://127.0.0.1:18007/mcp").trim();
@@ -705,7 +714,7 @@ async function callTool(
       });
       if (!principalV2.complete) {
         const readiness = evaluateWealthTaskReadiness({
-          taskId: "WM-GT-04",
+          taskId: allocationTaskId,
           checks: {
             identity: readinessCheck("BLOCKED", "PRINCIPAL_V2_UNAVAILABLE", "当前岗位身份无法形成可验证授权快照。", { retryable: true }),
           },
@@ -754,7 +763,7 @@ async function callTool(
       const productDataReady = result.evidence.productDataAsOf.length > 0;
       const releaseEvidence = await resolveWealthRolePackReleaseEvidence();
       const readiness = evaluateWealthTaskReadiness({
-        taskId: "WM-GT-04",
+        taskId: allocationTaskId,
         checks: {
           identity: readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已就绪。"),
           knowledge: result.policySource.ready
@@ -769,6 +778,7 @@ async function callTool(
           policy: policyReady
             ? readinessCheck("READY", "SUITABILITY_POLICY_ALLOW", "存在通过适当性校验的产品候选。")
             : readinessCheck("BLOCKED", "SUITABILITY_POLICY_DENY", result.excludedProducts[0]?.reason || "没有产品通过当前适当性规则。"),
+          skill: readinessCheck("READY", "WEALTH_ALLOCATION_SKILL_READY", "财富资产配置流程已就绪。"),
           capability: readinessCheck("READY", "WEALTH_CONTEXT_CAPABILITY_READY", "财富配置上下文能力已就绪。"),
           evidence: result.evidence.policyDecisionIds.length
             ? readinessCheck("READY", "POLICY_EVIDENCE_READY", "适当性判断证据已生成。")
@@ -817,6 +827,7 @@ async function callTool(
         releaseEvidence,
         correlationId: pickHeader(req, ["x-request-id", "x-correlation-id"]) || undefined,
       });
+      const contextReceipt = buildWealthAllocationContextReceipt({ envelope: executionEnvelope, result });
       await recordAuditBestEffort({
         action: "governance.wealth_suitability.evaluated",
         result: result.status === "ready" ? "success" : "denied",
@@ -843,12 +854,12 @@ async function callTool(
           excludedProductCount: result.excludedProducts.length,
         },
       });
-      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({ ...result, readiness, executionEnvelope })}`);
+      return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({ ...result, readiness, executionEnvelope, contextReceipt })}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || "");
       const policyUnavailable = /policy|制度|knowledge/i.test(message);
       const readiness = evaluateWealthTaskReadiness({
-        taskId: "WM-GT-04",
+        taskId: allocationTaskId,
         checks: {
           identity: readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已就绪。"),
           knowledge: policyUnavailable

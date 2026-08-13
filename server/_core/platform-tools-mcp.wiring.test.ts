@@ -38,6 +38,13 @@ vi.mock("./agent-memory", () => ({
   listAgentMemoryView: vi.fn(),
   rememberExplicitPreference: vi.fn(),
 }));
+vi.mock("./agent-memory-retrieval", () => ({
+  buildRelevantAgentMemoryContext: vi.fn(async () => ({
+    context: "<ea_relevant_memory>客户更关注流动性</ea_relevant_memory>",
+    selectedIds: [42],
+    activeCount: 1,
+  })),
+}));
 vi.mock("./observability/metrics", () => ({
   beginMcpCall: vi.fn(() => () => undefined),
   observeGovernanceDecision: vi.fn(),
@@ -154,6 +161,7 @@ beforeEach(async () => {
     evaluatedAt: "2026-08-10T00:00:00.000Z",
     selected: {
       sourceAssetId: "doc-v22",
+      contentHash: "e".repeat(64),
       documentName: "财富产品适当性销售管理细则（V2.2现行）.md",
       versionLabel: "V2.2",
       sourceDepartment: "财富管理部",
@@ -176,7 +184,16 @@ beforeEach(async () => {
     eligibleProducts: [{ productId: "P-R2", name: "稳健产品", policyDecisionId: "pdec_allow", policyCode: "WEALTH_SUITABILITY_MATCH:ELIGIBLE" }],
     excludedProducts: [{ productId: "P-R4", name: "高风险产品", reason: "风险等级不匹配", policyDecisionId: "pdec_deny", policyCode: "WEALTH_SUITABILITY_MATCH:RISK_MISMATCH" }],
     policySource: { ready: true, sourceAssetId: "doc-v22", versionLabel: "V2.2", sourceLocator: "4.1", eligibilityFingerprint: "a".repeat(64) },
-    evidence: { ruleVersion: "wealth-suitability-v1", customerDataAsOf: "2026-08-10T00:00:00.000Z", productDataAsOf: ["2026-08-10T00:00:00.000Z"], policyDecisionIds: ["pdec_allow", "pdec_deny"] },
+    evidence: {
+      ruleVersion: "wealth-suitability-v1",
+      customerDataAsOf: "2026-08-10T00:00:00.000Z",
+      productDataAsOf: ["2026-08-10T00:00:00.000Z"],
+      policyDecisionIds: ["pdec_allow", "pdec_deny"],
+      decisions: [
+        { productId: "P-R2", effect: "ALLOW", policyCode: "WEALTH_SUITABILITY_MATCH:ELIGIBLE", policyDecisionId: "pdec_allow" },
+        { productId: "P-R4", effect: "DENY", policyCode: "WEALTH_SUITABILITY_MATCH:RISK_MISMATCH", policyDecisionId: "pdec_deny" },
+      ],
+    },
   });
   const app = express();
   app.use(express.json());
@@ -208,6 +225,7 @@ describe("platform MCP PEP wiring", () => {
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_POLICY_BASIS");
     expect(body.result?.content?.[0]?.text).toContain("V2.2");
+    expect(body.result?.content?.[0]?.text).toContain('"schema":"ea.context-receipt.v1"');
     expect(mocks.resolveWealthPolicyBasis).toHaveBeenCalledWith(expect.objectContaining({
       userId: 7,
       groupId: 3,
@@ -234,6 +252,8 @@ describe("platform MCP PEP wiring", () => {
     expect(response.status).toBe(200);
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_ALLOCATION_CONTEXT");
+    expect(body.result?.content?.[0]?.text).toContain('"taskId":"WM-GT-02"');
+    expect(body.result?.content?.[0]?.text).toContain('"schema":"ea.context-receipt.v1"');
     expect(body.result?.content?.[0]?.text).toContain("P-R2");
     expect(mocks.prepareWealthAllocationContext).toHaveBeenCalledWith(expect.objectContaining({
       request: expect.objectContaining({ customerId: "C-001", amount: 500000, horizonMonths: 36, channel: "branch" }),
@@ -254,6 +274,9 @@ describe("platform MCP PEP wiring", () => {
     const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain("EA_WEALTH_PREVISIT_CONTEXT");
+    expect(body.result?.content?.[0]?.text).toContain('"taskId":"WM-GT-01"');
+    expect(body.result?.content?.[0]?.text).toContain('"schema":"ea.context-receipt.v1"');
+    expect(body.result?.content?.[0]?.text).toContain('"memoryId":"42"');
     expect(body.result?.content?.[0]?.text).toContain('"status":"READY"');
     expect(mocks.prepareWealthPrevisitContext).toHaveBeenCalledWith(expect.objectContaining({ customerId: "C-001" }));
   });

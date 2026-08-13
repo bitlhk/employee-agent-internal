@@ -3,6 +3,9 @@ import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  serverId: "insurance_customer_profile",
+  displayName: "客户画像",
+  roleKey: "insurance-advisor",
   authorizationStatus: "active" as "active" | "revoked",
   policy: {
     toolName: "list_customer_profiles",
@@ -28,8 +31,8 @@ vi.mock("../db", () => ({
   completeEnterpriseMcpCall: mocks.complete,
   getUserById: vi.fn(async () => ({ id: 7, email: "user@example.com", organization: "Example Bank" })),
   listEnterpriseMcpConnections: vi.fn(async () => [{
-    serverId: "insurance_customer_profile",
-    displayName: "客户画像",
+    serverId: mocks.serverId,
+    displayName: mocks.displayName,
     endpointUrl: "https://mcp.example.com/insurance/customer-profile/mcp",
     resourceUri: "https://mcp.example.com/insurance/customer-profile/mcp",
     lifecycleState: "shadow",
@@ -37,11 +40,11 @@ vi.mock("../db", () => ({
     authMode: "none_shadow",
     identityMode: "user",
     timeoutMs: 30_000,
-    toolsJson: [{ name: "list_customer_profiles", description: "查询客户画像", inputSchema: { type: "object" } }],
+    toolsJson: [{ name: mocks.policy.toolName, description: "查询客户画像", inputSchema: { type: "object" } }],
   }]),
   listEnterpriseMcpToolPolicies: vi.fn(async () => [{ ...mocks.policy }]),
   resolveEffectiveRoleAssets: vi.fn(async () => ({})),
-  resolvePersistedAgentMcpSelection: vi.fn(async () => ({ enabledServerIds: ["insurance_customer_profile"] })),
+  resolvePersistedAgentMcpSelection: vi.fn(async () => ({ enabledServerIds: [mocks.serverId] })),
   reserveEnterpriseMcpCall: mocks.reserve,
   revealEnterpriseMcpCredential: vi.fn(() => null),
 }));
@@ -51,7 +54,7 @@ vi.mock("../db/claw", () => ({
     adoptId: "lgj-insurance",
     agentId: "jiuwen_lgj-insurance",
     userId: 7,
-    roleTemplate: "insurance-advisor",
+    roleTemplate: mocks.roleKey,
     permissionProfile: "plus",
     status: "active",
   })),
@@ -65,12 +68,12 @@ vi.mock("../db/runtime-principal", () => ({
   getRuntimeAuthorizationSnapshot: vi.fn(async () => ({
     id: 1, snapshotId: "auth-current", authorizationFingerprint: "a".repeat(64),
     tenantId: "tn-test", organizationId: "org-test", userId: 7, adoptionId: "lgj-insurance",
-    agentId: "jiuwen_lgj-insurance", roleTemplate: "insurance-advisor", workspaceId: "/workspace/lgj-insurance",
+    agentId: "jiuwen_lgj-insurance", roleTemplate: mocks.roleKey, workspaceId: "/workspace/lgj-insurance",
     permissionProfile: "plus", status: mocks.authorizationStatus, createdAt: new Date(),
     revokedAt: mocks.authorizationStatus === "revoked" ? new Date() : null,
     authorityJson: {
       tenantId: "tn-test", organizationId: "org-test", userId: 7, adoptionId: "lgj-insurance",
-      agentId: "jiuwen_lgj-insurance", roleTemplate: "insurance-advisor", workspaceId: "/workspace/lgj-insurance",
+      agentId: "jiuwen_lgj-insurance", roleTemplate: mocks.roleKey, workspaceId: "/workspace/lgj-insurance",
       permissionProfile: "plus", groupIds: [], membershipVersion: 1,
     },
   })),
@@ -119,7 +122,7 @@ let server: ReturnType<ReturnType<typeof express>["listen"]> | undefined;
 let baseUrl = "";
 
 async function callGateway(args: Record<string, unknown> = {}): Promise<GatewayResponse> {
-  const exposedName = enterpriseMcpGatewayToolName("insurance_customer_profile", "list_customer_profiles");
+  const exposedName = enterpriseMcpGatewayToolName(mocks.serverId, mocks.policy.toolName);
   const response = await fetch(`${baseUrl}/api/internal/enterprise-mcp/mcp`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-insurance" },
@@ -136,8 +139,12 @@ function resultText(response: GatewayResponse): string {
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.authorizationStatus = "active";
+  mocks.serverId = "insurance_customer_profile";
+  mocks.displayName = "客户画像";
+  mocks.roleKey = "insurance-advisor";
   process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW = "true";
   Object.assign(mocks.policy, {
+    toolName: "list_customer_profiles",
     enabled: 1,
     sideEffect: "read",
     requiredScopes: ["insurance.customer.read"],
@@ -189,7 +196,7 @@ describe("enterprise MCP gateway", () => {
     const payload = await response.json() as GatewayResponse;
     expect(payload.result?.tools).toEqual([
       expect.objectContaining({
-        name: enterpriseMcpGatewayToolName("insurance_customer_profile", "list_customer_profiles"),
+        name: enterpriseMcpGatewayToolName(mocks.serverId, mocks.policy.toolName),
         description: "[客户画像] 查询客户画像",
       }),
     ]);
@@ -204,7 +211,7 @@ describe("enterprise MCP gateway", () => {
         id: "anonymous-call",
         method: "tools/call",
         params: {
-          name: enterpriseMcpGatewayToolName("insurance_customer_profile", "list_customer_profiles"),
+          name: enterpriseMcpGatewayToolName(mocks.serverId, mocks.policy.toolName),
           arguments: {},
         },
       }),
@@ -281,6 +288,34 @@ describe("enterprise MCP gateway", () => {
     expect(resultText(response)).toContain("emcp_original");
     expect(mocks.complete).not.toHaveBeenCalled();
     expect(mocks.remoteCall).not.toHaveBeenCalled();
+  });
+
+  it("returns a WM-GT-05 Context Receipt after confirmed idempotent follow-up execution", async () => {
+    mocks.serverId = "wealth_governance_demo";
+    mocks.displayName = "财富业务治理 Demo";
+    mocks.roleKey = "wealth-manager";
+    Object.assign(mocks.policy, {
+      toolName: "demo_create_followup_task",
+      sideEffect: "write",
+      requiredScopes: ["demo.followup.write"],
+      allowedRoles: ["wealth-manager"],
+      approvalMode: "always",
+      idempotencyRequired: 1,
+    });
+    mocks.enforceApproval.mockResolvedValue({
+      effect: "ALLOW",
+      approval: { approvalId: "apr_followup_1" },
+    });
+    mocks.remoteCall.mockResolvedValue({
+      content: [{ type: "text", text: "客户跟进任务已创建" }],
+      _meta: { externalRequestId: "DEMO-FOLLOWUP-1" },
+    });
+    const response = await callGateway({ idempotency_key: "idem-followup-1" });
+    expect(response.result?.isError, JSON.stringify(response)).not.toBe(true);
+    expect(JSON.stringify(response.result)).toContain('"schema":"ea.context-receipt.v1"');
+    expect(JSON.stringify(response.result)).toContain('"taskId":"WM-GT-05"');
+    expect(JSON.stringify(response.result)).toContain('"approvalId":"apr_followup_1"');
+    expect(JSON.stringify(response.result)).toContain('"idempotencyProtected":true');
   });
 
   it("does not execute an enterprise write after current authority is revoked", async () => {
