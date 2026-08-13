@@ -8389,6 +8389,112 @@ input.session-searchbar__input:focus-visible,
   overflow-x: auto;
   white-space: nowrap;
 }
+.agent-task-card__intents {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--oc-border);
+}
+.agent-task-card__intents-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agent-task-card__intents-heading strong {
+  color: var(--oc-text-primary);
+  font-size: 13px;
+}
+.agent-task-card__intents-heading span {
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+}
+.agent-task-card__intent {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  background: var(--oc-bg-page);
+}
+.agent-task-card__intent[data-status="succeeded"] {
+  border-color: color-mix(in oklab, #16865b 38%, var(--oc-border));
+  background: color-mix(in oklab, #16865b 5%, var(--oc-bg-page));
+}
+.agent-task-card__intent-icon {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--oc-bg-surface);
+  color: var(--banking-brand-red);
+}
+.agent-task-card__intent-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.agent-task-card__intent-copy strong {
+  color: var(--oc-text-primary);
+  font-size: 12px;
+}
+.agent-task-card__intent-copy small,
+.agent-task-card__intent-copy em {
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+}
+.agent-task-card__intent-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.agent-task-card__intent-actions button {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--banking-brand-red);
+  border-radius: 7px;
+  background: var(--banking-brand-red);
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+}
+.agent-task-card__intent-actions button.is-secondary {
+  border-color: var(--oc-border);
+  background: transparent;
+  color: var(--oc-text-secondary);
+}
+.agent-task-card__intent-actions button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+.agent-task-card__intent-actions b {
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.agent-task-card__intent-actions b.is-success { color: #16865b; }
+.agent-task-card__intent-message {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .agent-artifact-thumbnail {
   position: relative;
   display: block;
@@ -8476,6 +8582,19 @@ input.session-searchbar__input:focus-visible,
   .agent-task-card__active-row {
     align-items: flex-start;
     flex-direction: column;
+  }
+  .agent-task-card__intents-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .agent-task-card__intent {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+  .agent-task-card__intent-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    padding-left: 37px;
   }
 }
 

@@ -1,7 +1,9 @@
 import type { ToolSideEffect } from "./tool-governance";
 import { governanceFingerprint } from "./governance/contracts";
 
-const SIDE_EFFECTS = new Set<ToolSideEffect>([
+export type A2ACapabilityIntentSideEffect = Exclude<ToolSideEffect, "read" | "compute">;
+
+const SIDE_EFFECTS = new Set<A2ACapabilityIntentSideEffect>([
   "workspace_write", "write", "external_send", "financial_action", "approval_action", "admin_action",
 ]);
 
@@ -10,7 +12,7 @@ export type A2ACapabilityIntent = {
   intentId: string;
   capabilityId: string;
   operation: string;
-  sideEffect: ToolSideEffect;
+  sideEffect: A2ACapabilityIntentSideEffect;
   resource?: string;
   arguments: Record<string, unknown>;
   idempotencyKey?: string;
@@ -22,7 +24,7 @@ function normalize(value: Record<string, unknown>): A2ACapabilityIntent | null {
   if (value.schema !== "ea.capability-intent.v1") return null;
   const capabilityId = String(value.capabilityId || value.capability_id || "").trim().slice(0, 128);
   const operation = String(value.operation || "").trim().slice(0, 128);
-  const sideEffect = String(value.sideEffect || value.side_effect || "") as ToolSideEffect;
+  const sideEffect = String(value.sideEffect || value.side_effect || "") as A2ACapabilityIntentSideEffect;
   const args = value.arguments && typeof value.arguments === "object" && !Array.isArray(value.arguments)
     ? value.arguments as Record<string, unknown>
     : {};

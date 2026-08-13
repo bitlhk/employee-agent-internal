@@ -1025,6 +1025,46 @@ export const agentTasks = mysqlTable("agent_tasks", {
 export type AgentTask = typeof agentTasks.$inferSelect;
 export type InsertAgentTask = typeof agentTasks.$inferInsert;
 
+// Remote Agents may propose business side effects, but execution is owned by
+// EA. This table is the durable bridge between a stored A2A proposal and the
+// existing governed Enterprise MCP execution receipt.
+export const a2aCapabilityIntentExecutions = mysqlTable("a2a_capability_intent_executions", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  executionId: varchar("execution_id", { length: 64 }).notNull(),
+  taskId: varchar("task_id", { length: 64 }).notNull(),
+  intentId: varchar("intent_id", { length: 128 }).notNull(),
+  intentFingerprint: varchar("intent_fingerprint", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  sourceAgentId: varchar("source_agent_id", { length: 64 }).notNull(),
+  capabilityId: varchar("capability_id", { length: 128 }).notNull(),
+  operation: varchar("operation", { length: 128 }).notNull(),
+  sideEffect: mysqlEnum("side_effect", ["workspace_write", "write", "external_send", "financial_action", "approval_action", "admin_action"]).notNull(),
+  bindingId: varchar("binding_id", { length: 128 }).notNull(),
+  bindingVersion: varchar("binding_version", { length: 64 }).notNull(),
+  targetServerId: varchar("target_server_id", { length: 128 }).notNull(),
+  targetToolName: varchar("target_tool_name", { length: 256 }).notNull(),
+  payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
+  approvalId: varchar("approval_id", { length: 64 }),
+  status: mysqlEnum("status", ["pending", "approval_required", "executing", "succeeded", "failed", "blocked"]).default("pending").notNull(),
+  resultHash: varchar("result_hash", { length: 64 }),
+  externalRequestId: varchar("external_request_id", { length: 128 }),
+  errorCode: varchar("error_code", { length: 128 }),
+  errorMessage: text("error_message"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  executionIdUnique: uniqueIndex("uk_a2a_intent_execution_id").on(table.executionId),
+  taskIntentUnique: uniqueIndex("uk_a2a_intent_execution_task_intent").on(table.taskId, table.intentId),
+  actorStatusIdx: index("idx_a2a_intent_execution_actor_status").on(table.userId, table.adoptId, table.status),
+  approvalIdx: index("idx_a2a_intent_execution_approval").on(table.approvalId),
+}));
+
+export type A2ACapabilityIntentExecution = typeof a2aCapabilityIntentExecutions.$inferSelect;
+export type InsertA2ACapabilityIntentExecution = typeof a2aCapabilityIntentExecutions.$inferInsert;
+
 export const cronJobCreations = mysqlTable("cron_job_creations", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   adoptId: varchar("adopt_id", { length: 64 }).notNull(),

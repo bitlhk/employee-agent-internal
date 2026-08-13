@@ -122,7 +122,17 @@ New Cron jobs persist the bounded task authorization snapshot in private Jiuwen 
 
 Delegated remote agents are restricted to `read` and `compute`. A direct side-effect delegation request is denied. A remote result may propose an `ea.capability-intent.v1`, but the proposal is persisted as `pending_local_governance`, omitted from ordinary result text, and recorded in audit evidence as not remotely executed.
 
-There is intentionally no generic route that blindly executes these intents. A future local execution flow must resolve the named EA Capability and pass the same current-authority, policy, confirmation, idempotency, and receipt checks as a local request.
+There is no generic route that blindly executes arbitrary remote intents. The local executor accepts only checked-in Capability Bindings. V1 registers one isolated reference binding:
+
+```text
+enterprise.crm / create_followup
+        ↓ strict argument transformation
+wealth_governance_demo / demo_create_followup_task
+```
+
+The binding rejects side-effect mismatches, real customer references, invalid due dates, and missing idempotency keys before entering the gateway. Every execution reuses the original task authorization snapshot, re-resolves current authority, and passes the existing Enterprise MCP policy, confirmation, egress, idempotency, short-lived identity, receipt, and audit path. Unsupported intents remain unexecuted.
+
+Execution state is durable in `a2a_capability_intent_executions`. A first request may end at `approval_required`; only the exact approved action and payload can transition through `executing` to `succeeded`. Terminal blocked or failed intents require a new remote proposal rather than replaying a consumed approval.
 
 ## 8. Database Rollout
 
@@ -133,6 +143,7 @@ Apply managed migrations before enabling the selected V2 task paths in an enviro
 0016_knowledge_version_chain.sql
 0017_role_pack_release_evidence.sql
 0018_a2a_capability_intents.sql
+0019_a2a_capability_intent_executions.sql
 ```
 
 Migration `0015` backfills stable organizations and memberships from existing non-empty `users.organization` values. Users without an organization receive a stable personal organization only when Principal V2 is first resolved.
@@ -143,14 +154,14 @@ The following are explicitly not claimed by this increment:
 
 - model-driven coverage for `WM-GT-02`, `WM-GT-05`, and `WM-GT-06`, or multi-model regression coverage;
 - execution-time authorization for channel binding/configuration administration remains ownership-based rather than task-envelope-based;
-- a governed local executor for approved A2A Capability Intents where a business use case requires it;
+- production Capability Bindings beyond the isolated wealth-manager Demo follow-up action;
 - enterprise MCP server-side row-level identity conformance beyond its current external contract;
 - complete route-level execution proof for every boundary-only Capability;
 - productized Enterprise Asset Onboarding review, release, and impact analysis.
 
 Recommended next order:
 
-1. add an explicitly governed local A2A intent executor only for registered business capabilities;
-2. complete route-level PEP execution proofs for remaining boundary-only capabilities;
-3. expand model scenarios to the remaining wealth-manager tasks and supported release models;
+1. complete route-level PEP execution proofs for remaining boundary-only capabilities;
+2. expand model scenarios to the remaining wealth-manager tasks and supported release models;
+3. define production A2A Capability Bindings only after the target enterprise systems implement identity, row-level scope and idempotency contracts;
 4. productize Enterprise Asset Onboarding outside the chat hot path.

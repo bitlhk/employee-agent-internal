@@ -27,3 +27,4 @@ export * from "./governance-approvals";
 export * from "./governance-demo";
 export * from "./runtime-principal";
 export * from "./role-pack-releases";
+export * from "./a2a-capability-intent-executions";

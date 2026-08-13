@@ -71,6 +71,13 @@ type JsonRpcMessage = {
   };
 };
 
+type GatewayCallControls = {
+  approvalId?: string | null;
+  taskAuthorizationSnapshotId?: string | null;
+  runtimeAttested?: boolean;
+  executionOrigin?: "jiuwenswarm" | "a2a_local_executor";
+};
+
 function ok(id: unknown, result: unknown) {
   return { jsonrpc: "2.0", id: id ?? null, result };
 }
@@ -120,8 +127,7 @@ async function trustedAdoptId(req: Request): Promise<string> {
   return String(claw?.adoptId || "");
 }
 
-async function runtimeContext(req: Request): Promise<RuntimeContext> {
-  const adoptId = await trustedAdoptId(req);
+async function runtimeContextForAdoptId(adoptId: string, sessionId?: unknown): Promise<RuntimeContext> {
   if (!adoptId) throw new Error("trusted Agent identity is missing");
   const claw = await getClawByAdoptId(adoptId);
   if (!claw || !["active", "expiring"].includes(String(claw.status || ""))) throw new Error("Agent is not active");
@@ -139,9 +145,16 @@ async function runtimeContext(req: Request): Promise<RuntimeContext> {
     enabledServerIds: new Set(selection.enabledServerIds),
     principal: resolveRuntimePrincipal({
       adoption: claw,
-      sessionId: req.headers["x-linggan-session-id"],
+      sessionId,
     }),
   };
+}
+
+async function runtimeContext(req: Request): Promise<RuntimeContext> {
+  return await runtimeContextForAdoptId(
+    await trustedAdoptId(req),
+    req.headers["x-linggan-session-id"],
+  );
 }
 
 function policyDraft(policy: Policy): EnterpriseMcpToolPolicyDraft {
@@ -262,7 +275,13 @@ async function auditCall(input: {
   await recordAuditRequired(event);
 }
 
-async function gatewayCall(context: RuntimeContext, exposedName: string, args: Record<string, unknown>, req: Request) {
+async function gatewayCall(
+  context: RuntimeContext,
+  exposedName: string,
+  args: Record<string, unknown>,
+  req: Request,
+  controls: GatewayCallControls = {},
+) {
   const current = activeCalls.get(context.adoptId) || 0;
   if (current >= MAX_ACTIVE_CALLS_PER_AGENT) return textResult("当前企业连接器调用较多，请稍后重试。", true);
   activeCalls.set(context.adoptId, current + 1);
@@ -309,7 +328,9 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
       }
       executionAuthority = await authorizeExecutionAuthority({
         principal: principalV2.principal,
-        taskAuthorizationSnapshotId: String(req.headers["x-ea-authorization-snapshot-id"] || "").trim() || null,
+        taskAuthorizationSnapshotId: controls.taskAuthorizationSnapshotId
+          || String(req.headers["x-ea-authorization-snapshot-id"] || "").trim()
+          || null,
         operation,
       });
       if (executionAuthority.effect !== "ALLOW") {
@@ -347,7 +368,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
     }, [enterpriseMcpPolicyAdapter({
       policy,
       principal: effectivePrincipal,
-      runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+      runtimeAttested: controls.runtimeAttested ?? runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
     })], {
       effect: "DENY",
       policyCode: "EA_ENTERPRISE_MCP_POLICY_UNAVAILABLE",
@@ -370,6 +391,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
         principalFingerprint: governance.principalFingerprint,
         operationFingerprint: governance.operationFingerprint,
         executionAuthorityFingerprint: executionAuthority?.effectiveAuthorityFingerprint || null,
+        executionOrigin: controls.executionOrigin || "jiuwenswarm",
       },
     });
     auditState = { entry, policyDecisionId, argsHash, identityMode, tenantId, sideEffect: policy.sideEffect };
@@ -407,7 +429,7 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
       decision: governance,
       principal: effectivePrincipal.principal,
       operation,
-      approvalId: String(req.headers["x-ea-approval-id"] || "").trim() || null,
+      approvalId: controls.approvalId || String(req.headers["x-ea-approval-id"] || "").trim() || null,
       idempotencyKey: idemKey || null,
     });
     if (approval.effect === "REQUIRE_APPROVAL") {
@@ -534,6 +556,34 @@ async function gatewayCall(context: RuntimeContext, exposedName: string, args: R
     if (next <= 0) activeCalls.delete(context.adoptId);
     else activeCalls.set(context.adoptId, next);
   }
+}
+
+export async function executeEnterpriseMcpGatewayTool(input: {
+  req: Request;
+  adoptId: string;
+  sessionId?: string | null;
+  serverId: string;
+  toolName: string;
+  arguments: Record<string, unknown>;
+  taskAuthorizationSnapshotId: string;
+  approvalId?: string | null;
+}) {
+  const context = await runtimeContextForAdoptId(input.adoptId, input.sessionId);
+  return await gatewayCall(
+    context,
+    enterpriseMcpGatewayToolName(input.serverId, input.toolName),
+    input.arguments,
+    input.req,
+    {
+      approvalId: input.approvalId || null,
+      taskAuthorizationSnapshotId: input.taskAuthorizationSnapshotId,
+      // This call originates after the EA route has validated task ownership,
+      // immutable binding and durable execution state. It does not depend on a
+      // remote Runtime hook to establish its local PEP.
+      runtimeAttested: true,
+      executionOrigin: "a2a_local_executor",
+    },
+  );
 }
 
 async function handleMessage(req: Request, message: unknown) {

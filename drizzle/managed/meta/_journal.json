@@ -134,6 +134,13 @@
       "when": 1787126400000,
       "tag": "0018_a2a_capability_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787212800000,
+      "tag": "0019_a2a_capability_intent_executions",
+      "breakpoints": true
     }
   ]
 }

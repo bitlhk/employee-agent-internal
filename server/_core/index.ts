@@ -56,6 +56,7 @@ import { registerFeishuRoutes } from "./claw-feishu";
 import { registerSkillRoutes } from "./claw-skills";
 import { registerCollabRoutes } from "./claw-collab";
 import { registerAgentTaskRoutes, startAgentTaskRuntime } from "./claw-agent-tasks";
+import { registerA2ACapabilityIntentRoutes } from "./a2a-capability-intent-routes";
 import { registerPersonalExpertRoutes } from "./personal-experts";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
@@ -455,6 +456,7 @@ async function startServer() {
   registerCollabRoutes(app);
   registerPersonalExpertRoutes(app);
   registerAgentTaskRoutes(app);
+  registerA2ACapabilityIntentRoutes(app);
   startManagedWorker("agent_health", startAgentHealthMonitor);
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);

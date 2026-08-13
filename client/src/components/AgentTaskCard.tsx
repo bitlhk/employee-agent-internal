@@ -6,7 +6,7 @@
  * JiuwenSwarm replies, while remote Agent progress and result live here.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Database, Eye, FileCheck2, Files, RotateCcw, ShieldCheck, Square } from "lucide-react";
+import { Check, ChevronDown, Database, Eye, FileCheck2, Files, Play, RotateCcw, ShieldCheck, Square, X } from "lucide-react";
 import { ChatMarkdown } from "@/components/ChatMarkdown";
 import { ExpertAvatar, ExpertMemberAvatar, ExpertTeamAvatar, isInvestmentTeamExpert, isInvestmentTeamMember } from "@/components/ExpertAvatar";
 import { AgentArtifactThumbnail, agentArtifactPreviewKind, type AgentArtifactView } from "@/components/AgentArtifactPanel";
@@ -49,6 +49,8 @@ export interface AgentTask {
   adapter_protocol?: string | null;
   artifactsJson?: string | null;
   artifacts_json?: string | null;
+  capabilityIntentsJson?: string | null;
+  capability_intents_json?: string | null;
   interactionJson?: string | null;
   interaction_json?: string | null;
   interactionStatus?: string | null;
@@ -65,6 +67,25 @@ export interface AgentTask {
   updated_at?: string | Date | null;
   durationMs?: number;
 }
+
+type CapabilityIntentExecution = {
+  executionId?: string;
+  status?: "pending" | "approval_required" | "executing" | "succeeded" | "failed" | "blocked";
+  approvalId?: string | null;
+  externalRequestId?: string | null;
+  errorMessage?: string | null;
+};
+
+type CapabilityIntentView = {
+  intentId: string;
+  capabilityId: string;
+  operation: string;
+  sideEffect: string;
+  supported?: boolean;
+  actionName?: string;
+  reason?: string;
+  execution?: CapabilityIntentExecution | null;
+};
 
 const STATUS_META: Record<string, { label: string; tone: string }> = {
   pending: { label: "处理中", tone: "pending" },
@@ -128,6 +149,19 @@ function parseRawEvents(raw: string | null | undefined): string | undefined {
     if (parsed && typeof parsed === "object") return "已接收远端事件";
   } catch {}
   return undefined;
+}
+
+function parseCapabilityIntents(raw: string | null | undefined): CapabilityIntentView[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is CapabilityIntentView => (
+      item && typeof item === "object" && Boolean(String(item.intentId || "").trim())
+    ));
+  } catch {
+    return [];
+  }
 }
 
 type TeamProgress = {
@@ -205,6 +239,7 @@ export function AgentTaskCard({
       ...artifact,
       adoptId: String(task.adoptId || task.adopt_id || ""),
     }));
+    const capabilityIntents = parseCapabilityIntents(value(task.capabilityIntentsJson, task.capability_intents_json));
 
     return {
       status,
@@ -226,6 +261,7 @@ export function AgentTaskCard({
       lifecycle,
       isWaitingForInput,
       artifacts,
+      capabilityIntents,
       steps: task.steps || [],
     };
   }, [task]);
@@ -235,6 +271,9 @@ export function AgentTaskCard({
   const [taskDetailsExpanded, setTaskDetailsExpanded] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const [retryPending, setRetryPending] = useState(false);
+  const [capabilityIntents, setCapabilityIntents] = useState<CapabilityIntentView[]>(normalized.capabilityIntents);
+  const [intentPendingId, setIntentPendingId] = useState("");
+  const [intentMessage, setIntentMessage] = useState("");
   const autoExpandedRef = useRef(false);
   const teamAutoExpandedRef = useRef(false);
 
@@ -249,6 +288,76 @@ export function AgentTaskCard({
     autoExpandedRef.current = true;
     setExpanded(true);
   }, [normalized.isDone]);
+
+  useEffect(() => {
+    setCapabilityIntents(normalized.capabilityIntents);
+  }, [normalized.capabilityIntents]);
+
+  useEffect(() => {
+    if (!expanded || normalized.capabilityIntents.length === 0) return;
+    const adoptId = String(task.adoptId || task.adopt_id || "").trim();
+    if (!adoptId) return;
+    const controller = new AbortController();
+    fetch(`/api/claw/agent-tasks/${encodeURIComponent(task.id)}/capability-intents?adoptId=${encodeURIComponent(adoptId)}`, {
+      credentials: "include",
+      signal: controller.signal,
+    }).then(async (response) => {
+      const payload = await response.json().catch(() => ({}));
+      if (response.ok && Array.isArray(payload?.items)) setCapabilityIntents(payload.items);
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [expanded, normalized.capabilityIntents.length, task.adoptId, task.adopt_id, task.id]);
+
+  const updateIntent = (next: CapabilityIntentView) => {
+    setCapabilityIntents(current => current.map(item => item.intentId === next.intentId ? next : item));
+  };
+
+  const executeIntent = async (intent: CapabilityIntentView, approvalId?: string) => {
+    const adoptId = String(task.adoptId || task.adopt_id || "").trim();
+    if (!adoptId) return;
+    setIntentPendingId(intent.intentId);
+    setIntentMessage("");
+    try {
+      const response = await fetch(`/api/claw/agent-tasks/${encodeURIComponent(task.id)}/capability-intents/${encodeURIComponent(intent.intentId)}/execute`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adoptId, ...(approvalId ? { approvalId } : {}) }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (payload?.item) updateIntent(payload.item);
+      if (!response.ok && !payload?.item) throw new Error(payload?.error || "业务动作执行失败");
+      if (payload?.result?.text) setIntentMessage(String(payload.result.text));
+      else if (payload?.approvalRequired) setIntentMessage("执行前需要你确认，确认只对本次动作和当前参数有效。");
+    } catch (error) {
+      setIntentMessage(error instanceof Error ? error.message : "业务动作执行失败");
+    } finally {
+      setIntentPendingId("");
+    }
+  };
+
+  const decideAndExecuteIntent = async (intent: CapabilityIntentView, decision: "approved" | "rejected") => {
+    const adoptId = String(task.adoptId || task.adopt_id || "").trim();
+    const approvalId = String(intent.execution?.approvalId || "").trim();
+    if (!adoptId || !approvalId) return;
+    setIntentPendingId(intent.intentId);
+    setIntentMessage("");
+    try {
+      const response = await fetch(`/api/claw/governance/approvals/${encodeURIComponent(approvalId)}/decision`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adoptId, decision }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.error || "操作确认失败");
+      await executeIntent(intent, approvalId);
+      if (decision === "rejected") setIntentMessage("你已取消该业务动作，平台未执行写入。");
+    } catch (error) {
+      setIntentMessage(error instanceof Error ? error.message : "操作确认失败");
+      setIntentPendingId("");
+    }
+  };
 
   const statusMeta = normalized.isWaitingForInput
     ? { label: "等待确认", tone: "pending" }
@@ -471,6 +580,53 @@ export function AgentTaskCard({
           {normalized.result ? (
             <div className="agent-task-card__result">
               <ChatMarkdown content={normalized.result} />
+            </div>
+          ) : null}
+
+          {capabilityIntents.length > 0 ? (
+            <div className="agent-task-card__intents">
+              <div className="agent-task-card__intents-heading">
+                <strong>待处理的业务动作</strong>
+                <span>专家仅提出建议，动作由平台治理执行</span>
+              </div>
+              {capabilityIntents.map((intent) => {
+                const status = intent.execution?.status || "pending";
+                const pending = intentPendingId === intent.intentId;
+                return (
+                  <div className="agent-task-card__intent" key={intent.intentId} data-status={status}>
+                    <span className="agent-task-card__intent-icon"><ShieldCheck size={15} /></span>
+                    <span className="agent-task-card__intent-copy">
+                      <strong>{intent.actionName || intent.operation}</strong>
+                      <small>{intent.supported === false ? intent.reason : "将重新校验当前权限、参数、人工确认和幂等"}</small>
+                      {intent.execution?.externalRequestId ? <em>业务回执 {intent.execution.externalRequestId}</em> : null}
+                      {intent.execution?.errorMessage ? <em>{intent.execution.errorMessage}</em> : null}
+                    </span>
+                    <span className="agent-task-card__intent-actions">
+                      {intent.supported === false ? <b>未接入</b> : null}
+                      {intent.supported !== false && status === "pending" ? (
+                        <button type="button" disabled={pending} onClick={() => void executeIntent(intent)}>
+                          <Play size={12} />{pending ? "处理中" : "申请执行"}
+                        </button>
+                      ) : null}
+                      {status === "approval_required" ? (
+                        <>
+                          <button type="button" disabled={pending} onClick={() => void decideAndExecuteIntent(intent, "approved")}>
+                            <Check size={12} />确认并执行
+                          </button>
+                          <button type="button" className="is-secondary" disabled={pending} onClick={() => void decideAndExecuteIntent(intent, "rejected")}>
+                            <X size={12} />取消
+                          </button>
+                        </>
+                      ) : null}
+                      {status === "executing" ? <b>执行中</b> : null}
+                      {status === "succeeded" ? <b className="is-success">已执行</b> : null}
+                      {status === "blocked" ? <b>已阻止</b> : null}
+                      {status === "failed" ? <b>执行失败</b> : null}
+                    </span>
+                  </div>
+                );
+              })}
+              {intentMessage ? <p className="agent-task-card__intent-message">{intentMessage}</p> : null}
             </div>
           ) : null}
 
