@@ -12,7 +12,7 @@ The active rollout scope is:
 - active side-effect Capability PEP coverage;
 - stable runtime organization identity and authorization snapshots;
 - reference knowledge source, series, and replacement versions;
-- role-pack contract validation.
+- role-pack contract validation;
 - persisted role-pack release evidence and stale-asset detection;
 - execution-time authority intersection on Custom and Enterprise MCP writes;
 - A2A side-effect closure through local-governance Capability Intents.
@@ -44,7 +44,7 @@ The Context Pack stores only `principalFingerprint`; it does not duplicate mutab
 
 Readiness returns `READY`, `DEGRADED`, or `BLOCKED`, plus separate allowed, denied, and fallback outcomes. It guides planning and user-visible recovery, but does not replace execution-time Policy or PEP checks.
 
-The release gate resolves the exact current asset-set fingerprint against persisted release evidence. A matching controlled-scenario release is `READY`; a changed asset set is `DEGRADED / ROLE_PACK_RELEASE_STALE`; a missing release remains in phased rollout and must not be described as model-verified.
+The release gate resolves the exact evaluation-suite version and current asset-set fingerprint against persisted release evidence. A matching verified release is `READY`; a changed asset set is `DEGRADED / ROLE_PACK_RELEASE_STALE`; a missing release remains in phased rollout and must not be described as model-verified.
 
 Controlled verification and model verification remain distinct. `controlled_scenario` proves deterministic context, policy, scope, and degradation behavior against governed fixtures. It does not claim that every supported model has passed an end-to-end scenario suite.
 
@@ -88,6 +88,16 @@ pnpm rolepack:wealth:scenarios -- --persist
 
 The controlled runner executes eight scenarios across `WM-GT-01`, `WM-GT-03`, and `WM-GT-04`, including cross-owner denial, expired knowledge degradation, current-policy selection, risk mismatch, expired assessment, and policy-unavailable fail-close behavior. Successful persistence marks older verified fingerprints for the same suite as `stale`.
 
+Run the six real-model scenarios and persist the stronger release evidence with:
+
+```bash
+pnpm rolepack:wealth:model-scenarios -- --persist --summary
+```
+
+The runner uses the configured EA assistant model without tools. It validates normal and degraded previsit output, current and missing policy behavior, risk mismatch, and expired assessment behavior. Deterministic checks prove that the model preserves Readiness, cites only selected sources, references only eligible products, does not create a formal recommendation, does not expose internal policy evidence, and does not suggest changing a customer's risk level to fit a product.
+
+The model sees a business-facing projection of governed Context rather than policy decision IDs, fingerprints, or authorization evidence. Detailed model, latency, output, and assertion evidence is persisted in the release record. Release IDs bind both the asset fingerprint and `wm-golden-task-v2`, so an older suite result cannot satisfy the current release gate.
+
 ## 6. Execution-time Authority
 
 Custom and Enterprise MCP write paths now re-resolve current authority immediately before governance and execution. Effective authority is:
@@ -123,7 +133,7 @@ Migration `0015` backfills stable organizations and memberships from existing no
 
 The following are explicitly not claimed by this increment:
 
-- full model-driven Golden Task scenario execution;
+- model-driven coverage for `WM-GT-02`, `WM-GT-05`, and `WM-GT-06`, or multi-model regression coverage;
 - execution-time authorization snapshot intersection on side-effect paths other than Custom and Enterprise MCP;
 - a governed local executor for approved A2A Capability Intents where a business use case requires it;
 - enterprise MCP server-side row-level identity conformance beyond its current external contract;
@@ -132,8 +142,8 @@ The following are explicitly not claimed by this increment:
 
 Recommended next order:
 
-1. add model-driven Golden Task execution and bind results to the exact release fingerprint;
-2. extend execution-time authority intersection to the next active high-risk side-effect paths;
-3. add an explicitly governed local A2A intent executor only for registered business capabilities;
-4. complete route-level PEP execution proofs for boundary-only capabilities;
+1. extend execution-time authority intersection to the next active high-risk side-effect paths;
+2. add an explicitly governed local A2A intent executor only for registered business capabilities;
+3. complete route-level PEP execution proofs for boundary-only capabilities;
+4. expand model scenarios to the remaining wealth-manager tasks and supported release models;
 5. productize Enterprise Asset Onboarding outside the chat hot path.

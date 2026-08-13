@@ -18,6 +18,17 @@ export type PersistRolePackReleaseInput = {
 export async function persistRolePackRelease(input: PersistRolePackReleaseInput): Promise<RolePackRelease> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
+  const [existing] = await database.select().from(rolePackReleases)
+    .where(eq(rolePackReleases.releaseId, input.releaseId)).limit(1);
+  const verificationRank = { contract: 1, controlled_scenario: 2, model_scenario: 3 } as const;
+  const preserveStrongerVerification = input.status === "verified"
+    && existing?.status === "verified"
+    && verificationRank[existing.verificationLevel] > verificationRank[input.verificationLevel];
+  const verificationLevel = preserveStrongerVerification ? existing.verificationLevel : input.verificationLevel;
+  const scenarioReport = preserveStrongerVerification ? existing.scenarioReport : input.scenarioReport || null;
+  const verifiedAt = preserveStrongerVerification
+    ? existing.verifiedAt
+    : input.status === "verified" ? input.verifiedAt || new Date() : null;
   if (input.status === "verified") {
     await database.update(rolePackReleases).set({ status: "stale" }).where(and(
       eq(rolePackReleases.rolePackId, input.rolePackId),
@@ -28,15 +39,16 @@ export async function persistRolePackRelease(input: PersistRolePackReleaseInput)
   }
   await database.insert(rolePackReleases).values({
     ...input,
-    scenarioReport: input.scenarioReport || null,
-    verifiedAt: input.status === "verified" ? input.verifiedAt || new Date() : null,
+    verificationLevel,
+    scenarioReport,
+    verifiedAt,
   }).onDuplicateKeyUpdate({
     set: {
-      verificationLevel: input.verificationLevel,
+      verificationLevel,
       status: input.status,
       contractReport: input.contractReport,
-      scenarioReport: input.scenarioReport || null,
-      verifiedAt: input.status === "verified" ? input.verifiedAt || new Date() : null,
+      scenarioReport,
+      verifiedAt,
     },
   });
   const [release] = await database.select().from(rolePackReleases)

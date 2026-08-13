@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
+export const WEALTH_EVAL_SUITE_VERSION = "wm-golden-task-v2";
+
 type BenchmarkCase = {
   caseId: string;
   path: "NORMAL" | "DENY" | "DEGRADED" | "CONFIRM";
@@ -130,7 +132,8 @@ export function runWealthRolePackContractChecks(root = process.cwd()) {
     executionLevel: "contract",
     scenarioExecution: false,
     rolePackId: knowledgeManifest.rolePackId,
-    releaseCandidateId: `${knowledgeManifest.rolePackId}@${assetSetFingerprint.slice(0, 16)}`,
+    evalSuiteVersion: WEALTH_EVAL_SUITE_VERSION,
+    releaseCandidateId: `${knowledgeManifest.rolePackId}@${assetSetFingerprint.slice(0, 16)}:${WEALTH_EVAL_SUITE_VERSION}`,
     assetSetFingerprint,
     taskCount: tasks.length,
     caseCount: tasks.reduce((total, task) => total + task.value.cases.length, 0),

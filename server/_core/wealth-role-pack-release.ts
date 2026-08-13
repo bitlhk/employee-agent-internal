@@ -1,23 +1,22 @@
 import { resolveRolePackReleaseEvidence } from "../db/role-pack-releases";
 import type { ReadinessCheck, ReleaseEvidenceRef } from "./governance/task-execution-envelope";
 import { readinessCheck } from "./governance/wealth-task-readiness";
-import { runWealthRolePackContractChecks } from "./reference-role-pack-contracts";
+import { runWealthRolePackContractChecks, WEALTH_EVAL_SUITE_VERSION } from "./reference-role-pack-contracts";
 
 const ROLE_PACK_ID = "linggan-bank.wealth-manager";
-const EVAL_SUITE_VERSION = "wm-golden-task-v1";
 
 export async function resolveWealthRolePackReleaseEvidence(): Promise<ReleaseEvidenceRef> {
   const contract = runWealthRolePackContractChecks();
   try {
     return await resolveRolePackReleaseEvidence({
       rolePackId: ROLE_PACK_ID,
-      evalSuiteVersion: EVAL_SUITE_VERSION,
+      evalSuiteVersion: WEALTH_EVAL_SUITE_VERSION,
       assetSetFingerprint: contract.assetSetFingerprint,
     });
   } catch {
     return {
       rolePackReleaseId: contract.releaseCandidateId,
-      evalSuiteVersion: EVAL_SUITE_VERSION,
+      evalSuiteVersion: WEALTH_EVAL_SUITE_VERSION,
       verificationStatus: "unverified",
       verificationLevel: "contract",
       assetSetFingerprint: contract.assetSetFingerprint,
