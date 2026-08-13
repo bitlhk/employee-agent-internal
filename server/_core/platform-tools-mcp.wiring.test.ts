@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   prepareWealthPrevisitContext: vi.fn(),
   resolveWealthPolicyBasis: vi.fn(),
   resolveWealthPrevisitKnowledgeBasis: vi.fn(),
+  authorizeExecutionAuthority: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -44,6 +45,10 @@ vi.mock("./observability/metrics", () => ({
 vi.mock("./fetch-timeout", () => ({ fetchWithTimeout: mocks.internalFetch }));
 vi.mock("./runtime-governance-attestation", () => ({
   runtimeGovernanceIsAttested: vi.fn(() => mocks.runtimeAttested),
+}));
+vi.mock("./governance/execution-authority", () => ({
+  requiresExecutionAuthority: vi.fn((sideEffect: string) => !["read", "compute"].includes(sideEffect)),
+  authorizeExecutionAuthority: mocks.authorizeExecutionAuthority,
 }));
 vi.mock("./governance/principal", () => {
   const principal = {
@@ -105,6 +110,21 @@ let baseUrl = "";
 beforeEach(async () => {
   vi.clearAllMocks();
   mocks.runtimeAttested = false;
+  mocks.authorizeExecutionAuthority.mockResolvedValue({
+    effect: "ALLOW",
+    policyCode: "EA_EXECUTION_AUTHORITY_INTERSECTION_V1",
+    ruleVersion: "execution-authority-v1",
+    reason: "allowed",
+    effectivePrincipal: {
+      tenantId: "tn_test", organizationId: "org_test", userId: 7,
+      adoptionId: "lgj-platform", agentId: "jiuwen_lgj-platform", roleTemplate: "wealth-manager",
+      workspaceId: "/workspace/lgj-platform", permissionProfile: "plus", sessionId: "",
+      authorizationSnapshotId: "authz_test", authorizationFingerprint: "e".repeat(64), identityVersion: "2",
+    },
+    taskSnapshotId: "authz_test",
+    currentSnapshotId: "authz_current",
+    effectiveAuthorityFingerprint: "e".repeat(64),
+  });
   mocks.prepareWealthMaturityContext.mockResolvedValue({
     schema: "ea.wealth-maturity-context.v1",
     status: "ready",
@@ -316,6 +336,37 @@ describe("platform MCP PEP wiring", () => {
     expect(mocks.internalFetch).not.toHaveBeenCalled();
   });
 
+  it("never reaches the platform executor when execution authority was revoked", async () => {
+    mocks.runtimeAttested = true;
+    mocks.authorizeExecutionAuthority.mockResolvedValueOnce({
+      effect: "DENY",
+      policyCode: "EA_EXECUTION_AUTHORITY_REVOKED",
+      ruleVersion: "execution-authority-v1",
+      reason: "任务授权或当前授权已失效，已停止执行。",
+      effectivePrincipal: {},
+      taskSnapshotId: "authz_task",
+      currentSnapshotId: "authz_current",
+      effectiveAuthorityFingerprint: "d".repeat(64),
+    });
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-agent-adopt-id": "lgj-platform",
+        "x-ea-runtime-id": "jiuwenswarm-local",
+        "x-ea-authorization-snapshot-id": "authz_task",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "platform-authority-denied", method: "tools/call",
+        params: { name: "create_scheduled_task", arguments: { name: "日报", message: "生成日报", cron_expr: "0 9 * * *" } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("授权已失效");
+    expect(mocks.internalFetch).not.toHaveBeenCalled();
+  });
+
   it("creates a one-time task through the identity-scoped platform scheduler", async () => {
     mocks.runtimeAttested = true;
     mocks.internalFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
@@ -348,6 +399,33 @@ describe("platform MCP PEP wiring", () => {
     const init = mocks.internalFetch.mock.calls[0]?.[1] as RequestInit;
     const payload = JSON.parse(String(init.body)) as { job: { schedule: unknown } };
     expect(payload.job.schedule).toEqual({ kind: "once", runAt, display: runAt });
+  });
+
+  it("forwards the bounded task authorization snapshot to the A2A task route", async () => {
+    mocks.runtimeAttested = true;
+    mocks.internalFetch.mockResolvedValue(new Response(JSON.stringify({ taskId: "agt_test" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-agent-adopt-id": "lgj-platform",
+        "x-ea-runtime-id": "jiuwenswarm-local",
+        "x-ea-authorization-snapshot-id": "authz_task",
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "platform-a2a", method: "tools/call",
+        params: { name: "submit_agent_task", arguments: { agent_id: "expert-1", task: "分析材料" } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean } };
+    expect(body.result?.isError).not.toBe(true);
+    const init = mocks.internalFetch.mock.calls[0]?.[1] as RequestInit;
+    expect(new Headers(init.headers).get("x-ea-authorization-snapshot-id")).toBe("authz_test");
+    const payload = JSON.parse(String(init.body)) as { sourceMessageId?: string };
+    expect(payload.sourceMessageId).toMatch(/^mcp:[a-f0-9]{64}$/);
   });
 
   it("rejects ambiguous scheduled task input before execution", async () => {

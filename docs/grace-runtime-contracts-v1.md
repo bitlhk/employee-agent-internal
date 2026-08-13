@@ -14,7 +14,7 @@ The active rollout scope is:
 - reference knowledge source, series, and replacement versions;
 - role-pack contract validation;
 - persisted role-pack release evidence and stale-asset detection;
-- execution-time authority intersection on Custom and Enterprise MCP writes;
+- execution-time authority intersection on Custom MCP, Enterprise MCP, Platform MCP, and A2A external execution;
 - A2A side-effect closure through local-governance Capability Intents.
 
 Ordinary chat and unrelated roles continue to use the existing Runtime Principal V1 path.
@@ -100,7 +100,7 @@ The model sees a business-facing projection of governed Context rather than poli
 
 ## 6. Execution-time Authority
 
-Custom and Enterprise MCP write paths now re-resolve current authority immediately before governance and execution. Effective authority is:
+Custom, Enterprise, and Platform MCP side-effect paths re-resolve current authority immediately before governance and execution. Effective authority is:
 
 ```text
 task authorization snapshot
@@ -109,6 +109,10 @@ INTERSECT current task scope
 ```
 
 Revoked organization membership, identity drift, missing snapshots, and database failures deny execution. New permissions granted after task creation do not enlarge the task's original authority. Route-level tests prove that revoked authority does not call the remote MCP executor.
+
+Platform MCP forwards the bounded task snapshot when it submits an A2A task. A2A persists that snapshot inside its private task Runtime Context and checks it twice: before reservation/delegation and again in the background Worker immediately before egress and the remote Agent call. A task may therefore be accepted into the queue but still fail closed if authority is revoked before execution. The persisted Runtime Context is removed from public task responses.
+
+Platform-created A2A tasks also derive a stable `sourceMessageId` from the MCP request identity when the caller does not provide one. The database reservation uses it as the downstream idempotency boundary.
 
 ## 7. A2A Side-effect Closure
 
@@ -134,15 +138,15 @@ Migration `0015` backfills stable organizations and memberships from existing no
 The following are explicitly not claimed by this increment:
 
 - model-driven coverage for `WM-GT-02`, `WM-GT-05`, and `WM-GT-06`, or multi-model regression coverage;
-- execution-time authorization snapshot intersection on side-effect paths other than Custom and Enterprise MCP;
+- execution-time authorization snapshot intersection on remaining direct notification, Feishu, cron, and workspace-write paths;
 - a governed local executor for approved A2A Capability Intents where a business use case requires it;
 - enterprise MCP server-side row-level identity conformance beyond its current external contract;
-- complete route-level execution proof for every boundary-only Capability.
+- complete route-level execution proof for every boundary-only Capability;
 - productized Enterprise Asset Onboarding review, release, and impact analysis.
 
 Recommended next order:
 
-1. extend execution-time authority intersection to the next active high-risk side-effect paths;
+1. extend execution-time authority intersection to remaining direct external-delivery and cron side-effect paths;
 2. add an explicitly governed local A2A intent executor only for registered business capabilities;
 3. complete route-level PEP execution proofs for boundary-only capabilities;
 4. expand model scenarios to the remaining wealth-manager tasks and supported release models;

@@ -21,6 +21,7 @@ import { fetchWithTimeout } from "./fetch-timeout";
 import { evaluateGovernance, governanceFingerprint, principalFingerprint } from "./governance/contracts";
 import { platformMcpPolicyAdapter } from "./governance/platform-mcp-policy";
 import { resolveRuntimePrincipal, resolveRuntimePrincipalV2 } from "./governance/principal";
+import { authorizePlatformMcpExecution } from "./governance/platform-mcp-execution-authority";
 import {
   buildCapabilitySnapshot,
   buildTaskContextPack,
@@ -354,19 +355,24 @@ async function callTool(
     adoption: claw,
     sessionId: pickHeader(req, ["x-linggan-session-id", "x-jiuwen-session-id"]),
   });
+  const operation = {
+    capabilityId: "platform.mcp",
+    operation: name,
+    sideEffect: profile.sideEffect,
+    resource: `platform-tool:${name}`,
+    payloadHash: stableToolInputHash(args),
+  } as const;
+  const authority = await authorizePlatformMcpExecution({ req, adoption: claw, principal, operation });
+  if (!authority.allowed) return textResult(authority.reason || "当前执行权限不可用。", { isError: true });
+  const effectivePrincipal = authority.principal;
+  const executionAuthority = authority.decision;
   const governance = await evaluateGovernance({
-    principal: principal.principal,
-    operation: {
-      capabilityId: "platform.mcp",
-      operation: name,
-      sideEffect: profile.sideEffect,
-      resource: `platform-tool:${name}`,
-      payloadHash: stableToolInputHash(args),
-    },
+    principal: effectivePrincipal.principal,
+    operation,
   }, [platformMcpPolicyAdapter({
     knownTool: TOOL_NAMES.has(name),
     profile,
-    principal,
+    principal: effectivePrincipal,
     runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
   })], {
     effect: "DENY",
@@ -380,14 +386,14 @@ async function callTool(
     result: governance.effect === "ALLOW" ? "success" : "denied",
     severity: governance.effect === "ALLOW" ? "info" : "high",
     actorType: "agent",
-    actorUserId: principal.principal.userId || null,
-    actorRole: principal.principal.roleTemplate || null,
+    actorUserId: effectivePrincipal.principal.userId || null,
+    actorRole: effectivePrincipal.principal.roleTemplate || null,
     targetType: "platform_tool",
     targetId: name,
-    workspaceId: principal.principal.workspaceId || null,
-    agentInstanceId: principal.principal.adoptionId || null,
-    runtimeAgentId: principal.principal.agentId || null,
-    sessionId: principal.principal.sessionId || null,
+    workspaceId: effectivePrincipal.principal.workspaceId || null,
+    agentInstanceId: effectivePrincipal.principal.adoptionId || null,
+    runtimeAgentId: effectivePrincipal.principal.agentId || null,
+    sessionId: effectivePrincipal.principal.sessionId || null,
     toolName: name,
     policyCode: governance.policyCode,
     source: "platform_tools_mcp",
@@ -399,6 +405,7 @@ async function callTool(
       operationFingerprint: governance.operationFingerprint,
       capabilitySetFingerprint: capabilitySetFingerprint(),
       sideEffect: profile.sideEffect,
+      executionAuthorityFingerprint: executionAuthority?.effectiveAuthorityFingerprint || null,
     },
   });
   if (governance.effect !== "ALLOW") return textResult(governance.reason, { isError: true });
@@ -871,16 +878,25 @@ async function callTool(
     const task = String(args.task || args.message || "").trim();
     if (!agentId) return textResult("Error: agent_id is required", { isError: true });
     if (!task) return textResult("Error: task is required", { isError: true });
+    const suppliedSourceMessageId = String(args.source_message_id || args.sourceMessageId || "").trim();
+    const sourceMessageId = suppliedSourceMessageId || `mcp:${createHash("sha256")
+      .update(`${String(requestIdentity ?? "")}:${stableToolInputHash({ agentId, task, args })}`)
+      .digest("hex")}`;
     const data: any = await internalJson("/api/claw/agent-tasks/submit", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(executionAuthority?.taskSnapshotId
+          ? { "X-EA-Authorization-Snapshot-Id": executionAuthority.taskSnapshotId }
+          : {}),
+      },
       body: JSON.stringify({
         adoptId,
         agentId,
         task,
         conversationId: args.conversation_id || args.conversationId,
         sessionId: args.session_id || args.sessionId,
-        sourceMessageId: args.source_message_id || args.sourceMessageId,
+        sourceMessageId,
       }),
     });
     return textResult(`Agent task submitted. task_id=${data.taskId}. EA will track the asynchronous result and write it back when complete.`);

@@ -58,6 +58,7 @@ import {
 import { guardToolEgress } from "./tool-egress-policy";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { resolveRuntimePrincipal } from "./governance/principal";
+import { authorizeA2AExecution } from "./governance/a2a-execution-authority";
 import {
   delegationEvidence,
   delegationScopeFromMetadata,
@@ -66,6 +67,12 @@ import {
 } from "./governance/delegation-policy";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
+type AgentTaskRuntimeContext = {
+  contextId?: string;
+  dataPart?: Record<string, unknown>;
+  dataPartMetadata?: Record<string, unknown>;
+  taskAuthorizationSnapshotId?: string;
+};
 
 const AGENT_TASK_TEXT_LIMIT_BYTES = 60_000;
 const AGENT_TASK_ERROR_LIMIT_BYTES = 8_000;
@@ -125,10 +132,7 @@ function publicAgentTask(task: unknown): Record<string, unknown> {
 
 function storedAgentTaskRuntime(task: Record<string, unknown>): {
   input: string;
-  contextId?: string;
-  dataPart?: Record<string, unknown>;
-  dataPartMetadata?: Record<string, unknown>;
-} {
+} & AgentTaskRuntimeContext {
   const stored = parseJsonRecord(task.requestContextJson ?? task.request_context_json);
   return {
     input: String(stored.input || task.input || ""),
@@ -136,6 +140,9 @@ function storedAgentTaskRuntime(task: Record<string, unknown>): {
     ...(stored.dataPart && typeof stored.dataPart === "object" ? { dataPart: stored.dataPart } : {}),
     ...(stored.dataPartMetadata && typeof stored.dataPartMetadata === "object"
       ? { dataPartMetadata: stored.dataPartMetadata }
+      : {}),
+    ...(stored.taskAuthorizationSnapshotId
+      ? { taskAuthorizationSnapshotId: String(stored.taskAuthorizationSnapshotId) }
       : {}),
   };
 }
@@ -235,8 +242,9 @@ async function authorizeAgentDelegation(input: {
   agent: BusinessAgent;
   requestedScope?: unknown;
   sessionId?: unknown;
+  principal?: ReturnType<typeof resolveRuntimePrincipal>;
 }): Promise<DelegationPolicyResult> {
-  const principal = resolveRuntimePrincipal({
+  const principal = input.principal || resolveRuntimePrincipal({
     adoption: input.claw,
     sessionId: input.sessionId,
   });
@@ -386,11 +394,7 @@ async function runAgentTaskInBackground(
   taskId: string,
   agent: any,
   input: string,
-  runtime: {
-    contextId?: string;
-    dataPart?: Record<string, unknown>;
-    dataPartMetadata?: Record<string, unknown>;
-  } = {},
+  runtime: AgentTaskRuntimeContext = {},
 ) {
   const startedAt = Date.now();
   const finishMetric = beginOperationalActivity("expert_task");
@@ -431,6 +435,19 @@ async function runAgentTaskInBackground(
       metricOutcome = isCancelledAgentTaskStatus(startingTask?.status) ? "cancelled" : "error";
       return;
     }
+    const taskAdoptId = String((agent as { __taskAdoptId?: unknown }).__taskAdoptId || "");
+    const { getClawByAdoptId } = await import("../db");
+    const taskClaw = taskAdoptId ? await getClawByAdoptId(taskAdoptId) : null;
+    if (!taskClaw) throw new Error("任务岗位身份已失效，已停止外部 Agent 调用。");
+    const executionAuthority = await authorizeA2AExecution({
+      claw: taskClaw,
+      agentId: String(agent.id || ""),
+      taskInput: input,
+      sessionId: startingTask.sourceSessionId,
+      dataPart: runtime.dataPart,
+      taskAuthorizationSnapshotId: runtime.taskAuthorizationSnapshotId,
+    });
+    if (!executionAuthority.allowed) throw new Error(executionAuthority.reason);
     const adapterProtocol = String(agent.adapterProtocol || "").trim();
     if (!agent.apiUrl) throw new Error("Agent endpoint is not configured");
     if (!["a2a-v1", "agent-a2a-v1", "a2a-task-v1"].includes(adapterProtocol)) {
@@ -886,32 +903,47 @@ export function registerAgentTaskRoutes(app: express.Express) {
       }
 
       const sourceMessageId = req.body?.sourceMessageId ? String(req.body.sourceMessageId).slice(0, 128) : "";
-      const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
-      const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
-      const maxDailyRequests = agentDailyRequestLimit(agent);
-      await ensureAgentAvailable(agent);
-      observeCapabilityPreflight({ kind: "expert", outcome: "ready" });
-
-      const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
-      const taskUserId = Number((claw as any).userId || 0);
       const sourceConversationId = req.body?.conversationId
         ? String(req.body.conversationId).slice(0, 128)
         : null;
       const sourceSessionId = req.body?.sessionId
         ? String(req.body.sessionId).slice(0, 160)
         : null;
+      const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
+      const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
+      const maxDailyRequests = agentDailyRequestLimit(agent);
+      await ensureAgentAvailable(agent);
+      observeCapabilityPreflight({ kind: "expert", outcome: "ready" });
+
+      const executionAuthority = await authorizeA2AExecution({
+        req,
+        claw,
+        agentId,
+        taskInput: input,
+        sessionId: sourceSessionId,
+        dataPart: scenarioId ? { schema: "ea.investment-team.request.v1", scenarioId } : undefined,
+        taskAuthorizationSnapshotId: String(req.headers["x-ea-authorization-snapshot-id"] || "").trim() || null,
+      });
+      if (!executionAuthority.allowed || !executionAuthority.effectivePrincipal) {
+        return res.status(403).json({ error: "EXECUTION_AUTHORITY_DENIED", reason: executionAuthority.reason });
+      }
+
+      const taskId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+      const taskUserId = Number((claw as any).userId || 0);
       const delegation = await authorizeAgentDelegation({
         req,
         claw,
         agent,
         requestedScope: req.body?.delegationScope,
         sessionId: sourceSessionId,
+        principal: { principal: executionAuthority.effectivePrincipal, complete: true, issues: [] },
       });
       if (!delegation.allowed) {
         return res.status(403).json({ error: "DELEGATION_NOT_ALLOWED", reason: delegation.decision.reason });
       }
       const governanceMetadata = delegationEvidence(delegation);
       const runtime = {
+        taskAuthorizationSnapshotId: executionAuthority.taskSnapshotId,
         contextId: a2aRuntimeContextId(
           endpointConfig,
           adoptId,
@@ -1059,6 +1091,9 @@ export function registerAgentTaskRoutes(app: express.Express) {
       }
       const continuationId = `agt_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
       const continuationRuntime = {
+        ...(sourceRuntime.taskAuthorizationSnapshotId
+          ? { taskAuthorizationSnapshotId: sourceRuntime.taskAuthorizationSnapshotId }
+          : {}),
         contextId: a2aRuntimeContextId(
           endpointConfig,
           adoptId,

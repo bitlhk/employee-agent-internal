@@ -7,14 +7,21 @@ const state = vi.hoisted(() => ({
   permissionProfile: "plus",
   reserveCalls: 0,
   remoteRunCalls: 0,
+  authorityCalls: 0,
+  authorityEffects: [] as Array<"ALLOW" | "DENY">,
+  leaseOwner: "",
   recoverLeaseCalls: 0,
   failOwnedLeaseCalls: 0,
   task: { status: "running" } as Record<string, unknown>,
+  reservedTask: null as Record<string, unknown> | null,
 }));
 
 vi.mock("../db/agents", () => ({
   answerAgentTaskInteractionAndCreate: vi.fn(),
-  claimAgentTaskLease: vi.fn(async () => true),
+  claimAgentTaskLease: vi.fn(async (input: { owner: string }) => {
+    state.leaseOwner = input.owner;
+    return true;
+  }),
   failOwnedAgentTaskLeases: vi.fn(async () => {
     state.failOwnedLeaseCalls++;
     return 0;
@@ -39,15 +46,16 @@ vi.mock("../db/agents", () => ({
     maxDailyRequests: 10,
     healthStatus: "healthy",
   })),
-  getAgentTask: vi.fn(async () => state.task),
+  getAgentTask: vi.fn(async () => ({ ...state.task, ...(state.leaseOwner ? { leaseOwner: state.leaseOwner } : {}) })),
   getAgentTaskBySourceMessage: vi.fn(),
-  insertCallLog: vi.fn(),
+  insertCallLog: vi.fn(async () => undefined),
   listAgentTasks: vi.fn(async () => []),
   listAgentTasksByIds: vi.fn(async () => []),
   listAgentTaskCounts: vi.fn(async () => ({})),
   listEnabledBusinessAgentsForContext: vi.fn(async () => []),
-  reserveAgentTask: vi.fn(async () => {
+  reserveAgentTask: vi.fn(async (task: Record<string, unknown>) => {
     state.reserveCalls++;
+    state.reservedTask = task;
     return state.reservation;
   }),
   updateActiveAgentTask: vi.fn(),
@@ -56,6 +64,12 @@ vi.mock("../db/agents", () => ({
 
 vi.mock("../db/users", () => ({
   getUserById: vi.fn(async () => ({ id: 1, role: "user", accessLevel: "plus" })),
+}));
+vi.mock("../db", () => ({
+  getClawByAdoptId: vi.fn(async (adoptId: string) => ({
+    adoptId, userId: 1, agentId: "runtime-1", roleTemplate: "general",
+    permissionProfile: state.permissionProfile, status: "active",
+  })),
 }));
 
 vi.mock("./helpers", () => ({
@@ -75,8 +89,8 @@ vi.mock("./agent-health", () => ({
   agentHealthRouteReason: vi.fn(() => ""),
   ensureAgentAvailable: vi.fn(),
   friendlyAgentTaskError: vi.fn((error: Error) => error.message),
-  markAgentTaskFailed: vi.fn(),
-  markAgentTaskSucceeded: vi.fn(),
+  markAgentTaskFailed: vi.fn(async () => undefined),
+  markAgentTaskSucceeded: vi.fn(async () => undefined),
 }));
 
 vi.mock("./a2a-expert-client", () => ({
@@ -89,6 +103,43 @@ vi.mock("./a2a-expert-client", () => ({
 }));
 
 vi.mock("./agent-artifacts", () => ({ materializeA2AArtifacts: vi.fn(async () => []) }));
+vi.mock("./tool-egress-policy", () => ({ guardToolEgress: vi.fn(async () => ({ ok: true })) }));
+vi.mock("./governance/principal", () => {
+  const principal = () => ({
+    userId: 1, adoptionId: "lgj-owner", agentId: "runtime-1", roleTemplate: "general",
+    workspaceId: "/tmp", permissionProfile: state.permissionProfile, sessionId: "",
+  });
+  return {
+    resolveRuntimePrincipal: vi.fn(() => ({ principal: principal(), complete: true, issues: [] })),
+    resolveRuntimePrincipalV2: vi.fn(async () => ({
+      principal: {
+        ...principal(), tenantId: "tn-test", organizationId: "org-test",
+        authorizationSnapshotId: "auth-current", authorizationFingerprint: "a".repeat(64), identityVersion: "2",
+      },
+      complete: true,
+      issues: [],
+    })),
+  };
+});
+vi.mock("./governance/execution-authority", () => ({
+  authorizeExecutionAuthority: vi.fn(async ({ principal, taskAuthorizationSnapshotId }: {
+    principal: Record<string, unknown>;
+    taskAuthorizationSnapshotId?: string | null;
+  }) => {
+    state.authorityCalls += 1;
+    const effect = state.authorityEffects.shift() || "ALLOW";
+    return {
+      effect,
+      policyCode: effect === "ALLOW" ? "EA_EXECUTION_AUTHORITY_INTERSECTION_V1" : "EA_EXECUTION_AUTHORITY_REVOKED",
+      ruleVersion: "execution-authority-v1",
+      reason: effect === "ALLOW" ? "allowed" : "任务授权或当前授权已失效，已停止执行。",
+      effectivePrincipal: principal,
+      taskSnapshotId: String(taskAuthorizationSnapshotId || "auth-current"),
+      currentSnapshotId: "auth-current",
+      effectiveAuthorityFingerprint: "b".repeat(64),
+    };
+  }),
+}));
 vi.mock("./observability/metrics", () => ({
   beginOperationalActivity: vi.fn(() => () => {}),
   observeAgentTaskRetry: vi.fn(),
@@ -116,7 +167,11 @@ afterEach(async () => {
   state.permissionProfile = "plus";
   state.reserveCalls = 0;
   state.remoteRunCalls = 0;
+  state.authorityCalls = 0;
+  state.authorityEffects = [];
+  state.leaseOwner = "";
   state.task = { status: "running" };
+  state.reservedTask = null;
   if (server) {
     await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     server = undefined;
@@ -164,6 +219,35 @@ describe("agent task consistency", () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({ taskId: "agt_existing", reused: true });
+  });
+
+  it("never calls the remote A2A executor when authority is revoked after reservation", async () => {
+    state.authorityEffects = ["ALLOW", "DENY"];
+    const base = await startServer();
+    const response = await fetch(`${base}/api/claw/agent-tasks/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-ea-authorization-snapshot-id": "auth-task" },
+      body: JSON.stringify({ adoptId: "lgj-owner", agentId: "expert-1", task: "分析材料" }),
+    });
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(state.authorityCalls).toBe(2));
+    expect(state.reserveCalls).toBe(1);
+    expect(JSON.parse(String(state.reservedTask?.requestContextJson))).toMatchObject({
+      taskAuthorizationSnapshotId: "auth-task",
+    });
+    expect(state.remoteRunCalls).toBe(0);
+  });
+
+  it("calls the remote A2A executor only after submission and worker authority checks allow", async () => {
+    const base = await startServer();
+    const response = await fetch(`${base}/api/claw/agent-tasks/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-ea-authorization-snapshot-id": "auth-task" },
+      body: JSON.stringify({ adoptId: "lgj-owner", agentId: "expert-1", task: "分析材料" }),
+    });
+    expect(response.status).toBe(200);
+    await vi.waitFor(() => expect(state.authorityCalls).toBe(2));
+    await vi.waitFor(() => expect(state.remoteRunCalls).toBe(1));
   });
 
   it("recovers expired leases at startup and releases owned tasks at shutdown", async () => {
