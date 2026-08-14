@@ -55,4 +55,10 @@ describe("4xx error tracking", () => {
     for (let i = 0; i < 25; i++) await track4xxError(req, {} as express.Response, 401);
     expect(shouldBlockIp("203.0.113.11")).toBe(false);
   });
+
+  it("does not let MCP negotiation failures block the internal runtime", async () => {
+    const req = { path: "/api/internal/platform-tools/mcp", ip: "127.0.0.1" } as express.Request;
+    for (let i = 0; i < 25; i++) await track4xxError(req, {} as express.Response, 401);
+    expect(shouldBlockIp("127.0.0.1")).toBe(false);
+  });
 });

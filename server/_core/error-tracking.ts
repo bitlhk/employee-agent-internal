@@ -36,6 +36,10 @@ import { getClientIp } from "./ip-utils";
  */
 function isErrorTrackingExemptPath(req: Request): boolean {
   const path = (req.path || "").toLowerCase();
+  // Internal runtime routes have their own signed identity or loopback-only
+  // migration credential. Expected MCP negotiation failures must never lock
+  // the runtime out of every managed capability on the shared loopback IP.
+  if (path.startsWith("/api/internal/")) return true;
   if (path === "/api/claw/chat-history/messages") return true;
   if (path === "/api/claw/chat-history/sessions") return true;
   if (path === "/api/claw/files/capabilities") return true;
