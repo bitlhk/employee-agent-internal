@@ -1,4 +1,5 @@
 import { getClawByAdoptId } from "../server/db/claw";
+import { closeDbConnection } from "../server/db/connection";
 import {
   buildEnterpriseRuntimeBinding,
   getRuntimeAgentBinding,
@@ -101,7 +102,9 @@ async function main(): Promise<void> {
   if (failed.length) process.exitCode = 1;
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+main()
+  .catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  })
+  .finally(closeDbConnection);
