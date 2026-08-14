@@ -11,7 +11,6 @@ if (!managerMatch) {
 
 const pnpmVersion = managerMatch?.[1] || "";
 const pinnedFiles = [
-  [".github/workflows/ci.yml", `version: ${pnpmVersion}`],
   ["Dockerfile", `pnpm@${pnpmVersion}`],
   ["scripts/bootstrap-install.sh", `pnpm@${pnpmVersion}`],
 ];
@@ -20,6 +19,15 @@ for (const [file, expected] of pinnedFiles) {
   if (!pnpmVersion || !content.includes(expected)) {
     violations.push(`${file} must use pnpm ${pnpmVersion || "<packageManager version>"}`);
   }
+}
+
+const ciWorkflow = await readFile(".github/workflows/ci.yml", "utf8");
+if (!ciWorkflow.includes("uses: pnpm/action-setup@v4")) {
+  violations.push(".github/workflows/ci.yml must install pnpm from packageManager through pnpm/action-setup@v4");
+}
+const pnpmSetupBlock = ciWorkflow.match(/- name: Setup pnpm[\s\S]*?(?=\n\s{6}- name:|$)/)?.[0] || "";
+if (/\n\s+version:/.test(pnpmSetupBlock)) {
+  violations.push(".github/workflows/ci.yml must not duplicate the packageManager pnpm version");
 }
 
 const frozenInstallFiles = [
