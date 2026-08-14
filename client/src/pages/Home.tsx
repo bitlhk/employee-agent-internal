@@ -7,6 +7,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { RuntimeWSClient } from "@/lib/runtime-ws";
+import { shouldAutoFollowChat } from "@/lib/chat-auto-follow";
 import {
   applyAssistantFinalSnapshot,
   mergeAssistantStreamText,
@@ -1969,6 +1970,7 @@ export default function Home() {
   const lingxiaMessageNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const lingxiaMessageRefCallbacks = useRef<Map<string, (node: HTMLDivElement | null) => void>>(new Map());
   const lingxiaManualNavigationRef = useRef(false);
+  const lingxiaAutoScrollFrameRef = useRef<number | null>(null);
   const [lingxiaNearBottom, setLingxiaNearBottom] = useState(true);
   const [activeConversationPromptId, setActiveConversationPromptId] = useState("");
   const lingxiaNearBottomRef = useRef(true);
@@ -4216,6 +4218,12 @@ export default function Home() {
     if (!el) return;
     let lastScrollTop = el.scrollTop;
     const pauseAutoFollow = () => {
+      if (lingxiaAutoScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(lingxiaAutoScrollFrameRef.current);
+        lingxiaAutoScrollFrameRef.current = null;
+      }
+      // Stop an in-flight smooth scroll before the browser applies the user's wheel delta.
+      el.scrollTo({ top: el.scrollTop, behavior: "auto" });
       lingxiaManualNavigationRef.current = true;
       updateLingxiaNearBottom(false);
     };
@@ -4275,15 +4283,23 @@ export default function Home() {
     const content = lingxiaMsgContentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
 
-    let animationFrame = 0;
     const observer = new ResizeObserver(() => {
-      if (lingxiaManualNavigationRef.current || !lingxiaNearBottomRef.current) return;
-      window.cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(() => scrollLingxiaToBottom("auto"));
+      if (!shouldAutoFollowChat(lingxiaManualNavigationRef.current, lingxiaNearBottomRef.current)) return;
+      if (lingxiaAutoScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(lingxiaAutoScrollFrameRef.current);
+      }
+      lingxiaAutoScrollFrameRef.current = window.requestAnimationFrame(() => {
+        lingxiaAutoScrollFrameRef.current = null;
+        if (!shouldAutoFollowChat(lingxiaManualNavigationRef.current, lingxiaNearBottomRef.current)) return;
+        scrollLingxiaToBottom("auto");
+      });
     });
     observer.observe(content);
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      if (lingxiaAutoScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(lingxiaAutoScrollFrameRef.current);
+        lingxiaAutoScrollFrameRef.current = null;
+      }
       observer.disconnect();
     };
   }, [activePage, scrollLingxiaToBottom, webConversationId]);
