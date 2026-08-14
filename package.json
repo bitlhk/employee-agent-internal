@@ -34,6 +34,7 @@
     "load:training:provision": "tsx scripts/provision-training-load-profiles.ts",
     "load:enterprise-runtime": "node scripts/load-test-enterprise-runtime.mjs",
     "runtime:enterprise:configure": "tsx scripts/configure-jiuwen-enterprise-routing.ts",
+    "runtime:enterprise:canary": "tsx scripts/manage-enterprise-runtime-canary.ts",
     "test:load-config": "node --test scripts/lib/load-test-profiles.test.mjs",
     "db:push": "drizzle-kit push",
     "db:deploy": "tsx scripts/db-deploy.ts",

@@ -38,7 +38,6 @@ import {
 } from "./enterprise-runtime-adapter";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
-const provisionedEnterpriseMcpFingerprints = new Set<string>();
 
 function gatewayWsUrl(route?: EnterpriseRuntimeRoute): string {
   return route?.wsUrl || String(process.env.JIUWENCLAW_GATEWAY_WS_URL || DEFAULT_GATEWAY_WS_URL);
@@ -449,8 +448,7 @@ export async function forwardToJiuwenGateway(
       sendGatewayRequest(ws, "chat.send", requestId, params);
     };
     const provisionManagedMcpOrSendChat = () => {
-      if (!managedMcpProvisioning
-        || provisionedEnterpriseMcpFingerprints.has(managedMcpProvisioning.fingerprint)) {
+      if (!managedMcpProvisioning) {
         sendChatRequest();
         return;
       }
@@ -586,9 +584,6 @@ export async function forwardToJiuwenGateway(
           });
           settle("managed-mcp-error");
           return;
-        }
-        if (managedMcpProvisioning) {
-          provisionedEnterpriseMcpFingerprints.add(managedMcpProvisioning.fingerprint);
         }
         sendChatRequest();
         return;
