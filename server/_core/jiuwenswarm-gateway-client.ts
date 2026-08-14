@@ -32,11 +32,13 @@ import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
 import {
   buildEnterpriseChatParams,
+  buildEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
   type EnterpriseRuntimeRoute,
 } from "./enterprise-runtime-adapter";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
+const provisionedEnterpriseMcpFingerprints = new Set<string>();
 
 function gatewayWsUrl(route?: EnterpriseRuntimeRoute): string {
   return route?.wsUrl || String(process.env.JIUWENCLAW_GATEWAY_WS_URL || DEFAULT_GATEWAY_WS_URL);
@@ -372,7 +374,10 @@ export async function forwardToJiuwenGateway(
         route: enterpriseRoute,
         sessionId,
         message,
+        adoptId: claw.adoptId,
+        agentId: claw.agentId,
         runtimeMode: opts.runtimeMode,
+        selectedSkills: opts.selectedSkills,
       })
     : buildGatewayChatParams({
         serviceId,
@@ -385,6 +390,14 @@ export async function forwardToJiuwenGateway(
         runtimeMode: opts.runtimeMode,
         selectedSkills: opts.selectedSkills,
       });
+  const managedMcpProvisioning = enterpriseRoute
+    ? buildEnterpriseManagedMcpProvisioning({
+        route: enterpriseRoute,
+        adoptId: claw.adoptId,
+        agentId: claw.agentId,
+      })
+    : null;
+  const managedMcpRequestId = `${requestId}:managed-mcp`;
   const knowledgeCitationIndexes = (opts.knowledgeSources || [])
     .map((source) => Number(source?.index || 0))
     .filter((index) => Number.isInteger(index) && index > 0);
@@ -426,9 +439,25 @@ export async function forwardToJiuwenGateway(
     let settled = false;
     let clientClosed = false;
     let requestSent = false;
+    let managedMcpRequestSent = false;
     let connectionAckTimer: NodeJS.Timeout | null = null;
     const timeoutMs = Math.max(30_000, Number(process.env.JIUWENCLAW_GATEWAY_CHAT_TIMEOUT_MS || process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || 180_000) || 180_000);
     const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
+    const sendChatRequest = () => {
+      if (requestSent || ws.readyState !== WebSocket.OPEN) return;
+      requestSent = true;
+      sendGatewayRequest(ws, "chat.send", requestId, params);
+    };
+    const provisionManagedMcpOrSendChat = () => {
+      if (!managedMcpProvisioning
+        || provisionedEnterpriseMcpFingerprints.has(managedMcpProvisioning.fingerprint)) {
+        sendChatRequest();
+        return;
+      }
+      if (managedMcpRequestSent || ws.readyState !== WebSocket.OPEN) return;
+      managedMcpRequestSent = true;
+      sendGatewayRequest(ws, "tools.add", managedMcpRequestId, managedMcpProvisioning.params);
+    };
     const settle = (reason: string) => {
       if (settled) return;
       settled = true;
@@ -534,23 +563,34 @@ export async function forwardToJiuwenGateway(
       if (enterpriseRoute) {
         connectionAckTimer = setTimeout(() => {
           if (requestSent || ws.readyState !== WebSocket.OPEN) return;
-          requestSent = true;
-          sendGatewayRequest(ws, "chat.send", requestId, params);
+          provisionManagedMcpOrSendChat();
         }, 2_000);
         return;
       }
-      requestSent = true;
-      sendGatewayRequest(ws, "chat.send", requestId, params);
+      sendChatRequest();
     });
     ws.on("message", async (raw) => {
       const frame = parseJsonFrame(raw);
       if (!frame || settled) return;
       if (enterpriseRoute && frame.type === "event" && frame.event === "connection.ack") {
         if (connectionAckTimer) clearTimeout(connectionAckTimer);
-        if (!requestSent && ws.readyState === WebSocket.OPEN) {
-          requestSent = true;
-          sendGatewayRequest(ws, "chat.send", requestId, params);
+        provisionManagedMcpOrSendChat();
+        return;
+      }
+      if (frame.type === "res" && frame.id === managedMcpRequestId) {
+        if (frame.ok === false) {
+          writeSseData(res, {
+            __stream_error: true,
+            error: "企业能力初始化失败，请稍后重试。",
+            reasonCode: "enterprise_mcp_provision_failed",
+          });
+          settle("managed-mcp-error");
+          return;
         }
+        if (managedMcpProvisioning) {
+          provisionedEnterpriseMcpFingerprints.add(managedMcpProvisioning.fingerprint);
+        }
+        sendChatRequest();
         return;
       }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {

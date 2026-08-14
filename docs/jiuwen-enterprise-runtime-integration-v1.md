@@ -229,6 +229,41 @@ Required first ports:
 Search, native Cron and A2A patches can follow after the training lane is
 stable.
 
+### 5.2.1 Implemented enterprise compatibility overlay
+
+The `ea/enterprise-0.0.11n` compatibility branch now provides the minimum
+runtime overlay required by the PoC:
+
+- request-scoped selected Skill disclosure without exposing local Skill paths;
+- EA-managed memory writes while preserving native read/search behavior;
+- short-lived runtime identity for EA-managed MCP requests;
+- explicit registration of the OpenJiuwen streamable HTTP MCP client;
+- delegation of native tool approval only for reserved EA gateway tools;
+- AgentServer and Gateway overlay images that forward the required runtime
+  environment.
+
+EA provisions only three platform-owned MCP gateways into an enterprise
+AgentServer:
+
+```text
+platform_tools       -> /api/internal/platform-tools/mcp
+custom_mcp_gateway   -> /api/internal/custom-mcp/mcp
+enterprise_mcp_gateway -> /api/internal/enterprise-mcp/mcp
+```
+
+The runtime receives no third-party endpoint or long-lived MCP credential.
+For each request it obtains a short-lived token bound to runtime, adoption,
+agent and audience. EA remains the authoritative PEP for tool visibility,
+read/write classification, approval, idempotency and audit. Consequently an
+existing unauthenticated Demo/Shadow MCP behind EA requires no developer-side
+authentication change.
+
+The first real canary used an active insurance-advisor adoption and called the
+insurance customer-profile Mock MCP through the enterprise AgentServer and EA
+enterprise MCP gateway. Tool discovery, role filtering, token verification,
+downstream execution and final model synthesis completed successfully. This is
+compatibility evidence, not a production traffic switch.
+
 ### 5.3 Capability execution
 
 Enterprise AgentServers may read/compute locally. Enterprise business writes

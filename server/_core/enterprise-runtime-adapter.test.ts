@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import {
   buildEnterpriseChatParams,
+  buildEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
   resolveEnterpriseRuntimeRoute,
   type EnterpriseRuntimeRoute,
@@ -90,7 +91,15 @@ describe("enterprise runtime adapter", () => {
       route: route(),
       sessionId: "sess-1",
       message: "准备保险客户访前材料",
+      adoptId: "lgj-test",
+      agentId: "agent-insurance",
       runtimeMode: "agent.fast",
+      selectedSkills: [{
+        id: "insurance-customer-visit",
+        name: "保险客户访前准备",
+        description: "准备客户访前材料",
+        skillFile: "/local/path/that-must-not-cross-the-runtime-boundary/SKILL.md",
+      }],
     });
 
     expect(params).toEqual({
@@ -101,10 +110,22 @@ describe("enterprise runtime adapter", () => {
       group_id: "ea_s3",
       bot_id: "insurance-advisor",
       user_id: "ea_user_abc",
+      interactive_ask: true,
+      request_metadata: {
+        source_channel: "lgj-test",
+        ea_managed_runtime: true,
+        ea_binding_id: "rtb_test",
+        ea_source_agent_id: "agent-insurance",
+        selected_skills: [{
+          id: "insurance-customer-visit",
+          name: "保险客户访前准备",
+          description: "准备客户访前材料",
+        }],
+      },
     });
     expect(params).not.toHaveProperty("project_dir");
     expect(params).not.toHaveProperty("model_name");
-    expect(params).not.toHaveProperty("selected_skills");
+    expect(JSON.stringify(params)).not.toContain("/local/path");
   });
 
   it("keeps permission continuation on the same runtime identity", () => {
@@ -122,6 +143,38 @@ describe("enterprise runtime adapter", () => {
       user_id: "ea_user_abc",
       request_id: "permission-1",
       source: "permission_interrupt",
+    });
+  });
+
+  it("provisions only EA gateways with dynamic identity headers and no long-lived credential", () => {
+    process.env.EA_ENTERPRISE_RUNTIME_EA_BASE_URL = "https://ea.example.test";
+    const provisioning = buildEnterpriseManagedMcpProvisioning({
+      route: route(),
+      adoptId: "lgj-test",
+      agentId: "agent-insurance",
+    });
+
+    expect(provisioning).not.toBeNull();
+    const root = JSON.parse(String(provisioning?.params.mcp_json));
+    expect(Object.keys(root.mcpServers)).toEqual([
+      "platform_tools",
+      "custom_mcp_gateway",
+      "enterprise_mcp_gateway",
+    ]);
+    expect(root.mcpServers.enterprise_mcp_gateway).toMatchObject({
+      url: "https://ea.example.test/api/internal/enterprise-mcp/mcp",
+      auth_headers: {
+        "x-ea-runtime-token-audience": "urn:ea:internal-mcp:enterprise-mcp",
+        "x-linggan-agent-id": "agent-insurance",
+        "x-jiuwen-channel-id": "lgj-test",
+      },
+    });
+    expect(JSON.stringify(root)).not.toContain("INTERNAL_API_KEY");
+    expect(JSON.stringify(root)).not.toContain("INTERNAL_RUNTIME_TOKEN_SECRET");
+    expect(provisioning?.params).toMatchObject({
+      group_id: "ea_s3",
+      bot_id: "insurance-advisor",
+      user_id: "ea_user_abc",
     });
   });
 });
