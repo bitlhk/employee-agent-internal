@@ -23,6 +23,7 @@
     "test:integration:db": "RUN_DB_INTEGRATION_TESTS=1 vitest run server/db/governance-runtime.integration.test.ts server/db/role-pack-releases.integration.test.ts",
     "test:coverage": "vitest run --coverage",
     "test:coverage:critical": "node scripts/check-critical-coverage.mjs",
+    "test:e2e:scroll": "playwright test --config playwright.scroll.config.ts",
     "knowledge:test": "bash -lc '\"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" -m unittest discover -s server/knowledge -p \"test_*.py\" -v'",
     "knowledge:demo:validate": "tsx scripts/import-demo-knowledge.ts --validate",
     "knowledge:rolepack": "tsx scripts/import-demo-knowledge.ts",
@@ -104,6 +105,7 @@
   "devDependencies": {
     "@fontsource/noto-sans-sc": "^5.2.8",
     "@hookform/resolvers": "^5.2.2",
+    "@playwright/test": "1.62.1",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.10",
     "@radix-ui/react-dialog": "^1.1.15",

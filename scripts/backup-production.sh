@@ -124,9 +124,18 @@ archive_skill_store() {
 archive_jiuwenswarm() {
   [[ -d "$JIUWENSWARM_HOME" ]] || return 0
   local runtime_parent runtime_name
+  local symlink_path relative_symlink
+  local symlink_excludes=()
   runtime_parent="$(dirname "$JIUWENSWARM_HOME")"
   runtime_name="$(basename "$JIUWENSWARM_HOME")"
+  # Runtime workspaces contain absolute Skill/team projections. Their targets are
+  # backed up separately, while restoring the links would cross recovery roots.
+  while IFS= read -r -d '' symlink_path; do
+    relative_symlink="${symlink_path#"$runtime_parent"/}"
+    symlink_excludes+=(--exclude="$relative_symlink")
+  done < <(find "$JIUWENSWARM_HOME" -type l -print0)
   tar -C "$runtime_parent" \
+    "${symlink_excludes[@]}" \
     --exclude="$runtime_name/logs" \
     --exclude="$runtime_name/**/.logs" \
     --exclude="$runtime_name/**/__pycache__" \

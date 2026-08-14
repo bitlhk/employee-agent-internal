@@ -64,6 +64,13 @@ window. Add 4-8 GB swap as OOM protection; swap is not usable capacity.
 5. Put the 100 short-lived session cookies in a mode-0600 load-test profile file.
 6. Add `selectedSkillId` to each profile when validating one training Skill.
 
+Do not cold-start all attendee runtimes concurrently. After account preparation,
+send one short automatic-model request per profile with concurrency 1-2. This
+warms the Jiuwen agent, workspace, Skill links, and MCP clients before the
+rehearsal. A cancelled cold start must still return a terminal
+`REQUEST_CANCELLED` response; the EA gateway must never wait for its full stream
+timeout.
+
 Example profile entry:
 
 ```json
@@ -107,9 +114,42 @@ EA_BUSINESS_LOAD_TEST_CHAT_MESSAGE='使用所选技能完成培训检查，只�
 pnpm load:training
 ```
 
+Prewarm all profiles before the concurrent model stage:
+
+```bash
+EA_BUSINESS_LOAD_TEST_URL=http://127.0.0.1:5180 \
+EA_BUSINESS_LOAD_TEST_PROFILE_FILE=/root/ea-training-profiles.json \
+EA_BUSINESS_LOAD_TEST_STAGES=1 \
+EA_BUSINESS_LOAD_TEST_STAGE_SECONDS=1 \
+EA_BUSINESS_LOAD_TEST_ENABLE_CHAT=1 \
+EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS=100 \
+EA_BUSINESS_LOAD_TEST_CHAT_CONCURRENCY=1 \
+EA_BUSINESS_LOAD_TEST_CHAT_MODEL=__auto \
+EA_BUSINESS_LOAD_TEST_CHAT_MESSAGE='只返回 PREWARM_OK。' \
+pnpm load:training
+```
+
 Repeat at chat concurrency 25, 50, then 75 only after the preceding stage
 passes. Run 100 only when the class explicitly requires 100 simultaneous
 generations and the model provider confirms matching concurrency/RPM/TPM quota.
+
+## Measured Shanghai Baseline
+
+The 2026-08-14 rehearsal used 16 active independent user/adoption profiles. A
+final rehearsal must be repeated after all 100 attendee profiles exist.
+
+| Scenario | Result |
+| --- | --- |
+| Platform reads, 100 concurrent | 0 errors; 1,155.8 requests/s; p95 33.5 ms |
+| Authenticated business reads, 100 concurrent | 0 errors; 295.2 requests/s; p95 442.3 ms |
+| Automatic model, 25 requests / 10 concurrent | 25/25 completed after prewarm; full-task p95 25.8 s |
+| Automatic model, 50 requests / 25 concurrent | 50/50 completed; provider TTFT p95 11.3 s; full-task p95 71.4 s |
+
+The host and HTTP lanes support 100 attendees, but the measured Agent runtime
+does not support a good classroom experience when 50-100 attendees generate at
+the same instant. Keep model exercises in groups of 25, stagger starts, and
+prewarm every attendee profile. Do not raise the chat lane to hide runtime or
+provider latency.
 
 ## Acceptance
 
