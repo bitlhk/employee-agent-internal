@@ -125,7 +125,7 @@ export default defineConfig(({ mode }) => {
                 return "vendor-pdfjs";
               }
               // React 相关库
-              if (id.includes("react") || id.includes("react-dom")) {
+              if (/[\\/]node_modules[\\/](?:\.pnpm[\\/])?(?:react(?:-dom)?|scheduler)(?:@|[\\/])/.test(id)) {
                 return "vendor-react";
               }
               // tRPC 相关库

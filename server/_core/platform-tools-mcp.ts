@@ -3,6 +3,8 @@ import { createHash } from "crypto";
 import path from "path";
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { isAuthorizedInternalRequest, resolveRuntimeAgentId, resolveRuntimeWorkspaceByIds } from "./helpers";
+import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
+import { internalMcpAudience } from "./internal-runtime-token";
 import type { SkillSource } from "../../shared/types/skill";
 import { getClawByAdoptId, getClawByAgentId, getUserById } from "../db";
 import { resolveEffectiveRoleAssets } from "../db/role-assets";
@@ -1022,6 +1024,7 @@ async function handleMessage(req: Request, msg: any) {
 }
 
 export function registerPlatformToolsMcpRoutes(app: Express): void {
+  const internalPlatformAudience = internalMcpAudience("/api/internal/platform-tools/mcp");
   app.get("/api/internal/platform-tools/health", (req, res) => {
     if (!isAuthorized(req)) {
       res.status(401).json({ error: "unauthorized" });
@@ -1148,8 +1151,8 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/internal/platform-tools/mcp", (req: Request, res: Response) => {
-    if (!isAuthorized(req)) {
+  app.get("/api/internal/platform-tools/mcp", async (req: Request, res: Response) => {
+    if (!await authorizeAndBindInternalRuntimeRequest(req, internalPlatformAudience)) {
       res.status(401).json(err(null, -32001, "unauthorized"));
       return;
     }
@@ -1170,8 +1173,8 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
     });
   });
 
-  app.delete("/api/internal/platform-tools/mcp", (req: Request, res: Response) => {
-    if (!isAuthorized(req)) {
+  app.delete("/api/internal/platform-tools/mcp", async (req: Request, res: Response) => {
+    if (!await authorizeAndBindInternalRuntimeRequest(req, internalPlatformAudience)) {
       res.status(401).json(err(null, -32001, "unauthorized"));
       return;
     }
@@ -1179,7 +1182,7 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
   });
 
   app.post("/api/internal/platform-tools/mcp", async (req: Request, res: Response) => {
-    if (!isAuthorized(req)) {
+    if (!await authorizeAndBindInternalRuntimeRequest(req, internalPlatformAudience)) {
       res.status(401).json(err(null, -32001, "unauthorized"));
       return;
     }

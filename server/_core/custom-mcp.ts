@@ -30,12 +30,13 @@ import {
 } from "./custom-mcp-client";
 import {
   readSessionEpoch,
-  isAuthorizedInternalRequest,
   isJiuwenClawAdoptId,
   requireClawOwner,
   resolveRequesterUserId,
   resolveRuntimeAgentId,
 } from "./helpers";
+import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
+import { internalMcpAudience } from "./internal-runtime-token";
 import { refreshJiuwenRuntimeCapabilities } from "./jiuwenswarm-runtime-refresh";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { strictLimiter } from "./security";
@@ -673,6 +674,7 @@ async function handleGatewayMessage(req: Request, message: any) {
 }
 
 export function registerCustomMcpRoutes(app: Express): void {
+  const customMcpAudience = internalMcpAudience("/api/internal/custom-mcp/mcp");
   app.post("/api/claw/custom-mcp/oauth/start", strictLimiter, async (req, res) => {
     try {
       const context = await owner(req, res, req.body?.adoptId);
@@ -987,7 +989,7 @@ export function registerCustomMcpRoutes(app: Express): void {
   });
 
   app.get("/api/internal/custom-mcp/mcp", async (req, res) => {
-    if (!isAuthorizedInternalRequest(req)) return res.status(401).json(err(null, -32001, "unauthorized"));
+    if (!await authorizeAndBindInternalRuntimeRequest(req, customMcpAudience)) return res.status(401).json(err(null, -32001, "unauthorized"));
     const adoptId = await trustedAdoptId(req);
     if (!adoptId) return res.status(400).json(err(null, -32001, "trusted Agent identity is missing"));
     res.status(200);
@@ -1001,13 +1003,13 @@ export function registerCustomMcpRoutes(app: Express): void {
     req.on("close", () => clearInterval(heartbeat));
   });
 
-  app.delete("/api/internal/custom-mcp/mcp", (req, res) => {
-    if (!isAuthorizedInternalRequest(req)) return res.status(401).json(err(null, -32001, "unauthorized"));
+  app.delete("/api/internal/custom-mcp/mcp", async (req, res) => {
+    if (!await authorizeAndBindInternalRuntimeRequest(req, customMcpAudience)) return res.status(401).json(err(null, -32001, "unauthorized"));
     res.status(204).end();
   });
 
   app.post("/api/internal/custom-mcp/mcp", async (req, res) => {
-    if (!isAuthorizedInternalRequest(req)) return res.status(401).json(err(null, -32001, "unauthorized"));
+    if (!await authorizeAndBindInternalRuntimeRequest(req, customMcpAudience)) return res.status(401).json(err(null, -32001, "unauthorized"));
     try {
       const body = req.body || {};
       const response = Array.isArray(body)

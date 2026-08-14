@@ -8,6 +8,10 @@ BUNDLE=""
 KEEP_RELEASES="${RELEASE_KEEP_PREVIOUS:-3}"
 PREPARE_ONLY=false
 SKIP_BACKUP=false
+BREAK_GLASS_REASON="${RELEASE_BREAK_GLASS_REASON:-}"
+BREAK_GLASS_ACTOR="${RELEASE_BREAK_GLASS_ACTOR:-}"
+BREAK_GLASS_APPROVER="${RELEASE_BREAK_GLASS_APPROVER:-}"
+BREAK_GLASS_TICKET="${RELEASE_BREAK_GLASS_TICKET:-}"
 
 usage() {
   cat <<'EOF'
@@ -19,6 +23,11 @@ Options:
   --keep NUMBER       Number of inactive releases to retain (default: 3)
   --prepare-only      Install, build, and migrate without switching PM2
   --skip-backup       Skip the pre-migration core backup
+  --break-glass-reason TEXT
+                      Bypass a failed CI admission with an audited emergency reason
+  --break-glass-actor NAME
+  --break-glass-approver NAME
+  --break-glass-ticket ID
 EOF
 }
 
@@ -30,6 +39,10 @@ while (( $# > 0 )); do
     --keep) KEEP_RELEASES="${2:-}"; shift 2 ;;
     --prepare-only) PREPARE_ONLY=true; shift ;;
     --skip-backup) SKIP_BACKUP=true; shift ;;
+    --break-glass-reason) BREAK_GLASS_REASON="${2:-}"; shift 2 ;;
+    --break-glass-actor) BREAK_GLASS_ACTOR="${2:-}"; shift 2 ;;
+    --break-glass-approver) BREAK_GLASS_APPROVER="${2:-}"; shift 2 ;;
+    --break-glass-ticket) BREAK_GLASS_TICKET="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -80,6 +93,19 @@ manifest="$staging/release-manifest.json"
 [[ -f "$manifest" ]] || release_die "release manifest is missing"
 release_id="$(node -e 'const m=require(process.argv[1]); process.stdout.write(String(m.releaseId || ""))' "$manifest")"
 release_validate_id "$release_id"
+source_commit="$(node -e 'const m=require(process.argv[1]); process.stdout.write(String(m.sourceCommit || ""))' "$manifest")"
+source_repository="$(node -e 'const m=require(process.argv[1]); process.stdout.write(String(m.sourceRepository || ""))' "$manifest")"
+ci_verifier="${RELEASE_CI_VERIFIER:-$staging/scripts/verify-github-release-checks.mjs}"
+if ! node "$ci_verifier" --repository "$source_repository" --commit "$source_commit"; then
+  if [[ -z "$BREAK_GLASS_REASON" || -z "$BREAK_GLASS_ACTOR" || -z "$BREAK_GLASS_APPROVER" || -z "$BREAK_GLASS_TICKET" ]]; then
+    release_die "CI admission failed; emergency release requires reason, actor, approver, and ticket"
+  fi
+  [[ "$BREAK_GLASS_ACTOR" != "$BREAK_GLASS_APPROVER" ]] \
+    || release_die "break-glass actor and approver must be different"
+  release_record_break_glass "$DEPLOY_ROOT" "$release_id" "$source_commit" \
+    "$BREAK_GLASS_ACTOR" "$BREAK_GLASS_APPROVER" "$BREAK_GLASS_TICKET" "$BREAK_GLASS_REASON"
+  release_log "CI admission bypassed under audited break-glass approval"
+fi
 release_dir="$DEPLOY_ROOT/releases/$release_id"
 [[ ! -e "$release_dir" ]] || release_die "release already exists: $release_id"
 

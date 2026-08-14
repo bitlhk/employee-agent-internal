@@ -32,13 +32,20 @@ import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwe
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { detectInstructionAttackSignals } from "./instruction-attack";
-import { classifyPermissionRisk } from "./permission-risk";
 import {
   normalizeJiuwenToolPayload,
   normalizeGovernanceApprovalToolEvent,
   normalizeJiuwenUsageSummary,
   stringifyJiuwenToolPayload,
 } from "./jiuwenclaw-event-normalizers";
+import {
+  isJiuwenHumanApprovalEvent,
+  normalizeJiuwenPermissionRequest,
+  summarizeJiuwenApprovalEvent,
+  type JiuwenInteractionAnswer,
+  type JiuwenInteractionQuestion,
+  type JiuwenPermissionRequest,
+} from "./jiuwen-permission-events";
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
 export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
@@ -49,6 +56,12 @@ export {
   normalizeJiuwenUsageSummary,
   stringifyJiuwenToolPayload,
 } from "./jiuwenclaw-event-normalizers";
+export {
+  normalizeJiuwenPermissionRequest,
+  type JiuwenInteractionAnswer,
+  type JiuwenInteractionQuestion,
+  type JiuwenPermissionRequest,
+} from "./jiuwen-permission-events";
 export type JiuwenClawRuntimeClaw = {
   adoptId: string;
   agentId: string;
@@ -100,34 +113,6 @@ export function buildJiuwenRunDescriptor(args: {
     sessionId,
   };
 }
-
-export type JiuwenPermissionRequest = {
-  requestId: string;
-  source: string;
-  kind: "permission" | "question";
-  title: string;
-  question: string;
-  command?: string;
-  toolName?: string;
-  options: Array<{ label: string; description?: string; value?: string }>;
-  questions?: JiuwenInteractionQuestion[];
-  riskLevel?: "low" | "medium" | "high";
-  reasonCode?: string;
-  reasonText?: string;
-  allowAlways?: boolean;
-};
-
-export type JiuwenInteractionQuestion = {
-  header: string;
-  question: string;
-  options: Array<{ label: string; description?: string; value?: string }>;
-  multiSelect: boolean;
-};
-
-export type JiuwenInteractionAnswer = {
-  selectedOptions: string[];
-  customInput: string;
-};
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
 const DEFAULT_SERVICE_ID = "linggan";
@@ -209,14 +194,23 @@ function initSse(res: Response): void {
   if (res.socket) res.socket.setNoDelay(true);
 }
 
-function parseJsonFrame(raw: RawData): any | null {
+function asJsonObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function parseJsonFrame(raw: RawData): Record<string, unknown> | null {
   try {
     const text = Array.isArray(raw)
       ? Buffer.concat(raw).toString("utf8")
       : Buffer.isBuffer(raw)
         ? raw.toString("utf8")
         : String(raw);
-    return JSON.parse(text);
+    const parsed: unknown = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
   } catch {
     return null;
   }
@@ -267,135 +261,6 @@ export function inferSkillIdFromJiuwenPayload(value: unknown): string | null {
   return String(named?.[1] || "").trim() || null;
 }
 
-function isJiuwenHumanApprovalEvent(eventType: string, delta: unknown): boolean {
-  const normalizedEventType = String(eventType || "").toLowerCase();
-  if (normalizedEventType === "chat.tool_call" || normalizedEventType === "chat.tool_result") return false;
-  if (normalizedEventType === "chat.ask_user_question") return true;
-  if (!delta || typeof delta !== "object") return false;
-
-  const source = String((delta as Record<string, unknown>).source || "").trim().toLowerCase();
-  return source === "permission_interrupt"
-    || source === "confirm_interrupt"
-    || source === "ask_user_interrupt";
-}
-
-function summarizeJiuwenApprovalEvent(eventType: string, delta: unknown): string {
-  const payload = stableJson(delta);
-  const trimmedPayload = payload.length > 800 ? `${payload.slice(0, 800)}...` : payload;
-  return `JiuwenSwarm 运行时请求人工确认，EA 当前未接入原生确认回传。event=${eventType}; payload=${trimmedPayload}`;
-}
-
-function normalizeChoiceOptions(
-  rawOptions: unknown,
-  fallback: Array<{ label: string; description?: string; value?: string }> = [],
-): Array<{ label: string; description?: string; value?: string }> {
-  if (!Array.isArray(rawOptions)) return fallback;
-  const options = rawOptions
-    .slice(0, 12)
-    .map((item) => {
-      if (typeof item === "string") return { label: item.slice(0, 160), value: item.slice(0, 160) };
-      if (!item || typeof item !== "object") return null;
-      const obj = item as Record<string, unknown>;
-      const label = String(obj.label || obj.value || "").trim().slice(0, 160);
-      if (!label) return null;
-      const description = String(obj.description || "").trim().slice(0, 360);
-      const value = String(obj.value || label).trim().slice(0, 160);
-      return {
-        label,
-        value,
-        ...(description ? { description } : {}),
-      };
-    })
-    .filter(Boolean) as Array<{ label: string; description?: string; value?: string }>;
-  return options.length > 0 ? options : fallback;
-}
-
-function permissionOptions(rawOptions: unknown): Array<{ label: string; description?: string; value?: string }> {
-  const fallback = [
-    { label: "本次允许", value: "本次允许", description: "仅本次允许执行" },
-    { label: "拒绝", value: "拒绝", description: "拒绝本次执行" },
-  ];
-  return normalizeChoiceOptions(rawOptions, fallback);
-}
-
-function normalizeInteractionQuestions(rawQuestions: unknown): JiuwenInteractionQuestion[] {
-  if (!Array.isArray(rawQuestions)) return [];
-  return rawQuestions
-    .slice(0, 8)
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const question = item as Record<string, unknown>;
-      const text = String(question.question || question.message || "").trim().slice(0, 600);
-      if (!text) return null;
-      return {
-        header: String(question.header || "请确认").trim().slice(0, 120) || "请确认",
-        question: text,
-        options: normalizeChoiceOptions(question.options),
-        multiSelect: question.multi_select === true || question.multiSelect === true,
-      };
-    })
-    .filter(Boolean) as JiuwenInteractionQuestion[];
-}
-
-function extractCommandFromQuestion(question: string): string {
-  const fencedJson = question.match(/```json\s*([\s\S]*?)```/i)?.[1];
-  if (fencedJson) {
-    try {
-      const parsed = JSON.parse(fencedJson);
-      const command = String(parsed?.command || parsed?.cmd || "").trim();
-      if (command) return command;
-    } catch {}
-  }
-  const fenced = question.match(/```\s*([\s\S]*?)```/)?.[1]?.trim();
-  if (fenced && fenced.length <= 2000) return fenced;
-  const inline = question.match(/工具\s*`?([^`\s]+)`?\s*需要授权/)?.[1];
-  return inline ? `tool: ${inline}` : "";
-}
-
-export function normalizeJiuwenPermissionRequest(eventType: string, delta: any, fallbackRequestId: string): JiuwenPermissionRequest | null {
-  if (!isJiuwenHumanApprovalEvent(eventType, delta)) return null;
-  const source = String(delta?.source || "").trim()
-    || (String(eventType).toLowerCase() === "chat.ask_user_question" ? "ask_user_interrupt" : "");
-  if (source && !["permission_interrupt", "confirm_interrupt", "ask_user_interrupt"].includes(source)) return null;
-  const questions = Array.isArray(delta?.questions) ? delta.questions : [];
-  const firstQuestion = questions.find((item: any) => item && typeof item === "object") || {};
-  const requestId = String(
-    delta?.request_id
-    || delta?.requestId
-    || delta?.id
-    || firstQuestion?.request_id
-    || firstQuestion?.id
-    || fallbackRequestId
-  ).trim();
-  if (!requestId) return null;
-  const question = String(firstQuestion?.question || delta?.question || delta?.message || delta?.query || "").trim();
-  const kind = source === "ask_user_interrupt" ? "question" : "permission";
-  const interactionQuestions = kind === "question" ? normalizeInteractionQuestions(delta?.questions) : [];
-  const titleFallback = kind === "question" ? "需要补充信息" : "权限确认";
-  const title = String(firstQuestion?.header || delta?.header || titleFallback).trim() || titleFallback;
-  const command = extractCommandFromQuestion(question || stableJson(delta));
-  const toolName = String(delta?.tool_name || delta?.toolName || firstQuestion?.tool_name || "").trim()
-    || (command.startsWith("tool: ") ? command.slice(6).trim() : "");
-  const options = kind === "question"
-    ? normalizeChoiceOptions(firstQuestion?.options || delta?.options)
-    : permissionOptions(firstQuestion?.options || delta?.options);
-  const risk = kind === "permission"
-    ? classifyPermissionRisk({ toolName, command, options })
-    : null;
-  return {
-    requestId,
-    source: source || "permission_interrupt",
-    kind,
-    title,
-    question: question || (kind === "question" ? "请补充必要信息后继续。" : "JiuwenSwarm 请求授权后继续执行。"),
-    ...(command ? { command } : {}),
-    ...(toolName ? { toolName } : {}),
-    options,
-    ...(interactionQuestions.length > 0 ? { questions: interactionQuestions } : {}),
-    ...(risk || {}),
-  };
-}
-
 export async function recordJiuwenToolAudit(args: {
   claw: JiuwenClawRuntimeClaw;
   req?: Request;
@@ -404,7 +269,7 @@ export async function recordJiuwenToolAudit(args: {
   requestId: string;
   channelId: string;
   eventType: string;
-  delta: any;
+  delta: unknown;
 }) {
   const tool = normalizeJiuwenToolPayload(args.eventType, args.delta);
   if (!tool) return;
@@ -589,7 +454,7 @@ export async function recordJiuwenToolAudit(args: {
 export function pickJiuwenText(value: unknown): string {
   if (typeof value === "string") return value;
   if (!value || typeof value !== "object") return "";
-  const obj = value as any;
+  const obj = value as Record<string, unknown>;
   for (const key of ["content", "text", "message", "delta"]) {
     if (typeof obj[key] === "string") return obj[key];
   }
@@ -600,9 +465,11 @@ export function pickJiuwenText(value: unknown): string {
   return "";
 }
 
-function pickErrorMessage(frame: any): string {
-  const body = frame?.body || {};
-  const delta = body?.delta || {};
+function pickErrorMessage(frame: unknown): string {
+  const root = asJsonObject(frame);
+  const body = asJsonObject(root.body);
+  const delta = asJsonObject(body.delta);
+  const details = asJsonObject(body.details);
   const raw = String(
     body?.message
       || body?.error
@@ -612,9 +479,9 @@ function pickErrorMessage(frame: any): string {
       || delta?.message
       || delta?.content
       || delta?.text
-      || body?.details?.message
-      || body?.details?.error
-      || frame?.message
+      || details.message
+      || details.error
+      || root.message
       || "jiuwenclaw runtime error"
   ).slice(0, 1000);
   if (/max(?:imum)? iterations?|iteration limit|达到.{0,8}(?:迭代|工具).{0,8}上限/i.test(raw)) {
@@ -662,8 +529,9 @@ function sanitizeWorkspaceRelativePath(raw: unknown): string | null {
   return parts.join("/");
 }
 
-function normalizeWorkspaceFilePayload(file: any, workspaceDir: string): { name: string; size: number; path: string } | null {
-  const rawPath = String(file?.path || file?.file_path || file?.full_path || file?.filepath || "").trim();
+function normalizeWorkspaceFilePayload(file: unknown, workspaceDir: string): { name: string; size: number; path: string } | null {
+  const payload = file && typeof file === "object" ? file as Record<string, unknown> : {};
+  const rawPath = String(payload.path || payload.file_path || payload.full_path || payload.filepath || "").trim();
   let relPath: string | null = null;
 
   if (rawPath) {
@@ -680,26 +548,27 @@ function normalizeWorkspaceFilePayload(file: any, workspaceDir: string): { name:
 
   if (!relPath || !isUserVisibleJiuwenArtifactPath(relPath)) return null;
   const absFile = path.join(workspaceDir, relPath);
-  let size = Number(file?.size || 0);
+  let size = Number(payload.size || 0);
   try {
     const st = statSync(absFile);
     if (!st.isFile()) return null;
     size = st.size;
   } catch {}
 
-  const name = String(file?.name || path.basename(relPath)).trim() || path.basename(relPath);
+  const name = String(payload.name || path.basename(relPath)).trim() || path.basename(relPath);
   return { name, size, path: relPath };
 }
 
-export function normalizeJiuwenFileEvent(delta: any, workspaceDir: string): Array<{ name: string; size: number; path: string }> {
-  const candidates = Array.isArray(delta?.files)
-    ? delta.files
-    : Array.isArray(delta?.file_list)
-      ? delta.file_list
-      : delta?.file
-        ? [delta.file]
-        : delta?.path
-          ? [delta]
+export function normalizeJiuwenFileEvent(delta: unknown, workspaceDir: string): Array<{ name: string; size: number; path: string }> {
+  const payload = delta && typeof delta === "object" ? delta as Record<string, unknown> : {};
+  const candidates = Array.isArray(payload.files)
+    ? payload.files
+    : Array.isArray(payload.file_list)
+      ? payload.file_list
+      : payload.file
+        ? [payload.file]
+        : payload.path
+          ? [payload]
           : [];
   const files: Array<{ name: string; size: number; path: string }> = [];
   for (const candidate of candidates) {
@@ -1300,7 +1169,7 @@ export async function forwardToJiuwenClaw(
 
       const kind = String(frame?.response_kind || frame?.event || "");
       const status = String(frame?.status || "");
-      const body = frame?.body || {};
+      const body = asJsonObject(frame.body);
 
       if (status === "failed" || kind === "e2a.error" || kind.endsWith(".error")) {
         fail(pickErrorMessage(frame));
@@ -1325,7 +1194,7 @@ export async function forwardToJiuwenClaw(
           return;
         }
         if (body?.delta_kind === "custom") {
-          const eventType = String(body?.event_type || body?.delta?.event_type || "jiuwen.event");
+          const eventType = String(body.event_type || asJsonObject(body.delta).event_type || "jiuwen.event");
           const text = pickJiuwenText(body?.delta);
           if (eventType === "chat.delta" && text) {
             writeTextDelta(text);
@@ -1678,7 +1547,7 @@ export async function answerJiuwenPermission(
 
       const kind = String(frame?.response_kind || frame?.event || "");
       const status = String(frame?.status || "");
-      const body = frame?.body || {};
+      const body = asJsonObject(frame.body);
       if (status === "failed" || kind === "e2a.error" || kind.endsWith(".error")) {
         settle({ ok: false, error: pickErrorMessage(frame), text });
         return;
@@ -1690,7 +1559,7 @@ export async function answerJiuwenPermission(
           return;
         }
         if (body?.delta_kind === "custom") {
-          const eventType = String(body?.event_type || body?.delta?.event_type || "jiuwen.event");
+          const eventType = String(body.event_type || asJsonObject(body.delta).event_type || "jiuwen.event");
           if (eventType === "chat.delta" || eventType === "chat.final") {
             const delta = pickJiuwenText(body?.delta);
             if (delta) text += sanitizePublicRuntimePaths(delta, workspaceDir);

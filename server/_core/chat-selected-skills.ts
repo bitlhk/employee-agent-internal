@@ -24,6 +24,18 @@ export type SelectedRuntimeSkill = {
   version?: string;
 };
 
+export type RuntimeSkillCandidate = {
+  id?: unknown;
+  enabled?: unknown;
+  state?: unknown;
+  name?: unknown;
+  label?: unknown;
+  displayName?: unknown;
+  description?: unknown;
+  sync?: { runtimePath?: unknown } | null;
+  source?: { displayName?: unknown; description?: unknown } | null;
+};
+
 function normalizeSelectedSkillId(value: unknown): string {
   const skillId = String(value || "").trim();
   if (!skillId) return "";
@@ -132,7 +144,7 @@ function affinityBoost(affinity: SkillSessionAffinity | undefined, nowMs: number
 }
 
 export function rankAutomaticSkillMatches(
-  skills: any[],
+  skills: RuntimeSkillCandidate[],
   userMessage: string,
   affinities: SkillSessionAffinity[] = [],
   now = new Date(),
@@ -163,7 +175,7 @@ export function rankAutomaticSkillMatches(
 }
 
 export function selectAutomaticSkillMatch(
-  skills: any[],
+  skills: RuntimeSkillCandidate[],
   userMessage: string,
   affinities: SkillSessionAffinity[] = [],
   now = new Date(),

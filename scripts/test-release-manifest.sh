@@ -12,6 +12,7 @@ trap 'rm -f "$output"' EXIT
     --output "$output" \
     --release-id release-test \
     --source-commit 0123456789abcdef \
+    --source-repository bitlhk/employee-agent-internal \
     --created-at 2026-01-01T00:00:00Z
 )
 
@@ -24,9 +25,10 @@ const packageText = await readFile("package.json", "utf8");
 const lockfileText = await readFile("pnpm-lock.yaml", "utf8");
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
-if (manifest.schema !== 2) throw new Error("unexpected manifest schema");
+if (manifest.schema !== 3) throw new Error("unexpected manifest schema");
 if (manifest.releaseId !== "release-test") throw new Error("release ID missing");
 if (manifest.sourceCommit !== "0123456789abcdef") throw new Error("source commit missing");
+if (manifest.sourceRepository !== "bitlhk/employee-agent-internal") throw new Error("source repository missing");
 if (manifest.packageJsonSha256 !== digest(packageText)) throw new Error("package hash mismatch");
 if (manifest.lockfileSha256 !== digest(lockfileText)) throw new Error("lockfile hash mismatch");
 if (!manifest.dependencies?.express) throw new Error("production dependencies missing");

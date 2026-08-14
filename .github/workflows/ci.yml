@@ -128,6 +128,12 @@ jobs:
       - name: Critical path coverage budget
         run: pnpm run test:coverage:critical
 
+      - name: Governance and Role Pack database integration
+        env:
+          DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_ci
+          RUN_DB_INTEGRATION_TESTS: "1"
+        run: pnpm run test:integration:db
+
       - name: Load-test configuration safety
         run: pnpm run test:load-config
 

@@ -80,6 +80,16 @@ docker-compose up -d
 WORKFORCE_AGENT_INTERNAL_BASE_URL=http://127.0.0.1:5180
 ```
 
+EA 受管的 Platform、Custom 和 Enterprise MCP 不再信任调用方自报的岗位实例 Header，而是使用短期运行时身份令牌。先在 EA 和 JiuwenSwarm 配置同一随机签名密钥，执行 `scripts/configure_jiuwenswarm.py` 并重启两端：
+
+```bash
+INTERNAL_RUNTIME_TOKEN_SECRET=<至少32字节随机值>
+INTERNAL_RUNTIME_TOKEN_TTL_SECONDS=300
+INTERNAL_RUNTIME_TOKEN_REQUIRED=false
+```
+
+验证三类受管 MCP 均可调用后，再将两端的 `INTERNAL_RUNTIME_TOKEN_REQUIRED` 改为 `true`。密钥轮换期间，EA 可通过 `INTERNAL_RUNTIME_TOKEN_PREVIOUS_SECRETS` 临时接受旧密钥；JiuwenSwarm 始终使用当前密钥签发。令牌会在每次受管 MCP HTTP 请求前刷新，并绑定 `runtimeId`、`agentId`、`adoptId` 和目标 MCP Audience；`jti` 在 EA 进程内一次性消费，重复提交会被拒绝并记录安全审计。
+
 具体 JiuwenSwarm 运行时配置以实际部署环境为准。
 
 ### A2A / HTTP Agent
@@ -139,6 +149,21 @@ sudo scripts/deploy-release.sh \
 ```
 
 The shared root owns `.env`, `data`, and `logs`; each release owns its source, dependencies, and build output. Deployment verifies the bundle checksum, installs and builds in a new directory, creates a database backup, applies managed migrations, switches `current`, reloads PM2, and runs the production health gate. A failed health gate automatically restores the previous release.
+
+The release manifest also binds the bundle to its GitHub repository and exact commit. Deployment verifies that commit's required GitHub Actions check before installing or migrating anything. Private repositories must provide a read-only token through `RELEASE_GITHUB_TOKEN`; configure additional required job names as newline-separated values in `RELEASE_REQUIRED_GITHUB_CHECKS`.
+
+An emergency CI bypass requires four explicit fields and records them in `deployments.log`; the actor and approver must be different:
+
+```bash
+sudo scripts/deploy-release.sh \
+  --bundle dist/releases/employee-agent-<release-id>.tar.gz \
+  --deploy-root /opt/employee-agent \
+  --shared-root /srv/employee-agent \
+  --break-glass-reason "production incident" \
+  --break-glass-actor "operator-name" \
+  --break-glass-approver "approver-name" \
+  --break-glass-ticket "INC-1234"
+```
 
 Set `RELEASE_REQUIRE_BACKUP=true` and `RELEASE_REQUIRE_MIGRATION_URL=true` in production so missing backup or DDL credentials block the release. The first migration from an existing live directory treats `--shared-root` as the rollback target; no data directory move is required.
 

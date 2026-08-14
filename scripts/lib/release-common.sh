@@ -88,6 +88,33 @@ release_record() {
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$action" "$release_id" "$previous_id" "$result" >> "$log_file"
 }
 
+release_record_break_glass() {
+  local deploy_root="$1"
+  local release_id="$2"
+  local source_commit="$3"
+  local actor="$4"
+  local approver="$5"
+  local ticket="$6"
+  local reason="$7"
+  local log_file="$deploy_root/deployments.log"
+
+  node - "$log_file" "$release_id" "$source_commit" "$actor" "$approver" "$ticket" "$reason" <<'NODE'
+const { appendFileSync } = require("node:fs");
+const [logFile, release, sourceCommit, actor, approver, ticket, reason] = process.argv.slice(2);
+appendFileSync(logFile, `${JSON.stringify({
+  time: new Date().toISOString(),
+  action: "break_glass",
+  release,
+  sourceCommit,
+  actor,
+  approver,
+  ticket,
+  reason,
+  result: "approved",
+})}\n`);
+NODE
+}
+
 release_previous_target() {
   local deploy_root="$1"
   local current_target="$2"

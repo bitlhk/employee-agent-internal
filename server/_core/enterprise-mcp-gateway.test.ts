@@ -96,6 +96,9 @@ vi.mock("./helpers", () => ({
   isAuthorizedInternalRequest: vi.fn(() => true),
   resolveRuntimeWorkspaceByIds: vi.fn((adoptId: string) => `/workspace/${adoptId}`),
 }));
+vi.mock("./internal-runtime-request", () => ({
+  authorizeAndBindInternalRuntimeRequest: vi.fn(async () => true),
+}));
 vi.mock("./observability/metrics", () => ({
   beginMcpCall: vi.fn(() => () => undefined),
   observeGovernanceDecision: vi.fn(),

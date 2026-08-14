@@ -2,6 +2,13 @@ import "dotenv/config";
 import "./runtime-permissions";
 import { flushApplicationLogs, logError, logFatal, logInfo, logWarn } from "./observability/logger";
 import { requestObservabilityMiddleware } from "./observability/http-middleware";
+import {
+  defaultJsonParser,
+  defaultUrlencodedParser,
+  largeUploadJsonParser,
+  requestEnvelopeLimit,
+  sanitizeServerErrorResponses,
+} from "./http-boundaries";
 import { registerOperationalRoutes } from "./observability/health-routes";
 import { startPublicHealthMonitor } from "./observability/public-health";
 import {
@@ -348,6 +355,7 @@ async function startServer() {
   const trustProxy = resolveTrustProxySetting(process.env.TRUST_PROXY, process.env.NODE_ENV);
   app.set("trust proxy", trustProxy);
   app.use(requestObservabilityMiddleware);
+  app.use(sanitizeServerErrorResponses);
   if (trustProxy === false) {
     console.log("[Server] Trust proxy disabled; set TRUST_PROXY explicitly when running behind a trusted reverse proxy");
   } else {
@@ -404,8 +412,8 @@ async function startServer() {
   app.use(trackResponseErrors);
   app.use(block4xxAbuse);
   
-  // 5. 请求大小限制；50MB 文件经 base64 JSON 上传后约 66.7MB。
-  app.use(requestSizeLimiter(80 * 1024 * 1024)); // 80MB request envelope
+  // 5. 普通 API 限制为 2MB；仅显式上传路由允许 80MB 包络。
+  app.use(requestSizeLimiter(requestEnvelopeLimit));
   
   // 6. 通用速率限制
   app.use(generalLimiter);
@@ -439,9 +447,11 @@ async function startServer() {
   // Anonymous installer events have a deliberately small request envelope.
   registerInstallTelemetryRoutes(app);
 
-  // Configure body parser with larger size limit for 50MB base64 file uploads.
-  app.use(express.json({ limit: "80mb" }));
-  app.use(express.urlencoded({ limit: "80mb", extended: true }));
+  // Large JSON parsing is restricted to the audited upload routes. The second
+  // parser skips bodies already consumed by the upload parser.
+  app.use(largeUploadJsonParser);
+  app.use(defaultJsonParser);
+  app.use(defaultUrlencodedParser);
 
   registerLocalProfileA2AProxy(app);
   
@@ -833,9 +843,12 @@ async function startServer() {
     
     // 确保响应是 JSON 格式
     if (!res.headersSent) {
-      res.status(err.status || 500).json({
-        error: err.message || "内部服务器错误",
-      });
+      const status = Number.isInteger(err?.status) && err.status >= 400 && err.status <= 599
+        ? err.status
+        : 500;
+      res.status(status).json(status >= 500
+        ? { error: "内部服务器错误", code: "INTERNAL_ERROR" }
+        : { error: err?.message || "请求处理失败" });
     }
   });
 

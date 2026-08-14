@@ -47,5 +47,16 @@ suite("Role Pack release evidence persistence", () => {
     });
     expect(await resolveRolePackReleaseEvidence({ rolePackId, evalSuiteVersion: "v1", assetSetFingerprint: secondFingerprint }))
       .toMatchObject({ verificationStatus: "verified", verificationLevel: "model_scenario" });
+
+    await persistRolePackRelease({
+      releaseId: `${rolePackId}@first`, rolePackId, evalSuiteVersion: "v1",
+      assetSetFingerprint: firstFingerprint, verificationLevel: "model_scenario", status: "verified",
+      contractReport: { status: "PASS", operation: "rollback" },
+      scenarioReport: { status: "PASS", operation: "rollback" },
+    });
+    expect(await resolveRolePackReleaseEvidence({ rolePackId, evalSuiteVersion: "v1", assetSetFingerprint: firstFingerprint }))
+      .toMatchObject({ verificationStatus: "verified", verificationLevel: "model_scenario" });
+    expect(await resolveRolePackReleaseEvidence({ rolePackId, evalSuiteVersion: "v1", assetSetFingerprint: secondFingerprint }))
+      .toMatchObject({ verificationStatus: "stale" });
   });
 });

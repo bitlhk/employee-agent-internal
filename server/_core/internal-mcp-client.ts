@@ -1,5 +1,6 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { internalMcpAudience, issueInternalRuntimeToken } from "./internal-runtime-token";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
@@ -19,17 +20,29 @@ export async function callInternalMcpTool(input: {
   adoptId: string;
   sessionId?: string;
   timeoutMs?: number;
+  runtimeId?: string;
 }): Promise<Record<string, unknown>> {
   const timeoutMs = Math.min(60_000, Math.max(1_000, Number(input.timeoutMs || 15_000)));
-  const transport = new StreamableHTTPClientTransport(internalMcpUrl(input.endpointUrl), {
-    requestInit: {
-      headers: {
-        "x-linggan-agent-id": input.agentId,
-        "x-agent-adopt-id": input.adoptId,
-        "x-jiuwen-channel-id": input.adoptId,
-        ...(input.sessionId ? { "x-linggan-session-id": input.sessionId } : {}),
-      },
-    },
+  const endpoint = internalMcpUrl(input.endpointUrl);
+  const audience = internalMcpAudience(endpoint.pathname);
+  const authenticatedFetch: typeof globalThis.fetch = async (request, init) => {
+    const issued = await issueInternalRuntimeToken({
+      runtimeId: input.runtimeId || "employee-agent",
+      agentId: input.agentId,
+      adoptId: input.adoptId,
+      audience,
+    });
+    const headers = new Headers(request instanceof Request ? request.headers : undefined);
+    new Headers(init?.headers).forEach((value, name) => headers.set(name, value));
+    headers.set("authorization", `Bearer ${issued.token}`);
+    headers.set("x-linggan-agent-id", input.agentId);
+    headers.set("x-agent-adopt-id", input.adoptId);
+    headers.set("x-jiuwen-channel-id", input.adoptId);
+    if (input.sessionId) headers.set("x-linggan-session-id", input.sessionId);
+    return await globalThis.fetch(request, { ...init, headers });
+  };
+  const transport = new StreamableHTTPClientTransport(endpoint, {
+    fetch: authenticatedFetch,
     reconnectionOptions: {
       maxReconnectionDelay: 1_000,
       initialReconnectionDelay: 250,

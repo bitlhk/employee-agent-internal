@@ -106,6 +106,24 @@ suite("governance runtime database invariants", () => {
     expect((await getGovernanceApproval(input.approvalId))?.status).toBe("consumed");
   });
 
+  it("does not let another user or adoption decide an approval", async () => {
+    const input = approvalInput(6);
+    await createGovernanceApproval(input);
+    await expect(decideGovernanceApproval({
+      approvalId: input.approvalId,
+      userId: input.userId + 1,
+      adoptId,
+      decision: "approved",
+    })).resolves.toBeNull();
+    await expect(decideGovernanceApproval({
+      approvalId: input.approvalId,
+      userId: input.userId,
+      adoptId: `${adoptId}-other`,
+      decision: "approved",
+    })).resolves.toBeNull();
+    expect((await getGovernanceApproval(input.approvalId))?.status).toBe("pending");
+  });
+
   it("expires stale approvals and releases the active binding", async () => {
     const input = approvalInput(4);
     input.expiresAt = new Date(Date.now() - 2_000);

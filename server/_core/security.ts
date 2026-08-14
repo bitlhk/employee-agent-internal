@@ -205,13 +205,14 @@ export function sanitizeObject<T extends Record<string, any>>(obj: T): Partial<T
 /**
  * 请求大小限制中间件
  */
-export function requestSizeLimiter(maxSize: number = 50 * 1024 * 1024) {
+export function requestSizeLimiter(maxSize: number | ((req: Request) => number) = 50 * 1024 * 1024) {
   return (req: Request, res: Response, next: NextFunction) => {
+    const resolvedMaxSize = typeof maxSize === "function" ? maxSize(req) : maxSize;
     const contentLength = req.headers["content-length"];
-    if (contentLength && parseInt(contentLength) > maxSize) {
+    if (contentLength && parseInt(contentLength) > resolvedMaxSize) {
       return res.status(413).json({
         error: "请求体过大",
-        maxSize: `${maxSize / 1024 / 1024}MB`,
+        maxSize: `${resolvedMaxSize / 1024 / 1024}MB`,
       });
     }
     next();

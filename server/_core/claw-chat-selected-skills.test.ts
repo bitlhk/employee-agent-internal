@@ -47,6 +47,13 @@ describe("selected skills chat context", () => {
     });
   });
 
+  it("treats an absent legacy selection as an empty explicit selection", () => {
+    expect(normalizeSelectedSkillIds(undefined, undefined)).toEqual({
+      ok: true,
+      skillIds: [],
+    });
+  });
+
   it("rejects oversized and invalid selections", () => {
     expect(normalizeSelectedSkillIds(["one", "two", "three", "four"])).toEqual({
       ok: false,
@@ -100,6 +107,46 @@ describe("selected skills chat context", () => {
       reason: "intent",
     });
     expect(selectAutomaticSkillMatch(skills, "今天天气怎么样")).toBeNull();
+  });
+
+  it("uses deterministic name, trigger, and description matches", () => {
+    const skill = (id: string, name: string, description: string) => ({
+      id,
+      enabled: true,
+      state: "ready",
+      sync: { runtimePath: `/workspace/skills/${id}` },
+      source: { displayName: name, description },
+    });
+
+    expect(selectAutomaticSkillMatch([
+      skill("previsit", "客户访前准备助手", "生成内部访前材料"),
+    ], "请使用客户访前准备助手")).toMatchObject({ reason: "name" });
+
+    expect(selectAutomaticSkillMatch([
+      skill("risk", "财富客户风险分析", "识别客户风险"),
+    ], "客户风险分析")).toMatchObject({ reason: "name" });
+
+    expect(selectAutomaticSkillMatch([
+      skill("policy", "专项作业", "触发词：保单检查、续期提醒"),
+    ], "请做保单检查")).toMatchObject({ reason: "trigger" });
+
+    expect(selectAutomaticSkillMatch([
+      skill("allocation", "组合作业", "用于整理客户资产配置建议"),
+    ], "资产配置建议")).toMatchObject({ reason: "description" });
+  });
+
+  it("ignores invalid and expired session affinity", () => {
+    const now = new Date("2026-08-05T10:00:00.000Z");
+    expect(selectAutomaticSkillMatch(sessionSkills, "继续", [{
+      skillId: "sales-coach",
+      useCount: 3,
+      lastSelectedAt: "invalid",
+    }], now)).toBeNull();
+    expect(selectAutomaticSkillMatch(sessionSkills, "继续", [{
+      skillId: "sales-coach",
+      useCount: 3,
+      lastSelectedAt: new Date("2026-08-03T09:00:00.000Z"),
+    }], now)).toBeNull();
   });
 
   it("does not auto-select a disabled or ambiguous skill", () => {

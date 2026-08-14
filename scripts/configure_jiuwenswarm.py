@@ -46,7 +46,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/platform-tools/mcp",
-            "headers": {"x-internal-key": "${INTERNAL_API_KEY}"},
+            "headers": {},
             "user_context": True,
             "timeout_s": 30,
         },
@@ -55,7 +55,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/custom-mcp/mcp",
-            "headers": {"x-internal-key": "${INTERNAL_API_KEY}"},
+            "headers": {},
             "user_context": True,
             "timeout_s": 65,
         },
@@ -64,7 +64,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/enterprise-mcp/mcp",
-            "headers": {"x-internal-key": "${INTERNAL_API_KEY}"},
+            "headers": {},
             "user_context": True,
             "timeout_s": 125,
         },
@@ -134,6 +134,11 @@ def main() -> int:
     internal_key = str(ea_env.get("INTERNAL_API_KEY") or "").strip()
     if not internal_key:
         raise SystemExit("EA INTERNAL_API_KEY is missing")
+    runtime_token_secret = str(ea_env.get("INTERNAL_RUNTIME_TOKEN_SECRET") or "").strip()
+    if len(runtime_token_secret.encode("utf-8")) < 32:
+        raise SystemExit("EA INTERNAL_RUNTIME_TOKEN_SECRET must contain at least 32 bytes")
+    runtime_token_ttl = str(ea_env.get("INTERNAL_RUNTIME_TOKEN_TTL_SECONDS") or "300").strip()
+    runtime_token_required = str(ea_env.get("INTERNAL_RUNTIME_TOKEN_REQUIRED") or "false").strip().lower()
 
     yaml = YAML()
     yaml.preserve_quotes = True
@@ -165,6 +170,9 @@ def main() -> int:
         runtime_env_path,
         {
             "INTERNAL_API_KEY": internal_key,
+            "INTERNAL_RUNTIME_TOKEN_SECRET": runtime_token_secret,
+            "INTERNAL_RUNTIME_TOKEN_TTL_SECONDS": runtime_token_ttl,
+            "INTERNAL_RUNTIME_TOKEN_REQUIRED": runtime_token_required,
             "WORKFORCE_AGENT_INTERNAL_BASE_URL": f"http://127.0.0.1:{args.port}",
             "JIUWENSWARM_DATA_DIR": str(config_path.parent.parent),
             "LINGGAN_CALLBACK_URL": f"http://127.0.0.1:{args.port}/api/internal/jiuwen/linggan/callback",

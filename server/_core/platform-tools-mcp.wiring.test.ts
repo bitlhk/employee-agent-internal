@@ -32,6 +32,9 @@ vi.mock("./helpers", () => ({
   resolveRuntimeAgentId: vi.fn(),
   resolveRuntimeWorkspaceByIds: vi.fn((adoptId: string) => `/workspace/${adoptId}`),
 }));
+vi.mock("./internal-runtime-request", () => ({
+  authorizeAndBindInternalRuntimeRequest: vi.fn(async () => true),
+}));
 vi.mock("./audit-events", () => ({ auditRequest: vi.fn(() => ({})), recordAuditBestEffort: vi.fn() }));
 vi.mock("./agent-memory", () => ({
   forgetAgentMemory: vi.fn(),

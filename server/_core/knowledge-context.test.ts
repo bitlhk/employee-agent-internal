@@ -256,6 +256,71 @@ describe("knowledge chat context", () => {
     expect(result.mode).toBe("auto");
   });
 
+  it("returns unavailable without retrieval when no accessible base is ready", async () => {
+    mocks.listAccessibleKnowledgeBases.mockResolvedValue([
+      { ...readyBase, status: "indexing" },
+    ]);
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [readyBase.publicId],
+      query: "根据制度说明差旅标准",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      context: "",
+      sources: [],
+      mode: "none",
+      retrieval: "unavailable",
+      candidateBaseCount: 0,
+    }));
+    expect(result.metrics).toEqual(expect.objectContaining({
+      queryCount: 0,
+      routedBaseCount: 0,
+    }));
+    expect(mocks.retrieveAcrossKnowledgeBases).not.toHaveBeenCalled();
+  });
+
+  it("returns governed retrieval metrics when a forced lookup has no relevant result", async () => {
+    mocks.retrieveAcrossKnowledgeBases.mockResolvedValue({
+      triggered: false,
+      retrieval: "hybrid",
+      metrics: {
+        knowledgeBaseCount: 1,
+        bm25MaxScore: 0.2,
+        bm25RelevantMaxScore: 0,
+        vectorMinDistance: 1.1,
+        queryCount: 2,
+        queryExpansion: "applied",
+        reranker: "rrf",
+        candidateExhausted: true,
+      },
+      results: [],
+    });
+
+    const result = await buildChatKnowledgeContext({
+      userId: 7,
+      roleTemplate: "wealth-manager",
+      requestedIds: [readyBase.publicId],
+      query: "根据制度说明不存在的事项",
+    });
+
+    expect(result).toEqual(expect.objectContaining({
+      context: "",
+      sources: [],
+      mode: "manual",
+      retrieval: "hybrid",
+    }));
+    expect(result.metrics).toEqual(expect.objectContaining({
+      queryCount: 2,
+      queryExpansion: "applied",
+      reranker: "rrf",
+      candidateExhausted: true,
+      routedBaseCount: 1,
+    }));
+  });
+
   it("strips expert handoff context and skips automatic retrieval for weather", async () => {
     const enterprise = { ...readyBase, id: 3, publicId: "kb_enterprise1", scope: "enterprise", isGlobal: true, name: "企业制度" };
     mocks.listAccessibleKnowledgeBases.mockResolvedValue([enterprise]);

@@ -30,6 +30,19 @@ release_require_command node
 release_require_command tar
 release_require_command sha256sum
 
+source_repository="${RELEASE_SOURCE_REPOSITORY:-}"
+if [[ -z "$source_repository" ]]; then
+  origin_url="$(git -C "$APP_ROOT" remote get-url origin 2>/dev/null || true)"
+  case "$origin_url" in
+    https://github.com/*) source_repository="${origin_url#https://github.com/}" ;;
+    git@github.com:*) source_repository="${origin_url#git@github.com:}" ;;
+    *) source_repository="" ;;
+  esac
+  source_repository="${source_repository%.git}"
+fi
+[[ "$source_repository" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+  || release_die "RELEASE_SOURCE_REPOSITORY must identify the GitHub owner/repository"
+
 git -C "$APP_ROOT" diff --quiet --ignore-submodules -- || release_die "worktree has unstaged changes"
 git -C "$APP_ROOT" diff --cached --quiet --ignore-submodules -- || release_die "worktree has staged changes"
 [[ -z "$(git -C "$APP_ROOT" ls-files --others --exclude-standard)" ]] || release_die "worktree has untracked files"
@@ -53,6 +66,7 @@ created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     --output release-manifest.json \
     --release-id "$RELEASE_ID" \
     --source-commit "$commit" \
+    --source-repository "$source_repository" \
     --created-at "$created_at"
 )
 
