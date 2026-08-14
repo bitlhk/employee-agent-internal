@@ -572,6 +572,38 @@ export const clawAdoptions = mysqlTable("claw_adoptions", {
 export type ClawAdoption = typeof clawAdoptions.$inferSelect;
 export type InsertClawAdoption = typeof clawAdoptions.$inferInsert;
 
+// Logical runtime placement for an adoption. Bindings never contain a worker
+// node address, so AgentServer pods can be rescheduled or scaled horizontally.
+export const runtimeAgentBindings = mysqlTable("runtime_agent_bindings", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  bindingId: varchar("binding_id", { length: 64 }).notNull(),
+  adoptionId: varchar("adoption_id", { length: 64 }).notNull(),
+  runtimeProfile: mysqlEnum("runtime_profile", ["standalone", "enterprise_canary", "enterprise"]).notNull(),
+  fallbackProfile: mysqlEnum("fallback_profile", ["standalone"]).default("standalone").notNull(),
+  gatewayTarget: varchar("gateway_target", { length: 64 }).notNull(),
+  runtimeGroupId: varchar("runtime_group_id", { length: 96 }).notNull(),
+  runtimeBotId: varchar("runtime_bot_id", { length: 96 }).notNull(),
+  runtimeUserId: varchar("runtime_user_id", { length: 128 }).notNull(),
+  serviceId: varchar("service_id", { length: 96 }).notNull(),
+  runtimeAgentId: varchar("runtime_agent_id", { length: 128 }).notNull(),
+  workspaceKey: varchar("workspace_key", { length: 128 }).notNull(),
+  assetSetFingerprint: varchar("asset_set_fingerprint", { length: 64 }),
+  bindingVersion: int("binding_version").default(1).notNull(),
+  status: mysqlEnum("status", ["pending", "ready", "degraded", "disabled"]).default("pending").notNull(),
+  validatedAt: timestamp("validated_at"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  bindingIdUnique: uniqueIndex("uk_runtime_agent_bindings_public_id").on(table.bindingId),
+  adoptionUnique: uniqueIndex("uk_runtime_agent_bindings_adoption").on(table.adoptionId),
+  profileStatusIdx: index("idx_runtime_agent_bindings_profile_status").on(table.runtimeProfile, table.status),
+  serviceIdx: index("idx_runtime_agent_bindings_service").on(table.gatewayTarget, table.serviceId),
+}));
+
+export type RuntimeAgentBinding = typeof runtimeAgentBindings.$inferSelect;
+export type InsertRuntimeAgentBinding = typeof runtimeAgentBindings.$inferInsert;
+
 /**
  * 灵感龙虾方案 - 领养生命周期事件日志
  */

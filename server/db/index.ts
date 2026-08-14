@@ -26,6 +26,7 @@ export * from "./cron-job-creations";
 export * from "./governance-approvals";
 export * from "./governance-demo";
 export * from "./runtime-principal";
+export * from "./runtime-agent-bindings";
 export * from "./role-pack-releases";
 export * from "./a2a-capability-intent-executions";
 export * from "./enterprise-assets";

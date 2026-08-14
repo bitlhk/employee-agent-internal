@@ -87,6 +87,8 @@ describe("selected skills chat context", () => {
     expect(manifest).toContain("selectedSkillCount: 2");
     expect(manifest.indexOf("fund-compare")).toBeLessThan(manifest.indexOf("portfolio-report"));
     expect(manifest).toContain("根据用户目标决定组合方式和执行顺序");
+    expect(manifest).toContain("不得再用 glob、list_files、find、bash");
+    expect(manifest).toContain("读取 SKILL.md 成功后应立即按其中任务路由调用已授权业务工具");
     expect(manifest).toContain("用户问题：先比较两只基金，再生成组合建议");
   });
 

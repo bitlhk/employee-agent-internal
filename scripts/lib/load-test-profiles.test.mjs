@@ -33,6 +33,21 @@ test("rejects duplicate identities and malformed credentials", () => {
   ]), /invalid cookie/);
 });
 
+test("accepts a 150-user training cohort and rejects oversized cohorts", () => {
+  const profiles = Array.from({ length: 150 }, (_, index) => ({
+    adoptId: `lgj-training${String(index + 1).padStart(3, "0")}`,
+    cookie: `session=${index + 1}`,
+  }));
+  assert.equal(normalizeLoadTestProfiles(profiles).length, 150);
+  assert.throws(
+    () => normalizeLoadTestProfiles(Array.from({ length: 201 }, (_, index) => ({
+      adoptId: `lgj-oversized${String(index + 1).padStart(3, "0")}`,
+      cookie: `session=${index + 1}`,
+    }))),
+    /more than 200/,
+  );
+});
+
 test("requires a private credential file", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "ea-load-profiles-"));
   try {

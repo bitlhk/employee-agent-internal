@@ -30,7 +30,7 @@ export function normalizeLoadTestProfiles(raw) {
   if (!Array.isArray(raw) || raw.length === 0) {
     throw new Error("Load-test profile file must contain a non-empty JSON array");
   }
-  if (raw.length > 100) throw new Error("Load-test profile file cannot contain more than 100 profiles");
+  if (raw.length > 200) throw new Error("Load-test profile file cannot contain more than 200 profiles");
   const profiles = raw.map(normalizeProfile);
   const unique = new Set(profiles.map((profile) => profile.adoptId));
   if (unique.size !== profiles.length) throw new Error("Load-test profile adoptIds must be unique");

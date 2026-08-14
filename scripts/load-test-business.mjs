@@ -17,14 +17,19 @@ const mutationOrigin = String(process.env.EA_BUSINESS_LOAD_TEST_ORIGIN || "").tr
 const stages = String(process.env.EA_BUSINESS_LOAD_TEST_STAGES || "5,10,20")
   .split(",")
   .map((value) => Number(value.trim()))
-  .filter((value) => Number.isInteger(value) && value > 0 && value <= 100);
+  .filter((value) => Number.isInteger(value) && value > 0 && value <= 200);
 const durationMs = Math.max(5_000, Number(process.env.EA_BUSINESS_LOAD_TEST_STAGE_SECONDS || 15) * 1000);
 const timeoutMs = Math.max(1_000, Number(process.env.EA_BUSINESS_LOAD_TEST_TIMEOUT_MS || 10_000));
+const prewarmEnabled = process.env.EA_BUSINESS_LOAD_TEST_PREWARM === "1";
+const prewarmConcurrency = Math.min(
+  30,
+  Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_PREWARM_CONCURRENCY || 10) || 10),
+);
 const outputDir = path.resolve(process.env.EA_BUSINESS_LOAD_TEST_OUTPUT_DIR || "data/load-tests");
 const chatEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_CHAT === "1";
-const chatRequests = Math.min(100, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS || 0) || 0));
+const chatRequests = Math.min(200, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_REQUESTS || 0) || 0));
 const chatConcurrency = Math.min(
-  100,
+  200,
   Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_CHAT_CONCURRENCY || Math.min(chatRequests || 1, 10)) || 1),
 );
 const chatMessage = String(
@@ -33,10 +38,14 @@ const chatMessage = String(
 ).slice(0, 1000);
 const chatModel = String(process.env.EA_BUSINESS_LOAD_TEST_CHAT_MODEL || "__auto").trim().slice(0, 120);
 const requireChatToolEvent = process.env.EA_BUSINESS_LOAD_TEST_REQUIRE_TOOL_EVENT === "1";
+const expectedToolFragments = String(process.env.EA_BUSINESS_LOAD_TEST_EXPECT_TOOL_FRAGMENTS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 const sandboxEnabled = process.env.EA_BUSINESS_LOAD_TEST_ENABLE_SANDBOX === "1";
-const sandboxRequests = Math.min(100, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_REQUESTS || 0) || 0));
+const sandboxRequests = Math.min(200, Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_REQUESTS || 0) || 0));
 const sandboxConcurrency = Math.min(
-  100,
+  200,
   Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_SANDBOX_CONCURRENCY || Math.min(sandboxRequests || 1, 5)) || 1),
 );
 const internalKey = String(process.env.EA_BUSINESS_LOAD_TEST_INTERNAL_KEY || "").trim();
@@ -73,6 +82,14 @@ const scenarios = [
   { name: "channel_capabilities", path: (profile) => `/api/claw/channels/capabilities?adoptId=${encodeURIComponent(profile.adoptId)}`, weight: 10 },
   { name: "knowledge_search", path: (profile) => trpcKnowledgeSearchPath(profile, knowledgeQuery), weight: 10, requiresKnowledge: true },
 ];
+const requestedScenarioNames = new Set(
+  String(process.env.EA_BUSINESS_LOAD_TEST_SCENARIOS || "")
+    .split(",").map((value) => value.trim()).filter(Boolean),
+);
+const activeScenarios = requestedScenarioNames.size > 0
+  ? scenarios.filter((scenario) => requestedScenarioNames.has(scenario.name))
+  : scenarios;
+if (!activeScenarios.length) throw new Error("EA_BUSINESS_LOAD_TEST_SCENARIOS did not match a known scenario");
 
 function weightedSchedule(items) {
   const totalWeight = items.reduce((total, item) => total + item.weight, 0);
@@ -89,14 +106,14 @@ function weightedSchedule(items) {
   });
 }
 
-const scenarioSchedule = weightedSchedule(scenarios);
+const scenarioSchedule = weightedSchedule(activeScenarios);
 
 function chooseScenario(sequence, profile) {
   for (let offset = 0; offset < scenarioSchedule.length; offset += 1) {
     const scenario = scenarioSchedule[(sequence + offset) % scenarioSchedule.length];
     if (!scenario.requiresKnowledge || profile.knowledgeBaseId) return scenario;
   }
-  return scenarios[0];
+  return activeScenarios[0];
 }
 
 function percentile(values, quantile) {
@@ -121,6 +138,81 @@ function latencySummary(items) {
     p95: Number(percentile(durations, 0.95).toFixed(1)),
     p99: Number(percentile(durations, 0.99).toFixed(1)),
     max: Number(Math.max(0, ...durations).toFixed(1)),
+  };
+}
+
+function parseSseEvents(body) {
+  const events = [];
+  for (const block of String(body || "").split(/\r?\n\r?\n/u)) {
+    const lines = block.split(/\r?\n/u);
+    const event = lines.find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
+    const data = lines.filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+    if (!data || data === "[DONE]") continue;
+    let payload = data;
+    try { payload = JSON.parse(data); } catch {}
+    events.push({ event, payload });
+  }
+  return events;
+}
+
+async function preflightProfile(profile, index) {
+  const startedAt = performance.now();
+  let status = 0;
+  let authenticated = false;
+  let error = "";
+  try {
+    const input = encodeURIComponent(JSON.stringify({ json: null }));
+    const response = await fetch(new URL(`/api/trpc/auth.me?input=${input}`, baseUrl), {
+      headers: { cookie: profile.cookie },
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    status = response.status;
+    const body = await response.text();
+    const parsed = JSON.parse(body);
+    const user = parsed?.result?.data?.json ?? parsed?.result?.data ?? null;
+    authenticated = Boolean(user?.id);
+    if (status < 200 || status >= 300) error = body.slice(0, 200);
+    else if (!authenticated) error = "session preflight returned no authenticated user";
+  } catch (caught) {
+    error = String(caught?.name || caught?.message || caught).slice(0, 200);
+  }
+  return {
+    index,
+    adoptId: profile.adoptId,
+    status,
+    authenticated,
+    durationMs: Number((performance.now() - startedAt).toFixed(1)),
+    error,
+  };
+}
+
+async function prewarmProfile(profile, index) {
+  const startedAt = performance.now();
+  const checks = [];
+  for (const scenario of scenarios.filter((item) => ["skill_registry", "mcp_status"].includes(item.name))) {
+    let status = 0;
+    let error = "";
+    try {
+      const response = await fetch(new URL(scenario.path(profile), baseUrl), {
+        headers: { cookie: profile.cookie },
+        redirect: "manual",
+        signal: AbortSignal.timeout(Math.max(timeoutMs, 60_000)),
+      });
+      status = response.status;
+      await response.arrayBuffer();
+      if (status < 200 || status >= 300) error = `HTTP ${status}`;
+    } catch (caught) {
+      error = String(caught?.name || caught?.message || caught).slice(0, 120);
+    }
+    checks.push({ scenario: scenario.name, status, error });
+  }
+  return {
+    index,
+    adoptId: profile.adoptId,
+    checks,
+    durationMs: Number((performance.now() - startedAt).toFixed(1)),
+    error: checks.find((check) => check.error)?.error || "",
   };
 }
 
@@ -166,7 +258,7 @@ async function runReadStage(concurrency) {
   });
   await Promise.all(workers);
 
-  const errors = samples.filter((sample) => sample.error || sample.status < 200 || sample.status >= 400);
+  const errors = samples.filter((sample) => sample.error || sample.status < 200 || sample.status >= 300);
   const byScenario = Object.groupBy(samples, (sample) => sample.scenario);
   return {
     concurrency,
@@ -181,6 +273,7 @@ async function runReadStage(concurrency) {
     ),
     statusCounts: countBy(samples, (sample) => sample.status || sample.error || "unknown"),
     scenarioCounts: countBy(samples, (sample) => sample.scenario),
+    scenarioErrorCounts: countBy(errors, (sample) => sample.scenario),
   };
 }
 
@@ -198,6 +291,7 @@ async function runChatSmoke(index, profile) {
   let firstByteMs = 0;
   let firstToolEventMs = 0;
   let selectedModel = "";
+  let toolNames = [];
   try {
     const response = await fetch(new URL("/api/claw/chat-stream", baseUrl), {
       method: "POST",
@@ -238,12 +332,25 @@ async function runChatSmoke(index, profile) {
     completed = body.includes("data: [DONE]");
     observedToolEvent = body.includes("event: tool_call");
     selectedModel = body.match(/"__model_selected"\s*:\s*"([^"]+)"/)?.[1] || "";
+    const events = parseSseEvents(body);
+    toolNames = Array.from(new Set(events
+      .filter((event) => event.event === "tool_call")
+      .map((event) => String(event.payload?.name || "").trim())
+      .filter(Boolean)));
+    const runtimeError = events.find((event) => event.event === "error");
     if (status < 200 || status >= 400) {
       error = body.slice(0, 200);
     } else if (!completed) {
       error = "chat stream ended without completion marker";
+    } else if (runtimeError) {
+      error = `chat stream emitted an error event: ${JSON.stringify(runtimeError.payload).slice(0, 160)}`;
     } else if (requireChatToolEvent && !observedToolEvent) {
       error = "chat stream completed without a tool event";
+    } else {
+      const missing = expectedToolFragments.filter(
+        (fragment) => !toolNames.some((toolName) => toolName.includes(fragment)),
+      );
+      if (missing.length > 0) error = `chat stream missed expected tools: ${missing.join(", ")}`;
     }
   } catch (caught) {
     error = String(caught?.name || caught?.message || caught).slice(0, 200);
@@ -258,6 +365,7 @@ async function runChatSmoke(index, profile) {
     completed,
     observedToolEvent,
     selectedModel,
+    toolNames,
     error,
   };
 }
@@ -307,10 +415,26 @@ const report = {
   mode: "authenticated-multi-user-business",
   profileCount: profiles.length,
   profilesWithKnowledge: profiles.filter((profile) => profile.knowledgeBaseId).length,
+  profilePreflight: [],
+  profilePrewarm: [],
   stages: [],
   chatSmoke: [],
   sandboxSmoke: [],
 };
+
+report.profilePreflight = await runBoundedBatch(profiles.length, Math.min(30, profiles.length), async (offset) => (
+  preflightProfile(profiles[offset], offset + 1)
+));
+const failedPreflight = report.profilePreflight.filter((sample) => sample.error);
+console.log(`profile preflight=${profiles.length} authenticated=${profiles.length - failedPreflight.length} failed=${failedPreflight.length}`);
+
+if (prewarmEnabled && failedPreflight.length === 0) {
+  report.profilePrewarm = await runBoundedBatch(profiles.length, prewarmConcurrency, async (offset) => (
+    prewarmProfile(profiles[offset], offset + 1)
+  ));
+  const failed = report.profilePrewarm.filter((sample) => sample.error);
+  console.log(`profile prewarm=${profiles.length} ready=${profiles.length - failed.length} failed=${failed.length}`);
+}
 
 for (const concurrency of stages) {
   const result = await runReadStage(concurrency);
@@ -327,6 +451,19 @@ report.chatSmoke = await runBoundedBatch(chatRequests, chatConcurrency, async (o
 });
 report.chatModel = chatModel;
 report.chatModelDistribution = countBy(report.chatSmoke, (sample) => sample.selectedModel || "unknown");
+report.chatLatencyMs = latencySummary(report.chatSmoke);
+report.chatFirstByteMs = latencySummary(
+  report.chatSmoke.map((sample) => ({ durationMs: sample.firstByteMs })),
+);
+report.chatFirstToolEventMs = latencySummary(
+  report.chatSmoke
+    .filter((sample) => sample.firstToolEventMs > 0)
+    .map((sample) => ({ durationMs: sample.firstToolEventMs })),
+);
+report.chatToolDistribution = countBy(
+  report.chatSmoke.flatMap((sample) => sample.toolNames),
+  (toolName) => toolName,
+);
 
 report.sandboxSmoke = await runBoundedBatch(sandboxRequests, sandboxConcurrency, async (offset) => {
   const index = offset + 1;
@@ -342,12 +479,15 @@ const failedStages = report.stages.filter(
     || stage.latencyMs.p95 > maxP95Ms
   ),
 );
+const failedPrewarm = report.profilePrewarm.filter((sample) => sample.error);
 const failedChat = report.chatSmoke.filter((sample) => sample.error);
 const failedSandbox = report.sandboxSmoke.filter((sample) => sample.error);
 report.acceptance = {
-  passed: failedStages.length === 0 && failedChat.length === 0 && failedSandbox.length === 0,
+  passed: failedPreflight.length === 0 && failedPrewarm.length === 0 && failedStages.length === 0 && failedChat.length === 0 && failedSandbox.length === 0,
   maxErrorRate,
   maxP95Ms,
+  failedProfilePreflight: failedPreflight.map((sample) => sample.index),
+  failedProfilePrewarm: failedPrewarm.map((sample) => sample.index),
   failedStageConcurrencies: failedStages.map((stage) => stage.concurrency),
   failedChatRequests: failedChat.map((sample) => sample.index),
   failedSandboxRequests: failedSandbox.map((sample) => sample.index),

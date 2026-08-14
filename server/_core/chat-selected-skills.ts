@@ -209,7 +209,8 @@ export function buildSelectedSkillsManifest(
     manual
       ? "要求：本轮优先使用用户选择的技能；根据用户目标决定组合方式和执行顺序，不要搜索或安装外部技能。"
       : "要求：用户请求与该技能高度匹配，本轮优先加载并使用该技能；不要搜索或安装外部技能。",
-    "请按需加载各 selectedSkillFile 对应的 SKILL.md，并只在需要时读取相关 references/scripts/examples；不要一次性加载无关材料。",
+    "请仅按平台给出的 selectedSkillFile 精确路径读取对应 SKILL.md；路径已由平台校验，不得再用 glob、list_files、find、bash 或其他工具搜索、定位或安装已选技能。",
+    "读取 SKILL.md 成功后应立即按其中任务路由调用已授权业务工具，并只在明确需要时读取该技能目录内的 references/scripts/examples；不要一次性加载无关材料。",
     "如果用户输入已经足够启动技能，请直接进入执行流程；如果缺少必要参数，再简短追问。",
     "",
     `用户问题：${userMessage}`,

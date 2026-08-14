@@ -40,8 +40,16 @@ describe("enterprise MCP workload identity", () => {
   });
 
   it("creates stable opaque tenant ids", () => {
+    process.env.EA_TENANCY_MODE = "legacy";
     expect(enterpriseMcpTenantId("Example Bank", 1)).toBe(enterpriseMcpTenantId(" example bank ", 9));
     expect(enterpriseMcpTenantId(null, 1)).not.toBe(enterpriseMcpTenantId(null, 2));
+  });
+
+  it("uses the configured Linggan Finance tenant in demo mode", () => {
+    process.env.EA_TENANCY_MODE = "demo_single_org";
+    process.env.EA_DEMO_TENANT_ID = "tn_linggan_finance";
+    expect(enterpriseMcpTenantId("Company A", 1)).toBe("tn_linggan_finance");
+    expect(enterpriseMcpTenantId("Company B", 2)).toBe("tn_linggan_finance");
   });
 
   it("issues a short lived ES256 token verifiable by JWKS", async () => {

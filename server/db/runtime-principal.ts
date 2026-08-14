@@ -1,11 +1,11 @@
-import { and, eq } from "drizzle-orm";
-import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
 import {
   runtimeAuthorizationSnapshots,
   runtimeOrganizationMemberships,
   runtimeOrganizations,
 } from "../../drizzle/schema";
 import { governanceFingerprint } from "../_core/governance/contracts";
+import { resolveRuntimeTenantBinding } from "../_core/governance/runtime-tenancy";
 import { getDb } from "./connection";
 
 export type AuthorizationSnapshotInput = {
@@ -30,14 +30,6 @@ function stableId(prefix: string, value: unknown, length = 24): string {
   return `${prefix}_${governanceFingerprint(value).slice(0, length)}`;
 }
 
-function stableSourceId(prefix: string, source: string): string {
-  return `${prefix}_${createHash("sha256").update(source).digest("hex").slice(0, 24)}`;
-}
-
-function normalizeOrganization(value: string | null | undefined): string {
-  return String(value || "").trim().replace(/\s+/gu, " ");
-}
-
 function normalizeGroupIds(values: Array<string | number> | undefined): string[] {
   return Array.from(new Set((values || [])
     .map(value => String(value).trim())
@@ -51,34 +43,35 @@ export async function resolveOrCreateAuthorizationSnapshot(
   const database = await getDb();
   if (!database) throw new Error("Database not available");
 
-  const [existingMembership] = await database
+  const binding = resolveRuntimeTenantBinding({
+    userId: input.userId,
+    organizationName: input.organizationName,
+  });
+  const memberships = await database
     .select()
     .from(runtimeOrganizationMemberships)
     .where(eq(runtimeOrganizationMemberships.userId, input.userId))
-    .limit(1);
+    .limit(20);
+  const existingMembership = binding.mode === "demo_single_org"
+    ? memberships.find(membership => membership.organizationId === binding.organizationId)
+    : memberships[0];
   if (existingMembership?.status === "revoked") {
     throw new Error("Runtime organization membership is revoked");
   }
 
-  const organizationName = normalizeOrganization(input.organizationName);
-  const personal = !organizationName;
-  const organizationSeed = personal
-    ? `personal-user:${input.userId}`
-    : organizationName.toLowerCase();
   const organizationId = existingMembership?.organizationId
-    || stableSourceId(personal ? "org_personal" : "org", organizationSeed);
-  const tenantId = stableSourceId("tn", organizationSeed);
+    || binding.organizationId;
   const groupIds = normalizeGroupIds(input.groupIds);
 
   if (!existingMembership) {
     await database.insert(runtimeOrganizations).values({
       organizationId,
-      tenantId,
-      displayName: organizationName || `Personal workspace ${input.userId}`,
-      identitySource: personal ? "personal" : "legacy",
-      externalSubject: personal ? `user:${input.userId}` : organizationSeed,
+      tenantId: binding.tenantId,
+      displayName: binding.displayName,
+      identitySource: binding.identitySource,
+      externalSubject: binding.externalSubject,
     }).onDuplicateKeyUpdate({
-      set: { displayName: organizationName || `Personal workspace ${input.userId}` },
+      set: { displayName: binding.displayName },
     });
 
     await database.insert(runtimeOrganizationMemberships).values({

@@ -30,11 +30,21 @@ import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./j
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
+import {
+  buildEnterpriseChatParams,
+  buildEnterprisePermissionAnswerParams,
+  type EnterpriseRuntimeRoute,
+} from "./enterprise-runtime-adapter";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 
-function gatewayWsUrl(): string {
-  return String(process.env.JIUWENCLAW_GATEWAY_WS_URL || DEFAULT_GATEWAY_WS_URL);
+function gatewayWsUrl(route?: EnterpriseRuntimeRoute): string {
+  return route?.wsUrl || String(process.env.JIUWENCLAW_GATEWAY_WS_URL || DEFAULT_GATEWAY_WS_URL);
+}
+
+function wsOrigin(rawUrl: string): string {
+  const url = new URL(rawUrl);
+  return `${url.protocol === "wss:" ? "https:" : "http:"}//${url.host}`;
 }
 
 function parseJsonFrame(raw: RawData): any | null {
@@ -329,6 +339,7 @@ export async function forwardToJiuwenGateway(
   message: string,
   res: Response,
   opts: JiuwenForwardOptions = {},
+  enterpriseRoute?: EnterpriseRuntimeRoute,
 ): Promise<void> {
   initSse(res);
 
@@ -342,27 +353,38 @@ export async function forwardToJiuwenGateway(
   }
 
 
-  if (opts.model) writeSseData(res, { __model_selected: opts.model });
+  if (enterpriseRoute) {
+    writeSseData(res, { __model_selected: String(process.env.EA_ENTERPRISE_RUNTIME_MODEL_ALIAS || "ea-auto") });
+  } else if (opts.model) {
+    writeSseData(res, { __model_selected: opts.model });
+  }
   if (opts.knowledgeSources?.length) writeSseData(res, { __knowledge_sources: opts.knowledgeSources });
 
-  const wsUrl = gatewayWsUrl();
-  const serviceId = buildJiuwenServiceId();
-  const agentId = buildJiuwenAgentId(claw);
+  const wsUrl = gatewayWsUrl(enterpriseRoute);
+  const serviceId = enterpriseRoute?.binding.serviceId || buildJiuwenServiceId();
+  const agentId = enterpriseRoute?.binding.runtimeAgentId || buildJiuwenAgentId(claw);
   const sessionId = buildJiuwenSessionId(claw, agentId, opts);
   const channelId = claw.adoptId;
   const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
   const requestId = `linggan-gateway-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const params = buildGatewayChatParams({
-    serviceId,
-    agentId,
-    sessionId,
-    channelId,
-    message,
-    workspaceDir,
-    model: opts.model,
-    runtimeMode: opts.runtimeMode,
-    selectedSkills: opts.selectedSkills,
-  });
+  const params = enterpriseRoute
+    ? buildEnterpriseChatParams({
+        route: enterpriseRoute,
+        sessionId,
+        message,
+        runtimeMode: opts.runtimeMode,
+      })
+    : buildGatewayChatParams({
+        serviceId,
+        agentId,
+        sessionId,
+        channelId,
+        message,
+        workspaceDir,
+        model: opts.model,
+        runtimeMode: opts.runtimeMode,
+        selectedSkills: opts.selectedSkills,
+      });
   const knowledgeCitationIndexes = (opts.knowledgeSources || [])
     .map((source) => Number(source?.index || 0))
     .filter((index) => Number.isInteger(index) && index > 0);
@@ -387,6 +409,8 @@ export async function forwardToJiuwenGateway(
     userId: claw.userId,
     clientRunId: opts.clientRunId || "",
     model: opts.model || "",
+    runtimeProfile: enterpriseRoute?.profile || "standalone",
+    gatewayTarget: enterpriseRoute?.gatewayTarget || "",
     wsUrl,
     ...privateMessageLogFields(message),
   });
@@ -402,8 +426,9 @@ export async function forwardToJiuwenGateway(
     let settled = false;
     let clientClosed = false;
     let requestSent = false;
+    let connectionAckTimer: NodeJS.Timeout | null = null;
     const timeoutMs = Math.max(30_000, Number(process.env.JIUWENCLAW_GATEWAY_CHAT_TIMEOUT_MS || process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || 180_000) || 180_000);
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
     const settle = (reason: string) => {
       if (settled) return;
       settled = true;
@@ -417,6 +442,7 @@ export async function forwardToJiuwenGateway(
             : "error",
       );
       clearTimeout(timeout);
+      if (connectionAckTimer) clearTimeout(connectionAckTimer);
       for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
         generatedFiles.set(file.path, file);
         if (!emittedFilePaths.has(file.path) && !clientClosed) {
@@ -505,12 +531,28 @@ export async function forwardToJiuwenGateway(
     });
     ws.on("open", () => {
       if (requestSent) return;
+      if (enterpriseRoute) {
+        connectionAckTimer = setTimeout(() => {
+          if (requestSent || ws.readyState !== WebSocket.OPEN) return;
+          requestSent = true;
+          sendGatewayRequest(ws, "chat.send", requestId, params);
+        }, 2_000);
+        return;
+      }
       requestSent = true;
       sendGatewayRequest(ws, "chat.send", requestId, params);
     });
     ws.on("message", async (raw) => {
       const frame = parseJsonFrame(raw);
       if (!frame || settled) return;
+      if (enterpriseRoute && frame.type === "event" && frame.event === "connection.ack") {
+        if (connectionAckTimer) clearTimeout(connectionAckTimer);
+        if (!requestSent && ws.readyState === WebSocket.OPEN) {
+          requestSent = true;
+          sendGatewayRequest(ws, "chat.send", requestId, params);
+        }
+        return;
+      }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {
         writeSseData(res, { __stream_error: true, error: String(frame.error || "JiuwenSwarm gateway 请求失败") });
         settle("request-error");
@@ -590,29 +632,40 @@ export async function answerJiuwenGatewayPermission(
     epochLabel?: unknown;
     runtimeMode?: unknown;
   },
+  enterpriseRoute?: EnterpriseRuntimeRoute,
 ): Promise<{ ok: true; text: string } | { ok: false; error: string; text?: string }> {
   const permissionRequestId = String(args.permissionRequestId || "").trim();
   if (!permissionRequestId) return { ok: false, error: "permissionRequestId required" };
 
-  const wsUrl = gatewayWsUrl();
-  const serviceId = buildJiuwenServiceId();
-  const agentId = buildJiuwenAgentId(claw);
+  const wsUrl = gatewayWsUrl(enterpriseRoute);
+  const serviceId = enterpriseRoute?.binding.serviceId || buildJiuwenServiceId();
+  const agentId = enterpriseRoute?.binding.runtimeAgentId || buildJiuwenAgentId(claw);
   const sessionId = buildJiuwenSessionId(claw, agentId, args);
   const channelId = claw.adoptId;
   const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
   const requestId = `linggan-gateway-answer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  const params = buildGatewayPermissionAnswerParams({
-    serviceId,
-    agentId,
-    sessionId,
-    channelId,
-    workspaceDir,
-    permissionRequestId,
-    selectedOption: args.selectedOption,
-    answers: args.answers,
-    source: args.source,
-    runtimeMode: args.runtimeMode,
-  });
+  const params = enterpriseRoute
+    ? buildEnterprisePermissionAnswerParams({
+        route: enterpriseRoute,
+        sessionId,
+        permissionRequestId,
+        selectedOption: args.selectedOption,
+        answers: args.answers,
+        source: args.source,
+        runtimeMode: args.runtimeMode,
+      })
+    : buildGatewayPermissionAnswerParams({
+        serviceId,
+        agentId,
+        sessionId,
+        channelId,
+        workspaceDir,
+        permissionRequestId,
+        selectedOption: args.selectedOption,
+        answers: args.answers,
+        source: args.source,
+        runtimeMode: args.runtimeMode,
+      });
 
   appendLogAsync("jiuwenclaw-exec.log", {
     ts: new Date().toISOString(),
@@ -629,19 +682,23 @@ export async function answerJiuwenGatewayPermission(
     answerCount: args.answers?.length || 1,
     source: args.source || "permission_interrupt",
     wsUrl,
+    runtimeProfile: enterpriseRoute?.profile || "standalone",
+    gatewayTarget: enterpriseRoute?.gatewayTarget || "",
   });
 
   return await new Promise((resolve) => {
     let settled = false;
     let requestSent = false;
+    let connectionAckTimer: NodeJS.Timeout | null = null;
     let text = "";
     let sawDone = false;
     const timeoutMs = Math.max(15_000, Number(process.env.JIUWENCLAW_GATEWAY_PERMISSION_TIMEOUT_MS || process.env.JIUWENCLAW_PERMISSION_TIMEOUT_MS || 180_000) || 180_000);
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
     const settle = (result: { ok: true; text: string } | { ok: false; error: string; text?: string }) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (connectionAckTimer) clearTimeout(connectionAckTimer);
       appendLogAsync("jiuwenclaw-exec.log", {
         ts: new Date().toISOString(),
         event: result.ok ? "gateway_permission_answer_complete" : "gateway_permission_answer_failed",
@@ -662,12 +719,28 @@ export async function answerJiuwenGatewayPermission(
     }, timeoutMs);
     ws.on("open", () => {
       if (requestSent) return;
+      if (enterpriseRoute) {
+        connectionAckTimer = setTimeout(() => {
+          if (requestSent || ws.readyState !== WebSocket.OPEN) return;
+          requestSent = true;
+          sendGatewayRequest(ws, "chat.send", requestId, params);
+        }, 2_000);
+        return;
+      }
       requestSent = true;
       sendGatewayRequest(ws, "chat.send", requestId, params);
     });
     ws.on("message", async (raw) => {
       const frame = parseJsonFrame(raw);
       if (!frame || settled) return;
+      if (enterpriseRoute && frame.type === "event" && frame.event === "connection.ack") {
+        if (connectionAckTimer) clearTimeout(connectionAckTimer);
+        if (!requestSent && ws.readyState === WebSocket.OPEN) {
+          requestSent = true;
+          sendGatewayRequest(ws, "chat.send", requestId, params);
+        }
+        return;
+      }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {
         settle({ ok: false, error: String(frame.error || "JiuwenSwarm gateway 权限确认失败"), text });
         return;

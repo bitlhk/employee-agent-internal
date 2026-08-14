@@ -1,7 +1,8 @@
-import { createHash, createPublicKey } from "node:crypto";
+import { createPublicKey } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { exportJWK, importPKCS8, SignJWT, type JWK } from "jose";
 import { resolvePublicBaseUrl } from "./public-base-url";
+import { resolveRuntimeTenantBinding } from "./governance/runtime-tenancy";
 
 const DEFAULT_TTL_SECONDS = 120;
 const MIN_TTL_SECONDS = 30;
@@ -127,8 +128,7 @@ async function publicJwks(config: IdentityConfig): Promise<JWK[]> {
 }
 
 export function enterpriseMcpTenantId(organization: string | null | undefined, userId: number): string {
-  const source = String(organization || "").trim().toLowerCase() || `personal-user:${userId}`;
-  return `tn_${createHash("sha256").update(source).digest("hex").slice(0, 24)}`;
+  return resolveRuntimeTenantBinding({ userId, organizationName: organization }).tenantId;
 }
 
 export async function enterpriseMcpIdentityStatus(): Promise<{

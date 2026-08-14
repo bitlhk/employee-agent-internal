@@ -47,6 +47,7 @@ import {
   type JiuwenPermissionRequest,
 } from "./jiuwen-permission-events";
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
+import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
 export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
@@ -130,6 +131,31 @@ export function isJiuwenClawRuntimeEnabled(): boolean {
 
 function useJiuwenGatewayTransport(): boolean {
   return String(process.env.JIUWENCLAW_CHAT_TRANSPORT || "").trim().toLowerCase() === "gateway";
+}
+
+async function readyEnterpriseRuntimeRoute(adoptionId: string): Promise<EnterpriseRuntimeRoute | null> {
+  if (String(process.env.EA_ENTERPRISE_RUNTIME_ENABLED || "").trim().toLowerCase() !== "true") {
+    return null;
+  }
+  try {
+    const { resolveEnterpriseRuntimeRoute } = await import("./enterprise-runtime-adapter");
+    const decision = await resolveEnterpriseRuntimeRoute(adoptionId);
+    if (decision.target === "enterprise") return decision.route;
+    appendLogAsync("jiuwenclaw-exec.log", {
+      ts: new Date().toISOString(),
+      event: "enterprise_runtime_fallback",
+      adoptId: adoptionId,
+      reason: decision.reason,
+    });
+  } catch (error) {
+    appendLogAsync("jiuwenclaw-exec.log", {
+      ts: new Date().toISOString(),
+      event: "enterprise_runtime_route_failed",
+      adoptId: adoptionId,
+      error: String((error as Error)?.message || error).slice(0, 500),
+    });
+  }
+  return null;
 }
 
 function sanitizeRuntimeId(value: unknown, fallback: string, maxLen = 96): string {
@@ -831,6 +857,11 @@ export async function forwardToJiuwenClaw(
     res.status(503).json({ error: "jiuwenclaw runtime is disabled" });
     return;
   }
+  const enterpriseRoute = await readyEnterpriseRuntimeRoute(claw.adoptId);
+  if (enterpriseRoute) {
+    const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
+    return forwardToJiuwenGateway(claw, message, res, opts, enterpriseRoute);
+  }
   if (useJiuwenGatewayTransport()) {
     const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
     return forwardToJiuwenGateway(claw, message, res, opts);
@@ -1445,6 +1476,11 @@ export async function answerJiuwenPermission(
 ): Promise<{ ok: true; text: string } | { ok: false; error: string; text?: string }> {
   if (!runtimeEnabled()) {
     return { ok: false, error: "jiuwenclaw runtime is disabled" };
+  }
+  const enterpriseRoute = await readyEnterpriseRuntimeRoute(claw.adoptId);
+  if (enterpriseRoute) {
+    const { answerJiuwenGatewayPermission } = await import("./jiuwenswarm-gateway-client");
+    return answerJiuwenGatewayPermission(claw, args, enterpriseRoute);
   }
   if (useJiuwenGatewayTransport()) {
     const { answerJiuwenGatewayPermission } = await import("./jiuwenswarm-gateway-client");
