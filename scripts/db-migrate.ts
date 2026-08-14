@@ -213,14 +213,54 @@ async function inspectHistory(connection: Connection, requireComplete: boolean):
   return { applied: rows.length, pending };
 }
 
+async function adoptCurrentSchema(connection: Connection): Promise<void> {
+  const { contract, checksum } = loadBaseline();
+  await validateBaseline(connection, contract);
+  await ensureMigrationTable(connection);
+
+  const [rows] = await connection.query<Array<{ count: number } & mysql.RowDataPacket>>(
+    `SELECT COUNT(*) AS count FROM \`${migrationsTable}\``,
+  );
+  if (Number(rows[0]?.count || 0) !== 0) {
+    throw new Error("current schema adoption requires an empty managed migration history");
+  }
+
+  const migrations = readMigrationFiles({ migrationsFolder });
+  const marker = `baseline:${contract.id}:${checksum}`;
+  await connection.beginTransaction();
+  try {
+    await connection.query(
+      `INSERT INTO \`${migrationsTable}\` (hash, created_at) VALUES (?, 0)`,
+      [marker],
+    );
+    for (const migration of migrations) {
+      await connection.query(
+        `INSERT INTO \`${migrationsTable}\` (hash, created_at) VALUES (?, ?)`,
+        [migration.hash, migration.folderMillis],
+      );
+    }
+    await connection.commit();
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  }
+
+  const adopted = await inspectHistory(connection, true);
+  console.log(`current schema adopted; applied=${adopted.applied} pending=${adopted.pending}`);
+}
+
 async function main(): Promise<void> {
   const mode = String(process.argv[2] || "apply");
-  if (!new Set(["apply", "check", "status"]).has(mode)) {
-    throw new Error("usage: db-migrate.ts [apply|check|status]");
+  if (!new Set(["apply", "check", "status", "adopt-current"]).has(mode)) {
+    throw new Error("usage: db-migrate.ts [apply|check|status|adopt-current]");
   }
   const connection = await mysql.createConnection({ uri: databaseUrl(), multipleStatements: false });
   try {
     await acquireLock(connection);
+    if (mode === "adopt-current") {
+      await adoptCurrentSchema(connection);
+      return;
+    }
     const tablePresent = await migrationTableExists(connection);
     if (!tablePresent && mode !== "apply") {
       await validateBaseline(connection, loadBaseline().contract);

@@ -65,7 +65,7 @@ jobs:
         run: |
           node -e "require('mysql2/promise').createConnection('mysql://root:ci-root-password@127.0.0.1:3306/mysql').then(async c => { await c.query('CREATE DATABASE employee_agent_upgrade CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'); await c.end(); })"
           pnpm exec drizzle-kit push --force
-          pnpm db:migrate
+          pnpm db:migrate:adopt
           pnpm db:migrate:check
 
       - name: Reject incompatible existing database
@@ -96,7 +96,7 @@ jobs:
           pnpm exec drizzle-kit push --force
           node -e "require('mysql2/promise').createConnection(process.env.DATABASE_URL).then(async c => { await c.query('ALTER TABLE lx_coop_user_hidden DROP COLUMN created_at'); await c.end(); })"
           pnpm db:baseline:repair
-          pnpm db:migrate
+          pnpm db:migrate:adopt
           pnpm db:migrate:check
 
       - name: Release and rollback flow

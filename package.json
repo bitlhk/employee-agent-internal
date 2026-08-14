@@ -35,6 +35,7 @@
     "db:deploy": "tsx scripts/db-deploy.ts",
     "db:baseline:repair": "tsx scripts/db-baseline-repair.ts",
     "db:migrate": "tsx scripts/db-migrate.ts apply",
+    "db:migrate:adopt": "tsx scripts/db-migrate.ts adopt-current",
     "db:migrate:check": "tsx scripts/db-migrate.ts check",
     "db:migrate:status": "tsx scripts/db-migrate.ts status",
     "release:build": "bash scripts/build-release.sh",

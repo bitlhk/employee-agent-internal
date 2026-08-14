@@ -20,6 +20,7 @@ function run(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<v
 async function main(): Promise<void> {
   const url = migrationUrl();
   const connection = await mysql.createConnection(url);
+  let initializedFromCurrentSchema = false;
   try {
     const [lockRows] = await connection.query<Array<{ acquired: number } & mysql.RowDataPacket>>(
       "SELECT GET_LOCK('employee_agent_schema_bootstrap', 60) AS acquired",
@@ -40,6 +41,7 @@ async function main(): Promise<void> {
     const env = { ...process.env, DATABASE_URL: url, DATABASE_MIGRATION_URL: url };
     if (domainTableCount === 0) {
       await run("pnpm", ["exec", "drizzle-kit", "push", "--force"], env);
+      initializedFromCurrentSchema = true;
     } else if (!hasUsersTable) {
       throw new Error("database is not empty and does not contain the Employee Agent users table");
     }
@@ -49,7 +51,11 @@ async function main(): Promise<void> {
   }
 
   const env = { ...process.env, DATABASE_URL: url, DATABASE_MIGRATION_URL: url };
-  await run("pnpm", ["exec", "tsx", "scripts/db-migrate.ts", "apply"], env);
+  await run(
+    "pnpm",
+    ["exec", "tsx", "scripts/db-migrate.ts", initializedFromCurrentSchema ? "adopt-current" : "apply"],
+    env,
+  );
 }
 
 main().catch((error) => {
