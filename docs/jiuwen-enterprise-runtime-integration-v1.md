@@ -357,6 +357,50 @@ Pre-warm enough AgentServer capacity before the session. The current dynamic
 pool's cold start and model quota behavior are not sufficient evidence for 150
 simultaneous generations.
 
+Run the enterprise Gateway/AgentServer lane separately from the EA HTTP and
+authenticated business-read profiles:
+
+```bash
+EA_ENTERPRISE_LOAD_TEST_WS_URL=ws://127.0.0.1:19002/ws \
+EA_ENTERPRISE_LOAD_TEST_STAGES=2,5,10 \
+EA_ENTERPRISE_LOAD_TEST_GROUPS=1 \
+pnpm load:enterprise-runtime
+```
+
+Increase `EA_ENTERPRISE_LOAD_TEST_GROUPS` only after every target node has the
+same AgentServer image. One group measures per-AgentServer concurrency; several
+groups also exercise dynamic service scheduling. The report records success,
+TTFT and total latency per request under `data/load-tests/`.
+
+The first two-node compatibility rehearsal proved logical user isolation even
+when two users intentionally reused the same session ID, and recovered the
+same user's conversation after deleting and recreating an AgentServer Pod.
+However, the PoC pods currently mount the same RWX PVC root. Application-level
+workspace keys separate users, but a compromised pod can enumerate other
+workspace directories. Mock-data training may proceed with this limitation;
+bank production requires storage-level isolation or a brokered file service.
+
+### 7.1 Two-node PoC baseline (2026-08-15)
+
+Minimal no-tool chats were executed against the enterprise Gateway after both
+Shanghai nodes received the same AgentServer overlay image:
+
+| Concurrent chats | Service groups | Success | TTFT P95 | Total P95 |
+| ---: | ---: | ---: | ---: | ---: |
+| 2 | 1 | 2/2 | 10.2 s | 10.4 s |
+| 5 | 1 | 5/5 | 11.6 s | 11.8 s |
+| 10 | 1 | 10/10 | 69.0 s | 69.2 s |
+| 10 | 2 | 10/10 | 35.4 s | 35.6 s |
+| 10 | 4 | 10/10 | 20.5 s | 20.7 s |
+
+Node CPU and memory remained low while the one-group 10-chat stage queued.
+This demonstrates a per-service/runtime lane bottleneck rather than host memory
+pressure. Horizontal service sharding materially improves latency, but this
+baseline does not support 150 simultaneous generations. For training, prewarm
+the cohort and stagger model exercises in groups. Do not claim 150-generation
+capacity until a model gateway, additional warm service shards and the staged
+50/100/150 profile all pass.
+
 ## 8. Singapore
 
 Do not use Singapore as an ad-hoc load shard for the Shanghai training event.

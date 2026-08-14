@@ -32,6 +32,7 @@
     "load:business": "node scripts/load-test-business.mjs",
     "load:training": "node scripts/load-test-business.mjs",
     "load:training:provision": "tsx scripts/provision-training-load-profiles.ts",
+    "load:enterprise-runtime": "node scripts/load-test-enterprise-runtime.mjs",
     "runtime:enterprise:configure": "tsx scripts/configure-jiuwen-enterprise-routing.ts",
     "test:load-config": "node --test scripts/lib/load-test-profiles.test.mjs",
     "db:push": "drizzle-kit push",
