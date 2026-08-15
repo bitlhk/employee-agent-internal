@@ -326,8 +326,8 @@ export function registerChatStreamRoutes(app: express.Express) {
       next();
     },
     capacityQueueGuard("chat_http", {
-      maxQueued: Number.parseInt(process.env.EA_CHAT_HTTP_MAX_QUEUE || "50", 10) || 50,
-      maxWaitMs: Number.parseInt(process.env.EA_CHAT_HTTP_QUEUE_WAIT_MS || "60000", 10) || 60_000,
+      maxQueued: Number.parseInt(process.env.EA_CHAT_HTTP_MAX_QUEUE || "100", 10) || 100,
+      maxWaitMs: Number.parseInt(process.env.EA_CHAT_HTTP_QUEUE_WAIT_MS || "120000", 10) || 120_000,
     }),
     (_req, _res, next) => {
       observeChatAdmission("capacity_acquired");
