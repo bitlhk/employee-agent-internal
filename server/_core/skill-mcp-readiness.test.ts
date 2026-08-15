@@ -90,7 +90,10 @@ describe("skill MCP readiness", () => {
   it("resolves legacy role MCP dependencies through the shared role gateway", async () => {
     const resolved = await resolveRoleManagedReadiness({
       requiredServerIds: ["credential_skills", "missing_server"],
-      configuredServers: [{ name: "role_mcp_gateway", enabled: true }],
+      configuredServers: [
+        { name: "role_mcp_gateway", enabled: true },
+        { name: "credential_skills", enabled: false },
+      ],
     }, async (serverId) => serverId === "credential_skills"
       ? { configured: true, availableTools: ["credential-prompt-generator"] }
       : { configured: false, availableTools: [] });

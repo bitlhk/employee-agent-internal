@@ -391,7 +391,9 @@ export async function probeJiuwenSkillMcpReadiness(args: {
   }).catch(() => ({ servers: [] as RuntimeMcpServer[], toolsByServer: {} as Record<string, string[]> }));
   const roleManaged = await resolveRoleManagedReadiness({
     requiredServerIds: requiredServerIds.filter(
-      (serverId) => !configuredServers.some((configured) => configured.name === serverId),
+      (serverId) => !configuredServers.some(
+        (configured) => configured.name === serverId && configured.enabled,
+      ),
     ),
     configuredServers,
   }).catch(() => ({
@@ -399,10 +401,11 @@ export async function probeJiuwenSkillMcpReadiness(args: {
     toolsByServer: {} as Record<string, string[]>,
     probeErrors: {} as Record<string, string>,
   }));
+  const roleManagedNames = new Set(roleManaged.servers.map((server) => server.name));
   configuredServers = [
-    ...configuredServers,
+    ...configuredServers.filter((server) => !roleManagedNames.has(server.name)),
     ...enterpriseManaged.servers.filter((server) => !configuredServers.some((configured) => configured.name === server.name)),
-    ...roleManaged.servers.filter((server) => !configuredServers.some((configured) => configured.name === server.name)),
+    ...roleManaged.servers,
   ];
   const configuredByName = new Map(configuredServers.map((server) => [server.name, server]));
   const toolsByServer: Record<string, string[] | undefined> = {
