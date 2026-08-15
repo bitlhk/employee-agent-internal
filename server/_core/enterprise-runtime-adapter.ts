@@ -148,6 +148,7 @@ export function buildEnterpriseChatParams(args: {
   adoptId: string;
   agentId: string;
   runtimeMode?: unknown;
+  modelName?: string;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
 }): Record<string, unknown> {
   const { binding } = args.route;
@@ -165,6 +166,7 @@ export function buildEnterpriseChatParams(args: {
     bot_id: binding.runtimeBotId,
     user_id: binding.runtimeUserId,
     interactive_ask: true,
+    ...(String(args.modelName || "").trim() ? { model_name: String(args.modelName).trim() } : {}),
     request_metadata: {
       source_channel: args.adoptId,
       ea_managed_runtime: true,
@@ -179,6 +181,16 @@ export function buildEnterpriseChatParams(args: {
       ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
     },
   };
+}
+
+export function enterpriseRuntimeSupportsModel(modelName: unknown): boolean {
+  const allowed = String(process.env.EA_ENTERPRISE_RUNTIME_MODEL_ALLOWLIST || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowed.length === 0) return true;
+  const selected = String(modelName || "").trim().toLowerCase();
+  return Boolean(selected) && allowed.includes(selected);
 }
 
 export function buildEnterprisePermissionAnswerParams(args: {

@@ -757,6 +757,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         res,
         {
           model: selectedModel.runtimeModelId,
+          modelName: selectedModel.modelName,
           req,
           channel,
           conversationId,

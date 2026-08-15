@@ -71,6 +71,7 @@ export type JiuwenClawRuntimeClaw = {
 };
 export type JiuwenForwardOptions = {
   model?: string;
+  modelName?: string;
   req?: Request;
   channel?: unknown;
   conversationId?: unknown;
@@ -858,7 +859,8 @@ export async function forwardToJiuwenClaw(
     return;
   }
   const enterpriseRoute = await readyEnterpriseRuntimeRoute(claw.adoptId);
-  if (enterpriseRoute) {
+  const { enterpriseRuntimeSupportsModel } = await import("./enterprise-runtime-adapter");
+  if (enterpriseRoute && enterpriseRuntimeSupportsModel(opts.modelName || opts.model)) {
     const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
     return forwardToJiuwenGateway(claw, message, res, opts, enterpriseRoute);
   }

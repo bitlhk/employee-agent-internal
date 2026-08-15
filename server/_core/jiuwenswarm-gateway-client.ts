@@ -376,6 +376,7 @@ export async function forwardToJiuwenGateway(
         adoptId: claw.adoptId,
         agentId: claw.agentId,
         runtimeMode: opts.runtimeMode,
+        modelName: opts.modelName,
         selectedSkills: opts.selectedSkills,
       })
     : buildGatewayChatParams({

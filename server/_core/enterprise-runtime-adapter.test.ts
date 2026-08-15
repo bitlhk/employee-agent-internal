@@ -4,6 +4,7 @@ import {
   buildEnterpriseChatParams,
   buildEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
+  enterpriseRuntimeSupportsModel,
   resolveEnterpriseRuntimeRoute,
   type EnterpriseRuntimeRoute,
 } from "./enterprise-runtime-adapter";
@@ -99,7 +100,7 @@ describe("enterprise runtime adapter", () => {
     });
   });
 
-  it("builds the native enterprise identity payload without local paths or model overrides", () => {
+  it("builds the native enterprise identity payload with a server-resolved model name", () => {
     const params = buildEnterpriseChatParams({
       route: route(),
       sessionId: "sess-1",
@@ -107,6 +108,7 @@ describe("enterprise runtime adapter", () => {
       adoptId: "lgj-test",
       agentId: "agent-insurance",
       runtimeMode: "agent.fast",
+      modelName: "deepseek-v4-flash",
       selectedSkills: [{
         id: "insurance-customer-visit",
         name: "保险客户访前准备",
@@ -124,6 +126,7 @@ describe("enterprise runtime adapter", () => {
       bot_id: "insurance-advisor",
       user_id: "ea_user_abc",
       interactive_ask: true,
+      model_name: "deepseek-v4-flash",
       request_metadata: {
         source_channel: "lgj-test",
         ea_managed_runtime: true,
@@ -143,8 +146,15 @@ describe("enterprise runtime adapter", () => {
       },
     });
     expect(params).not.toHaveProperty("project_dir");
-    expect(params).not.toHaveProperty("model_name");
     expect(JSON.stringify(params)).not.toContain("/local/path");
+  });
+
+  it("limits enterprise routing to the configured server-side model allowlist", () => {
+    process.env.EA_ENTERPRISE_RUNTIME_MODEL_ALLOWLIST = "deepseek-v4-flash, hy3";
+
+    expect(enterpriseRuntimeSupportsModel("deepseek-v4-flash")).toBe(true);
+    expect(enterpriseRuntimeSupportsModel("HY3")).toBe(true);
+    expect(enterpriseRuntimeSupportsModel("openpangu-2.0-flash")).toBe(false);
   });
 
   it("keeps permission continuation on the same runtime identity", () => {
