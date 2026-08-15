@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { closeDbConnection } from "../server/db/connection";
 import { getClawByAdoptId, listClawAdoptionsAdmin } from "../server/db/claw";
 import { resolveEffectiveRoleAssets } from "../server/db/role-assets";
