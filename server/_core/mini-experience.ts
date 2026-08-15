@@ -26,6 +26,7 @@ import { logError, logInfo, logWarn } from "./observability/logger";
 import { resolvePublicBaseUrl } from "./public-base-url";
 import { resolveAgentRoleTemplate } from "./role-templates";
 import { onboardBuiltinSkillsForAdopt } from "./skills/skill-onboarding";
+import { ensureEnterpriseRuntimeBindingForAdoption } from "./enterprise-runtime-assets";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 
 const MINI_EXPERIENCE_TTL_DAYS = 30;
@@ -468,6 +469,13 @@ async function provisionRegisteredAdoption(userId: number, subject: string): Pro
       await adapter.reconcileSkills({ adoptId, agentId, role, effectiveAssets });
       await adapter.reconcileMcp({ adoptId, agentId, role, effectiveAssets });
       await updateClawAdoptionStatus(adoptionId, "active", { lastError: null });
+      await ensureEnterpriseRuntimeBindingForAdoption(adoptId).catch(error => {
+        logWarn("miniprogram_account.enterprise_binding_failed", {
+          adoptId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
       await appendClawAdoptionEvent({
         adoptionId,
         eventType: "create_succeeded",

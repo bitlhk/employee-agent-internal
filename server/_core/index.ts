@@ -68,6 +68,7 @@ import { registerPersonalExpertRoutes } from "./personal-experts";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
 import { registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
+import { registerEnterpriseRuntimeAssetRoutes } from "./enterprise-runtime-assets";
 import { reconcileEnterpriseMcpRuntimeScopes } from "./enterprise-mcp-runtime-reconcile";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
 import { registerToolsPolicyRoutes } from "./claw-tools-policy";
@@ -471,6 +472,7 @@ async function startServer() {
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);
   registerEnterpriseMcpGatewayRoutes(app);
+  registerEnterpriseRuntimeAssetRoutes(app);
   registerSkillConfigRoutes(app);
   registerToolsPolicyRoutes(app);
   registerCoreFileRoutes(app);

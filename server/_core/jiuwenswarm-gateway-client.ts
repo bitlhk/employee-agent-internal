@@ -427,6 +427,7 @@ export async function forwardToJiuwenGateway(
     ...privateMessageLogFields(message),
   });
 
+  let enterpriseBootstrapFallback = false;
   await new Promise<void>((resolve) => {
     const startedAt = Date.now();
     const generatedFiles = new Map<string, JiuwenSessionArtifactFile>();
@@ -459,15 +460,17 @@ export async function forwardToJiuwenGateway(
     const settle = (reason: string) => {
       if (settled) return;
       settled = true;
-      opts.onRuntimeOutcome?.(
-        reason === "done" || reason === "permission-required"
-          ? "success"
-          : reason === "timeout"
-            ? "timeout"
-          : reason === "client-closed"
-            ? "cancelled"
-            : "error",
-      );
+      if (reason !== "enterprise-bootstrap-fallback") {
+        opts.onRuntimeOutcome?.(
+          reason === "done" || reason === "permission-required"
+            ? "success"
+            : reason === "timeout"
+              ? "timeout"
+            : reason === "client-closed"
+              ? "cancelled"
+              : "error",
+        );
+      }
       clearTimeout(timeout);
       if (connectionAckTimer) clearTimeout(connectionAckTimer);
       for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
@@ -502,6 +505,11 @@ export async function forwardToJiuwenGateway(
         requestId,
         reason,
       });
+      if (reason === "enterprise-bootstrap-fallback") {
+        try { ws.close(1012, reason); } catch {}
+        resolve();
+        return;
+      }
       const rawAssistantMessage = finalAssistantText.trim() || memoryAssistantText.trim();
       const citationValidation = validateKnowledgeCitations(rawAssistantMessage, knowledgeCitationIndexes);
       const validatedAssistantMessage = citationValidation.text;
@@ -589,7 +597,13 @@ export async function forwardToJiuwenGateway(
         return;
       }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {
-        writeSseData(res, { __stream_error: true, error: String(frame.error || "JiuwenSwarm gateway 请求失败") });
+        const message = String(frame.error || "JiuwenSwarm gateway 请求失败");
+        if (enterpriseRoute && message.includes("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED")) {
+          enterpriseBootstrapFallback = true;
+          settle("enterprise-bootstrap-fallback");
+          return;
+        }
+        writeSseData(res, { __stream_error: true, error: message });
         settle("request-error");
         return;
       }
@@ -599,7 +613,13 @@ export async function forwardToJiuwenGateway(
       const sid = payloadSessionId(payload);
       if (sid && sid !== sessionId) return;
       if (eventType === "chat.error") {
-        writeSseData(res, { __stream_error: true, error: String(payload.error || payload.message || "JiuwenSwarm gateway 返回错误") });
+        const message = String(payload.error || payload.message || "JiuwenSwarm gateway 返回错误");
+        if (enterpriseRoute && message.includes("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED")) {
+          enterpriseBootstrapFallback = true;
+          settle("enterprise-bootstrap-fallback");
+          return;
+        }
+        writeSseData(res, { __stream_error: true, error: message });
       }
       if (eventType === "chat.final" && String(payload.content || "").trim()) {
         finalAssistantText = validateKnowledgeCitations(
@@ -652,6 +672,16 @@ export async function forwardToJiuwenGateway(
       if (!settled) settle(clientClosed ? "client-closed" : "ws-close");
     });
   });
+  if (enterpriseBootstrapFallback && enterpriseRoute) {
+    appendLogAsync("jiuwenclaw-exec.log", {
+      ts: new Date().toISOString(),
+      event: "enterprise_runtime_asset_bootstrap_fallback",
+      adoptId: claw.adoptId,
+      bindingId: enterpriseRoute.binding.bindingId,
+      assetSetFingerprint: enterpriseRoute.binding.assetSetFingerprint,
+    });
+    return forwardToJiuwenGateway(claw, message, res, opts);
+  }
 }
 
 export async function answerJiuwenGatewayPermission(

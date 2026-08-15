@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import { getRuntimeAgentBinding } from "../db/runtime-agent-bindings";
+import { enterpriseRuntimeAssetBundleExists } from "./enterprise-runtime-assets";
 import type { JiuwenInteractionAnswer, JiuwenSelectedSkillMetadata } from "./jiuwenclaw-bridge";
 
 export type EnterpriseRuntimeRoute = {
@@ -103,6 +104,7 @@ export async function resolveEnterpriseRuntimeRoute(
   adoptionId: string,
   dependencies: {
     getBinding?: typeof getRuntimeAgentBinding;
+    bundleExists?: typeof enterpriseRuntimeAssetBundleExists;
   } = {},
 ): Promise<RuntimeRouteDecision> {
   if (!enterpriseRuntimeEnabled()) {
@@ -121,6 +123,9 @@ export async function resolveEnterpriseRuntimeRoute(
   }
   if (!String(binding.assetSetFingerprint || "").trim()) {
     return { target: "standalone", reason: "enterprise_asset_bundle_missing" };
+  }
+  if (!(dependencies.bundleExists || enterpriseRuntimeAssetBundleExists)(binding)) {
+    return { target: "standalone", reason: "enterprise_asset_bundle_unavailable" };
   }
   if (binding.runtimeProfile !== "enterprise_canary" && binding.runtimeProfile !== "enterprise") {
     return { target: "standalone", reason: "enterprise_profile_not_selected" };
@@ -165,6 +170,12 @@ export function buildEnterpriseChatParams(args: {
       ea_managed_runtime: true,
       ea_binding_id: binding.bindingId,
       ea_source_agent_id: args.agentId,
+      ea_asset_bundle: {
+        binding_id: binding.bindingId,
+        fingerprint: binding.assetSetFingerprint,
+        workspace_key: binding.workspaceKey,
+        source_agent_id: args.agentId,
+      },
       ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
     },
   };

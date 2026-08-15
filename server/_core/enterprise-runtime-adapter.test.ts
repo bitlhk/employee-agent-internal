@@ -65,6 +65,7 @@ describe("enterprise runtime adapter", () => {
     process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "wss://runtime.example.test/ws";
     const selected = await resolveEnterpriseRuntimeRoute("lgj-test", {
       getBinding: vi.fn().mockResolvedValue(binding()),
+      bundleExists: vi.fn().mockReturnValue(true),
     });
 
     expect(selected.target).toBe("enterprise");
@@ -128,6 +129,12 @@ describe("enterprise runtime adapter", () => {
         ea_managed_runtime: true,
         ea_binding_id: "rtb_test",
         ea_source_agent_id: "agent-insurance",
+        ea_asset_bundle: {
+          binding_id: "rtb_test",
+          fingerprint: "a".repeat(64),
+          source_agent_id: "agent-insurance",
+          workspace_key: "workspace_abc",
+        },
         selected_skills: [{
           id: "insurance-customer-visit",
           name: "保险客户访前准备",

@@ -784,6 +784,8 @@ export class FileSkillRegistry implements SkillRegistry {
     try {
       if (isJiuwenClawAdoptId(adoptId)) {
         await this.syncJiuwenSwarmWorkspaceSkills(adoptId);
+        const { refreshEnterpriseRuntimeAssetsIfBound } = await import("../enterprise-runtime-assets");
+        await refreshEnterpriseRuntimeAssetsIfBound(adoptId);
         await refreshJiuwenRuntimeCapabilities(adoptId);
       } else {
         await this.syncOpenClawAgentSkillFilter(adoptId);

@@ -55,6 +55,7 @@ import { getAdminSystemHealth } from "../_core/admin-system-health";
 import { logDebug, logWarn } from "../_core/observability/logger";
 import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
 import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
+import { ensureEnterpriseRuntimeBindingForAdoption } from "../_core/enterprise-runtime-assets";
 import { pruneSkillRegistryForAdopt, skillRegistry } from "../_core/skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
 import { roleSkillPreferences } from "../_core/skills/role-skill-preferences";
@@ -1890,6 +1891,14 @@ export const clawRouter = router({
 
           await updateClawAdoptionStatus(adoptionId, "active");
 
+          const enterpriseBinding = await ensureEnterpriseRuntimeBindingForAdoption(adoptId).catch((error) => {
+            logWarn("runtime.enterprise.auto_binding_failed", {
+              adoptId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            return null;
+          });
+
           await appendClawAdoptionEvent({
             adoptionId,
             eventType: "create_succeeded",
@@ -1920,6 +1929,8 @@ export const clawRouter = router({
               effectiveAssets,
               skillReconcile,
               mcpReconcile,
+              enterpriseBindingId: enterpriseBinding?.bindingId || null,
+              enterpriseRuntimeReady: enterpriseBinding?.status === "ready",
               reconcileApplied: Boolean(skillReconcile.applied || mcpReconcile.applied),
               ttlDays,
               entryUrl,
