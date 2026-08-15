@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildEnterpriseSelectedSkillsManifest,
   buildSelectedSkillsManifest,
   normalizeSelectedSkillIds,
   selectAutomaticSkillMatch,
@@ -179,5 +180,23 @@ describe("selected skills chat context", () => {
 
     expect(manifest).toContain("平台根据用户请求匹配技能");
     expect(manifest).not.toContain("输入框选择技能 Chip");
+  });
+
+  it("builds a pathless native manifest for the enterprise runtime", () => {
+    const manifest = buildEnterpriseSelectedSkillsManifest([{
+      id: "auto-insurance-advisor",
+      name: "保险顾问助手",
+      description: "查询客户画像和保险产品，形成受控建议。",
+      skillFile: "/root/control-plane/skills/auto-insurance-advisor/SKILL.md",
+      runtimePath: "/root/control-plane/skills/auto-insurance-advisor",
+    }], "查询我负责的客户画像和适配产品");
+
+    expect(manifest).toContain("skill_tool");
+    expect(manifest).toContain("auto-insurance-advisor");
+    expect(manifest).toContain("查询我负责的客户画像和适配产品");
+    expect(manifest).not.toContain("/root/control-plane");
+    expect(manifest).not.toContain("SKILL.md");
+    expect(manifest).not.toContain("read_file");
+    expect(manifest).not.toContain("bash");
   });
 });

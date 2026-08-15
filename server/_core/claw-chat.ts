@@ -27,6 +27,7 @@ import {
 } from "./observability/metrics";
 import { observePublicModelTraffic } from "./observability/public-health";
 import {
+  buildEnterpriseSelectedSkillsManifest,
   buildSelectedSkillsManifest,
   normalizeSelectedSkillIds,
   selectAutomaticSkillMatch,
@@ -49,6 +50,7 @@ import {
   recordChatSkillSelection,
 } from "../db/chat-skill-session-state";
 import type { ModelRequestLease } from "./automatic-model-router";
+import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -56,6 +58,7 @@ type SelectedSkillsContext =
   | {
       ok: true;
       message: string;
+      enterpriseMessage: string;
       skillIds: string[];
       labels: string[];
       skillFiles: string[];
@@ -167,6 +170,7 @@ async function buildSelectedSkillsContext(
   return {
     ok: true,
     message: buildSelectedSkillsManifest(metadata, userMessage, selectionMode),
+    enterpriseMessage: buildEnterpriseSelectedSkillsManifest(metadata, userMessage, selectionMode),
     skillIds: metadata.map((skill) => skill.id),
     labels: metadata.map((skill) => skill.name),
     skillFiles: metadata.map((skill) => skill.skillFile),
@@ -551,13 +555,6 @@ export function registerChatStreamRoutes(app: express.Express) {
       }
       observeCapabilityPreflight({ kind: "model", outcome: "ready" });
 
-      const selectedSkillMessageLimit = Math.max(
-        4000,
-        Number(process.env.SELECTED_SKILL_MESSAGE_MAX_CHARS || 8000) || 8000,
-      );
-      const runtimeMessageBody = selectedSkills?.ok
-        ? selectedSkills.message.slice(0, selectedSkillMessageLimit)
-        : userMessage;
       let knowledgeContext = "";
       let memoryContext = "";
       let knowledgeSources: Array<Record<string, unknown>> = [];
@@ -720,6 +717,34 @@ export function registerChatStreamRoutes(app: express.Express) {
         routeReason: activeModelLease.routeReason,
       });
 
+      const {
+        enterpriseRuntimeSupportsModel,
+        resolveEnterpriseRuntimeRoute,
+      } = await import("./enterprise-runtime-adapter");
+      let enterpriseRoute: EnterpriseRuntimeRoute | null = null;
+      try {
+        const runtimeRouteDecision = await resolveEnterpriseRuntimeRoute(String(adoption.adoptId));
+        enterpriseRoute = runtimeRouteDecision.target === "enterprise"
+          && enterpriseRuntimeSupportsModel(selectedModel.modelName || selectedModel.runtimeModelId)
+          ? runtimeRouteDecision.route
+          : null;
+      } catch (error) {
+        appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "enterprise_runtime_route_failed",
+          adoptId: String(adoption.adoptId),
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      const selectedSkillMessageLimit = Math.max(
+        4000,
+        Number(process.env.SELECTED_SKILL_MESSAGE_MAX_CHARS || 8000) || 8000,
+      );
+      const runtimeMessageBody = selectedSkills?.ok
+        ? (enterpriseRoute ? selectedSkills.enterpriseMessage : selectedSkills.message)
+          .slice(0, selectedSkillMessageLimit)
+        : userMessage;
+
       if (selectedSkills?.ok) {
         appendLogAsync("jiuwenclaw-exec.log", {
           ts: new Date().toISOString(),
@@ -732,7 +757,9 @@ export function registerChatStreamRoutes(app: express.Express) {
           selectedSkillNames: selectedSkills.labels,
           selectedSkillFiles: selectedSkills.skillFiles,
           model: selectedModel.runtimeModelId,
-          injectionMode: skillSelectionMode === "automatic" ? "automatic_manifest" : "manifest",
+          injectionMode: enterpriseRoute
+            ? (skillSelectionMode === "automatic" ? "enterprise_native_automatic" : "enterprise_native")
+            : (skillSelectionMode === "automatic" ? "automatic_manifest" : "manifest"),
           ...(automaticSkillMatch ? {
             matchScore: automaticSkillMatch.score,
             matchReason: automaticSkillMatch.reason,
@@ -779,6 +806,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           runtimeMode: normalizedRuntimeMode,
           cancelPendingPermission,
           selectedSkills: selectedSkills?.ok ? selectedSkills.metadata : [],
+          enterpriseRoute,
           knowledgeSources,
           memoryUserMessage: restrictedMiniExperience ? undefined : userMessage,
           onFirstToken: () => {

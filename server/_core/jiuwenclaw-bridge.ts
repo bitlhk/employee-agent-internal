@@ -80,6 +80,7 @@ export type JiuwenForwardOptions = {
   runtimeMode?: unknown;
   cancelPendingPermission?: unknown;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
+  enterpriseRoute?: EnterpriseRuntimeRoute | null;
   knowledgeSources?: Array<Record<string, unknown>>;
   memoryUserMessage?: string;
   onFirstToken?: () => void;
@@ -858,7 +859,9 @@ export async function forwardToJiuwenClaw(
     res.status(503).json({ error: "jiuwenclaw runtime is disabled" });
     return;
   }
-  const enterpriseRoute = await readyEnterpriseRuntimeRoute(claw.adoptId);
+  const enterpriseRoute = opts.enterpriseRoute === undefined
+    ? await readyEnterpriseRuntimeRoute(claw.adoptId)
+    : opts.enterpriseRoute;
   const { enterpriseRuntimeSupportsModel } = await import("./enterprise-runtime-adapter");
   if (enterpriseRoute && enterpriseRuntimeSupportsModel(opts.modelName || opts.model)) {
     const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
