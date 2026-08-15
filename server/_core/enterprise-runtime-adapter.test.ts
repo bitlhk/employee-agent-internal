@@ -79,13 +79,16 @@ describe("enterprise runtime adapter", () => {
   it("fails back before execution for a pending binding", async () => {
     process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
     process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "ws://192.168.0.114:30005/ws";
+    const ensureBinding = vi.fn().mockResolvedValue(null);
 
     await expect(resolveEnterpriseRuntimeRoute("lgj-test", {
       getBinding: vi.fn().mockResolvedValue(binding({ status: "pending" })),
+      ensureBinding,
     })).resolves.toEqual({
       target: "standalone",
       reason: "enterprise_binding_pending",
     });
+    expect(ensureBinding).toHaveBeenCalledWith("lgj-test");
   });
 
   it("fails back before execution when the enterprise asset bundle is missing", async () => {
@@ -94,9 +97,29 @@ describe("enterprise runtime adapter", () => {
 
     await expect(resolveEnterpriseRuntimeRoute("lgj-test", {
       getBinding: vi.fn().mockResolvedValue(binding({ assetSetFingerprint: null })),
+      ensureBinding: vi.fn().mockResolvedValue(null),
     })).resolves.toEqual({
       target: "standalone",
       reason: "enterprise_asset_bundle_missing",
+    });
+  });
+
+  it("repairs a missing binding before the first enterprise request", async () => {
+    process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
+    process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "wss://runtime.example.test/ws";
+    const repaired = binding({ runtimeProfile: "enterprise", status: "ready" });
+    const ensureBinding = vi.fn().mockResolvedValue(repaired);
+
+    const selected = await resolveEnterpriseRuntimeRoute("lgj-test", {
+      getBinding: vi.fn().mockResolvedValue(null),
+      ensureBinding,
+      bundleExists: vi.fn().mockReturnValue(true),
+    });
+
+    expect(ensureBinding).toHaveBeenCalledWith("lgj-test");
+    expect(selected).toMatchObject({
+      target: "enterprise",
+      route: { binding: { bindingId: "rtb_test", status: "ready" } },
     });
   });
 

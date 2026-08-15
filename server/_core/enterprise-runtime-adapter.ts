@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import { getRuntimeAgentBinding } from "../db/runtime-agent-bindings";
-import { enterpriseRuntimeAssetBundleExists } from "./enterprise-runtime-assets";
+import {
+  ensureEnterpriseRuntimeBindingForAdoption,
+  enterpriseRuntimeAssetBundleExists,
+} from "./enterprise-runtime-assets";
 import type { JiuwenInteractionAnswer, JiuwenSelectedSkillMetadata } from "./jiuwenclaw-bridge";
 
 export type EnterpriseRuntimeRoute = {
@@ -105,6 +108,7 @@ export async function resolveEnterpriseRuntimeRoute(
   dependencies: {
     getBinding?: typeof getRuntimeAgentBinding;
     bundleExists?: typeof enterpriseRuntimeAssetBundleExists;
+    ensureBinding?: typeof ensureEnterpriseRuntimeBindingForAdoption;
   } = {},
 ): Promise<RuntimeRouteDecision> {
   if (!enterpriseRuntimeEnabled()) {
@@ -114,7 +118,20 @@ export async function resolveEnterpriseRuntimeRoute(
   if (!wsUrl) {
     return { target: "standalone", reason: "enterprise_gateway_not_configured" };
   }
-  const binding = await (dependencies.getBinding || getRuntimeAgentBinding)(adoptionId);
+  const getBinding = dependencies.getBinding || getRuntimeAgentBinding;
+  const bundleExists = dependencies.bundleExists || enterpriseRuntimeAssetBundleExists;
+  let binding = await getBinding(adoptionId);
+  const shouldRepair = !binding
+    || ["pending", "degraded"].includes(binding.status)
+    || (binding.status === "ready" && (
+      !String(binding.assetSetFingerprint || "").trim()
+      || !bundleExists(binding)
+  ));
+  if (shouldRepair) {
+    const repaired = await (dependencies.ensureBinding || ensureEnterpriseRuntimeBindingForAdoption)(adoptionId)
+      .catch(() => null);
+    if (repaired) binding = repaired;
+  }
   if (!binding) {
     return { target: "standalone", reason: "enterprise_binding_missing" };
   }
@@ -124,7 +141,7 @@ export async function resolveEnterpriseRuntimeRoute(
   if (!String(binding.assetSetFingerprint || "").trim()) {
     return { target: "standalone", reason: "enterprise_asset_bundle_missing" };
   }
-  if (!(dependencies.bundleExists || enterpriseRuntimeAssetBundleExists)(binding)) {
+  if (!bundleExists(binding)) {
     return { target: "standalone", reason: "enterprise_asset_bundle_unavailable" };
   }
   if (binding.runtimeProfile !== "enterprise_canary" && binding.runtimeProfile !== "enterprise") {
