@@ -227,6 +227,18 @@ describe("enterprise runtime adapter", () => {
       group_id: "ea_s3",
       bot_id: "insurance-advisor",
       user_id: "ea_user_abc",
+      request_metadata: {
+        source_channel: "lgj-test",
+        ea_managed_runtime: true,
+        ea_binding_id: "rtb_test",
+        ea_source_agent_id: "agent-insurance",
+        ea_asset_bundle: {
+          binding_id: "rtb_test",
+          fingerprint: "a".repeat(64),
+          workspace_key: "workspace_abc",
+          source_agent_id: "agent-insurance",
+        },
+      },
     });
   });
 });

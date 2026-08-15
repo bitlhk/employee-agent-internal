@@ -29,6 +29,25 @@ const MANAGED_MCP_SERVERS = [
   ["enterprise_mcp_gateway", "/api/internal/enterprise-mcp/mcp", "urn:ea:internal-mcp:enterprise-mcp"],
 ] as const;
 
+function enterpriseRuntimeAssetMetadata(args: {
+  route: EnterpriseRuntimeRoute;
+  adoptId: string;
+  agentId: string;
+}): Record<string, unknown> {
+  return {
+    source_channel: args.adoptId,
+    ea_managed_runtime: true,
+    ea_binding_id: args.route.binding.bindingId,
+    ea_source_agent_id: args.agentId,
+    ea_asset_bundle: {
+      binding_id: args.route.binding.bindingId,
+      fingerprint: args.route.binding.assetSetFingerprint,
+      workspace_key: args.route.binding.workspaceKey,
+      source_agent_id: args.agentId,
+    },
+  };
+}
+
 function enterpriseRuntimeEnabled(): boolean {
   return String(process.env.EA_ENTERPRISE_RUNTIME_ENABLED || "").trim().toLowerCase() === "true";
 }
@@ -99,6 +118,7 @@ export function buildEnterpriseManagedMcpProvisioning(args: {
       bot_id: args.route.binding.runtimeBotId,
       user_id: args.route.binding.runtimeUserId,
       mcp_json: mcpJson,
+      request_metadata: enterpriseRuntimeAssetMetadata(args),
     },
   };
 }
@@ -185,16 +205,7 @@ export function buildEnterpriseChatParams(args: {
     interactive_ask: true,
     ...(String(args.modelName || "").trim() ? { model_name: String(args.modelName).trim() } : {}),
     request_metadata: {
-      source_channel: args.adoptId,
-      ea_managed_runtime: true,
-      ea_binding_id: binding.bindingId,
-      ea_source_agent_id: args.agentId,
-      ea_asset_bundle: {
-        binding_id: binding.bindingId,
-        fingerprint: binding.assetSetFingerprint,
-        workspace_key: binding.workspaceKey,
-        source_agent_id: args.agentId,
-      },
+      ...enterpriseRuntimeAssetMetadata(args),
       ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
     },
   };

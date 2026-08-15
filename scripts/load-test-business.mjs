@@ -367,7 +367,10 @@ async function runChatSmoke(index, profile) {
       .filter((event) => event.event === "tool_call")
       .map((event) => String(event.payload?.name || "").trim())
       .filter(Boolean)));
-    const runtimeError = events.find((event) => event.event === "error");
+    const runtimeError = events.find((event) => (
+      event.event === "error"
+      || (event.payload && typeof event.payload === "object" && event.payload.__stream_error === true)
+    ));
     if (status < 200 || status >= 400) {
       error = body.slice(0, 200);
     } else if (!completed) {
