@@ -46,13 +46,13 @@ between providers without allowing one model to absorb the whole class. The
 into 150 simultaneous model calls. Confirm provider RPM/TPM/concurrency quota
 before raising the active chat limit.
 
-Each enterprise Jiuwen AgentServer is currently an isolated pod requesting
-500m CPU and 1 GiB memory. Two 16 vCPU / 32 GB workers can validate request
-concurrency, but cannot schedule 150 simultaneously active, distinct runtime
-pods. At the current resource request, a 150-user all-active rehearsal requires
-six workers of that size, including Shanghai 2 and Shanghai 3. Do not lower the
-memory request below observed runtime usage merely to make the scheduler accept
-more pods.
+Each enterprise Jiuwen AgentServer service-shard pod requests 500m CPU and
+1 GiB memory. Users do not each own a pod: the stable binding maps an adoption
+to one of 16 finite shards per role, while `runtimeUserId` and `workspaceKey`
+preserve user/adoption isolation inside the shard. A 150-person single-role
+class therefore needs at most 16 AgentServer pods, spread across Shanghai 2 and
+Shanghai 3, and fits the current two 16 vCPU / 32 GB workers. A multi-role event
+must budget `active roles x 16` service pods separately.
 
 JiuwenSwarm should run with at least 65,535 open files:
 
@@ -148,9 +148,8 @@ stage passes. A 150-request start burst is admitted through the 60-active /
 The 2026-08-15 control-plane rehearsal used 11 active independent
 user/adoption profiles and repeated them to generate a 150-request start burst.
 It validates admission, queueing, automatic model routing and both Shanghai
-compute nodes. It does not validate 150 distinct AgentServer pods; that final
-gate must be repeated with 150 independent profiles after worker capacity is
-available.
+compute nodes. It does not yet validate 150 distinct runtime identities and
+workspaces; that final gate must be repeated with 150 independent profiles.
 
 | Scenario | Result |
 | --- | --- |
@@ -160,10 +159,10 @@ available.
 | Automatic model, 150-request burst / 11 profiles | 150/150 completed; first-byte p95 18.1 s; full-task p95 79.3 s; maximum 83.9 s |
 
 The EA admission and model lanes accept a 150-request start burst with bounded
-queueing. Independent runtime cardinality remains a separate gate because each
-active adoption owns an isolated AgentServer pod. Prewarm every attendee
-profile only after enough worker nodes are present; otherwise the scheduler will
-leave excess runtimes Pending.
+queueing. Independent runtime identity remains a separate gate even though pod
+cardinality is bounded by the 16 service shards. Prewarm every attendee profile
+in small batches, verify all 16 shards schedule, and assert that history,
+workspace, Skill and MCP scope never cross adoption boundaries.
 
 ## Acceptance
 

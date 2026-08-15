@@ -1,6 +1,7 @@
 # Jiuwen Enterprise Runtime Integration V1
 
-Status: architecture baseline, not yet a production traffic switch.
+Status: controlled Shanghai canary active; 150-distinct-runtime capacity remains
+an explicit release gate.
 
 ## 1. Decision
 
@@ -153,17 +154,17 @@ membership from the public registration `company` field.
 
 | Capability | Enterprise `0.0.11n` | Current EA requirement | Result |
 | --- | --- | --- | --- |
-| Dynamic AgentServer scheduling | Supported | 150-person burst capacity | PASS |
+| Dynamic AgentServer scheduling | Supported with topology spread across Shanghai-2/3 and 16 finite service shards per role | 150 distinct active adoptions | PARTIAL; 11 distinct adoptions and a repeated 150-request burst passed; the final 150-identity isolation run remains |
 | `service_id` / `agent_id` / `session_id` routing | Supported and direct IDs are preserved | Stable adoption isolation | PASS with EA-generated mapping |
 | Shared persistent workspace | Shared NFS-backed workspace keys | Per-adoption Skill/files/history | PARTIAL; needs remote workspace mapping |
 | Local absolute `project_dir` | Accepted as request input but refers to a path inside the pod | Shanghai-1 local workspace content | FAIL; never send Shanghai-1 absolute paths to the cluster |
-| Role scope manifest | No `.linggan-role-scope.json` enforcement | Fail-closed Skill/MCP role scope | FAIL; port or add equivalent adapter |
-| Selected Skill request rail | Only team-member configuration was found | Per-request selected Skill prompt and minimal tool exposure | FAIL; port required |
-| Skill installation | Enterprise install APIs and per-tenant rows exist | EA default/optional Skill reconciliation | PARTIAL; needs asset bundle/bootstrap adapter |
-| EA platform MCP | Generic/request-scoped MCP exists | Signed EA identity, role allowlist, platform gateways | FAIL; port required |
+| Role scope manifest | EA overlay provisions the role scope manifest | Fail-closed Skill/MCP role scope | PASS in the controlled canary |
+| Selected Skill request rail | EA overlay forwards selected Skill scope per request | Per-request selected Skill prompt and minimal tool exposure | PASS in the controlled canary |
+| Skill installation | Runtime asset bootstrap provisions role defaults and preserves explicit user disable | EA default/optional Skill reconciliation | PASS for the validated wealth, insurance and investment profiles |
+| EA platform MCP | Signed request-scoped EA gateways are provisioned into AgentServer | Signed EA identity, role allowlist, platform gateways | PASS for validated read and governed-write routes |
 | Managed memory read | Native memory exists | EA-selected governed memory | PASS through EA prompt Context; native memory must stay disabled |
 | Managed memory write | Native memory behavior differs | EA is sole writer with evidence/versioning | FAIL unless platform MCP write tools are restored |
-| Per-request model choice | Runtime uses configured model; EA `model_name` is not consumed on the normal request path | EA automatic model routing | FAIL; use a model gateway or port request-level model selection |
+| Per-request model choice | EA overlay accepts only the managed allowlist and gives request scope precedence | EA automatic model routing | PASS; DeepSeek, HY3, Doubao and GLM lanes observed in AgentServer logs |
 | Session history | Enterprise session files on shared workspace | Existing Shanghai-1 history continuity | PARTIAL; new sessions work, old sessions require migration or sticky fallback |
 | Generated files | Enterprise supports file transfer/MinIO | EA file list currently scans local workspace | FAIL; add remote artifact adapter |
 | Cron | Enterprise routing exists | EA platform scheduler and ownership semantics | PARTIAL; keep EA scheduler for V1 |
@@ -417,20 +418,22 @@ Until those replication and data-residency decisions exist, Singapore should
 remain a test/DR candidate. A later design can use region-pinned tenants and
 asynchronous evidence backup rather than per-request cross-region balancing.
 
-## 9. Implementation Order
+## 9. Remaining Implementation Order
 
-1. Enable the platform-owned Linggan Finance demo tenant and validate that the
-   Linggan SSO -> EA Principal V2 chain preserves per-user/adoption isolation.
-2. Establish private Shanghai-1 -> enterprise Gateway connectivity with TLS or
-   authenticated internal transport.
-3. Apply the additive `runtime_agent_bindings` migration and connect the
-   persistent binding to an enterprise routing envelope behind a
-   disabled-by-default feature flag.
-4. Build the enterprise-compatible AgentServer image with the minimum Linggan
-   patch set and add asset bundle bootstrap.
-5. Add remote history/file adapters and model-gateway integration.
-6. Run the 150 local-account staged load profile and a small real-SSO canary.
-7. Enable only new training adoptions, retaining Shanghai-1 as rollback.
+1. Keep the current 500m CPU / 1 GiB AgentServer request and 16-shard binding.
+   For a single-role class this bounds the dynamic pool at 16 service pods,
+   spread across Shanghai 2 and Shanghai 3. Recalculate capacity before a
+   multi-role event because each active role can populate another 16 shards.
+2. Prepare 150 real, independent Linggan test accounts and adoptions; reconcile
+   role assets and prewarm them in small batches.
+3. Run the distinct-profile 50/100/150 identity-cardinality gates and verify that
+   no service-shard pod remains Pending, no node exceeds 80% memory, the pool
+   remains bounded at 16 pods for one role, and workspace, history, Skill and
+   MCP scope remain isolated.
+4. Complete the remaining remote history/file compatibility checks and node-loss
+   recovery drill.
+5. Freeze the validated images, role assets, model pool and training profiles;
+   retain Shanghai-1 runtime fallback for unsupported capabilities.
 
 ## 10. Go/No-Go
 
@@ -443,7 +446,8 @@ Do not switch the training cohort to enterprise runtime until all are true:
 - the model layer has enough aggregate quota or a tested gateway queue;
 - generated files are retrievable through EA;
 - rollback to Shanghai-1 is tested;
-- the 100 and 150 staged profiles meet the agreed SLO.
+- the 100 and 150 distinct-profile stages meet the agreed SLO and all required
+  service-shard pods schedule within the worker memory budget.
 
 The current enterprise deployment is a useful capacity PoC, not yet a drop-in
 replacement for Shanghai-1.
