@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { mkdir, writeFile } from "node:fs/promises";
+import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import {
   browserMutationHeaders,
@@ -51,6 +53,10 @@ const sandboxConcurrency = Math.min(
 const internalKey = String(process.env.EA_BUSINESS_LOAD_TEST_INTERNAL_KEY || "").trim();
 const maxErrorRate = Math.max(0, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_ERROR_RATE || 0.01));
 const maxP95Ms = Math.max(1, Number(process.env.EA_BUSINESS_LOAD_TEST_MAX_P95_MS || 1500));
+const loadTestAgents = {
+  "http:": new http.Agent({ keepAlive: true, maxSockets: 250, maxFreeSockets: 50 }),
+  "https:": new https.Agent({ keepAlive: true, maxSockets: 250, maxFreeSockets: 50 }),
+};
 
 if (!stages.length) throw new Error("EA_BUSINESS_LOAD_TEST_STAGES must contain at least one positive integer");
 if (chatRequests > 0 && !chatEnabled) {
@@ -153,6 +159,47 @@ function parseSseEvents(body) {
     events.push({ event, payload });
   }
   return events;
+}
+
+function requestChatStream(url, headers, payload, timeout) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const transport = url.protocol === "https:" ? https : http;
+    const startedAt = performance.now();
+    const request = transport.request(url, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "content-length": Buffer.byteLength(body),
+      },
+      agent: loadTestAgents[url.protocol],
+    }, (response) => {
+      let responseBody = "";
+      let bytes = 0;
+      let firstByteMs = 0;
+      let firstToolEventMs = 0;
+      response.on("data", (chunk) => {
+        if (!firstByteMs) firstByteMs = performance.now() - startedAt;
+        bytes += chunk.length;
+        responseBody += chunk.toString("utf8");
+        if (!firstToolEventMs && responseBody.includes("event: tool_call")) {
+          firstToolEventMs = performance.now() - startedAt;
+        }
+        if (responseBody.length > 1_000_000) responseBody = responseBody.slice(-500_000);
+      });
+      response.on("end", () => resolve({
+        status: response.statusCode || 0,
+        body: responseBody,
+        bytes,
+        firstByteMs,
+        firstToolEventMs,
+      }));
+      response.on("error", reject);
+    });
+    request.setTimeout(timeout, () => request.destroy(new Error(`chat request timed out after ${timeout}ms`)));
+    request.on("error", reject);
+    request.end(body);
+  });
 }
 
 async function preflightProfile(profile, index) {
@@ -293,10 +340,10 @@ async function runChatSmoke(index, profile) {
   let selectedModel = "";
   let toolNames = [];
   try {
-    const response = await fetch(new URL("/api/claw/chat-stream", baseUrl), {
-      method: "POST",
+    const response = await requestChatStream(
+      new URL("/api/claw/chat-stream", baseUrl),
       headers,
-      body: JSON.stringify({
+      {
         adoptId: profile.adoptId,
         message: chatMessage,
         model: chatModel,
@@ -304,31 +351,14 @@ async function runChatSmoke(index, profile) {
         conversationId,
         clientRunId: `loadtest-${conversationId}`,
         ...(profile.selectedSkillId ? { selectedSkillIds: [profile.selectedSkillId] } : {}),
-      }),
-      signal: AbortSignal.timeout(Math.max(timeoutMs, 300_000)),
-    });
+      },
+      Math.max(timeoutMs, 300_000),
+    );
     status = response.status;
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let body = "";
-    if (reader) {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!firstByteMs) firstByteMs = performance.now() - startedAt;
-        bytes += value.byteLength;
-        body += decoder.decode(value, { stream: true });
-        if (!firstToolEventMs && body.includes("event: tool_call")) {
-          firstToolEventMs = performance.now() - startedAt;
-        }
-        if (body.length > 1_000_000) body = body.slice(-500_000);
-      }
-      body += decoder.decode();
-    } else {
-      body = await response.text();
-      bytes = Buffer.byteLength(body);
-      firstByteMs = performance.now() - startedAt;
-    }
+    const body = response.body;
+    bytes = response.bytes;
+    firstByteMs = response.firstByteMs;
+    firstToolEventMs = response.firstToolEventMs;
     completed = body.includes("data: [DONE]");
     observedToolEvent = body.includes("event: tool_call");
     selectedModel = body.match(/"__model_selected"\s*:\s*"([^"]+)"/)?.[1] || "";

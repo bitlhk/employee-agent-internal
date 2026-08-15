@@ -22,6 +22,7 @@ import {
   beginChatRequest,
   beginRuntimeCall,
   observeCapabilityPreflight,
+  observeChatAdmission,
   type ChatOutcome,
 } from "./observability/metrics";
 import { observePublicModelTraffic } from "./observability/public-health";
@@ -315,11 +316,23 @@ export function registerChatStreamRoutes(app: express.Express) {
 
   app.post(
     "/api/claw/chat-stream",
+    (_req, _res, next) => {
+      observeChatAdmission("rate_limit_entered");
+      next();
+    },
     clawChatLimiter,
+    (_req, _res, next) => {
+      observeChatAdmission("rate_limit_passed");
+      next();
+    },
     capacityQueueGuard("chat_http", {
       maxQueued: Number.parseInt(process.env.EA_CHAT_HTTP_MAX_QUEUE || "50", 10) || 50,
       maxWaitMs: Number.parseInt(process.env.EA_CHAT_HTTP_QUEUE_WAIT_MS || "60000", 10) || 60_000,
     }),
+    (_req, _res, next) => {
+      observeChatAdmission("capacity_acquired");
+      next();
+    },
     async (req, res) => {
       const {
         adoptId,

@@ -334,6 +334,13 @@ const chatRequests = new Counter({
   registers: [metricsRegistry],
 });
 
+const chatAdmission = new Counter({
+  name: "ea_chat_admission_total",
+  help: "Chat requests reaching each bounded admission stage.",
+  labelNames: ["stage"] as const,
+  registers: [metricsRegistry],
+});
+
 const chatDuration = new Histogram({
   name: "ea_chat_request_duration_seconds",
   help: "End-to-end chat request duration in seconds.",
@@ -737,6 +744,12 @@ export function setCapacityLane(lane: string, active: number, limit: number): vo
 
 export function observeCapacityRejection(lane: string): void {
   capacityRejections.inc({ lane: lane.slice(0, 32) });
+}
+
+export function observeChatAdmission(
+  stage: "rate_limit_entered" | "rate_limit_passed" | "capacity_acquired",
+): void {
+  chatAdmission.inc({ stage });
 }
 
 export function setCapacityQueue(lane: string, queued: number, limit: number): void {
