@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { evaluateSkillMcpReadiness, resolveRoleManagedReadiness } from "./skill-mcp-readiness";
+import {
+  evaluateSkillMcpReadiness,
+  includeEnterpriseRoleGateway,
+  resolveRoleManagedReadiness,
+} from "./skill-mcp-readiness";
 
 const requirement = {
   servers: {
@@ -103,6 +107,16 @@ describe("skill MCP readiness", () => {
       toolsByServer: { credential_skills: ["credential-prompt-generator"] },
       probeErrors: {},
     });
+  });
+
+  it("adds the role gateway for an enterprise-bound adoption even when the local runtime omits it", () => {
+    expect(includeEnterpriseRoleGateway([
+      { name: "credential_skills", enabled: false },
+    ], true)).toEqual([
+      { name: "credential_skills", enabled: false },
+      { name: "role_mcp_gateway", enabled: true },
+    ]);
+    expect(includeEnterpriseRoleGateway([], false)).toEqual([]);
   });
 
   it("keeps a configured role MCP usable when live discovery is temporarily unchecked", async () => {

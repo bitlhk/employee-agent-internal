@@ -8,6 +8,7 @@ import {
   probeRoleMcpServerForReadiness,
   type RoleMcpReadinessProbe,
 } from "./role-mcp-gateway";
+import { resolveEnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
 const SERVER_CACHE_TTL_MS = 30_000;
@@ -19,6 +20,16 @@ type RuntimeMcpServer = {
   name: string;
   enabled: boolean;
 };
+
+export function includeEnterpriseRoleGateway(
+  servers: RuntimeMcpServer[],
+  enterpriseBound: boolean,
+): RuntimeMcpServer[] {
+  if (!enterpriseBound || servers.some((server) => server.name === ROLE_MCP_GATEWAY_ID && server.enabled)) {
+    return servers;
+  }
+  return [...servers, { name: ROLE_MCP_GATEWAY_ID, enabled: true }];
+}
 
 export type SkillMcpServerReadiness = {
   serverId: string;
@@ -381,6 +392,12 @@ export async function probeJiuwenSkillMcpReadiness(args: {
       catalogError: sanitizeProbeError(error),
     });
   }
+  const enterpriseBound = args.adoptId
+    ? await resolveEnterpriseRuntimeRoute(args.adoptId)
+      .then((decision) => decision.target === "enterprise")
+      .catch(() => false)
+    : false;
+  configuredServers = includeEnterpriseRoleGateway(configuredServers, enterpriseBound);
 
   const enterpriseManaged = await resolveEnterpriseManagedReadiness({
     requiredServerIds: requiredServerIds.filter(
