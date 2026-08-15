@@ -83,6 +83,32 @@ describe("operational capacity", () => {
     secondRes.emit("finish");
   });
 
+  it("dispatches a queued request after its request body stream is consumed", async () => {
+    resetCapacityForTests({ chat_http: 1 });
+    const guard = capacityQueueGuard("chat_http", { maxQueued: 1, maxWaitMs: 5_000 });
+    const calls: string[] = [];
+    const response = () => Object.assign(new EventEmitter(), {
+      destroyed: false,
+      headersSent: false,
+      setHeader() {},
+      status() { return this; },
+      json() { this.headersSent = true; return this; },
+    });
+    const firstReq = Object.assign(new EventEmitter(), { aborted: false, destroyed: false });
+    const queuedReq = Object.assign(new EventEmitter(), { aborted: false, destroyed: false });
+    const firstRes = response();
+    const queuedRes = response();
+
+    guard(firstReq as any, firstRes as any, () => calls.push("first"));
+    guard(queuedReq as any, queuedRes as any, () => calls.push("queued"));
+    queuedReq.destroyed = true;
+    firstRes.emit("finish");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(calls).toEqual(["first", "queued"]);
+    queuedRes.emit("finish");
+  });
+
   it("fails fast when a lane reaches its configured limit", () => {
     resetCapacityForTests({ chat_http: 1 });
     const release = tryAcquireCapacity("chat_http");

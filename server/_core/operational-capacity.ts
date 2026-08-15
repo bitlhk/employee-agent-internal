@@ -85,7 +85,10 @@ function drainWaiters(lane: CapacityLane): void {
   while (waiters[lane].length > 0 && states[lane].active < states[lane].limit) {
     const waiter = waiters[lane].shift()!;
     publishQueue(lane);
-    if (waiter.req.destroyed || waiter.res.destroyed || waiter.res.headersSent) {
+    // Body parsers may mark a fully consumed IncomingMessage as destroyed while
+    // the response socket is still healthy. Only an actual client abort makes
+    // a queued request ineligible for dispatch.
+    if (waiter.req.aborted || waiter.res.destroyed || waiter.res.headersSent) {
       clearTimeout(waiter.timer);
       continue;
     }
