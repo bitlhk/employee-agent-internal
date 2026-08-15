@@ -1,5 +1,6 @@
 import "dotenv/config";
 
+import { setTimeout as delay } from "node:timers/promises";
 import { closeDbConnection } from "../server/db/connection";
 import { getClawByAdoptId, listClawAdoptionsAdmin } from "../server/db/claw";
 import { resolveEffectiveRoleAssets } from "../server/db/role-assets";
@@ -72,9 +73,18 @@ async function main(): Promise<void> {
   if (failed.length) process.exitCode = 1;
 }
 
-main()
-  .catch((error) => {
+async function run(): Promise<void> {
+  try {
+    await main();
+  } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
-  })
-  .finally(closeDbConnection);
+  } finally {
+    // Reconcile operations can enqueue audit writes after their primary result.
+    // Let those callbacks drain before closing the shared MySQL pool.
+    await delay(500);
+    await closeDbConnection();
+  }
+}
+
+void run();

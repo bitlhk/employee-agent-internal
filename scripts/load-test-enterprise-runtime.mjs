@@ -10,8 +10,9 @@ const stages = String(process.env.EA_ENTERPRISE_LOAD_TEST_STAGES || "2,5,10")
   .map((value) => Number(value.trim()))
   .filter((value) => Number.isInteger(value) && value > 0 && value <= 150);
 const timeoutMs = Math.max(15_000, Number(process.env.EA_ENTERPRISE_LOAD_TEST_TIMEOUT_MS || 180_000));
-const groupCount = Math.max(1, Math.min(16, Number(process.env.EA_ENTERPRISE_LOAD_TEST_GROUPS || 1)));
-const groupOffset = Math.max(0, Number(process.env.EA_ENTERPRISE_LOAD_TEST_GROUP_OFFSET || 5));
+const shardCount = Math.max(1, Math.min(256, Number(process.env.EA_ENTERPRISE_LOAD_TEST_SHARDS || 16)));
+const groupCount = Math.max(1, Math.min(shardCount, Number(process.env.EA_ENTERPRISE_LOAD_TEST_GROUPS || 1)));
+const groupOffset = Math.max(0, Number(process.env.EA_ENTERPRISE_LOAD_TEST_GROUP_OFFSET || 5)) % shardCount;
 const botId = String(process.env.EA_ENTERPRISE_LOAD_TEST_BOT_ID || "insurance-advisor").trim();
 const mode = String(process.env.EA_ENTERPRISE_LOAD_TEST_MODE || "agent.fast").trim();
 const outputDir = path.resolve(process.env.EA_ENTERPRISE_LOAD_TEST_OUTPUT_DIR || "data/load-tests");
@@ -48,7 +49,7 @@ function runConversation({ stage, index, runId }) {
     const requestId = `${runId}:${stage}:${index}`;
     const sessionId = `ea-load-${runId}-${stage}-${index}`;
     const userId = `ea_load_${runId}_${stage}_${index}`;
-    const groupId = `ea_s${groupOffset + (index % groupCount)}`;
+    const groupId = `ea_s${(groupOffset + (index % groupCount)) % shardCount}`;
     const ws = new WebSocket(wsUrl, { headers: { Origin: wsOrigin } });
     let sent = false;
     let firstTokenAt = 0;
@@ -166,6 +167,7 @@ const report = {
   target: `${wsUrl.protocol}//${wsUrl.host}${wsUrl.pathname}`,
   mode: "enterprise-runtime-minimal-chat",
   botId,
+  shardCount,
   groupCount,
   stages: [],
 };
