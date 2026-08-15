@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { recordAuditBestEffort } from "../server/_core/audit-events";
 import { resolveRuntimeAgentId } from "../server/_core/helpers";
 import { resolveAgentRoleTemplate } from "../server/_core/role-templates";
@@ -35,6 +35,7 @@ const PRIMARY_SKILL = {
 const DEFAULT_SKILLS = [PRIMARY_SKILL.id, "insurance-telesales-recommend", "goldencoach-stage-evaluation"];
 const OPTIONAL_SKILLS = ["insurance-advisor-pro"];
 const DEFAULT_MCP_SERVERS = ["insurance_customer_profile", "insurance_product_exam_points", "wealth_governance_demo"];
+const RETIRED_MCP_SERVERS = new Set(["insurance_telesales_recommend"]);
 
 type InstallOptions = { apply: boolean; adoptIds: string[] };
 type Baseline = {
@@ -69,7 +70,10 @@ export function applyInsuranceRolePackBaseline(baseline: Baseline): Baseline {
   role.defaultSkills = unique([...DEFAULT_SKILLS, ...existingDefaults]);
   role.optionalSkills = unique([...(role.optionalSkills || []), ...OPTIONAL_SKILLS])
     .filter((skillId) => !role.defaultSkills?.includes(skillId));
-  role.mcpServers = unique([...(role.mcpServers || []), ...DEFAULT_MCP_SERVERS]);
+  role.mcpServers = unique([
+    ...(role.mcpServers || []).filter((serverId) => !RETIRED_MCP_SERVERS.has(serverId)),
+    ...DEFAULT_MCP_SERVERS,
+  ]);
   return baseline;
 }
 
@@ -185,13 +189,17 @@ async function main() {
   console.log(JSON.stringify({ ...plan, marketId, baselineChanged, reconciled }, null, 2));
 }
 
-main()
-  .then(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    await closeDbConnection();
-  })
-  .catch(async (error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-    await closeDbConnection().catch(() => undefined);
-  });
+const isDirectExecution = Boolean(process.argv[1]) && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
+
+if (isDirectExecution) {
+  main()
+    .then(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await closeDbConnection();
+    })
+    .catch(async (error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+      await closeDbConnection().catch(() => undefined);
+    });
+}
