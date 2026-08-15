@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     adopt_id: "lgj-demo",
     agent_id: "jiuwen_lgj-demo",
     request_id: "req-demo",
-    scp: ["demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
+    scp: ["mcp.tools.read", "demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
   } as Record<string, unknown>,
   createRecord: vi.fn(),
   getRecord: vi.fn(),
@@ -63,7 +63,7 @@ beforeEach(async () => {
     adopt_id: "lgj-demo",
     agent_id: "jiuwen_lgj-demo",
     request_id: "req-demo",
-    scp: ["demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
+    scp: ["mcp.tools.read", "demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
   });
   mocks.createRecord.mockResolvedValue({
     created: true,
@@ -108,6 +108,36 @@ describe("governance Demo MCP", () => {
     mocks.claims.role = "general-assistant";
     const { response } = await rpc("tools/list");
     expect(response.status).toBe(401);
+  });
+
+  it("requires the discovery scope and an exact tools/list token", async () => {
+    mocks.claims.scp = [];
+    const missingScope = await rpc("tools/list");
+    expect(missingScope.response.status).toBe(401);
+    expect(JSON.stringify(missingScope.payload)).toContain("mcp.tools.read");
+
+    mocks.claims.scp = ["mcp.tools.read"];
+    mocks.claims.tool_name = "tools/call";
+    const wrongTool = await rpc("tools/list");
+    expect(wrongTool.response.status).toBe(401);
+    expect(JSON.stringify(wrongTool.payload)).toContain("工具范围不匹配");
+  });
+
+  it("does not let a discovery token call a business tool", async () => {
+    mocks.claims.tool_name = "tools/list";
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_followup_task",
+      arguments: {
+        customer_ref: "张先生（Demo）",
+        objective: "创建跟进任务",
+        due_at: "2026-08-20T09:00:00+08:00",
+        priority: "high",
+        idempotency_key: "demo-followup-discovery-token",
+      },
+    });
+    expect(response.status).toBe(401);
+    expect(JSON.stringify(payload)).toContain("工具范围不匹配");
+    expect(mocks.createRecord).not.toHaveBeenCalled();
   });
 
   it("does not let a read scope authorize a Demo write", async () => {

@@ -168,7 +168,7 @@ async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdent
   const claims = verified.payload;
   if (claims.server_id !== GOVERNANCE_DEMO_MCP_SERVER_ID) throw new Error("身份令牌资源不匹配");
   const tokenTool = String(claims.tool_name || "");
-  if (toolName && tokenTool !== toolName && tokenTool !== "tools/list") throw new Error("身份令牌工具范围不匹配");
+  if (!toolName || tokenTool !== toolName) throw new Error("身份令牌工具范围不匹配");
   const roleKey = String(claims.role || "");
   if (!["wealth-manager", "insurance-advisor", "platform-admin"].includes(roleKey)) {
     throw new Error("当前岗位无权访问该 Demo MCP");
@@ -176,6 +176,9 @@ async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdent
   const scopes = new Set(Array.isArray(claims.scp)
     ? claims.scp.map(String)
     : String(claims.scope || "").split(/\s+/).filter(Boolean));
+  if (toolName === "tools/list" && !scopes.has("mcp.tools.read")) {
+    throw new Error("身份令牌缺少范围：mcp.tools.read");
+  }
   const tenantId = String(claims.tenant_id || "").trim();
   const userId = Number(claims.actor_user_id || claims.user_id || 0);
   const adoptId = String(claims.adopt_id || "").trim();
@@ -302,9 +305,12 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
 async function handleMessage(req: Request, message: JsonRpcMessage) {
   const id = message?.id;
   const method = String(message?.method || "");
-  if (method === "notifications/initialized") return null;
+  if (method === "notifications/initialized") {
+    await verifyIdentity(req, "tools/list");
+    return null;
+  }
   if (method === "initialize") {
-    await verifyIdentity(req, "");
+    await verifyIdentity(req, "tools/list");
     return ok(id, {
       protocolVersion: "2025-11-25",
       capabilities: { tools: { listChanged: false } },
@@ -312,9 +318,12 @@ async function handleMessage(req: Request, message: JsonRpcMessage) {
       instructions: "Explicit Demo MCP. All writes are isolated and must remain governed by the EA Enterprise MCP gateway.",
     });
   }
-  if (method === "ping") return ok(id, {});
+  if (method === "ping") {
+    await verifyIdentity(req, "tools/list");
+    return ok(id, {});
+  }
   if (method === "tools/list") {
-    await verifyIdentity(req, "");
+    await verifyIdentity(req, "tools/list");
     return ok(id, { tools: governanceDemoMcpTools() });
   }
   if (method === "tools/call") {
