@@ -25,11 +25,29 @@ describe("role MCP gateway", () => {
       description: "",
       inputSchema: { type: "object" },
     })).toBe(true);
+    for (const name of [
+      "credential-prompt-generator",
+      "image-classification",
+      "credential-extractor",
+      "locate-field",
+      "credential_image_extract_from_workspace",
+    ]) {
+      expect(roleMcpToolIsSafe({
+        name,
+        description: "",
+        inputSchema: { type: "object" },
+      })).toBe(true);
+    }
     expect(roleMcpToolIsSafe({
       name: "update_customer",
       description: "",
       inputSchema: { type: "object" },
       annotations: { readOnlyHint: true },
+    })).toBe(false);
+    expect(roleMcpToolIsSafe({
+      name: "sync-prompt",
+      description: "",
+      inputSchema: { type: "object" },
     })).toBe(false);
   });
 

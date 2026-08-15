@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateSkillMcpReadiness } from "./skill-mcp-readiness";
+import { evaluateSkillMcpReadiness, resolveRoleManagedReadiness } from "./skill-mcp-readiness";
 
 const requirement = {
   servers: {
@@ -85,5 +85,41 @@ describe("skill MCP readiness", () => {
     });
     expect(result).toMatchObject({ status: "ready", canProceed: true });
     expect(result.servers[0].missingTools).toEqual([]);
+  });
+
+  it("resolves legacy role MCP dependencies through the shared role gateway", async () => {
+    const resolved = await resolveRoleManagedReadiness({
+      requiredServerIds: ["credential_skills", "missing_server"],
+      configuredServers: [{ name: "role_mcp_gateway", enabled: true }],
+    }, async (serverId) => serverId === "credential_skills"
+      ? { configured: true, availableTools: ["credential-prompt-generator"] }
+      : { configured: false, availableTools: [] });
+
+    expect(resolved).toEqual({
+      servers: [{ name: "credential_skills", enabled: true }],
+      toolsByServer: { credential_skills: ["credential-prompt-generator"] },
+      probeErrors: {},
+    });
+  });
+
+  it("keeps a configured role MCP usable when live discovery is temporarily unchecked", async () => {
+    const resolved = await resolveRoleManagedReadiness({
+      requiredServerIds: ["credential_skills"],
+      configuredServers: [{ name: "role_mcp_gateway", enabled: true }],
+    }, async () => ({
+      configured: true,
+      availableTools: [],
+      probeError: "upstream unavailable",
+    }));
+    const result = evaluateSkillMcpReadiness({
+      skillId: "credential-prompt-generator",
+      requirement: { servers: { credential_skills: ["credential-prompt-generator"] } },
+      authorizedServerIds: new Set(["credential_skills"]),
+      configuredServers: resolved.servers,
+      toolsByServer: resolved.toolsByServer,
+      probeErrors: resolved.probeErrors,
+    });
+
+    expect(result).toMatchObject({ status: "unchecked", canProceed: true });
   });
 });

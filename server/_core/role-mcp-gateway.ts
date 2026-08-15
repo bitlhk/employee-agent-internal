@@ -30,7 +30,7 @@ const MANAGED_SERVER_IDS = new Set([
   "enterprise_mcp_gateway",
   "role_mcp_gateway",
 ]);
-const SAFE_COMPUTE_NAME_RE = /(?:^|[_:.-])(?:parse|validate|schema|analy[sz]e|calculate|convert|extract|summari[sz]e)(?:$|[_:.-])/i;
+const SAFE_COMPUTE_NAME_RE = /(?:^|[_:.-])(?:parse|validate|schema|analy[sz]e|calculate|classif(?:y|ication)|convert|extract(?:or)?|generate|generator|locate|summari[sz]e)(?:$|[_:.-])/i;
 
 type JsonRpcMessage = {
   id?: unknown;
@@ -167,6 +167,40 @@ async function toolsForServer(serverId: string, config: TrustedRuntimeMcpConfig)
     if (oldest) toolCache.delete(oldest);
   }
   return tools;
+}
+
+export type RoleMcpReadinessProbe = {
+  configured: boolean;
+  availableTools: string[];
+  probeError?: string;
+};
+
+/**
+ * Resolve the logical MCP server behind the shared role gateway. Readiness
+ * checks use remote tool names because role-pack requirements are authored
+ * against the enterprise asset, not the gateway's hashed exposed name.
+ */
+export async function probeRoleMcpServerForReadiness(serverId: string): Promise<RoleMcpReadinessProbe> {
+  const normalized = String(serverId || "").trim();
+  if (!normalized || MANAGED_SERVER_IDS.has(normalized)) {
+    return { configured: false, availableTools: [] };
+  }
+  const raw = runtimeMcpServers()[normalized];
+  const config = raw ? normalizeTrustedRuntimeMcpConfig(raw) : null;
+  if (!config) return { configured: false, availableTools: [] };
+  try {
+    const tools = await toolsForServer(normalized, config);
+    return {
+      configured: true,
+      availableTools: tools.map((tool) => tool.name).filter(Boolean).sort(),
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      availableTools: [],
+      probeError: cleanError(error),
+    };
+  }
 }
 
 async function exposedTools(context: RuntimeContext): Promise<RoleMcpTool[]> {
