@@ -92,7 +92,12 @@ function skillDirectoryDigest(rootDir: string): string {
   }
   const hash = createHash("sha256");
   const walk = (dir: string, relativeDir: string) => {
-    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    // Keep this byte-independent ordering aligned with Python's default string
+    // ordering in the enterprise AgentServer asset verifier. localeCompare is
+    // locale-sensitive and can produce a different digest for the same files.
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => (
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+    ));
     for (const entry of entries) {
       const absolutePath = path.join(dir, entry.name);
       const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;

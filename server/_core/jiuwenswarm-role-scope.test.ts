@@ -266,6 +266,36 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("uses the same deterministic Skill digest ordering as the Python runtime", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-digest-order-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const shared = path.join(root, "skills-shared");
+      const skillDir = path.join(shared, "wealth-manager-assistant");
+      mkdirSync(skillDir, { recursive: true });
+      writeFileSync(path.join(skillDir, "SKILL.md"), "# Skill\n", "utf8");
+      writeFileSync(path.join(skillDir, "_meta.json"), "{}\n", "utf8");
+      writeFileSync(path.join(skillDir, "README.md"), "# Readme\n", "utf8");
+      writeFileSync(path.join(skillDir, "\u53c2\u8003.md"), "\u4f9d\u636e\n", "utf8");
+
+      writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: workspace,
+        role,
+        effectiveAssets,
+        sharedSkillsDir: shared,
+      });
+
+      const manifest = JSON.parse(
+        readFileSync(path.join(workspace, JIUWENSWARM_MANAGED_SKILLS_MANIFEST), "utf8"),
+      );
+      expect(manifest.skills["wealth-manager-assistant"].digest).toBe(
+        "176157b66f47a16ae8eefdbf621b5e5972db1f0f158558216efe340085318c83",
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("links installed active skills without linking every optional role grant", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-active-links-"));
     try {

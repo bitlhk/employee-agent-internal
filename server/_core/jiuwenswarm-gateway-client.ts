@@ -65,6 +65,30 @@ function parseJsonFrame(raw: RawData): any | null {
   }
 }
 
+export function enterpriseMcpProvisioningFrameResult(
+  frame: any,
+  requestId: string,
+): { status: "success" | "error"; error?: string } | null {
+  if (!frame || String(requestId || "") === "") return null;
+  if (frame.type === "res" && frame.id === requestId) {
+    return frame.ok === false
+      ? { status: "error", error: String(frame.error || frame.payload?.error || "enterprise MCP provisioning failed") }
+      : { status: "success" };
+  }
+  if (
+    frame.type === "event"
+    && frame.request_id === requestId
+    && frame.event === "chat.error"
+  ) {
+    const payload = eventPayload(frame);
+    return {
+      status: "error",
+      error: String(payload.error || payload.message || "enterprise MCP provisioning failed"),
+    };
+  }
+  return null;
+}
+
 function initSse(res: Response): void {
   if (!res.headersSent) {
     res.setHeader("Content-Type", "text/event-stream");
@@ -635,14 +659,15 @@ export async function forwardToJiuwenGateway(
         provisionManagedMcpOrSendChat();
         return;
       }
-      if (frame.type === "res" && frame.id === managedMcpRequestId) {
+      const managedMcpResult = enterpriseMcpProvisioningFrameResult(frame, managedMcpRequestId);
+      if (managedMcpResult) {
         if (managedMcpProvisionTimer) clearTimeout(managedMcpProvisionTimer);
         managedMcpProvisionTimer = null;
-        if (frame.ok === false) {
+        if (managedMcpResult.status === "error") {
           const rejectProvision = managedMcpProvisionReject;
           managedMcpProvisionResolve = null;
           managedMcpProvisionReject = null;
-          rejectProvision?.(new Error(String(frame.error || "enterprise MCP provisioning failed")));
+          rejectProvision?.(new Error(managedMcpResult.error || "enterprise MCP provisioning failed"));
           return;
         }
         const resolveProvision = managedMcpProvisionResolve;
