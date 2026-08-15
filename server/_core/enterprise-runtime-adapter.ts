@@ -119,6 +119,9 @@ export async function resolveEnterpriseRuntimeRoute(
   if (binding.status !== "ready") {
     return { target: "standalone", reason: `enterprise_binding_${binding.status}` };
   }
+  if (!String(binding.assetSetFingerprint || "").trim()) {
+    return { target: "standalone", reason: "enterprise_asset_bundle_missing" };
+  }
   if (binding.runtimeProfile !== "enterprise_canary" && binding.runtimeProfile !== "enterprise") {
     return { target: "standalone", reason: "enterprise_profile_not_selected" };
   }

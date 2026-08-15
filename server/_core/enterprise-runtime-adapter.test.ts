@@ -24,7 +24,7 @@ function binding(overrides: Partial<RuntimeAgentBinding> = {}): RuntimeAgentBind
     serviceId: "service-1",
     runtimeAgentId: "ea_user_abc",
     workspaceKey: "workspace_abc",
-    assetSetFingerprint: null,
+    assetSetFingerprint: "a".repeat(64),
     status: "ready",
     version: 1,
     validatedAt: new Date("2026-08-14T00:00:00Z"),
@@ -83,6 +83,18 @@ describe("enterprise runtime adapter", () => {
     })).resolves.toEqual({
       target: "standalone",
       reason: "enterprise_binding_pending",
+    });
+  });
+
+  it("fails back before execution when the enterprise asset bundle is missing", async () => {
+    process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
+    process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "ws://192.168.0.114:30005/ws";
+
+    await expect(resolveEnterpriseRuntimeRoute("lgj-test", {
+      getBinding: vi.fn().mockResolvedValue(binding({ assetSetFingerprint: null })),
+    })).resolves.toEqual({
+      target: "standalone",
+      reason: "enterprise_asset_bundle_missing",
     });
   });
 
