@@ -36,8 +36,12 @@ import {
   buildEnterprisePermissionAnswerParams,
   type EnterpriseRuntimeRoute,
 } from "./enterprise-runtime-adapter";
+import { EnterpriseMcpProvisioningCoordinator } from "./enterprise-mcp-provisioning-coordinator";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
+const enterpriseMcpProvisioningCoordinator = new EnterpriseMcpProvisioningCoordinator(
+  Math.max(30_000, Number(process.env.EA_ENTERPRISE_MCP_PROVISION_CACHE_TTL_MS || 600_000) || 600_000),
+);
 
 function gatewayWsUrl(route?: EnterpriseRuntimeRoute): string {
   return route?.wsUrl || String(process.env.JIUWENCLAW_GATEWAY_WS_URL || DEFAULT_GATEWAY_WS_URL);
@@ -441,6 +445,9 @@ export async function forwardToJiuwenGateway(
     let clientClosed = false;
     let requestSent = false;
     let managedMcpRequestSent = false;
+    let managedMcpProvisionResolve: (() => void) | null = null;
+    let managedMcpProvisionReject: ((error: Error) => void) | null = null;
+    let managedMcpProvisionTimer: NodeJS.Timeout | null = null;
     let connectionAckTimer: NodeJS.Timeout | null = null;
     const timeoutMs = Math.max(30_000, Number(process.env.JIUWENCLAW_GATEWAY_CHAT_TIMEOUT_MS || process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || 180_000) || 180_000);
     const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
@@ -454,13 +461,56 @@ export async function forwardToJiuwenGateway(
         sendChatRequest();
         return;
       }
-      if (managedMcpRequestSent || ws.readyState !== WebSocket.OPEN) return;
-      managedMcpRequestSent = true;
-      sendGatewayRequest(ws, "tools.add", managedMcpRequestId, managedMcpProvisioning.params);
+      void enterpriseMcpProvisioningCoordinator.ensure(
+        managedMcpProvisioning.fingerprint,
+        () => new Promise<void>((resolveProvision, rejectProvision) => {
+          if (managedMcpRequestSent || ws.readyState !== WebSocket.OPEN) {
+            rejectProvision(new Error("enterprise MCP provisioning socket unavailable"));
+            return;
+          }
+          managedMcpRequestSent = true;
+          managedMcpProvisionResolve = resolveProvision;
+          managedMcpProvisionReject = rejectProvision;
+          const provisioningTimeoutMs = Math.max(
+            5_000,
+            Number(process.env.EA_ENTERPRISE_MCP_PROVISION_TIMEOUT_MS || 20_000) || 20_000,
+          );
+          managedMcpProvisionTimer = setTimeout(() => {
+            managedMcpProvisionTimer = null;
+            managedMcpProvisionReject = null;
+            managedMcpProvisionResolve = null;
+            rejectProvision(new Error("enterprise MCP provisioning timed out"));
+          }, provisioningTimeoutMs);
+          sendGatewayRequest(ws, "tools.add", managedMcpRequestId, managedMcpProvisioning.params);
+        }),
+      ).then(() => {
+        sendChatRequest();
+      }).catch((error) => {
+        if (settled) return;
+        appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "enterprise_mcp_provision_failed",
+          adoptId: claw.adoptId,
+          bindingId: enterpriseRoute?.binding.bindingId || "",
+          error: String(error instanceof Error ? error.message : error),
+        });
+        writeSseData(res, {
+          __stream_error: true,
+          error: "企业能力初始化失败，请稍后重试。",
+          reasonCode: "enterprise_mcp_provision_failed",
+        });
+        settle("managed-mcp-error");
+      });
     };
     const settle = (reason: string) => {
       if (settled) return;
       settled = true;
+      const rejectPendingProvision = managedMcpProvisionReject;
+      managedMcpProvisionResolve = null;
+      managedMcpProvisionReject = null;
+      if (rejectPendingProvision) {
+        rejectPendingProvision(new Error(`enterprise MCP provisioning interrupted: ${reason}`));
+      }
       if (reason !== "enterprise-bootstrap-fallback") {
         opts.onRuntimeOutcome?.(
           reason === "done" || reason === "permission-required"
@@ -474,6 +524,7 @@ export async function forwardToJiuwenGateway(
       }
       clearTimeout(timeout);
       if (connectionAckTimer) clearTimeout(connectionAckTimer);
+      if (managedMcpProvisionTimer) clearTimeout(managedMcpProvisionTimer);
       for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
         generatedFiles.set(file.path, file);
         if (!emittedFilePaths.has(file.path) && !clientClosed) {
@@ -585,16 +636,19 @@ export async function forwardToJiuwenGateway(
         return;
       }
       if (frame.type === "res" && frame.id === managedMcpRequestId) {
+        if (managedMcpProvisionTimer) clearTimeout(managedMcpProvisionTimer);
+        managedMcpProvisionTimer = null;
         if (frame.ok === false) {
-          writeSseData(res, {
-            __stream_error: true,
-            error: "企业能力初始化失败，请稍后重试。",
-            reasonCode: "enterprise_mcp_provision_failed",
-          });
-          settle("managed-mcp-error");
+          const rejectProvision = managedMcpProvisionReject;
+          managedMcpProvisionResolve = null;
+          managedMcpProvisionReject = null;
+          rejectProvision?.(new Error(String(frame.error || "enterprise MCP provisioning failed")));
           return;
         }
-        sendChatRequest();
+        const resolveProvision = managedMcpProvisionResolve;
+        managedMcpProvisionResolve = null;
+        managedMcpProvisionReject = null;
+        resolveProvision?.();
         return;
       }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {
