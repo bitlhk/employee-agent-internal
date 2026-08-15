@@ -117,6 +117,11 @@ describe("governance invariants", () => {
     expect(resolveToolGovernance("mcp_enterprise_mcp_gateway_enterprise_ab12_update_customer")).toMatchObject({
       sideEffect: "write", registered: true, policyRequired: true,
     });
+    expect(resolveToolGovernance("mcp_role_mcp_gateway_role_ab12_bond_parse_schema")).toMatchObject({
+      sideEffect: "read",
+      policyRequired: false,
+      auditLevel: "strong",
+    });
   });
 
   it("fails closed for a newly introduced side-effect tool", async () => {

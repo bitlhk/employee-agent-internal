@@ -18,6 +18,11 @@ afterEach(() => {
 });
 
 describe("internal runtime tokens", () => {
+  it("maps the role MCP gateway to its own audience", () => {
+    expect(internalMcpAudience("/api/internal/role-mcp/mcp"))
+      .toBe("urn:ea:internal-mcp:role-mcp");
+  });
+
   it("binds runtime, Agent, adoption, audience, expiry, and jti", async () => {
     const audience = internalMcpAudience("/api/internal/custom-mcp/mcp");
     const issued = await issueInternalRuntimeToken({

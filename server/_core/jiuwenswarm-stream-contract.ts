@@ -1,6 +1,26 @@
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { validateKnowledgeCitations } from "@shared/knowledge-citations";
 
+export type JiuwenRunDescriptor = {
+  runId: string;
+  requestId: string;
+  sessionId: string;
+};
+
+export function buildJiuwenRunDescriptor(args: {
+  clientRunId?: string | null;
+  requestId: string;
+  sessionId: string;
+}): JiuwenRunDescriptor {
+  const requestId = String(args.requestId || "").trim();
+  const sessionId = String(args.sessionId || "").trim();
+  return {
+    runId: String(args.clientRunId || "").trim() || requestId,
+    requestId,
+    sessionId,
+  };
+}
+
 export function buildJiuwenTextDelta(content: string) {
   return {
     __text_mode: "delta" as const,

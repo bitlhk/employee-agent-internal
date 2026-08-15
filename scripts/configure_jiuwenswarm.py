@@ -68,6 +68,15 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "user_context": True,
             "timeout_s": 125,
         },
+        {
+            "name": "role_mcp_gateway",
+            "enabled": True,
+            "transport": "streamable-http",
+            "url": f"http://127.0.0.1:{port}/api/internal/role-mcp/mcp",
+            "headers": {},
+            "user_context": True,
+            "timeout_s": 125,
+        },
     ]
     for desired in desired_servers:
         server = next(

@@ -29,7 +29,11 @@ import {
   type JiuwenSessionArtifactFile,
 } from "./jiuwen-session-artifacts";
 import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwenswarm-mcp-metrics";
-import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
+import {
+  buildJiuwenFinalSnapshot,
+  buildJiuwenRunDescriptor,
+  buildJiuwenTextDelta,
+} from "./jiuwenswarm-stream-contract";
 import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { detectInstructionAttackSignals } from "./instruction-attack";
 import {
@@ -50,7 +54,12 @@ import { createResponseEvidenceCollector } from "./governance/response-evidence"
 import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
-export { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
+export {
+  buildJiuwenFinalSnapshot,
+  buildJiuwenRunDescriptor,
+  buildJiuwenTextDelta,
+  type JiuwenRunDescriptor,
+} from "./jiuwenswarm-stream-contract";
 export {
   normalizeGovernanceApprovalToolEvent,
   normalizeJiuwenToolPayload,
@@ -96,27 +105,6 @@ export type JiuwenSelectedSkillMetadata = {
   sourceKind?: string;
   version?: string;
 };
-export type JiuwenRunDescriptor = {
-  runId: string;
-  requestId: string;
-  sessionId: string;
-};
-
-export function buildJiuwenRunDescriptor(args: {
-  clientRunId?: string | null;
-  requestId: string;
-  sessionId: string;
-}): JiuwenRunDescriptor {
-  const requestId = String(args.requestId || "").trim();
-  const sessionId = String(args.sessionId || "").trim();
-  const clientRunId = String(args.clientRunId || "").trim();
-  return {
-    runId: clientRunId || requestId,
-    requestId,
-    sessionId,
-  };
-}
-
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
 const DEFAULT_SERVICE_ID = "linggan";
 const seenJiuwenAuditEventIds = new Set<string>();

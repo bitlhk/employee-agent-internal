@@ -212,11 +212,24 @@ describe("enterprise runtime adapter", () => {
       "platform_tools",
       "custom_mcp_gateway",
       "enterprise_mcp_gateway",
+      "role_mcp_gateway",
     ]);
     expect(root.mcpServers.enterprise_mcp_gateway).toMatchObject({
       url: "https://ea.example.test/api/internal/enterprise-mcp/mcp",
       auth_headers: {
         "x-ea-runtime-token-audience": "urn:ea:internal-mcp:enterprise-mcp",
+        "x-linggan-agent-id": "agent-insurance",
+        "x-jiuwen-channel-id": "lgj-test",
+      },
+    });
+    const serverIds = Object.values(root.mcpServers).map((server: any) => server.server_id);
+    expect(new Set(serverIds).size).toBe(4);
+    expect(serverIds.every((serverId: string) => /^[a-z_]+_[a-f0-9]{12}$/.test(serverId))).toBe(true);
+    expect(root.mcpServers.role_mcp_gateway).toMatchObject({
+      name: "role_mcp_gateway",
+      url: "https://ea.example.test/api/internal/role-mcp/mcp",
+      auth_headers: {
+        "x-ea-runtime-token-audience": "urn:ea:internal-mcp:role-mcp",
         "x-linggan-agent-id": "agent-insurance",
         "x-jiuwen-channel-id": "lgj-test",
       },

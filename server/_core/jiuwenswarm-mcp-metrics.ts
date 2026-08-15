@@ -49,7 +49,7 @@ export function inferMcpServerForJiuwenTool(toolName: string): string | null {
   if (!flattened) return null;
   const customUser = flattened.match(/^(custom_user_\d+)_/);
   if (customUser?.[1]) return customUser[1];
-  for (const knownServer of ["enterprise_mcp_gateway", "custom_mcp_gateway", "platform_tools"]) {
+  for (const knownServer of ["enterprise_mcp_gateway", "custom_mcp_gateway", "role_mcp_gateway", "platform_tools"]) {
     if (flattened.startsWith(`${knownServer}_`)) return knownServer;
   }
 
@@ -64,7 +64,7 @@ export function inferMcpServerForJiuwenTool(toolName: string): string | null {
 }
 
 function jiuwenMcpKind(serverId: string): McpKind {
-  if (serverId === "enterprise_mcp_gateway") return "enterprise";
+  if (serverId === "enterprise_mcp_gateway" || serverId === "role_mcp_gateway") return "enterprise";
   return serverId.startsWith("custom_user_") || serverId === "custom_mcp_gateway" ? "custom" : "platform";
 }
 

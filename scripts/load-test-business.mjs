@@ -40,6 +40,7 @@ const chatMessage = String(
 ).slice(0, 1000);
 const chatModel = String(process.env.EA_BUSINESS_LOAD_TEST_CHAT_MODEL || "__auto").trim().slice(0, 120);
 const requireChatToolEvent = process.env.EA_BUSINESS_LOAD_TEST_REQUIRE_TOOL_EVENT === "1";
+const allowPermissionRequest = process.env.EA_BUSINESS_LOAD_TEST_ALLOW_PERMISSION_REQUEST === "1";
 const expectedToolFragments = String(process.env.EA_BUSINESS_LOAD_TEST_EXPECT_TOOL_FRAGMENTS || "")
   .split(",")
   .map((value) => value.trim())
@@ -339,6 +340,8 @@ async function runChatSmoke(index, profile) {
   let firstToolEventMs = 0;
   let selectedModel = "";
   let toolNames = [];
+  let permissionRequired = false;
+  let permissionToolName = "";
   try {
     const response = await requestChatStream(
       new URL("/api/claw/chat-stream", baseUrl),
@@ -371,12 +374,17 @@ async function runChatSmoke(index, profile) {
       event.event === "error"
       || (event.payload && typeof event.payload === "object" && event.payload.__stream_error === true)
     ));
+    const permissionRequest = events.find((event) => event.event === "jiuwen_permission_request");
+    permissionRequired = Boolean(permissionRequest);
+    permissionToolName = String(permissionRequest?.payload?.toolName || "").trim();
     if (status < 200 || status >= 400) {
       error = body.slice(0, 200);
     } else if (!completed) {
       error = "chat stream ended without completion marker";
     } else if (runtimeError) {
       error = `chat stream emitted an error event: ${JSON.stringify(runtimeError.payload).slice(0, 160)}`;
+    } else if (permissionRequired && !allowPermissionRequest) {
+      error = `chat stream stopped for a permission request${permissionToolName ? `: ${permissionToolName}` : ""}`;
     } else if (requireChatToolEvent && !observedToolEvent) {
       error = "chat stream completed without a tool event";
     } else {
@@ -399,6 +407,8 @@ async function runChatSmoke(index, profile) {
     observedToolEvent,
     selectedModel,
     toolNames,
+    permissionRequired,
+    permissionToolName,
     error,
   };
 }

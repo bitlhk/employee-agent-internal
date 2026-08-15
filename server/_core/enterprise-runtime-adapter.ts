@@ -27,7 +27,13 @@ const MANAGED_MCP_SERVERS = [
   ["platform_tools", "/api/internal/platform-tools/mcp", "urn:ea:internal-mcp:platform-tools"],
   ["custom_mcp_gateway", "/api/internal/custom-mcp/mcp", "urn:ea:internal-mcp:custom-mcp"],
   ["enterprise_mcp_gateway", "/api/internal/enterprise-mcp/mcp", "urn:ea:internal-mcp:enterprise-mcp"],
+  ["role_mcp_gateway", "/api/internal/role-mcp/mcp", "urn:ea:internal-mcp:role-mcp"],
 ] as const;
+
+function managedMcpServerId(name: string, bindingId: string): string {
+  const scope = createHash("sha256").update(bindingId).digest("hex").slice(0, 12);
+  return `${name}_${scope}`;
+}
 
 function enterpriseRuntimeAssetMetadata(args: {
   route: EnterpriseRuntimeRoute;
@@ -97,6 +103,7 @@ export function buildEnterpriseManagedMcpProvisioning(args: {
     name,
     {
       name,
+      server_id: managedMcpServerId(name, args.route.binding.bindingId),
       description: "EA governed capability gateway",
       type: "streamableHttp",
       url: new URL(pathname, `${baseUrl}/`).toString(),

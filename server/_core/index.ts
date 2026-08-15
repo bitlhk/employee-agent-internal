@@ -68,6 +68,7 @@ import { registerPersonalExpertRoutes } from "./personal-experts";
 import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
 import { registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
+import { registerRoleMcpGatewayRoutes } from "./role-mcp-gateway";
 import { registerEnterpriseRuntimeAssetRoutes } from "./enterprise-runtime-assets";
 import { reconcileEnterpriseMcpRuntimeScopes } from "./enterprise-mcp-runtime-reconcile";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
@@ -372,7 +373,7 @@ async function startServer() {
       if (req.path === "/api/claw/chat-stream") {
         return false;
       }
-      if (req.path === "/api/internal/platform-tools/mcp") {
+      if (/^\/api\/internal\/(?:platform-tools|custom-mcp|enterprise-mcp|role-mcp)\/mcp$/.test(req.path)) {
         return false;
       }
       // 如果请求头明确要求不压缩，则不压缩
@@ -472,6 +473,7 @@ async function startServer() {
   registerPlatformToolsMcpRoutes(app);
   registerCustomMcpRoutes(app);
   registerEnterpriseMcpGatewayRoutes(app);
+  registerRoleMcpGatewayRoutes(app);
   registerEnterpriseRuntimeAssetRoutes(app);
   registerSkillConfigRoutes(app);
   registerToolsPolicyRoutes(app);

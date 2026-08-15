@@ -58,6 +58,7 @@ export function internalMcpAudience(pathname: string): string {
   if (path.endsWith("/platform-tools/mcp")) return "urn:ea:internal-mcp:platform-tools";
   if (path.endsWith("/custom-mcp/mcp")) return "urn:ea:internal-mcp:custom-mcp";
   if (path.endsWith("/enterprise-mcp/mcp")) return "urn:ea:internal-mcp:enterprise-mcp";
+  if (path.endsWith("/role-mcp/mcp")) return "urn:ea:internal-mcp:role-mcp";
   throw new Error("Unsupported internal MCP audience path");
 }
 

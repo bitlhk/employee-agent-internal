@@ -93,6 +93,11 @@ type McpToolGroupOverride = {
 };
 
 const DEFAULT_MCP_CATEGORY = "MCP 工具";
+type JsonObject = Record<string, unknown>;
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
 
 export type ManagedMcpServerStatus = {
   serverId: string;
@@ -127,6 +132,7 @@ const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
   { id: "platform_tools", name: "平台协作工具", category: "平台能力", description: "管理投递通道、定时任务和跨智能体协作，让对话结果进入后续工作流程。", serverIds: ["platform_tools"] },
   { id: "custom_mcp_gateway", name: "自定义连接网关", category: "平台能力", description: "将用户添加的 MCP 安全接入当前智能体，并按用户和智能体实例隔离调用。", serverIds: ["custom_mcp_gateway"] },
   { id: "enterprise_mcp_gateway", name: "企业连接网关", category: "平台能力", description: "按岗位、用户和工具策略调用组织 MCP，并统一执行身份传递、数据护栏和审计。", serverIds: ["enterprise_mcp_gateway"] },
+  { id: "role_mcp_gateway", name: "岗位连接网关", category: "平台能力", description: "将平台已有的只读岗位 MCP 通过统一身份、岗位范围和审计接入企业运行时。", serverIds: ["role_mcp_gateway"] },
 ];
 
 function readableMcpName(serverId: string): string {
@@ -157,22 +163,24 @@ function mcpFallbackTool(serverId: string) {
   };
 }
 
-function readOpenClawConfig(): Record<string, any> {
+function readOpenClawConfig(): JsonObject {
   try {
     if (!existsSync(OPENCLAW_JSON_PATH)) return {};
     const cfg = JSON.parse(
       String(readFileSync(OPENCLAW_JSON_PATH, "utf-8") || "{}")
     );
-    return cfg && typeof cfg === "object" ? cfg : {};
+    return isJsonObject(cfg) ? cfg : {};
   } catch {
     return {};
   }
 }
 
-function readOpenClawMcpServers(config = readOpenClawConfig()): Record<string, any> {
-  return config?.mcp?.servers && typeof config.mcp.servers === "object"
-    ? config.mcp.servers
-    : {};
+function readOpenClawMcpServers(config = readOpenClawConfig()): Record<string, JsonObject> {
+  const mcp = isJsonObject(config.mcp) ? config.mcp : {};
+  if (!isJsonObject(mcp.servers)) return {};
+  return Object.fromEntries(Object.entries(mcp.servers).filter((entry): entry is [string, JsonObject] => (
+    isJsonObject(entry[1])
+  )));
 }
 
 export function listConfiguredMcpServers() {
@@ -181,8 +189,8 @@ export function listConfiguredMcpServers() {
     .map(([serverId, raw]) => ({
       serverId,
       configured: true,
-      enabled: !Boolean((raw as any)?.disabled),
-      status: Boolean((raw as any)?.disabled) ? "disabled" : "available",
+      enabled: !Boolean(raw.disabled),
+      status: Boolean(raw.disabled) ? "disabled" : "available",
       existsOnDisk: mcpServerExistsOnDisk(serverId, raw),
     }))
     .sort((a, b) => a.serverId.localeCompare(b.serverId));
@@ -247,10 +255,10 @@ function extractSkillIntroduction(skillMd: string, fallback: string): string {
     : intro;
 }
 
-function mcpServerExistsOnDisk(serverId: string, raw: any): boolean {
-  const command = typeof raw?.command === "string" ? raw.command : "";
-  const args = Array.isArray(raw?.args)
-    ? raw.args.map((x: any) => String(x || ""))
+function mcpServerExistsOnDisk(serverId: string, raw: JsonObject): boolean {
+  const command = typeof raw.command === "string" ? raw.command : "";
+  const args = Array.isArray(raw.args)
+    ? raw.args.map((item) => String(item || ""))
     : [];
   const candidates = [command, ...args].filter(Boolean);
   for (const item of candidates) {

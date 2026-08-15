@@ -32,6 +32,7 @@ const URL_FIELD_RE = /(?:^|_)(?:url|uri|endpoint|webhook)(?:$|_)/i;
 const DEFAULT_TRUSTED_TOOL_PREFIXES = [
   "mcp_platform_tools_",
   "mcp_enterprise_mcp_gateway_",
+  "mcp_role_mcp_gateway_",
   "mcp_wind_",
   "mcp_wealth_assistant_",
   "mcp_market_data__",
