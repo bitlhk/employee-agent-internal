@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { enterpriseMcpProvisioningFrameResult } from "./jiuwenswarm-gateway-client";
+import {
+  canDegradeAfterEnterpriseMcpProvisioningFailure,
+  enterpriseMcpProvisioningFrameResult,
+} from "./jiuwenswarm-gateway-client";
 
 describe("enterpriseMcpProvisioningFrameResult", () => {
   const requestId = "request-1:managed-mcp";
@@ -34,5 +37,17 @@ describe("enterpriseMcpProvisioningFrameResult", () => {
       request_id: "another-request",
       payload: { error: "unrelated" },
     }, requestId)).toBeNull();
+  });
+
+  it("degrades only when the provisioning confirmation times out", () => {
+    expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
+      new Error("enterprise MCP provisioning timed out"),
+    )).toBe(true);
+    expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
+      new Error("enterprise MCP provisioning failed"),
+    )).toBe(false);
+    expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
+      new Error("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED: digest mismatch"),
+    )).toBe(false);
   });
 });

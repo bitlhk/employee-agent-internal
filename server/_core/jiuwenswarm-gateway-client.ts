@@ -89,6 +89,11 @@ export function enterpriseMcpProvisioningFrameResult(
   return null;
 }
 
+export function canDegradeAfterEnterpriseMcpProvisioningFailure(error: unknown): boolean {
+  return String(error instanceof Error ? error.message : error).trim()
+    === "enterprise MCP provisioning timed out";
+}
+
 function initSse(res: Response): void {
   if (!res.headersSent) {
     res.setHeader("Content-Type", "text/event-stream");
@@ -511,12 +516,24 @@ export async function forwardToJiuwenGateway(
         sendChatRequest();
       }).catch((error) => {
         if (settled) return;
+        const errorMessage = String(error instanceof Error ? error.message : error);
+        if (canDegradeAfterEnterpriseMcpProvisioningFailure(error)) {
+          appendLogAsync("jiuwenclaw-exec.log", {
+            ts: new Date().toISOString(),
+            event: "enterprise_mcp_provision_degraded",
+            adoptId: claw.adoptId,
+            bindingId: enterpriseRoute?.binding.bindingId || "",
+            error: errorMessage,
+          });
+          sendChatRequest();
+          return;
+        }
         appendLogAsync("jiuwenclaw-exec.log", {
           ts: new Date().toISOString(),
           event: "enterprise_mcp_provision_failed",
           adoptId: claw.adoptId,
           bindingId: enterpriseRoute?.binding.bindingId || "",
-          error: String(error instanceof Error ? error.message : error),
+          error: errorMessage,
         });
         writeSseData(res, {
           __stream_error: true,
