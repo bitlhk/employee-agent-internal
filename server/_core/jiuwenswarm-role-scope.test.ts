@@ -323,6 +323,39 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("authorizes an enabled local Skill without trusting unrelated workspace directories", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-local-active-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const activeSkill = path.join(workspace, "skills", "installed-local");
+      const unrelatedSkill = path.join(workspace, "skills", "stale-unregistered");
+      mkdirSync(activeSkill, { recursive: true });
+      mkdirSync(unrelatedSkill, { recursive: true });
+      writeFileSync(path.join(activeSkill, "SKILL.md"), "# Installed\n", "utf8");
+      writeFileSync(path.join(unrelatedSkill, "SKILL.md"), "# Stale\n", "utf8");
+
+      writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: workspace,
+        role,
+        effectiveAssets: {
+          ...effectiveAssets,
+          skills: { default: [], optional: [] },
+        },
+        activeSkillIds: ["installed-local"],
+        skillSourceDirs: [],
+      });
+
+      const manifest = JSON.parse(
+        readFileSync(path.join(workspace, JIUWENSWARM_MANAGED_SKILLS_MANIFEST), "utf8"),
+      );
+      expect(Object.keys(manifest.skills)).toEqual(["installed-local"]);
+      expect(manifest.skills["installed-local"].digest).toMatch(/^[a-f0-9]{64}$/u);
+      expect(existsSync(path.join(workspace, "skills", "stale-unregistered"))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("updates a materialized skill only when its source content changes", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-sync-"));
     try {

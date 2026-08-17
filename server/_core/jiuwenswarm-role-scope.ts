@@ -241,17 +241,15 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
     ...(args.sharedSkillsDir ? [args.sharedSkillsDir] : []),
   ]);
 
-  const linkResult = skillSourceDirs.length > 0
-    ? reconcileJiuwenSwarmSharedSkillLinks({
-      workspaceDir,
-      sharedSkillsDirs: skillSourceDirs,
-      allowedSkillIds: activeRoleSkillIds(
-        args.effectiveAssets,
-        args.activeSkillIds || [],
-        args.disabledDefaultSkillIds || [],
-      ),
-    })
-    : { linkedSharedSkills: [], removedSharedSkills: [] };
+  const linkResult = reconcileJiuwenSwarmSharedSkillLinks({
+    workspaceDir,
+    sharedSkillsDirs: skillSourceDirs,
+    allowedSkillIds: activeRoleSkillIds(
+      args.effectiveAssets,
+      args.activeSkillIds || [],
+      args.disabledDefaultSkillIds || [],
+    ),
+  });
 
   if (current === next) {
     normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir);
@@ -448,7 +446,6 @@ export function reconcileJiuwenSwarmSharedSkillLinks(params: {
     ...(params.sharedSkillsDirs || []),
     ...(params.sharedSkillsDir ? [params.sharedSkillsDir] : []),
   ]).filter((dir) => existsSync(dir));
-  if (sharedSkillsDirs.length === 0) return { linkedSharedSkills, removedSharedSkills };
   mkdirSync(workspaceSkillsDir, { recursive: true });
   const sharedRoots = sharedSkillsDirs.map((dir) => path.resolve(dir));
 
@@ -482,12 +479,15 @@ export function reconcileJiuwenSwarmSharedSkillLinks(params: {
 
   for (const skillId of allowed) {
     const sharedRoot = sharedSkillsDirs.find((dir) => existsSync(path.join(dir, skillId)));
-    if (!sharedRoot) continue;
-    const sharedPath = path.join(sharedRoot, skillId);
+    const sharedPath = sharedRoot
+      ? path.join(sharedRoot, skillId)
+      : path.join(workspaceSkillsDir, skillId);
     const linkPath = path.join(workspaceSkillsDir, skillId);
-    if (!existsSync(sharedPath)) continue;
+    if (sharedRoot ? !existsSync(sharedPath) : !existsSync(path.join(sharedPath, "SKILL.md"))) continue;
     const digest = skillDirectoryDigest(sharedPath);
-    const materialized = materializeManagedSkill(sharedPath, linkPath, digest);
+    const materialized = sharedRoot
+      ? materializeManagedSkill(sharedPath, linkPath, digest)
+      : false;
     nextManaged.skills[skillId] = { digest };
     if (materialized || previousManaged.skills[skillId]?.digest !== digest) linkedSharedSkills.push(skillId);
   }
