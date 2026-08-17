@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { realpathSync, statSync } from "node:fs";
+import path from "node:path";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
+import type { UploadedAttachmentContextFile } from "../../shared/uploaded-attachment-context";
 import { getRuntimeAgentBinding } from "../db/runtime-agent-bindings";
 import {
   ensureEnterpriseRuntimeBindingForAdoption,
@@ -23,6 +26,12 @@ export type EnterpriseManagedMcpProvisioning = {
   params: Record<string, unknown>;
 };
 
+export type EnterpriseRuntimeAttachmentRef = {
+  name: string;
+  path: string;
+  size: number;
+};
+
 const MANAGED_MCP_SERVERS = [
   ["platform_tools", "/api/internal/platform-tools/mcp", "urn:ea:internal-mcp:platform-tools"],
   ["custom_mcp_gateway", "/api/internal/custom-mcp/mcp", "urn:ea:internal-mcp:custom-mcp"],
@@ -39,6 +48,7 @@ function enterpriseRuntimeAssetMetadata(args: {
   route: EnterpriseRuntimeRoute;
   adoptId: string;
   agentId: string;
+  runtimeAttachments?: EnterpriseRuntimeAttachmentRef[];
 }): Record<string, unknown> {
   return {
     source_channel: args.adoptId,
@@ -51,7 +61,38 @@ function enterpriseRuntimeAssetMetadata(args: {
       workspace_key: args.route.binding.workspaceKey,
       source_agent_id: args.agentId,
     },
+    ...(args.runtimeAttachments?.length
+      ? { ea_runtime_attachments: args.runtimeAttachments }
+      : {}),
   };
+}
+
+export function buildEnterpriseRuntimeAttachmentRefs(
+  attachments: UploadedAttachmentContextFile[],
+  workspaceDir: string,
+): EnterpriseRuntimeAttachmentRef[] {
+  if (!attachments.length) return [];
+  const workspaceRoot = realpathSync(workspaceDir);
+  return attachments.slice(0, 8).map((attachment) => {
+    const relativePath = String(attachment.path || "").replace(/\\/gu, "/").replace(/^workspace\//u, "").trim();
+    if (!relativePath.startsWith("prompt_attachment/") || relativePath.split("/").some((part) => !part || part === "." || part === "..")) {
+      throw new Error("Uploaded attachment path is outside the managed attachment directory");
+    }
+    const absolutePath = realpathSync(path.resolve(workspaceRoot, relativePath));
+    const relativeToWorkspace = path.relative(workspaceRoot, absolutePath);
+    if (!relativeToWorkspace || relativeToWorkspace.startsWith("..") || path.isAbsolute(relativeToWorkspace)) {
+      throw new Error("Uploaded attachment escaped the runtime workspace");
+    }
+    const stats = statSync(absolutePath);
+    if (!stats.isFile() || stats.size > 50 * 1024 * 1024) {
+      throw new Error("Uploaded attachment is unavailable or exceeds the runtime limit");
+    }
+    return {
+      name: String(attachment.name || path.basename(absolutePath)).replace(/[\r\n]/gu, " ").trim().slice(0, 255),
+      path: relativePath,
+      size: stats.size,
+    };
+  });
 }
 
 function enterpriseRuntimeEnabled(): boolean {
@@ -194,6 +235,7 @@ export function buildEnterpriseChatParams(args: {
   runtimeMode?: unknown;
   modelName?: string;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
+  runtimeAttachments?: EnterpriseRuntimeAttachmentRef[];
 }): Record<string, unknown> {
   const { binding } = args.route;
   const selectedSkills = (args.selectedSkills || []).slice(0, 8).map((skill) => ({

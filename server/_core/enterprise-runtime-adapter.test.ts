@@ -1,9 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import {
   buildEnterpriseChatParams,
   buildEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
+  buildEnterpriseRuntimeAttachmentRefs,
   enterpriseRuntimeSupportsModel,
   resolveEnterpriseRuntimeRoute,
   type EnterpriseRuntimeRoute,
@@ -170,6 +174,38 @@ describe("enterprise runtime adapter", () => {
     });
     expect(params).not.toHaveProperty("project_dir");
     expect(JSON.stringify(params)).not.toContain("/local/path");
+  });
+
+  it("projects only validated prompt attachments into enterprise request metadata", () => {
+    const workspace = mkdtempSync(path.join(tmpdir(), "ea-enterprise-attachment-"));
+    try {
+      mkdirSync(path.join(workspace, "prompt_attachment"));
+      writeFileSync(path.join(workspace, "prompt_attachment", "policy.docx"), "policy");
+      const runtimeAttachments = buildEnterpriseRuntimeAttachmentRefs([{
+        name: "政策.docx",
+        path: "prompt_attachment/policy.docx",
+        size: 6,
+      }], workspace);
+      const params = buildEnterpriseChatParams({
+        route: route(),
+        sessionId: "sess-attachment",
+        message: "请审核附件",
+        adoptId: "lgj-test",
+        agentId: "agent-insurance",
+        runtimeAttachments,
+      });
+
+      expect(runtimeAttachments).toEqual([{
+        name: "政策.docx",
+        path: "prompt_attachment/policy.docx",
+        size: 6,
+      }]);
+      expect(params).toMatchObject({
+        request_metadata: { ea_runtime_attachments: runtimeAttachments },
+      });
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 
   it("limits enterprise routing to the configured server-side model allowlist", () => {

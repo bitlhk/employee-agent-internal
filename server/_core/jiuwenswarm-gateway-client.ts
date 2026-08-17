@@ -33,6 +33,7 @@ import { createResponseEvidenceCollector } from "./governance/response-evidence"
 import {
   buildEnterpriseChatParams,
   buildEnterpriseManagedMcpProvisioning,
+  buildEnterpriseRuntimeAttachmentRefs,
   buildEnterprisePermissionAnswerParams,
   type EnterpriseRuntimeRoute,
 } from "./enterprise-runtime-adapter";
@@ -400,6 +401,9 @@ export async function forwardToJiuwenGateway(
   const sessionId = buildJiuwenSessionId(claw, agentId, opts);
   const channelId = claw.adoptId;
   const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
+  const runtimeAttachments = enterpriseRoute
+    ? buildEnterpriseRuntimeAttachmentRefs(opts.uploadedAttachments || [], workspaceDir)
+    : [];
   const requestId = `linggan-gateway-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const params = enterpriseRoute
     ? buildEnterpriseChatParams({
@@ -411,6 +415,7 @@ export async function forwardToJiuwenGateway(
         runtimeMode: opts.runtimeMode,
         modelName: opts.modelName,
         selectedSkills: opts.selectedSkills,
+        runtimeAttachments,
       })
     : buildGatewayChatParams({
         serviceId,

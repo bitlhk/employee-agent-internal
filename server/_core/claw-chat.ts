@@ -820,6 +820,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           runtimeMode: normalizedRuntimeMode,
           cancelPendingPermission,
           selectedSkills: selectedSkills?.ok ? selectedSkills.metadata : [],
+          uploadedAttachments: parsedUserMessage.attachments,
           enterpriseRoute,
           knowledgeSources,
           memoryUserMessage: restrictedMiniExperience ? undefined : userMessage,

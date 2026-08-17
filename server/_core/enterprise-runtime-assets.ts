@@ -24,8 +24,10 @@ import {
 import { recordAuditBestEffort, auditRequest } from "./audit-events";
 import { APP_ROOT, resolveRuntimeWorkspaceByIds } from "./helpers";
 import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
+import { resolveExistingWorkspacePath } from "./file-path-security";
 
 export const ENTERPRISE_RUNTIME_ASSET_AUDIENCE = "urn:ea:runtime-assets";
+export const ENTERPRISE_RUNTIME_ATTACHMENT_AUDIENCE = "urn:ea:runtime-attachments";
 const BUNDLE_FORMAT_VERSION = 1;
 const MAX_BUNDLE_FILES = 512;
 const MAX_BUNDLE_BYTES = 32 * 1024 * 1024;
@@ -97,6 +99,14 @@ function normalizeRelativePath(value: string): string {
   const normalized = value.replace(/\\/gu, "/").replace(/^\/+/, "");
   if (!normalized || normalized.includes("\0") || normalized.split("/").some((part) => !part || part === "." || part === "..")) {
     throw new Error(`Unsafe runtime asset path: ${value}`);
+  }
+  return normalized;
+}
+
+function normalizeAttachmentPath(value: string): string {
+  const normalized = normalizeRelativePath(value);
+  if (!normalized.startsWith("prompt_attachment/")) {
+    throw new Error("Runtime attachment path is outside prompt_attachment");
   }
   return normalized;
 }
@@ -360,5 +370,50 @@ export function registerEnterpriseRuntimeAssetRoutes(app: Express): void {
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("X-EA-Asset-Fingerprint", String(binding.assetSetFingerprint));
     createReadStream(bundlePath).pipe(res);
+  });
+
+  app.get("/api/internal/runtime-assets/attachment", async (req: Request, res: Response) => {
+    if (!await authorizeAndBindInternalRuntimeRequest(req, ENTERPRISE_RUNTIME_ATTACHMENT_AUDIENCE)) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const adoptionId = String(req.headers["x-agent-adopt-id"] || "").trim();
+    const agentId = String(req.headers["x-linggan-agent-id"] || "").trim();
+    const adoption = await getClawByAdoptId(adoptionId).catch(() => null);
+    const binding = await getRuntimeAgentBinding(adoptionId).catch(() => null);
+    if (
+      !adoption
+      || !binding
+      || binding.status !== "ready"
+      || String(adoption.agentId || "") !== agentId
+    ) {
+      res.status(409).json({ error: "runtime_attachment_binding_not_ready" });
+      return;
+    }
+
+    let relativePath: string;
+    try {
+      relativePath = normalizeAttachmentPath(String(req.query.path || ""));
+    } catch {
+      res.status(400).json({ error: "invalid_runtime_attachment_path" });
+      return;
+    }
+    const workspaceDir = resolveRuntimeWorkspaceByIds(adoptionId, agentId);
+    const filePath = resolveExistingWorkspacePath(workspaceDir, relativePath);
+    if (!filePath) {
+      res.status(404).json({ error: "runtime_attachment_not_found" });
+      return;
+    }
+    const stats = statSync(filePath);
+    if (!stats.isFile() || stats.size > 50 * 1024 * 1024) {
+      res.status(413).json({ error: "runtime_attachment_exceeds_limit" });
+      return;
+    }
+    const digest = sha256(readFileSync(filePath));
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader("Content-Length", String(stats.size));
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-EA-Attachment-SHA256", digest);
+    createReadStream(filePath).pipe(res);
   });
 }

@@ -7,6 +7,7 @@ import path from "path";
 import { WebSocket, type RawData } from "ws";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import { parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
+import type { UploadedAttachmentContextFile } from "@shared/uploaded-attachment-context";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { privateMessageLogFields } from "./log-privacy";
 import {
@@ -89,6 +90,7 @@ export type JiuwenForwardOptions = {
   runtimeMode?: unknown;
   cancelPendingPermission?: unknown;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
+  uploadedAttachments?: UploadedAttachmentContextFile[];
   enterpriseRoute?: EnterpriseRuntimeRoute | null;
   knowledgeSources?: Array<Record<string, unknown>>;
   memoryUserMessage?: string;
