@@ -95,6 +95,10 @@ export function canDegradeAfterEnterpriseMcpProvisioningFailure(error: unknown):
     === "enterprise MCP provisioning timed out";
 }
 
+export function gatewayPermissionAnswerMethod(enterprise: boolean): "chat.send" | "chat.user_answer" {
+  return enterprise ? "chat.user_answer" : "chat.send";
+}
+
 function initSse(res: Response): void {
   if (!res.headersSent) {
     res.setHeader("Content-Type", "text/event-stream");
@@ -862,7 +866,16 @@ export async function answerJiuwenGatewayPermission(
     let connectionAckTimer: NodeJS.Timeout | null = null;
     let text = "";
     let sawDone = false;
-    const timeoutMs = Math.max(15_000, Number(process.env.JIUWENCLAW_GATEWAY_PERMISSION_TIMEOUT_MS || process.env.JIUWENCLAW_PERMISSION_TIMEOUT_MS || 180_000) || 180_000);
+    const defaultTimeoutMs = enterpriseRoute ? 300_000 : 180_000;
+    const timeoutMs = Math.max(
+      15_000,
+      Number(
+        process.env.JIUWENCLAW_GATEWAY_PERMISSION_TIMEOUT_MS
+        || process.env.JIUWENCLAW_PERMISSION_TIMEOUT_MS
+        || defaultTimeoutMs,
+      ) || defaultTimeoutMs,
+    );
+    const answerMethod = gatewayPermissionAnswerMethod(Boolean(enterpriseRoute));
     const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
     const settle = (result: { ok: true; text: string } | { ok: false; error: string; text?: string }) => {
       if (settled) return;
@@ -893,12 +906,12 @@ export async function answerJiuwenGatewayPermission(
         connectionAckTimer = setTimeout(() => {
           if (requestSent || ws.readyState !== WebSocket.OPEN) return;
           requestSent = true;
-          sendGatewayRequest(ws, "chat.send", requestId, params);
+          sendGatewayRequest(ws, answerMethod, requestId, params);
         }, 2_000);
         return;
       }
       requestSent = true;
-      sendGatewayRequest(ws, "chat.send", requestId, params);
+      sendGatewayRequest(ws, answerMethod, requestId, params);
     });
     ws.on("message", async (raw) => {
       const frame = parseJsonFrame(raw);
@@ -907,7 +920,7 @@ export async function answerJiuwenGatewayPermission(
         if (connectionAckTimer) clearTimeout(connectionAckTimer);
         if (!requestSent && ws.readyState === WebSocket.OPEN) {
           requestSent = true;
-          sendGatewayRequest(ws, "chat.send", requestId, params);
+          sendGatewayRequest(ws, answerMethod, requestId, params);
         }
         return;
       }

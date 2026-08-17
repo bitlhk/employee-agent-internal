@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canDegradeAfterEnterpriseMcpProvisioningFailure,
   enterpriseMcpProvisioningFrameResult,
+  gatewayPermissionAnswerMethod,
 } from "./jiuwenswarm-gateway-client";
 
 describe("enterpriseMcpProvisioningFrameResult", () => {
@@ -49,5 +50,12 @@ describe("enterpriseMcpProvisioningFrameResult", () => {
     expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
       new Error("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED: digest mismatch"),
     )).toBe(false);
+  });
+});
+
+describe("gatewayPermissionAnswerMethod", () => {
+  it("uses the enterprise gateway user-answer protocol without changing standalone compatibility", () => {
+    expect(gatewayPermissionAnswerMethod(true)).toBe("chat.user_answer");
+    expect(gatewayPermissionAnswerMethod(false)).toBe("chat.send");
   });
 });
