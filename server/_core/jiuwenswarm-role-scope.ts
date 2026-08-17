@@ -241,15 +241,22 @@ export function writeJiuwenSwarmRoleScopeManifest(args: {
     ...(args.sharedSkillsDir ? [args.sharedSkillsDir] : []),
   ]);
 
-  const linkResult = reconcileJiuwenSwarmSharedSkillLinks({
-    workspaceDir,
-    sharedSkillsDirs: skillSourceDirs,
-    allowedSkillIds: activeRoleSkillIds(
-      args.effectiveAssets,
-      args.activeSkillIds || [],
-      args.disabledDefaultSkillIds || [],
-    ),
-  });
+  const shouldReconcileSkills =
+    args.skillSourceDirs !== undefined
+    || args.sharedSkillsDir !== undefined
+    || args.activeSkillIds !== undefined
+    || args.disabledDefaultSkillIds !== undefined;
+  const linkResult = shouldReconcileSkills
+    ? reconcileJiuwenSwarmSharedSkillLinks({
+      workspaceDir,
+      sharedSkillsDirs: skillSourceDirs,
+      allowedSkillIds: activeRoleSkillIds(
+        args.effectiveAssets,
+        args.activeSkillIds || [],
+        args.disabledDefaultSkillIds || [],
+      ),
+    })
+    : { linkedSharedSkills: [], removedSharedSkills: [] };
 
   if (current === next) {
     normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir);

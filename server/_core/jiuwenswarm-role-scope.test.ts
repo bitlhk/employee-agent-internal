@@ -144,6 +144,35 @@ describe("jiuwenswarm role scope manifest", () => {
     }
   });
 
+  it("does not reconcile Skill files during an MCP-only scope update", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-mcp-only-"));
+    try {
+      const managedSkill = path.join(root, "skills", "user-installed");
+      mkdirSync(managedSkill, { recursive: true });
+      writeFileSync(path.join(managedSkill, "SKILL.md"), "# Installed\n", "utf8");
+      writeFileSync(
+        path.join(root, JIUWENSWARM_MANAGED_SKILLS_MANIFEST),
+        `${JSON.stringify({ version: 1, skills: { "user-installed": { digest: "a".repeat(64) } } }, null, 2)}\n`,
+        "utf8",
+      );
+
+      writeJiuwenSwarmRoleScopeManifest({
+        workspaceDir: root,
+        role,
+        effectiveAssets,
+        activeMcpServerIds: ["customer_context_tool"],
+      });
+
+      expect(existsSync(path.join(managedSkill, "SKILL.md"))).toBe(true);
+      const manifest = JSON.parse(
+        readFileSync(path.join(root, JIUWENSWARM_MANAGED_SKILLS_MANIFEST), "utf8"),
+      );
+      expect(Object.keys(manifest.skills)).toEqual(["user-installed"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes external-agent routing guidance into JiuwenSwarm identity", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "jiuwenswarm-role-scope-risk-"));
     try {

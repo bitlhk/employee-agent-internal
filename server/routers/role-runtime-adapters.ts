@@ -18,6 +18,7 @@ import { resolvePersistedAgentMcpSelection } from "../db/agent-mcp-preferences";
 import type { AgentRuntime } from "../_core/role-templates";
 import { retiredRuntimeMessage } from "../_core/runtime-policy";
 import { refreshEnterpriseRuntimeAssetsIfBound } from "../_core/enterprise-runtime-assets";
+import { activeJiuwenSwarmRegistrySkillIds, skillRegistry } from "../_core/skills/skill-registry";
 
 export function missingDefaultRoleSkills(defaultSkillIds: string[], sourceDirs: string[]): string[] {
   return Array.from(new Set(defaultSkillIds.map((id) => String(id || "").trim()).filter(Boolean)))
@@ -66,11 +67,22 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
     assertDefaultRoleSkillsAvailable(input);
     const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
     const workspacePermission = ensureJiuwenSwarmWorkspacePermission(workspaceDir);
+    let activeSkillIds = input.activeSkillIds;
+    if (activeSkillIds === undefined) {
+      const listed = await skillRegistry.listSkills(input.adoptId);
+      activeSkillIds = listed.ok
+        ? activeJiuwenSwarmRegistrySkillIds(
+          listed.value,
+          input.adoptId,
+          [...input.effectiveAssets.skills.default, ...input.effectiveAssets.skills.optional],
+        )
+        : [];
+    }
     const result = writeJiuwenSwarmRoleScopeManifest({
       workspaceDir,
       role: input.role,
       effectiveAssets: input.effectiveAssets,
-      activeSkillIds: input.activeSkillIds,
+      activeSkillIds,
       disabledDefaultSkillIds: input.disabledDefaultSkillIds,
       skillSourceDirs: skillSourceDirsForRuntime(),
     });
