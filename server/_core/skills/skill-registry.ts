@@ -48,6 +48,24 @@ type SkillListCacheEntry = {
 const DEFAULT_SKILL_LIST_CACHE_TTL_MS = 5_000;
 const MAX_SKILL_LIST_CACHE_ENTRIES = 500;
 
+export function activeJiuwenSwarmRegistrySkillIds(
+  skills: Skill[],
+  adoptId: string,
+  roleAuthorizedSkillIds: Iterable<string>,
+): string[] {
+  const roleAuthorized = new Set(Array.from(roleAuthorizedSkillIds, (skillId) => String(skillId || "").trim()));
+  return Array.from(new Set(skills
+    .filter((skill) =>
+      skill.adoptId === adoptId
+      && skill.enabled
+      && skill.state === "ready"
+      && (skill.source.kind !== "runtime_imported" || roleAuthorized.has(skill.id))
+    )
+    .map((skill) => skill.id)
+    .filter(Boolean)))
+    .sort();
+}
+
 type FileSummary = {
   exists: boolean;
   isDirectory?: boolean;
@@ -741,14 +759,15 @@ export class FileSkillRegistry implements SkillRegistry {
     const role = resolveAgentRoleTemplate(roleTemplate);
     const effectiveAssets = await resolveEffectiveRoleAssets(role.id);
     const roleDefaultSkillIds = new Set(effectiveAssets.skills.default);
-    const activeSkillIds = this.loadRegistry()
-      .filter((skill) =>
-        skill.adoptId === adoptId
-        && !roleDefaultSkillIds.has(skill.id)
-        && skill.enabled
-        && skill.state === "ready"
-      )
-      .map((skill) => skill.id);
+    const roleAuthorizedSkillIds = new Set([
+      ...effectiveAssets.skills.default,
+      ...effectiveAssets.skills.optional,
+    ]);
+    const activeSkillIds = activeJiuwenSwarmRegistrySkillIds(
+      this.loadRegistry(),
+      adoptId,
+      roleAuthorizedSkillIds,
+    ).filter((skillId) => !roleDefaultSkillIds.has(skillId));
     const disabledDefaultSkillIds = roleSkillPreferences.getDisabledDefaultSkillIds(adoptId);
 
     const result = writeJiuwenSwarmRoleScopeManifest({

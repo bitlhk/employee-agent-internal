@@ -4,7 +4,7 @@ import os from "os";
 import path from "path";
 import { describe, expect, it, vi } from "vitest";
 import type { Skill } from "../../../shared/types/skill";
-import { FileSkillRegistry } from "./skill-registry";
+import { activeJiuwenSwarmRegistrySkillIds, FileSkillRegistry } from "./skill-registry";
 
 function tempRoot(): string {
   return mkdtempSync(path.join(os.tmpdir(), "lingxia-skill-registry-"));
@@ -33,6 +33,25 @@ function makeSkill(root: string, id: string, state: Skill["state"] = "ready"): S
     updatedAt: "2026-05-01T00:00:00.000Z",
   };
 }
+
+describe("activeJiuwenSwarmRegistrySkillIds", () => {
+  it("drops stale imported role skills while retaining current grants and user installs", () => {
+    const root = "/tmp/skill-registry-selection";
+    const staleImported = makeSkill(root, "old-role-default");
+    staleImported.source.kind = "runtime_imported";
+    const currentImported = makeSkill(root, "current-role-optional");
+    currentImported.source.kind = "runtime_imported";
+    const uploaded = makeSkill(root, "user-uploaded");
+    const disabled = makeSkill(root, "disabled-uploaded");
+    disabled.enabled = false;
+
+    expect(activeJiuwenSwarmRegistrySkillIds(
+      [staleImported, currentImported, uploaded, disabled],
+      "lgc-test",
+      ["current-role-optional"],
+    )).toEqual(["current-role-optional", "user-uploaded"]);
+  });
+});
 
 function registry(root: string): FileSkillRegistry {
   return new FileSkillRegistry({
