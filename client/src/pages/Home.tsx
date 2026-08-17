@@ -1970,6 +1970,7 @@ export default function Home() {
   const lingxiaMessageNodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const lingxiaMessageRefCallbacks = useRef<Map<string, (node: HTMLDivElement | null) => void>>(new Map());
   const lingxiaManualNavigationRef = useRef(false);
+  const lingxiaAutoFollowPauseUntilRef = useRef(0);
   const lingxiaAutoScrollFrameRef = useRef<number | null>(null);
   const [lingxiaNearBottom, setLingxiaNearBottom] = useState(true);
   const [activeConversationPromptId, setActiveConversationPromptId] = useState("");
@@ -3109,6 +3110,7 @@ export default function Home() {
     const nowLabel = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
     const assistantTimeLabel = nowLabel;
     lingxiaManualNavigationRef.current = false;
+    lingxiaAutoFollowPauseUntilRef.current = 0;
     updateLingxiaNearBottom(true);
 
     if (text.toLowerCase() === "/help" || text.toLowerCase() === "/commands") {
@@ -4160,6 +4162,7 @@ export default function Home() {
     if (!viewport || !target) return;
 
     lingxiaManualNavigationRef.current = true;
+    lingxiaAutoFollowPauseUntilRef.current = Date.now() + 500;
     updateLingxiaNearBottom(false);
     setActiveConversationPromptId(messageId);
 
@@ -4172,6 +4175,7 @@ export default function Home() {
 
   useEffect(() => {
     lingxiaManualNavigationRef.current = false;
+    lingxiaAutoFollowPauseUntilRef.current = 0;
     setActiveConversationPromptId("");
   }, [webConversationId]);
 
@@ -4224,6 +4228,10 @@ export default function Home() {
       }
       // Stop an in-flight smooth scroll before the browser applies the user's wheel delta.
       el.scrollTo({ top: el.scrollTop, behavior: "auto" });
+      lingxiaAutoFollowPauseUntilRef.current = Math.max(
+        lingxiaAutoFollowPauseUntilRef.current,
+        Date.now() + 250,
+      );
       lingxiaManualNavigationRef.current = true;
       updateLingxiaNearBottom(false);
     };
@@ -4240,6 +4248,11 @@ export default function Home() {
       }
 
       const distanceFromBottom = Math.max(0, el.scrollHeight - scrollTop - el.clientHeight);
+      if (Date.now() < lingxiaAutoFollowPauseUntilRef.current) {
+        lingxiaManualNavigationRef.current = true;
+        updateLingxiaNearBottom(false);
+        return;
+      }
       if (distanceFromBottom <= 12) {
         lingxiaManualNavigationRef.current = false;
         updateLingxiaNearBottom(true);
@@ -4260,8 +4273,12 @@ export default function Home() {
         ".agent-task-card__details-toggle",
         ".lingxia-tool-summary",
         ".lingxia-tool-step-summary",
+        ".lingxia-toolcard__mini-btn",
+        ".context-receipt__summary",
+        ".context-receipt__technical > summary",
       ].join(", "))) return;
       const scrollTop = el.scrollTop;
+      lingxiaAutoFollowPauseUntilRef.current = Date.now() + 350;
       lingxiaManualNavigationRef.current = true;
       updateLingxiaNearBottom(false);
       window.requestAnimationFrame(() => {
@@ -4277,7 +4294,7 @@ export default function Home() {
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("pointerdown", onPointerDown);
     };
-  }, [updateLingxiaNearBottom]);
+  }, [activePage, updateLingxiaNearBottom, webConversationId]);
 
   useEffect(() => {
     const content = lingxiaMsgContentRef.current;
@@ -4309,6 +4326,7 @@ export default function Home() {
     const userJustSent = lastMessage?.role === "user";
     if (userJustSent) {
       lingxiaManualNavigationRef.current = false;
+      lingxiaAutoFollowPauseUntilRef.current = 0;
       updateLingxiaNearBottom(true);
     }
     if (userJustSent || (!lingxiaManualNavigationRef.current && lingxiaNearBottomRef.current)) {
@@ -4801,6 +4819,7 @@ export default function Home() {
                   style={{ background: "var(--oc-bg-surface)", border: "1px solid var(--oc-border-strong)", color: "var(--oc-text-primary)" }}
                   onClick={() => {
                     lingxiaManualNavigationRef.current = false;
+                    lingxiaAutoFollowPauseUntilRef.current = 0;
                     updateLingxiaNearBottom(true);
                     scrollLingxiaToBottom("smooth");
                   }}
