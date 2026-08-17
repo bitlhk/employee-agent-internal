@@ -28,7 +28,12 @@ interface AdoptionStat {
 interface UsageData {
   adoptions: AdoptionStat[];
   daily: Array<{ date: string; count: number }>;
-  summary: { totalClaws: number; totalChats: number; activeToday: number };
+  summary: {
+    totalClaws: number;
+    totalChats: number;
+    activeToday: number;
+    activeInstancesToday?: number;
+  };
   installations?: {
     summary: {
       commandCopied: number;
@@ -46,11 +51,16 @@ interface UsageData {
 
 function getRecentDailySeries(raw: Array<{ date: string; count: number }>, days = 14) {
   const counts = new Map(raw.map((item) => [item.date, item.count]));
-  const today = new Date();
+  const todayKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  const [year, month, day] = todayKey.split("-").map(Number);
+  const todayUtc = Date.UTC(year, month - 1, day);
   return Array.from({ length: days }, (_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (days - 1 - index));
-    const key = date.toISOString().slice(0, 10);
+    const key = new Date(todayUtc - (days - 1 - index) * 86400000).toISOString().slice(0, 10);
     return { date: key, count: counts.get(key) || 0 };
   });
 }
@@ -85,8 +95,9 @@ export function UsageStatsTab() {
   const chartHeightPx = 72;
   const summaryCards = [
     { label: "智能体实例总数", value: data.summary.totalClaws, icon: Users, tone: "red", hint: "已配置实例" },
-    { label: "总对话数", value: data.summary.totalChats, icon: MessageSquare, tone: "blue", hint: "累计会话调用" },
-    { label: "今日活跃", value: data.summary.activeToday, icon: TrendingUp, tone: "green", hint: "今日有交互" },
+    { label: "累计消息轮次", value: data.summary.totalChats, icon: MessageSquare, tone: "blue", hint: "已去重的用户请求" },
+    { label: "今日活跃用户", value: data.summary.activeToday, icon: TrendingUp, tone: "green", hint: "今日发起过对话" },
+    { label: "今日活跃实例", value: data.summary.activeInstancesToday ?? data.summary.activeToday, icon: Gauge, tone: "red", hint: "今日有交互的岗位实例" },
   ];
   const installSummary = data.installations?.summary || {
     commandCopied: 0,
@@ -109,7 +120,7 @@ export function UsageStatsTab() {
   return (
     <div className="admin-usage-tab space-y-6">
       {/* 概览卡片 */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => {
           const Icon = card.icon;
           return (

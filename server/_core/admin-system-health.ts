@@ -12,6 +12,7 @@ import {
 } from "./helpers";
 import { getCapacitySnapshot } from "./operational-capacity";
 import { getAgentTaskRuntimeSnapshot } from "../db/agents";
+import { parseJiuwenUsageRequest } from "./usage-events";
 
 export interface RuntimeModelOption {
   id: string;
@@ -116,21 +117,26 @@ function readJiuwenRecentActivity(): { requests24h: number; completes24h: number
   if (!existsSync(logPath)) return { requests24h: 0, completes24h: 0 };
 
   const cutoff = Date.now() - 24 * 60 * 60 * 1_000;
-  let requests24h = 0;
-  let completes24h = 0;
+  const requestKeys = new Set<string>();
+  const completionKeys = new Set<string>();
   try {
     const lines = readFileSync(logPath, "utf8").split(/\r?\n/).filter(Boolean).slice(-5_000);
     for (const line of lines) {
       const event = parseJson<Record<string, unknown>>(line, {});
       const timestamp = Date.parse(String(event.ts || ""));
       if (!Number.isFinite(timestamp) || timestamp < cutoff) continue;
-      if (event.event === "chat_stream_request") requests24h += 1;
-      if (event.event === "chat_stream_complete") completes24h += 1;
+      const request = parseJiuwenUsageRequest(event);
+      if (request) requestKeys.add(request.key);
+      if (event.event === "chat_stream_complete" || event.event === "gateway_chat_complete") {
+        const completionIdentity = String(event.requestId || "").trim()
+          || [event.adoptId || "", event.sessionId || "", event.ts || ""].join("|");
+        completionKeys.add(completionIdentity);
+      }
     }
   } catch {
     return { requests24h: 0, completes24h: 0 };
   }
-  return { requests24h, completes24h };
+  return { requests24h: requestKeys.size, completes24h: completionKeys.size };
 }
 
 async function readDatabaseHealth(): Promise<DatabaseHealth> {

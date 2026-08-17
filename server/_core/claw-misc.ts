@@ -32,6 +32,7 @@ import {
 import { logError, logInfo } from "./observability/logger";
 import { resolveEaAssistantModelConfig } from "./ea-assistant-model";
 import { fetchWithTimeout } from "./fetch-timeout";
+import { parseJiuwenUsageRequest, usageDateKey } from "./usage-events";
 
 import {
   addJiuwenUsageEvents,
@@ -847,8 +848,39 @@ export function registerMiscRoutes(app: express.Express) {
         }
       } catch {}
 
+      const jiuwenLogAdoptIds = new Set<string>();
+      try {
+        const jiuwenLogPath = APP_ROOT + "/logs/jiuwenclaw-exec.log";
+        if (existsSync(jiuwenLogPath)) {
+          const maxLines = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_JIUWEN_LOG_MAX_LINES || process.env.LINGXIA_USAGE_JIUWEN_LOG_MAX_LINES || 100000), 100), 500000);
+          const jiuwenLines = readFileSync(jiuwenLogPath, "utf8").split("\n").filter(Boolean).slice(-maxLines);
+          for (const line of jiuwenLines) {
+            try {
+              const d = JSON.parse(line);
+              const usageEvent = parseJiuwenUsageRequest(d);
+              if (!usageEvent) continue;
+              const adoptId = usageEvent.adoptId;
+              if (!adoptId || !isJiuwenClawAdoptId(adoptId)) continue;
+              jiuwenLogAdoptIds.add(adoptId);
+              addUsageEvent({
+                byAdopt,
+                dailyAll,
+                seen,
+                key: usageEvent.key,
+                adoptId,
+                ts: usageEvent.ts,
+                userId: usageEvent.userId,
+              });
+            } catch {}
+          }
+        }
+      } catch {}
+
+      // Runtime logs are the canonical source. Local session history is only a
+      // compatibility fallback for older instances that have no retained log.
       for (const claw of adoptionRows) {
         if (claw.runtime !== "jiuwenswarm" && !isJiuwenClawAdoptId(claw.adoptId)) continue;
+        if (jiuwenLogAdoptIds.has(claw.adoptId)) continue;
         addJiuwenUsageEvents({
           byAdopt,
           dailyAll,
@@ -859,38 +891,8 @@ export function registerMiscRoutes(app: express.Express) {
         });
       }
 
-      try {
-        const jiuwenLogPath = APP_ROOT + "/logs/jiuwenclaw-exec.log";
-        if (existsSync(jiuwenLogPath)) {
-          const maxLines = Math.min(Math.max(Number(process.env.WORKFORCE_AGENT_USAGE_JIUWEN_LOG_MAX_LINES || process.env.LINGXIA_USAGE_JIUWEN_LOG_MAX_LINES || 20000), 100), 500000);
-          const jiuwenLines = readFileSync(jiuwenLogPath, "utf8").split("\n").filter(Boolean).slice(-maxLines);
-          for (const line of jiuwenLines) {
-            try {
-              const d = JSON.parse(line);
-              if (d?.event !== "chat_stream_request") continue;
-              const adoptId = String(d?.adoptId || "").trim();
-              if (!adoptId || !isJiuwenClawAdoptId(adoptId)) continue;
-              addUsageEvent({
-                byAdopt,
-                dailyAll,
-                seen,
-                key: [
-                  "jiuwen-log",
-                  adoptId,
-                  d?.clientRunId || "",
-                  d?.sessionId || "",
-                  d?.ts || "",
-                ].join("|"),
-                adoptId,
-                ts: d?.ts || "",
-                userId: d?.userId || 0,
-              });
-            } catch {}
-          }
-        }
-      } catch {}
-
       // 构建排行
+      const recent7dStart = usageDateKey(Date.now() - 6 * 86400000);
       const adoptions = Object.entries(byAdopt)
         .filter(([adoptId]) => currentAdoptIds.has(adoptId))
         .map(([adoptId, stat]) => ({
@@ -901,7 +903,7 @@ export function registerMiscRoutes(app: express.Express) {
           runtime: adoptRuntimeMap[adoptId] || (isJiuwenClawAdoptId(adoptId) ? "jiuwenswarm" : "openclaw"),
           lastActivity: stat.lastTs,
           recent7d: Object.entries(stat.days)
-            .filter(([d]) => d >= new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10))
+            .filter(([d]) => d >= recent7dStart)
             .reduce((s, [, c]) => s + c, 0),
           dailyBreakdown: Object.entries(stat.days).sort(([a], [b]) => b.localeCompare(a)).slice(0, 14)
             .map(([date, count]) => ({ date, count })),
@@ -935,14 +937,23 @@ export function registerMiscRoutes(app: express.Express) {
         logError("admin.usage_stats.install_telemetry_failed", error);
       }
 
+      const today = usageDateKey(new Date());
+      const activeAdoptionsToday = adoptions.filter((adoption) =>
+        adoption.dailyBreakdown.some((day) => day.date === today),
+      );
+      const activeUserIdsToday = new Set(
+        activeAdoptionsToday.map((adoption) => adoption.userId).filter((userId) => userId > 0),
+      );
+
       return res.json({
         adoptions,
         daily,
         installations,
         summary: {
-          totalClaws: adoptions.length,
+          totalClaws: currentAdoptIds.size,
           totalChats: seen.size,
-          activeToday: adoptions.filter(a => a.dailyBreakdown.some(d => d.date === new Date().toISOString().slice(0, 10))).length,
+          activeToday: activeUserIdsToday.size,
+          activeInstancesToday: activeAdoptionsToday.length,
         },
       });
     } catch (e: any) {

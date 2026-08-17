@@ -4,6 +4,7 @@ import { stripExpertHandoffRuntimeMessage } from "@shared/expert-handoff-context
 import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import { existsSync, readFileSync, readdirSync, rmSync, statSync } from "fs";
 import path from "path";
+import { usageDateKey } from "./usage-events";
 import {
   JIUWENCLAW_HOME,
   isJiuwenClawAdoptId,
@@ -815,7 +816,7 @@ export function addUsageEvent(params: {
 }) {
   const aid = String(params.adoptId || "").trim();
   const ts = String(params.ts || "").trim();
-  const day = ts.slice(0, 10);
+  const day = usageDateKey(ts);
   if (!aid || !day || params.seen.has(params.key)) return;
   params.seen.add(params.key);
 

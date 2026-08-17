@@ -457,6 +457,7 @@ export async function forwardToJiuwenGateway(
     serviceId,
     sessionId,
     channelId,
+    requestId,
     userId: claw.userId,
     clientRunId: opts.clientRunId || "",
     model: opts.model || "",
@@ -601,6 +602,8 @@ export async function forwardToJiuwenGateway(
         sessionId,
         channelId,
         requestId,
+        userId: claw.userId,
+        clientRunId: opts.clientRunId || "",
         reason,
       });
       if (reason === "enterprise-bootstrap-fallback") {
