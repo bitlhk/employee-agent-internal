@@ -96,12 +96,16 @@ export async function getRuntimeAgentBinding(adoptionId: string): Promise<Runtim
 
 export async function upsertRuntimeAgentBinding(
   draft: EnterpriseRuntimeBindingDraft,
+  options: { status?: "pending" | "ready" } = {},
 ): Promise<RuntimeAgentBinding> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
+  const status = options.status || "pending";
+  const validatedAt = status === "ready" ? new Date() : null;
   await database.insert(runtimeAgentBindings).values({
     ...draft,
-    status: "pending",
+    status,
+    validatedAt,
   }).onDuplicateKeyUpdate({
     set: {
       runtimeProfile: draft.runtimeProfile,
@@ -114,8 +118,8 @@ export async function upsertRuntimeAgentBinding(
       runtimeAgentId: draft.runtimeAgentId,
       workspaceKey: draft.workspaceKey,
       assetSetFingerprint: draft.assetSetFingerprint,
-      status: "pending",
-      validatedAt: null,
+      status,
+      validatedAt,
       lastError: null,
     },
   });

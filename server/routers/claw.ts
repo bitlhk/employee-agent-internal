@@ -76,7 +76,7 @@ import {
   listAgentRoleTemplates,
   resolveAgentRoleTemplate,
 } from "../_core/role-templates";
-import { resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
+import { reconcileRoleRuntimeAssets, resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
 import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
 import { MESSAGE_FEEDBACK_REASON_CODES } from "../../shared/message-feedback";
@@ -1886,8 +1886,12 @@ export const clawRouter = router({
             role,
             effectiveAssets,
           });
-          const skillReconcile = await runtimeAdapter.reconcileSkills({ adoptId, agentId, role, effectiveAssets });
-          const mcpReconcile = await runtimeAdapter.reconcileMcp({ adoptId, agentId, role, effectiveAssets });
+          const assetReconcile = await reconcileRoleRuntimeAssets(runtimeAdapter, {
+            adoptId,
+            agentId,
+            role,
+            effectiveAssets,
+          });
 
           await updateClawAdoptionStatus(adoptionId, "active");
 
@@ -1927,11 +1931,11 @@ export const clawRouter = router({
               runtimeFallbackApplied: provisionPlan.fallbackApplied,
               runtimeFallbackReason: provisionPlan.fallbackReason || null,
               effectiveAssets,
-              skillReconcile,
-              mcpReconcile,
+              skillReconcile: assetReconcile,
+              mcpReconcile: assetReconcile,
               enterpriseBindingId: enterpriseBinding?.bindingId || null,
               enterpriseRuntimeReady: enterpriseBinding?.status === "ready",
-              reconcileApplied: Boolean(skillReconcile.applied || mcpReconcile.applied),
+              reconcileApplied: assetReconcile.applied,
               ttlDays,
               entryUrl,
             },

@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   provision: vi.fn(async () => ({ ok: true })),
   reconcileSkills: vi.fn(async () => ({ ok: true })),
   reconcileMcp: vi.fn(async () => ({ ok: true })),
+  reconcileAssets: vi.fn(async () => ({ ok: true, applied: true, changed: 1 })),
   writeRoleScope: vi.fn(),
   listSkillsWithRoleDefaults: vi.fn(async () => ({ ok: true, value: [] })),
   listHistory: vi.fn(async () => ({ sessions: [] })),
@@ -45,6 +46,7 @@ vi.mock("../routers/role-runtime-adapters", () => ({
     provision: mocks.provision,
     reconcileSkills: mocks.reconcileSkills,
     reconcileMcp: mocks.reconcileMcp,
+    reconcileAssets: mocks.reconcileAssets,
   }),
 }));
 
@@ -403,9 +405,9 @@ describe("EA Mini Program experience route", () => {
     expect(mocks.provision).toHaveBeenCalledWith(
       expect.objectContaining({ permissionProfile: "starter" })
     );
-    expect(mocks.writeRoleScope).toHaveBeenCalledWith(
+    expect(mocks.reconcileAssets).toHaveBeenCalledWith(
       expect.objectContaining({
-        activeMcpServerIds: [],
+        activeSkillIds: [],
         includePlatformMcp: false,
       })
     );

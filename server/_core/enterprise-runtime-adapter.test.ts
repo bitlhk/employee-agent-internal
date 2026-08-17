@@ -71,6 +71,7 @@ describe("enterprise runtime adapter", () => {
     const selected = await resolveEnterpriseRuntimeRoute("lgj-test", {
       getBinding: vi.fn().mockResolvedValue(binding()),
       bundleExists: vi.fn().mockReturnValue(true),
+      ensureCurrent: vi.fn().mockResolvedValue(binding()),
     });
 
     expect(selected.target).toBe("enterprise");

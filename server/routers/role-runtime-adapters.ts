@@ -64,6 +64,14 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
   }
 
   async reconcileSkills(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> {
+    return this.reconcileAssets(input);
+  }
+
+  async reconcileMcp(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> {
+    return this.reconcileAssets(input);
+  }
+
+  async reconcileAssets(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> {
     assertDefaultRoleSkillsAvailable(input);
     const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
     const workspacePermission = ensureJiuwenSwarmWorkspacePermission(workspaceDir);
@@ -78,12 +86,15 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
         )
         : [];
     }
+    const selection = await resolvePersistedAgentMcpSelection(input.adoptId, input.effectiveAssets);
     const result = writeJiuwenSwarmRoleScopeManifest({
       workspaceDir,
       role: input.role,
       effectiveAssets: input.effectiveAssets,
       activeSkillIds,
       disabledDefaultSkillIds: input.disabledDefaultSkillIds,
+      activeMcpServerIds: selection.enabledServerIds,
+      includePlatformMcp: input.includePlatformMcp,
       skillSourceDirs: skillSourceDirsForRuntime(),
     });
     const changed =
@@ -100,28 +111,6 @@ class JiuwenSwarmRoleRuntimeAdapter implements RoleRuntimeAdapter {
       ok: true,
       applied: totalChanged > 0,
       changed: totalChanged,
-      reason: `${result.manifestPath}; workspacePermission=${workspacePermission.changed ? "updated" : "ok"}`,
-    };
-  }
-
-  async reconcileMcp(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> {
-    const selection = await resolvePersistedAgentMcpSelection(input.adoptId, input.effectiveAssets);
-    const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
-    const workspacePermission = ensureJiuwenSwarmWorkspacePermission(workspaceDir);
-    const result = writeJiuwenSwarmRoleScopeManifest({
-      workspaceDir,
-      role: input.role,
-      effectiveAssets: input.effectiveAssets,
-      activeMcpServerIds: selection.enabledServerIds,
-    });
-    const changed = Number(result.changed) + Number(workspacePermission.changed);
-    if (changed > 0) {
-      await refreshEnterpriseRuntimeAssetsIfBound(input.adoptId).catch(() => null);
-    }
-    return {
-      ok: true,
-      applied: changed > 0,
-      changed,
       reason: `${result.manifestPath}; enabledMcp=${selection.enabledServerIds.length}; workspacePermission=${workspacePermission.changed ? "updated" : "ok"}`,
     };
   }

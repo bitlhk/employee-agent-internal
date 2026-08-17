@@ -15,6 +15,7 @@ import { roleSkillPreferences } from "./skills/role-skill-preferences";
 import { skillRegistry } from "./skills/skill-registry";
 import type { Skill } from "../../shared/types/skill";
 import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
+import { reconcileRoleRuntimeAssets } from "./role-runtime-adapter";
 
 export type AdminClawAdoption = NonNullable<
   Awaited<ReturnType<typeof getClawAdoptionAdminById>>
@@ -134,18 +135,12 @@ export const applyAdminRoleReset = async (input: {
   const effectiveAssetDiff = diffEffectiveRoleAssets(previousEffectiveAssets, effectiveAssets);
   const activeSkillIds = await resolveActiveSkillIdsAfterRoleReset(adoptId, effectiveAssets);
   const runtimeAdapter = getRoleRuntimeAdapter(runtime);
-  const skillReconcile = await runtimeAdapter.reconcileSkills({
+  const assetReconcile = await reconcileRoleRuntimeAssets(runtimeAdapter, {
     adoptId,
     agentId,
     role: input.role,
     effectiveAssets,
     activeSkillIds,
-  });
-  const mcpReconcile = await runtimeAdapter.reconcileMcp({
-    adoptId,
-    agentId,
-    role: input.role,
-    effectiveAssets,
   });
   roleSkillPreferences.clear(adoptId);
   const sessionEpoch = await runtimeAdapter.bumpSessionEpoch(adoptId, agentId);
@@ -165,8 +160,8 @@ export const applyAdminRoleReset = async (input: {
       effectiveAssets,
       effectiveAssetDiff,
       activeSkillIds,
-      skillReconcile,
-      mcpReconcile,
+      skillReconcile: assetReconcile,
+      mcpReconcile: assetReconcile,
       sessionEpoch,
     }),
   });
@@ -178,8 +173,8 @@ export const applyAdminRoleReset = async (input: {
     previousEffectiveAssets,
     effectiveAssets,
     effectiveAssetDiff,
-    skillReconcile,
-    mcpReconcile,
+    skillReconcile: assetReconcile,
+    mcpReconcile: assetReconcile,
     sessionEpoch,
   };
 };

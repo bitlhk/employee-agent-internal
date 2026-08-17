@@ -75,6 +75,7 @@ export type EnterpriseRuntimeAssetBundle = {
 type BundleFile = EnterpriseRuntimeAssetFile & { content: Buffer };
 
 const publishLocks = new Map<string, Promise<unknown>>();
+const freshnessChecks = new Map<string, { expiresAt: number; promise: Promise<RuntimeAgentBinding | null> }>();
 
 function assetsRoot(): string {
   return path.resolve(
@@ -256,13 +257,13 @@ export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: stri
   return withPublishLock(adoptionId, async () => {
     const adoption = await getClawByAdoptId(adoptionId);
     if (!adoption || !["active", "expiring"].includes(String(adoption.status || ""))) return null;
+    const previous = await getRuntimeAgentBinding(adoptionId).catch(() => null);
     const draft = buildEnterpriseRuntimeBinding({
       adoptionId: adoption.adoptId,
       agentId: adoption.agentId,
       roleTemplate: adoption.roleTemplate,
       runtimeProfile: "enterprise",
     });
-    await upsertRuntimeAgentBinding(draft);
     try {
       const bundle = buildEnterpriseRuntimeAssetBundle({
         adoptionId: adoption.adoptId,
@@ -271,13 +272,10 @@ export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: stri
         workspaceDir: resolveRuntimeWorkspaceByIds(adoption.adoptId, adoption.agentId),
         binding: draft,
       });
-      const binding = await upsertRuntimeAgentBinding({ ...draft, assetSetFingerprint: bundle.fingerprint });
-      await updateRuntimeAgentBindingStatus({
-        adoptionId,
-        status: "ready",
-        validatedAt: new Date(),
-        lastError: null,
-      });
+      const binding = await upsertRuntimeAgentBinding(
+        { ...draft, assetSetFingerprint: bundle.fingerprint },
+        { status: "ready" },
+      );
       await recordAuditBestEffort({
         action: "runtime.enterprise.asset_publish_succeeded",
         result: "success",
@@ -294,10 +292,23 @@ export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: stri
           fileCount: bundle.manifest.files.length,
         },
       });
-      return { ...binding, status: "ready", validatedAt: new Date() };
+      return binding;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await updateRuntimeAgentBindingStatus({ adoptionId, status: "degraded", lastError: message.slice(0, 1000) });
+      const canRetainPrevious = Boolean(
+        previous
+        && previous.status === "ready"
+        && previous.runtimeBotId === draft.runtimeBotId
+        && enterpriseRuntimeAssetBundleExists(previous),
+      );
+      if (!canRetainPrevious) {
+        await upsertRuntimeAgentBinding(draft).catch(() => null);
+        await updateRuntimeAgentBindingStatus({
+          adoptionId,
+          status: "degraded",
+          lastError: message.slice(0, 1000),
+        });
+      }
       await recordAuditBestEffort({
         action: "runtime.enterprise.asset_publish_failed",
         result: "failed",
@@ -308,9 +319,12 @@ export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: stri
         agentInstanceId: adoptionId,
         runtimeType: "jiuwenswarm",
         runtimeAgentId: adoption.agentId,
-        metadata: { error: message.slice(0, 500) },
-      });
-      return null;
+          metadata: {
+            error: message.slice(0, 500),
+            retainedPreviousReadyBundle: canRetainPrevious,
+          },
+        });
+      return canRetainPrevious ? previous : null;
     }
   });
 }
@@ -318,7 +332,30 @@ export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: stri
 export async function refreshEnterpriseRuntimeAssetsIfBound(adoptionId: string): Promise<RuntimeAgentBinding | null> {
   const binding = await getRuntimeAgentBinding(adoptionId).catch(() => null);
   if (!binding || binding.status === "disabled") return null;
+  freshnessChecks.delete(adoptionId);
   return ensureEnterpriseRuntimeBindingForAdoption(adoptionId);
+}
+
+function freshnessTtlMs(): number {
+  const configured = Number(process.env.EA_ENTERPRISE_RUNTIME_ASSET_SELF_HEAL_TTL_MS || 10_000);
+  return Number.isFinite(configured) && configured >= 1_000 && configured <= 300_000
+    ? configured
+    : 10_000;
+}
+
+export function ensureEnterpriseRuntimeAssetsCurrent(adoptionId: string): Promise<RuntimeAgentBinding | null> {
+  const now = Date.now();
+  const cached = freshnessChecks.get(adoptionId);
+  if (cached && cached.expiresAt > now) return cached.promise;
+  const promise = ensureEnterpriseRuntimeBindingForAdoption(adoptionId);
+  freshnessChecks.set(adoptionId, { expiresAt: now + freshnessTtlMs(), promise });
+  promise.catch(() => freshnessChecks.delete(adoptionId));
+  return promise;
+}
+
+export function clearEnterpriseRuntimeAssetFreshnessCache(adoptionId?: string): void {
+  if (adoptionId) freshnessChecks.delete(adoptionId);
+  else freshnessChecks.clear();
 }
 
 export function enterpriseRuntimeAssetBundlePath(binding: Pick<RuntimeAgentBinding, "adoptionId" | "assetSetFingerprint">): string | null {

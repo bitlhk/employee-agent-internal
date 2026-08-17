@@ -36,6 +36,7 @@ export type RoleRuntimeReconcileInput = {
   effectiveAssets: EffectiveRoleAssets;
   activeSkillIds?: string[];
   disabledDefaultSkillIds?: string[];
+  includePlatformMcp?: boolean;
 };
 
 export type RoleRuntimeReconcileResult = {
@@ -51,9 +52,25 @@ export interface RoleRuntimeAdapter {
   provision(input: RoleRuntimeProvisionInput): Promise<RoleRuntimeProvisionResult> | RoleRuntimeProvisionResult;
   reconcileSkills(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> | RoleRuntimeReconcileResult;
   reconcileMcp(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> | RoleRuntimeReconcileResult;
+  reconcileAssets?(input: RoleRuntimeReconcileInput): Promise<RoleRuntimeReconcileResult> | RoleRuntimeReconcileResult;
   refreshCapabilities(adoptId: string, agentId: string): Promise<number> | number;
   bumpSessionEpoch(adoptId: string, agentId: string): Promise<number> | number;
   audit(input: RoleRuntimeReconcileInput & { action: string; metadata?: Record<string, unknown> }): Promise<void> | void;
+}
+
+export async function reconcileRoleRuntimeAssets(
+  adapter: RoleRuntimeAdapter,
+  input: RoleRuntimeReconcileInput,
+): Promise<RoleRuntimeReconcileResult> {
+  if (adapter.reconcileAssets) return adapter.reconcileAssets(input);
+  const skill = await adapter.reconcileSkills(input);
+  const mcp = await adapter.reconcileMcp(input);
+  return {
+    ok: skill.ok && mcp.ok,
+    applied: skill.applied || mcp.applied,
+    changed: skill.changed + mcp.changed,
+    reason: [skill.reason, mcp.reason].filter(Boolean).join("; "),
+  };
 }
 
 export function resolveRoleRuntimeProvisionPlan(

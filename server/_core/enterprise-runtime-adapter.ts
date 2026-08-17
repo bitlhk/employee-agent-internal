@@ -5,6 +5,7 @@ import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import type { UploadedAttachmentContextFile } from "../../shared/uploaded-attachment-context";
 import { getRuntimeAgentBinding } from "../db/runtime-agent-bindings";
 import {
+  ensureEnterpriseRuntimeAssetsCurrent,
   ensureEnterpriseRuntimeBindingForAdoption,
   enterpriseRuntimeAssetBundleExists,
 } from "./enterprise-runtime-assets";
@@ -177,6 +178,7 @@ export async function resolveEnterpriseRuntimeRoute(
     getBinding?: typeof getRuntimeAgentBinding;
     bundleExists?: typeof enterpriseRuntimeAssetBundleExists;
     ensureBinding?: typeof ensureEnterpriseRuntimeBindingForAdoption;
+    ensureCurrent?: typeof ensureEnterpriseRuntimeAssetsCurrent;
   } = {},
 ): Promise<RuntimeRouteDecision> {
   if (!enterpriseRuntimeEnabled()) {
@@ -189,6 +191,15 @@ export async function resolveEnterpriseRuntimeRoute(
   const getBinding = dependencies.getBinding || getRuntimeAgentBinding;
   const bundleExists = dependencies.bundleExists || enterpriseRuntimeAssetBundleExists;
   let binding = await getBinding(adoptionId);
+  if (
+    binding?.status === "ready"
+    && String(binding.assetSetFingerprint || "").trim()
+    && bundleExists(binding)
+  ) {
+    const current = await (dependencies.ensureCurrent || ensureEnterpriseRuntimeAssetsCurrent)(adoptionId)
+      .catch(() => null);
+    if (current) binding = current;
+  }
   const shouldRepair = !binding
     || ["pending", "degraded"].includes(binding.status)
     || (binding.status === "ready" && (
