@@ -65,6 +65,13 @@ export function applyInsuranceRolePackBaseline(baseline: Baseline): Baseline {
   const role = baseline.industries?.insurance?.roles?.[ROLE_KEY];
   if (!role) throw new Error(`岗位基线缺少 ${ROLE_KEY}`);
   baseline.skillRequirements ||= {};
+  for (const serverId of RETIRED_MCP_SERVERS) {
+    const requirement = baseline.skillRequirements["insurance-telesales-recommend"];
+    if (requirement?.servers) delete requirement.servers[serverId];
+    if (requirement?.servers && Object.keys(requirement.servers).length === 0) {
+      delete baseline.skillRequirements["insurance-telesales-recommend"];
+    }
+  }
   baseline.skillRequirements[PRIMARY_SKILL.id] = { servers: PRIMARY_SKILL.requiredMcpServers };
   const existingDefaults = (role.defaultSkills || []).filter((skillId) => !OPTIONAL_SKILLS.includes(skillId));
   role.defaultSkills = unique([...DEFAULT_SKILLS, ...existingDefaults]);
