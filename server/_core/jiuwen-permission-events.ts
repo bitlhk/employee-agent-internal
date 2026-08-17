@@ -128,7 +128,7 @@ export function normalizeJiuwenPermissionRequest(
   const payload = objectValue(delta);
   const source = String(payload.source || "").trim()
     || (String(eventType).toLowerCase() === "chat.ask_user_question" ? "ask_user_interrupt" : "");
-  if (source && !["permission_interrupt", "confirm_interrupt", "ask_user_interrupt"].includes(source)) return null;
+  if (source && !["permission_interrupt", "confirm_interrupt", "ask_user_interrupt", "ask_tool"].includes(source)) return null;
   const questions = Array.isArray(payload.questions) ? payload.questions : [];
   const firstQuestion = objectValue(questions.find((item) => item && typeof item === "object"));
   const requestId = String(
@@ -137,7 +137,7 @@ export function normalizeJiuwenPermissionRequest(
   ).trim();
   if (!requestId) return null;
   const question = String(firstQuestion.question || payload.question || payload.message || payload.query || "").trim();
-  const kind = source === "ask_user_interrupt" ? "question" : "permission";
+  const kind = source === "ask_user_interrupt" || source === "ask_tool" ? "question" : "permission";
   const interactionQuestions = kind === "question" ? normalizeInteractionQuestions(payload.questions) : [];
   const titleFallback = kind === "question" ? "需要补充信息" : "权限确认";
   const title = String(firstQuestion.header || payload.header || titleFallback).trim() || titleFallback;

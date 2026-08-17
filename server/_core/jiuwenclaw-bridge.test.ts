@@ -72,6 +72,35 @@ describe("jiuwenclaw bridge audit helpers", () => {
     expect(request?.options.map((option) => option.label)).toEqual(["新保客户", "续保客户"]);
   });
 
+  it("accepts ask_user_question events emitted by the ask tool", () => {
+    const request = normalizeJiuwenPermissionRequest("chat.ask_user_question", {
+      request_id: "ask_uq_live-1",
+      source: "ask_tool",
+      questions: [
+        {
+          header: "场景主题",
+          question: "本次陪练场景的主题是什么？",
+          options: [
+            { label: "新车主首次投保", description: "训练需求挖掘" },
+            { label: "老客户续保", description: "训练续保促成" },
+          ],
+          multi_select: false,
+        },
+      ],
+      session_id: "sess-live-1",
+    }, "fallback");
+
+    expect(request).toMatchObject({
+      requestId: "ask_uq_live-1",
+      source: "ask_tool",
+      kind: "question",
+      title: "场景主题",
+      question: "本次陪练场景的主题是什么？",
+    });
+    expect(request?.questions).toHaveLength(1);
+    expect(request?.options.map((option) => option.label)).toEqual(["新车主首次投保", "老客户续保"]);
+  });
+
   it("keeps real permission interrupts on the allow or reject contract", () => {
     const request = normalizeJiuwenPermissionRequest("chat.permission", {
       request_id: "permission-1",
