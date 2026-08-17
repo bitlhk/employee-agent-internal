@@ -724,10 +724,24 @@ export function registerChatStreamRoutes(app: express.Express) {
       let enterpriseRoute: EnterpriseRuntimeRoute | null = null;
       try {
         const runtimeRouteDecision = await resolveEnterpriseRuntimeRoute(String(adoption.adoptId));
-        enterpriseRoute = runtimeRouteDecision.target === "enterprise"
-          && enterpriseRuntimeSupportsModel(selectedModel.modelName || selectedModel.runtimeModelId)
-          ? runtimeRouteDecision.route
-          : null;
+        if (runtimeRouteDecision.target === "enterprise") {
+          const enterpriseModelName = selectedModel.modelName || selectedModel.runtimeModelId;
+          if (!enterpriseRuntimeSupportsModel(enterpriseModelName)) {
+            observeCapabilityPreflight({ kind: "model", outcome: "blocked" });
+            appendLogAsync("jiuwenclaw-exec.log", {
+              ts: new Date().toISOString(),
+              event: "enterprise_runtime_model_blocked",
+              adoptId: String(adoption.adoptId),
+              userId: Number(adoption.userId),
+              clientRunId,
+              model: enterpriseModelName,
+              reason: "model_not_in_enterprise_allowlist",
+            });
+            res.status(503).json({ error: "所选模型尚未接入企业运行集群，请选择“自动”或其他可用模型" });
+            return;
+          }
+          enterpriseRoute = runtimeRouteDecision.route;
+        }
       } catch (error) {
         appendLogAsync("jiuwenclaw-exec.log", {
           ts: new Date().toISOString(),
