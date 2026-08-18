@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listMcpToolGroups } from "./claw-skills";
+import { listMcpToolGroups, roleHomeConnectorStates } from "./claw-skills";
 
 describe("managed enterprise MCP status", () => {
   it("uses the managed Chinese display name and health snapshot", () => {
@@ -63,5 +63,21 @@ describe("managed enterprise MCP status", () => {
         liveError: "upstream unavailable",
       })],
     });
+  });
+
+  it("projects connector health into the shared role-home readiness contract", () => {
+    expect(roleHomeConnectorStates({
+      items: [{
+        children: [
+          { serverId: "ready", configured: true, status: "available", liveStatus: "live", enabledForAgent: true },
+          { serverId: "degraded", configured: true, status: "disabled", liveStatus: "unavailable", enabledForAgent: true },
+          { serverId: "blocked", configured: true, status: "available", liveStatus: "live", enabledForAgent: false },
+        ],
+      }],
+    })).toEqual([
+      { serverId: "ready", status: "READY" },
+      { serverId: "degraded", status: "DEGRADED" },
+      { serverId: "blocked", status: "BLOCKED" },
+    ]);
   });
 });

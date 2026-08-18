@@ -29,11 +29,16 @@ import {
   listCustomMcpConnections,
   listEnterpriseMcpConnections,
   listEnterpriseMcpToolPolicies,
+  listAccessibleKnowledgeBases,
+  getUserById,
   listMcpInvocationCounts,
   resolveEffectiveRoleAssets,
   resolvePersistedAgentMcpSelection,
   setAgentMcpPreference,
 } from "../db";
+import { roleExperience } from "../../shared/role-experience";
+import type { RoleHomeConnectorState } from "./role-home-runtime";
+import { buildRoleHomeRuntimeStatus } from "./role-home-runtime";
 import { skillRegistry } from "./skills/skill-registry";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { roleSkillPreferences } from "./skills/role-skill-preferences";
@@ -110,6 +115,26 @@ export type ManagedMcpServerStatus = {
   checkedAt: string | null;
   error: string | null;
 };
+
+export function roleHomeConnectorStates(payload: Record<string, unknown>): RoleHomeConnectorState[] {
+  const groups = Array.isArray(payload.items) ? payload.items : [];
+  const states = new Map<string, RoleHomeConnectorState["status"]>();
+  for (const group of groups) {
+    if (!group || typeof group !== "object") continue;
+    const children = Array.isArray((group as Record<string, unknown>).children)
+      ? (group as Record<string, unknown>).children as Array<Record<string, unknown>>
+      : [];
+    for (const child of children) {
+      const serverId = String(child.serverId || child.id || "").trim();
+      if (!serverId) continue;
+      const enabled = child.enabledForAgent !== false;
+      const available = child.status === "available" && child.liveStatus !== "unavailable";
+      const configured = Boolean(child.configured);
+      states.set(serverId, enabled && available ? "READY" : enabled && configured ? "DEGRADED" : "BLOCKED");
+    }
+  }
+  return Array.from(states, ([serverId, status]) => ({ serverId, status }));
+}
 
 const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
   { id: "wind_stock_data", name: "Wind A股数据", category: "公共金融数据", description: "查询 A 股行情、K 线、公司档案、财务、股东、事件、技术与风险指标。", serverIds: ["wind_stock_data"] },
@@ -598,7 +623,7 @@ export function registerSkillRoutes(app: express.Express) {
             };
           }));
         const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses, managedServers });
-        return buildMcpStatusResponse({
+        const statusPayload = buildMcpStatusResponse({
           rawPayload,
           selection,
           customRows,
@@ -606,6 +631,35 @@ export function registerSkillRoutes(app: express.Express) {
           roleTemplate,
           liveTtlMs: MCP_TOOLS_LIVE_TTL_MS,
         });
+        const owner = await getUserById(Number(claw.userId || 0));
+        const [skillsResult, knowledgeBases] = await Promise.all([
+          listSkillsWithRoleDefaults({
+            adoptId,
+            agentId: resolveRuntimeAgentId(adoptId, claw.agentId),
+            roleTemplate,
+          }).catch(() => null),
+          listAccessibleKnowledgeBases({
+            userId: Number(owner?.id || claw.userId || 0),
+            groupId: Number(owner?.groupId || 0),
+            roleTemplate,
+          }).catch(() => []),
+        ]);
+        const experience = roleExperience(roleTemplate);
+        const knowledgeReady = knowledgeBases.some((base) => (
+          base.status === "ready"
+          && (experience.maturity === "reference"
+            ? base.scope === "role" && base.roleTemplate === experience.roleTemplate
+            : true)
+        ));
+        return {
+          ...statusPayload,
+          roleHome: buildRoleHomeRuntimeStatus({
+            roleTemplate,
+            connectors: roleHomeConnectorStates(statusPayload),
+            knowledgeReady,
+            skills: skillsResult?.ok ? skillsResult.value : [],
+          }),
+        };
       };
       const responsePayload = force
         ? await loadStatus()

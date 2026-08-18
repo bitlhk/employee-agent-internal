@@ -1,7 +1,10 @@
 import {
   BarChart3,
+  BookOpenCheck,
   BriefcaseBusiness,
   CheckCircle2,
+  CircleAlert,
+  Database,
   FileCheck2,
   FileText,
   MessageSquareText,
@@ -9,10 +12,11 @@ import {
   Search,
   ShieldCheck,
   Target,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
-import type { ComposerConnector } from "@/lib/composer-connectors";
-import { roleExperience, type RoleTaskStarter } from "@/lib/role-experience";
+import type { RoleHomeRuntimeStatus, RoleHomeTaskStatus } from "@shared/role-home";
+import { roleExperience, selectRoleHomeTaskIds, type RoleTaskStarter } from "@/lib/role-experience";
 
 const TASK_ICONS: Record<RoleTaskStarter["icon"], LucideIcon> = {
   brief: BriefcaseBusiness,
@@ -25,30 +29,49 @@ const TASK_ICONS: Record<RoleTaskStarter["icon"], LucideIcon> = {
   target: Target,
 };
 
-function connectorReady(connector: ComposerConnector | undefined): boolean {
-  return Boolean(
-    connector
-    && connector.enabledForAgent
-    && connector.status === "available"
-    && connector.liveStatus !== "unavailable",
-  );
+const CAPABILITY_ICONS: Record<string, LucideIcon> = {
+  connector: Database,
+  knowledge: BookOpenCheck,
+  policy: ShieldCheck,
+  skill: Wrench,
+};
+
+function taskAvailability(task: RoleTaskStarter, status: RoleHomeTaskStatus | undefined, loading: boolean) {
+  if (!status) {
+    return loading
+      ? { state: "checking" as const, label: "正在核验" }
+      : { state: "degraded" as const, label: "有限可用", reason: "岗位运行状态暂未完成核验。" };
+  }
+  if (status.status === "READY") {
+    return {
+      state: "ready" as const,
+      label: task.confirmationRequired ? "可开始 · 执行前确认" : task.attachmentRecommended ? "建议上传材料" : "可开始",
+    };
+  }
+  if (status.status === "DEGRADED") {
+    return { state: "degraded" as const, label: "有限可用", reason: status.reason };
+  }
+  return { state: "blocked" as const, label: "暂不可用", reason: status.reason };
 }
 
-function taskStatus(task: RoleTaskStarter, connectors: ComposerConnector[], loading: boolean) {
-  const required = task.requiredConnectorIds || [];
-  if (required.length === 0) return { state: "ready" as const, label: task.attachmentRecommended ? "建议上传材料" : "可开始" };
-  if (loading && connectors.length === 0) return { state: "checking" as const, label: "正在核验连接" };
-  const missing = required.filter((id) => !connectorReady(connectors.find((connector) => connector.serverId === id)));
-  return missing.length === 0
-    ? { state: "ready" as const, label: "数据连接可用" }
-    : { state: "unavailable" as const, label: "所需连接待恢复" };
+function featuredTasks(roleTemplate: string, statuses: RoleHomeTaskStatus[]): RoleTaskStarter[] {
+  const experience = roleExperience(roleTemplate);
+  const taskById = new Map(experience.tasks.map((task) => [task.id, task]));
+  return selectRoleHomeTaskIds(roleTemplate, statuses)
+    .map((taskId) => taskById.get(taskId))
+    .filter((task): task is RoleTaskStarter => Boolean(task));
+}
+
+function roleTitle(roleName: string): string {
+  const normalized = String(roleName || "岗位").trim();
+  return normalized.endsWith("智能体") ? normalized : `${normalized}智能体`;
 }
 
 export function RoleTaskLaunchpad({
   roleTemplate,
   roleName,
   skillCount,
-  connectors,
+  runtimeStatus,
   connectorsLoading,
   onSelectPrompt,
   onOpenSkills,
@@ -56,61 +79,97 @@ export function RoleTaskLaunchpad({
   roleTemplate: string;
   roleName: string;
   skillCount: number;
-  connectors: ComposerConnector[];
+  runtimeStatus: RoleHomeRuntimeStatus | null;
   connectorsLoading: boolean;
   onSelectPrompt: (task: RoleTaskStarter) => void;
   onOpenSkills: () => void;
 }) {
   const experience = roleExperience(roleTemplate);
-  const readyConnectorCount = connectors.filter(connectorReady).length;
+  const statuses = runtimeStatus?.roleTemplate === experience.roleTemplate ? runtimeStatus.tasks : [];
+  const statusById = new Map(statuses.map((status) => [status.taskId, status]));
+  const tasks = featuredTasks(experience.roleTemplate, statuses);
+  const visibleStatuses = tasks.map((task) => statusById.get(task.id)?.status || (connectorsLoading ? null : "DEGRADED"));
+  const readyCount = visibleStatuses.filter((status) => status === "READY").length;
+  const degradedCount = visibleStatuses.filter((status) => status === "DEGRADED" || status === null).length;
+  const blockedCount = visibleStatuses.filter((status) => status === "BLOCKED").length;
   const maturityLabel = experience.maturity === "reference"
     ? "标杆岗位"
-    : experience.maturity === "operational" ? "岗位能力" : "通用能力";
+    : experience.maturity === "operational" ? "岗位智能体" : "工作智能体";
+  const summary = connectorsLoading && !runtimeStatus
+    ? "正在核验岗位能力"
+    : [
+        readyCount ? `${readyCount} 项任务可开始` : "",
+        degradedCount ? `${degradedCount} 项有限可用` : "",
+        blockedCount ? `${blockedCount} 项暂不可用` : "",
+      ].filter(Boolean).join(" · ");
 
   return (
     <section className="role-task-launchpad" aria-label={`${roleName}可开始的任务`}>
       <header className="role-task-launchpad__header">
-        <div>
+        <div className="role-task-launchpad__identity">
           <span className="role-task-launchpad__eyebrow">{maturityLabel}</span>
-          <h1>{roleName}</h1>
-          <p>{experience.summary}</p>
+          <h1>{roleTitle(roleName)}</h1>
+          <strong>{experience.assistantLabel}</strong>
+          <p>{experience.description}</p>
         </div>
-        <div className="role-task-launchpad__readiness" aria-label="岗位能力状态">
-          <CheckCircle2 aria-hidden="true" />
-          <span>{skillCount} 项 Skill</span>
-          <i aria-hidden="true" />
-          <span>{connectorsLoading && connectors.length === 0 ? "连接核验中" : `${readyConnectorCount} 项企业连接可用`}</span>
+        <div className="role-task-launchpad__readiness" aria-label="岗位任务状态">
+          {blockedCount > 0 ? <CircleAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+          <span>{summary || "岗位能力可用"}</span>
         </div>
       </header>
 
-      <div className="role-task-launchpad__tasks">
-        {experience.tasks.map((task) => {
-          const availability = taskStatus(task, connectors, connectorsLoading);
-          const Icon = TASK_ICONS[task.icon];
-          return (
-            <button
-              key={task.id}
-              type="button"
-              className="role-task-launchpad__task"
-              data-state={availability.state}
-              disabled={availability.state !== "ready"}
-              onClick={() => onSelectPrompt(task)}
-              title={availability.state === "unavailable" ? `${task.label}：${availability.label}` : task.description}
-            >
-              <span className="role-task-launchpad__task-icon"><Icon aria-hidden="true" /></span>
-              <span className="role-task-launchpad__task-copy">
-                <strong>{task.label}</strong>
-                <small>{task.description}</small>
+      <section className="role-task-launchpad__work" aria-labelledby="role-task-launchpad-title">
+        <h2 id="role-task-launchpad-title">今天可以开始</h2>
+        <div className="role-task-launchpad__tasks">
+          {tasks.map((task) => {
+            const availability = taskAvailability(task, statusById.get(task.id), connectorsLoading);
+            const Icon = TASK_ICONS[task.icon];
+            return (
+              <button
+                key={task.id}
+                type="button"
+                className="role-task-launchpad__task"
+                data-state={availability.state}
+                disabled={availability.state === "blocked" || availability.state === "checking"}
+                onClick={() => onSelectPrompt(task)}
+                title={availability.reason ? `${task.label}：${availability.reason}` : task.description}
+              >
+                <span className="role-task-launchpad__task-icon"><Icon aria-hidden="true" /></span>
+                <span className="role-task-launchpad__task-copy">
+                  <strong>{task.label}</strong>
+                  <small>{task.description}</small>
+                </span>
+                <span className="role-task-launchpad__task-status">{availability.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="role-task-launchpad__capabilities" aria-labelledby="role-capability-title">
+        <div className="role-task-launchpad__section-heading">
+          <h2 id="role-capability-title">岗位能力</h2>
+          <span>企业数据、知识与规则按当前岗位授权</span>
+        </div>
+        <div className="role-task-launchpad__capability-list">
+          {experience.capabilities.map((capability) => {
+            const runtimeCapability = runtimeStatus?.capabilities.find((item) => item.id === capability.id);
+            const Icon = CAPABILITY_ICONS[capability.kind] || Puzzle;
+            const state = runtimeCapability?.status || (connectorsLoading ? "DEGRADED" : "BLOCKED");
+            return (
+              <span key={capability.id} className="role-task-launchpad__capability" data-state={state.toLowerCase()}>
+                <Icon aria-hidden="true" />
+                <strong>{capability.label}</strong>
+                <small>{runtimeCapability?.statusLabel || (connectorsLoading ? "核验中" : "待核验")}</small>
               </span>
-              <span className="role-task-launchpad__task-status">{availability.label}</span>
-            </button>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </section>
 
       <footer className="role-task-launchpad__footer">
-        <span>选择任务后可继续补充客户、企业或材料范围</span>
-        <button type="button" onClick={onOpenSkills}><Puzzle aria-hidden="true" />管理 Skill</button>
+        <span>选择任务后可补充客户、企业或材料范围，也可以直接在下方描述工作。</span>
+        <button type="button" onClick={onOpenSkills}><Puzzle aria-hidden="true" />管理 Skill{skillCount > 0 ? ` · ${skillCount}` : ""}</button>
       </footer>
     </section>
   );

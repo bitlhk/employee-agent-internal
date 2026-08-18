@@ -1,3 +1,6 @@
+import type { RoleHomeRuntimeStatus } from "../../../shared/role-home";
+export type { RoleHomeRuntimeStatus } from "../../../shared/role-home";
+
 export type ComposerConnector = {
   serverId: string;
   name: string;
@@ -22,6 +25,7 @@ export type ComposerConnectorResponse = {
   }>;
   enabledServerIds?: string[];
   disabledServerIds?: string[];
+  roleHome?: RoleHomeRuntimeStatus;
 };
 
 export function flattenComposerConnectors(payload: ComposerConnectorResponse): ComposerConnector[] {

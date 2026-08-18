@@ -67,6 +67,7 @@ import {
   flattenComposerConnectors,
   type ComposerConnector,
   type ComposerConnectorResponse,
+  type RoleHomeRuntimeStatus,
 } from "@/lib/composer-connectors";
 import {
   expertTaskMessage,
@@ -2103,6 +2104,7 @@ export default function Home() {
     try { localStorage.setItem(knowledgeSelectionKey, JSON.stringify(selectedComposerKnowledgeIds.slice(0, 8))); } catch {}
   }, [knowledgeSelectionKey, selectedComposerKnowledgeIds]);
   const [composerConnectors, setComposerConnectors] = useState<ComposerConnector[]>([]);
+  const [roleHomeRuntime, setRoleHomeRuntime] = useState<RoleHomeRuntimeStatus | null>(null);
   const [composerConnectorSearch, setComposerConnectorSearch] = useState("");
   const [composerConnectorsLoading, setComposerConnectorsLoading] = useState(false);
   const [pendingConnectorId, setPendingConnectorId] = useState("");
@@ -2171,6 +2173,7 @@ export default function Home() {
       const payload = await response.json().catch(() => ({})) as ComposerConnectorResponse & { error?: string };
       if (!response.ok) throw new Error(payload.error || `连接列表加载失败 (${response.status})`);
       setComposerConnectors(flattenComposerConnectors(payload));
+      setRoleHomeRuntime(payload.roleHome || null);
     } catch (error) {
       if (!options.silent) toast.error(error instanceof Error ? error.message : "连接列表加载失败");
     } finally {
@@ -2293,6 +2296,7 @@ export default function Home() {
   }, [refetchSkills, resolvedAdoptId]);
   useEffect(() => {
     setComposerConnectors([]);
+    setRoleHomeRuntime(null);
     setComposerExperts([]);
     setComposerConnectorSearch("");
     setComposerExpertSearch("");
@@ -4284,7 +4288,7 @@ export default function Home() {
 
   useEffect(() => {
     const content = lingxiaMsgContentRef.current;
-    if (!content || typeof ResizeObserver === "undefined") return;
+    if (!content || typeof ResizeObserver === "undefined" || activeLingxiaMsgs.length === 0) return;
 
     const observer = new ResizeObserver(() => {
       if (!shouldAutoFollowChat(lingxiaManualNavigationRef.current, lingxiaNearBottomRef.current)) return;
@@ -4305,7 +4309,7 @@ export default function Home() {
       }
       observer.disconnect();
     };
-  }, [activePage, scrollLingxiaToBottom, webConversationId]);
+  }, [activeLingxiaMsgs.length, activePage, scrollLingxiaToBottom, webConversationId]);
 
   useEffect(() => {
     const lastMessage = activeLingxiaMsgs[activeLingxiaMsgs.length - 1];
@@ -4708,9 +4712,7 @@ export default function Home() {
               <div ref={lingxiaMsgContentRef} className="mx-auto w-full max-w-[880px] px-6 space-y-5">
 
               {sessionSwitchingId && activeLingxiaMsgs.length === 0 ? <ChatStartupSkeleton /> : null}
-
               {!sessionSwitchingId && clawByAdoptLoading && activeLingxiaMsgs.length === 0 ? <ChatStartupSkeleton /> : null}
-
               {!clawByAdoptLoading && !clawByAdoptId && (
                 <div className="max-w-4xl rounded-xl p-4 text-sm" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.15)", color: "#d4a030" }}>
                   未找到该岗位智能体实例，可能已过期或尚未完成创建。
@@ -4722,7 +4724,7 @@ export default function Home() {
                   roleTemplate={String((clawByAdoptId as any)?.roleTemplate || "general-assistant")}
                   roleName={lingxiaDisplayName || brand.name}
                   skillCount={composerSkills.length}
-                  connectors={composerConnectors}
+                  runtimeStatus={roleHomeRuntime}
                   connectorsLoading={composerConnectorsLoading}
                   onSelectPrompt={(task) => { setLingxiaInput(task.prompt); window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0); }}
                   onOpenSkills={openSkillManager}
@@ -4939,7 +4941,7 @@ export default function Home() {
                   : pendingExpertInteraction.interaction.allowNote
                     ? "可补充说明…"
                     : "请选择一个选项"
-                : `Message ${lingxiaDisplayName || brand.name}…`}
+                : activeLingxiaMsgs.length === 0 ? "输入你要完成的工作任务…" : `继续与${lingxiaDisplayName || brand.name}沟通…`}
               maxLength={4000}
               historyStorageKey={INPUT_HISTORY_KEY}
               voiceOnRight
