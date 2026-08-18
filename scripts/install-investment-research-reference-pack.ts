@@ -29,7 +29,6 @@ const PRIMARY_SKILL = {
   requiredMcpServers: {
     wind_stock_data: ["get_stock_basicinfo", "get_stock_fundamentals", "get_stock_price_indicators", "get_risk_metrics"],
     wind_financial_docs: ["get_company_announcements", "get_financial_news"],
-    wind_analytics_data: ["get_financial_data"],
   },
 } as const;
 const SKILL_ROOT = path.join(APP_ROOT, "examples", "investment-research-reference-role-pack", "skills", PRIMARY_SKILL.id);

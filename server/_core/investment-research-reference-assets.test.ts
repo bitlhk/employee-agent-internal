@@ -33,6 +33,7 @@ describe("investment research Reference Role Pack assets", () => {
       wind_stock_data: ["get_stock_basicinfo", "get_stock_fundamentals", "get_stock_price_indicators", "get_risk_metrics"],
       wind_financial_docs: ["get_company_announcements", "get_financial_news"],
     });
+    expect(updated.skillRequirements?.["investment-research-assistant"]?.servers).not.toHaveProperty("wind_analytics_data");
     const once = JSON.stringify(updated);
     expect(JSON.stringify(applyInvestmentResearchRolePackBaseline(updated))).toBe(once);
   });
