@@ -116,9 +116,15 @@ async function main(): Promise<void> {
 }
 
 if (Boolean(process.argv[1]) && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  main().then(() => closeDbConnection()).catch(async (error) => {
-    console.error(error instanceof Error ? error.message : error);
-    process.exitCode = 1;
-    await closeDbConnection().catch(() => undefined);
-  });
+  main()
+    .then(async () => {
+      // Allow best-effort audit writes to drain before closing the shared pool.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await closeDbConnection();
+    })
+    .catch(async (error) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exitCode = 1;
+      await closeDbConnection().catch(() => undefined);
+    });
 }
