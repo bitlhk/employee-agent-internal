@@ -45,7 +45,12 @@ type SkillListCacheEntry = {
   value: Skill[];
 };
 
-const DEFAULT_SKILL_LIST_CACHE_TTL_MS = 5_000;
+const configuredSkillListCacheTtlMs = Number(
+  process.env.EA_SKILL_LIST_CACHE_TTL_MS || 5_000,
+);
+const DEFAULT_SKILL_LIST_CACHE_TTL_MS = Number.isFinite(configuredSkillListCacheTtlMs)
+  ? Math.min(300_000, Math.max(0, configuredSkillListCacheTtlMs))
+  : 5_000;
 const MAX_SKILL_LIST_CACHE_ENTRIES = 500;
 
 export function activeJiuwenSwarmRegistrySkillIds(

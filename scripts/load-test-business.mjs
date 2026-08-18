@@ -238,7 +238,9 @@ async function preflightProfile(profile, index) {
 async function prewarmProfile(profile, index) {
   const startedAt = performance.now();
   const checks = [];
-  for (const scenario of scenarios.filter((item) => ["skill_registry", "mcp_status"].includes(item.name))) {
+  for (const scenario of scenarios.filter((item) => (
+    ["history_sessions", "skill_registry", "mcp_status"].includes(item.name)
+  ))) {
     let status = 0;
     let error = "";
     try {

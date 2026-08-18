@@ -222,8 +222,13 @@ export function listConfiguredMcpServers() {
 }
 
 const agentMcpMutationTails = new Map<string, Promise<void>>();
+const configuredMcpStatusCacheTtl = Number(
+  process.env.EA_MCP_STATUS_RESPONSE_CACHE_TTL_MS || 5_000,
+);
 const mcpStatusResponseCache = createBoundedAsyncCache<Record<string, unknown>>({
-  ttlMs: 5_000,
+  ttlMs: Number.isFinite(configuredMcpStatusCacheTtl)
+    ? Math.min(300_000, Math.max(1_000, configuredMcpStatusCacheTtl))
+    : 5_000,
   maxEntries: 1_000,
   onEvent: recordMcpStatusCacheRequest,
 });

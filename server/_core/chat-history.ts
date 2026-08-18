@@ -66,7 +66,7 @@ const chatSessionListCache = createChatSessionListCache<
   ReturnType<typeof mergeExpertTaskHistorySessions>
 >({
   ttlMs: Number.isFinite(configuredChatSessionListTtl)
-    ? Math.min(10_000, Math.max(500, configuredChatSessionListTtl))
+    ? Math.min(300_000, Math.max(500, configuredChatSessionListTtl))
     : 2_500,
 });
 
