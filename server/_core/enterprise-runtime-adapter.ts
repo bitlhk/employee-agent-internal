@@ -271,6 +271,32 @@ export function buildEnterpriseChatParams(args: {
   };
 }
 
+export function buildEnterpriseHistoryParams(args: {
+  route: EnterpriseRuntimeRoute;
+  adoptId: string;
+  agentId: string;
+  sessionId?: string;
+  pageIdx?: number;
+  limit?: number;
+  offset?: number;
+}): Record<string, unknown> {
+  const { binding } = args.route;
+  return {
+    group_id: binding.runtimeGroupId,
+    bot_id: binding.runtimeBotId,
+    user_id: binding.runtimeUserId,
+    ...(args.sessionId ? { session_id: args.sessionId } : {}),
+    ...(args.pageIdx ? { page_idx: args.pageIdx } : {}),
+    ...(args.limit ? { limit: args.limit } : {}),
+    ...(args.offset ? { offset: args.offset } : {}),
+    request_metadata: enterpriseRuntimeAssetMetadata({
+      route: args.route,
+      adoptId: args.adoptId,
+      agentId: args.agentId,
+    }),
+  };
+}
+
 export function enterpriseRuntimeSupportsModel(modelName: unknown): boolean {
   const allowed = String(process.env.EA_ENTERPRISE_RUNTIME_MODEL_ALLOWLIST || "")
     .split(",")

@@ -5,6 +5,7 @@ import path from "node:path";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import {
   buildEnterpriseChatParams,
+  buildEnterpriseHistoryParams,
   buildEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
   buildEnterpriseRuntimeAttachmentRefs,
@@ -175,6 +176,32 @@ describe("enterprise runtime adapter", () => {
     });
     expect(params).not.toHaveProperty("project_dir");
     expect(JSON.stringify(params)).not.toContain("/local/path");
+  });
+
+  it("binds history requests to the managed workspace identity", () => {
+    expect(buildEnterpriseHistoryParams({
+      route: route(),
+      adoptId: "lgj-test",
+      agentId: "agent-insurance",
+      sessionId: "sess_lgj-test_web_conv_1_e1",
+      pageIdx: 1,
+      limit: 20,
+    })).toMatchObject({
+      group_id: "ea_s3",
+      bot_id: "insurance-advisor",
+      user_id: "ea_user_abc",
+      session_id: "sess_lgj-test_web_conv_1_e1",
+      page_idx: 1,
+      limit: 20,
+      request_metadata: {
+        source_channel: "lgj-test",
+        ea_managed_runtime: true,
+        ea_binding_id: "rtb_test",
+        ea_asset_bundle: {
+          workspace_key: "workspace_abc",
+        },
+      },
+    });
   });
 
   it("projects only validated prompt attachments into enterprise request metadata", () => {

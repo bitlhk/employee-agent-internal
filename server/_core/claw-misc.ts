@@ -43,7 +43,7 @@ import {
   invalidateChatHistorySessionList,
   listClawChatHistorySessionRecords,
   logIosLoadDebug,
-  mergeJiuwenHistoryCandidates,
+  readModernChatHistorySessionMessages,
   resolveJiuwenHistorySession,
   type UsageBucket,
 } from "./chat-history";
@@ -252,36 +252,25 @@ export function registerMiscRoutes(app: express.Express) {
       }
 
       if (isJiuwenClawAdoptId(adoptId)) {
-        const resolved = resolveJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
-        if (!resolved) {
+        const history = await readModernChatHistorySessionMessages({
+          adoptId,
+          dbAgentId,
+          sessionKey,
+          workspaceDir: resolveRuntimeWorkspace(claw, adoptId),
+          maxMessages: 200,
+        });
+        if (!history) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
-        const runtimeMessages = mergeJiuwenHistoryCandidates({
-          candidates: resolved.segments,
-          adoptId,
-          dbAgentId,
-          maxMessages: 200,
-          workspaceDir: resolveRuntimeWorkspace(claw, adoptId),
-        });
-        const expertTasks = await listAgentTasksByConversation(adoptId, resolved.conversationId, 100).catch(() => []);
-        const messages = bindHistoryAttachmentOwner(dedupeHistoryMessages([
-          ...runtimeMessages,
-          ...buildExpertTaskHistoryMessages(expertTasks, 200),
-        ], 200), adoptId);
         logIosLoadDebug("chat_history_messages_done_jiuwen", {
           adoptId,
           runtimeAgentId: jiuwenClawAgentId(adoptId, dbAgentId),
           sessionKey,
-          messageCount: messages.length,
+          messageCount: history.messages.length,
           ms: Date.now() - startedAt,
         });
-        res.json({
-          conversationId: resolved.conversationId,
-          sessionKey,
-          sessionId: resolved.sessionId,
-          messages,
-        });
+        res.json(history);
         return;
       }
 

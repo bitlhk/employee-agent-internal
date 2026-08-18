@@ -29,6 +29,11 @@ import {
 } from "./expert-task-history";
 import { createChatSessionListCache } from "./chat-session-list-cache";
 import { logDebug, logWarn } from "./observability/logger";
+import {
+  listEnterpriseRuntimeHistorySessions,
+  readEnterpriseRuntimeHistoryRecords,
+  type EnterpriseRuntimeHistorySession,
+} from "./enterprise-runtime-history";
 
 export type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -202,6 +207,63 @@ function isListableJiuwenWebSession(sessionId: string, adoptId: string): boolean
   if (value.includes("_conv_linggan_channel_")) return false;
   if (/\.bak(?:-|$)/i.test(value)) return false;
   return !/(?:^|[_-])(smoke|debug|test|bench|bash_approval)(?:[_-]|$)/i.test(value);
+}
+
+export function normalizeEnterpriseHistorySessions(args: {
+  sessions: EnterpriseRuntimeHistorySession[];
+  adoptId: string;
+  limit: number;
+}): any[] {
+  const grouped = new Map<string, EnterpriseRuntimeHistorySession[]>();
+  for (const session of args.sessions) {
+    const sessionId = safeJiuwenSessionId(session?.session_id);
+    if (!sessionId || !isListableJiuwenWebSession(sessionId, args.adoptId)) continue;
+    const channelId = String(session?.channel_id || "").trim();
+    if (channelId && channelId !== "web" && channelId !== args.adoptId) continue;
+    const conversationId = jiuwenConversationIdFromSessionId(sessionId, args.adoptId);
+    const entries = grouped.get(conversationId) || [];
+    entries.push({ ...session, session_id: sessionId });
+    grouped.set(conversationId, entries);
+  }
+  return Array.from(grouped.entries())
+    .map(([conversationId, segments]) => {
+      const ordered = segments.slice().sort((left, right) => (
+        normalizeJiuwenHistoryTimestamp(left.last_message_at) - normalizeJiuwenHistoryTimestamp(right.last_message_at)
+      ));
+      const latest = ordered[ordered.length - 1];
+      const oldest = ordered[0];
+      const updatedAt = normalizeJiuwenHistoryTimestamp(latest?.last_message_at || latest?.created_at);
+      const createdAt = normalizeJiuwenHistoryTimestamp(oldest?.created_at || oldest?.last_message_at);
+      return {
+        conversationId,
+        sessionKey: String(latest?.session_id || ""),
+        sessionId: String(latest?.session_id || ""),
+        title: truncateHistoryText(oldest?.title || latest?.title || "", 24) || "新对话",
+        preview: "",
+        searchText: normalizeHistoryText(segments.map((segment) => segment.title || "").join(" ")).slice(0, 12_000),
+        messageCount: segments.reduce((sum, segment) => sum + Math.max(0, Number(segment.message_count || 0)), 0),
+        createdAt,
+        updatedAt,
+        runtime: "jiuwenswarm-enterprise",
+      };
+    })
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, args.limit);
+}
+
+function mergeRuntimeHistorySessions(primary: any[], fallback: any[], limit: number): any[] {
+  const byConversation = new Map<string, any>();
+  for (const session of [...primary, ...fallback]) {
+    const key = String(session?.conversationId || session?.sessionKey || "").trim();
+    if (!key) continue;
+    const previous = byConversation.get(key);
+    if (!previous || Number(session?.updatedAt || 0) > Number(previous?.updatedAt || 0)) {
+      byConversation.set(key, session);
+    }
+  }
+  return Array.from(byConversation.values())
+    .sort((left, right) => Number(right?.updatedAt || 0) - Number(left?.updatedAt || 0))
+    .slice(0, limit);
 }
 
 function jiuwenHistoryFileForSession(sessionsDir: string, sessionId: string): string | null {
@@ -430,14 +492,6 @@ function generatedFilesFromToolCalls(calls: ChatHistoryToolCall[], workspaceDir:
 
 export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200, adoptId = "", workspaceDirRaw = ""): ChatHistoryMessage[] {
   if (!historyFile || !existsSync(historyFile)) return [];
-  const messages: ChatHistoryMessage[] = [];
-  const assistantByRequest = new Map<string, {
-    id: string;
-    finalText: string;
-    fallbackText: string;
-    timestamp: number;
-    toolCalls: ChatHistoryToolCall[];
-  }>();
   const rawHistory = readFileSync(historyFile, "utf8");
   const artifactRuns = readJiuwenSessionArtifacts(historyFile);
   const workspaceDir = workspaceDirRaw || jiuwenWorkspaceFromHistoryFile(historyFile);
@@ -450,6 +504,24 @@ export function extractJiuwenChatMessages(historyFile: string, maxMessages = 200
     } catch {}
   }
   const rows = events || rawHistory.split("\n");
+  return extractJiuwenChatMessagesFromRecords(rows, maxMessages, adoptId, workspaceDir, artifactRuns);
+}
+
+export function extractJiuwenChatMessagesFromRecords(
+  rows: any[],
+  maxMessages = 200,
+  adoptId = "",
+  workspaceDir = "",
+  artifactRuns = new Map<string, { adoptId?: string; files?: JiuwenSessionArtifactFile[] }>(),
+): ChatHistoryMessage[] {
+  const messages: ChatHistoryMessage[] = [];
+  const assistantByRequest = new Map<string, {
+    id: string;
+    finalText: string;
+    fallbackText: string;
+    timestamp: number;
+    toolCalls: ChatHistoryToolCall[];
+  }>();
   for (const row of rows) {
     if (typeof row === "string" && !row.trim()) continue;
     let event: any;
@@ -743,6 +815,46 @@ export async function readModernChatHistorySessionMessages(args: {
   }
 
   if (!isJiuwenClawAdoptId(args.adoptId)) return null;
+  const enterpriseSessionId = safeJiuwenSessionId(args.sessionKey);
+  if (enterpriseSessionId && isListableJiuwenWebSession(enterpriseSessionId, args.adoptId)) {
+    try {
+      const records = await readEnterpriseRuntimeHistoryRecords({
+        adoptId: args.adoptId,
+        agentId: args.dbAgentId,
+        sessionId: enterpriseSessionId,
+        maxMessages,
+      });
+      if (records) {
+        const conversationId = jiuwenConversationIdFromSessionId(enterpriseSessionId, args.adoptId);
+        const runtimeMessages = extractJiuwenChatMessagesFromRecords(
+          records,
+          maxMessages,
+          args.adoptId,
+          args.workspaceDir,
+        );
+        const expertTasks = await listAgentTasksByConversation(args.adoptId, conversationId, 100).catch(() => []);
+        const messages = bindHistoryAttachmentOwner(dedupeHistoryMessages([
+          ...runtimeMessages,
+          ...buildExpertTaskHistoryMessages(expertTasks, maxMessages),
+        ], maxMessages), args.adoptId);
+        if (messages.length > 0) {
+          return {
+            conversationId,
+            sessionKey: args.sessionKey,
+            sessionId: enterpriseSessionId,
+            runtime: "jiuwenswarm-enterprise" as const,
+            messages,
+          };
+        }
+      }
+    } catch (error) {
+      logWarn("chat.history.enterprise_messages_fallback", {
+        adoptId: args.adoptId,
+        sessionId: enterpriseSessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
   const resolved = resolveJiuwenHistorySession({
     adoptId: args.adoptId,
     dbAgentId: args.dbAgentId,
@@ -950,7 +1062,28 @@ export async function listClawChatHistorySessionRecords(args: {
       return [];
     });
     const expertSessions = buildExpertTaskHistorySessions(expertTasks);
-    const runtimeSessions = listJiuwenChatHistorySessions({ adoptId, dbAgentId, limit });
+    const localSessions = listJiuwenChatHistorySessions({ adoptId, dbAgentId, limit });
+    let enterpriseSessions: any[] = [];
+    try {
+      const rawEnterpriseSessions = await listEnterpriseRuntimeHistorySessions({
+        adoptId,
+        agentId: dbAgentId,
+        limit,
+      });
+      if (rawEnterpriseSessions) {
+        enterpriseSessions = normalizeEnterpriseHistorySessions({
+          sessions: rawEnterpriseSessions,
+          adoptId,
+          limit,
+        });
+      }
+    } catch (error) {
+      logWarn("chat.history.enterprise_list_fallback", {
+        adoptId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    const runtimeSessions = mergeRuntimeHistorySessions(enterpriseSessions, localSessions, limit);
     return mergeExpertTaskHistorySessions(runtimeSessions, expertSessions, limit);
   });
   logIosLoadDebug("chat_history_sessions_done_jiuwen", {
