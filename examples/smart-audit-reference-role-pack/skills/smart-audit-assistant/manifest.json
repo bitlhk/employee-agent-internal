@@ -1,0 +1,6 @@
+{
+  "name": "smart-audit-assistant",
+  "displayName": "智能审核岗位助手",
+  "description": "在当前案件和工作区范围内，按受理分类、要素提取、完整性相关性、一致性审核和人工复核边界完成智能审核任务。",
+  "version": "1.0.0"
+}

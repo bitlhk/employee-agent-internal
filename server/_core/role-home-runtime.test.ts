@@ -96,4 +96,42 @@ describe("role home runtime projection", () => {
     expect(status.tasks.find((task) => task.taskId === "IA-GT-02")?.status).toBe("DEGRADED");
     expect(status.capabilities.find((item) => item.id === "product-explanation")?.status).toBe("DEGRADED");
   });
+
+  it("projects smart-audit Golden Tasks from real knowledge, skill and connector readiness", () => {
+    const status = buildRoleHomeRuntimeStatus({
+      roleTemplate: "credential-compliance",
+      connectors: [
+        { serverId: "credential_image_workspace", status: "READY" },
+        { serverId: "wealth_governance_demo", status: "READY" },
+      ],
+      knowledgeReady: true,
+      skills: [readySkill("smart-audit-assistant")],
+    });
+    expect(status.tasks).toHaveLength(6);
+    expect(status.tasks.every((task) => task.status === "READY")).toBe(true);
+    expect(selectRoleHomeTaskIds("credential-compliance", status.tasks)).toEqual([
+      "AU-GT-01", "AU-GT-02", "AU-GT-03", "AU-GT-06",
+    ]);
+    expect(status.capabilities.find((item) => item.id === "human-review")?.status).toBe("READY");
+  });
+
+  it("projects investment research tasks from Wind and governed write readiness", () => {
+    const status = buildRoleHomeRuntimeStatus({
+      roleTemplate: "investment-researcher",
+      connectors: [
+        { serverId: "wind_stock_data", status: "READY" },
+        { serverId: "wind_financial_docs", status: "READY" },
+        { serverId: "wind_analytics_data", status: "READY" },
+        { serverId: "wealth_governance_demo", status: "READY" },
+      ],
+      knowledgeReady: true,
+      skills: [readySkill("investment-research-assistant")],
+    });
+    expect(status.tasks).toHaveLength(6);
+    expect(status.tasks.every((task) => task.status === "READY")).toBe(true);
+    expect(selectRoleHomeTaskIds("investment-researcher", status.tasks)).toEqual([
+      "IR-GT-01", "IR-GT-02", "IR-GT-05", "IR-GT-06",
+    ]);
+    expect(status.capabilities.find((item) => item.id === "event-tracking")?.status).toBe("READY");
+  });
 });

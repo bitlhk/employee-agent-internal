@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "ea.reference-role-pack.knowledge.v1",
+  "rolePackId": "linggan-finance.investment-research",
+  "roleTemplate": "investment-researcher",
+  "knowledgeBase": {
+    "name": "投顾分析岗位操作规范（演示）",
+    "description": "投顾分析岗位的公司研究、财报、同业、估值风险、事件跟踪和研究留痕规范。",
+    "classification": "internal",
+    "externalProcessingAllowed": true
+  },
+  "assets": [
+    { "assetId": "ir-role-boundary", "file": "01-投顾分析岗位职责与研究边界.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-01", "IR-GT-02", "IR-GT-03", "IR-GT-04", "IR-GT-05", "IR-GT-06"] },
+    { "assetId": "ir-company-first-look-sop", "file": "02-公司快速研究作业指导书.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-01"] },
+    { "assetId": "ir-earnings-review-sop", "file": "03-财报复盘与盈利质量检查SOP.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-02"] },
+    { "assetId": "ir-peer-comparison-standard", "file": "04-同业比较口径与可比性规范.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-03"] },
+    { "assetId": "ir-valuation-risk-guide", "file": "05-估值判断与风险核验指引.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-04"] },
+    { "assetId": "ir-event-impact-sop", "file": "06-公告新闻与事件影响分析SOP.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-05"] },
+    { "assetId": "ir-memo-tracking-guide", "file": "07-研究备忘与跟踪任务留痕指引.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "approved", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-06"] },
+    { "assetId": "ir-data-assurance-v2.0", "documentSeriesId": "ir-data-assurance", "file": "08-研究数据来源与时效管理办法（V2.0现行）.md", "versionLabel": "V2.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "official", "lifecycle": "active", "effectiveAt": "2026-07-01T00:00:00.000Z", "expiresAt": null, "supersedes": "ir-data-assurance-v1.0", "taskIds": ["IR-GT-01", "IR-GT-02", "IR-GT-03", "IR-GT-04", "IR-GT-05", "IR-GT-06"] },
+    { "assetId": "ir-data-assurance-v1.0", "documentSeriesId": "ir-data-assurance", "file": "09-研究数据来源与时效管理办法（V1.0历史）.md", "versionLabel": "V1.0", "sourceDepartment": "投资研究部", "classification": "internal", "authority": "official", "lifecycle": "expired", "effectiveAt": "2025-01-01T00:00:00.000Z", "expiresAt": "2026-06-30T23:59:59.000Z", "supersededBy": "ir-data-assurance-v2.0", "taskIds": ["IR-GT-01", "IR-GT-02", "IR-GT-03", "IR-GT-04", "IR-GT-05", "IR-GT-06"] },
+    { "assetId": "ir-compliance-conflict-standard", "file": "10-投资研究合规与利益冲突检查清单.md", "versionLabel": "V1.0", "sourceDepartment": "合规管理部", "classification": "internal", "authority": "official", "lifecycle": "active", "effectiveAt": "2026-08-01T00:00:00.000Z", "expiresAt": null, "taskIds": ["IR-GT-01", "IR-GT-02", "IR-GT-03", "IR-GT-04", "IR-GT-05", "IR-GT-06"] }
+  ]
+}

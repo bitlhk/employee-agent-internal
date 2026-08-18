@@ -44,6 +44,7 @@ import {
   handlePostLoanRiskEscalationTool,
   POST_LOAN_RISK_ESCALATION_TOOL,
 } from "./post-loan-risk-tool-handler";
+import { GOVERNED_ROLE_POLICY_TOOLS, handleGovernedRolePolicyTool } from "./governed-role-policy-tools";
 import { summarizePlatformAgents } from "./platform-agent-summary";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
 import { handleWealthPrevisitTool } from "./wealth-previsit-tool-handler";
@@ -205,6 +206,7 @@ const TOOLS = [
     },
   },
   POST_LOAN_RISK_ESCALATION_TOOL,
+  ...GOVERNED_ROLE_POLICY_TOOLS,
 ];
 const TOOL_NAMES = new Set(TOOLS.map(tool => tool.name));
 
@@ -514,6 +516,8 @@ async function callTool(
       principal: effectivePrincipal.principal,
     });
   }
+
+  if (GOVERNED_ROLE_POLICY_TOOLS.some((tool) => tool.name === name)) return handleGovernedRolePolicyTool({ req, name, args, adoptId, principal: effectivePrincipal.principal });
 
   if (name === "get_wealth_policy_basis") {
     const user = await getUserById(Number(claw.userId));

@@ -98,6 +98,38 @@ export function governanceDemoMcpTools() {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
     },
     {
+      name: "demo_create_audit_review_task",
+      description: "【Demo】创建智能审核人工复核任务，仅写入隔离演示表，不连接真实审批系统。需要用户确认且必须提供幂等键。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          case_ref: { type: "string", description: "明确标注 Demo 的案件标识，例如：CASE-001（Demo）" },
+          review_summary: { type: "string", minLength: 5, maxLength: 1000, description: "需要人工复核的疑点和依据摘要" },
+          severity: { type: "string", enum: ["L1", "L2", "L3", "L4"], description: "人工复核等级" },
+          due_at: { type: "string", description: "计划复核时间，ISO 8601 格式" },
+          idempotency_key: { type: "string", minLength: 8, maxLength: 191 },
+        },
+        required: ["case_ref", "review_summary", "severity", "due_at", "idempotency_key"],
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    {
+      name: "demo_create_research_watch_task",
+      description: "【Demo】创建投顾分析研究跟踪任务，仅写入隔离演示表，不连接交易或真实研究系统。需要用户确认且必须提供幂等键。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          security_ref: { type: "string", description: "明确标注 Demo 的证券标识，例如：600000.SH（Demo）" },
+          research_summary: { type: "string", minLength: 10, maxLength: 1200, description: "研究结论、风险和失效条件摘要" },
+          due_at: { type: "string", description: "计划复核时间，ISO 8601 格式" },
+          priority: { type: "string", enum: ["high", "medium", "low"], description: "跟踪优先级" },
+          idempotency_key: { type: "string", minLength: 8, maxLength: 191 },
+        },
+        required: ["security_ref", "research_summary", "due_at", "priority", "idempotency_key"],
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true },
+    },
+    {
       name: "demo_update_customer_profile",
       description: "【Demo·风险识别探针】更新演示客户标签；远端故意错误声明只读，用于证明平台策略不会被工具元数据降级。",
       inputSchema: {
@@ -170,7 +202,7 @@ async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdent
   const tokenTool = String(claims.tool_name || "");
   if (!toolName || tokenTool !== toolName) throw new Error("身份令牌工具范围不匹配");
   const roleKey = String(claims.role || "");
-  if (!["wealth-manager", "insurance-advisor", "post-loan-risk-control", "platform-admin"].includes(roleKey)) {
+  if (!["wealth-manager", "insurance-advisor", "post-loan-risk-control", "credential-compliance", "investment-researcher", "platform-admin"].includes(roleKey)) {
     throw new Error("当前岗位无权访问该 Demo MCP");
   }
   const scopes = new Set(Array.isArray(claims.scp)
@@ -220,16 +252,32 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
     ].join("\n"), { demo: true, recordId: record.recordId, requestId: identity.requestId });
   }
 
-  if (!["demo_create_portfolio_draft", "demo_create_followup_task", "demo_update_customer_profile"].includes(name)) {
+  if (!["demo_create_portfolio_draft", "demo_create_followup_task", "demo_create_audit_review_task", "demo_create_research_watch_task", "demo_update_customer_profile"].includes(name)) {
     throw new Error("未知 Demo 工具");
   }
   const requiredScope = name === "demo_create_portfolio_draft"
     ? "demo.portfolio.write"
     : name === "demo_create_followup_task"
       ? "demo.followup.write"
+      : name === "demo_create_audit_review_task"
+        ? "demo.audit_review.write"
+      : name === "demo_create_research_watch_task"
+        ? "demo.research_watch.write"
       : "demo.customer.write";
   requireScope(identity, requiredScope);
-  const customerRef = demoCustomerRef(args);
+  const customerRef = name === "demo_create_audit_review_task"
+    ? (() => {
+        const value = stringArg(args, "case_ref", 128);
+        if (!/(?:^|[（(\s_-])demo(?:$|[）)\s_-])/i.test(value)) throw new Error("Demo 工具只接受明确标注 Demo 的案件标识");
+        return value;
+      })()
+    : name === "demo_create_research_watch_task"
+      ? (() => {
+          const value = stringArg(args, "security_ref", 128);
+          if (!/(?:^|[（(\s_-])demo(?:$|[）)\s_-])/i.test(value)) throw new Error("Demo 工具只接受明确标注 Demo 的证券标识");
+          return value;
+        })()
+      : demoCustomerRef(args);
   const idempotencyKey = stringArg(args, "idempotency_key", 191);
   const riskLevel = name === "demo_create_portfolio_draft" ? stringArg(args, "risk_level", 8) : null;
   if (riskLevel && !["C1", "C2", "C3", "C4", "C5"].includes(riskLevel)) {
@@ -254,6 +302,28 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
           })(),
           sourceEventRef: String(args.source_event_ref || "").trim().slice(0, 128) || null,
         }
+      : name === "demo_create_audit_review_task"
+        ? {
+            caseRef: customerRef,
+            reviewSummary: stringArg(args, "review_summary", 1000),
+            severity: (() => {
+              const value = stringArg(args, "severity", 8);
+              if (!["L1", "L2", "L3", "L4"].includes(value)) throw new Error("severity 参数无效");
+              return value;
+            })(),
+            dueAt: isoDateArg(args, "due_at"),
+          }
+      : name === "demo_create_research_watch_task"
+        ? {
+            securityRef: customerRef,
+            researchSummary: stringArg(args, "research_summary", 1200),
+            dueAt: isoDateArg(args, "due_at"),
+            priority: (() => {
+              const value = stringArg(args, "priority", 16);
+              if (!["high", "medium", "low"].includes(value)) throw new Error("priority 参数无效");
+              return value;
+            })(),
+          }
       : {
         customerRef,
         serviceTag: stringArg(args, "service_tag", 80),
@@ -262,6 +332,10 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
     ? "DEMO-PLAN"
     : name === "demo_create_followup_task"
       ? "DEMO-FOLLOWUP"
+      : name === "demo_create_audit_review_task"
+        ? "DEMO-AUDIT-REVIEW"
+      : name === "demo_create_research_watch_task"
+        ? "DEMO-RESEARCH-WATCH"
       : "DEMO-CUST";
   const recordId = `${recordPrefix}-${randomUUID().slice(0, 12).toUpperCase()}`;
   const result = await createGovernanceDemoBusinessRecord({
@@ -279,6 +353,10 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
       ? "demo_draft"
       : name === "demo_create_followup_task"
         ? "demo_followup"
+        : name === "demo_create_audit_review_task"
+          ? "demo_followup"
+        : name === "demo_create_research_watch_task"
+          ? "demo_followup"
         : "demo_updated",
     payloadJson: payload,
   });
@@ -286,13 +364,17 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
     ? "资产配置方案草稿已创建"
     : name === "demo_create_followup_task"
       ? "客户跟进任务已创建"
+      : name === "demo_create_audit_review_task"
+        ? "审核人工复核任务已创建"
+      : name === "demo_create_research_watch_task"
+        ? "研究跟踪任务已创建"
       : "演示客户标签已更新";
   return textResult([
     `【Demo】${action}`,
     `记录编号：${result.record.recordId}`,
-    `客户：${result.record.customerRef}`,
+    `${name === "demo_create_audit_review_task" ? "案件" : name === "demo_create_research_watch_task" ? "标的" : "客户"}：${result.record.customerRef}`,
     `状态：${result.record.status}`,
-    "数据边界：仅写入隔离演示表，未连接真实 CRM",
+    `数据边界：仅写入隔离演示表，未连接${name === "demo_create_research_watch_task" ? "交易或真实研究系统" : "真实 CRM"}`,
   ].join("\n"), {
     demo: true,
     recordId: result.record.recordId,

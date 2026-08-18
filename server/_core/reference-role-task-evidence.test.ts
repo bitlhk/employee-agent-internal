@@ -111,4 +111,66 @@ describe("reference role task evidence adapter", () => {
       idempotencyProtected: true,
     });
   });
+
+  it("binds smart-audit extraction and confirmed human review to the shared evidence protocol", () => {
+    const readResult = attachReferenceRoleTaskReceipt({
+      ...base,
+      result: { content: [{ type: "text", text: "sensitive credential fixture" }] },
+      roleTemplate: "credential-compliance",
+      serverId: "credential_image_workspace",
+      toolName: "credential_image_extract_from_workspace",
+      sideEffect: "read",
+    });
+    const readReceipt = extractTrustedContextReceipt("enterprise_credential_image_extract_from_workspace", readResult);
+    expect(readReceipt).toMatchObject({ taskId: "AU-GT-02", taskLabel: "凭证要素提取与原文定位" });
+    expect(JSON.stringify(readReceipt)).not.toContain("sensitive credential fixture");
+
+    const writeResult = attachReferenceRoleTaskReceipt({
+      ...base,
+      result: { content: [{ type: "text", text: "created" }] },
+      roleTemplate: "credential-compliance",
+      serverId: "wealth_governance_demo",
+      toolName: "demo_create_audit_review_task",
+      sideEffect: "write",
+      externalRequestId: "DEMO-AUDIT-1",
+      approvalId: "approval-audit",
+      idempotencyProtected: true,
+    });
+    const writeReceipt = extractTrustedContextReceipt("enterprise_demo_create_audit_review_task", writeResult);
+    expect(writeReceipt).toMatchObject({ taskId: "AU-GT-06", taskLabel: "审核意见与人工复核闭环" });
+    expect(writeReceipt?.applied.capabilityExecutions[0]).toMatchObject({
+      approvalId: "approval-audit",
+      externalRequestId: "DEMO-AUDIT-1",
+      idempotencyProtected: true,
+    });
+  });
+
+  it("binds Wind research and confirmed watch writes to the shared evidence protocol", () => {
+    const readResult = attachReferenceRoleTaskReceipt({
+      ...base,
+      result: { content: [{ type: "text", text: "dynamic Wind fixture" }] },
+      roleTemplate: "investment-researcher",
+      serverId: "wind_stock_data",
+      toolName: "get_stock_basicinfo",
+      sideEffect: "read",
+    });
+    const readReceipt = extractTrustedContextReceipt("enterprise_get_stock_basicinfo", readResult);
+    expect(readReceipt).toMatchObject({ taskId: "IR-GT-01", taskLabel: "公司快速研究" });
+    expect(JSON.stringify(readReceipt)).not.toContain("dynamic Wind fixture");
+
+    const writeResult = attachReferenceRoleTaskReceipt({
+      ...base,
+      result: { content: [{ type: "text", text: "created" }] },
+      roleTemplate: "investment-researcher",
+      serverId: "wealth_governance_demo",
+      toolName: "demo_create_research_watch_task",
+      sideEffect: "write",
+      externalRequestId: "DEMO-RESEARCH-WATCH-1",
+      approvalId: "approval-ir",
+      idempotencyProtected: true,
+    });
+    const writeReceipt = extractTrustedContextReceipt("enterprise_demo_create_research_watch_task", writeResult);
+    expect(writeReceipt).toMatchObject({ taskId: "IR-GT-06", taskLabel: "研究备忘与跟踪" });
+    expect(writeReceipt?.applied.capabilityExecutions[0]).toMatchObject({ approvalId: "approval-ir", externalRequestId: "DEMO-RESEARCH-WATCH-1", idempotencyProtected: true });
+  });
 });

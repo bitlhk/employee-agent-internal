@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     adopt_id: "lgj-demo",
     agent_id: "jiuwen_lgj-demo",
     request_id: "req-demo",
-    scp: ["mcp.tools.read", "demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
+    scp: ["mcp.tools.read", "demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.audit_review.write", "demo.research_watch.write", "demo.customer.write"],
   } as Record<string, unknown>,
   createRecord: vi.fn(),
   getRecord: vi.fn(),
@@ -63,7 +63,7 @@ beforeEach(async () => {
     adopt_id: "lgj-demo",
     agent_id: "jiuwen_lgj-demo",
     request_id: "req-demo",
-    scp: ["mcp.tools.read", "demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.customer.write"],
+    scp: ["mcp.tools.read", "demo.portfolio.read", "demo.portfolio.write", "demo.followup.write", "demo.audit_review.write", "demo.research_watch.write", "demo.customer.write"],
   });
   mocks.createRecord.mockResolvedValue({
     created: true,
@@ -249,6 +249,64 @@ describe("governance Demo MCP", () => {
       idempotencyKey: "demo-insurance-followup-001",
     }));
     expect(payload.result._meta.externalRequestId).toBe("DEMO-INSURANCE-FOLLOWUP-1");
+  });
+
+  it("creates an isolated smart-audit human review task with the trusted runtime identity", async () => {
+    mocks.claims.role = "credential-compliance";
+    mocks.claims.tool_name = "demo_create_audit_review_task";
+    mocks.claims.scp = ["demo.audit_review.write"];
+    mocks.createRecord.mockResolvedValue({
+      created: true,
+      record: { recordId: "DEMO-AUDIT-REVIEW-1", customerRef: "CASE-001（Demo）", status: "demo_followup" },
+    });
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_audit_review_task",
+      arguments: {
+        case_ref: "CASE-001（Demo）",
+        review_summary: "关键收入字段与流水汇总存在冲突，需要人工核验原始凭证。",
+        severity: "L4",
+        due_at: "2026-08-20T09:00:00+08:00",
+        idempotency_key: "demo-audit-review-001",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.createRecord).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "demo_create_audit_review_task",
+      roleKey: "credential-compliance",
+      status: "demo_followup",
+      payloadJson: expect.objectContaining({ severity: "L4" }),
+    }));
+    expect(payload.result._meta.externalRequestId).toBe("DEMO-AUDIT-REVIEW-1");
+    expect(JSON.stringify(payload)).toContain("人工复核任务已创建");
+  });
+
+  it("creates an isolated investment research watch task without a trading capability", async () => {
+    mocks.claims.role = "investment-researcher";
+    mocks.claims.tool_name = "demo_create_research_watch_task";
+    mocks.claims.scp = ["demo.research_watch.write"];
+    mocks.createRecord.mockResolvedValue({
+      created: true,
+      record: { recordId: "DEMO-RESEARCH-WATCH-1", customerRef: "600000.SH（Demo）", status: "demo_followup" },
+    });
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_research_watch_task",
+      arguments: {
+        security_ref: "600000.SH（Demo）",
+        research_summary: "跟踪财报现金流变化、公告风险和核心假设失效条件。",
+        due_at: "2026-08-25T09:00:00+08:00",
+        priority: "high",
+        idempotency_key: "demo-research-watch-001",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.createRecord).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "demo_create_research_watch_task",
+      roleKey: "investment-researcher",
+      status: "demo_followup",
+      payloadJson: expect.objectContaining({ priority: "high" }),
+    }));
+    expect(payload.result._meta.externalRequestId).toBe("DEMO-RESEARCH-WATCH-1");
+    expect(JSON.stringify(payload)).toContain("未连接交易或真实研究系统");
   });
 
   it("rejects a customer reference that could be mistaken for real CRM data", async () => {

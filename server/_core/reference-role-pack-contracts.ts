@@ -10,6 +10,8 @@ import {
 export const WEALTH_EVAL_SUITE_VERSION = referenceRolePack("wealth-manager")!.evalSuiteVersion;
 export const INSURANCE_EVAL_SUITE_VERSION = referenceRolePack("insurance-advisor")!.evalSuiteVersion;
 export const POST_LOAN_RISK_EVAL_SUITE_VERSION = referenceRolePack("post-loan-risk-control")!.evalSuiteVersion;
+export const SMART_AUDIT_EVAL_SUITE_VERSION = referenceRolePack("smart-audit")!.evalSuiteVersion;
+export const INVESTMENT_RESEARCH_EVAL_SUITE_VERSION = referenceRolePack("investment-research")!.evalSuiteVersion;
 
 type BenchmarkCase = {
   caseId: string;
@@ -153,4 +155,12 @@ export function runInsuranceRolePackContractChecks(root = process.cwd()) {
 
 export function runPostLoanRiskRolePackContractChecks(root = process.cwd()) {
   return runReferenceRolePackContractChecks(root, referenceRolePack("post-loan-risk-control")!);
+}
+
+export function runSmartAuditRolePackContractChecks(root = process.cwd()) {
+  return runReferenceRolePackContractChecks(root, referenceRolePack("smart-audit")!);
+}
+
+export function runInvestmentResearchRolePackContractChecks(root = process.cwd()) {
+  return runReferenceRolePackContractChecks(root, referenceRolePack("investment-research")!);
 }

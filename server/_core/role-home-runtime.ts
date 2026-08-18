@@ -125,6 +125,19 @@ const CONNECTOR_TASK_REQUIREMENTS: Record<string, Record<string, string[]>> = {
     "RC-GT-04": ["post_loan_risk_data"],
     "RC-GT-05": ["post_loan_risk_data"],
   },
+  "credential-compliance": {
+    "AU-GT-02": ["credential_image_workspace"],
+    "AU-GT-05": ["credential_image_workspace"],
+    "AU-GT-06": ["wealth_governance_demo"],
+  },
+  "investment-researcher": {
+    "IR-GT-01": ["wind_stock_data"],
+    "IR-GT-02": ["wind_stock_data", "wind_financial_docs"],
+    "IR-GT-03": ["wind_analytics_data"],
+    "IR-GT-04": ["wind_stock_data"],
+    "IR-GT-05": ["wind_financial_docs"],
+    "IR-GT-06": ["wealth_governance_demo"],
+  },
 };
 
 export function buildRoleHomeRuntimeStatus(input: {

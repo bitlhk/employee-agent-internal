@@ -11,11 +11,11 @@
 | 财富经理 | Reference Role Pack，6 项 Golden Task | 展示标杆任务入口、业务进度和 Context Receipt |
 | 保险顾问 | Reference Role Pack，6 项 Golden Task | 展示标杆任务入口、MCP 就绪状态和销售陪练 |
 | 风控经理 | Reference Role Pack，6 项 Golden Task | 展示标杆任务入口、确定性预警判断和依据 |
-| 审核专员 | 已有 Role、审核 Skill 与 MCP，缺统一任务矩阵 | 展示真实可用的材料审核入口，不标记为标杆验收通过 |
-| 投顾分析 | 已有 Role、金融 Skill 与 Wind MCP | 展示常用研究任务入口，不扩展本轮 Reference Role Pack |
+| 审核专员 | Reference Role Pack，6 项 Golden Task | 展示材料受理、规则核验、疑点分级和人工复核闭环 |
+| 投顾分析 | Reference Role Pack 已完成 | 6 项 Golden Task、10 份治理知识、Wind 数据门禁、研究输出边界与受控跟踪任务 |
 | 通用助手 | 基础对话、文件和自定义 Skill | 突出 Skill 上传、安装和试用闭环 |
 
-审核专员后续是否升级为“审核经理”需先完成岗位边界、标杆任务矩阵、知识资产、确定性规则和 Eval。不能只改岗位名称或欢迎页。
+审核岗位继续沿用运行时 ID `credential-compliance` 和“审核专员”岗位名称；“智能审核”作为 Role Pack 产品表达，不额外创建岗位或运行时配置。投顾分析同样沿用 `investment-researcher`，不创建第二套岗位或金融数据能力。
 
 ## 3. 第一阶段：一线岗位体验
 
@@ -76,4 +76,5 @@
 3. 业务化执行进度；
 4. Context Receipt 轻量展示复核；
 5. 统一运营指标契约和后台看板；
-6. 审核岗位标杆任务矩阵与 Reference Role Pack。
+6. 智能审核 Reference Knowledge、Policy、Eval 与 Reference Role Pack（已完成）。
+7. 投顾分析 Reference Knowledge、Wind 数据门禁、输出边界、Eval 与 Reference Role Pack（已完成）。

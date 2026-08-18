@@ -6,6 +6,8 @@ describe("roleExperience", () => {
     ["wealth-manager", "WM-GT-01"],
     ["insurance-advisor", "IA-GT-01"],
     ["post-loan-risk-control", "RC-GT-01"],
+    ["credential-compliance", "AU-GT-01"],
+    ["investment-researcher", "IR-GT-01"],
   ])("keeps %s starters aligned with its reference task prefix", (role, taskPrefix) => {
     const experience = roleExperience(role);
     expect(experience.maturity).toBe("reference");
@@ -29,8 +31,18 @@ describe("roleExperience", () => {
     ))).toBe(true);
   });
 
-  it("keeps the audit role operational until its benchmark pack is complete", () => {
-    expect(roleExperience("credential-compliance").maturity).toBe("operational");
+  it("keeps the audit role aligned with its benchmark pack", () => {
+    expect(roleExperience("credential-compliance").maturity).toBe("reference");
+    expect(roleExperience("credential-compliance").tasks.map((task) => task.id)).toEqual([
+      "AU-GT-01", "AU-GT-02", "AU-GT-03", "AU-GT-04", "AU-GT-05", "AU-GT-06",
+    ]);
+  });
+
+  it("projects all six investment research Golden Tasks", () => {
+    expect(roleExperience("investment-researcher").maturity).toBe("reference");
+    expect(roleExperience("investment-researcher").tasks.map((task) => task.id)).toEqual([
+      "IR-GT-01", "IR-GT-02", "IR-GT-03", "IR-GT-04", "IR-GT-05", "IR-GT-06",
+    ]);
   });
 
   it("keeps runtime dependencies out of the presentation adapter", () => {
