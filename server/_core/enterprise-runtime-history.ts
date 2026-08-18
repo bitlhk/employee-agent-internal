@@ -7,6 +7,8 @@ import {
 } from "./enterprise-runtime-adapter";
 
 const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_COMPAT_HISTORY_MAX_PAGES = 20;
+const MAX_COMPAT_HISTORY_MAX_PAGES = 40;
 
 export type EnterpriseRuntimeHistorySession = {
   session_id?: string;
@@ -17,6 +19,18 @@ export type EnterpriseRuntimeHistorySession = {
   last_message_at?: number;
   [key: string]: unknown;
 };
+
+export function resolveEnterpriseHistoryMaxPages(
+  maxMessages: number,
+  configuredValue: string | undefined = process.env.EA_ENTERPRISE_HISTORY_COMPAT_MAX_PAGES,
+): number {
+  const logicalMessagePages = Math.max(1, Math.ceil(Math.min(Math.max(maxMessages, 1), 500) / 50));
+  const configured = Number(configuredValue || DEFAULT_COMPAT_HISTORY_MAX_PAGES);
+  const compatibilityPages = Number.isFinite(configured)
+    ? Math.min(MAX_COMPAT_HISTORY_MAX_PAGES, Math.max(1, Math.floor(configured)))
+    : DEFAULT_COMPAT_HISTORY_MAX_PAGES;
+  return Math.max(logicalMessagePages, compatibilityPages);
+}
 
 function parseFrame(raw: RawData): any | null {
   try {
@@ -131,7 +145,9 @@ export async function readEnterpriseRuntimeHistoryRecords(args: {
   const route = await enterpriseRoute(args.adoptId);
   if (!route) return null;
   const records: any[] = [];
-  const maxPages = Math.max(1, Math.ceil(Math.min(Math.max(args.maxMessages, 1), 500) / 50));
+  // Pre-compaction enterprise sessions may contain thousands of streaming frames for
+  // one logical answer. New sessions still stop after page 1 via total_pages.
+  const maxPages = resolveEnterpriseHistoryMaxPages(args.maxMessages);
   for (let pageIdx = 1; pageIdx <= maxPages; pageIdx += 1) {
     const result = await gatewayRequest({
       route,

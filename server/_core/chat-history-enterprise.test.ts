@@ -3,8 +3,16 @@ import {
   extractJiuwenChatMessagesFromRecords,
   normalizeEnterpriseHistorySessions,
 } from "./chat-history";
+import { resolveEnterpriseHistoryMaxPages } from "./enterprise-runtime-history";
 
 describe("enterprise runtime chat history", () => {
+  it("allows bounded compatibility paging for pre-compaction transcripts", () => {
+    expect(resolveEnterpriseHistoryMaxPages(200, undefined)).toBe(20);
+    expect(resolveEnterpriseHistoryMaxPages(500, "6")).toBe(10);
+    expect(resolveEnterpriseHistoryMaxPages(200, "1000")).toBe(40);
+    expect(resolveEnterpriseHistoryMaxPages(200, "invalid")).toBe(20);
+  });
+
   it("groups enterprise session epochs and filters unrelated sessions", () => {
     const sessions = normalizeEnterpriseHistorySessions({
       adoptId: "lgj-user",
