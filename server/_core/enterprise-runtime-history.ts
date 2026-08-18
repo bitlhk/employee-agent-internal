@@ -142,6 +142,7 @@ export async function readEnterpriseRuntimeHistoryRecords(args: {
         agentId: args.agentId,
         sessionId: args.sessionId,
         pageIdx,
+        pageSize: 500,
       }),
     });
     records.push(...result.messages);

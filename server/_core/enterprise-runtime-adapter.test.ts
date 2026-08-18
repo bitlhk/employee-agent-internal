@@ -185,6 +185,7 @@ describe("enterprise runtime adapter", () => {
       agentId: "agent-insurance",
       sessionId: "sess_lgj-test_web_conv_1_e1",
       pageIdx: 1,
+      pageSize: 500,
       limit: 20,
     })).toMatchObject({
       group_id: "ea_s3",
@@ -192,6 +193,7 @@ describe("enterprise runtime adapter", () => {
       user_id: "ea_user_abc",
       session_id: "sess_lgj-test_web_conv_1_e1",
       page_idx: 1,
+      page_size: 500,
       limit: 20,
       request_metadata: {
         source_channel: "lgj-test",

@@ -277,6 +277,7 @@ export function buildEnterpriseHistoryParams(args: {
   agentId: string;
   sessionId?: string;
   pageIdx?: number;
+  pageSize?: number;
   limit?: number;
   offset?: number;
 }): Record<string, unknown> {
@@ -287,6 +288,7 @@ export function buildEnterpriseHistoryParams(args: {
     user_id: binding.runtimeUserId,
     ...(args.sessionId ? { session_id: args.sessionId } : {}),
     ...(args.pageIdx ? { page_idx: args.pageIdx } : {}),
+    ...(args.pageSize ? { page_size: args.pageSize } : {}),
     ...(args.limit ? { limit: args.limit } : {}),
     ...(args.offset ? { offset: args.offset } : {}),
     request_metadata: enterpriseRuntimeAssetMetadata({
