@@ -3,6 +3,7 @@ import {
   canDegradeAfterEnterpriseMcpProvisioningFailure,
   enterpriseMcpProvisioningFrameResult,
   gatewayPermissionAnswerMethod,
+  gatewayPermissionEventMatchesRequest,
 } from "./jiuwenswarm-gateway-client";
 
 describe("enterpriseMcpProvisioningFrameResult", () => {
@@ -54,8 +55,42 @@ describe("enterpriseMcpProvisioningFrameResult", () => {
 });
 
 describe("gatewayPermissionAnswerMethod", () => {
-  it("uses the enterprise gateway user-answer protocol without changing standalone compatibility", () => {
-    expect(gatewayPermissionAnswerMethod(true)).toBe("chat.user_answer");
-    expect(gatewayPermissionAnswerMethod(false)).toBe("chat.send");
+  it("resumes persisted tool interruptions through chat.send", () => {
+    expect(gatewayPermissionAnswerMethod(true, "permission_interrupt")).toBe("chat.send");
+    expect(gatewayPermissionAnswerMethod(false, "permission_interrupt")).toBe("chat.send");
+  });
+
+  it("keeps registry-backed enterprise questions on chat.user_answer", () => {
+    expect(gatewayPermissionAnswerMethod(true, "ask_tool")).toBe("chat.user_answer");
+  });
+});
+
+describe("gatewayPermissionEventMatchesRequest", () => {
+  it("does not complete a resumed permission from another request in the same session", () => {
+    expect(gatewayPermissionEventMatchesRequest({
+      type: "event",
+      event: "chat.final",
+      request_id: "new-chat-request",
+    }, "permission-resume-request", "chat.send", true)).toBe(false);
+    expect(gatewayPermissionEventMatchesRequest({
+      type: "event",
+      event: "chat.final",
+      request_id: "permission-resume-request",
+    }, "permission-resume-request", "chat.send", true)).toBe(true);
+  });
+
+  it("does not constrain registry-backed user answers to the answer RPC id", () => {
+    expect(gatewayPermissionEventMatchesRequest({
+      type: "event",
+      event: "chat.final",
+      request_id: "original-chat-request",
+    }, "answer-rpc-request", "chat.user_answer", true)).toBe(true);
+  });
+
+  it("preserves standalone gateways that do not emit top-level request ids", () => {
+    expect(gatewayPermissionEventMatchesRequest({
+      type: "event",
+      event: "chat.final",
+    }, "permission-resume-request", "chat.send", false)).toBe(true);
   });
 });

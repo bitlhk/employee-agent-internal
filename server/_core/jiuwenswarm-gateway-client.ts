@@ -95,8 +95,24 @@ export function canDegradeAfterEnterpriseMcpProvisioningFailure(error: unknown):
     === "enterprise MCP provisioning timed out";
 }
 
-export function gatewayPermissionAnswerMethod(enterprise: boolean): "chat.send" | "chat.user_answer" {
-  return enterprise ? "chat.user_answer" : "chat.send";
+export function gatewayPermissionAnswerMethod(
+  enterprise: boolean,
+  source: unknown,
+): "chat.send" | "chat.user_answer" {
+  if (!enterprise) return "chat.send";
+  return String(source || "permission_interrupt").trim() === "permission_interrupt"
+    ? "chat.send"
+    : "chat.user_answer";
+}
+
+export function gatewayPermissionEventMatchesRequest(
+  frame: any,
+  requestId: string,
+  answerMethod: "chat.send" | "chat.user_answer",
+  enterprise: boolean,
+): boolean {
+  if (!enterprise || answerMethod !== "chat.send" || frame?.type !== "event") return true;
+  return String(frame.request_id || "") === requestId;
 }
 
 function initSse(res: Response): void {
@@ -875,7 +891,7 @@ export async function answerJiuwenGatewayPermission(
         || defaultTimeoutMs,
       ) || defaultTimeoutMs,
     );
-    const answerMethod = gatewayPermissionAnswerMethod(Boolean(enterpriseRoute));
+    const answerMethod = gatewayPermissionAnswerMethod(Boolean(enterpriseRoute), args.source);
     const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
     const settle = (result: { ok: true; text: string } | { ok: false; error: string; text?: string }) => {
       if (settled) return;
@@ -929,6 +945,12 @@ export async function answerJiuwenGatewayPermission(
         return;
       }
       if (frame.type !== "event") return;
+      if (!gatewayPermissionEventMatchesRequest(
+        frame,
+        requestId,
+        answerMethod,
+        Boolean(enterpriseRoute),
+      )) return;
       const eventType = String(frame.event || "");
       const payload = eventPayload(frame);
       const sid = payloadSessionId(payload);

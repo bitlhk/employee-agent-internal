@@ -32,10 +32,17 @@ JIUWEN_AUTO_MODEL_STICKY_MS=900000
 # Keep workshop packages small. The product maximum remains 50 MB.
 EA_SKILL_UPLOAD_MAX_BYTES=5242880
 EA_SKILL_SCAN_CONCURRENCY=4
-EA_SKILL_SCAN_MAX_QUEUE=100
+EA_SKILL_SCAN_MAX_QUEUE=200
 EA_SKILL_INSTALL_CONCURRENCY=2
-EA_SKILL_INSTALL_MAX_QUEUE=100
+EA_SKILL_INSTALL_MAX_QUEUE=200
 ```
+
+The Skill registry remains a serialized file-backed mutation boundary. The
+200-request queues absorb a whole-class arrival burst, but they do not make
+installation parallel. For the workshop, start uploads in three groups of
+about 50 attendees, separated by one or two minutes. Do not raise install
+concurrency to hide registry serialization; migrate the registry to a
+transactional store before running sustained multi-EA-process writes.
 
 Do not raise `EA_CHAT_HTTP_MAX_CONCURRENCY` until the real model/Skill stages
 below pass. A larger number cannot create upstream MaaS or MCP quota.
