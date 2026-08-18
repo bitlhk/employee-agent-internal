@@ -48,6 +48,20 @@ test("accepts a 150-user training cohort and rejects oversized cohorts", () => {
   );
 });
 
+test("preserves a safe role template label for mixed-role reports", () => {
+  const [profile] = normalizeLoadTestProfiles([{
+    adoptId: "lgj-role0001",
+    cookie: "session=test",
+    roleTemplate: "insurance-advisor",
+  }]);
+  assert.equal(profile.roleTemplate, "insurance-advisor");
+  assert.throws(() => normalizeLoadTestProfiles([{
+    adoptId: "lgj-role0002",
+    cookie: "session=test",
+    roleTemplate: "insurance advisor",
+  }]), /invalid roleTemplate/);
+});
+
 test("requires a private credential file", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "ea-load-profiles-"));
   try {
