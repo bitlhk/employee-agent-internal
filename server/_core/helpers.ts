@@ -7,6 +7,7 @@ import type { Request, Response } from "express";
 import { createContext } from "./context";
 import { appendRetainedJsonLog, startJsonLogRetention } from "./retained-json-log";
 import { isPrivateIpAddress } from "./ip-address";
+import { createBoundedAsyncCache } from "./bounded-async-cache";
 
 // ── 可配置路径（开源部署时通过 .env 覆盖）──
 const processHome = process.env.HOME || process.env.USERPROFILE || "/root";
@@ -307,6 +308,23 @@ export const resolveRequesterUserId = async (req: Request, res: Response): Promi
   }
 };
 
+const configuredClawOwnerLookupTtl = Number(
+  process.env.EA_CLAW_OWNER_LOOKUP_CACHE_TTL_MS || 5_000,
+);
+const clawOwnerLookupCache = createBoundedAsyncCache<any>({
+  ttlMs: Number.isFinite(configuredClawOwnerLookupTtl)
+    ? Math.min(30_000, Math.max(500, configuredClawOwnerLookupTtl))
+    : 5_000,
+  maxEntries: 2_000,
+});
+
+const clawOwnerLookupKey = (adoptId: string) => `owner:${adoptId}\u0000`;
+
+export function invalidateClawOwnerLookup(adoptId: string): void {
+  const normalized = String(adoptId || "").trim();
+  if (normalized) clawOwnerLookupCache.invalidatePrefix(clawOwnerLookupKey(normalized));
+}
+
 export const requireClawOwner = async (req: Request, res: Response, adoptId: string) => {
   const userId = await resolveRequesterUserId(req, res);
   if (!userId) {
@@ -314,8 +332,13 @@ export const requireClawOwner = async (req: Request, res: Response, adoptId: str
     return null;
   }
   const { getClawByAdoptId } = await import("../db");
-  const claw = await getClawByAdoptId(adoptId).catch(() => null);
+  const cacheKey = clawOwnerLookupKey(adoptId);
+  const claw = await clawOwnerLookupCache.getOrLoad(
+    cacheKey,
+    () => getClawByAdoptId(adoptId).catch(() => null),
+  );
   if (!claw) {
+    clawOwnerLookupCache.invalidatePrefix(cacheKey);
     res.status(404).json({ error: "NOT_FOUND" });
     return null;
   }
