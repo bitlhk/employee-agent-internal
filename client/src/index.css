@@ -7148,7 +7148,7 @@ input.session-searchbar__input:focus-visible,
 }
 
 .role-task-launchpad {
-  --role-accent: color-mix(in oklab, var(--oc-accent) 72%, var(--oc-text-primary));
+  --role-accent: var(--oc-accent);
   --role-accent-subtle: color-mix(in oklab, var(--oc-accent-subtle) 72%, transparent);
   display: grid;
   gap: 18px;
