@@ -473,15 +473,27 @@ export function listMcpToolGroups(options: {
   };
 }
 
-async function discoverGeneratedRuntimeSkills(
-  adoptId: string,
-  runtimeAgentId: string,
-  onlySkillId?: string
-): Promise<{
+type GeneratedSkillDiscoveryResult = {
   discovered: number;
   installed: Array<{ skillId: string; displayName: string }>;
   skipped: Array<{ skillId: string; reason: string }>;
-}> {
+};
+
+const configuredSkillDiscoveryTtl = Number(
+  process.env.EA_SKILL_DISCOVERY_CACHE_TTL_MS || 30_000,
+);
+const generatedSkillDiscoveryCache = createBoundedAsyncCache<GeneratedSkillDiscoveryResult>({
+  ttlMs: Number.isFinite(configuredSkillDiscoveryTtl)
+    ? Math.min(300_000, Math.max(1_000, configuredSkillDiscoveryTtl))
+    : 30_000,
+  maxEntries: 2_000,
+});
+
+async function discoverGeneratedRuntimeSkillsUncached(
+  adoptId: string,
+  runtimeAgentId: string,
+  onlySkillId?: string
+): Promise<GeneratedSkillDiscoveryResult> {
   const runtimeSkillsRoot = path.join(
     resolveRuntimeWorkspaceByIds(adoptId, runtimeAgentId),
     "skills"
@@ -560,6 +572,23 @@ async function discoverGeneratedRuntimeSkills(
   }
 
   return { discovered: installed.length, installed, skipped };
+}
+
+async function discoverGeneratedRuntimeSkills(
+  adoptId: string,
+  runtimeAgentId: string,
+  onlySkillId?: string,
+): Promise<GeneratedSkillDiscoveryResult> {
+  const prefix = `${adoptId}\u0000${runtimeAgentId}\u0000`;
+  if (onlySkillId) {
+    generatedSkillDiscoveryCache.invalidatePrefix(prefix);
+    return discoverGeneratedRuntimeSkillsUncached(adoptId, runtimeAgentId, onlySkillId);
+  }
+  const key = `${prefix}${readSessionEpoch(adoptId)}`;
+  return generatedSkillDiscoveryCache.getOrLoad(
+    key,
+    () => discoverGeneratedRuntimeSkillsUncached(adoptId, runtimeAgentId),
+  );
 }
 
 

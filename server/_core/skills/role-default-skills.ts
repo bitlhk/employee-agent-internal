@@ -7,6 +7,7 @@ import { skillRegistry } from "./skill-registry";
 import { roleSkillPreferences } from "./role-skill-preferences";
 import { parseSkillSourceDirectory } from "./skill-source";
 import { skillSourceDirsForRuntime } from "./skill-store";
+import { createBoundedAsyncCache } from "../bounded-async-cache";
 
 type MergeRoleDefaultSkillsInput = {
   adoptId: string;
@@ -17,6 +18,16 @@ type MergeRoleDefaultSkillsInput = {
   skillSourceDirs?: string[];
   now?: Date;
 };
+
+const configuredProjectionCacheTtl = Number(
+  process.env.EA_ROLE_SKILL_PROJECTION_CACHE_TTL_MS || 30_000,
+);
+const roleSkillProjectionCache = createBoundedAsyncCache<Skill[]>({
+  ttlMs: Number.isFinite(configuredProjectionCacheTtl)
+    ? Math.min(300_000, Math.max(1_000, configuredProjectionCacheTtl))
+    : 30_000,
+  maxEntries: 2_000,
+});
 
 function uniqueSkillIds(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort();
@@ -123,15 +134,41 @@ export async function listSkillsWithRoleDefaults(input: {
   if (!listed.ok) return listed;
   const effectiveAssets = await resolveEffectiveRoleAssets(input.roleTemplate);
   const skillSourceDirs = skillSourceDirsForRuntime();
-  return {
-    ok: true,
-    value: mergeRoleDefaultSkills({
+  const disabledDefaultSkillIds = roleSkillPreferences.getDisabledDefaultSkillIds(input.adoptId);
+  const runtimeWorkspaceDir = resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId);
+  const projectionKey = JSON.stringify({
+    adoptId: input.adoptId,
+    agentId: input.agentId,
+    roleTemplate: input.roleTemplate,
+    defaultSkillIds: uniqueSkillIds(effectiveAssets.skills.default),
+    disabledDefaultSkillIds: uniqueSkillIds(disabledDefaultSkillIds),
+    registeredSkills: listed.value.map((skill) => ({
+      id: skill.id,
+      state: skill.state,
+      enabled: skill.enabled,
+      updatedAt: skill.updatedAt,
+      sourceKind: skill.source.kind,
+      sourcePath: skill.source.sourcePath,
+      displayName: skill.source.displayName,
+      description: skill.source.description,
+      version: skill.source.version,
+    })),
+    runtimeWorkspaceDir,
+    skillSourceDirs,
+  });
+  const projected = await roleSkillProjectionCache.getOrLoad(
+    projectionKey,
+    async () => mergeRoleDefaultSkills({
       adoptId: input.adoptId,
       defaultSkillIds: effectiveAssets.skills.default,
-      disabledDefaultSkillIds: roleSkillPreferences.getDisabledDefaultSkillIds(input.adoptId),
+      disabledDefaultSkillIds,
       registeredSkills: listed.value,
-      runtimeWorkspaceDir: resolveRuntimeWorkspaceByIds(input.adoptId, input.agentId),
+      runtimeWorkspaceDir,
       skillSourceDirs,
     }),
+  );
+  return {
+    ok: true,
+    value: structuredClone(projected),
   };
 }
