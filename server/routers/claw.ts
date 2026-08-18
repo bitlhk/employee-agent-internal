@@ -2052,6 +2052,7 @@ export const clawRouter = router({
           desc: skill.source.description || "智能体技能",
           emoji: "⚡",
           source: "private" as const,
+          sourceKind: skill.source.kind,
           scope: "private" as const,
           sourcePath: skill.sync.runtimePath || skill.source.sourcePath || "",
           ownerAgentId: input.adoptId,

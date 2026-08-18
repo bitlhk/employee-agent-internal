@@ -34,16 +34,16 @@ describe("role home runtime projection", () => {
     expect(selectRoleHomeTaskIds("wealth-manager", status.tasks)).toEqual([
       "WM-GT-01",
       "WM-GT-02",
-      "WM-GT-04",
+      "WM-GT-06",
       "WM-GT-05",
     ]);
     expect(status.capabilities).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: "customer-data", status: "READY", statusLabel: "已连接" }),
-      expect.objectContaining({ id: "role-knowledge", status: "READY", statusLabel: "已就绪" }),
+      expect.objectContaining({ id: "customer-operations", status: "READY", statusLabel: "已就绪" }),
+      expect.objectContaining({ id: "compliance-guard", status: "READY", statusLabel: "已就绪" }),
     ]));
   });
 
-  it("falls back to maturity follow-up when the write connector is not provisioned", () => {
+  it("keeps safe operations available when the write connector is not provisioned", () => {
     const status = buildRoleHomeRuntimeStatus({
       roleTemplate: "wealth-manager",
       connectors: [
@@ -56,7 +56,10 @@ describe("role home runtime projection", () => {
 
     expect(status.tasks.find((task) => task.taskId === "WM-GT-05")?.status).toBe("BLOCKED");
     expect(status.tasks.find((task) => task.taskId === "WM-GT-06")?.status).toBe("READY");
-    expect(selectRoleHomeTaskIds("wealth-manager", status.tasks)[3]).toBe("WM-GT-06");
+    expect(selectRoleHomeTaskIds("wealth-manager", status.tasks)).toEqual([
+      "WM-GT-01", "WM-GT-02", "WM-GT-06", "WM-GT-05",
+    ]);
+    expect(status.capabilities.find((item) => item.id === "customer-operations")?.status).toBe("DEGRADED");
   });
 
   it("blocks policy verification without current role knowledge and degrades safe fallback tasks", () => {
@@ -72,7 +75,7 @@ describe("role home runtime projection", () => {
 
     expect(status.tasks.find((task) => task.taskId === "WM-GT-03")?.status).toBe("BLOCKED");
     expect(status.tasks.find((task) => task.taskId === "WM-GT-01")?.status).toBe("DEGRADED");
-    expect(status.capabilities.find((item) => item.id === "role-knowledge")).toMatchObject({
+    expect(status.capabilities.find((item) => item.id === "compliance-guard")).toMatchObject({
       status: "DEGRADED",
       statusLabel: "有限可用",
     });
@@ -91,6 +94,6 @@ describe("role home runtime projection", () => {
 
     expect(status.tasks.find((task) => task.taskId === "IA-GT-01")?.status).toBe("READY");
     expect(status.tasks.find((task) => task.taskId === "IA-GT-02")?.status).toBe("DEGRADED");
-    expect(status.capabilities.find((item) => item.id === "product-data")?.status).toBe("DEGRADED");
+    expect(status.capabilities.find((item) => item.id === "product-explanation")?.status).toBe("DEGRADED");
   });
 });

@@ -30,10 +30,17 @@ function connectorStatus(states: Map<string, RoleHomeStatus>, ids: string[]): Ro
   return "BLOCKED";
 }
 
-function capabilityStatusLabel(kind: string, status: RoleHomeStatus): string {
-  if (status === "READY") return kind === "connector" ? "已连接" : "已就绪";
+function capabilityStatusLabel(status: RoleHomeStatus): string {
+  if (status === "READY") return "已就绪";
   if (status === "DEGRADED") return "有限可用";
-  return "待恢复";
+  return "暂不可用";
+}
+
+function aggregateTaskStatus(taskIds: string[], statuses: Map<string, RoleHomeStatus>): RoleHomeStatus {
+  const values = taskIds.map((taskId) => statuses.get(taskId) || "BLOCKED");
+  if (values.every((status) => status === "READY")) return "READY";
+  if (values.every((status) => status === "BLOCKED")) return "BLOCKED";
+  return "DEGRADED";
 }
 
 function genericTaskStatus(input: {
@@ -150,19 +157,14 @@ export function buildRoleHomeRuntimeStatus(input: {
       requiresSkill: experience.maturity === "reference",
     });
   });
+  const taskStatuses = new Map(tasks.map((task) => [task.taskId, task.status]));
   const capabilities: RoleHomeCapabilityStatus[] = experience.capabilities.map((capability) => {
-    const status = capability.kind === "connector"
-      ? connectorStatus(connectors, capability.connectorIds || [])
-      : capability.kind === "knowledge"
-        ? input.knowledgeReady ? "READY" : "DEGRADED"
-        : capability.kind === "skill"
-          ? skillReady ? "READY" : "DEGRADED"
-          : "READY";
+    const status = aggregateTaskStatus(capability.taskIds, taskStatuses);
     return {
       id: capability.id,
       label: capability.label,
       status,
-      statusLabel: capabilityStatusLabel(capability.kind, status),
+      statusLabel: capabilityStatusLabel(status),
     };
   });
   return {

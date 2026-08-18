@@ -13,8 +13,8 @@ export type RoleTaskStarter = {
 export type RoleCapabilityPresentation = {
   id: string;
   label: string;
-  kind: "connector" | "knowledge" | "policy" | "skill";
-  connectorIds?: string[];
+  icon: "customer" | "analysis" | "allocation" | "product" | "governance" | "operations" | "research" | "skill";
+  taskIds: string[];
 };
 
 export type RoleExperience = {
@@ -45,7 +45,7 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
       },
       {
         id: "WM-GT-02",
-        label: "资产配置建议",
+        label: "资产配置方案",
         description: "结合风险等级和资产结构形成配置建议",
         prompt: "请从我负责的客户中选择一位适合分析的客户，结合最新画像、持仓和当前产品数据，形成资产配置建议并说明排除项。",
         icon: "chart",
@@ -74,18 +74,19 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
       },
       {
         id: "WM-GT-06",
-        label: "产品到期跟进",
+        label: "产品到期经营",
         description: "识别近期到期客户并形成跟进计划",
         prompt: "请梳理未来 30 天产品到期的客户，按优先级给出跟进计划，并区分已核实信息和仍需补充的事项。",
         icon: "target",
       },
     ],
-    taskSlots: [["WM-GT-01"], ["WM-GT-02"], ["WM-GT-04"], ["WM-GT-05", "WM-GT-06"]],
+    taskSlots: [["WM-GT-01"], ["WM-GT-02"], ["WM-GT-06"], ["WM-GT-05"]],
     capabilities: [
-      { id: "customer-data", label: "客户数据", kind: "connector", connectorIds: ["wealth_assistant_customer"] },
-      { id: "product-data", label: "产品数据", kind: "connector", connectorIds: ["wealth_assistant_product"] },
-      { id: "role-knowledge", label: "岗位知识", kind: "knowledge" },
-      { id: "suitability-policy", label: "适当性规则", kind: "policy" },
+      { id: "customer-operations", label: "客户经营", icon: "operations", taskIds: ["WM-GT-01", "WM-GT-06", "WM-GT-05"] },
+      { id: "customer-analysis", label: "客户分析", icon: "customer", taskIds: ["WM-GT-01", "WM-GT-02"] },
+      { id: "asset-allocation", label: "资产配置", icon: "allocation", taskIds: ["WM-GT-02"] },
+      { id: "product-matching", label: "产品匹配", icon: "product", taskIds: ["WM-GT-02", "WM-GT-04"] },
+      { id: "compliance-guard", label: "合规护航", icon: "governance", taskIds: ["WM-GT-03", "WM-GT-04"] },
     ],
   },
   "insurance-advisor": {
@@ -102,10 +103,11 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
     ],
     taskSlots: [["IA-GT-01"], ["IA-GT-02"], ["IA-GT-03"], ["IA-GT-05"]],
     capabilities: [
-      { id: "customer-data", label: "客户数据", kind: "connector", connectorIds: ["insurance_customer_profile"] },
-      { id: "product-data", label: "产品知识", kind: "connector", connectorIds: ["insurance_product_exam_points"] },
-      { id: "role-knowledge", label: "岗位知识", kind: "knowledge" },
-      { id: "sales-policy", label: "销售规则", kind: "policy" },
+      { id: "renewal-operations", label: "续保经营", icon: "operations", taskIds: ["IA-GT-01"] },
+      { id: "needs-analysis", label: "需求分析", icon: "customer", taskIds: ["IA-GT-02"] },
+      { id: "product-explanation", label: "产品讲解", icon: "product", taskIds: ["IA-GT-03"] },
+      { id: "sales-coaching", label: "销售陪练", icon: "skill", taskIds: ["IA-GT-05"] },
+      { id: "sales-compliance", label: "合规销售", icon: "governance", taskIds: ["IA-GT-02", "IA-GT-03"] },
     ],
   },
   "post-loan-risk-control": {
@@ -122,10 +124,10 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
     ],
     taskSlots: [["RC-GT-01"], ["RC-GT-02"], ["RC-GT-04"], ["RC-GT-05"]],
     capabilities: [
-      { id: "risk-data", label: "贷后数据", kind: "connector", connectorIds: ["post_loan_risk_data"] },
-      { id: "external-risk", label: "外部风险", kind: "connector", connectorIds: ["post_loan_risk_data"] },
-      { id: "role-knowledge", label: "岗位知识", kind: "knowledge" },
-      { id: "risk-policy", label: "预警规则", kind: "policy" },
+      { id: "post-loan-monitoring", label: "贷后监测", icon: "operations", taskIds: ["RC-GT-01"] },
+      { id: "financial-diagnosis", label: "财务诊断", icon: "analysis", taskIds: ["RC-GT-02"] },
+      { id: "external-verification", label: "外部核验", icon: "research", taskIds: ["RC-GT-04"] },
+      { id: "warning-grading", label: "预警分级", icon: "governance", taskIds: ["RC-GT-05"] },
     ],
   },
   "credential-compliance": {
@@ -142,8 +144,10 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
     ],
     taskSlots: [["AUDIT-START-01"], ["AUDIT-START-02"], ["AUDIT-START-03"], ["AUDIT-START-04"]],
     capabilities: [
-      { id: "role-skill", label: "审核技能", kind: "skill" },
-      { id: "role-knowledge", label: "审核知识", kind: "knowledge" },
+      { id: "material-review", label: "材料审核", icon: "governance", taskIds: ["AUDIT-START-01"] },
+      { id: "element-extraction", label: "要素提取", icon: "analysis", taskIds: ["AUDIT-START-02"] },
+      { id: "anomaly-analysis", label: "异常分析", icon: "research", taskIds: ["AUDIT-START-03"] },
+      { id: "rule-authoring", label: "规则生成", icon: "skill", taskIds: ["AUDIT-START-04"] },
     ],
   },
   "investment-researcher": {
@@ -160,9 +164,10 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
     ],
     taskSlots: [["INVEST-START-01"], ["INVEST-START-02"], ["INVEST-START-03"], ["INVEST-START-04"]],
     capabilities: [
-      { id: "market-data", label: "市场数据", kind: "connector", connectorIds: ["wind_stock_data", "wind_fund_data", "wind_financial_docs"] },
-      { id: "role-knowledge", label: "研究知识", kind: "knowledge" },
-      { id: "role-skill", label: "投研技能", kind: "skill" },
+      { id: "company-research", label: "公司研究", icon: "research", taskIds: ["INVEST-START-01"] },
+      { id: "financial-analysis", label: "财报分析", icon: "analysis", taskIds: ["INVEST-START-02"] },
+      { id: "peer-comparison", label: "同业比较", icon: "allocation", taskIds: ["INVEST-START-03"] },
+      { id: "event-interpretation", label: "事件解读", icon: "operations", taskIds: ["INVEST-START-04"] },
     ],
   },
   "general-assistant": {
@@ -179,8 +184,10 @@ const ROLE_EXPERIENCES: Record<string, RoleExperience> = {
     ],
     taskSlots: [["GENERAL-START-01"], ["GENERAL-START-02"], ["GENERAL-START-03"], ["GENERAL-START-04"]],
     capabilities: [
-      { id: "role-skill", label: "工作技能", kind: "skill" },
-      { id: "role-knowledge", label: "工作知识", kind: "knowledge" },
+      { id: "material-organization", label: "材料整理", icon: "operations", taskIds: ["GENERAL-START-01"] },
+      { id: "work-planning", label: "方案规划", icon: "allocation", taskIds: ["GENERAL-START-02"] },
+      { id: "content-review", label: "内容检查", icon: "governance", taskIds: ["GENERAL-START-03"] },
+      { id: "custom-skill", label: "自定义技能", icon: "skill", taskIds: ["GENERAL-START-04"] },
     ],
   },
 };

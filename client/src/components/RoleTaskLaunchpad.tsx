@@ -4,14 +4,15 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   CircleAlert,
-  Database,
   FileCheck2,
   FileText,
+  Layers3,
   MessageSquareText,
   Puzzle,
   Search,
   ShieldCheck,
   Target,
+  UserRound,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -30,10 +31,21 @@ const TASK_ICONS: Record<RoleTaskStarter["icon"], LucideIcon> = {
 };
 
 const CAPABILITY_ICONS: Record<string, LucideIcon> = {
-  connector: Database,
-  knowledge: BookOpenCheck,
-  policy: ShieldCheck,
+  customer: UserRound,
+  analysis: BarChart3,
+  allocation: Layers3,
+  product: Search,
+  governance: ShieldCheck,
+  operations: BriefcaseBusiness,
+  research: BookOpenCheck,
   skill: Wrench,
+};
+
+type RoleHomeSkill = {
+  id: string;
+  label: string;
+  desc: string;
+  source: string;
 };
 
 function taskAvailability(task: RoleTaskStarter, status: RoleHomeTaskStatus | undefined, loading: boolean) {
@@ -70,7 +82,7 @@ function roleTitle(roleName: string): string {
 export function RoleTaskLaunchpad({
   roleTemplate,
   roleName,
-  skillCount,
+  skills,
   runtimeStatus,
   connectorsLoading,
   onSelectPrompt,
@@ -78,13 +90,16 @@ export function RoleTaskLaunchpad({
 }: {
   roleTemplate: string;
   roleName: string;
-  skillCount: number;
+  skills: RoleHomeSkill[];
   runtimeStatus: RoleHomeRuntimeStatus | null;
   connectorsLoading: boolean;
   onSelectPrompt: (task: RoleTaskStarter) => void;
   onOpenSkills: () => void;
 }) {
   const experience = roleExperience(roleTemplate);
+  const featuredSkills = skills
+    .filter((skill) => skill.source === "role_default")
+    .slice(0, 4);
   const statuses = runtimeStatus?.roleTemplate === experience.roleTemplate ? runtimeStatus.tasks : [];
   const statusById = new Map(statuses.map((status) => [status.taskId, status]));
   const tasks = featuredTasks(experience.roleTemplate, statuses);
@@ -112,7 +127,11 @@ export function RoleTaskLaunchpad({
           <strong>{experience.assistantLabel}</strong>
           <p>{experience.description}</p>
         </div>
-        <div className="role-task-launchpad__readiness" aria-label="岗位任务状态">
+        <div
+          className="role-task-launchpad__readiness"
+          data-state={blockedCount > 0 ? "blocked" : degradedCount > 0 ? "degraded" : "ready"}
+          aria-label="岗位任务状态"
+        >
           {blockedCount > 0 ? <CircleAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
           <span>{summary || "岗位能力可用"}</span>
         </div>
@@ -154,7 +173,7 @@ export function RoleTaskLaunchpad({
         <div className="role-task-launchpad__capability-list">
           {experience.capabilities.map((capability) => {
             const runtimeCapability = runtimeStatus?.capabilities.find((item) => item.id === capability.id);
-            const Icon = CAPABILITY_ICONS[capability.kind] || Puzzle;
+            const Icon = CAPABILITY_ICONS[capability.icon] || Puzzle;
             const state = runtimeCapability?.status || (connectorsLoading ? "DEGRADED" : "BLOCKED");
             return (
               <span key={capability.id} className="role-task-launchpad__capability" data-state={state.toLowerCase()}>
@@ -167,9 +186,28 @@ export function RoleTaskLaunchpad({
         </div>
       </section>
 
+      <section className="role-task-launchpad__skills" aria-labelledby="role-skills-title">
+        <div className="role-task-launchpad__section-heading">
+          <div>
+            <h2 id="role-skills-title">岗位技能</h2>
+            <span>{skills.length > 0 ? `已启用 ${skills.length} 项` : "暂无已启用技能"}</span>
+          </div>
+          <button type="button" onClick={onOpenSkills}>查看全部 / 管理</button>
+        </div>
+        {featuredSkills.length > 0 ? (
+          <div className="role-task-launchpad__skill-list">
+            {featuredSkills.map((skill) => (
+              <span key={skill.id} className="role-task-launchpad__skill" title={skill.desc || skill.label}>
+                <Puzzle aria-hidden="true" />
+                <strong>{skill.label}</strong>
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
       <footer className="role-task-launchpad__footer">
         <span>选择任务后可补充客户、企业或材料范围，也可以直接在下方描述工作。</span>
-        <button type="button" onClick={onOpenSkills}><Puzzle aria-hidden="true" />管理 Skill{skillCount > 0 ? ` · ${skillCount}` : ""}</button>
       </footer>
     </section>
   );

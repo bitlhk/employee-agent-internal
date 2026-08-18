@@ -4723,7 +4723,7 @@ export default function Home() {
                 <RoleTaskLaunchpad
                   roleTemplate={String((clawByAdoptId as any)?.roleTemplate || "general-assistant")}
                   roleName={lingxiaDisplayName || brand.name}
-                  skillCount={composerSkills.length}
+                  skills={composerSkills}
                   runtimeStatus={roleHomeRuntime}
                   connectorsLoading={composerConnectorsLoading}
                   onSelectPrompt={(task) => { setLingxiaInput(task.prompt); window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0); }}

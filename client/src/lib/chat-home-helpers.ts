@@ -58,7 +58,7 @@ export function flattenComposerSkills(groups: any): ComposerSkillOption[] {
       desc: String(
         skill?.desc || skill?.description || skill?.source?.description || ""
       ).trim(),
-      source: String(skill?.scope || skill?.source || "skill").trim(),
+      source: String(skill?.sourceKind || skill?.source?.kind || skill?.scope || "skill").trim(),
       initial: composerSkillInitial(skill, id),
       requiredMcpServers: Array.isArray(skill?.requirements?.mcpServers)
         ? skill.requirements.mcpServers

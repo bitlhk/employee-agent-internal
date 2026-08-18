@@ -13,6 +13,22 @@ describe("roleExperience", () => {
     expect(experience.taskSlots).toHaveLength(4);
   });
 
+  it.each([
+    "wealth-manager",
+    "insurance-advisor",
+    "post-loan-risk-control",
+    "credential-compliance",
+    "investment-researcher",
+    "general-assistant",
+  ])("keeps every %s home reference inside its role presentation contract", (role) => {
+    const experience = roleExperience(role);
+    const taskIds = new Set(experience.tasks.map((task) => task.id));
+    expect(experience.taskSlots.flat().every((taskId) => taskIds.has(taskId))).toBe(true);
+    expect(experience.capabilities.every((capability) => (
+      capability.taskIds.length > 0 && capability.taskIds.every((taskId) => taskIds.has(taskId))
+    ))).toBe(true);
+  });
+
   it("keeps the audit role operational until its benchmark pack is complete", () => {
     expect(roleExperience("credential-compliance").maturity).toBe("operational");
   });
@@ -20,11 +36,16 @@ describe("roleExperience", () => {
   it("keeps runtime dependencies out of the presentation adapter", () => {
     const serialized = JSON.stringify(roleExperience("wealth-manager"));
     expect(serialized).not.toContain("requiredConnectorIds");
-    expect(roleExperience("wealth-manager").taskSlots[3]).toEqual(["WM-GT-05", "WM-GT-06"]);
+    expect(serialized).not.toContain("connectorIds");
+    expect(roleExperience("wealth-manager").taskSlots).toEqual([
+      ["WM-GT-01"], ["WM-GT-02"], ["WM-GT-06"], ["WM-GT-05"],
+    ]);
   });
 
-  it("uses the read-only fallback task until runtime readiness is available", () => {
-    expect(selectRoleHomeTaskIds("wealth-manager", [])[3]).toBe("WM-GT-06");
+  it("keeps the four wealth starters stable until runtime readiness is available", () => {
+    expect(selectRoleHomeTaskIds("wealth-manager", [])).toEqual([
+      "WM-GT-01", "WM-GT-02", "WM-GT-06", "WM-GT-05",
+    ]);
   });
 
   it("falls back to the general assistant and exposes stable labels", () => {
