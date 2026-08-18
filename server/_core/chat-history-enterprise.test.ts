@@ -78,4 +78,25 @@ describe("enterprise runtime chat history", () => {
       ["assistant", "你好，今天有什么可以帮你？"],
     ]);
   });
+
+  it("preserves whitespace-only deltas used by markdown formatting", () => {
+    const messages = extractJiuwenChatMessagesFromRecords([
+      {
+        id: "u1",
+        role: "user",
+        timestamp: 100,
+        content: "请给我天气信息",
+      },
+      ...["**天气**", "\n\n", "- ", "北京", "：", "晴朗", "\n", "- ", "上海", "：", "多云"].map((content, index) => ({
+        id: `a${index}`,
+        request_id: "req1",
+        role: "assistant",
+        timestamp: 101 + index,
+        event_type: "chat.delta",
+        content,
+      })),
+    ], 20, "lgj-user");
+
+    expect(messages[1]?.text).toBe("**天气**\n\n- 北京：晴朗\n- 上海：多云");
+  });
 });

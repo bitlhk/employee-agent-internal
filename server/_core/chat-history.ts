@@ -327,6 +327,7 @@ function mergeJiuwenAssistantText(previous: string, next: string, eventType: str
   const text = String(next || "");
   if (!text) return previous;
   if (!previous) return text;
+  if (eventType === "chat.delta") return `${previous}${text}`;
   if (text === previous) return previous;
   if (text.includes(previous) && text.length > previous.length) return text;
   if (previous.includes(text)) return previous;
@@ -534,9 +535,10 @@ export function extractJiuwenChatMessagesFromRecords(
     if (role !== "user" && role !== "assistant") continue;
     const eventType = String(event?.event_type || event?.type || "").toLowerCase();
     const timestamp = normalizeJiuwenHistoryTimestamp(event?.timestamp || event?.created_at || event?.time);
+    const historyContent = jiuwenHistoryContent(event);
     const rawText = role === "user"
-      ? stripEaJiuwenUserInternalContext(stripPlatformLanguagePolicy(jiuwenHistoryContent(event))).trim()
-      : jiuwenHistoryContent(event).trim();
+      ? stripEaJiuwenUserInternalContext(stripPlatformLanguagePolicy(historyContent)).trim()
+      : historyContent;
     const attachmentContext = role === "user"
       ? parseUploadedAttachmentRuntimeMessage(rawText)
       : { text: rawText, attachments: [] };
