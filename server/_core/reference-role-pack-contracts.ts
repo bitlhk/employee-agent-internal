@@ -1,9 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import {
+  expectedReferenceRoleTaskIds,
+  referenceRolePack,
+  type ReferenceRolePackDefinition,
+} from "./reference-role-pack-registry";
 
-export const WEALTH_EVAL_SUITE_VERSION = "wm-golden-task-v3";
-export const INSURANCE_EVAL_SUITE_VERSION = "ia-golden-task-v1";
+export const WEALTH_EVAL_SUITE_VERSION = referenceRolePack("wealth-manager")!.evalSuiteVersion;
+export const INSURANCE_EVAL_SUITE_VERSION = referenceRolePack("insurance-advisor")!.evalSuiteVersion;
+export const POST_LOAN_RISK_EVAL_SUITE_VERSION = referenceRolePack("post-loan-risk-control")!.evalSuiteVersion;
 
 type BenchmarkCase = {
   caseId: string;
@@ -20,33 +26,6 @@ type BenchmarkTask = {
   roleTemplate: string;
   requiredCapabilities?: string[];
   cases: BenchmarkCase[];
-};
-
-type CapabilityProof = {
-  owner: "employee-agent" | "enterprise-mcp";
-  implementation: string;
-  test: string;
-};
-
-const WEALTH_CAPABILITY_PROOFS: Record<string, CapabilityProof> = {
-  prepare_wealth_previsit_context: { owner: "employee-agent", implementation: "server/_core/wealth-previsit-tool-handler.ts", test: "server/_core/wealth-previsit-context.test.ts" },
-  wealth_assistant_context_probe: { owner: "enterprise-mcp", implementation: "scripts/install-wealth-manager-reference-pack.ts", test: "server/_core/wealth-manager-reference-assets.test.ts" },
-  wealth_assistant_customer_detail: { owner: "enterprise-mcp", implementation: "scripts/install-wealth-manager-reference-pack.ts", test: "server/_core/wealth-manager-reference-assets.test.ts" },
-  prepare_wealth_allocation_context: { owner: "employee-agent", implementation: "server/_core/wealth-allocation-context.ts", test: "server/_core/wealth-allocation-context.test.ts" },
-  get_wealth_policy_basis: { owner: "employee-agent", implementation: "server/_core/wealth-policy-source.ts", test: "server/_core/wealth-policy-source.test.ts" },
-  demo_create_portfolio_draft: { owner: "employee-agent", implementation: "server/_core/governance-demo-mcp.ts", test: "server/_core/governance-demo-mcp.test.ts" },
-  demo_create_followup_task: { owner: "employee-agent", implementation: "server/_core/governance-demo-mcp.ts", test: "server/_core/governance-demo-mcp.test.ts" },
-  prepare_wealth_maturity_context: { owner: "employee-agent", implementation: "server/_core/wealth-maturity-context.ts", test: "server/_core/wealth-maturity-context.test.ts" },
-};
-
-const INSURANCE_CAPABILITY_PROOFS: Record<string, CapabilityProof> = {
-  list_customer_profiles: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
-  get_customer_profile_by_name: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
-  list_products: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
-  search_products: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
-  get_product_detail: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
-  get_exam_points: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
-  demo_create_followup_task: { owner: "employee-agent", implementation: "server/_core/governance-demo-mcp.ts", test: "server/_core/governance-demo-mcp.test.ts" },
 };
 
 export type AssertionCategory = "business_data" | "knowledge_policy" | "execution_control" | "user_experience" | "runtime_invariant";
@@ -68,25 +47,14 @@ function readJson<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, "utf8")) as T;
 }
 
-type ContractConfig = {
-  packDirectory: string;
-  roleTemplate: string;
-  taskPrefix: "WM" | "IA";
-  taskCount: number;
-  evalSuiteVersion: string;
-  capabilityProofs: Record<string, CapabilityProof>;
-  knowledgeAssetPath(root: string, file: string): string;
-  skillManifests: string[];
-};
-
-function runReferenceRolePackContractChecks(root: string, config: ContractConfig) {
+export function runReferenceRolePackContractChecks(root: string, config: ReferenceRolePackDefinition) {
   const packRoot = path.join(root, "examples", config.packDirectory);
   const evalRoot = path.join(packRoot, "eval");
   const filePattern = new RegExp(`^${config.taskPrefix.toLowerCase()}-gt-\\d{2}-cases\\.json$`, "u");
   const taskFiles = readdirSync(evalRoot).filter((file) => filePattern.test(file)).sort();
   const tasks = taskFiles.map((file) => ({ file, value: readJson<BenchmarkTask>(path.join(evalRoot, file)) }));
   const errors: string[] = [];
-  const expectedTaskIds = Array.from({ length: config.taskCount }, (_, index) => `${config.taskPrefix}-GT-${String(index + 1).padStart(2, "0")}`);
+  const expectedTaskIds = expectedReferenceRoleTaskIds(config);
   if (JSON.stringify(tasks.map((task) => task.value.taskId)) !== JSON.stringify(expectedTaskIds)) {
     errors.push(`Expected benchmark tasks ${expectedTaskIds.join(", ")}`);
   }
@@ -121,9 +89,9 @@ function runReferenceRolePackContractChecks(root: string, config: ContractConfig
     const proof = config.capabilityProofs[capabilityId];
     if (!proof) {
       errors.push(`Capability ${capabilityId} has no implementation proof`);
-      return { capabilityId, owner: "unknown", implementation: null, test: null, status: "FAIL" };
+      return { capabilityId, owner: "unknown", implementation: null, test: null, additionalEvidence: [], status: "FAIL" };
     }
-    for (const evidencePath of [proof.implementation, proof.test]) {
+    for (const evidencePath of [proof.implementation, proof.test, ...(proof.additionalEvidence || [])]) {
       if (!existsSync(path.join(root, evidencePath))) errors.push(`Capability ${capabilityId} proof is missing: ${evidencePath}`);
     }
     return { capabilityId, ...proof, status: "PASS" };
@@ -136,7 +104,7 @@ function runReferenceRolePackContractChecks(root: string, config: ContractConfig
     if (!knowledgeManifest.assets.some((asset) => asset.taskIds.includes(taskId))) errors.push(`Knowledge manifest does not cover ${taskId}`);
   }
   for (const asset of knowledgeManifest.assets) {
-    const candidate = config.knowledgeAssetPath(root, asset.file);
+    const candidate = path.join(root, config.knowledgeSourceDirectory, asset.file);
     if (!existsSync(candidate)) errors.push(`Knowledge asset file is missing: ${asset.file}`);
   }
 
@@ -144,7 +112,11 @@ function runReferenceRolePackContractChecks(root: string, config: ContractConfig
     ...tasks.map((task) => path.join(evalRoot, task.file)),
     knowledgeManifestPath,
     ...config.skillManifests.map((file) => path.join(packRoot, file)),
-    ...Array.from(new Set(capabilityEvidence.flatMap((item) => [item.implementation, item.test]).filter(Boolean) as string[])).map((file) => path.join(root, file)),
+    ...Array.from(new Set(capabilityEvidence.flatMap((item) => [
+      item.implementation,
+      item.test,
+      ...(item.additionalEvidence || []),
+    ]).filter(Boolean) as string[])).map((file) => path.join(root, file)),
   ].sort();
   for (const file of fingerprintInputs) {
     if (!existsSync(file)) errors.push(`Release asset is missing: ${path.relative(root, file)}`);
@@ -172,27 +144,13 @@ function runReferenceRolePackContractChecks(root: string, config: ContractConfig
 }
 
 export function runWealthRolePackContractChecks(root = process.cwd()) {
-  return runReferenceRolePackContractChecks(root, {
-    packDirectory: "wealth-manager-reference-role-pack",
-    roleTemplate: "wealth-manager",
-    taskPrefix: "WM",
-    taskCount: 6,
-    evalSuiteVersion: WEALTH_EVAL_SUITE_VERSION,
-    capabilityProofs: WEALTH_CAPABILITY_PROOFS,
-    knowledgeAssetPath: (repoRoot, file) => path.join(repoRoot, "examples", "financial-enterprise-knowledge-demo", file),
-    skillManifests: ["skills/privbank-previsit/manifest.json", "skills/wealth-manager-assistant/manifest.json"],
-  });
+  return runReferenceRolePackContractChecks(root, referenceRolePack("wealth-manager")!);
 }
 
 export function runInsuranceRolePackContractChecks(root = process.cwd()) {
-  return runReferenceRolePackContractChecks(root, {
-    packDirectory: "insurance-advisor-reference-role-pack",
-    roleTemplate: "insurance-advisor",
-    taskPrefix: "IA",
-    taskCount: 6,
-    evalSuiteVersion: INSURANCE_EVAL_SUITE_VERSION,
-    capabilityProofs: INSURANCE_CAPABILITY_PROOFS,
-    knowledgeAssetPath: (repoRoot, file) => path.join(repoRoot, "examples", "insurance-advisor-reference-role-pack", "knowledge", "documents", file),
-    skillManifests: ["skills/auto-insurance-advisor/manifest.json"],
-  });
+  return runReferenceRolePackContractChecks(root, referenceRolePack("insurance-advisor")!);
+}
+
+export function runPostLoanRiskRolePackContractChecks(root = process.cwd()) {
+  return runReferenceRolePackContractChecks(root, referenceRolePack("post-loan-risk-control")!);
 }

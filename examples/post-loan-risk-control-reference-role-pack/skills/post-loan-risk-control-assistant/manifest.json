@@ -1,0 +1,6 @@
+{
+  "name": "post-loan-risk-control-assistant",
+  "displayName": "贷后风控岗位助手",
+  "description": "通过授权贷后数据、当前有效岗位知识、确定性预警规则和现有风险预测技能，完成企业贷后核查、风险诊断、报告与跟踪任务。",
+  "version": "1.0.0"
+}

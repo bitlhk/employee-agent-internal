@@ -40,6 +40,11 @@ import {
   buildWealthPolicyContextReceipt,
 } from "./wealth-context-receipts";
 import { attachContextReceipt } from "./governance/context-receipt";
+import {
+  handlePostLoanRiskEscalationTool,
+  POST_LOAN_RISK_ESCALATION_TOOL,
+} from "./post-loan-risk-tool-handler";
+import { summarizePlatformAgents } from "./platform-agent-summary";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
 import { handleWealthPrevisitTool } from "./wealth-previsit-tool-handler";
 import { wealthAllocationModelContent, wealthPolicyModelContent } from "./wealth-model-content";
@@ -199,6 +204,7 @@ const TOOLS = [
       required: ["customer_id"],
     },
   },
+  POST_LOAN_RISK_ESCALATION_TOOL,
 ];
 const TOOL_NAMES = new Set(TOOLS.map(tool => tool.name));
 
@@ -303,25 +309,6 @@ async function internalJson(path: string, init: RequestInit = {}) {
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(String((data as any)?.error || resp.status));
   return data;
-}
-
-function summarizeAgents(data: any): string {
-  const agents = Array.isArray(data?.agents) ? data.agents : [];
-  if (agents.length === 0) return "No external Agents are available for this employee agent.";
-  const lines = agents.map((agent: any) => {
-    const ready = agent.routeReady ? "ready" : `not ready: ${agent.reason || "unknown"}`;
-    const capabilities = Array.isArray(agent.capabilities) && agent.capabilities.length
-      ? ` capabilities=${agent.capabilities.join(",")}`
-      : "";
-    const description = String(agent.description || "").trim();
-    return `- ${agent.id}: ${agent.name} (${ready}; protocol=${agent.adapterProtocol || "unknown"}${capabilities})${description ? ` ${description}` : ""}`;
-  });
-  return [
-    "Available external Agents:",
-    ...lines,
-    "",
-    "Selection rule: use local skills/MCP for lightweight lookup, verification, or short explanations; use an external Agent for complete specialist analysis, batch work, formal reports, long-running tasks, or explicit user requests to call that Agent.",
-  ].join("\n");
 }
 
 async function callTool(
@@ -516,7 +503,16 @@ async function callTool(
 
   if (name === "list_available_agents") {
     const data = await internalJson(`/api/claw/agents/available?adoptId=${encodeURIComponent(adoptId)}`);
-    return textResult(summarizeAgents(data));
+    return textResult(summarizePlatformAgents(data));
+  }
+
+  if (name === "evaluate_post_loan_risk_escalation") {
+    return handlePostLoanRiskEscalationTool({
+      req,
+      args,
+      adoptId,
+      principal: effectivePrincipal.principal,
+    });
   }
 
   if (name === "get_wealth_policy_basis") {

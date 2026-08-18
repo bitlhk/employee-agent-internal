@@ -8,17 +8,17 @@
 
 ## 2. 验收基线
 
-| 验收项 | 财富经理 | 保险顾问 | 判定 |
-|---|---|---|---|
-| Reference Role Pack | `linggan-bank.wealth-manager` | `linggan-insurance.insurance-advisor` | PASS |
-| Golden Task Contract | 6 个任务、24 个用例 | 6 个任务、25 个用例 | PASS |
-| Controlled Scenario | 14 个确定性场景 | 6 个确定性场景 | PASS |
-| Context Receipt | 财富知识、客户、产品、记忆 | 保险客户、产品、培训考点 | PASS |
-| Response Evidence | 服务端 Citation Finalization | 同一实现 | PASS |
-| Business Receipt | Demo 跟进写入 | 复用同一 Demo 跟进写入 | PASS |
-| Task Receipt Bundle | 服务端生成阶段顺序 | 同一实现 | PASS |
-| UI | 通用 `ContextReceiptPanel` | 不增加保险分支 | PASS |
-| Governance Contract | 通用 Principal、Readiness、PEP、Approval、Idempotency | 同一实现 | PASS |
+| 验收项 | 财富经理 | 保险顾问 | 风控经理 | 判定 |
+|---|---|---|---|---|
+| Reference Role Pack | `linggan-bank.wealth-manager` | `linggan-insurance.insurance-advisor` | `linggan-bank.post-loan-risk-control` | PASS |
+| Golden Task Contract | 6 个任务、24 个用例 | 6 个任务、25 个用例 | 6 个任务、24 个用例 | PASS |
+| Controlled Scenario | 14 个确定性场景 | 6 个确定性场景 | 6 个确定性场景 | PASS |
+| Context Receipt | 财富知识、客户、产品、记忆 | 保险客户、产品、培训考点 | 企业、贷款、风险数据 | PASS |
+| Response Evidence | 服务端 Citation Finalization | 同一实现 | 同一实现 | PASS |
+| Business Receipt | Demo 跟进写入 | 复用同一 Demo 跟进写入 | 复用同一 Demo 跟进写入 | PASS |
+| Task Receipt Bundle | 服务端生成阶段顺序 | 同一实现 | 同一实现 | PASS |
+| UI | 通用 `ContextReceiptPanel` | 不增加保险分支 | 不增加风控分支 | PASS |
+| Governance Contract | 通用 Principal、Readiness、PEP、Approval、Idempotency | 同一实现 | 同一实现 | PASS |
 
 执行验收：
 
@@ -27,10 +27,12 @@ pnpm rolepack:wealth:contracts
 pnpm rolepack:wealth:scenarios
 pnpm rolepack:insurance:contracts
 pnpm rolepack:insurance:scenarios
+pnpm rolepack:risk:contracts
+pnpm rolepack:risk:scenarios
 pnpm rolepack:replication:validate
 ```
 
-`rolepack:replication:validate` 同时检查共享 Evidence、UI 和 Governance 文件不得出现 `WM-GT-*`、`IA-GT-*` 或岗位名。岗位任务标签、Outcome 文案和能力映射只能位于岗位资产或业务适配器。
+`rolepack:replication:validate` 同时检查共享 Evidence、UI 和 Governance 文件不得出现 `WM-GT-*`、`IA-GT-*`、`RC-GT-*` 或岗位名。岗位任务标签、Outcome 文案和能力映射只能位于岗位资产或业务适配器。
 
 ## 3. 共用运行链
 
@@ -85,6 +87,12 @@ Runtime Principal
 
 保险客户与产品 MCP 当前仍是无鉴权 Mock 服务，只能标记为 `Demo/Shadow Ready`。本轮 PASS 证明岗位复制和治理接线成立，不代表该远端服务达到生产数据接入标准。升级 `Production Ready` 前仍需 JWKS 验签、用户/租户隔离和客户行级过滤。
 
+### 风控经理
+
+目录：`examples/post-loan-risk-control-reference-role-pack`
+
+闭环覆盖企业贷后全景、财务还款、押品担保、外部风险、确定性预警和复评跟踪。动态事实来自 `post_loan_risk_data`；预警分级由 `POST_LOAN_RISK_ESCALATION` 确定性执行，写入继续复用通用确认、幂等和回执链。
+
 ## 6. 发布判定
 
 以下任一项失败，Role Pack 不得发布：
@@ -101,6 +109,6 @@ Runtime Principal
 
 GRACE Role Replication Validation V1 的产品判定是：
 
-> 财富经理与保险顾问使用不同岗位资产和企业数据入口，但复用同一套身份、上下文、治理、执行、证据和 UI 契约。
+> 财富经理、保险顾问与风控经理使用不同岗位资产和企业数据入口，但复用同一套身份、上下文、治理、执行、证据和 UI 契约。
 
 因此 Role Pack 是可安装、可验证的岗位交付单元，GRACE 是其统一受控运行平台，而不是单一 Agent 应用。

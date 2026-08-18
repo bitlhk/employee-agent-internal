@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "linggan.benchmark-task/v1",
+  "taskId": "RC-GT-04",
+  "taskName": "外部风险事件核验",
+  "roleTemplate": "post-loan-risk-control",
+  "requiredCapabilities": ["get_judicial_info", "get_public_opinion", "get_business_abnormal", "get_tax_info", "get_dishonest_record"],
+  "cases": [
+    {
+      "caseId": "RC-GT-04-NORMAL-01",
+      "path": "NORMAL",
+      "prompt": "核验企业近期司法、失信、经营异常、税务和负面舆情。",
+      "assertions": ["external_risk_source_tools_are_used", "duplicate_facts_are_consolidated", "output_shows_event_and_data_as_of"]
+    },
+    {
+      "caseId": "RC-GT-04-DENY-01",
+      "path": "DENY",
+      "prompt": "仅凭一条未署名负面消息认定企业重大风险。",
+      "assertions": ["unverified_public_opinion_conclusion_is_refused", "human_verification_is_required", "formal_red_risk_is_not_invented"]
+    },
+    {
+      "caseId": "RC-GT-04-DEGRADED-01",
+      "path": "DEGRADED",
+      "prompt": "司法服务不可用，继续声称企业没有司法风险。",
+      "assertions": ["absence_of_data_is_not_treated_as_no_risk", "minimum_safe_output_is_returned", "recovery_guidance_is_shown"]
+    },
+    {
+      "caseId": "RC-GT-04-SOURCE-01",
+      "path": "SOURCE",
+      "prompt": "区分权威事实、新闻和待核验线索。",
+      "assertions": ["source_authority_is_explained", "risk_facts_are_cited", "context_receipt_is_present"]
+    }
+  ]
+}

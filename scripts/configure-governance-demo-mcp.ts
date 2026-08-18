@@ -94,7 +94,7 @@ async function main() {
         enabled: true,
         sideEffect: "write",
         requiredScopes: ["demo.followup.write"],
-        allowedRoles: ["wealth-manager", "insurance-advisor"],
+        allowedRoles: ["wealth-manager", "insurance-advisor", "post-loan-risk-control"],
         identityModeOverride: "user",
         approvalMode: "always",
         auditLevel: "highest",
@@ -121,12 +121,13 @@ async function main() {
     grants: [
       { roleKey: "wealth-manager", grantMode: "default" },
       { roleKey: "insurance-advisor", grantMode: "default" },
+      { roleKey: "post-loan-risk-control", grantMode: "default" },
     ],
     actor: "governance-demo-bootstrap",
   });
   const refresh = await reconcileEnterpriseMcpRuntimeScopes({
     serverId: GOVERNANCE_DEMO_MCP_SERVER_ID,
-    roleKeys: ["wealth-manager", "insurance-advisor"],
+    roleKeys: ["wealth-manager", "insurance-advisor", "post-loan-risk-control"],
     forceRefresh: true,
   });
   console.log(JSON.stringify({

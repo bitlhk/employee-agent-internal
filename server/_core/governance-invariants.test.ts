@@ -105,6 +105,11 @@ describe("governance invariants", () => {
       policyRequired: false,
       registered: true,
     });
+    expect(resolveToolGovernance("mcp_platform_tools_evaluate_post_loan_risk_escalation")).toMatchObject({
+      sideEffect: "compute",
+      policyRequired: false,
+      registered: true,
+    });
     expect(resolveToolGovernance("mcp_platform_tools_create_scheduled_task")).toMatchObject({ sideEffect: "write", idempotencyRequired: true });
     expect(resolveToolGovernance("mcp_platform_tools_submit_agent_task")).toMatchObject({ sideEffect: "external_send", idempotencyRequired: true });
     expect(resolveToolGovernance("audio_question_answering")).toMatchObject({ sideEffect: "compute", registered: true });

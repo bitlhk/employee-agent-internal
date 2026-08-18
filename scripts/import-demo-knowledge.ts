@@ -21,6 +21,10 @@ import {
   knowledgeMimeType,
   removeKnowledgeBaseFiles,
 } from "../server/_core/knowledge-storage";
+import {
+  REFERENCE_ROLE_PACKS,
+  referenceRoleTaskIdPattern,
+} from "../server/_core/reference-role-pack-registry";
 
 type KnowledgeClassification = "public" | "internal" | "sensitive" | "restricted";
 type KnowledgeAuthority = "official" | "approved" | "reference" | "personal";
@@ -84,7 +88,7 @@ type ImportPlanItem = {
 };
 
 type ReferencePackDefinition = {
-  key: "wealth-manager" | "insurance-advisor";
+  key: string;
   roleTemplate: string;
   manifestPath: string;
   sourceDir: string;
@@ -100,34 +104,15 @@ const validateOnly = process.argv.includes("--validate");
 const requestedPack = String(process.argv.find((arg) => arg.startsWith("--pack="))?.split("=", 2)[1] || "").trim();
 
 const REFERENCE_PACKS: ReferencePackDefinition[] = [
-  {
-    key: "wealth-manager",
-    roleTemplate: "wealth-manager",
-    manifestPath: path.resolve(APP_ROOT, "examples", "wealth-manager-reference-role-pack", "knowledge", "manifest.json"),
-    sourceDir: legacySourceDir,
-    taskIdPattern: /^WM-GT-0[1-6]$/,
-    legacyNames: ["财富经理岗位知识（演示）"],
-    fallbackKnowledgeBase: {
-      name: "财富经理岗位操作规范（演示）",
-      description: "财富经理岗位内部操作口径、访前准备、销售规范与官方监管法规。",
-      classification: "internal",
-      externalProcessingAllowed: true,
-    },
-  },
-  {
-    key: "insurance-advisor",
-    roleTemplate: "insurance-advisor",
-    manifestPath: path.resolve(APP_ROOT, "examples", "insurance-advisor-reference-role-pack", "knowledge", "manifest.json"),
-    sourceDir: path.resolve(APP_ROOT, "examples", "insurance-advisor-reference-role-pack", "knowledge", "documents"),
-    taskIdPattern: /^IA-GT-0[1-6]$/,
-    legacyNames: ["保险顾问岗位知识（演示）"],
-    fallbackKnowledgeBase: {
-      name: "保险顾问岗位操作规范（演示）",
-      description: "保险顾问岗位内部操作口径、车险客户经营、产品讲解、销售陪练与合规升级规范。",
-      classification: "internal",
-      externalProcessingAllowed: true,
-    },
-  },
+  ...REFERENCE_ROLE_PACKS.map((definition) => ({
+    key: definition.key,
+    roleTemplate: definition.roleTemplate,
+    manifestPath: path.resolve(APP_ROOT, "examples", definition.packDirectory, "knowledge", "manifest.json"),
+    sourceDir: path.resolve(APP_ROOT, definition.knowledgeSourceDirectory),
+    taskIdPattern: referenceRoleTaskIdPattern(definition),
+    legacyNames: [...definition.legacyKnowledgeBaseNames],
+    fallbackKnowledgeBase: definition.fallbackKnowledgeBase,
+  })),
 ];
 
 const selectedPack = requestedPack
@@ -141,6 +126,7 @@ const LEGACY_NAMES = new Set([
   "金融机构运营制度演示库",
   "企业差旅与合规制度（演示）",
   "财富经理岗位知识（演示）",
+  "保险顾问岗位知识（演示）",
 ]);
 const OFFICIAL_SUITABILITY_NAME = "11-金融机构产品适当性管理办法（2025）.pdf";
 const OFFICIAL_SUITABILITY_SHA256 = "5f16e63b49fa264dfd43c986edfe27e1cb066e4c9236f7d75a1fd03f7fb2ad0c";
@@ -351,7 +337,6 @@ function buildLegacyImportPlan(): ImportPlanItem[] {
   validateReferenceKnowledgeManifest(wealthManifest, wealthDefinition);
   const wealthByFile = new Map(wealthManifest.assets.map((asset) => [asset.file, asset]));
   const wealthSeries = resolveReferenceKnowledgeSeries(wealthManifest.assets);
-  const wealthPrefixes = wealthManifest.assets.map((asset) => asset.file.split("-", 1)[0]);
   const collections = [
     {
       scope: "enterprise" as const,
@@ -362,31 +347,10 @@ function buildLegacyImportPlan(): ImportPlanItem[] {
     },
     {
       scope: "role" as const,
-      roleTemplate: "wealth-manager",
-      name: "财富经理岗位操作规范（演示）",
-      description: "财富经理岗位内部操作口径、访前准备、销售规范与官方监管法规。",
-      files: ["11", ...wealthPrefixes],
-    },
-    {
-      scope: "role" as const,
-      roleTemplate: "post-loan-risk-control",
-      name: "风控经理岗位知识（演示）",
-      description: "风控经理适用的客户尽调、数据保护、贷后预警与升级处置示例知识。",
-      files: ["05", "06", "07", "09", "10"],
-    },
-    {
-      scope: "role" as const,
       roleTemplate: "credential-compliance",
       name: "审核专员岗位知识（演示）",
       description: "审核专员适用的票据附件、客户尽调、信息保护与审批职责示例知识。",
       files: ["03", "05", "06", "09", "10"],
-    },
-    {
-      scope: "role" as const,
-      roleTemplate: "insurance-advisor",
-      name: "保险顾问岗位知识（演示）",
-      description: "保险顾问旧版通用金融演示知识；建议改用 --pack=insurance-advisor。",
-      files: ["04", "05", "06", "09"],
     },
     {
       scope: "role" as const,
@@ -427,12 +391,19 @@ function buildImportPlan(): { items: ImportPlanItem[]; manifests: ReferencePackM
     const selected = buildReferencePackPlan(selectedPack);
     return { items: [selected.item], manifests: [selected.manifest] };
   }
-  const manifests = REFERENCE_PACKS.map((definition) => buildReferencePackPlan(definition).manifest);
-  return { items: buildLegacyImportPlan(), manifests };
+  const referencePlans = REFERENCE_PACKS.map((definition) => buildReferencePackPlan(definition));
+  return {
+    items: [...referencePlans.map((plan) => plan.item), ...buildLegacyImportPlan()],
+    manifests: referencePlans.map((plan) => plan.manifest),
+  };
 }
 
 function managedKnowledgeBaseNames(items: ImportPlanItem[]): Set<string> {
-  if (!selectedPack) return new Set([...LEGACY_NAMES, ...items.map((item) => item.collection.name)]);
+  if (!selectedPack) return new Set([
+    ...LEGACY_NAMES,
+    ...REFERENCE_PACKS.flatMap((definition) => definition.legacyNames),
+    ...items.map((item) => item.collection.name),
+  ]);
   return new Set([
     ...selectedPack.legacyNames,
     ...items.map((item) => item.collection.name),
@@ -530,7 +501,7 @@ async function main() {
     return;
   }
   if (!adoptId) {
-    throw new Error("Usage: tsx scripts/import-demo-knowledge.ts --validate [--pack=wealth-manager|insurance-advisor] | --adopt-id=lgj-xxx [--pack=...]");
+    throw new Error(`Usage: tsx scripts/import-demo-knowledge.ts --validate [--pack=${REFERENCE_PACKS.map((pack) => pack.key).join("|")}] | --adopt-id=lgj-xxx [--pack=...]`);
   }
   const claw = await getClawByAdoptId(adoptId);
   if (!claw) throw new Error(`Agent adoption not found: ${adoptId}`);

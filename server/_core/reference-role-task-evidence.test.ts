@@ -75,4 +75,40 @@ describe("reference role task evidence adapter", () => {
       sideEffect: "read",
     })).toBe(result);
   });
+
+  it("binds post-loan enterprise data to the registered risk task", () => {
+    const result = attachReferenceRoleTaskReceipt({
+      ...base,
+      result: { content: [{ type: "text", text: "sensitive enterprise fixture" }] },
+      roleTemplate: "post-loan-risk-control",
+      serverId: "post_loan_risk_data",
+      toolName: "get_financial_statements",
+      sideEffect: "read",
+    });
+    const receipt = extractTrustedContextReceipt("enterprise_get_financial_statements", result);
+    expect(receipt).toMatchObject({ taskId: "RC-GT-02", taskLabel: "财务与还款异常诊断" });
+    expect(receipt?.provided.businessData[0]?.sourceSystem).toBe("post_loan_risk_data");
+    expect(JSON.stringify(receipt)).not.toContain("sensitive enterprise fixture");
+  });
+
+  it("uses the shared confirmed write receipt for a risk follow-up", () => {
+    const result = attachReferenceRoleTaskReceipt({
+      ...base,
+      result: { content: [{ type: "text", text: "created" }] },
+      roleTemplate: "post-loan-risk-control",
+      serverId: "wealth_governance_demo",
+      toolName: "demo_create_followup_task",
+      sideEffect: "write",
+      externalRequestId: "DEMO-RISK-1",
+      approvalId: "approval-risk",
+      idempotencyProtected: true,
+    });
+    const receipt = extractTrustedContextReceipt("enterprise_demo_create_followup_task", result);
+    expect(receipt).toMatchObject({ taskId: "RC-GT-06", taskLabel: "风险复评与跟踪任务" });
+    expect(receipt?.applied.capabilityExecutions[0]).toMatchObject({
+      approvalId: "approval-risk",
+      externalRequestId: "DEMO-RISK-1",
+      idempotencyProtected: true,
+    });
+  });
 });

@@ -170,7 +170,7 @@ async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdent
   const tokenTool = String(claims.tool_name || "");
   if (!toolName || tokenTool !== toolName) throw new Error("身份令牌工具范围不匹配");
   const roleKey = String(claims.role || "");
-  if (!["wealth-manager", "insurance-advisor", "platform-admin"].includes(roleKey)) {
+  if (!["wealth-manager", "insurance-advisor", "post-loan-risk-control", "platform-admin"].includes(roleKey)) {
     throw new Error("当前岗位无权访问该 Demo MCP");
   }
   const scopes = new Set(Array.isArray(claims.scp)

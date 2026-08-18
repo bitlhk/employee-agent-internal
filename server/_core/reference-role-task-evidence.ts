@@ -12,7 +12,87 @@ type RoleTaskEvidenceProfile = TaskReadinessProfile & {
   outcomeLabels: Record<string, string>;
 };
 
+function postLoanReadProfiles(input: {
+  taskId: string;
+  taskLabel: string;
+  requestedOutcome: string;
+  fallbackOutcome: string;
+  tools: Array<{ name: string; label: string }>;
+}): RoleTaskEvidenceProfile[] {
+  return input.tools.map((tool) => ({
+    roleTemplate: "post-loan-risk-control",
+    serverId: "post_loan_risk_data",
+    toolName: tool.name,
+    taskId: input.taskId,
+    taskLabel: input.taskLabel,
+    requestedOutcome: input.requestedOutcome,
+    requiredChecks: ["identity", "policy", "capability", "receipt", "evidence"],
+    fallbackOutcomes: [input.fallbackOutcome],
+    capabilityLabel: tool.label,
+    sourceLabel: "当前授权企业贷后数据",
+    outcomeLabels: {
+      [input.requestedOutcome]: input.taskLabel,
+      [input.fallbackOutcome]: "已核验事实和数据补充清单",
+    },
+  }));
+}
+
 const profiles: RoleTaskEvidenceProfile[] = [
+  ...postLoanReadProfiles({
+    taskId: "RC-GT-01",
+    taskLabel: "企业贷后全景核查",
+    requestedOutcome: "verified_post_loan_panorama",
+    fallbackOutcome: "post_loan_minimum_input_checklist",
+    tools: [
+      { name: "get_enterprise_profile", label: "查询企业画像" },
+      { name: "get_loan_account", label: "查询贷款账户" },
+      { name: "get_credit_rating", label: "查询信用评级" },
+    ],
+  }),
+  ...postLoanReadProfiles({
+    taskId: "RC-GT-02",
+    taskLabel: "财务与还款异常诊断",
+    requestedOutcome: "verified_financial_repayment_diagnosis",
+    fallbackOutcome: "financial_repayment_gap_checklist",
+    tools: [
+      { name: "get_financial_statements", label: "查询企业财务报表" },
+      { name: "get_repayment_history", label: "查询企业还款历史" },
+    ],
+  }),
+  ...postLoanReadProfiles({
+    taskId: "RC-GT-03",
+    taskLabel: "押品与担保风险检查",
+    requestedOutcome: "verified_collateral_guarantee_check",
+    fallbackOutcome: "collateral_guarantee_gap_checklist",
+    tools: [
+      { name: "get_collateral_info", label: "查询抵质押物信息" },
+      { name: "get_guarantor_info", label: "查询担保人信息" },
+    ],
+  }),
+  ...postLoanReadProfiles({
+    taskId: "RC-GT-04",
+    taskLabel: "外部风险事件核验",
+    requestedOutcome: "verified_external_risk_events",
+    fallbackOutcome: "external_risk_verification_checklist",
+    tools: [
+      { name: "get_judicial_info", label: "查询司法信息" },
+      { name: "get_public_opinion", label: "查询公开舆情" },
+      { name: "get_business_abnormal", label: "查询经营异常" },
+      { name: "get_tax_info", label: "查询税务信息" },
+      { name: "get_dishonest_record", label: "查询失信记录" },
+    ],
+  }),
+  ...postLoanReadProfiles({
+    taskId: "RC-GT-05",
+    taskLabel: "综合预警分级与评估报告",
+    requestedOutcome: "verified_industry_risk_context",
+    fallbackOutcome: "industry_context_gap_checklist",
+    tools: [
+      { name: "get_industry_benchmark", label: "查询行业基准" },
+      { name: "get_industry_rating", label: "查询行业风险评级" },
+      { name: "get_macro_indicator", label: "查询宏观指标" },
+    ],
+  }),
   {
     roleTemplate: "insurance-advisor",
     serverId: "insurance_customer_profile",
@@ -138,6 +218,22 @@ const profiles: RoleTaskEvidenceProfile[] = [
     outcomeLabels: {
       confirmed_insurance_followup_write: "创建保险客户跟进任务",
       insurance_followup_draft: "保险客户跟进草稿",
+      confirmation_request: "操作确认请求",
+    },
+  },
+  {
+    roleTemplate: "post-loan-risk-control",
+    serverId: "wealth_governance_demo",
+    toolName: "demo_create_followup_task",
+    taskId: "RC-GT-06",
+    taskLabel: "风险复评与跟踪任务",
+    requestedOutcome: "confirmed_risk_followup_write",
+    requiredChecks: ["identity", "policy", "capability", "approval", "idempotency", "receipt", "evidence"],
+    fallbackOutcomes: ["risk_followup_draft", "confirmation_request"],
+    capabilityLabel: "创建风险复评跟踪任务（Demo）",
+    outcomeLabels: {
+      confirmed_risk_followup_write: "创建风险复评跟踪任务",
+      risk_followup_draft: "风险复评任务草稿",
       confirmation_request: "操作确认请求",
     },
   },

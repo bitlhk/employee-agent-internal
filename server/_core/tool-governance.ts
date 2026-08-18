@@ -100,6 +100,7 @@ const RULES: readonly GovernanceRule[] = [
     exact: [
       "ask_user", "audio_question_answering", "generate_image", "load_tools", "skill_tool",
       "task_tool", "video_understanding", "visual_question_answering",
+      "mcp_platform_tools_evaluate_post_loan_risk_escalation",
     ],
     sideEffect: "compute",
     policyRequired: false,
