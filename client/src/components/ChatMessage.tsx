@@ -7,7 +7,7 @@ import { ContextReceiptPanel } from "@/components/ContextReceiptPanel";
 import { ToolDetailRenderer } from "@/components/tool-cards/ToolDetailRenderer";
 import { WebSourceCard } from "@/components/WebSourceCard";
 import { cleanLeakedToolTags } from "@/lib/clean-leaked-tags";
-import { classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
+import { businessToolLabel, classifyToolName, type ToolVisualKind } from "@/lib/tool-presentation";
 import { extractChatWebSources } from "@/lib/web-sources";
 import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
 import {
@@ -380,6 +380,8 @@ export function ToolExecutionReceipt({ toolCalls }: { toolCalls: ToolCallEntry[]
 function toolCallLabel(tc: ToolCallEntry): string {
   const rawName = String(tc.name || "tool");
   const lower = rawName.toLowerCase();
+  const businessLabel = businessToolLabel(rawName, tc.arguments);
+  if (businessLabel) return businessLabel;
   if (GATEWAY_TOOL_META[rawName]) return GATEWAY_TOOL_META[rawName].label;
   if (GATEWAY_TOOL_META[lower]) return GATEWAY_TOOL_META[lower].label;
   if (rawName === "[产出文件]" || lower.includes("workspace_files")) return "产出文件";

@@ -36,6 +36,7 @@ import type { CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { ExpertAvatar, ExpertTeamRoster, isInvestmentTeamExpert } from "@/components/ExpertAvatar";
 import { ConnectorIcon } from "@/components/ConnectorIcon";
 import { PageContainer } from "@/components/console/PageContainer";
+import { SkillActivationNotice, type SkillActivationNoticeValue } from "@/components/SkillActivationNotice";
 import { useChannelBinding } from "@/hooks/useChannelBinding";
 import { MarketplacePage } from "./MarketplacePage";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -46,6 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
+import { skillTrialPrompt } from "@/lib/role-experience";
 import {
   CONNECTOR_CATALOG_CATEGORIES,
   FEISHU_CONNECTOR_ID,
@@ -2059,7 +2061,7 @@ function SkillDetailModal({
   );
 }
 
-export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, onManageMcp, onTryMcp, onMcpChanged, onAddExpert, onManageExpert, onTryExpert }: {
+export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, onManageMcp, onTryMcp, onTrySkill, onMcpChanged, onAddExpert, onManageExpert, onTryExpert }: {
   section?: SkillsPageSection;
   skills?: { shared: any[]; system: any[]; private: any[] } | null | undefined;
   canEdit?: boolean;
@@ -2070,6 +2072,7 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
   onAddMcp?: (template?: CustomMcpTemplate) => void;
   onManageMcp?: () => void;
   onTryMcp?: () => void;
+  onTrySkill?: (skillId: string, displayName: string, prompt: string) => void;
   onMcpChanged?: () => void | Promise<void>;
   onAddExpert?: () => void;
   onManageExpert?: () => void;
@@ -2092,6 +2095,7 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [uploading, setUploading] = useState(false);
+  const [skillActivation, setSkillActivation] = useState<SkillActivationNoticeValue | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
@@ -2255,14 +2259,17 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
         return;
       }
       const description = prompt("技能说明", inspect.skill.description || "")?.trim() || inspect.skill.description || "";
-      await uploadSkillPackage({
+      const uploaded = await uploadSkillPackage({
         adoptId,
         file,
         displayName,
         description,
       });
-      if (inspect.skill.warnings?.length) {
-        toast.warning(`技能已上传，静态扫描提示 ${inspect.skill.warnings.length} 项，请在详情中确认。`);
+      const skillId = String(uploaded.item?.id || inspect.skill.skillId || "").trim();
+      const warningCount = uploaded.warnings?.length || inspect.skill.warnings?.length || 0;
+      setSkillActivation({ skillId, displayName, prompt: skillTrialPrompt(displayName), warningCount });
+      if (warningCount) {
+        toast.warning(`技能已就绪，有 ${warningCount} 项兼容或安全提示。`);
       } else {
         toast.success("技能已上传并同步到运行环境");
       }
@@ -2356,6 +2363,14 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
           )}
         </div>
         </div>
+
+        {skillActivation ? (
+          <SkillActivationNotice
+            value={skillActivation}
+            onTry={() => onTrySkill?.(skillActivation.skillId, skillActivation.displayName, skillActivation.prompt)}
+            onDismiss={() => setSkillActivation(null)}
+          />
+        ) : null}
 
         {skillTab === "market" && (
           <div id="skills-panel-market" className="skills-panel skills-panel--market stealth-scrollbar" role="tabpanel" aria-labelledby="skills-subtab-market" tabIndex={0} onScroll={handleSkillsPanelScroll}>

@@ -7147,6 +7147,151 @@ input.session-searchbar__input:focus-visible,
   font-weight: var(--oc-weight-semibold);
 }
 
+.role-task-launchpad {
+  display: grid;
+  gap: 20px;
+  width: 100%;
+  padding: clamp(8px, 3vh, 34px) 0 24px;
+}
+.role-task-launchpad__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+.role-task-launchpad__header > div:first-child { min-width: 0; }
+.role-task-launchpad__eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: #16836d;
+  font-size: 11px;
+  font-weight: 650;
+}
+.role-task-launchpad h1 {
+  margin: 0;
+  color: var(--oc-text-primary);
+  font-size: 28px;
+  font-weight: 650;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.role-task-launchpad__header p {
+  margin: 7px 0 0;
+  color: var(--oc-text-secondary);
+  font-size: 14px;
+}
+.role-task-launchpad__readiness {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.role-task-launchpad__readiness svg { width: 15px; height: 15px; color: #16836d; }
+.role-task-launchpad__readiness i { width: 1px; height: 12px; background: var(--oc-border); }
+.role-task-launchpad__tasks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.role-task-launchpad__task {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  min-height: 78px;
+  padding: 13px 14px;
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: 6px;
+  background: var(--oc-bg-surface);
+  color: var(--oc-text-primary);
+  text-align: left;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+.role-task-launchpad__task:not(:disabled):hover {
+  border-color: color-mix(in oklab, #16836d 42%, var(--oc-border));
+  background: color-mix(in oklab, var(--oc-bg-surface) 88%, #16836d 12%);
+  transform: translateY(-1px);
+}
+.role-task-launchpad__task:focus-visible { outline: 2px solid color-mix(in oklab, #16836d 55%, transparent); outline-offset: 2px; }
+.role-task-launchpad__task:disabled { cursor: not-allowed; opacity: 0.56; }
+.role-task-launchpad__task-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--oc-bg-secondary) 84%, #16836d 16%);
+  color: #16836d;
+}
+.role-task-launchpad__task-icon svg { width: 17px; height: 17px; }
+.role-task-launchpad__task-copy { display: grid; gap: 4px; min-width: 0; }
+.role-task-launchpad__task-copy strong { font-size: 13px; font-weight: 650; }
+.role-task-launchpad__task-copy small { color: var(--oc-text-tertiary); font-size: 11px; line-height: 1.35; }
+.role-task-launchpad__task-status { color: #16836d; font-size: 10px; white-space: nowrap; }
+.role-task-launchpad__task[data-state="checking"] .role-task-launchpad__task-status { color: #a16207; }
+.role-task-launchpad__task[data-state="unavailable"] .role-task-launchpad__task-status { color: #b45309; }
+.role-task-launchpad__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--oc-text-tertiary);
+  font-size: 11px;
+}
+.role-task-launchpad__footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--oc-text-secondary);
+  font-size: 11px;
+}
+.role-task-launchpad__footer button:hover { color: var(--oc-text-primary); }
+.role-task-launchpad__footer svg { width: 13px; height: 13px; }
+
+.skill-activation-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  margin: 0 18px 10px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in oklab, #16836d 34%, var(--oc-border));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--oc-bg-surface) 92%, #16836d 8%);
+}
+.skill-activation-notice__title { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.skill-activation-notice__title > span { display: grid; place-items: center; width: 28px; height: 28px; color: #16836d; }
+.skill-activation-notice__title svg { width: 17px; height: 17px; }
+.skill-activation-notice__title > div { display: grid; gap: 2px; min-width: 0; }
+.skill-activation-notice__title strong { overflow: hidden; color: var(--oc-text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.skill-activation-notice__title small { color: var(--oc-text-tertiary); font-size: 10px; }
+.skill-activation-notice__steps { display: flex; align-items: center; justify-content: center; gap: 6px 12px; min-width: 0; flex-wrap: wrap; }
+.skill-activation-notice__steps span { display: inline-flex; align-items: center; gap: 4px; color: var(--oc-text-secondary); font-size: 10px; white-space: nowrap; }
+.skill-activation-notice__steps svg { width: 11px; height: 11px; color: #16836d; }
+.skill-activation-notice__actions { display: flex; align-items: center; gap: 5px; }
+.skill-activation-notice__actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; border-radius: 5px; font-size: 11px; }
+.skill-activation-notice__actions .is-primary { padding: 0 10px; border: 1px solid #16836d; background: #16836d; color: white; }
+.skill-activation-notice__actions .is-icon { width: 28px; border: 0; background: transparent; color: var(--oc-text-tertiary); }
+.skill-activation-notice__actions svg { width: 13px; height: 13px; }
+
+@media (max-width: 760px) {
+  .role-task-launchpad { gap: 15px; padding-top: 4px; }
+  .role-task-launchpad__header { display: grid; gap: 11px; }
+  .role-task-launchpad h1 { font-size: 24px; }
+  .role-task-launchpad__readiness { flex-wrap: wrap; white-space: normal; }
+  .role-task-launchpad__tasks { grid-template-columns: 1fr; }
+  .role-task-launchpad__task { grid-template-columns: 32px minmax(0, 1fr); min-height: 70px; }
+  .role-task-launchpad__task-status { grid-column: 2; }
+  .role-task-launchpad__footer { align-items: flex-start; }
+  .skill-activation-notice { grid-template-columns: 1fr auto; }
+  .skill-activation-notice__steps { grid-column: 1 / -1; justify-content: flex-start; order: 3; }
+}
+
 /* ── 用户消息正文 ── */
 .lingxia-user-msg-text {
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;

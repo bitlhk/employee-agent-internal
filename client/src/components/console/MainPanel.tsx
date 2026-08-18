@@ -48,6 +48,7 @@ export function MainPanel({
   onAddMcp,
   onManageMcp,
   onTryMcp,
+  onTrySkill,
   onMcpChanged,
   onAddExpert,
   onManageExpert,
@@ -58,6 +59,7 @@ export function MainPanel({
   onAddMcp?: (template?: CustomMcpTemplate) => void;
   onManageMcp?: () => void;
   onTryMcp?: () => void;
+  onTrySkill?: (skillId: string, displayName: string, prompt: string) => void;
   onMcpChanged?: () => void | Promise<void>;
   onAddExpert?: () => void;
   onManageExpert?: () => void;
@@ -96,7 +98,7 @@ export function MainPanel({
 
   const renderPage = (page: PanelPageKey): ReactNode => {
     if (page === "skills") {
-      return <SkillsPage section={capabilitySection(activePage)} skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
+      return <SkillsPage section={capabilitySection(activePage)} skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onTrySkill={onTrySkill} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
     }
     if (page === "agent") return <GrowthPage adoptId={adoptId || ""} />;
     if (page === "knowledge") return <KnowledgePage adoptId={adoptId || ""} />;

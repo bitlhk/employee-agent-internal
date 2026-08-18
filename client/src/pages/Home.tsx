@@ -1,9 +1,3 @@
-/**
- * Home.tsx — Workforce Agent Platform console
- * Renders the agent console when accessed via /claw/:adoptId or a legacy agent subdomain.
- * The linggan homepage code has been removed (dead code on this server).
- */
-
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { RuntimeWSClient } from "@/lib/runtime-ws";
@@ -20,6 +14,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useRoute, useLocation } from "wouter";
 import { SidebarFooter } from "@/components/SidebarFooter";
 import { ChatInput } from "@/components/ChatInput";
+import { RoleTaskLaunchpad } from "@/components/RoleTaskLaunchpad";
 import { CustomMcpDialog, type CustomMcpTemplate } from "@/components/CustomMcpDialog";
 import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
 import { KnowledgeCaptureDialog, type KnowledgeCaptureSource } from "@/components/KnowledgeCaptureDialog";
@@ -67,6 +62,7 @@ import {
   type AgentInteractionResponse,
 } from "@shared/agent-interaction";
 import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
+import { roleDisplayName, skillTrialPrompt } from "@/lib/role-experience";
 import {
   flattenComposerConnectors,
   type ComposerConnector,
@@ -141,21 +137,6 @@ import {
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
 const MAX_COMPOSER_SKILLS = 3;
-
-const ROLE_DISPLAY_NAMES: Record<string, string> = {
-  "investment-researcher": "投顾分析",
-  "wealth-manager": "财富经理",
-  "credential-compliance": "审核专员",
-  "insurance-advisor": "保险顾问",
-  "general-assistant": "通用助手",
-};
-
-function roleDisplayName(roleTemplate: unknown, roleName?: unknown) {
-  const name = String(roleName || "").trim();
-  if (name) return name;
-  const role = String(roleTemplate || "").trim();
-  return ROLE_DISPLAY_NAMES[role] || "通用助手";
-}
 
 function inferKnowledgeCaptureTitle(text: string): string {
   const normalized = stripEaInternalRuntimeContext(String(text || ""))
@@ -2292,10 +2273,14 @@ export default function Home() {
       if (skillId) {
         setSelectedComposerSkillIds((current) => current.includes(skillId) ? current : [...current, skillId].slice(0, MAX_COMPOSER_SKILLS));
       }
+      const tryUploadedSkill = () => setLingxiaInput(skillTrialPrompt(displayName));
+      const uploadDescription = warnings > 0
+        ? `技能包检查、安装和运行环境同步已完成；有 ${warnings} 项兼容提示。`
+        : "技能包检查、兼容检查、安装和运行环境同步已完成。";
       if (warnings > 0) {
-        toast.warning(`技能已上传并选中，有 ${warnings} 项兼容或安全提示可在技能管理中查看。`);
+        toast.warning("技能已上传并选中", { description: uploadDescription, action: { label: "立即试用", onClick: tryUploadedSkill } });
       } else {
-        toast.success("技能已上传并同步到运行环境");
+        toast.success("技能已就绪", { description: uploadDescription, action: { label: "立即试用", onClick: tryUploadedSkill } });
       }
       setComposerAddMenuOpen(false);
       setComposerAddMenuView("root");
@@ -4733,9 +4718,15 @@ export default function Home() {
               )}
 
               {!sessionSwitchingId && !clawByAdoptLoading && clawByAdoptId && activeLingxiaMsgs.length === 0 && (
-                <div className="max-w-4xl py-2 lingxia-msg-fade lingxia-welcome-message">
-                  你好，我是 <span>{lingxiaDisplayName || brand.name}</span>，有什么想聊的？
-                </div>
+                <RoleTaskLaunchpad
+                  roleTemplate={String((clawByAdoptId as any)?.roleTemplate || "general-assistant")}
+                  roleName={lingxiaDisplayName || brand.name}
+                  skillCount={composerSkills.length}
+                  connectors={composerConnectors}
+                  connectorsLoading={composerConnectorsLoading}
+                  onSelectPrompt={(task) => { setLingxiaInput(task.prompt); window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0); }}
+                  onOpenSkills={openSkillManager}
+                />
               )}
 
               {activeLingxiaMsgs.map((m, idx) => {
@@ -5459,6 +5450,13 @@ export default function Home() {
                 window.setTimeout(() => {
                   document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus();
                 }, 0);
+              }}
+              onTrySkill={(skillId, _displayName, prompt) => {
+                setSelectedComposerExpertId("");
+                setSelectedComposerSkillIds(skillId ? [skillId] : []);
+                setLingxiaInput(prompt);
+                setSidebarSelection("navigation"); setActivePage("chat"); setMobileSidebarOpen(false);
+                window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0);
               }}
               onTryExpert={(expertId, initialPrompt, scenarioId) => {
                 setSelectedComposerExpertId(expertId);

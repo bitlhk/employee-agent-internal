@@ -122,7 +122,7 @@ describe("ChatMessage tool timeline", () => {
 
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain("lingxia-tool-summary__loader");
-    expect(html).toContain("搜索网页");
+    expect(html).toContain("检索公开信息");
     expect(html).not.toContain("lingxia-tool-timeline-panel");
     expect(html).not.toContain("lingxia-bubble-ai");
   });
