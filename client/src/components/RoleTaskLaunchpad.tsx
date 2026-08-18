@@ -16,6 +16,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { RoleHomeRuntimeStatus, RoleHomeTaskStatus } from "@shared/role-home";
+import { ConnectorIcon } from "@/components/ConnectorIcon";
+import type { ComposerConnector } from "@/lib/composer-connectors";
 import { localizedComposerSkillLabel, type ComposerSkillOption } from "@/lib/chat-home-helpers";
 import { roleExperience, selectRoleHomeTaskIds, type RoleTaskStarter } from "@/lib/role-experience";
 
@@ -63,6 +65,7 @@ export function RoleTaskLaunchpad({
   roleTemplate,
   roleName,
   skills,
+  enterpriseTools,
   selectedSkillIds,
   runtimeStatus,
   onSelectPrompt,
@@ -71,6 +74,7 @@ export function RoleTaskLaunchpad({
   roleTemplate: string;
   roleName: string;
   skills: ComposerSkillOption[];
+  enterpriseTools: ComposerConnector[];
   selectedSkillIds: string[];
   runtimeStatus: RoleHomeRuntimeStatus | null;
   onSelectPrompt: (task: RoleTaskStarter) => void;
@@ -167,6 +171,35 @@ export function RoleTaskLaunchpad({
           </div>
         ) : null}
       </section>
+
+      {enterpriseTools.length > 0 ? (
+        <section className="role-task-launchpad__enterprise-tools" aria-labelledby="role-enterprise-tools-title">
+          <div className="role-task-launchpad__section-heading">
+            <div>
+              <h2 id="role-enterprise-tools-title">企业工具</h2>
+              <span>已连接 {enterpriseTools.length} 项</span>
+            </div>
+          </div>
+          <div className="role-task-launchpad__enterprise-tool-list">
+            {enterpriseTools.map((connector) => {
+              const toolNames = connector.tools.map((tool) => tool.description || tool.name).filter(Boolean);
+              const detail = toolNames.length > 0
+                ? `${connector.description}\n可调用：${toolNames.join("、")}`
+                : connector.description;
+              return (
+                <span
+                  key={connector.serverId}
+                  className="role-task-launchpad__enterprise-tool"
+                  title={detail || connector.name}
+                >
+                  <ConnectorIcon {...connector} />
+                  <strong>{connector.name}</strong>
+                </span>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </section>
   );
 }

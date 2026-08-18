@@ -13,6 +13,10 @@ export type ComposerConnector = {
   liveStatus?: "live" | "fallback" | "unavailable" | "unsupported";
   enabledForAgent: boolean;
   grantMode: "default" | "optional";
+  tools: Array<{
+    name: string;
+    description: string;
+  }>;
 };
 
 export type ComposerConnectorResponse = {
@@ -59,8 +63,24 @@ export function flattenComposerConnectors(payload: ComposerConnectorResponse): C
         liveStatus: child.liveStatus,
         enabledForAgent: child.enabledForAgent !== false,
         grantMode: (child.grantMode === "default" ? "default" : "optional") as ComposerConnector["grantMode"],
+        tools: (Array.isArray(child.tools) ? child.tools : [])
+          .map((tool) => ({
+            name: String(tool?.name || "").trim(),
+            description: String(tool?.description || "").trim(),
+          }))
+          .filter((tool) => tool.name),
       }));
     })
     .filter((item) => item.serverId)
     .sort((a, b) => Number(b.enabledForAgent) - Number(a.enabledForAgent) || a.name.localeCompare(b.name, "zh-CN"));
+}
+
+export function roleHomeEnterpriseConnectors(connectors: ComposerConnector[]): ComposerConnector[] {
+  return connectors.filter((connector) => (
+    connector.configured
+    && connector.enabledForAgent
+    && connector.status === "available"
+    && connector.liveStatus !== "unavailable"
+    && !connector.serverId.endsWith("_gateway")
+  ));
 }

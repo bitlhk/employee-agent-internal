@@ -65,6 +65,7 @@ import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upl
 import { roleDisplayName, skillTrialPrompt } from "@/lib/role-experience";
 import {
   flattenComposerConnectors,
+  roleHomeEnterpriseConnectors,
   type ComposerConnector,
   type ComposerConnectorResponse,
   type RoleHomeRuntimeStatus,
@@ -2358,10 +2359,8 @@ export default function Home() {
         .includes(query)
     ));
   }, [composerConnectorSearch, composerConnectors]);
-  const activeComposerConnectorCount = useMemo(
-    () => composerConnectors.filter((connector) => connector.enabledForAgent).length,
-    [composerConnectors],
-  );
+  const activeComposerConnectorCount = useMemo(() => composerConnectors.filter((connector) => connector.enabledForAgent).length, [composerConnectors]);
+  const roleHomeEnterpriseTools = useMemo(() => roleHomeEnterpriseConnectors(composerConnectors), [composerConnectors]);
   const filteredComposerExperts = useMemo(() => {
     const query = composerExpertSearch.trim().toLocaleLowerCase();
     if (!query) return composerExperts;
@@ -4724,6 +4723,7 @@ export default function Home() {
                   roleTemplate={String((clawByAdoptId as any)?.roleTemplate || "general-assistant")}
                   roleName={lingxiaDisplayName || brand.name}
                   skills={composerSkills}
+                  enterpriseTools={roleHomeEnterpriseTools}
                   selectedSkillIds={selectedComposerSkillIds}
                   runtimeStatus={roleHomeRuntime}
                   onSelectPrompt={(task) => { setLingxiaInput(task.prompt); window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0); }}
