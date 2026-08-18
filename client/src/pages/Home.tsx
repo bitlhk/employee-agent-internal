@@ -2288,15 +2288,13 @@ export default function Home() {
       const uploaded = await uploadSkillPackage({ file, adoptId: resolvedAdoptId, displayName, description });
       await refetchSkills();
       const warnings = uploaded.warnings?.length || inspect.skill.warnings?.length || 0;
+      const skillId = String(uploaded.item?.id || inspect.skill.skillId || "").trim();
+      if (skillId) {
+        setSelectedComposerSkillIds((current) => current.includes(skillId) ? current : [...current, skillId].slice(0, MAX_COMPOSER_SKILLS));
+      }
       if (warnings > 0) {
-        toast.warning(`技能已上传，静态扫描提示 ${warnings} 项，请在技能管理中确认。`);
+        toast.warning(`技能已上传并选中，有 ${warnings} 项兼容或安全提示可在技能管理中查看。`);
       } else {
-        const skillId = String(uploaded.item?.id || inspect.skill.skillId || "").trim();
-        if (skillId) {
-          setSelectedComposerSkillIds((current) => current.includes(skillId)
-            ? current
-            : [...current, skillId].slice(0, MAX_COMPOSER_SKILLS));
-        }
         toast.success("技能已上传并同步到运行环境");
       }
       setComposerAddMenuOpen(false);
@@ -4032,6 +4030,9 @@ export default function Home() {
         });
         return;
       }
+      if (opts?.selectedSkillIds?.length) {
+        setSelectedComposerSkillIds((current) => Array.from(new Set([...current, ...opts.selectedSkillIds!])).slice(0, MAX_COMPOSER_SKILLS));
+      }
       // 网络错误 / fetch 失败 → 进入"重连中"状态，不直接判任务失败
       if (conversationIdAtSend && runtimeSessionKey) {
         void reconcileStreamedConversation({
@@ -4874,7 +4875,6 @@ export default function Home() {
                   }
                 }
                 const selectedSkillIds = selectedComposerSkills.map((skill) => skill.id);
-                setSelectedComposerSkillIds([]);
                 if (selectedExpert) {
                   return submitExpertTask({
                     expert: selectedExpert,
@@ -4894,6 +4894,7 @@ export default function Home() {
                     ? buildExpertHandoffRuntimeMessage(finalText, detachedExpertHandoff!)
                     : finalText;
                   if (includeExpertHandoff) setDetachedExpertId("");
+                  setSelectedComposerSkillIds([]);
                   void sendLingxiaMessage(runtimeText, {
                     selectedSkillIds,
                     displayText: text || (messageAttachments.length > 0 ? "请查看我上传的附件。" : ""),

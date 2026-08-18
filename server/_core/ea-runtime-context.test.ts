@@ -59,6 +59,23 @@ describe("EA runtime context display cleanup", () => {
     expect(stripEaInternalRuntimeContext(runtime)).toBe("你可以使用智能审核工作台技能吗");
   });
 
+  it.each([
+    "【本轮已由用户选择岗位技能】",
+    "【本轮已由平台匹配岗位技能】",
+  ])("removes the enterprise selected-skill manifest headed by %s", (heading) => {
+    const runtime = [
+      heading,
+      "selectedSkillCount: 1",
+      "1. selectedSkillId: smart-audit-suite",
+      "   selectedSkillName: 智能审核工作台",
+      "要求：优先加载并使用该技能。",
+      "",
+      "用户问题：你可以使用智能审核工作台技能吗",
+    ].join("\n");
+
+    expect(stripEaInternalRuntimeContext(runtime)).toBe("你可以使用智能审核工作台技能吗");
+  });
+
   it("removes the server-managed security policy before displaying or retrieving user text", () => {
     const runtime = [
       "<ea_security_policy>",

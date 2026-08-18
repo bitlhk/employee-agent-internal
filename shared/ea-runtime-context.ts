@@ -4,6 +4,8 @@ const USER_REQUEST_RE = /<user_request>\s*([\s\S]*?)\s*<\/user_request>/gi;
 const SELECTED_SKILL_HEADINGS = [
   "【本轮已由用户在输入框选择技能 Chip】",
   "【本轮已由平台根据用户请求匹配技能】",
+  "【本轮已由用户选择岗位技能】",
+  "【本轮已由平台匹配岗位技能】",
 ] as const;
 const SELECTED_SKILL_QUESTION_MARKER = "\n用户问题：";
 

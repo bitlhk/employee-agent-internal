@@ -192,6 +192,7 @@ describe("selected skills chat context", () => {
     }], "查询我负责的客户画像和适配产品");
 
     expect(manifest).toContain("skill_tool");
+    expect(manifest).toContain("不要连续重试未知工具");
     expect(manifest).toContain("auto-insurance-advisor");
     expect(manifest).toContain("查询我负责的客户画像和适配产品");
     expect(manifest).not.toContain("/root/control-plane");

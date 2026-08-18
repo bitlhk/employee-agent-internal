@@ -193,6 +193,11 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
     { re: /\bwget\s+https?:\/\//i, label: "wget 外部地址" },
     { re: /\bcurl\s+https?:\/\//i, label: "curl 外部地址" },
   ];
+  const compatibilityPatterns = [
+    { re: /\bexec_command\b/i, label: "引用了其他运行时工具 exec_command，执行时将按当前命令工具适配" },
+    { re: /\blist_files\b/i, label: "引用了其他运行时工具 list_files，执行时将按当前文件工具适配" },
+    { re: /\bapply_patch\b/i, label: "引用了其他运行时工具 apply_patch，执行时将按当前文件编辑工具适配" },
+  ];
   for (const file of normalized) {
     if (!/\.(js|ts|py|sh|md|json|yaml|yml)$/i.test(file.path)) continue;
     const content = textContent(file.content);
@@ -203,6 +208,11 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
     }
     for (const item of dangerousPatterns) {
       if (item.re.test(content)) warnings.push(`${file.path}: ${item.label}`);
+    }
+    if (/skill\.md$/i.test(file.path)) {
+      for (const item of compatibilityPatterns) {
+        if (item.re.test(content)) warnings.push(`${file.path}: ${item.label}`);
+      }
     }
   }
 

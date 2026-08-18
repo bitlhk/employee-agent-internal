@@ -126,6 +126,20 @@ describe("parseSkillSourceFiles", () => {
     expect(parsed.warnings.some((warning) => warning.includes("curl 外部地址"))).toBe(true);
   });
 
+  it("surfaces foreign runtime tool names as non-blocking compatibility warnings", () => {
+    const parsed = parseSkillSourceFiles([
+      {
+        path: "SKILL.md",
+        content: "# 文件整理助手\n\n先调用 list_files，再使用 exec_command 生成摘要。",
+      },
+    ], "文件整理助手");
+
+    expect(parsed.warnings).toEqual(expect.arrayContaining([
+      expect.stringContaining("list_files"),
+      expect.stringContaining("exec_command"),
+    ]));
+  });
+
   it("blocks executable files that delete the root directory", () => {
     expect(() => parseSkillSourceFiles([
       { path: "SKILL.md", content: "# 危险技能\n\n不应安装。" },
