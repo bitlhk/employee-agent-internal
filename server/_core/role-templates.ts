@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { readFileSync } from "fs";
 import path from "path";
 import { z } from "zod";
@@ -74,6 +75,8 @@ export type RoleSkillMcpBaseline = z.infer<typeof BaselineSchema>;
 
 let cachedBaseline: RoleSkillMcpBaseline | null = null;
 let cachedTemplates: AgentRoleTemplate[] | null = null;
+let cachedBaselineSignature = "";
+let nextBaselineRefreshAt = 0;
 
 function baselinePath(): string {
   const configured = String(process.env.ROLE_SKILL_MCP_BASELINE_PATH || "").trim();
@@ -81,8 +84,19 @@ function baselinePath(): string {
   return path.isAbsolute(configured) ? configured : path.resolve(APP_ROOT, configured);
 }
 
-function loadBaselineFromDisk(): RoleSkillMcpBaseline {
-  const raw = readFileSync(baselinePath(), "utf8");
+function baselineRefreshIntervalMs(): number {
+  const configured = Number(process.env.ROLE_SKILL_MCP_BASELINE_REFRESH_MS ?? 5_000);
+  if (!Number.isFinite(configured)) return 5_000;
+  return Math.min(60_000, Math.max(0, Math.floor(configured)));
+}
+
+function readBaselineSource(file: string): { raw: string; signature: string } {
+  const raw = readFileSync(file, "utf8");
+  const digest = createHash("sha256").update(raw).digest("hex");
+  return { raw, signature: `${file}:${digest}` };
+}
+
+function parseBaseline(raw: string): RoleSkillMcpBaseline {
   const parsed = BaselineSchema.parse(JSON.parse(raw));
   const roleIds = new Set<string>();
   for (const [industry, block] of Object.entries(parsed.industries) as Array<[AgentIndustry, z.infer<typeof IndustryBlockSchema>]>) {
@@ -107,7 +121,22 @@ function loadBaselineFromDisk(): RoleSkillMcpBaseline {
 }
 
 export function getRoleSkillMcpBaseline(): RoleSkillMcpBaseline {
-  if (!cachedBaseline) cachedBaseline = loadBaselineFromDisk();
+  const now = Date.now();
+  if (cachedBaseline && now < nextBaselineRefreshAt) return cachedBaseline;
+  nextBaselineRefreshAt = now + baselineRefreshIntervalMs();
+  const file = baselinePath();
+  const { raw, signature } = readBaselineSource(file);
+  if (cachedBaseline && signature === cachedBaselineSignature) return cachedBaseline;
+  try {
+    const loaded = parseBaseline(raw);
+    cachedBaseline = loaded;
+    cachedTemplates = null;
+    cachedBaselineSignature = signature;
+  } catch (error) {
+    if (!cachedBaseline) throw error;
+    cachedBaselineSignature = signature;
+    console.error("[role-template] baseline reload failed; keeping last known good version", error);
+  }
   return cachedBaseline;
 }
 
@@ -154,4 +183,6 @@ export function resolveAgentRoleTemplate(roleId?: string | null): AgentRoleTempl
 export function resetRoleTemplateCacheForTests(): void {
   cachedBaseline = null;
   cachedTemplates = null;
+  cachedBaselineSignature = "";
+  nextBaselineRefreshAt = 0;
 }

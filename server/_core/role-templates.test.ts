@@ -80,14 +80,18 @@ function withBaselineFile(payload: unknown, fn: () => void) {
   const root = mkdtempSync(path.join(os.tmpdir(), "role-baseline-"));
   const file = path.join(root, "baseline.json");
   const previous = process.env.ROLE_SKILL_MCP_BASELINE_PATH;
+  const previousRefresh = process.env.ROLE_SKILL_MCP_BASELINE_REFRESH_MS;
   try {
     writeFileSync(file, JSON.stringify(payload), "utf8");
     process.env.ROLE_SKILL_MCP_BASELINE_PATH = file;
+    process.env.ROLE_SKILL_MCP_BASELINE_REFRESH_MS = "0";
     resetRoleTemplateCacheForTests();
     fn();
   } finally {
     if (previous === undefined) delete process.env.ROLE_SKILL_MCP_BASELINE_PATH;
     else process.env.ROLE_SKILL_MCP_BASELINE_PATH = previous;
+    if (previousRefresh === undefined) delete process.env.ROLE_SKILL_MCP_BASELINE_REFRESH_MS;
+    else process.env.ROLE_SKILL_MCP_BASELINE_REFRESH_MS = previousRefresh;
     resetRoleTemplateCacheForTests();
     rmSync(root, { recursive: true, force: true });
   }
@@ -125,6 +129,30 @@ describe("role template baseline loader", () => {
         },
       });
       expect(getSkillMcpRequirement("plain-skill")).toEqual({ servers: {} });
+    });
+  });
+
+  it("hot reloads an atomically updated baseline without restarting the process", () => {
+    withBaselineFile(baseline(), () => {
+      const file = process.env.ROLE_SKILL_MCP_BASELINE_PATH!;
+      expect(getRoleSkillMcpBaseline().version).toBe("test-v1");
+
+      writeFileSync(file, JSON.stringify(baseline({ version: "test-v2" })), "utf8");
+
+      expect(getRoleSkillMcpBaseline().version).toBe("test-v2");
+      expect(listAgentRoleTemplates()).toHaveLength(2);
+    });
+  });
+
+  it("keeps the last known good baseline when a hot reload is invalid", () => {
+    withBaselineFile(baseline(), () => {
+      const file = process.env.ROLE_SKILL_MCP_BASELINE_PATH!;
+      expect(getRoleSkillMcpBaseline().version).toBe("test-v1");
+
+      writeFileSync(file, "{invalid", "utf8");
+
+      expect(getRoleSkillMcpBaseline().version).toBe("test-v1");
+      expect(resolveAgentRoleTemplate("wealth-manager").name).toBe("财富经理");
     });
   });
 
