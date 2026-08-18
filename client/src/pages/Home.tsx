@@ -94,6 +94,7 @@ import {
   clawModelStorageKey,
   clawStatusStorageKey,
   compactSessionSearchText,
+  conversationHasMeaningfulContent,
   inferSessionPreview,
   inferSessionTitle,
   initialWorkspacePanelWidth,
@@ -1761,20 +1762,34 @@ export default function Home() {
     };
   }, [activeLingxiaStreaming, isJiuwenRuntime, resolvedAdoptId, userStorageId, webConversationId, webSessions]);
 
-  const startNewLingxiaConversation = () => {
+  const openEmptyLingxiaConversation = (selection: "navigation" | "session") => {
     if (activeLingxiaStreaming) {
       toast.error("请先停止当前回复");
       return;
     }
     setSessionSwitchingId(null);
-    setSidebarSelection("session");
+    setSidebarSelection(selection);
     setActivePage("chat");
     setMobileSidebarOpen(false);
     setSessionMenuOpen(false);
+
+    const currentSession = webSessionsRef.current.find(
+      session => session.conversationId === webConversationIdRef.current,
+    );
+    if (
+      webConversationIdRef.current &&
+      !conversationHasMeaningfulContent(activeLingxiaMsgs as any[], currentSession)
+    ) {
+      return;
+    }
+
     const conversationId = makeConversationId();
     ensureEmptyWebSession(conversationId);
     activateWebConversation(conversationId);
   };
+
+  const startNewLingxiaConversation = () => openEmptyLingxiaConversation("session");
+  const openRoleHome = () => openEmptyLingxiaConversation("navigation");
 
   const switchLingxiaConversation = async (conversationId: string) => {
     if (activeLingxiaStreaming) {
@@ -4545,6 +4560,7 @@ export default function Home() {
               onRenameConversation={renameLingxiaConversation}
               onTogglePinConversation={togglePinLingxiaConversation}
               onNewConversation={startNewLingxiaConversation}
+              onOpenHome={openRoleHome}
               sessionsLoading={webSessionsLoading && webSessions.length === 0}
               footer={(
                 <SidebarFooter

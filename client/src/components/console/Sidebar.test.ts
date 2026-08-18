@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPageKey, isSidebarNavItemActive } from "./Sidebar";
+import { isPageKey, isSidebarNavItemActive, primaryItems } from "./Sidebar";
 
 describe("workbench page keys", () => {
   it("accepts current pages and rejects stale session values", () => {
@@ -20,5 +20,12 @@ describe("sidebar selection", () => {
     expect(isSidebarNavItemActive("chat", "chat", true)).toBe(true);
     expect(isSidebarNavItemActive("chat", "chat", false)).toBe(false);
     expect(isSidebarNavItemActive("skills", "chat", true)).toBe(false);
+  });
+
+  it("presents the chat workspace as the role home entry", () => {
+    const home = primaryItems.find(item => item.key === "chat");
+
+    expect(home?.label).toBe("主页");
+    expect(primaryItems.some(item => item.label === "聊天")).toBe(false);
   });
 });

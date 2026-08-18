@@ -2,8 +2,8 @@ import {
   Bot,
   BookOpen,
   Brain,
+  House,
   Library,
-  MessageCircle,
   Plug,
   Timer,
   Users,
@@ -17,8 +17,8 @@ type NavItem = { key: PageKey; label: string; icon: any; adminOnly?: boolean };
 
 export type SidebarConversation = SessionListConversation;
 
-const primaryItems: NavItem[] = [
-  { key: "chat", label: "聊天", icon: MessageCircle },
+export const primaryItems: NavItem[] = [
+  { key: "chat", label: "主页", icon: House },
   { key: "skills", label: "技能", icon: Library },
   { key: "experts", label: "专家", icon: Bot },
   { key: "connectors", label: "连接器", icon: Plug },
@@ -59,6 +59,7 @@ export function Sidebar({
   onRenameConversation,
   onTogglePinConversation,
   onNewConversation,
+  onOpenHome,
   sessionsLoading,
   footer,
 }: {
@@ -75,6 +76,7 @@ export function Sidebar({
   onRenameConversation?: (conversationId: string, title: string) => void;
   onTogglePinConversation?: (conversationId: string, pinned: boolean) => void;
   onNewConversation?: () => void;
+  onOpenHome?: () => void;
   sessionsLoading?: boolean;
   footer?: ReactNode;
 }) {
@@ -83,7 +85,11 @@ export function Sidebar({
           const active = isSidebarNavItemActive(activePage, it.key, navigationSelectionActive);
           return (
             <div key={it.key} className="flex flex-col">
-              <button title={it.label} onClick={() => setActivePage(it.key)} className={`w-full flex items-center text-left sidebar-item relative ${active ? "active" : ""}`}>
+              <button
+                title={it.label}
+                onClick={() => it.key === "chat" && onOpenHome ? onOpenHome() : setActivePage(it.key)}
+                className={`w-full flex items-center text-left sidebar-item relative ${active ? "active" : ""}`}
+              >
                 <Icon size={18} strokeWidth={1.5} className="sidebar-item-icon" />
                 {!collapsed && <span className="sidebar-item-label">{it.label}</span>}
                 {it.key === "collab" && coopBadge !== undefined && coopBadge > 0 ? (

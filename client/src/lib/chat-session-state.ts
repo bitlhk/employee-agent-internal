@@ -161,6 +161,19 @@ export function inferSessionPreview(messages: Array<{ text?: string }>) {
   return truncateSessionText(last?.text || "", 42);
 }
 
+export function conversationHasMeaningfulContent(
+  messages: Array<{ role?: string; text?: string }>,
+  session?: Pick<WebChatSessionRecord, "messageCount" | "preview">,
+) {
+  if (Number(session?.messageCount || 0) > 0) return true;
+  if (normalizeSessionText(session?.preview || "")) return true;
+  return messages.some(
+    message =>
+      (message.role === "user" || message.role === "assistant") &&
+      normalizeSessionText(message.text || ""),
+  );
+}
+
 export function readLocalStorageWithLegacy(
   primaryKey: string,
   legacyKeys: string[] = []

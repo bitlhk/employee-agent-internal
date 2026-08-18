@@ -113,7 +113,7 @@ export function SidebarFooter({
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={onReturnHome}>
             <Home />
-            首页
+            返回岗位列表
           </DropdownMenuItem>
           <div
             className="workbench-appearance-row"
