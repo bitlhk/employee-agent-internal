@@ -17,6 +17,22 @@ describe("roleExperience", () => {
     expect(roleExperience("credential-compliance").maturity).toBe("operational");
   });
 
+  it("does not model built-in platform tools as external connector dependencies", () => {
+    const referenceRoles = ["wealth-manager", "post-loan-risk-control"];
+    for (const role of referenceRoles) {
+      for (const task of roleExperience(role).tasks) {
+        expect(task.requiredConnectorIds ?? []).not.toContain("platform_tools");
+      }
+    }
+
+    const wealthTasks = roleExperience("wealth-manager").tasks;
+    expect(wealthTasks.find((task) => task.id === "WM-GT-03")?.requiredConnectorIds).toBeUndefined();
+    expect(wealthTasks.find((task) => task.id === "WM-GT-04")?.requiredConnectorIds).toEqual([
+      "wealth_assistant_customer",
+      "wealth_assistant_product",
+    ]);
+  });
+
   it("falls back to the general assistant and exposes stable labels", () => {
     expect(roleExperience("unknown-role").roleTemplate).toBe("general-assistant");
     expect(roleDisplayName("post-loan-risk-control")).toBe("风控经理");
