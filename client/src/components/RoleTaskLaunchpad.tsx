@@ -2,8 +2,7 @@ import {
   BarChart3,
   BookOpenCheck,
   BriefcaseBusiness,
-  CheckCircle2,
-  CircleAlert,
+  Check,
   FileCheck2,
   FileText,
   Layers3,
@@ -17,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { RoleHomeRuntimeStatus, RoleHomeTaskStatus } from "@shared/role-home";
+import { localizedComposerSkillLabel, type ComposerSkillOption } from "@/lib/chat-home-helpers";
 import { roleExperience, selectRoleHomeTaskIds, type RoleTaskStarter } from "@/lib/role-experience";
 
 const TASK_ICONS: Record<RoleTaskStarter["icon"], LucideIcon> = {
@@ -41,29 +41,9 @@ const CAPABILITY_ICONS: Record<string, LucideIcon> = {
   skill: Wrench,
 };
 
-type RoleHomeSkill = {
-  id: string;
-  label: string;
-  desc: string;
-  source: string;
-};
-
-function taskAvailability(task: RoleTaskStarter, status: RoleHomeTaskStatus | undefined, loading: boolean) {
-  if (!status) {
-    return loading
-      ? { state: "checking" as const, label: "正在核验" }
-      : { state: "degraded" as const, label: "有限可用", reason: "岗位运行状态暂未完成核验。" };
-  }
-  if (status.status === "READY") {
-    return {
-      state: "ready" as const,
-      label: task.confirmationRequired ? "可开始 · 执行前确认" : task.attachmentRecommended ? "建议上传材料" : "可开始",
-    };
-  }
-  if (status.status === "DEGRADED") {
-    return { state: "degraded" as const, label: "有限可用", reason: status.reason };
-  }
-  return { state: "blocked" as const, label: "暂不可用", reason: status.reason };
+function taskAvailability(status: RoleHomeTaskStatus | undefined) {
+  if (status?.status === "BLOCKED") return { state: "blocked" as const, label: "暂不可用", reason: status.reason };
+  return { state: "available" as const };
 }
 
 function featuredTasks(roleTemplate: string, statuses: RoleHomeTaskStatus[]): RoleTaskStarter[] {
@@ -83,57 +63,31 @@ export function RoleTaskLaunchpad({
   roleTemplate,
   roleName,
   skills,
+  selectedSkillIds,
   runtimeStatus,
-  connectorsLoading,
   onSelectPrompt,
-  onOpenSkills,
+  onSelectSkill,
 }: {
   roleTemplate: string;
   roleName: string;
-  skills: RoleHomeSkill[];
+  skills: ComposerSkillOption[];
+  selectedSkillIds: string[];
   runtimeStatus: RoleHomeRuntimeStatus | null;
-  connectorsLoading: boolean;
   onSelectPrompt: (task: RoleTaskStarter) => void;
-  onOpenSkills: () => void;
+  onSelectSkill: (skill: ComposerSkillOption) => void;
 }) {
   const experience = roleExperience(roleTemplate);
-  const featuredSkills = skills
-    .filter((skill) => skill.source === "role_default")
-    .slice(0, 4);
   const statuses = runtimeStatus?.roleTemplate === experience.roleTemplate ? runtimeStatus.tasks : [];
   const statusById = new Map(statuses.map((status) => [status.taskId, status]));
   const tasks = featuredTasks(experience.roleTemplate, statuses);
-  const visibleStatuses = tasks.map((task) => statusById.get(task.id)?.status || (connectorsLoading ? null : "DEGRADED"));
-  const readyCount = visibleStatuses.filter((status) => status === "READY").length;
-  const degradedCount = visibleStatuses.filter((status) => status === "DEGRADED" || status === null).length;
-  const blockedCount = visibleStatuses.filter((status) => status === "BLOCKED").length;
-  const maturityLabel = experience.maturity === "reference"
-    ? "标杆岗位"
-    : experience.maturity === "operational" ? "岗位智能体" : "工作智能体";
-  const summary = connectorsLoading && !runtimeStatus
-    ? "正在核验岗位能力"
-    : [
-        readyCount ? `${readyCount} 项任务可开始` : "",
-        degradedCount ? `${degradedCount} 项有限可用` : "",
-        blockedCount ? `${blockedCount} 项暂不可用` : "",
-      ].filter(Boolean).join(" · ");
 
   return (
     <section className="role-task-launchpad" aria-label={`${roleName}可开始的任务`}>
       <header className="role-task-launchpad__header">
         <div className="role-task-launchpad__identity">
-          <span className="role-task-launchpad__eyebrow">{maturityLabel}</span>
           <h1>{roleTitle(roleName)}</h1>
           <strong>{experience.assistantLabel}</strong>
           <p>{experience.description}</p>
-        </div>
-        <div
-          className="role-task-launchpad__readiness"
-          data-state={blockedCount > 0 ? "blocked" : degradedCount > 0 ? "degraded" : "ready"}
-          aria-label="岗位任务状态"
-        >
-          {blockedCount > 0 ? <CircleAlert aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
-          <span>{summary || "岗位能力可用"}</span>
         </div>
       </header>
 
@@ -141,7 +95,7 @@ export function RoleTaskLaunchpad({
         <h2 id="role-task-launchpad-title">今天可以开始</h2>
         <div className="role-task-launchpad__tasks">
           {tasks.map((task) => {
-            const availability = taskAvailability(task, statusById.get(task.id), connectorsLoading);
+            const availability = taskAvailability(statusById.get(task.id));
             const Icon = TASK_ICONS[task.icon];
             return (
               <button
@@ -149,7 +103,7 @@ export function RoleTaskLaunchpad({
                 type="button"
                 className="role-task-launchpad__task"
                 data-state={availability.state}
-                disabled={availability.state === "blocked" || availability.state === "checking"}
+                disabled={availability.state === "blocked"}
                 onClick={() => onSelectPrompt(task)}
                 title={availability.reason ? `${task.label}：${availability.reason}` : task.description}
               >
@@ -158,7 +112,7 @@ export function RoleTaskLaunchpad({
                   <strong>{task.label}</strong>
                   <small>{task.description}</small>
                 </span>
-                <span className="role-task-launchpad__task-status">{availability.label}</span>
+                {availability.label ? <span className="role-task-launchpad__task-status">{availability.label}</span> : null}
               </button>
             );
           })}
@@ -168,18 +122,14 @@ export function RoleTaskLaunchpad({
       <section className="role-task-launchpad__capabilities" aria-labelledby="role-capability-title">
         <div className="role-task-launchpad__section-heading">
           <h2 id="role-capability-title">岗位能力</h2>
-          <span>企业数据、知识与规则按当前岗位授权</span>
         </div>
         <div className="role-task-launchpad__capability-list">
           {experience.capabilities.map((capability) => {
-            const runtimeCapability = runtimeStatus?.capabilities.find((item) => item.id === capability.id);
             const Icon = CAPABILITY_ICONS[capability.icon] || Puzzle;
-            const state = runtimeCapability?.status || (connectorsLoading ? "DEGRADED" : "BLOCKED");
             return (
-              <span key={capability.id} className="role-task-launchpad__capability" data-state={state.toLowerCase()}>
+              <span key={capability.id} className="role-task-launchpad__capability">
                 <Icon aria-hidden="true" />
                 <strong>{capability.label}</strong>
-                <small>{runtimeCapability?.statusLabel || (connectorsLoading ? "核验中" : "待核验")}</small>
               </span>
             );
           })}
@@ -192,23 +142,31 @@ export function RoleTaskLaunchpad({
             <h2 id="role-skills-title">岗位技能</h2>
             <span>{skills.length > 0 ? `已启用 ${skills.length} 项` : "暂无已启用技能"}</span>
           </div>
-          <button type="button" onClick={onOpenSkills}>查看全部 / 管理</button>
         </div>
-        {featuredSkills.length > 0 ? (
+        {skills.length > 0 ? (
           <div className="role-task-launchpad__skill-list">
-            {featuredSkills.map((skill) => (
-              <span key={skill.id} className="role-task-launchpad__skill" title={skill.desc || skill.label}>
-                <Puzzle aria-hidden="true" />
-                <strong>{skill.label}</strong>
-              </span>
-            ))}
+            {skills.map((skill) => {
+              const selected = selectedSkillIds.includes(skill.id);
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className="role-task-launchpad__skill"
+                  data-skill-id={skill.id}
+                  data-selected={selected ? "true" : "false"}
+                  aria-pressed={selected}
+                  title={skill.desc || skill.label}
+                  onClick={() => onSelectSkill(skill)}
+                >
+                  <Puzzle aria-hidden="true" />
+                  <strong>{localizedComposerSkillLabel(skill)}</strong>
+                  {selected ? <Check className="role-task-launchpad__skill-check" aria-hidden="true" /> : null}
+                </button>
+              );
+            })}
           </div>
         ) : null}
       </section>
-
-      <footer className="role-task-launchpad__footer">
-        <span>选择任务后可补充客户、企业或材料范围，也可以直接在下方描述工作。</span>
-      </footer>
     </section>
   );
 }

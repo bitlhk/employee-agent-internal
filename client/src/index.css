@@ -7156,20 +7156,10 @@ input.session-searchbar__input:focus-visible,
   padding: clamp(4px, 1.8vh, 18px) 0 18px;
 }
 .role-task-launchpad__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
+  display: block;
 }
 .role-task-launchpad__header > div:first-child { min-width: 0; }
 .role-task-launchpad__identity { max-width: 610px; }
-.role-task-launchpad__eyebrow {
-  display: block;
-  margin-bottom: 6px;
-  color: var(--role-accent);
-  font-size: 11px;
-  font-weight: 650;
-}
 .role-task-launchpad h1 {
   margin: 0;
   color: var(--oc-text-primary);
@@ -7191,19 +7181,6 @@ input.session-searchbar__input:focus-visible,
   font-size: 13px;
   line-height: 1.6;
 }
-.role-task-launchpad__readiness {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  padding-top: 19px;
-  color: var(--oc-text-secondary);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.role-task-launchpad__readiness svg { width: 15px; height: 15px; color: var(--oc-success); }
-.role-task-launchpad__readiness[data-state="degraded"] svg { color: var(--oc-warning); }
-.role-task-launchpad__readiness[data-state="blocked"] svg { color: var(--oc-danger); }
 .role-task-launchpad__work,
 .role-task-launchpad__capabilities,
 .role-task-launchpad__skills { display: grid; gap: 10px; }
@@ -7254,14 +7231,9 @@ input.session-searchbar__input:focus-visible,
 .role-task-launchpad__task-copy { display: grid; gap: 4px; min-width: 0; }
 .role-task-launchpad__task-copy strong { font-size: 13px; font-weight: 650; }
 .role-task-launchpad__task-copy small { color: var(--oc-text-tertiary); font-size: 11px; line-height: 1.35; }
-.role-task-launchpad__task-status { color: var(--oc-success); font-size: 10px; white-space: nowrap; }
-.role-task-launchpad__task[data-state="checking"] .role-task-launchpad__task-status,
-.role-task-launchpad__task[data-state="degraded"] .role-task-launchpad__task-status { color: var(--oc-warning); }
-.role-task-launchpad__task[data-state="blocked"] .role-task-launchpad__task-status { color: var(--oc-danger); }
+.role-task-launchpad__task-status { color: var(--oc-danger); font-size: 10px; white-space: nowrap; }
 .role-task-launchpad__capabilities {
-  padding: 13px 0;
-  border-top: 1px solid var(--oc-border-subtle);
-  border-bottom: 1px solid var(--oc-border-subtle);
+  padding: 2px 0;
 }
 .role-task-launchpad__section-heading {
   display: flex;
@@ -7269,34 +7241,21 @@ input.session-searchbar__input:focus-visible,
   justify-content: space-between;
   gap: 16px;
 }
-.role-task-launchpad__section-heading > span {
-  color: var(--oc-text-tertiary);
-  font-size: 10px;
-}
 .role-task-launchpad__section-heading > div { display: flex; align-items: baseline; gap: 8px; }
 .role-task-launchpad__section-heading > div > span { color: var(--oc-text-tertiary); font-size: 10px; }
-.role-task-launchpad__section-heading > button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--oc-text-secondary);
-  font-size: 10px;
-}
-.role-task-launchpad__section-heading > button:hover { color: var(--role-accent); }
 .role-task-launchpad__capability-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
-  gap: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 9px 24px;
+  flex-wrap: wrap;
 }
 .role-task-launchpad__capability {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  display: inline-flex;
   align-items: center;
-  column-gap: 7px;
+  gap: 7px;
   min-width: 0;
 }
 .role-task-launchpad__capability svg {
-  grid-row: 1 / 3;
   width: 15px;
   height: 15px;
   color: var(--role-accent);
@@ -7309,26 +7268,36 @@ input.session-searchbar__input:focus-visible,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.role-task-launchpad__capability small { color: var(--oc-success); font-size: 9px; }
-.role-task-launchpad__capability[data-state="degraded"] small { color: #a16207; }
-.role-task-launchpad__capability[data-state="blocked"] small { color: var(--oc-danger); }
 .role-task-launchpad__skills { padding-bottom: 2px; }
 .role-task-launchpad__skill-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  max-height: 116px;
+  overflow-y: auto;
+  padding: 1px 4px 1px 1px;
+  scrollbar-gutter: stable;
 }
 .role-task-launchpad__skill {
   display: flex;
+  width: 100%;
   min-width: 0;
   align-items: center;
   gap: 7px;
   padding: 8px 9px;
   color: var(--oc-text-secondary);
   background: var(--oc-bg-soft);
+  border: 1px solid transparent;
   border-radius: 6px;
+  text-align: left;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 .role-task-launchpad__skill svg { width: 13px; height: 13px; flex: none; color: var(--role-accent); }
+.role-task-launchpad__skill:hover { background: var(--oc-bg-hover); border-color: var(--oc-border); }
+.role-task-launchpad__skill[data-selected="true"] {
+  background: color-mix(in oklab, var(--oc-bg-soft) 90%, var(--role-accent) 10%);
+  border-color: color-mix(in oklab, var(--role-accent) 32%, var(--oc-border));
+}
 .role-task-launchpad__skill strong {
   overflow: hidden;
   color: var(--oc-text-primary);
@@ -7337,14 +7306,7 @@ input.session-searchbar__input:focus-visible,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.role-task-launchpad__footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--oc-text-tertiary);
-  font-size: 11px;
-}
+.role-task-launchpad__skill .role-task-launchpad__skill-check { margin-left: auto; color: var(--oc-success); }
 
 .skill-activation-notice {
   display: grid;
@@ -7374,17 +7336,13 @@ input.session-searchbar__input:focus-visible,
 
 @media (max-width: 760px) {
   .role-task-launchpad { gap: 15px; padding-top: 4px; }
-  .role-task-launchpad__header { display: grid; gap: 11px; }
   .role-task-launchpad h1 { font-size: 24px; }
-  .role-task-launchpad__readiness { padding-top: 0; flex-wrap: wrap; white-space: normal; }
   .role-task-launchpad__tasks { grid-template-columns: 1fr; }
   .role-task-launchpad__task { grid-template-columns: 32px minmax(0, 1fr); min-height: 70px; }
   .role-task-launchpad__task-status { grid-column: 2; }
   .role-task-launchpad__section-heading { display: grid; gap: 4px; }
   .role-task-launchpad__section-heading > div { justify-content: space-between; }
-  .role-task-launchpad__capability-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .role-task-launchpad__skill-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .role-task-launchpad__footer { align-items: flex-start; }
   .skill-activation-notice { grid-template-columns: 1fr auto; }
   .skill-activation-notice__steps { grid-column: 1 / -1; justify-content: flex-start; order: 3; }
 }

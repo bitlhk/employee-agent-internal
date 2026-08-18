@@ -15,6 +15,15 @@ export type ComposerSkillOption = {
   requiredMcpServers: string[];
 };
 
+export function localizedComposerSkillLabel(skill: Pick<ComposerSkillOption, "label" | "desc">): string {
+  const label = String(skill.label || "").trim();
+  const withoutEnglishQualifier = label.replace(/\s*[（(][^）)]*[A-Za-z][^）)]*[）)]/gu, "").trim();
+  if (/[\u3400-\u9fff]/u.test(withoutEnglishQualifier)) return withoutEnglishQualifier;
+  const descriptionLead = String(skill.desc || "").split(/[。；;]/u)[0]?.trim() || "";
+  if (/[\u3400-\u9fff]/u.test(descriptionLead) && descriptionLead.length <= 16) return descriptionLead;
+  return withoutEnglishQualifier || label || "技能";
+}
+
 function composerSkillInitial(skill: any, id: string): string {
   const candidates = [
     skill?.name,

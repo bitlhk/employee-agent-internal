@@ -4724,10 +4724,10 @@ export default function Home() {
                   roleTemplate={String((clawByAdoptId as any)?.roleTemplate || "general-assistant")}
                   roleName={lingxiaDisplayName || brand.name}
                   skills={composerSkills}
+                  selectedSkillIds={selectedComposerSkillIds}
                   runtimeStatus={roleHomeRuntime}
-                  connectorsLoading={composerConnectorsLoading}
                   onSelectPrompt={(task) => { setLingxiaInput(task.prompt); window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0); }}
-                  onOpenSkills={openSkillManager}
+                  onSelectSkill={(skill) => { void selectComposerSkill(skill); window.setTimeout(() => document.querySelector<HTMLTextAreaElement>("textarea.main-chat-input")?.focus(), 0); }}
                 />
               )}
 
