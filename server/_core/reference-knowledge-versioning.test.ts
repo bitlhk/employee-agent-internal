@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   resolveReferenceKnowledgeSeries,
+  selectCanonicalReferenceKnowledgeBase,
   type ReferenceKnowledgeAsset,
   validateReferenceKnowledgeVersionGraph,
 } from "../../scripts/import-demo-knowledge";
@@ -25,6 +26,19 @@ function asset(
 }
 
 describe("reference knowledge version graph", () => {
+  it("keeps one canonical role knowledge base and identifies duplicate copies", () => {
+    const bases = [
+      { id: 9, name: "风控经理岗位知识（演示）", status: "ready" as const },
+      { id: 12, name: "风控经理岗位操作规范（演示）", status: "indexing" as const },
+      { id: 15, name: "风控经理岗位操作规范（演示）", status: "ready" as const },
+    ];
+
+    const selected = selectCanonicalReferenceKnowledgeBase(bases, "风控经理岗位操作规范（演示）");
+
+    expect(selected.canonical?.id).toBe(15);
+    expect(selected.duplicates.map((base) => base.id)).toEqual([12, 9]);
+  });
+
   it("resolves replacement versions to one stable document series", () => {
     const previous = asset("policy-v1", {
       lifecycle: "expired",

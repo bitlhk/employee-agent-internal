@@ -11,8 +11,11 @@ import {
   deleteKnowledgeDocumentsByBase,
   getClawByAdoptId,
   getUserById,
+  listGlobalRoleKnowledgeBases,
   listKnowledgeBasesOwnedByUser,
+  prepareManagedKnowledgeBaseReplacement,
 } from "../server/db";
+import type { KnowledgeBaseRecord } from "../server/db";
 import { queueKnowledgeIndex } from "../server/_core/knowledge-service";
 import {
   KNOWLEDGE_EXTENSIONS,
@@ -410,23 +413,25 @@ function managedKnowledgeBaseNames(items: ImportPlanItem[]): Set<string> {
   ]);
 }
 
-async function importKnowledgeBase(
-  item: ImportPlanItem,
-  ownerUserId: number,
-  ownerGroupId: number,
-): Promise<{ knowledgeBaseId: string; name: string; scope: string; roleTemplate: string | null; documents: number }> {
-  const base = await createKnowledgeBaseRecord({
-    publicId: `kb_${nanoid(18)}`,
-    ownerUserId,
-    ownerGroupId,
-    scope: item.collection.scope,
-    isGlobal: true,
-    roleTemplate: item.collection.roleTemplate,
-    name: item.collection.name,
-    description: item.collection.description,
-    classification: item.collection.classification,
-    externalProcessingAllowed: item.collection.externalProcessingAllowed,
+export function selectCanonicalReferenceKnowledgeBase<T extends Pick<KnowledgeBaseRecord, "id" | "name" | "status">>(
+  bases: T[],
+  targetName: string,
+): { canonical: T | null; duplicates: T[] } {
+  const ordered = bases.slice().sort((left, right) => {
+    const leftNameRank = left.name === targetName ? 0 : 1;
+    const rightNameRank = right.name === targetName ? 0 : 1;
+    if (leftNameRank !== rightNameRank) return leftNameRank - rightNameRank;
+    const leftStatusRank = left.status === "ready" ? 0 : 1;
+    const rightStatusRank = right.status === "ready" ? 0 : 1;
+    return leftStatusRank - rightStatusRank || left.id - right.id;
   });
+  return { canonical: ordered[0] || null, duplicates: ordered.slice(1) };
+}
+
+async function populateKnowledgeBase(
+  item: ImportPlanItem,
+  base: KnowledgeBaseRecord,
+): Promise<{ knowledgeBaseId: string; name: string; scope: string; roleTemplate: string | null; documents: number }> {
   const documentIdByFile = new Map(item.files.map((sourcePath) => [path.basename(sourcePath), `doc_${nanoid(18)}`]));
   const documentIdByAsset = new Map<string, string>();
   for (const [filename, governance] of item.governanceByFile) {
@@ -470,14 +475,64 @@ async function importKnowledgeBase(
       expiresAt: governance.expiresAt,
     });
   }
-  await queueKnowledgeIndex({ ...base, documentCount: item.files.length, status: "indexing" }, selectedPack ? "reference_pack_import" : "demo_import");
+  await queueKnowledgeIndex(
+    {
+      ...base,
+      name: item.collection.name,
+      description: item.collection.description,
+      classification: item.collection.classification,
+      externalProcessingAllowed: item.collection.externalProcessingAllowed,
+      status: "indexing",
+      documentCount: item.files.length,
+      chunkCount: 0,
+      lastError: null,
+    },
+    selectedPack ? "reference_pack_import" : "demo_import",
+  );
   return {
     knowledgeBaseId: base.publicId,
-    name: base.name,
+    name: item.collection.name,
     scope: base.scope,
     roleTemplate: base.roleTemplate,
     documents: item.files.length,
   };
+}
+
+async function importKnowledgeBase(
+  item: ImportPlanItem,
+  ownerUserId: number,
+  ownerGroupId: number,
+): Promise<{ knowledgeBaseId: string; name: string; scope: string; roleTemplate: string | null; documents: number }> {
+  const base = await createKnowledgeBaseRecord({
+    publicId: `kb_${nanoid(18)}`,
+    ownerUserId,
+    ownerGroupId,
+    scope: item.collection.scope,
+    isGlobal: true,
+    roleTemplate: item.collection.roleTemplate,
+    name: item.collection.name,
+    description: item.collection.description,
+    classification: item.collection.classification,
+    externalProcessingAllowed: item.collection.externalProcessingAllowed,
+  });
+  return populateKnowledgeBase(item, base);
+}
+
+async function replaceKnowledgeBase(
+  item: ImportPlanItem,
+  base: KnowledgeBaseRecord,
+): ReturnType<typeof populateKnowledgeBase> {
+  await deleteKnowledgeDocumentsByBase(base.id);
+  removeKnowledgeBaseFiles(base.publicId);
+  await prepareManagedKnowledgeBaseReplacement({
+    id: base.id,
+    ownerUserId: base.ownerUserId,
+    name: item.collection.name,
+    description: item.collection.description,
+    classification: item.collection.classification,
+    externalProcessingAllowed: item.collection.externalProcessingAllowed,
+  });
+  return populateKnowledgeBase(item, base);
 }
 
 async function main() {
@@ -513,20 +568,42 @@ async function main() {
   const ownerUserId = Number(user.id);
   const ownerGroupId = Number(user.groupId || 0);
   const managedNames = managedKnowledgeBaseNames(items);
-  const existing = (await listKnowledgeBasesOwnedByUser(ownerUserId)).filter((item) => managedNames.has(item.name));
-  for (const base of existing) {
-    await deleteKnowledgeDocumentsByBase(base.id);
-    await deleteKnowledgeBaseRecord(base.id, ownerUserId);
-    removeKnowledgeBaseFiles(base.publicId);
-  }
-
+  const removed: KnowledgeBaseRecord[] = [];
+  const reused: KnowledgeBaseRecord[] = [];
   const imported = [];
-  for (const item of items) imported.push(await importKnowledgeBase(item, ownerUserId, ownerGroupId));
+  if (selectedPack) {
+    const item = items[0];
+    const existing = (await listGlobalRoleKnowledgeBases(selectedPack.roleTemplate))
+      .filter((base) => managedNames.has(base.name));
+    const { canonical, duplicates } = selectCanonicalReferenceKnowledgeBase(existing, item.collection.name);
+    for (const base of duplicates) {
+      await deleteKnowledgeDocumentsByBase(base.id);
+      await deleteKnowledgeBaseRecord(base.id, base.ownerUserId);
+      removeKnowledgeBaseFiles(base.publicId);
+      removed.push(base);
+    }
+    if (canonical) {
+      imported.push(await replaceKnowledgeBase(item, canonical));
+      reused.push(canonical);
+    } else {
+      imported.push(await importKnowledgeBase(item, ownerUserId, ownerGroupId));
+    }
+  } else {
+    const existing = (await listKnowledgeBasesOwnedByUser(ownerUserId)).filter((item) => managedNames.has(item.name));
+    for (const base of existing) {
+      await deleteKnowledgeDocumentsByBase(base.id);
+      await deleteKnowledgeBaseRecord(base.id, ownerUserId);
+      removeKnowledgeBaseFiles(base.publicId);
+      removed.push(base);
+    }
+    for (const item of items) imported.push(await importKnowledgeBase(item, ownerUserId, ownerGroupId));
+  }
   console.log(JSON.stringify({
     ok: true,
     adoptId,
     selectedPack: selectedPack?.key || null,
-    removed: existing.map((base) => ({ id: base.publicId, name: base.name })),
+    reused: reused.map((base) => ({ id: base.publicId, name: base.name, ownerUserId: base.ownerUserId })),
+    removed: removed.map((base) => ({ id: base.publicId, name: base.name, ownerUserId: base.ownerUserId })),
     imported,
   }, null, 2));
   process.exit(0);

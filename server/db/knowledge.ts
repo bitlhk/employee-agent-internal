@@ -198,6 +198,23 @@ export async function listKnowledgeBasesOwnedByUser(ownerUserId: number): Promis
   return rowsFromResult(result).map(mapBase);
 }
 
+export async function listGlobalRoleKnowledgeBases(roleTemplate: string): Promise<KnowledgeBaseRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const normalizedRole = String(roleTemplate || "").trim();
+  if (!normalizedRole) return [];
+  const result: any = await db.execute(sql`
+    SELECT ${BASE_SELECT}
+    FROM knowledge_bases
+    WHERE scope = 'role'
+      AND is_global = TRUE
+      AND role_template = ${normalizedRole}
+    ORDER BY id ASC
+    LIMIT 1000
+  `);
+  return rowsFromResult(result).map(mapBase);
+}
+
 export async function getAccessibleKnowledgeBase(input: {
   publicId: string;
   userId: number;
@@ -307,6 +324,30 @@ export async function updateKnowledgeBaseRecord(input: {
   await db.execute(sql`
     UPDATE knowledge_bases
     SET name = ${input.name}, description = ${input.description}
+    WHERE id = ${input.id} AND owner_user_id = ${input.ownerUserId}
+  `);
+}
+
+export async function prepareManagedKnowledgeBaseReplacement(input: {
+  id: number;
+  ownerUserId: number;
+  name: string;
+  description: string;
+  classification: KnowledgeClassification;
+  externalProcessingAllowed: boolean;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.execute(sql`
+    UPDATE knowledge_bases
+    SET name = ${input.name},
+        description = ${input.description},
+        classification = ${input.classification},
+        external_processing_allowed = ${input.externalProcessingAllowed},
+        status = 'indexing',
+        document_count = 0,
+        chunk_count = 0,
+        last_error = NULL
     WHERE id = ${input.id} AND owner_user_id = ${input.ownerUserId}
   `);
 }
