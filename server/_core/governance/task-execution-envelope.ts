@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ContextResolutionEvidenceV1 } from "../../../shared/context-resolution";
+import type { EffectiveContextSnapshotV1 } from "../../../shared/context-receipt";
 import type { RuntimePrincipalV2 } from "./contracts";
 import { governanceFingerprint, principalFingerprint } from "./contracts";
 
@@ -34,6 +35,7 @@ export type TaskContextPack = {
       assetId: string;
       version: string;
       contentHash: string;
+      effectiveAt?: string | null;
       logicalAssetId?: string;
       bindingId?: string;
       providerType?: "llamaindex" | "mcp" | "api";
@@ -58,6 +60,7 @@ export type TaskContextPack = {
     taskStateVersion?: string;
   };
   principalFingerprint: string;
+  effectiveContextSnapshot: EffectiveContextSnapshotV1;
   contextEvidenceFingerprint: string;
   assembledAt: string;
 };
@@ -93,11 +96,57 @@ export type TaskExecutionEnvelope = {
   envelopeFingerprint: string;
 };
 
-export function buildTaskContextPack(input: Omit<TaskContextPack, "contextEvidenceFingerprint">): TaskContextPack {
+export function buildTaskContextPack(input: Omit<TaskContextPack, "contextEvidenceFingerprint" | "effectiveContextSnapshot"> & {
+  effectiveContextSnapshot?: EffectiveContextSnapshotV1;
+}): TaskContextPack {
+  const snapshot = input.effectiveContextSnapshot || effectiveContextSnapshot({
+    knowledge: input.knowledge.selectedAssets,
+    businessData: input.businessData.sources,
+    memory: input.memory.memoryRefs.map((memoryId) => ({ memoryId })),
+    capturedAt: input.assembledAt,
+  });
   return {
     ...input,
-    contextEvidenceFingerprint: governanceFingerprint(input),
+    effectiveContextSnapshot: snapshot,
+    contextEvidenceFingerprint: governanceFingerprint({ ...input, effectiveContextSnapshot: snapshot }),
   };
+}
+
+export function effectiveContextSnapshot(input: {
+  knowledge: TaskContextPack["knowledge"]["selectedAssets"];
+  businessData: TaskContextPack["businessData"]["sources"];
+  memory?: Array<{ memoryId: string; version?: number; asOf?: string }>;
+  capturedAt: string;
+}): EffectiveContextSnapshotV1 {
+  const items: EffectiveContextSnapshotV1["items"] = [
+    ...input.knowledge.map((item) => ({
+      contextType: "knowledge" as const,
+      ...(item.logicalAssetId ? { logicalAssetId: item.logicalAssetId } : {}),
+      assetId: item.assetId,
+      version: item.version,
+      ...(item.effectiveAt !== undefined ? { effectiveAt: item.effectiveAt } : {}),
+    })),
+    ...input.businessData.map((item) => ({
+      contextType: "business_data" as const,
+      ...(item.logicalAssetId ? { logicalAssetId: item.logicalAssetId } : {}),
+      assetId: `${item.sourceSystem}:${item.entityRef}`,
+      version: item.asOf,
+      asOf: item.asOf,
+    })),
+    ...(input.memory || []).map((item) => ({
+      contextType: "memory" as const,
+      assetId: String(item.memoryId),
+      version: item.version ? String(item.version) : "referenced",
+      ...(item.asOf ? { asOf: item.asOf } : {}),
+    })),
+  ].sort((left, right) => {
+    const leftLogicalAsset = "logicalAssetId" in left ? left.logicalAssetId || "" : "";
+    const rightLogicalAsset = "logicalAssetId" in right ? right.logicalAssetId || "" : "";
+    return `${left.contextType}:${leftLogicalAsset}:${left.assetId}`
+      .localeCompare(`${right.contextType}:${rightLogicalAsset}:${right.assetId}`);
+  });
+  const body = { capturedAt: input.capturedAt, items };
+  return { ...body, snapshotFingerprint: governanceFingerprint(body) };
 }
 
 export function buildCapabilitySnapshot(

@@ -17,6 +17,19 @@ export type ContextReceiptReadiness = {
   decisionFingerprint: string;
 };
 
+export type EffectiveContextSnapshotV1 = {
+  capturedAt: string;
+  items: Array<{
+    contextType: "knowledge" | "business_data" | "memory";
+    logicalAssetId?: string;
+    assetId: string;
+    version: string;
+    asOf?: string;
+    effectiveAt?: string | null;
+  }>;
+  snapshotFingerprint: string;
+};
+
 export type ContextReceiptV1 = {
   schema: typeof CONTEXT_RECEIPT_SCHEMA;
   receiptId: string;
@@ -26,12 +39,14 @@ export type ContextReceiptV1 = {
   correlationId?: string;
   principalFingerprint: string;
   resolution?: ContextResolutionEvidenceV1;
+  effectiveContextSnapshot: EffectiveContextSnapshotV1;
   provided: {
     knowledge: Array<{
       assetId: string;
       label: string;
       version: string;
       contentHash: string;
+      effectiveAt?: string | null;
       logicalAssetId?: string;
       bindingId?: string;
       providerType?: "llamaindex" | "mcp" | "api";

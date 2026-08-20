@@ -172,10 +172,16 @@ export async function resolveWealthPolicyBasis(input: {
     (total, item) => total + reasons.reduce((sum, reason) => sum + Number(item[reason] || 0), 0),
     0,
   );
+  const supersededInSeries = seriesDocuments.filter((document) => (
+    !eligibleIds.has(document.publicId)
+    && documents.some((replacement) => (
+      eligibleIds.has(replacement.publicId) && replacement.supersedesDocumentId === document.publicId
+    ))
+  )).length;
   const governance = {
     eligibilityFingerprint: eligibility.fingerprint,
-    historicalVersionFiltered: count("lifecycle_inactive", "expired") > 0,
-    filteredForValidity: count("lifecycle_inactive", "expired", "not_effective"),
+    historicalVersionFiltered: count("lifecycle_inactive", "expired") + supersededInSeries > 0,
+    filteredForValidity: count("lifecycle_inactive", "expired", "not_effective") + supersededInSeries,
     unavailableDocuments: count("base_not_ready", "document_not_ready", "invalid_document_id"),
     // Do not expose restricted document names or precise counts to the model/user.
     accessRestricted: count("classification_denied", "role_mismatch") > 0,
@@ -248,6 +254,7 @@ export async function resolveWealthSuitabilityPolicySource(input: {
     sourceAssetId: selected?.sourceAssetId || "",
     ...(selected?.knowledgeBaseId ? { knowledgeBaseId: selected.knowledgeBaseId } : {}),
     versionLabel: selected?.versionLabel || "",
+    effectiveAt: selected?.effectiveAt || null,
     sourceLocator: selected?.sourceLocator || "",
     eligibilityFingerprint: basis.governance.eligibilityFingerprint,
     ...(basis.resolutionReasonCode ? { resolutionReasonCode: basis.resolutionReasonCode } : {}),

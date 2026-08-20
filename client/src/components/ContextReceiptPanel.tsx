@@ -153,7 +153,7 @@ export function ContextReceiptPanel({
                 {receipt.provided.knowledge.map((item) => (
                   <li key={item.assetId}>
                     <span>{item.label}</span>
-                    <small>{item.version ? `版本 ${item.version}` : "版本已绑定"} · 已提供</small>
+                    <small>{item.version ? `版本 ${item.version}` : "版本已绑定"}{item.effectiveAt ? ` · ${formatAsOf(item.effectiveAt)} 生效` : ""} · 已提供</small>
                   </li>
                 ))}
                 {citedKnowledge.map((item) => (

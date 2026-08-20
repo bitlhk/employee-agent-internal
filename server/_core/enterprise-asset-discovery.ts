@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import { z } from "zod";
@@ -356,4 +356,17 @@ export function persistCandidateArtifact(candidateId: string, filename: string, 
   const target = candidateArtifactUri(candidateId, filename);
   writeFileSync(target.absolutePath, content, { mode: 0o600 });
   return target.uri;
+}
+
+export function readCandidateArtifact(candidateId: string, sourceUri: string): Buffer {
+  const prefix = `candidate://${candidateId}/`;
+  if (!String(sourceUri || "").startsWith(prefix)) throw new Error("候选资产没有可发布的暂存正文");
+  let filename = "";
+  try {
+    filename = decodeURIComponent(sourceUri.slice(prefix.length));
+  } catch {
+    throw new Error("候选资产暂存地址无效");
+  }
+  const target = candidateArtifactUri(candidateId, filename);
+  return readFileSync(target.absolutePath);
 }

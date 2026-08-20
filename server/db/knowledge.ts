@@ -198,6 +198,32 @@ export async function listKnowledgeBasesOwnedByUser(ownerUserId: number): Promis
   return rowsFromResult(result).map(mapBase);
 }
 
+export async function listGovernedKnowledgeBases(): Promise<KnowledgeBaseRecord[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.execute(sql`
+    SELECT ${BASE_SELECT}
+    FROM knowledge_bases
+    WHERE scope IN ('role', 'enterprise')
+    ORDER BY scope DESC, role_template ASC, name ASC
+    LIMIT 1000
+  `);
+  return rowsFromResult(result).map(mapBase);
+}
+
+export async function getKnowledgeBaseByPublicId(publicId: string): Promise<KnowledgeBaseRecord | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.execute(sql`
+    SELECT ${BASE_SELECT}
+    FROM knowledge_bases
+    WHERE public_id = ${publicId}
+    LIMIT 1
+  `);
+  const row = rowsFromResult(result)[0];
+  return row ? mapBase(row) : null;
+}
+
 export async function listGlobalRoleKnowledgeBases(roleTemplate: string): Promise<KnowledgeBaseRecord[]> {
   const db = await getDb();
   if (!db) return [];
@@ -424,6 +450,19 @@ export async function getKnowledgeDocumentByPublicId(publicId: string): Promise<
   `);
   const row = rowsFromResult(result)[0];
   return row ? mapDocument(row) : null;
+}
+
+export async function listKnowledgeDocumentsByPublicIds(publicIds: string[]): Promise<KnowledgeDocumentRecord[]> {
+  const ids = [...new Set(publicIds.map(value => String(value || "").trim()).filter(Boolean))];
+  if (!ids.length) return [];
+  const db = await getDb();
+  if (!db) return [];
+  const result = await db.execute(sql`
+    SELECT ${DOCUMENT_SELECT}
+    FROM knowledge_documents
+    WHERE public_id IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})
+  `);
+  return rowsFromResult(result).map(mapDocument);
 }
 
 export async function findKnowledgeDocumentByHash(knowledgeBaseId: number, sha256: string): Promise<KnowledgeDocumentRecord | null> {

@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { rolePackReleases, type RolePackRelease } from "../../drizzle/schema";
 import type { ReleaseEvidenceRef } from "../_core/governance/task-execution-envelope";
 import { getDb } from "./connection";
@@ -88,6 +88,18 @@ export async function resolveRolePackReleaseEvidence(input: {
     verificationLevel: exact?.verificationLevel || "contract",
     assetSetFingerprint: input.assetSetFingerprint,
   };
+}
+
+export async function latestVerifiedRolePackReleases(rolePackIds: string[]): Promise<RolePackRelease[]> {
+  const database = await getDb();
+  if (!database || !rolePackIds.length) return [];
+  const rows = await database.select().from(rolePackReleases).where(and(
+    inArray(rolePackReleases.rolePackId, [...new Set(rolePackIds)]),
+    eq(rolePackReleases.status, "verified"),
+  )).orderBy(desc(rolePackReleases.verifiedAt));
+  const latest = new Map<string, RolePackRelease>();
+  for (const row of rows) if (!latest.has(row.rolePackId)) latest.set(row.rolePackId, row);
+  return Array.from(latest.values());
 }
 
 function releaseEvidence(

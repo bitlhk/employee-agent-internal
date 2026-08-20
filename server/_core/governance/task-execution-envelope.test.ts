@@ -33,8 +33,20 @@ describe("task execution envelope", () => {
       checks: readyChecks(["identity", "knowledge", "policy", "evidence"]),
     });
     const context = buildTaskContextPack({
-      knowledge: { selectedAssets: [], eligibilityFingerprint: "k".repeat(64) },
-      businessData: { sources: [] },
+      knowledge: { selectedAssets: [{
+        assetId: "wealth-policy",
+        version: "V3.2",
+        contentHash: "k".repeat(64),
+        logicalAssetId: "current_wealth_policy",
+        effectiveAt: "2026-07-01T00:00:00.000Z",
+      }], eligibilityFingerprint: "k".repeat(64) },
+      businessData: { sources: [{
+        sourceSystem: "crm",
+        entityRef: "customer-7",
+        asOf: "2026-08-13T00:00:00.000Z",
+        resultFingerprint: "d".repeat(64),
+        logicalAssetId: "customer_profile",
+      }] },
       memory: { memoryRefs: [] },
       principalFingerprint: principalFingerprint(principal),
       assembledAt: "2026-08-13T00:00:00.000Z",
@@ -62,6 +74,11 @@ describe("task execution envelope", () => {
 
     expect(envelope.readiness.status).toBe("READY");
     expect(envelope.context).not.toHaveProperty("principal");
+    expect(envelope.context.effectiveContextSnapshot.items).toEqual([
+      expect.objectContaining({ contextType: "business_data", logicalAssetId: "customer_profile" }),
+      expect.objectContaining({ contextType: "knowledge", logicalAssetId: "current_wealth_policy", version: "V3.2", effectiveAt: "2026-07-01T00:00:00.000Z" }),
+    ]);
+    expect(envelope.context.effectiveContextSnapshot.snapshotFingerprint).toHaveLength(64);
     expect(envelope.envelopeFingerprint).toHaveLength(64);
     expect(Object.isFrozen(envelope)).toBe(true);
   });

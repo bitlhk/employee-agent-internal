@@ -564,6 +564,7 @@ async function callTool(
             assetId: basis.selected.sourceAssetId,
             version: basis.selected.versionLabel,
             contentHash: basis.selected.contentHash || "",
+            effectiveAt: basis.selected.effectiveAt,
             ...(basis.sourceBinding || {}),
           }] : [],
           eligibilityFingerprint: basis.governance.eligibilityFingerprint,

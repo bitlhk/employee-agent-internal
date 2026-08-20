@@ -48,4 +48,36 @@ describe("knowledge eligibility", () => {
       { scope: "personal", ownerUserId: 7, isGlobal: false, classification: "restricted" },
     ).documentIds).toEqual([document.publicId]);
   });
+
+  it("keeps the current version until its validated replacement becomes effective", () => {
+    const current = {
+      ...document,
+      publicId: "doc_policy_v32",
+      documentSeriesId: "wealth-policy",
+      versionLabel: "V3.2",
+      effectiveAt: "2026-01-01T00:00:00.000Z",
+    };
+    const replacement = {
+      ...document,
+      id: 2,
+      publicId: "doc_policy_v33",
+      documentSeriesId: "wealth-policy",
+      supersedesDocumentId: current.publicId,
+      versionLabel: "V3.3",
+      effectiveAt: "2026-09-01T00:00:00.000Z",
+    };
+    const before = buildKnowledgeEligibility({
+      bases: [base], documents: [current, replacement], userId: 7,
+      actorRole: "user", roleTemplate: "wealth-manager", now: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    expect(before.documentIds).toEqual([current.publicId]);
+    expect(before.excludedByReason).toMatchObject({ not_effective: 1 });
+
+    const after = buildKnowledgeEligibility({
+      bases: [base], documents: [current, replacement], userId: 7,
+      actorRole: "user", roleTemplate: "wealth-manager", now: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    expect(after.documentIds).toEqual([replacement.publicId]);
+    expect(after.excludedByReason).toMatchObject({ superseded: 1 });
+  });
 });

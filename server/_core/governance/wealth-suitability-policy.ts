@@ -12,6 +12,7 @@ export type WealthPolicySource = {
   sourceAssetId: string;
   knowledgeBaseId?: string;
   versionLabel: string;
+  effectiveAt?: string | null;
   sourceLocator: string;
   eligibilityFingerprint: string;
   resolutionReasonCode?: ContextResolutionReasonCodeV1;

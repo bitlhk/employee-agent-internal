@@ -5,6 +5,7 @@ function policySeriesKey(name: string): string {
     .replace(/\.[^.]+$/, "")
     .replace(/[（(][^）)]*(?:现行|历史|失效|废止)[^）)]*[）)]/g, "")
     .replace(/(?:版本)?\s*[Vv]?\d+(?:\.\d+)*/g, "")
+    .replace(/[（）()]/g, "")
     .replace(/[\s_\-—]+/g, "")
     .trim();
 }
@@ -17,9 +18,15 @@ export function selectWealthPolicyDocument(input: {
   const configuredName = String(input.configuredName).trim();
   const configuredSeries = policySeriesKey(configuredName);
   const eligibleIds = new Set(input.eligibleDocumentIds);
-  const seriesDocuments = input.documents.filter((document) => policySeriesKey(document.name) === configuredSeries);
+  const configuredDocument = input.documents.find((document) => document.name === configuredName);
+  const configuredSeriesId = String(configuredDocument?.documentSeriesId || "").trim();
+  const seriesDocuments = input.documents.filter((document) => (
+    configuredSeriesId
+      ? document.documentSeriesId === configuredSeriesId
+      : policySeriesKey(document.name) === configuredSeries
+  ));
   const selected = seriesDocuments
-    .filter((document) => eligibleIds.has(document.publicId) && document.name === configuredName)
+    .filter((document) => eligibleIds.has(document.publicId))
     .sort((left, right) => {
       const authorityRank = { official: 4, approved: 3, reference: 2, personal: 1 } as const;
       const authority = (authorityRank[right.authority] || 0) - (authorityRank[left.authority] || 0);

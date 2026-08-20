@@ -109,7 +109,9 @@ function governedEmptyKnowledgeContext(excludedByReason: Record<string, number>)
   const denied = Number(excludedByReason.classification_denied || 0) + Number(excludedByReason.role_mismatch || 0);
   const unavailable = Number(excludedByReason.base_not_ready || 0) + Number(excludedByReason.document_not_ready || 0);
   const future = Number(excludedByReason.not_effective || 0);
-  const inactive = Number(excludedByReason.expired || 0) + Number(excludedByReason.lifecycle_inactive || 0);
+  const inactive = Number(excludedByReason.expired || 0)
+    + Number(excludedByReason.lifecycle_inactive || 0)
+    + Number(excludedByReason.superseded || 0);
   const message = denied > 0
     ? "当前没有可授权用于本次任务的企业知识依据。"
     : future > 0 && inactive === 0

@@ -9,6 +9,7 @@ import {
 } from "../../../shared/context-evidence";
 import { governanceFingerprint } from "./contracts";
 import type { TaskExecutionEnvelope, TaskReadinessDecision } from "./task-execution-envelope";
+import { effectiveContextSnapshot } from "./task-execution-envelope";
 import { createContextReceiptMemoryFeedbackToken } from "./context-receipt-feedback-token";
 
 type ReceiptKnowledgeLabel = { assetId: string; label: string };
@@ -87,6 +88,7 @@ export function buildContextReceipt(input: {
   correlationId?: string;
   principalFingerprint: string;
   resolution?: ContextReceiptV1["resolution"];
+  effectiveContextSnapshot?: ContextReceiptV1["effectiveContextSnapshot"];
   provided: ContextReceiptV1["provided"];
   citedKnowledgeAssetIds?: string[];
   policyDecisions?: ContextReceiptAppliedPolicy[];
@@ -102,6 +104,16 @@ export function buildContextReceipt(input: {
   }
   const receiptId = `crpt_${randomUUID()}`;
   const createdAt = (input.now || new Date()).toISOString();
+  const snapshot = input.effectiveContextSnapshot || effectiveContextSnapshot({
+    knowledge: input.provided.knowledge,
+    businessData: input.provided.businessData,
+    memory: input.provided.memory.map((item) => ({
+      memoryId: item.memoryId,
+      version: item.version,
+      ...(item.asOf ? { asOf: item.asOf } : {}),
+    })),
+    capturedAt: createdAt,
+  });
   const body = {
     schema: CONTEXT_RECEIPT_SCHEMA,
     receiptId,
@@ -111,6 +123,7 @@ export function buildContextReceipt(input: {
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
     principalFingerprint: String(input.principalFingerprint || "").trim(),
     ...(input.resolution ? { resolution: input.resolution } : {}),
+    effectiveContextSnapshot: snapshot,
     provided: input.provided,
     cited: { knowledgeAssetIds: citedKnowledgeAssetIds },
     applied: {
@@ -155,6 +168,7 @@ export function buildContextReceiptFromEnvelope(input: {
     correlationId: input.envelope.correlationId,
     principalFingerprint: input.envelope.context.principalFingerprint,
     resolution: input.envelope.context.resolution,
+    effectiveContextSnapshot: input.envelope.context.effectiveContextSnapshot,
     provided: {
       knowledge: input.envelope.context.knowledge.selectedAssets.map((item) => ({
         ...item,

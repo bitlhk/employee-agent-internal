@@ -50,7 +50,12 @@ function envelope(taskId: "WM-GT-01" | "WM-GT-02" | "WM-GT-03") {
         resolutionFingerprint: "8".repeat(64),
       },
       knowledge: {
-        selectedAssets: [{ assetId: "policy-current", version: "V2.2", contentHash: "b".repeat(64) }],
+        selectedAssets: [{
+          assetId: "policy-current",
+          version: "V2.2",
+          contentHash: "b".repeat(64),
+          effectiveAt: "2026-07-01T00:00:00.000Z",
+        }],
         eligibilityFingerprint: "c".repeat(64),
       },
       businessData: { sources: taskId === "WM-GT-03" ? [] : [{
@@ -94,12 +99,22 @@ describe("Context Receipt V1", () => {
       capabilityExecutions: [{ capabilityId: "wealth_context", operation: "prepare", status: "completed" }],
     });
     expect(receipt.taskId).toBe(taskId);
-    expect(receipt.provided.knowledge[0]).toMatchObject({ label: "现行制度 V2.2", version: "V2.2" });
+    expect(receipt.provided.knowledge[0]).toMatchObject({
+      label: "现行制度 V2.2",
+      version: "V2.2",
+      effectiveAt: "2026-07-01T00:00:00.000Z",
+    });
     expect(receipt.applied.policyDecisions[0].policyCode).toBe("EA_KNOWLEDGE_ELIGIBILITY_V1");
     expect(receipt.resolution?.needs[0]).toMatchObject({
       logicalAssetId: "current_wealth_policy",
       bindingId: "ctxb-policy",
     });
+    expect(receipt.effectiveContextSnapshot.items).toContainEqual(expect.objectContaining({
+      contextType: "knowledge",
+      assetId: "policy-current",
+      version: "V2.2",
+    }));
+    expect(receipt.effectiveContextSnapshot.snapshotFingerprint).toHaveLength(64);
     expect(JSON.stringify(receipt)).not.toContain("kb://");
     expect(receipt.receiptFingerprint).toHaveLength(64);
     expect(Object.isFrozen(receipt)).toBe(true);

@@ -1,4 +1,7 @@
 import { TRPCError } from "@trpc/server";
+import { createHash } from "node:crypto";
+import { writeFileSync } from "node:fs";
+import { nanoid } from "nanoid";
 import { z } from "zod";
 import { auditActor, auditRequest, recordAuditRequired } from "../_core/audit-events";
 import {
@@ -15,6 +18,7 @@ import {
   discoverZipArtifacts,
   enterpriseAssetIdForPath,
   persistCandidateArtifact,
+  readCandidateArtifact,
   suggestEnterpriseAssetMetadata,
   suggestEnterpriseAssetMetadataWithModel,
   type DiscoveredEnterpriseArtifact,
@@ -28,17 +32,37 @@ import {
   getEnterpriseAssetCandidate,
   getEnterpriseAssetSource,
   getEnterpriseMcpConnection,
+  getKnowledgeBaseById,
+  getKnowledgeBaseByPublicId,
   getKnowledgeDocumentByPublicId,
+  createKnowledgeDocumentRecord,
+  deleteKnowledgeDocumentRecord,
+  findKnowledgeDocumentByHash,
   importEnterpriseAssetCandidates,
   listEnterpriseAssetCandidatesByChecksums,
   listApprovedSkillMarketItems,
   listEnterpriseAssetCandidates,
   listEnterpriseAssetSources,
+  listGovernedKnowledgeBases,
+  listKnowledgeDocuments,
+  listKnowledgeDocumentsByPublicIds,
+  latestVerifiedRolePackReleases,
   markEnterpriseAssetSourceSynced,
   publishEnterpriseAssetCandidate,
+  activateEnterpriseKnowledgeCandidate,
+  stageEnterpriseKnowledgeCandidate,
   updateEnterpriseAssetCandidate,
   upsertEnterpriseAssetSource,
 } from "../db";
+import {
+  knowledgeDocumentStoragePath,
+  knowledgeExtension,
+  knowledgeMimeType,
+  removeKnowledgeDocumentFiles,
+} from "../_core/knowledge-storage";
+import { queueKnowledgeIndex } from "../_core/knowledge-service";
+import { verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
+import { persistReferenceRolePackScenarioReport } from "../_core/reference-role-pack-release";
 
 const sourceSchema = z.object({
   sourceId: z.string().min(3).max(128).regex(/^[a-zA-Z0-9._-]+$/),
@@ -125,6 +149,21 @@ function candidateUri(candidateId: string, filename: string): string {
 function unresolvedDiagnostics(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   return value.filter(item => item && typeof item === "object" && !(item as Record<string, unknown>).resolvedAt) as Array<Record<string, unknown>>;
+}
+
+function knowledgeReleaseStatus(candidate: {
+  status: string;
+  targetAssetId?: string | null;
+}, document: Awaited<ReturnType<typeof getKnowledgeDocumentByPublicId>>): string {
+  if (candidate.status === "approved" && !candidate.targetAssetId) return "ready_to_stage";
+  if (candidate.status === "approved" && document?.lifecycle === "draft") return "awaiting_validation";
+  if (candidate.status !== "published" || !document) return candidate.status;
+  if (document.lifecycle !== "active") return "inactive";
+  const effectiveAt = document.effectiveAt ? new Date(document.effectiveAt) : null;
+  if (effectiveAt && effectiveAt.getTime() > Date.now()) return "validated_pending_effective";
+  const expiresAt = document.expiresAt ? new Date(document.expiresAt) : null;
+  if (expiresAt && expiresAt.getTime() <= Date.now()) return "expired";
+  return "active";
 }
 
 async function uploadedArtifacts(input: z.infer<typeof discoveryInputSchema>): Promise<DiscoveredEnterpriseArtifact[]> {
@@ -222,13 +261,47 @@ export const enterpriseAssetsRouter = router({
     sourceId: z.string().max(128).optional(),
     status: z.enum(["draft", "review_pending", "approved", "rejected", "published", "stale"]).optional(),
   }).optional()).query(async ({ input }) => {
-    const [sources, candidates] = await Promise.all([
+    const [sources, candidates, knowledgeBases] = await Promise.all([
       listEnterpriseAssetSources(),
       listEnterpriseAssetCandidates(input || {}),
+      listGovernedKnowledgeBases(),
     ]);
+    const runtimeDocumentsById = new Map((await listKnowledgeDocumentsByPublicIds(candidates.flatMap(candidate => (
+      candidate.targetAssetType === "knowledge_document" && candidate.targetAssetId ? [candidate.targetAssetId] : []
+    )))).map(document => [document.publicId, document]));
     return {
       sources,
-      candidates,
+      knowledgeBases: knowledgeBases.map(base => ({
+        publicId: base.publicId,
+        name: base.name,
+        scope: base.scope,
+        roleTemplate: base.roleTemplate,
+        status: base.status,
+      })),
+      candidates: candidates.map((candidate) => {
+        const runtimeDocument = candidate.targetAssetId ? runtimeDocumentsById.get(candidate.targetAssetId) || null : null;
+        const impact = candidate.impactAnalysisJson && typeof candidate.impactAnalysisJson === "object"
+          ? candidate.impactAnalysisJson as Record<string, unknown>
+          : {};
+        const validation = impact.knowledgeValidation && typeof impact.knowledgeValidation === "object"
+          ? impact.knowledgeValidation as Record<string, unknown>
+          : null;
+        return {
+          ...candidate,
+          releaseStatus: candidate.assetType === "knowledge_document"
+            ? knowledgeReleaseStatus(candidate, runtimeDocument)
+            : candidate.status,
+          runtimeDocument: runtimeDocument ? {
+            publicId: runtimeDocument.publicId,
+            versionLabel: runtimeDocument.versionLabel,
+            lifecycle: runtimeDocument.lifecycle,
+            effectiveAt: runtimeDocument.effectiveAt,
+            expiresAt: runtimeDocument.expiresAt,
+            status: runtimeDocument.status,
+          } : null,
+          validationStatus: validation?.status === "PASS" || validation?.status === "FAIL" ? validation.status : null,
+        };
+      }),
       summary: {
         sources: sources.length,
         pendingRemediation: candidates.filter(row => unresolvedDiagnostics(row.diagnosticsJson).length > 0 && ["draft", "rejected"].includes(row.status)).length,
@@ -482,6 +555,215 @@ export const enterpriseAssetsRouter = router({
     return row;
   }),
 
+  stageKnowledgeVersion: adminProcedure.input(z.object({
+    candidateId: z.string().min(3).max(64),
+    knowledgeBaseId: z.string().min(1).max(64),
+  })).mutation(async ({ input, ctx }) => {
+    const candidate = await getEnterpriseAssetCandidate(input.candidateId);
+    if (!candidate || candidate.assetType !== "knowledge_document" || candidate.status !== "approved" || !candidate.confirmedMetadataJson) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅审核通过的知识候选可进入岗位验证" });
+    }
+    if (candidate.targetAssetId) {
+      throw new TRPCError({ code: "CONFLICT", message: "该知识版本已进入验证流程" });
+    }
+    const metadata = enterpriseAssetMetadataSchema.parse(candidate.confirmedMetadataJson);
+    if (metadata.lifecycle !== "active") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请先确认该资产计划进入有效生命周期" });
+    }
+    if (metadata.authority === "official" && !metadata.effectiveAt) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "正式制度必须确认生效时间" });
+    }
+    const base = await getKnowledgeBaseByPublicId(input.knowledgeBaseId);
+    if (!base || !["role", "enterprise"].includes(base.scope)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "目标必须是岗位或企业知识库" });
+    }
+    if (base.scope === "role" && (!base.roleTemplate || !metadata.applicableRoles.includes(base.roleTemplate))) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "目标知识库岗位与资产适用岗位不一致" });
+    }
+    let content: Buffer;
+    try {
+      content = readCandidateArtifact(candidate.candidateId, candidate.sourceUri || "");
+    } catch (error) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "候选正文不可用" });
+    }
+    if (candidate.checksum !== createHash("sha256").update(content).digest("hex")) {
+      throw new TRPCError({ code: "CONFLICT", message: "候选正文校验失败，请重新发现资产" });
+    }
+    if (await findKnowledgeDocumentByHash(base.id, candidate.checksum)) {
+      throw new TRPCError({ code: "CONFLICT", message: "目标知识库已存在相同内容" });
+    }
+    const supersedes = metadata.supersedes
+      ? await getKnowledgeDocumentByPublicId(metadata.supersedes)
+      : null;
+    if (metadata.supersedes && (!supersedes || supersedes.knowledgeBaseId !== base.id)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "被替代版本不存在或不属于目标知识库" });
+    }
+    const extension = knowledgeExtension(candidate.displayName);
+    const documentId = `doc_${nanoid(18)}`;
+    const storage = knowledgeDocumentStoragePath(base.publicId, documentId, candidate.displayName);
+    writeFileSync(storage.absolute, content, { mode: 0o600 });
+    let document: Awaited<ReturnType<typeof createKnowledgeDocumentRecord>> | undefined;
+    try {
+      document = await createKnowledgeDocumentRecord({
+        publicId: documentId,
+        knowledgeBaseId: base.id,
+        name: candidate.displayName,
+        extension,
+        mimeType: knowledgeMimeType(extension),
+        storagePath: storage.relative,
+        sizeBytes: content.length,
+        sha256: candidate.checksum,
+        sourceAssetId: `${candidate.enterpriseAssetId.slice(0, 108)}@${candidate.checksum.slice(0, 16)}`,
+        documentSeriesId: metadata.documentSeriesId || candidate.enterpriseAssetId,
+        supersedesDocumentId: supersedes?.publicId || null,
+        versionLabel: candidate.sourceVersion,
+        lifecycle: "draft",
+        sourceDepartment: metadata.ownerDepartment,
+        classification: metadata.classification,
+        authority: metadata.authority,
+        externalProcessingAllowed: metadata.externalProcessingAllowed,
+        effectiveAt: metadata.effectiveAt ? new Date(metadata.effectiveAt) : null,
+        expiresAt: metadata.expiresAt ? new Date(metadata.expiresAt) : null,
+      });
+      const impact = analyzeEnterpriseAssetImpact({
+        assetType: candidate.assetType,
+        enterpriseAssetId: candidate.enterpriseAssetId,
+        sourceVersion: candidate.sourceVersion,
+        checksum: candidate.checksum,
+        metadata,
+      });
+      await stageEnterpriseKnowledgeCandidate({
+        candidate,
+        documentId,
+        impactAnalysisJson: impact,
+        affectedRolePackIds: impact.affectedRolePackIds,
+        actor: actorName(ctx.user),
+      });
+      await audit(ctx, "enterprise_asset.knowledge_staged", candidate.candidateId, {
+        documentId,
+        knowledgeBaseId: base.publicId,
+        effectiveAt: metadata.effectiveAt || null,
+        affectedTaskIds: impact.affectedTaskIds,
+      });
+    } catch (error) {
+      if (document) await deleteKnowledgeDocumentRecord(document.id, base.id).catch(() => false);
+      removeKnowledgeDocumentFiles(base.publicId, documentId);
+      throw error;
+    }
+    void queueKnowledgeIndex({ ...base, status: "indexing", documentCount: base.documentCount + 1 }, "enterprise_asset_staged").catch(() => {});
+    return { documentId, releaseStatus: "awaiting_validation" as const };
+  }),
+
+  verifyKnowledgeVersion: adminProcedure.input(z.object({
+    candidateId: z.string().min(3).max(64),
+  })).mutation(async ({ input, ctx }) => {
+    const candidate = await getEnterpriseAssetCandidate(input.candidateId);
+    if (!candidate || candidate.assetType !== "knowledge_document" || candidate.status !== "approved"
+      || candidate.targetAssetType !== "knowledge_document" || !candidate.targetAssetId || !candidate.confirmedMetadataJson) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该知识版本尚未进入验证流程" });
+    }
+    const metadata = enterpriseAssetMetadataSchema.parse(candidate.confirmedMetadataJson);
+    if (!metadata.applicableRoles.includes("wealth-manager")) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "V1 候选级验证当前仅支持财富经理制度" });
+    }
+    const document = await getKnowledgeDocumentByPublicId(candidate.targetAssetId);
+    if (!document || document.lifecycle !== "draft" || document.status !== "ready") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "知识版本尚未完成索引，暂不能运行标杆任务" });
+    }
+    const base = await getKnowledgeBaseById(document.knowledgeBaseId);
+    if (!base) throw new TRPCError({ code: "PRECONDITION_FAILED", message: "目标知识库不存在" });
+    const result = await verifyWealthPolicyCandidate({
+      candidate,
+      metadata,
+      base,
+      document,
+      documents: await listKnowledgeDocuments(base.id),
+    });
+    const impact = candidate.impactAnalysisJson && typeof candidate.impactAnalysisJson === "object"
+      ? candidate.impactAnalysisJson as Record<string, unknown>
+      : {};
+    const updated = await updateEnterpriseAssetCandidate(candidate.candidateId, {
+      impactAnalysisJson: { ...impact, knowledgeValidation: result.validation },
+      updatedBy: actorName(ctx.user),
+    }, ["approved"]);
+    if (!updated || updated.status !== "approved") {
+      throw new TRPCError({ code: "CONFLICT", message: "候选状态已变化，请刷新后重试" });
+    }
+    await persistReferenceRolePackScenarioReport(result.controlled, result.contract);
+    await audit(ctx, "enterprise_asset.knowledge_validated", candidate.candidateId, {
+      documentId: document.publicId,
+      validationStatus: result.validation.status,
+      validationFingerprint: result.validation.validationFingerprint,
+      taskIds: result.validation.taskIds,
+      checks: result.validation.checks.map(check => ({ code: check.code, passed: check.passed })),
+    });
+    return result.validation;
+  }),
+
+  activateKnowledgeVersion: adminProcedure.input(z.object({
+    candidateId: z.string().min(3).max(64),
+  })).mutation(async ({ input, ctx }) => {
+    const candidate = await getEnterpriseAssetCandidate(input.candidateId);
+    if (!candidate || candidate.assetType !== "knowledge_document" || candidate.status !== "approved"
+      || candidate.targetAssetType !== "knowledge_document" || !candidate.targetAssetId || !candidate.confirmedMetadataJson) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该知识版本尚未进入验证流程" });
+    }
+    const document = await getKnowledgeDocumentByPublicId(candidate.targetAssetId);
+    if (!document || document.lifecycle !== "draft" || document.status !== "ready") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "知识版本尚未完成索引，暂不能启用" });
+    }
+    const metadata = enterpriseAssetMetadataSchema.parse(candidate.confirmedMetadataJson);
+    const impactJson = candidate.impactAnalysisJson && typeof candidate.impactAnalysisJson === "object"
+      ? candidate.impactAnalysisJson as Record<string, unknown>
+      : {};
+    const validation = impactJson.knowledgeValidation && typeof impactJson.knowledgeValidation === "object"
+      ? impactJson.knowledgeValidation as Record<string, unknown>
+      : null;
+    if (!validation || validation.status !== "PASS"
+      || validation.candidateId !== candidate.candidateId
+      || validation.documentId !== document.publicId
+      || validation.checksum !== candidate.checksum) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该知识版本尚未通过候选级标杆任务验收" });
+    }
+    const impact = analyzeEnterpriseAssetImpact({
+      assetType: candidate.assetType,
+      enterpriseAssetId: candidate.enterpriseAssetId,
+      sourceVersion: candidate.sourceVersion,
+      checksum: candidate.checksum,
+      metadata,
+    });
+    const releases = await latestVerifiedRolePackReleases(impact.affectedRolePackIds);
+    const stagedAt = candidate.updatedAt instanceof Date ? candidate.updatedAt : new Date(candidate.updatedAt);
+    const releaseByRole = new Map(releases.map(release => [release.rolePackId, release]));
+    const missing = impact.affectedRolePackIds.filter(rolePackId => {
+      const release = releaseByRole.get(rolePackId);
+      return !release?.verifiedAt || release.verifiedAt.getTime() <= stagedAt.getTime();
+    });
+    if (missing.length) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `受影响岗位尚未在本次知识暂存后完成标杆任务验收: ${missing.join("、")}`,
+      });
+    }
+    const row = await activateEnterpriseKnowledgeCandidate({
+      candidate,
+      documentId: document.publicId,
+      actor: actorName(ctx.user),
+    });
+    const effectiveAt = document.effectiveAt ? new Date(document.effectiveAt) : null;
+    const releaseStatus = effectiveAt && effectiveAt.getTime() > Date.now()
+      ? "validated_pending_effective" as const
+      : "active" as const;
+    await audit(ctx, "enterprise_asset.knowledge_activated", candidate.candidateId, {
+      documentId: document.publicId,
+      versionLabel: document.versionLabel,
+      effectiveAt: document.effectiveAt,
+      releaseStatus,
+      verifiedReleaseIds: releases.map(release => release.releaseId),
+    });
+    return { candidate: row, releaseStatus };
+  }),
+
   publish: adminProcedure.input(z.object({
     candidateId: z.string().min(3).max(64),
     targetAssetType: targetTypeSchema,
@@ -490,6 +772,9 @@ export const enterpriseAssetsRouter = router({
     const candidate = await getEnterpriseAssetCandidate(input.candidateId);
     if (!candidate || candidate.status !== "approved" || !candidate.confirmedMetadataJson) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅审核通过且元数据完整的资产可发布" });
+    }
+    if (candidate.assetType === "knowledge_document") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "知识文档请先进入岗位验证，再按生效时间启用" });
     }
     const expected = targetTypeForEnterpriseAsset(candidate.assetType);
     if (input.targetAssetType !== expected) {

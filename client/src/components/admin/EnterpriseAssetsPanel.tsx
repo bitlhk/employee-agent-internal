@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
-import { AlertTriangle, Archive, Check, FileInput, FolderOpen, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, Archive, Check, Clock3, FileInput, FolderOpen, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Overview = RouterOutputs["enterpriseAssets"]["overview"];
@@ -16,6 +16,14 @@ type Candidate = Overview["candidates"][number];
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿", review_pending: "待审核", approved: "审核通过", rejected: "已退回", published: "已发布", stale: "已失效",
+};
+const RELEASE_STATUS_LABELS: Record<string, string> = {
+  ready_to_stage: "可进入岗位验证",
+  awaiting_validation: "待标杆任务验收",
+  validated_pending_effective: "已验证，等待生效",
+  active: "当前有效",
+  expired: "已失效",
+  inactive: "未启用",
 };
 const TYPE_LABELS: Record<string, string> = {
   knowledge_document: "知识文档", business_data: "业务数据", policy: "确定性策略", skill: "Skill", mcp_capability: "MCP 能力", role_identity: "岗位身份",
@@ -66,6 +74,8 @@ export function EnterpriseAssetsPanel() {
   const [rejectNote, setRejectNote] = useState("");
   const [publishTarget, setPublishTarget] = useState<Candidate | null>(null);
   const [targetAssetId, setTargetAssetId] = useState("");
+  const [stageTarget, setStageTarget] = useState<Candidate | null>(null);
+  const [targetKnowledgeBaseId, setTargetKnowledgeBaseId] = useState("");
 
   const invalidate = async () => utils.enterpriseAssets.overview.invalidate();
   const saveSource = trpc.enterpriseAssets.saveSource.useMutation({
@@ -100,12 +110,38 @@ export function EnterpriseAssetsPanel() {
     onSuccess: async () => { toast.success("资产映射已发布，相关岗位包需重新验收"); setPublishTarget(null); setTargetAssetId(""); await invalidate(); },
     onError: error => toast.error(error.message),
   });
+  const stageKnowledgeVersion = trpc.enterpriseAssets.stageKnowledgeVersion.useMutation({
+    onSuccess: async () => {
+      toast.success("知识版本已进入岗位验证，尚未对员工生效");
+      setStageTarget(null);
+      setTargetKnowledgeBaseId("");
+      await invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const activateKnowledgeVersion = trpc.enterpriseAssets.activateKnowledgeVersion.useMutation({
+    onSuccess: async result => {
+      toast.success(result.releaseStatus === "validated_pending_effective" ? "验证完成，将按生效时间自动启用" : "知识版本已启用");
+      await invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const verifyKnowledgeVersion = trpc.enterpriseAssets.verifyKnowledgeVersion.useMutation({
+    onSuccess: async result => {
+      toast[result.status === "PASS" ? "success" : "error"](result.status === "PASS" ? "候选版本和财富经理标杆任务已通过" : "候选版本验证未通过，请查看检查结果");
+      await invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
 
   const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
-  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || submitReview.isPending || review.isPending || publish.isPending;
+  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || submitReview.isPending
+    || review.isPending || publish.isPending || stageKnowledgeVersion.isPending
+    || verifyKnowledgeVersion.isPending || activateKnowledgeVersion.isPending;
 
   const openReview = (candidate: Candidate) => {
     const suggested = { ...((candidate.suggestedMetadataJson || {}) as Record<string, unknown>) };
+    suggested.logicalAssetIds = Array.isArray(suggested.logicalAssetCandidates) ? suggested.logicalAssetCandidates : [];
     delete suggested.enterpriseId;
     delete suggested.suggestedDomain;
     delete suggested.logicalAssetCandidates;
@@ -225,6 +261,11 @@ export function EnterpriseAssetsPanel() {
                   {Array.isArray(suggestion.applicableRoles) && suggestion.applicableRoles.length > 0 && <div className="mt-1 text-xs text-muted-foreground">建议岗位：{suggestion.applicableRoles.map(String).join("、")}</div>}
                   {Array.isArray(suggestion.logicalAssetCandidates) && suggestion.logicalAssetCandidates.length > 0 && <div className="mt-1 text-xs text-muted-foreground">逻辑资产候选：{suggestion.logicalAssetCandidates.map(String).join("、")}</div>}
                   {candidate.targetAssetId && <div className="mt-1 text-xs text-emerald-700">Runtime 映射：{candidate.targetAssetType} / {candidate.targetAssetId}</div>}
+                  {candidate.assetType === "knowledge_document" && RELEASE_STATUS_LABELS[candidate.releaseStatus] && <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <Clock3 className="h-3 w-3" />{RELEASE_STATUS_LABELS[candidate.releaseStatus]}
+                    {candidate.runtimeDocument?.effectiveAt && candidate.releaseStatus === "validated_pending_effective" ? ` · ${new Date(candidate.runtimeDocument.effectiveAt).toLocaleString("zh-CN")} 生效` : ""}
+                  </div>}
+                  {candidate.validationStatus && <div className={`mt-1 text-xs ${candidate.validationStatus === "PASS" ? "text-emerald-700" : "text-red-600"}`}>候选级标杆任务：{candidate.validationStatus === "PASS" ? "已通过" : "未通过"}</div>}
                   {Array.isArray(impact.affectedTaskIds) && impact.affectedTaskIds.length > 0 && <div className="mt-1 text-xs text-amber-700">需重跑：{impact.affectedTaskIds.join("、")}</div>}
                   {diagnostics.length > 0 && <div className="mt-2 space-y-1 rounded border border-amber-200 bg-amber-50 px-2.5 py-2">
                     {diagnostics.slice(0, 3).map((diagnostic, index) => <div key={`${String(diagnostic.code)}-${index}`} className="flex items-start gap-1.5 text-xs text-amber-800"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><span>{String(diagnostic.message || diagnostic.code || "需要人工确认")}</span></div>)}
@@ -238,7 +279,15 @@ export function EnterpriseAssetsPanel() {
                     <Button size="sm" onClick={() => review.mutate({ candidateId: candidate.candidateId, decision: "approve" })}><Check className="mr-1.5 h-3.5 w-3.5" />通过</Button>
                     <Button variant="outline" size="sm" onClick={() => setRejectTarget(candidate)}><X className="mr-1.5 h-3.5 w-3.5" />退回</Button>
                   </>}
-                  {candidate.status === "approved" && <Button size="sm" onClick={() => { setPublishTarget(candidate); setTargetAssetId(""); }}><PackageCheck className="mr-1.5 h-3.5 w-3.5" />发布映射</Button>}
+                  {candidate.status === "approved" && candidate.assetType === "knowledge_document" && !candidate.targetAssetId && <Button size="sm" onClick={() => {
+                    setStageTarget(candidate);
+                    const role = Array.isArray((candidate.confirmedMetadataJson as { applicableRoles?: unknown } | null)?.applicableRoles)
+                      ? String((candidate.confirmedMetadataJson as { applicableRoles: unknown[] }).applicableRoles[0] || "") : "";
+                    setTargetKnowledgeBaseId(data?.knowledgeBases.find(base => base.roleTemplate === role)?.publicId || data?.knowledgeBases[0]?.publicId || "");
+                  }}><PackageCheck className="mr-1.5 h-3.5 w-3.5" />进入岗位验证</Button>}
+                  {candidate.status === "approved" && candidate.assetType === "knowledge_document" && candidate.targetAssetId && candidate.validationStatus !== "PASS" && <Button variant="outline" size="sm" disabled={busy} onClick={() => verifyKnowledgeVersion.mutate({ candidateId: candidate.candidateId })}><ShieldCheck className="mr-1.5 h-3.5 w-3.5" />运行标杆任务</Button>}
+                  {candidate.status === "approved" && candidate.assetType === "knowledge_document" && candidate.targetAssetId && candidate.validationStatus === "PASS" && <Button size="sm" disabled={busy} onClick={() => activateKnowledgeVersion.mutate({ candidateId: candidate.candidateId })}><Check className="mr-1.5 h-3.5 w-3.5" />按生效时间启用</Button>}
+                  {candidate.status === "approved" && candidate.assetType !== "knowledge_document" && <Button size="sm" onClick={() => { setPublishTarget(candidate); setTargetAssetId(""); }}><PackageCheck className="mr-1.5 h-3.5 w-3.5" />发布映射</Button>}
                 </div>
               </div>
             );
@@ -349,6 +398,14 @@ export function EnterpriseAssetsPanel() {
           <DialogHeader><DialogTitle>发布 Runtime 映射</DialogTitle><DialogDescription>必须绑定到已存在的 {publishTarget ? TARGET_BY_TYPE[publishTarget.assetType] : "Runtime 资产"}。发布会使受影响岗位包进入待重验状态。</DialogDescription></DialogHeader>
           <div><Label>目标资产 ID</Label><Input value={targetAssetId} onChange={e => setTargetAssetId(e.target.value)} placeholder="现有知识 publicId、MCP serverId、Skill ID 或岗位 ID" /></div>
           <DialogFooter><Button variant="outline" onClick={() => setPublishTarget(null)}>取消</Button><Button disabled={busy || !targetAssetId.trim()} onClick={() => publishTarget && publish.mutate({ candidateId: publishTarget.candidateId, targetAssetType: TARGET_BY_TYPE[publishTarget.assetType], targetAssetId: targetAssetId.trim() })}>确认发布</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(stageTarget)} onOpenChange={open => !open && setStageTarget(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>进入岗位验证</DialogTitle><DialogDescription>知识版本将以草稿进入现有知识库并触发受影响岗位重验；通过标杆任务前不会提供给员工。</DialogDescription></DialogHeader>
+          <div><Label>目标知识库</Label><Select value={targetKnowledgeBaseId} onValueChange={setTargetKnowledgeBaseId}><SelectTrigger><SelectValue placeholder="选择岗位或企业知识库" /></SelectTrigger><SelectContent>{(data?.knowledgeBases || []).map(base => <SelectItem key={base.publicId} value={base.publicId}>{base.name}{base.roleTemplate ? ` · ${base.roleTemplate}` : ""}</SelectItem>)}</SelectContent></Select></div>
+          <DialogFooter><Button variant="outline" onClick={() => setStageTarget(null)}>取消</Button><Button disabled={busy || !targetKnowledgeBaseId} onClick={() => stageTarget && stageKnowledgeVersion.mutate({ candidateId: stageTarget.candidateId, knowledgeBaseId: targetKnowledgeBaseId })}>确认进入验证</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

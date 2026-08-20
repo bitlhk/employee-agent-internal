@@ -162,6 +162,7 @@ export function buildWealthAllocationTaskContextPack(input: {
         assetId: input.result.policySource.sourceAssetId,
         version: input.result.policySource.versionLabel,
         contentHash: "",
+        effectiveAt: input.result.policySource.effectiveAt,
         ...(input.result.policySource.sourceBinding || {}),
       }] : [],
       eligibilityFingerprint: input.result.policySource.eligibilityFingerprint,

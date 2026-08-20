@@ -55,6 +55,7 @@ All flags default to `false`; disabling them restores the legacy paths without r
 - A resolved provider that returns no usable Context is not `READY`. Receipts use bounded reason codes: `NO_BINDING`, `BINDING_DISABLED`, `CAPABILITY_MISMATCH`, `AMBIGUOUS_BINDING`, `NOT_ELIGIBLE`, `SOURCE_UNAVAILABLE`, `NO_USABLE_CONTEXT`, and `STALE_ASSET`.
 - A task resolves Knowledge and Business Data from one in-memory Binding snapshot. The snapshot fingerprint is carried into resolution evidence so a concurrent Promote cannot silently mix source versions within one task.
 - Receipt entries retain logical asset ID, Binding ID, provider type, and a SHA-256 resource-reference fingerprint. Raw physical references do not enter model content or the Receipt.
+- `TaskContextPack` and the Receipt carry an Effective Context Snapshot containing only logical asset IDs, asset/version identifiers, business-data timestamps, and a fingerprint. It never contains retrieved正文 or physical provider addresses.
 - `Retrieved`, `Provided`, `Cited`, and `Applied` remain separate evidence semantics. A resolved Binding is not itself proof that content was retrieved or used.
 
 ## Deliberate Non-Goals

@@ -28,6 +28,16 @@ export type KnowledgeEligibilityResult = {
   excludedByReason: Record<string, number>;
 };
 
+function supersededDocumentIds(documents: KnowledgeDocumentRecord[]): Set<string> {
+  const eligibleIds = new Set(documents.map((document) => document.publicId));
+  const superseded = new Set<string>();
+  for (const document of documents) {
+    const previousId = String(document.supersedesDocumentId || "").trim();
+    if (previousId && eligibleIds.has(previousId)) superseded.add(previousId);
+  }
+  return superseded;
+}
+
 function configuredRoleTemplates(name: string): Set<string> {
   return new Set(String(process.env[name] || "")
     .split(",")
@@ -69,7 +79,7 @@ export function buildKnowledgeEligibility(input: {
   const now = input.now || new Date();
   const baseById = new Map(input.bases.map((base) => [base.id, base]));
   const excludedByReason: Record<string, number> = {};
-  const included = new Set<string>();
+  const eligibleDocuments: KnowledgeDocumentRecord[] = [];
   const exclude = (reason: string) => {
     excludedByReason[reason] = (excludedByReason[reason] || 0) + 1;
   };
@@ -114,6 +124,18 @@ export function buildKnowledgeEligibility(input: {
     }
     if (!/^doc_[A-Za-z0-9_-]{3,60}$/.test(document.publicId)) {
       exclude("invalid_document_id");
+      continue;
+    }
+    eligibleDocuments.push(document);
+  }
+
+  // A future replacement must not hide the current version. Only a replacement
+  // that passed every eligibility check can supersede its predecessor.
+  const superseded = supersededDocumentIds(eligibleDocuments);
+  const included = new Set<string>();
+  for (const document of eligibleDocuments) {
+    if (superseded.has(document.publicId)) {
+      exclude("superseded");
       continue;
     }
     included.add(document.publicId);

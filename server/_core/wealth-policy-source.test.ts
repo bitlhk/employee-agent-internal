@@ -78,6 +78,17 @@ const historical = document({
   expiresAt: "2026-06-30T23:59:59.000Z",
 });
 
+const scheduled = document({
+  id: 33,
+  publicId: "doc_policy_v33",
+  name: "15-财富产品适当性销售管理细则（V3.3）.md",
+  sourceAssetId: "wm-suitability-policy-v33",
+  documentSeriesId: "wealth-suitability-policy",
+  supersedesDocumentId: "doc_policy_v22",
+  versionLabel: "V3.3",
+  effectiveAt: "2026-09-01T00:00:00.000Z",
+});
+
 describe("wealth policy source", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -130,6 +141,23 @@ describe("wealth policy source", () => {
     expect(result.selected).toBeNull();
     expect(result.resolutionReasonCode).toBe("STALE_ASSET");
     expect(result.userMessage).toContain("暂不能据此形成正式业务判断");
+  });
+
+  it("keeps V2.2 before the effective date and selects V3.3 when it becomes effective", async () => {
+    const seriesCurrent = { ...current, documentSeriesId: "wealth-suitability-policy" };
+    mocks.listKnowledgeDocumentsForBases.mockResolvedValue([seriesCurrent, scheduled]);
+    const before = await resolveWealthPolicyBasis({
+      userId: 7, groupId: 3, actorRole: "user", roleTemplate: "wealth-manager",
+      now: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    expect(before.selected).toMatchObject({ documentId: "doc_policy_v22", versionLabel: "V2.2" });
+
+    const after = await resolveWealthPolicyBasis({
+      userId: 7, groupId: 3, actorRole: "user", roleTemplate: "wealth-manager",
+      now: new Date("2026-09-01T00:00:00.000Z"),
+    });
+    expect(after.selected).toMatchObject({ documentId: "doc_policy_v33", versionLabel: "V3.3" });
+    expect(after.governance).toMatchObject({ historicalVersionFiltered: true, filteredForValidity: 1 });
   });
 
   it("restricts retrieval to an eligible bound LlamaIndex base and emits ContextItemV1", async () => {

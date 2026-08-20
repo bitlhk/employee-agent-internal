@@ -21,6 +21,7 @@ export const enterpriseAssetMetadataSchema = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
   documentSeriesId: z.string().min(1).max(128).nullable().optional(),
   supersedes: z.string().min(1).max(128).nullable().optional(),
+  logicalAssetIds: z.array(z.string().min(1).max(128)).max(16).default([]),
   externalProcessingAllowed: z.boolean().default(false),
   relatedTasks: z.array(z.string().min(1).max(64)).max(64).default([]),
   policyCandidates: z.array(z.string().min(1).max(128)).max(64).default([]),
@@ -96,6 +97,7 @@ export function analyzeEnterpriseAssetImpact(input: {
       organizations: [...input.metadata.applicableOrganizations].sort(),
       tasks: [...input.metadata.relatedTasks].sort(),
       policies: [...input.metadata.policyCandidates].sort(),
+      logicalAssets: [...(input.metadata.logicalAssetIds || [])].sort(),
     })).digest("hex"),
   };
 }

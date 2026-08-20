@@ -1,7 +1,8 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
   enterpriseAssetCandidates,
   enterpriseAssetSources,
+  knowledgeDocuments,
   rolePackReleases,
   type EnterpriseAssetCandidate,
   type InsertEnterpriseAssetCandidate,
@@ -134,6 +135,77 @@ export async function staleRolePackReleases(rolePackIds: string[]) {
     eq(rolePackReleases.status, "verified"),
   ));
   return Number((result as any)[0]?.affectedRows || 0);
+}
+
+export async function stageEnterpriseKnowledgeCandidate(input: {
+  candidate: EnterpriseAssetCandidate;
+  documentId: string;
+  impactAnalysisJson: Record<string, unknown>;
+  affectedRolePackIds: string[];
+  actor: string;
+}) {
+  const db = await database();
+  return db.transaction(async tx => {
+    await tx.update(enterpriseAssetCandidates).set({
+      targetAssetType: "knowledge_document",
+      targetAssetId: input.documentId,
+      impactAnalysisJson: input.impactAnalysisJson,
+      updatedBy: input.actor,
+    }).where(and(
+      eq(enterpriseAssetCandidates.candidateId, input.candidate.candidateId),
+      eq(enterpriseAssetCandidates.status, "approved"),
+      isNull(enterpriseAssetCandidates.targetAssetId),
+    ));
+    if (input.affectedRolePackIds.length) {
+      await tx.update(rolePackReleases).set({ status: "stale" }).where(and(
+        inArray(rolePackReleases.rolePackId, input.affectedRolePackIds),
+        eq(rolePackReleases.status, "verified"),
+      ));
+    }
+    const [staged] = await tx.select().from(enterpriseAssetCandidates)
+      .where(eq(enterpriseAssetCandidates.candidateId, input.candidate.candidateId)).limit(1);
+    if (!staged || staged.status !== "approved" || staged.targetAssetId !== input.documentId) {
+      throw new Error("Asset staging state changed; retry publication");
+    }
+    return staged;
+  });
+}
+
+export async function activateEnterpriseKnowledgeCandidate(input: {
+  candidate: EnterpriseAssetCandidate;
+  documentId: string;
+  actor: string;
+}) {
+  const db = await database();
+  return db.transaction(async tx => {
+    await tx.update(knowledgeDocuments).set({ lifecycle: "active" }).where(and(
+      eq(knowledgeDocuments.publicId, input.documentId),
+      eq(knowledgeDocuments.lifecycle, "draft"),
+    ));
+    await tx.update(enterpriseAssetCandidates).set({ status: "stale", updatedBy: input.actor }).where(and(
+      eq(enterpriseAssetCandidates.enterpriseAssetId, input.candidate.enterpriseAssetId),
+      eq(enterpriseAssetCandidates.status, "published"),
+      ne(enterpriseAssetCandidates.candidateId, input.candidate.candidateId),
+    ));
+    await tx.update(enterpriseAssetCandidates).set({
+      status: "published",
+      publishedBy: input.actor,
+      publishedAt: new Date(),
+      updatedBy: input.actor,
+    }).where(and(
+      eq(enterpriseAssetCandidates.candidateId, input.candidate.candidateId),
+      eq(enterpriseAssetCandidates.status, "approved"),
+      eq(enterpriseAssetCandidates.targetAssetId, input.documentId),
+    ));
+    const [document] = await tx.select().from(knowledgeDocuments)
+      .where(eq(knowledgeDocuments.publicId, input.documentId)).limit(1);
+    const [published] = await tx.select().from(enterpriseAssetCandidates)
+      .where(eq(enterpriseAssetCandidates.candidateId, input.candidate.candidateId)).limit(1);
+    if (!document || document.lifecycle !== "active" || !published || published.status !== "published") {
+      throw new Error("Knowledge activation state changed; retry activation");
+    }
+    return published;
+  });
 }
 
 export async function publishEnterpriseAssetCandidate(input: {
