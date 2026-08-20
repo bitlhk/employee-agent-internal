@@ -103,7 +103,7 @@ curl -fsSL https://linggan.top/install.sh | bash
 
 - 安装 Node.js 22、Python、pnpm、PM2、MySQL 和 Docker
 - 从 AtomGit 拉取 `linggan_ai/employee-agent`
-- 安装基于官方 0.2.3 的固定版 EA JiuwenSwarm Runtime
+- 安装基于官方 0.2.3、由灵感维护 Patch 的固定版 EA JiuwenSwarm Runtime
 - 生成 `.env`
 - 创建数据库、执行迁移并生成管理员
 - 创建独立的本机知识检索环境与 PM2 进程
@@ -120,6 +120,10 @@ http://127.0.0.1:5180
 ```
 
 确需临时直连时可显式设置 `APP_BIND_IP=0.0.0.0`，但不要在公网生产环境绕过 HTTPS 反向代理。
+
+该一键脚本默认部署单机增强版 Runtime，适合开发、体验和中小规模部署。同一套 EA
+代码也支持通过 `EA_ENTERPRISE_RUNTIME_ENABLED=true` 接入企业 JiuwenSwarm 集群；集群的
+K3s、Gateway、Manager、AgentServer、共享存储和网络仍应按企业部署规范独立交付。
 
 ## 可审计安装
 
