@@ -18,6 +18,9 @@ import { getClawByAdoptId } from "../db/claw";
 import {
   buildEnterpriseRuntimeBinding,
   getRuntimeAgentBinding,
+  listReadyRuntimeAgentBindings,
+  markRuntimeAgentAssetsDirty,
+  markRuntimeAgentAssetsPublished,
   updateRuntimeAgentBindingStatus,
   upsertRuntimeAgentBinding,
 } from "../db/runtime-agent-bindings";
@@ -25,6 +28,7 @@ import { recordAuditBestEffort, auditRequest } from "./audit-events";
 import { APP_ROOT, resolveRuntimeWorkspaceByIds } from "./helpers";
 import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
 import { resolveExistingWorkspacePath } from "./file-path-security";
+import { logError, logInfo, logWarn } from "./observability/logger";
 
 export const ENTERPRISE_RUNTIME_ASSET_AUDIENCE = "urn:ea:runtime-assets";
 export const ENTERPRISE_RUNTIME_ATTACHMENT_AUDIENCE = "urn:ea:runtime-attachments";
@@ -252,12 +256,42 @@ function autoBindingEnabled(): boolean {
   return String(process.env.EA_ENTERPRISE_RUNTIME_ENABLED || "").trim().toLowerCase() === "true";
 }
 
-export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: string): Promise<RuntimeAgentBinding | null> {
+function eventDrivenAssetsEnabled(): boolean {
+  return String(process.env.EA_ENTERPRISE_RUNTIME_EVENT_DRIVEN_ASSETS || "true").trim().toLowerCase() !== "false";
+}
+
+export function enterpriseRuntimeAssetsDirty(binding: Pick<
+  RuntimeAgentBinding,
+  "desiredAssetRevision" | "publishedAssetRevision"
+>): boolean {
+  const desired = Math.max(1, Number(binding.desiredAssetRevision || 1));
+  const published = Math.max(1, Number(binding.publishedAssetRevision || 1));
+  return desired > published;
+}
+
+function readyBundleIsReusable(binding: RuntimeAgentBinding | null): binding is RuntimeAgentBinding {
+  return Boolean(
+    binding
+    && binding.status === "ready"
+    && String(binding.assetSetFingerprint || "").trim()
+    && !enterpriseRuntimeAssetsDirty(binding)
+    && enterpriseRuntimeAssetBundleExists(binding),
+  );
+}
+
+export async function ensureEnterpriseRuntimeBindingForAdoption(
+  adoptionId: string,
+  options: { forceVerify?: boolean } = {},
+): Promise<RuntimeAgentBinding | null> {
   if (!autoBindingEnabled()) return null;
   return withPublishLock(adoptionId, async () => {
+    const previous = await getRuntimeAgentBinding(adoptionId).catch(() => null);
+    if (eventDrivenAssetsEnabled() && !options.forceVerify && readyBundleIsReusable(previous)) {
+      return previous;
+    }
     const adoption = await getClawByAdoptId(adoptionId);
     if (!adoption || !["active", "expiring"].includes(String(adoption.status || ""))) return null;
-    const previous = await getRuntimeAgentBinding(adoptionId).catch(() => null);
+    const targetRevision = Math.max(1, Number(previous?.desiredAssetRevision || 1));
     const draft = buildEnterpriseRuntimeBinding({
       adoptionId: adoption.adoptId,
       agentId: adoption.agentId,
@@ -272,9 +306,24 @@ export async function ensureEnterpriseRuntimeBindingForAdoption(adoptionId: stri
         workspaceDir: resolveRuntimeWorkspaceByIds(adoption.adoptId, adoption.agentId),
         binding: draft,
       });
+      if (
+        previous
+        && previous.status === "ready"
+        && previous.runtimeBotId === draft.runtimeBotId
+        && previous.assetSetFingerprint === bundle.fingerprint
+        && enterpriseRuntimeAssetBundleExists(previous)
+      ) {
+        if (enterpriseRuntimeAssetsDirty(previous)) {
+          return await markRuntimeAgentAssetsPublished({
+            adoptionId,
+            publishedAssetRevision: targetRevision,
+          }) || previous;
+        }
+        return previous;
+      }
       const binding = await upsertRuntimeAgentBinding(
         { ...draft, assetSetFingerprint: bundle.fingerprint },
-        { status: "ready" },
+        { status: "ready", publishedAssetRevision: targetRevision },
       );
       await recordAuditBestEffort({
         action: "runtime.enterprise.asset_publish_succeeded",
@@ -333,6 +382,7 @@ export async function refreshEnterpriseRuntimeAssetsIfBound(adoptionId: string):
   const binding = await getRuntimeAgentBinding(adoptionId).catch(() => null);
   if (!binding || binding.status === "disabled") return null;
   freshnessChecks.delete(adoptionId);
+  if (eventDrivenAssetsEnabled()) await markRuntimeAgentAssetsDirty(adoptionId);
   return ensureEnterpriseRuntimeBindingForAdoption(adoptionId);
 }
 
@@ -344,6 +394,7 @@ function freshnessTtlMs(): number {
 }
 
 export function ensureEnterpriseRuntimeAssetsCurrent(adoptionId: string): Promise<RuntimeAgentBinding | null> {
+  if (eventDrivenAssetsEnabled()) return ensureEnterpriseRuntimeBindingForAdoption(adoptionId);
   const now = Date.now();
   const cached = freshnessChecks.get(adoptionId);
   if (cached && cached.expiresAt > now) return cached.promise;
@@ -351,6 +402,56 @@ export function ensureEnterpriseRuntimeAssetsCurrent(adoptionId: string): Promis
   freshnessChecks.set(adoptionId, { expiresAt: now + freshnessTtlMs(), promise });
   promise.catch(() => freshnessChecks.delete(adoptionId));
   return promise;
+}
+
+function selfHealIntervalMs(): number {
+  const configured = Number(process.env.EA_ENTERPRISE_RUNTIME_ASSET_SELF_HEAL_INTERVAL_MS || 300_000);
+  return Number.isFinite(configured) && configured >= 60_000 && configured <= 86_400_000
+    ? configured
+    : 300_000;
+}
+
+export async function runEnterpriseRuntimeAssetSelfHeal(): Promise<{ checked: number; failed: number }> {
+  if (!autoBindingEnabled() || !eventDrivenAssetsEnabled()) return { checked: 0, failed: 0 };
+  const bindings = await listReadyRuntimeAgentBindings();
+  let checked = 0;
+  let failed = 0;
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < bindings.length) {
+      const binding = bindings[cursor++];
+      checked += 1;
+      const current = await ensureEnterpriseRuntimeBindingForAdoption(binding.adoptionId, { forceVerify: true })
+        .catch(() => null);
+      if (!current) failed += 1;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(2, bindings.length) }, () => worker()));
+  return { checked, failed };
+}
+
+export function startEnterpriseRuntimeAssetSelfHeal(): () => void {
+  if (!autoBindingEnabled() || !eventDrivenAssetsEnabled()) return () => {};
+  let running = false;
+  const run = async (): Promise<void> => {
+    if (running) return;
+    running = true;
+    try {
+      const summary = await runEnterpriseRuntimeAssetSelfHeal();
+      if (summary.checked > 0) {
+        const fields = { checked: summary.checked, failed: summary.failed };
+        if (summary.failed > 0) logWarn("runtime_assets.self_heal_partial", fields);
+        else logInfo("runtime_assets.self_heal_completed", fields);
+      }
+    } catch (error) {
+      logError("runtime_assets.self_heal_failed", error);
+    } finally {
+      running = false;
+    }
+  };
+  const timer = setInterval(() => void run(), selfHealIntervalMs());
+  timer.unref();
+  return () => clearInterval(timer);
 }
 
 export function clearEnterpriseRuntimeAssetFreshnessCache(adoptionId?: string): void {

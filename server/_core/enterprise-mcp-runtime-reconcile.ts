@@ -7,6 +7,7 @@ import {
 import { listClawAdoptionsAdmin } from "../db/claw";
 import { resolveRuntimeAgentId, resolveRuntimeWorkspaceByIds } from "./helpers";
 import { ensureJiuwenSwarmWorkspacePermission } from "./jiuwenswarm-permissions";
+import { refreshEnterpriseRuntimeAssetsIfBound } from "./enterprise-runtime-assets";
 import { refreshJiuwenRuntimeCapabilities } from "./jiuwenswarm-runtime-refresh";
 import { writeJiuwenSwarmRoleScopeManifest } from "./jiuwenswarm-role-scope";
 import { resolveAgentRoleTemplate } from "./role-templates";
@@ -77,8 +78,12 @@ export async function reconcileEnterpriseMcpRuntimeScopes(input: {
           activeMcpServerIds: selection.enabledServerIds,
         });
         ensureJiuwenSwarmWorkspacePermission(workspaceDir);
-        if (result.changed) summary.updated += 1;
-        if (result.changed || input.forceRefresh) {
+        const assetChanged = result.changed || result.identityChanged || result.userChanged;
+        if (assetChanged) {
+          summary.updated += 1;
+          await refreshEnterpriseRuntimeAssetsIfBound(adoptId);
+        }
+        if (assetChanged || input.forceRefresh) {
           await refreshJiuwenRuntimeCapabilities(adoptId);
           summary.refreshed += 1;
         }

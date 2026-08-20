@@ -3,7 +3,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildEnterpriseRuntimeAssetBundle } from "./enterprise-runtime-assets";
+import {
+  buildEnterpriseRuntimeAssetBundle,
+  enterpriseRuntimeAssetsDirty,
+} from "./enterprise-runtime-assets";
 
 const temporaryDirectories: string[] = [];
 
@@ -30,6 +33,12 @@ afterEach(() => {
 });
 
 describe("enterprise runtime asset bundles", () => {
+  it("treats only a newer desired revision as dirty", () => {
+    expect(enterpriseRuntimeAssetsDirty({ desiredAssetRevision: 1, publishedAssetRevision: 1 })).toBe(false);
+    expect(enterpriseRuntimeAssetsDirty({ desiredAssetRevision: 2, publishedAssetRevision: 1 })).toBe(true);
+    expect(enterpriseRuntimeAssetsDirty({ desiredAssetRevision: 2, publishedAssetRevision: 2 })).toBe(false);
+  });
+
   it("builds an immutable per-adoption bundle with checksums and no MCP credentials", () => {
     const { workspaceDir, outputRoot } = fixture();
     const first = buildEnterpriseRuntimeAssetBundle({

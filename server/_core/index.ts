@@ -69,7 +69,10 @@ import { registerPlatformToolsMcpRoutes } from "./platform-tools-mcp";
 import { registerCustomMcpRoutes } from "./custom-mcp";
 import { registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
 import { registerRoleMcpGatewayRoutes } from "./role-mcp-gateway";
-import { registerEnterpriseRuntimeAssetRoutes } from "./enterprise-runtime-assets";
+import {
+  registerEnterpriseRuntimeAssetRoutes,
+  startEnterpriseRuntimeAssetSelfHeal,
+} from "./enterprise-runtime-assets";
 import { reconcileEnterpriseMcpRuntimeScopes } from "./enterprise-mcp-runtime-reconcile";
 import { registerSkillConfigRoutes } from "./claw-skill-config";
 import { registerToolsPolicyRoutes } from "./claw-tools-policy";
@@ -895,6 +898,7 @@ async function startServer() {
           await startManagedWorkerAsync("agent_tasks", startAgentTaskRuntime);
           startManagedWorker("agent_memory", startAgentMemoryRuntime);
           startManagedWorker("knowledge_recovery", startKnowledgeIndexRecovery);
+          startManagedWorker("runtime_assets", startEnterpriseRuntimeAssetSelfHeal);
           void reconcileEnterpriseMcpRuntimeScopes()
             .then((summary) => logInfo("enterprise_mcp.runtime_scopes_reconciled", summary))
             .catch((error) => logError("enterprise_mcp.runtime_scopes_failed", error));

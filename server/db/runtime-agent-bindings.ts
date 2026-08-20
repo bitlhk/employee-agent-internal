@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { runtimeAgentBindings, type RuntimeAgentBinding } from "../../drizzle/schema";
 import { getDb } from "./connection";
 
@@ -96,14 +96,21 @@ export async function getRuntimeAgentBinding(adoptionId: string): Promise<Runtim
 
 export async function upsertRuntimeAgentBinding(
   draft: EnterpriseRuntimeBindingDraft,
-  options: { status?: "pending" | "ready" } = {},
+  options: {
+    status?: "pending" | "ready";
+    publishedAssetRevision?: number;
+  } = {},
 ): Promise<RuntimeAgentBinding> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
   const status = options.status || "pending";
   const validatedAt = status === "ready" ? new Date() : null;
+  const publishedAssetRevision = Math.max(1, Math.floor(options.publishedAssetRevision || 1));
   await database.insert(runtimeAgentBindings).values({
     ...draft,
+    desiredAssetRevision: publishedAssetRevision,
+    publishedAssetRevision,
+    assetDirtyAt: null,
     status,
     validatedAt,
   }).onDuplicateKeyUpdate({
@@ -118,6 +125,11 @@ export async function upsertRuntimeAgentBinding(
       runtimeAgentId: draft.runtimeAgentId,
       workspaceKey: draft.workspaceKey,
       assetSetFingerprint: draft.assetSetFingerprint,
+      publishedAssetRevision,
+      assetDirtyAt: sql`CASE
+        WHEN ${runtimeAgentBindings.desiredAssetRevision} <= ${publishedAssetRevision} THEN NULL
+        ELSE ${runtimeAgentBindings.assetDirtyAt}
+      END`,
       status,
       validatedAt,
       lastError: null,
@@ -126,6 +138,43 @@ export async function upsertRuntimeAgentBinding(
   const binding = await getRuntimeAgentBinding(draft.adoptionId);
   if (!binding) throw new Error("Runtime binding was not persisted");
   return binding;
+}
+
+export async function markRuntimeAgentAssetsDirty(adoptionId: string): Promise<RuntimeAgentBinding | null> {
+  const database = await getDb();
+  if (!database) return null;
+  await database.update(runtimeAgentBindings).set({
+    desiredAssetRevision: sql`${runtimeAgentBindings.desiredAssetRevision} + 1`,
+    assetDirtyAt: new Date(),
+  }).where(eq(runtimeAgentBindings.adoptionId, adoptionId));
+  return getRuntimeAgentBinding(adoptionId);
+}
+
+export async function markRuntimeAgentAssetsPublished(input: {
+  adoptionId: string;
+  publishedAssetRevision: number;
+}): Promise<RuntimeAgentBinding | null> {
+  const database = await getDb();
+  if (!database) return null;
+  const revision = Math.max(1, Math.floor(input.publishedAssetRevision));
+  await database.update(runtimeAgentBindings).set({
+    publishedAssetRevision: sql`GREATEST(${runtimeAgentBindings.publishedAssetRevision}, ${revision})`,
+    assetDirtyAt: sql`CASE
+      WHEN ${runtimeAgentBindings.desiredAssetRevision} <= ${revision} THEN NULL
+      ELSE ${runtimeAgentBindings.assetDirtyAt}
+    END`,
+  }).where(eq(runtimeAgentBindings.adoptionId, input.adoptionId));
+  return getRuntimeAgentBinding(input.adoptionId);
+}
+
+export async function listReadyRuntimeAgentBindings(limit = 1_000): Promise<RuntimeAgentBinding[]> {
+  const database = await getDb();
+  if (!database) return [];
+  return database
+    .select()
+    .from(runtimeAgentBindings)
+    .where(eq(runtimeAgentBindings.status, "ready"))
+    .limit(Math.max(1, Math.min(5_000, Math.floor(limit))));
 }
 
 export async function updateRuntimeAgentBindingStatus(input: {

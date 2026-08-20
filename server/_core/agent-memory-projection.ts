@@ -70,14 +70,16 @@ export function writeAgentMemoryProjection(input: {
   mode: AgentMemoryMode;
   memories: AgentMemoryRecord[];
   syntheses: AgentMemorySynthesisRecord[];
-}): string {
+}): { userPath: string; changed: boolean } {
   const userPath = path.join(input.workspaceDir, "USER.md");
   const identityPath = path.join(input.workspaceDir, "IDENTITY.md");
   const existingUser = existsSync(userPath) ? readFileSync(userPath, "utf8") : "# 用户偏好\n";
   const existingIdentity = existsSync(identityPath) ? readFileSync(identityPath, "utf8") : "# 身份\n";
   const nextUser = replaceManagedBlock(existingUser, MANAGED_BLOCK_START, MANAGED_BLOCK_END, renderManagedMemoryMarkdown(input.memories, input.syntheses));
   const nextIdentity = replaceManagedBlock(existingIdentity, POLICY_BLOCK_START, POLICY_BLOCK_END, memoryPolicyMarkdown(input.mode));
-  if (nextUser !== existingUser) atomicWrite(userPath, nextUser);
-  if (nextIdentity !== existingIdentity) atomicWrite(identityPath, nextIdentity);
-  return userPath;
+  const userChanged = nextUser !== existingUser;
+  const identityChanged = nextIdentity !== existingIdentity;
+  if (userChanged) atomicWrite(userPath, nextUser);
+  if (identityChanged) atomicWrite(identityPath, nextIdentity);
+  return { userPath, changed: userChanged || identityChanged };
 }

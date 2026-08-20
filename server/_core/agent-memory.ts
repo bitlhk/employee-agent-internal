@@ -317,12 +317,16 @@ export async function projectAgentMemories(input: {
         adoptId: input.adoptId,
         sourceSignature,
       });
-  const userPath = writeAgentMemoryProjection({
+  const projection = writeAgentMemoryProjection({
     workspaceDir: jiuwenClawWorkspaceDir(input.adoptId, input.dbAgentId), mode,
     memories: selectCoreAgentMemories(memories),
     syntheses: syntheses.filter((item) => item.slot === "profile").slice(0, 3),
   });
-  return { activeCount: memories.length, userPath };
+  if (projection.changed) {
+    const { refreshEnterpriseRuntimeAssetsIfBound } = await import("./enterprise-runtime-assets");
+    await refreshEnterpriseRuntimeAssetsIfBound(input.adoptId).catch(() => null);
+  }
+  return { activeCount: memories.length, userPath: projection.userPath };
 }
 
 async function projectByAdoptId(adoptId: string): Promise<void> {

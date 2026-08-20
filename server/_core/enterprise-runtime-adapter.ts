@@ -8,6 +8,7 @@ import {
   ensureEnterpriseRuntimeAssetsCurrent,
   ensureEnterpriseRuntimeBindingForAdoption,
   enterpriseRuntimeAssetBundleExists,
+  enterpriseRuntimeAssetsDirty,
 } from "./enterprise-runtime-assets";
 import type { JiuwenInteractionAnswer, JiuwenSelectedSkillMetadata } from "./jiuwenclaw-bridge";
 
@@ -195,6 +196,7 @@ export async function resolveEnterpriseRuntimeRoute(
     binding?.status === "ready"
     && String(binding.assetSetFingerprint || "").trim()
     && bundleExists(binding)
+    && enterpriseRuntimeAssetsDirty(binding)
   ) {
     const current = await (dependencies.ensureCurrent || ensureEnterpriseRuntimeAssetsCurrent)(adoptionId)
       .catch(() => null);

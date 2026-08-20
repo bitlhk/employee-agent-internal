@@ -31,8 +31,11 @@ function binding(overrides: Partial<RuntimeAgentBinding> = {}): RuntimeAgentBind
     runtimeAgentId: "ea_user_abc",
     workspaceKey: "workspace_abc",
     assetSetFingerprint: "a".repeat(64),
+    desiredAssetRevision: 1,
+    publishedAssetRevision: 1,
+    assetDirtyAt: null,
+    bindingVersion: 1,
     status: "ready",
-    version: 1,
     validatedAt: new Date("2026-08-14T00:00:00Z"),
     lastError: null,
     createdAt: new Date("2026-08-14T00:00:00Z"),
@@ -69,10 +72,11 @@ describe("enterprise runtime adapter", () => {
   it("selects only a ready enterprise binding with a valid gateway", async () => {
     process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
     process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "wss://runtime.example.test/ws";
+    const ensureCurrent = vi.fn().mockResolvedValue(binding());
     const selected = await resolveEnterpriseRuntimeRoute("lgj-test", {
       getBinding: vi.fn().mockResolvedValue(binding()),
       bundleExists: vi.fn().mockReturnValue(true),
-      ensureCurrent: vi.fn().mockResolvedValue(binding()),
+      ensureCurrent,
     });
 
     expect(selected.target).toBe("enterprise");
@@ -80,6 +84,31 @@ describe("enterprise runtime adapter", () => {
       expect(selected.route.binding.runtimeUserId).toBe("ea_user_abc");
       expect(selected.route.wsUrl).toBe("wss://runtime.example.test/ws");
     }
+    expect(ensureCurrent).not.toHaveBeenCalled();
+  });
+
+  it("publishes a dirty enterprise asset revision before routing", async () => {
+    process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
+    process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "wss://runtime.example.test/ws";
+    const dirty = binding({
+      desiredAssetRevision: 2,
+      publishedAssetRevision: 1,
+      assetDirtyAt: new Date("2026-08-14T01:00:00Z"),
+    });
+    const current = binding({ desiredAssetRevision: 2, publishedAssetRevision: 2 });
+    const ensureCurrent = vi.fn().mockResolvedValue(current);
+
+    const selected = await resolveEnterpriseRuntimeRoute("lgj-test", {
+      getBinding: vi.fn().mockResolvedValue(dirty),
+      bundleExists: vi.fn().mockReturnValue(true),
+      ensureCurrent,
+    });
+
+    expect(ensureCurrent).toHaveBeenCalledWith("lgj-test");
+    expect(selected).toMatchObject({
+      target: "enterprise",
+      route: { binding: { desiredAssetRevision: 2, publishedAssetRevision: 2 } },
+    });
   });
 
   it("fails back before execution for a pending binding", async () => {

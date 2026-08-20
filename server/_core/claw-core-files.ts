@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from "fs
 import {
   isJiuwenClawAdoptId, requireClawOwner, resolveClawWorkspace, computeEtag,
 } from "./helpers";
+import { refreshEnterpriseRuntimeAssetsIfBound } from "./enterprise-runtime-assets";
 
 export function registerCoreFileRoutes(app: express.Express) {
 
@@ -102,6 +103,9 @@ export function registerCoreFileRoutes(app: express.Express) {
 
       mkdirSync(workspace, { recursive: true });
       writeFileSync(fp, content, "utf8");
+      if (content !== current && (name === "IDENTITY.md" || name === "USER.md")) {
+        await refreshEnterpriseRuntimeAssetsIfBound(adoptId).catch(() => null);
+      }
       const updatedAt = statSync(fp).mtime.toISOString();
       const nextEtag = computeEtag(content);
       return res.json({ ok: true, adoptId, name, updatedAt, etag: nextEtag });

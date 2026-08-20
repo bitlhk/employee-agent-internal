@@ -321,6 +321,7 @@ export type BackgroundWorkerName =
   | "agent_memory"
   | "agent_tasks"
   | "knowledge_recovery"
+  | "runtime_assets"
   | "audit_dlq"
   | "tool_audit"
   | "public_health"
