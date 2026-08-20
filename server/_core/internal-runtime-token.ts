@@ -53,12 +53,18 @@ function adoptId(value: unknown): string {
   return /^lgj-[A-Za-z0-9_-]{3,60}$/.test(normalized) ? normalized : "";
 }
 
-export function internalMcpAudience(pathname: string): string {
+export function optionalInternalMcpAudience(pathname: string): string | null {
   const path = String(pathname || "").replace(/\?.*$/, "").replace(/\/$/, "");
   if (path.endsWith("/platform-tools/mcp")) return "urn:ea:internal-mcp:platform-tools";
   if (path.endsWith("/custom-mcp/mcp")) return "urn:ea:internal-mcp:custom-mcp";
   if (path.endsWith("/enterprise-mcp/mcp")) return "urn:ea:internal-mcp:enterprise-mcp";
   if (path.endsWith("/role-mcp/mcp")) return "urn:ea:internal-mcp:role-mcp";
+  return null;
+}
+
+export function internalMcpAudience(pathname: string): string {
+  const audience = optionalInternalMcpAudience(pathname);
+  if (audience) return audience;
   throw new Error("Unsupported internal MCP audience path");
 }
 

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   internalMcpAudience,
   issueInternalRuntimeToken,
+  optionalInternalMcpAudience,
   verifyInternalRuntimeToken,
 } from "./internal-runtime-token";
 
@@ -21,6 +22,11 @@ describe("internal runtime tokens", () => {
   it("maps the role MCP gateway to its own audience", () => {
     expect(internalMcpAudience("/api/internal/role-mcp/mcp"))
       .toBe("urn:ea:internal-mcp:role-mcp");
+  });
+
+  it("leaves standalone loopback MCP endpoints outside the EA gateway audience namespace", () => {
+    expect(optionalInternalMcpAudience("/mcp")).toBeNull();
+    expect(() => internalMcpAudience("/mcp")).toThrow(/Unsupported internal MCP audience path/);
   });
 
   it("binds runtime, Agent, adoption, audience, expiry, and jti", async () => {
