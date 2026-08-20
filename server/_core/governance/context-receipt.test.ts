@@ -32,6 +32,23 @@ function envelope(taskId: "WM-GT-01" | "WM-GT-02" | "WM-GT-03") {
   return buildTaskExecutionEnvelope({
     principal,
     context: buildTaskContextPack({
+      resolution: {
+        schema: "ea.context-resolution-evidence.v1",
+        planId: `wealth.${taskId}`,
+        planVersion: "1",
+        taskId,
+        status: "READY",
+        needs: [{
+          logicalAssetId: "current_wealth_policy",
+          contextType: "knowledge",
+          requiredness: "required",
+          resolutionStatus: "resolved",
+          bindingId: "ctxb-policy",
+          providerType: "llamaindex",
+          resourceRefFingerprint: "9".repeat(64),
+        }],
+        resolutionFingerprint: "8".repeat(64),
+      },
       knowledge: {
         selectedAssets: [{ assetId: "policy-current", version: "V2.2", contentHash: "b".repeat(64) }],
         eligibilityFingerprint: "c".repeat(64),
@@ -79,6 +96,11 @@ describe("Context Receipt V1", () => {
     expect(receipt.taskId).toBe(taskId);
     expect(receipt.provided.knowledge[0]).toMatchObject({ label: "现行制度 V2.2", version: "V2.2" });
     expect(receipt.applied.policyDecisions[0].policyCode).toBe("EA_KNOWLEDGE_ELIGIBILITY_V1");
+    expect(receipt.resolution?.needs[0]).toMatchObject({
+      logicalAssetId: "current_wealth_policy",
+      bindingId: "ctxb-policy",
+    });
+    expect(JSON.stringify(receipt)).not.toContain("kb://");
     expect(receipt.receiptFingerprint).toHaveLength(64);
     expect(Object.isFrozen(receipt)).toBe(true);
   });

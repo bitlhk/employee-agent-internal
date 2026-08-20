@@ -1,3 +1,5 @@
+import type { ContextResolutionEvidenceV1 } from "./context-resolution";
+
 export const CONTEXT_RECEIPT_SCHEMA = "ea.context-receipt.v1" as const;
 
 export type ContextReceiptReadiness = {
@@ -23,12 +25,17 @@ export type ContextReceiptV1 = {
   envelopeId?: string;
   correlationId?: string;
   principalFingerprint: string;
+  resolution?: ContextResolutionEvidenceV1;
   provided: {
     knowledge: Array<{
       assetId: string;
       label: string;
       version: string;
       contentHash: string;
+      logicalAssetId?: string;
+      bindingId?: string;
+      providerType?: "llamaindex" | "mcp" | "api";
+      resourceRefFingerprint?: string;
     }>;
     businessData: Array<{
       sourceSystem: string;
@@ -36,6 +43,10 @@ export type ContextReceiptV1 = {
       entityRef: string;
       asOf: string;
       resultFingerprint: string;
+      logicalAssetId?: string;
+      bindingId?: string;
+      providerType?: "llamaindex" | "mcp" | "api";
+      resourceRefFingerprint?: string;
     }>;
     memory: Array<{
       memoryId: string;

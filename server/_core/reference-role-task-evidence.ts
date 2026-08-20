@@ -1,4 +1,5 @@
 import type { ContextReceiptV1 } from "../../shared/context-receipt";
+import type { ContextResolutionEvidenceV1 } from "../../shared/context-resolution";
 import { attachContextReceipt, buildContextReceipt } from "./governance/context-receipt";
 import { evaluateTaskReadiness, readinessCheck, type TaskReadinessProfile } from "./governance/task-readiness";
 
@@ -376,6 +377,13 @@ export function attachReferenceRoleTaskReceipt<T extends Record<string, unknown>
   externalRequestId?: string | null;
   approvalId?: string | null;
   idempotencyProtected?: boolean;
+  sourceBinding?: {
+    logicalAssetId: string;
+    bindingId: string;
+    providerType: "llamaindex" | "mcp" | "api";
+    resourceRefFingerprint: string;
+  } | null;
+  contextResolution?: ContextResolutionEvidenceV1;
   now?: Date;
 }): T {
   const profile = resolveRoleTaskEvidenceProfile(input.roleTemplate, input.serverId, input.toolName);
@@ -405,6 +413,7 @@ export function attachReferenceRoleTaskReceipt<T extends Record<string, unknown>
     taskId: profile.taskId,
     taskLabel: profile.taskLabel,
     principalFingerprint: input.principalFingerprint,
+    resolution: input.contextResolution,
     provided: {
       knowledge: [],
       businessData: profile.sourceLabel ? [{
@@ -413,6 +422,7 @@ export function attachReferenceRoleTaskReceipt<T extends Record<string, unknown>
         entityRef: input.argumentsFingerprint,
         asOf: now.toISOString(),
         resultFingerprint: input.resultFingerprint,
+        ...(input.sourceBinding || {}),
       }] : [],
       memory: [],
       capabilities: [{

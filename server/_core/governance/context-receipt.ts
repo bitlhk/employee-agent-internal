@@ -86,6 +86,7 @@ export function buildContextReceipt(input: {
   envelopeId?: string;
   correlationId?: string;
   principalFingerprint: string;
+  resolution?: ContextReceiptV1["resolution"];
   provided: ContextReceiptV1["provided"];
   citedKnowledgeAssetIds?: string[];
   policyDecisions?: ContextReceiptAppliedPolicy[];
@@ -109,6 +110,7 @@ export function buildContextReceipt(input: {
     ...(input.envelopeId ? { envelopeId: input.envelopeId } : {}),
     ...(input.correlationId ? { correlationId: input.correlationId } : {}),
     principalFingerprint: String(input.principalFingerprint || "").trim(),
+    ...(input.resolution ? { resolution: input.resolution } : {}),
     provided: input.provided,
     cited: { knowledgeAssetIds: citedKnowledgeAssetIds },
     applied: {
@@ -152,6 +154,7 @@ export function buildContextReceiptFromEnvelope(input: {
     envelopeId: input.envelope.envelopeId,
     correlationId: input.envelope.correlationId,
     principalFingerprint: input.envelope.context.principalFingerprint,
+    resolution: input.envelope.context.resolution,
     provided: {
       knowledge: input.envelope.context.knowledge.selectedAssets.map((item) => ({
         ...item,

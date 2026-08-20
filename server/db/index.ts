@@ -30,3 +30,4 @@ export * from "./runtime-agent-bindings";
 export * from "./role-pack-releases";
 export * from "./a2a-capability-intent-executions";
 export * from "./enterprise-assets";
+export * from "./context-source-bindings";

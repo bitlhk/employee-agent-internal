@@ -641,6 +641,21 @@ const memoryConflicts = new Counter({
   registers: [metricsRegistry],
 });
 
+const contextResolutionShadowComparisons = new Counter({
+  name: "ea_context_resolution_shadow_comparisons_total",
+  help: "Shadow Context Resolver comparisons by Golden Task and bounded result.",
+  labelNames: ["task_id", "result"] as const,
+  registers: [metricsRegistry],
+});
+
+const contextResolutionShadowDuration = new Histogram({
+  name: "ea_context_resolution_shadow_duration_seconds",
+  help: "Shadow Context Resolver comparison duration in seconds by Golden Task.",
+  labelNames: ["task_id", "outcome"] as const,
+  buckets: [0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2],
+  registers: [metricsRegistry],
+});
+
 const capabilityPreflight = new Counter({
   name: "ea_capability_preflight_total",
   help: "Capability preflight outcomes by bounded capability kind.",
@@ -771,6 +786,33 @@ export function observeMemoryRetrieval(input: {
 
 export function observeMemoryConflict(action: "detected" | "accepted" | "rejected"): void {
   memoryConflicts.inc({ action });
+}
+
+export function observeContextResolutionShadow(input: {
+  taskId: string;
+  durationMs: number;
+  outcome: "success" | "error";
+  comparisons?: Array<{
+    resolutionStatus: "resolved" | "missing" | "ambiguous";
+    observed: boolean;
+    sourceMatch: boolean;
+  }>;
+}): void {
+  const taskId = input.taskId.slice(0, 32);
+  contextResolutionShadowDuration.observe(
+    { task_id: taskId, outcome: input.outcome },
+    Math.max(0, input.durationMs) / 1000,
+  );
+  for (const comparison of input.comparisons || []) {
+    const result = comparison.sourceMatch
+      ? "match"
+      : comparison.resolutionStatus !== "resolved"
+        ? comparison.resolutionStatus
+        : comparison.observed
+          ? "source_mismatch"
+          : "not_observed";
+    contextResolutionShadowComparisons.inc({ task_id: taskId, result });
+  }
 }
 
 export function observeCapabilityPreflight(input: {

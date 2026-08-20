@@ -12,6 +12,7 @@ import {
   configureDbPoolMetrics,
   metricsRegistry,
   observeDbPoolEvent,
+  observeContextResolutionShadow,
   observeOperationalActivity,
   recordMcpStatusCacheRequest,
   setBackgroundWorkerState,
@@ -70,6 +71,15 @@ describe("operational metrics", () => {
     observeDbPoolEvent("release");
     observeDbPoolEvent("release");
     setBackgroundWorkerState("recycler", "running");
+    observeContextResolutionShadow({
+      taskId: "WM-GT-02",
+      outcome: "success",
+      durationMs: 2,
+      comparisons: [
+        { resolutionStatus: "resolved", observed: true, sourceMatch: true },
+        { resolutionStatus: "resolved", observed: true, sourceMatch: false },
+      ],
+    });
 
     const output = await metricsRegistry.metrics();
     expect(output).toContain('ea_chat_requests_total{runtime="jiuwenswarm",outcome="success"} 1');
@@ -83,6 +93,9 @@ describe("operational metrics", () => {
     expect(output).toContain('ea_sandbox_executions_total{outcome="timeout"} 1');
     expect(output).toContain('ea_db_pool_connections{state="active"} 0');
     expect(output).toContain('ea_background_worker_state{worker="recycler",state="running"} 1');
+    expect(output).toContain('ea_context_resolution_shadow_comparisons_total{task_id="WM-GT-02",result="match"} 1');
+    expect(output).toContain('ea_context_resolution_shadow_comparisons_total{task_id="WM-GT-02",result="source_mismatch"} 1');
+    expect(output).toContain("ea_context_resolution_shadow_duration_seconds_bucket");
   });
 
   it("exports bounded release and restore evidence without identifiers", async () => {

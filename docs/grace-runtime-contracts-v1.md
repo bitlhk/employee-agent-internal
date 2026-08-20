@@ -156,6 +156,7 @@ Apply managed migrations before enabling the selected V2 task paths in an enviro
 0018_a2a_capability_intents.sql
 0019_a2a_capability_intent_executions.sql
 0020_enterprise_asset_onboarding.sql
+0023_context_source_bindings.sql
 ```
 
 Migration `0015` backfills stable organizations and memberships from existing non-empty `users.organization` values. Users without an organization receive a stable personal organization only when Principal V2 is first resolved.

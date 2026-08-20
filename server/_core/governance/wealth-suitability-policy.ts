@@ -2,6 +2,7 @@ import type {
   GovernanceDecisionDraft,
   GovernancePolicyAdapter,
 } from "./contracts";
+import type { ContextItemV1, ContextResolutionReasonCodeV1 } from "../../../shared/context-resolution";
 
 export const WEALTH_SUITABILITY_POLICY_ID = "WEALTH_SUITABILITY_MATCH";
 export const WEALTH_SUITABILITY_RULE_VERSION = "wealth-suitability-v1";
@@ -12,6 +13,14 @@ export type WealthPolicySource = {
   versionLabel: string;
   sourceLocator: string;
   eligibilityFingerprint: string;
+  resolutionReasonCode?: ContextResolutionReasonCodeV1;
+  sourceBinding?: {
+    logicalAssetId: string;
+    bindingId: string;
+    providerType: "llamaindex" | "mcp" | "api";
+    resourceRefFingerprint: string;
+  };
+  contextItem?: ContextItemV1;
 };
 
 export type WealthCustomerSuitabilityContext = {

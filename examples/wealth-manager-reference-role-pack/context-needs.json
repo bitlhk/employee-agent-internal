@@ -1,0 +1,160 @@
+{
+  "schemaVersion": "ea.reference-role-pack.context-needs.v1",
+  "rolePackId": "linggan-bank.wealth-manager",
+  "roleTemplate": "wealth-manager",
+  "plans": [
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-bank.wealth-manager.WM-GT-01.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "roleTemplate": "wealth-manager",
+      "taskId": "WM-GT-01",
+      "needs": [
+        {
+          "needId": "customer-profile",
+          "logicalAssetId": "customer_profile",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "核验客户归属并取得当前客户画像与风险信息",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "customer-portfolio",
+          "logicalAssetId": "customer_portfolio",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得当前持仓和资产结构用于访前准备",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "previsit-sop",
+          "logicalAssetId": "current_previsit_sop",
+          "contextType": "knowledge",
+          "requiredness": "optional",
+          "purpose": "应用当前有效的财富客户访前作业依据",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter"]
+        },
+        {
+          "needId": "relationship-memory",
+          "logicalAssetId": "customer_relationship_memory",
+          "contextType": "memory",
+          "requiredness": "optional",
+          "purpose": "补充已授权的客户沟通偏好和连续任务现场",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 2592000 },
+          "requiredCapabilities": ["relevant_retrieval"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-bank.wealth-manager.WM-GT-02.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "roleTemplate": "wealth-manager",
+      "taskId": "WM-GT-02",
+      "needs": [
+        {
+          "needId": "customer-profile",
+          "logicalAssetId": "customer_profile",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得客户当前风险测评和基础画像",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "customer-portfolio",
+          "logicalAssetId": "customer_portfolio",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得客户当前资产结构和资金安排",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "available-products",
+          "logicalAssetId": "available_products",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得当前渠道可售产品集合",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["search"]
+        },
+        {
+          "needId": "wealth-policy",
+          "logicalAssetId": "current_wealth_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的财富产品销售和适当性依据",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter"]
+        },
+        {
+          "needId": "market-view",
+          "logicalAssetId": "current_market_view",
+          "contextType": "knowledge",
+          "requiredness": "optional",
+          "purpose": "补充最新市场观点，不作为适当性规则来源",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 604800 },
+          "authority": "approved",
+          "requiredCapabilities": ["hybrid_search"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-bank.wealth-manager.WM-GT-03.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "roleTemplate": "wealth-manager",
+      "taskId": "WM-GT-03",
+      "needs": [
+        {
+          "needId": "wealth-policy",
+          "logicalAssetId": "current_wealth_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "核验当前有效制度版本并形成现行政策判断",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-bank.wealth-manager.WM-GT-05.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "roleTemplate": "wealth-manager",
+      "taskId": "WM-GT-05",
+      "needs": [
+        {
+          "needId": "followup-payload",
+          "logicalAssetId": "governed_followup_payload",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得与确认操作绑定的跟进目标、时间和优先级",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 600 },
+          "requiredCapabilities": ["task_state_read"]
+        },
+        {
+          "needId": "followup-guide",
+          "logicalAssetId": "current_followup_guide",
+          "contextType": "knowledge",
+          "requiredness": "optional",
+          "purpose": "应用当前有效的客户跟进与留痕操作指引",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter"]
+        }
+      ]
+    }
+  ]
+}

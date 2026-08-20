@@ -212,6 +212,86 @@ export const enterpriseAssetCandidates = mysqlTable("enterprise_asset_candidates
 export type EnterpriseAssetCandidate = typeof enterpriseAssetCandidates.$inferSelect;
 export type InsertEnterpriseAssetCandidate = typeof enterpriseAssetCandidates.$inferInsert;
 
+export const contextSourceBindings = mysqlTable("context_source_bindings", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  bindingId: varchar("binding_id", { length: 128 }).notNull(),
+  organizationId: varchar("organization_id", { length: 128 }).notNull(),
+  rolePackId: varchar("role_pack_id", { length: 128 }).notNull(),
+  logicalAssetId: varchar("logical_asset_id", { length: 128 }).notNull(),
+  contextType: mysqlEnum("context_type", ["knowledge", "business_data", "memory"]).notNull(),
+  providerType: mysqlEnum("provider_type", ["llamaindex", "mcp", "api"]).notNull(),
+  resourceRef: varchar("resource_ref", { length: 1000 }).notNull(),
+  capabilitiesJson: json("capabilities_json").$type<string[]>().notNull(),
+  bindingVersion: varchar("binding_version", { length: 64 }).default("1").notNull(),
+  stage: mysqlEnum("stage", ["production", "shadow"]).default("production").notNull(),
+  status: mysqlEnum("status", ["active", "disabled"]).default("active").notNull(),
+  verifiedReleaseId: varchar("verified_release_id", { length: 128 }),
+  createdBy: varchar("created_by", { length: 128 }).notNull(),
+  updatedBy: varchar("updated_by", { length: 128 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  bindingIdUnique: uniqueIndex("uk_context_source_bindings_public_id").on(table.bindingId),
+  logicalStageUnique: uniqueIndex("uk_context_source_bindings_logical_stage").on(
+    table.organizationId,
+    table.rolePackId,
+    table.logicalAssetId,
+    table.contextType,
+    table.stage,
+  ),
+  roleStageStatusIdx: index("idx_context_source_bindings_role_stage_status").on(
+    table.organizationId,
+    table.rolePackId,
+    table.stage,
+    table.status,
+  ),
+}));
+
+export type ContextSourceBinding = typeof contextSourceBindings.$inferSelect;
+export type InsertContextSourceBinding = typeof contextSourceBindings.$inferInsert;
+
+// Immutable promotion snapshots support audit and transactional rollback without
+// turning the routing table into a second asset registry.
+export const contextSourceBindingPromotions = mysqlTable("context_source_binding_promotions", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  promotionId: varchar("promotion_id", { length: 128 }).notNull(),
+  organizationId: varchar("organization_id", { length: 128 }).notNull(),
+  rolePackId: varchar("role_pack_id", { length: 128 }).notNull(),
+  verifiedReleaseId: varchar("verified_release_id", { length: 128 }).notNull(),
+  previousSnapshotJson: json("previous_snapshot_json").$type<ContextSourceBindingV1Snapshot[]>().notNull(),
+  promotedSnapshotJson: json("promoted_snapshot_json").$type<ContextSourceBindingV1Snapshot[]>().notNull(),
+  status: mysqlEnum("status", ["active", "rolled_back"]).default("active").notNull(),
+  createdBy: varchar("created_by", { length: 128 }).notNull(),
+  rolledBackBy: varchar("rolled_back_by", { length: 128 }),
+  rolledBackAt: timestamp("rolled_back_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => ({
+  promotionIdUnique: uniqueIndex("uk_context_source_binding_promotions_public_id").on(table.promotionId),
+  roleCreatedIdx: index("idx_context_source_binding_promotions_role_created").on(
+    table.organizationId,
+    table.rolePackId,
+    table.createdAt,
+  ),
+}));
+
+type ContextSourceBindingV1Snapshot = {
+  bindingId: string;
+  organizationId: string;
+  rolePackId: string;
+  logicalAssetId: string;
+  contextType: "knowledge" | "business_data" | "memory";
+  providerType: "llamaindex" | "mcp" | "api";
+  resourceRef: string;
+  capabilities: string[];
+  bindingVersion: string;
+  stage: "production" | "shadow";
+  status: "active" | "disabled";
+  verifiedReleaseId?: string;
+};
+
+export type ContextSourceBindingPromotion = typeof contextSourceBindingPromotions.$inferSelect;
+export type InsertContextSourceBindingPromotion = typeof contextSourceBindingPromotions.$inferInsert;
+
 /** Stable mapping from a trusted upstream account to the canonical EA user. */
 export const channelIdentityLinks = mysqlTable("channel_identity_links", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),

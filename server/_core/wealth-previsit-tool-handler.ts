@@ -21,6 +21,16 @@ import { prepareWealthPrevisitContext } from "./wealth-previsit-context";
 import { resolveWealthPrevisitKnowledgeBasis } from "./wealth-policy-source";
 import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } from "./wealth-role-pack-release";
 import { wealthPrevisitModelContent } from "./wealth-model-content";
+import {
+  contextBindingEvidence,
+  contextResolutionEvidence,
+  applyContextResolutionEvidenceOutcomes,
+  observeWealthContextResolutionShadow,
+  resolveWealthTaskContextSnapshot,
+  resolvedContextBinding,
+  wealthKnowledgeSourceFromPlan,
+} from "./context-resolution/wealth-source-resolution";
+import { mcpResourceRef, resolveMcpBindingTarget } from "./context-resolution/mcp-adapter";
 
 type ToolResult = {
   content: Array<{ type: string; text: string }>;
@@ -75,12 +85,34 @@ export async function handleWealthPrevisitTool(input: {
   }
 
   try {
+    const contextSnapshot = await resolveWealthTaskContextSnapshot({
+      taskId: "WM-GT-01",
+      organizationId: principalV2.principal.organizationId,
+      contextTypes: ["knowledge", "business_data"],
+    });
+    const knowledgeSource = wealthKnowledgeSourceFromPlan(
+      contextSnapshot.plans.knowledge,
+      "current_previsit_sop",
+    );
+    const businessResolution = contextSnapshot.plans.business_data || { mode: "legacy" as const, plan: null };
+    let customerTarget = { endpointUrl: customerEndpoint, toolName: "wealth_assistant_customer_detail" };
+    if (businessResolution.mode === "binding") {
+      const profileBinding = resolvedContextBinding(businessResolution.plan, "customer_profile");
+      const portfolioBinding = resolvedContextBinding(businessResolution.plan, "customer_portfolio");
+      if (!profileBinding || !portfolioBinding) throw new Error("必需业务上下文来源未完成绑定");
+      const profileTarget = resolveMcpBindingTarget(profileBinding);
+      const portfolioTarget = resolveMcpBindingTarget(portfolioBinding);
+      if (profileTarget.endpointUrl !== portfolioTarget.endpointUrl || profileTarget.toolName !== portfolioTarget.toolName) {
+        throw new Error("当前访前处理器不能合并不同的客户画像与持仓来源");
+      }
+      customerTarget = profileTarget;
+    }
     const result = await prepareWealthPrevisitContext({
       principal: principalV2.principal,
       customerId,
       dependencies: {
         probeIdentity: async () => parseInternalMcpJsonResult(await callInternalMcpTool({
-          endpointUrl: customerEndpoint,
+          endpointUrl: customerTarget.endpointUrl,
           toolName: "wealth_assistant_context_probe",
           args: {},
           agentId: principalV2.principal.agentId,
@@ -88,8 +120,8 @@ export async function handleWealthPrevisitTool(input: {
           sessionId: principalV2.principal.sessionId,
         })),
         loadCustomer: async (requestedCustomerId) => parseInternalMcpJsonResult(await callInternalMcpTool({
-          endpointUrl: customerEndpoint,
-          toolName: "wealth_assistant_customer_detail",
+          endpointUrl: customerTarget.endpointUrl,
+          toolName: customerTarget.toolName,
           args: { customerId: requestedCustomerId },
           agentId: principalV2.principal.agentId,
           adoptId,
@@ -100,6 +132,7 @@ export async function handleWealthPrevisitTool(input: {
           groupId: Number(user.groupId || 0),
           actorRole: String(user.role || "user"),
           roleTemplate: principalV2.principal.roleTemplate,
+          knowledgeSource,
         }),
       },
     });
@@ -133,11 +166,22 @@ export async function handleWealthPrevisitTool(input: {
     const executionEnvelope = buildTaskExecutionEnvelope({
       principal: principalV2.principal,
       context: buildTaskContextPack({
+        resolution: applyContextResolutionEvidenceOutcomes({
+          evidence: contextResolutionEvidence([knowledgeSource.plan, businessResolution.plan]),
+          outcomes: [{
+            logicalAssetId: "current_previsit_sop",
+            usable: knowledgeReady,
+            ...(result.knowledgeBasis.resolutionReasonCode
+              ? { reasonCode: result.knowledgeBasis.resolutionReasonCode }
+              : {}),
+          }],
+        }),
         knowledge: {
           selectedAssets: result.knowledgeBasis.selected ? [{
             assetId: result.knowledgeBasis.selected.sourceAssetId,
             version: result.knowledgeBasis.selected.versionLabel,
             contentHash: result.knowledgeBasis.selected.contentHash,
+            ...(result.knowledgeBasis.sourceBinding || {}),
           }] : [],
           eligibilityFingerprint: result.knowledgeBasis.eligibilityFingerprint,
         },
@@ -147,6 +191,7 @@ export async function handleWealthPrevisitTool(input: {
             entityRef: result.evidence.customerId,
             asOf: result.evidence.customerDataAsOf,
             resultFingerprint: result.evidence.customerResultFingerprint,
+            ...(contextBindingEvidence(resolvedContextBinding(businessResolution.plan, "customer_profile")) || {}),
           }],
         },
         memory: { memoryRefs: taskMemory.selectedRefs.map((item) => String(item.memoryId)) },
@@ -233,6 +278,32 @@ export async function handleWealthPrevisitTool(input: {
         contextEligibilityFingerprint: result.knowledgeBasis.eligibilityFingerprint,
       },
     });
+    await observeWealthContextResolutionShadow({
+      taskId: "WM-GT-01",
+      principal: principalV2.principal,
+      observed: [
+        {
+          logicalAssetId: "customer_profile",
+          providerType: "mcp",
+          resourceRef: mcpResourceRef("wealth-customer", customerTarget.toolName),
+        },
+        {
+          logicalAssetId: "customer_portfolio",
+          providerType: "mcp",
+          resourceRef: mcpResourceRef("wealth-customer", customerTarget.toolName),
+        },
+        ...(knowledgeSource.binding ? [{
+          logicalAssetId: "current_previsit_sop",
+          providerType: "llamaindex" as const,
+          resourceRef: knowledgeSource.binding.resourceRef,
+        }] : []),
+        {
+          logicalAssetId: "customer_relationship_memory",
+          providerType: "api" as const,
+          resourceRef: "api://employee-agent/agent-memory/relevant",
+        },
+      ],
+    });
     return attachContextReceipt(textResult(`EA_WEALTH_PREVISIT_CONTEXT:${JSON.stringify(wealthPrevisitModelContent({
       result,
       readiness,
@@ -241,6 +312,7 @@ export async function handleWealthPrevisitTool(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || "");
     const authorizationDenied = /标识|范围|归属|授权/u.test(message);
+    const contextBindingBlocked = /上下文来源|Context binding|不能合并不同/u.test(message);
     const readiness = evaluateWealthTaskReadiness({
       taskId: "WM-GT-01",
       checks: {
@@ -249,6 +321,8 @@ export async function handleWealthPrevisitTool(input: {
           : readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份已就绪。"),
         customerData: authorizationDenied
           ? readinessCheck("BLOCKED", "CUSTOMER_SCOPE_DENIED", "该客户不在当前岗位授权范围内。")
+          : contextBindingBlocked
+            ? readinessCheck("BLOCKED", "REQUIRED_CONTEXT_BINDING_MISSING", "必需客户上下文来源尚未完成受治理绑定。")
           : readinessCheck("DEGRADED", "CUSTOMER_DATA_UNAVAILABLE", "客户数据服务暂时不可用。", { retryable: true }),
         knowledge: readinessCheck(
           "DEGRADED",

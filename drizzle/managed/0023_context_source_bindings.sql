@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `context_source_bindings` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `binding_id` varchar(128) NOT NULL,
+  `organization_id` varchar(128) NOT NULL,
+  `role_pack_id` varchar(128) NOT NULL,
+  `logical_asset_id` varchar(128) NOT NULL,
+  `context_type` enum('knowledge','business_data','memory') NOT NULL,
+  `provider_type` enum('llamaindex','mcp','api') NOT NULL,
+  `resource_ref` varchar(1000) NOT NULL,
+  `capabilities_json` json NOT NULL,
+  `binding_version` varchar(64) NOT NULL DEFAULT '1',
+  `stage` enum('production','shadow') NOT NULL DEFAULT 'production',
+  `status` enum('active','disabled') NOT NULL DEFAULT 'active',
+  `verified_release_id` varchar(128) DEFAULT NULL,
+  `created_by` varchar(128) NOT NULL,
+  `updated_by` varchar(128) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_context_source_bindings_public_id` (`binding_id`),
+  UNIQUE KEY `uk_context_source_bindings_logical_stage` (`organization_id`,`role_pack_id`,`logical_asset_id`,`context_type`,`stage`),
+  KEY `idx_context_source_bindings_role_stage_status` (`organization_id`,`role_pack_id`,`stage`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

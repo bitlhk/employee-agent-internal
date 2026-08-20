@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ContextResolutionEvidenceV1 } from "../../../shared/context-resolution";
 import type { RuntimePrincipalV2 } from "./contracts";
 import { governanceFingerprint, principalFingerprint } from "./contracts";
 
@@ -27,8 +28,17 @@ export type TaskReadinessDecision = {
 };
 
 export type TaskContextPack = {
+  resolution?: ContextResolutionEvidenceV1;
   knowledge: {
-    selectedAssets: Array<{ assetId: string; version: string; contentHash: string }>;
+    selectedAssets: Array<{
+      assetId: string;
+      version: string;
+      contentHash: string;
+      logicalAssetId?: string;
+      bindingId?: string;
+      providerType?: "llamaindex" | "mcp" | "api";
+      resourceRefFingerprint?: string;
+    }>;
     eligibilityFingerprint: string;
   };
   businessData: {
@@ -37,6 +47,10 @@ export type TaskContextPack = {
       entityRef: string;
       asOf: string;
       resultFingerprint: string;
+      logicalAssetId?: string;
+      bindingId?: string;
+      providerType?: "llamaindex" | "mcp" | "api";
+      resourceRefFingerprint?: string;
     }>;
   };
   memory: {

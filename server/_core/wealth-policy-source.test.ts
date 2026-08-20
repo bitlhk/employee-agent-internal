@@ -15,7 +15,7 @@ import { resolveWealthPolicyBasis, resolveWealthSuitabilityPolicySource } from "
 
 const base: KnowledgeBaseRecord = {
   id: 1,
-  publicId: "kb_wealth",
+  publicId: "kb_wealth_policy_01",
   ownerUserId: 1,
   ownerGroupId: 3,
   scope: "role",
@@ -123,6 +123,93 @@ describe("wealth policy source", () => {
     });
     expect(result.status).toBe("unavailable");
     expect(result.selected).toBeNull();
+    expect(result.resolutionReasonCode).toBe("STALE_ASSET");
     expect(result.userMessage).toContain("暂不能据此形成正式业务判断");
+  });
+
+  it("restricts retrieval to an eligible bound LlamaIndex base and emits ContextItemV1", async () => {
+    const binding = {
+      schema: "ea.context-source-binding.v1" as const,
+      bindingId: "ctxb-policy",
+      organizationId: "org-a",
+      rolePackId: "linggan-bank.wealth-manager",
+      logicalAssetId: "current_wealth_policy",
+      contextType: "knowledge" as const,
+      providerType: "llamaindex" as const,
+      resourceRef: "kb://kb_wealth_policy_01",
+      capabilities: ["metadata_filter", "citation"],
+      bindingVersion: "1",
+      stage: "production" as const,
+      status: "active" as const,
+    };
+    const need = {
+      needId: "wealth-policy",
+      logicalAssetId: binding.logicalAssetId,
+      contextType: "knowledge" as const,
+      requiredness: "required" as const,
+      purpose: "current policy",
+      freshness: { mode: "current_effective" as const },
+    };
+    const result = await resolveWealthPolicyBasis({
+      userId: 7,
+      groupId: 3,
+      actorRole: "user",
+      roleTemplate: "wealth-manager",
+      now: new Date("2026-08-10T00:00:00.000Z"),
+      knowledgeSource: {
+        mode: "binding",
+        binding,
+        plan: {
+          schema: "ea.concrete-context-plan.v1",
+          planId: "wealth-policy",
+          planVersion: "1",
+          taskId: "WM-GT-03",
+          rolePackId: binding.rolePackId,
+          organizationId: binding.organizationId,
+          stage: "production",
+          status: "READY",
+          resolutions: [{ need, binding, status: "resolved" }],
+          bindingSnapshotFingerprint: "b".repeat(64),
+          resolutionFingerprint: "f".repeat(64),
+        },
+      },
+    });
+    expect(mocks.listKnowledgeDocumentsForBases).toHaveBeenCalledWith([base.id]);
+    expect(result.contextItem).toMatchObject({
+      schema: "ea.context-item.v1",
+      logicalAssetId: "current_wealth_policy",
+      bindingId: "ctxb-policy",
+      assetVersion: "V2.2",
+    });
+    expect(JSON.stringify(result.contextItem)).not.toContain(binding.resourceRef);
+  });
+
+  it("classifies a bound but inaccessible knowledge base as NOT_ELIGIBLE", async () => {
+    const result = await resolveWealthPolicyBasis({
+      userId: 7,
+      groupId: 3,
+      actorRole: "user",
+      roleTemplate: "wealth-manager",
+      knowledgeSource: {
+        mode: "binding",
+        binding: {
+          schema: "ea.context-source-binding.v1",
+          bindingId: "ctxb-other",
+          organizationId: "org-a",
+          rolePackId: "linggan-bank.wealth-manager",
+          logicalAssetId: "current_wealth_policy",
+          contextType: "knowledge",
+          providerType: "llamaindex",
+          resourceRef: "kb://kb_other_policy_01",
+          capabilities: ["metadata_filter"],
+          bindingVersion: "1",
+          stage: "production",
+          status: "active",
+        },
+        plan: null,
+      },
+    });
+    expect(result.status).toBe("unavailable");
+    expect(result.resolutionReasonCode).toBe("NOT_ELIGIBLE");
   });
 });

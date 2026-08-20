@@ -22,6 +22,7 @@ export type ReferenceRolePackDefinition = {
     externalProcessingAllowed: boolean;
   };
   skillManifests: string[];
+  contextNeedManifest?: string;
   capabilityProofs: Record<string, CapabilityProof>;
 };
 
@@ -46,6 +47,7 @@ const definitions = [
       "skills/privbank-previsit/manifest.json",
       "skills/wealth-manager-assistant/manifest.json",
     ],
+    contextNeedManifest: "context-needs.json",
     capabilityProofs: {
       prepare_wealth_previsit_context: { owner: "employee-agent", implementation: "server/_core/wealth-previsit-tool-handler.ts", test: "server/_core/wealth-previsit-context.test.ts" },
       wealth_assistant_context_probe: { owner: "enterprise-mcp", implementation: "scripts/install-wealth-manager-reference-pack.ts", test: "server/_core/wealth-manager-reference-assets.test.ts" },

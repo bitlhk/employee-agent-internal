@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import type { ContextNeedPlanV1 } from "../../shared/context-resolution";
 import {
   expectedReferenceRoleTaskIds,
   referenceRolePack,
@@ -110,10 +111,48 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
     if (!existsSync(candidate)) errors.push(`Knowledge asset file is missing: ${asset.file}`);
   }
 
+  const contextNeedManifestPath = config.contextNeedManifest
+    ? path.join(packRoot, config.contextNeedManifest)
+    : null;
+  if (contextNeedManifestPath) {
+    if (!existsSync(contextNeedManifestPath)) {
+      errors.push(`Context need manifest is missing: ${config.contextNeedManifest}`);
+    } else {
+      const manifest = readJson<{
+        schemaVersion: string;
+        rolePackId: string;
+        roleTemplate: string;
+        plans: ContextNeedPlanV1[];
+      }>(contextNeedManifestPath);
+      if (manifest.schemaVersion !== "ea.reference-role-pack.context-needs.v1") errors.push("Context need manifest schema is unsupported");
+      if (manifest.rolePackId !== config.rolePackId) errors.push(`Context need manifest rolePackId must be ${config.rolePackId}`);
+      if (manifest.roleTemplate !== config.roleTemplate) errors.push(`Context need manifest roleTemplate must be ${config.roleTemplate}`);
+      const seenTasks = new Set<string>();
+      for (const plan of manifest.plans || []) {
+        if (plan.schema !== "ea.context-need-plan.v1") errors.push(`${plan.taskId || "unknown"}: unsupported ContextNeedPlan schema`);
+        if (!expectedTaskIds.includes(plan.taskId)) errors.push(`${plan.taskId}: ContextNeedPlan does not map to a Golden Task`);
+        if (seenTasks.has(plan.taskId)) errors.push(`${plan.taskId}: duplicate ContextNeedPlan`);
+        seenTasks.add(plan.taskId);
+        if (plan.rolePackId !== config.rolePackId || plan.roleTemplate !== config.roleTemplate) errors.push(`${plan.taskId}: ContextNeedPlan role binding mismatch`);
+        if (!plan.needs?.length) errors.push(`${plan.taskId}: ContextNeedPlan has no needs`);
+        const logicalKeys = new Set<string>();
+        for (const need of plan.needs || []) {
+          const key = `${need.contextType}:${need.logicalAssetId}`;
+          if (logicalKeys.has(key)) errors.push(`${plan.taskId}: duplicate logical Context need ${key}`);
+          logicalKeys.add(key);
+          if (!need.needId || !need.purpose || !["required", "optional"].includes(need.requiredness)) {
+            errors.push(`${plan.taskId}: invalid Context need ${need.needId || key}`);
+          }
+        }
+      }
+    }
+  }
+
   const fingerprintInputs = [
     ...tasks.map((task) => path.join(evalRoot, task.file)),
     knowledgeManifestPath,
     ...config.skillManifests.map((file) => path.join(packRoot, file)),
+    ...(contextNeedManifestPath ? [contextNeedManifestPath] : []),
     ...Array.from(new Set(capabilityEvidence.flatMap((item) => [
       item.implementation,
       item.test,
