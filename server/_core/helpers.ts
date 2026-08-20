@@ -311,7 +311,9 @@ export const resolveRequesterUserId = async (req: Request, res: Response): Promi
 const configuredClawOwnerLookupTtl = Number(
   process.env.EA_CLAW_OWNER_LOOKUP_CACHE_TTL_MS || 5_000,
 );
-const clawOwnerLookupCache = createBoundedAsyncCache<any>({
+type ClawOwnerRecord = Awaited<ReturnType<(typeof import("../db"))["getClawByAdoptId"]>>;
+
+const clawOwnerLookupCache = createBoundedAsyncCache<ClawOwnerRecord | null>({
   ttlMs: Number.isFinite(configuredClawOwnerLookupTtl)
     ? Math.min(30_000, Math.max(500, configuredClawOwnerLookupTtl))
     : 5_000,
@@ -342,7 +344,7 @@ export const requireClawOwner = async (req: Request, res: Response, adoptId: str
     res.status(404).json({ error: "NOT_FOUND" });
     return null;
   }
-  if (Number((claw as any).userId || 0) !== userId) {
+  if (Number(claw.userId || 0) !== userId) {
     appendLogAsync("claw-auth.log", { ts: new Date().toISOString(), route: req.path, userId, adoptId, result: 403 });
     res.status(403).json({ error: "FORBIDDEN" });
     return null;

@@ -188,7 +188,7 @@ export async function listAccessibleKnowledgeBases(input: {
 export async function listKnowledgeBasesOwnedByUser(ownerUserId: number): Promise<KnowledgeBaseRecord[]> {
   const db = await getDb();
   if (!db) return [];
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${BASE_SELECT}
     FROM knowledge_bases
     WHERE owner_user_id = ${ownerUserId}
@@ -203,7 +203,7 @@ export async function listGlobalRoleKnowledgeBases(roleTemplate: string): Promis
   if (!db) return [];
   const normalizedRole = String(roleTemplate || "").trim();
   if (!normalizedRole) return [];
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${BASE_SELECT}
     FROM knowledge_bases
     WHERE scope = 'role'
@@ -223,7 +223,7 @@ export async function getAccessibleKnowledgeBase(input: {
 }): Promise<KnowledgeBaseRecord | null> {
   const db = await getDb();
   if (!db) return null;
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${BASE_SELECT}
     FROM knowledge_bases
     WHERE public_id = ${input.publicId}
@@ -249,7 +249,7 @@ export async function getAccessibleKnowledgeBase(input: {
 export async function getKnowledgeBaseById(id: number): Promise<KnowledgeBaseRecord | null> {
   const db = await getDb();
   if (!db) return null;
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${BASE_SELECT}
     FROM knowledge_bases
     WHERE id = ${id}
@@ -377,7 +377,7 @@ export async function setKnowledgeBaseIndexState(input: {
 export async function deleteKnowledgeBaseRecord(id: number, ownerUserId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     DELETE FROM knowledge_bases WHERE id = ${id} AND owner_user_id = ${ownerUserId}
   `);
   return Number((result as any)?.[0]?.affectedRows || 0) > 0;
@@ -386,7 +386,7 @@ export async function deleteKnowledgeBaseRecord(id: number, ownerUserId: number)
 export async function listKnowledgeDocuments(knowledgeBaseId: number): Promise<KnowledgeDocumentRecord[]> {
   const db = await getDb();
   if (!db) return [];
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${DOCUMENT_SELECT}
     FROM knowledge_documents
     WHERE knowledge_base_id = ${knowledgeBaseId}
@@ -416,7 +416,7 @@ export async function listKnowledgeDocumentsForBases(knowledgeBaseIds: number[])
 export async function getKnowledgeDocumentByPublicId(publicId: string): Promise<KnowledgeDocumentRecord | null> {
   const db = await getDb();
   if (!db) return null;
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${DOCUMENT_SELECT}
     FROM knowledge_documents
     WHERE public_id = ${publicId}
@@ -429,7 +429,7 @@ export async function getKnowledgeDocumentByPublicId(publicId: string): Promise<
 export async function findKnowledgeDocumentByHash(knowledgeBaseId: number, sha256: string): Promise<KnowledgeDocumentRecord | null> {
   const db = await getDb();
   if (!db) return null;
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT ${DOCUMENT_SELECT}
     FROM knowledge_documents
     WHERE knowledge_base_id = ${knowledgeBaseId} AND sha256 = ${sha256}
@@ -550,7 +550,7 @@ export async function updateKnowledgeDocumentGovernance(input: {
 export async function deleteKnowledgeDocumentRecord(id: number, knowledgeBaseId: number): Promise<boolean> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     DELETE FROM knowledge_documents WHERE id = ${id} AND knowledge_base_id = ${knowledgeBaseId}
   `);
   await refreshKnowledgeBaseDocumentCount(knowledgeBaseId);
@@ -593,12 +593,12 @@ function mapIndexJob(row: any): KnowledgeIndexJobRecord {
 export async function createKnowledgeIndexJob(knowledgeBaseId: number, reason = "content_changed"): Promise<KnowledgeIndexJobRecord> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     INSERT INTO knowledge_index_jobs (knowledge_base_id, reason)
     VALUES (${knowledgeBaseId}, ${reason})
   `);
   const id = Number((result as any)?.[0]?.insertId || 0);
-  const rows: any = await db.execute(sql`
+  const rows = await db.execute(sql`
     SELECT id, knowledge_base_id, reason, status, attempts, last_error, locked_at,
            finished_at, created_at, updated_at
     FROM knowledge_index_jobs WHERE id = ${id} LIMIT 1
@@ -629,7 +629,7 @@ export async function setKnowledgeIndexJobState(input: {
 export async function listRecoverableKnowledgeIndexJobs(limit = 100): Promise<KnowledgeIndexJobRecord[]> {
   const db = await getDb();
   if (!db) return [];
-  const result: any = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT id, knowledge_base_id, reason, status, attempts, last_error, locked_at,
            finished_at, created_at, updated_at
     FROM knowledge_index_jobs

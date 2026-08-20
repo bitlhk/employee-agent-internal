@@ -1,6 +1,7 @@
 import type { AgentTask } from "@/components/AgentTaskCard";
 import type { JiuwenPermissionRequestCard } from "@/components/ChatMessage";
 import { parseAgentTaskArtifacts } from "@shared/agent-artifact";
+import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
 import type { ExpertHandoffContext } from "@shared/expert-handoff-context";
 
 const JIUWEN_PERMISSION_MARKER_RE =
@@ -14,6 +15,17 @@ export type ComposerSkillOption = {
   initial: string;
   requiredMcpServers: string[];
 };
+
+export function inferKnowledgeCaptureTitle(text: string): string {
+  const normalized = stripEaInternalRuntimeContext(String(text || ""))
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1")
+    .replace(/[*_`~>|]/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || "对话沉淀";
+  return normalized.slice(0, 60);
+}
 
 export function localizedComposerSkillLabel(skill: Pick<ComposerSkillOption, "label" | "desc">): string {
   const label = String(skill.label || "").trim();

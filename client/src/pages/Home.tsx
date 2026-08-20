@@ -85,6 +85,7 @@ import {
   extractJiuwenPermissionMarker,
   fetchWithTimeout,
   flattenComposerSkills,
+  inferKnowledgeCaptureTitle,
   messageAgentTaskIds,
   withJiuwenPermissionMarker,
   type ComposerSkillOption,
@@ -140,22 +141,6 @@ import {
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
 const MAX_COMPOSER_SKILLS = 3;
-
-function inferKnowledgeCaptureTitle(text: string): string {
-  const normalized = stripEaInternalRuntimeContext(String(text || ""))
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, "$1")
-    .replace(/[*_`~>|]/g, "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean) || "对话沉淀";
-  return normalized.slice(0, 60);
-}
-
-// reasoning_content 是模型内部推理流。当前产品不直接展示原始推理内容，避免和真实工具调用卡片混淆。
-function markThinkingDone(msgs: any[]): any[] {
-  return msgs;
-}
 
 function toolCallsSignature(toolCalls?: ToolCallEntry[]) {
   if (!Array.isArray(toolCalls) || toolCalls.length === 0) return "";
@@ -1778,7 +1763,7 @@ export default function Home() {
     );
     if (
       webConversationIdRef.current &&
-      !conversationHasMeaningfulContent(activeLingxiaMsgs as any[], currentSession)
+      !conversationHasMeaningfulContent(activeLingxiaMsgs, currentSession)
     ) {
       return;
     }
@@ -3496,15 +3481,11 @@ export default function Home() {
               // 文本 delta
               const delta = chunk?.choices?.[0]?.delta?.content;
               if (delta) {
-                // 收到 content delta → reasoning 阶段结束，mark thinking done
-                setLingxiaMsgs((prev) => markThinkingDone(prev));
                 const textMode = chunk.__text_mode === "snapshot" ? "snapshot" : "delta";
                 setLingxiaMsgs((prev) => { const n = [...prev]; const last = n[n.length-1]; if (last?.role === "assistant") n[n.length-1] = { ...last, text: mergeAssistantStreamText(last.text, delta, textMode), status: undefined }; return n; });
               }
               // 完成
               if (chunk?.choices?.[0]?.finish_reason === "stop") {
-                // 双保险：finish_reason=stop 也兜底 mark thinking done
-                setLingxiaMsgs((prev) => markThinkingDone(prev));
                 console.log("[DIAG] ✅ WSS finish_reason=stop，流结束");
                 setLingxiaStreaming(false);
                 wsClient.setRawHandler(null);
@@ -3969,8 +3950,6 @@ export default function Home() {
               ? deltaRaw.map((c: any) => (typeof c === "string" ? c : (c?.text ?? ""))).join("")
               : (typeof deltaRaw === "string" ? deltaRaw : (deltaRaw != null ? String(deltaRaw) : ""));
             if (delta && !finalSnapshotReceived) {
-              // 收到 content delta → reasoning 阶段结束，mark thinking done
-              setLingxiaMsgs((prev) => markThinkingDone(prev));
               if (chunk.__text_mode === "snapshot") {
                 flushDelta();
                 setLingxiaMsgs((prev) => {
@@ -3989,10 +3968,6 @@ export default function Home() {
                 pendingDelta += delta;
                 scheduleFlush();
               }
-            }
-            // HTTP 路径 finish_reason=stop 兜底 mark thinking done
-            if (chunk?.choices?.[0]?.finish_reason === "stop") {
-              setLingxiaMsgs((prev) => markThinkingDone(prev));
             }
           } catch {
             // 忽略非 JSON 行
