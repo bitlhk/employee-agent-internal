@@ -2,7 +2,15 @@
 
 ## Current Status
 
-As of 2026-08-20, the GRACE Context CI/CD baseline is **Production Deployed / Activation Gated**. The code and release controls are deployed, while target-environment Feature Flags, Bindings, candidate assets, and Golden Task evidence remain explicit activation gates. Deployment does not by itself activate a new business Context path.
+As of 2026-08-20, the GRACE Context CI/CD baseline is **Production Deployed / Wealth Context Activated / Asset Release Gated**. Wealth Manager Knowledge and Business Data resolution use promoted Production Bindings in the Shanghai environment. New enterprise asset versions still require candidate review, candidate-bound Golden Task evidence, activation approval, and effective-time Eligibility. Deployment by itself does not activate a new asset version.
+
+This status is deliberately scoped:
+
+- Wealth Manager Context Resolution V1 is active for Knowledge, Business Data, and the governed Memory reference.
+- Enterprise Asset Release remains gated per candidate and effective time.
+- Multi-role Context Resolution, onboarding at enterprise scale, automatic Projection, and external provider federation are not implied by the Wealth Manager activation.
+
+The production facts and evidence boundaries are recorded in `grace-production-activation-record-2026-08-20.md`.
 
 ## Purpose
 

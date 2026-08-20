@@ -20,6 +20,10 @@ The Resolver does not understand business semantics, grant permissions, execute 
 
 ## Rollout
 
+### Production Activation Scope
+
+The Shanghai environment completed Wealth Manager Production Promotion on 2026-08-20. The three Context Resolution flags are enabled and seven active Production Bindings serve `linggan-bank.wealth-manager`; seven Shadow Bindings remain available for comparison. This is a role-scoped activation, not a platform-wide claim for every Role Pack.
+
 1. Apply `0023_context_source_bindings.sql` and `0024_context_source_binding_promotions.sql`.
 2. Create Shadow Bindings with `pnpm context:wealth:bindings -- --organization=<org> --knowledge-base=<kb_public_id> --apply`.
 3. Set `EA_CONTEXT_RESOLUTION_SHADOW_ENABLED=true` and compare `logs/context-resolution-shadow.log`. Shadow failures never affect users and the log contains references and match booleans, not customer payloads.
@@ -46,7 +50,7 @@ pnpm context:wealth:verify -- \
   --iterations=100
 ```
 
-All flags default to `false`; disabling them restores the legacy paths without reverting the additive migration.
+All flags default to `false` in a new installation. The Shanghai Wealth Manager activation explicitly enables them. Disabling them restores the legacy paths without reverting the additive migration, but doing so is a production behavior change and must follow an operational decision rather than documentation assumptions.
 
 ## Readiness And Evidence
 
