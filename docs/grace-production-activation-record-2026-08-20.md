@@ -6,6 +6,8 @@ GRACE Context Resolution V1 is **Production Activated for Wealth Manager** in th
 
 This is a production fact record, not a claim that all GRACE Context capabilities are generally available.
 
+The corresponding machine-readable, point-in-time inventory is `grace-production-context-inventory-2026-08-20.yaml`. It is an evidence snapshot, not a production configuration source.
+
 ## Observed Runtime State
 
 Read-only verification on 2026-08-20 confirmed:
@@ -23,11 +25,11 @@ Read-only verification on 2026-08-20 confirmed:
 
 The Production Binding set contains:
 
-| Context type | Logical assets | Provider types |
-| --- | --- | --- |
-| Knowledge | `current_previsit_sop`, `current_wealth_policy` | LlamaIndex |
-| Business Data | `available_products`, `customer_portfolio`, `customer_profile`, `governed_followup_payload` | MCP / API |
-| Memory | `customer_relationship_memory` | API |
+| Context type  | Logical assets                                                                              | Provider types |
+| ------------- | ------------------------------------------------------------------------------------------- | -------------- |
+| Knowledge     | `current_previsit_sop`, `current_wealth_policy`                                             | LlamaIndex     |
+| Business Data | `available_products`, `customer_portfolio`, `customer_profile`, `governed_followup_payload` | MCP / API      |
+| Memory        | `customer_relationship_memory`                                                              | API            |
 
 No physical `resourceRef`, credential, customer value, or retrieved Context content is recorded here.
 

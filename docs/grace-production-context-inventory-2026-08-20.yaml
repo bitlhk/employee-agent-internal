@@ -1,0 +1,70 @@
+schemaVersion: grace.production-context-inventory.v1
+snapshotOnly: true
+environment: shanghai
+observedAt: "2026-08-20T22:25:00+08:00"
+runtimeHealth: ready
+
+application:
+  deployedCommit: 8aaf93255e2e0713fd70c5349e7372fbf3d1cba4
+
+featureFlags:
+  shadowResolution: true
+  knowledgeResolution: true
+  businessDataResolution: true
+
+roles:
+  - rolePackId: linggan-bank.wealth-manager
+    organizationScope: "*"
+    runtimeStatus: production_activated
+    assetReleaseStatus: gated
+
+    bindings:
+      production:
+        active: 7
+      shadow:
+        active: 7
+
+    contextSources:
+      knowledge:
+        - logicalAssetId: current_previsit_sop
+          providerType: llamaindex
+        - logicalAssetId: current_wealth_policy
+          providerType: llamaindex
+      businessData:
+        - logicalAssetId: available_products
+          providerType: mcp
+        - logicalAssetId: customer_portfolio
+          providerType: mcp
+        - logicalAssetId: customer_profile
+          providerType: mcp
+        - logicalAssetId: governed_followup_payload
+          providerType: api
+      memory:
+        - logicalAssetId: customer_relationship_memory
+          providerType: api
+
+    promotion:
+      promotionId: ctxp_cadc8ba3248444eabd8c1eaa8b0ec06c
+      status: active
+      promotedAt: "2026-08-20T15:58:54+08:00"
+
+    validation:
+      rolePackReleaseId: linggan-bank.wealth-manager@fb121195e3a859b1:wm-golden-task-v3
+      suiteVersion: wm-golden-task-v3
+      level: controlled_scenario
+      status: verified
+      latestVerifiedAt: "2026-08-20T16:01:11+08:00"
+
+notActivated:
+  - multi_role_context_resolution
+  - enterprise_scale_onboarding
+  - automatic_runtime_projection
+  - external_provider_federation
+
+evidence:
+  activationRecord: grace-production-activation-record-2026-08-20.md
+  sourceOfTruth:
+    - runtime_environment
+    - context_source_bindings
+    - context_source_binding_promotions
+    - role_pack_releases
