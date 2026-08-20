@@ -85,11 +85,16 @@ function stringArray(...values: unknown[]): string[] {
 
 function dataObject(payload: JsonObject): JsonObject {
   const data = object(payload.data);
-  return object(payload.customer).customerId || object(payload.customer).id
-    ? object(payload.customer)
-    : object(data.customer).customerId || object(data.customer).id
-      ? object(data.customer)
-      : Object.keys(data).length ? data : payload;
+  const directCustomer = object(payload.customer);
+  if (Object.keys(directCustomer).length) return directCustomer;
+  const nestedCustomer = object(data.customer);
+  if (Object.keys(nestedCustomer).length) return nestedCustomer;
+  return Object.keys(data).length ? data : payload;
+}
+
+function customerRiskLevel(value: unknown): string {
+  const riskLevel = String(value ?? "").trim().toUpperCase();
+  return /^[1-5]$/.test(riskLevel) ? `C${riskLevel}` : riskLevel;
 }
 
 export function normalizeWealthCustomer(payload: JsonObject, expectedCustomerId: string) {
@@ -103,6 +108,7 @@ export function normalizeWealthCustomer(payload: JsonObject, expectedCustomerId:
     assessment.expiresAt,
     assessment.expires_at,
     assessment.validUntil,
+    customer.CUST_RSK_RT_VLD_DT,
   ) || null;
   const assessmentStatus = firstString(
     customer.assessmentStatus,
@@ -113,9 +119,16 @@ export function normalizeWealthCustomer(payload: JsonObject, expectedCustomerId:
     assessmentExpiresAt ? "valid" : "",
   );
   return {
-    customerId: firstString(customer.customerId, customer.customer_id, customer.id, expectedCustomerId),
-    name: firstString(customer.name, customer.customerName, customer.customer_name),
-    riskLevel: firstString(customer.riskLevel, customer.risk_level, customer.riskRating, customer.risk_rating, assessment.level),
+    customerId: firstString(customer.customerId, customer.customer_id, customer.CUST_NO, customer.id, expectedCustomerId),
+    name: firstString(customer.name, customer.customerName, customer.customer_name, customer.CUST_NAME),
+    riskLevel: customerRiskLevel(firstString(
+      customer.riskLevel,
+      customer.risk_level,
+      customer.riskRating,
+      customer.risk_rating,
+      customer.CUSTM_RSK_LVL_CD,
+      assessment.level,
+    )),
     assessmentStatus,
     assessmentExpiresAt,
     dataAsOf: firstString(customer.dataAsOf, customer.data_as_of, customer.updatedAt, customer.updated_at, payload.updatedAt, payload.updated_at),

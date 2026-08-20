@@ -292,10 +292,11 @@ export async function handleWealthPrevisitTool(input: {
           providerType: "mcp",
           resourceRef: mcpResourceRef("wealth-customer", customerTarget.toolName),
         },
-        ...(knowledgeSource.binding ? [{
+        ...(knowledgeSource.binding || result.knowledgeBasis.selected?.knowledgeBaseId ? [{
           logicalAssetId: "current_previsit_sop",
           providerType: "llamaindex" as const,
-          resourceRef: knowledgeSource.binding.resourceRef,
+          resourceRef: knowledgeSource.binding?.resourceRef
+            || `kb://${result.knowledgeBasis.selected?.knowledgeBaseId}`,
         }] : []),
         {
           logicalAssetId: "customer_relationship_memory",

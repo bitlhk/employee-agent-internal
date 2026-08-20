@@ -106,7 +106,12 @@ describe("wealth policy source", () => {
       roleTemplate: "wealth-manager",
       now: new Date("2026-08-10T00:00:00.000Z"),
     });
-    expect(source).toMatchObject({ ready: true, sourceAssetId: "doc_policy_v22", versionLabel: "V2.2" });
+    expect(source).toMatchObject({
+      ready: true,
+      sourceAssetId: "doc_policy_v22",
+      knowledgeBaseId: "kb_wealth_policy_01",
+      versionLabel: "V2.2",
+    });
   });
 
   it("fails safely when the configured current version is no longer eligible", async () => {

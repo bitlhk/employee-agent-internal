@@ -855,7 +855,11 @@ async function callTool(
           excludedProductCount: result.excludedProducts.length,
         },
       });
-      await observeWealthAllocationRuntimeSources(runtimeSources, principalV2.principal);
+      await observeWealthAllocationRuntimeSources(
+        runtimeSources,
+        principalV2.principal,
+        result.policySource.knowledgeBaseId,
+      );
       return attachContextReceipt(
         textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify(wealthAllocationModelContent(result, readiness))}`),
         contextReceipt,

@@ -10,6 +10,7 @@ export const WEALTH_SUITABILITY_RULE_VERSION = "wealth-suitability-v1";
 export type WealthPolicySource = {
   ready: boolean;
   sourceAssetId: string;
+  knowledgeBaseId?: string;
   versionLabel: string;
   sourceLocator: string;
   eligibilityFingerprint: string;

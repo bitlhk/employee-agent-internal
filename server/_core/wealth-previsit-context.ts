@@ -52,7 +52,12 @@ export async function prepareWealthPrevisitContext(input: {
     input.dependencies.resolveKnowledge(),
   ]);
   const customer = customerObject(customerPayload);
-  const returnedCustomerId = firstString(customer.customerId, customer.customer_id, customer.id);
+  const returnedCustomerId = firstString(
+    customer.customerId,
+    customer.customer_id,
+    customer.CUST_NO,
+    customer.id,
+  );
   if (!returnedCustomerId || returnedCustomerId !== input.customerId) {
     throw new Error("客户 MCP 返回的客户标识与请求不一致");
   }

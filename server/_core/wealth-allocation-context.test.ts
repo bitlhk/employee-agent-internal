@@ -67,6 +67,28 @@ describe("wealth allocation context", () => {
     expect(normalizeWealthProducts(products)).toHaveLength(3);
   });
 
+  it("normalizes the governed enterprise wealth customer fields", () => {
+    expect(normalizeWealthCustomer({
+      ok: true,
+      data: {
+        customer: {
+          CUST_NO: "C001",
+          CUST_NAME: "演示客户",
+          CUSTM_RSK_LVL_CD: "3",
+          CUST_RSK_RT_VLD_DT: "2027-01-01T00:00:00.000Z",
+        },
+      },
+      updatedAt: "2026-08-20T00:00:00.000Z",
+    }, "C001")).toMatchObject({
+      customerId: "C001",
+      name: "演示客户",
+      riskLevel: "C3",
+      assessmentStatus: "valid",
+      assessmentExpiresAt: "2027-01-01T00:00:00.000Z",
+      dataAsOf: "2026-08-20T00:00:00.000Z",
+    });
+  });
+
   it("returns only policy-eligible candidates to the model context", async () => {
     const result = await prepareWealthAllocationContext({
       principal,

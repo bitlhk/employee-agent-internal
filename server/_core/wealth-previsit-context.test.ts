@@ -39,4 +39,25 @@ describe("wealth previsit context", () => {
       },
     })).rejects.toThrow(/客户标识/);
   });
+
+  it("accepts the governed wealth MCP customer number field", async () => {
+    const result = await prepareWealthPrevisitContext({
+      principal,
+      customerId: "C001",
+      dependencies: {
+        probeIdentity: async () => ({ data: { verified: true } }),
+        loadCustomer: async () => ({
+          data: { customer: { CUST_NO: "C001", CUST_NAME: "演示客户" } },
+          updatedAt: "2026-08-20T00:00:00.000Z",
+        }),
+        resolveKnowledge: async () => ({
+          status: "ready", evaluatedAt: "2026-08-20T00:00:00.000Z",
+          selected: { sourceAssetId: "wm-previsit-sop", documentId: "doc-1", versionLabel: "V1.0", contentHash: "b".repeat(64), sourceDepartment: "财富管理部" },
+          eligibilityFingerprint: "c".repeat(64), userMessage: "已就绪",
+        }),
+      },
+    });
+    expect(result.status).toBe("ready");
+    expect(result.evidence).toMatchObject({ customerId: "C001", scopeVerified: true });
+  });
 });

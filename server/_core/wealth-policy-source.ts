@@ -246,6 +246,7 @@ export async function resolveWealthSuitabilityPolicySource(input: {
   return {
     ready: basis.status === "ready" && Boolean(selected),
     sourceAssetId: selected?.sourceAssetId || "",
+    ...(selected?.knowledgeBaseId ? { knowledgeBaseId: selected.knowledgeBaseId } : {}),
     versionLabel: selected?.versionLabel || "",
     sourceLocator: selected?.sourceLocator || "",
     eligibilityFingerprint: basis.governance.eligibilityFingerprint,

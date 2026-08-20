@@ -123,8 +123,11 @@ export async function resolveWealthAllocationRuntimeSources(input: {
 export async function observeWealthAllocationRuntimeSources(
   sources: WealthAllocationRuntimeSources,
   principal: RuntimePrincipalV2,
+  legacyKnowledgeBaseId?: string,
 ): Promise<void> {
   if (!sources.enabled) return;
+  const knowledgeResourceRef = sources.knowledgeSource?.binding?.resourceRef
+    || (legacyKnowledgeBaseId ? `kb://${legacyKnowledgeBaseId}` : "");
   await observeWealthContextResolutionShadow({
     taskId: "WM-GT-02",
     principal,
@@ -132,10 +135,10 @@ export async function observeWealthAllocationRuntimeSources(
       { logicalAssetId: "customer_profile", providerType: "mcp", resourceRef: mcpResourceRef("wealth-customer", sources.customerTarget.toolName) },
       { logicalAssetId: "customer_portfolio", providerType: "mcp", resourceRef: mcpResourceRef("wealth-customer", sources.customerTarget.toolName) },
       { logicalAssetId: "available_products", providerType: "mcp", resourceRef: mcpResourceRef("wealth-product", sources.productTarget.toolName) },
-      ...(sources.knowledgeSource?.binding ? [{
+      ...(knowledgeResourceRef ? [{
         logicalAssetId: "current_wealth_policy",
         providerType: "llamaindex" as const,
-        resourceRef: sources.knowledgeSource.binding.resourceRef,
+        resourceRef: knowledgeResourceRef,
       }] : []),
     ],
   });
