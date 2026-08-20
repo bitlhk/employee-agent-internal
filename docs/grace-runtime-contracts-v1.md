@@ -157,6 +157,7 @@ Apply managed migrations before enabling the selected V2 task paths in an enviro
 0019_a2a_capability_intent_executions.sql
 0020_enterprise_asset_onboarding.sql
 0023_context_source_bindings.sql
+0025_enterprise_asset_discovery.sql
 ```
 
 Migration `0015` backfills stable organizations and memberships from existing non-empty `users.organization` values. Users without an organization receive a stable personal organization only when Principal V2 is first resolved.
@@ -165,6 +166,6 @@ Migration `0015` backfills stable organizations and memberships from existing no
 
 - Production A2A contracts remain disabled until a target Enterprise MCP has passed identity enforcement and row-level authorization verification.
 - Multi-model release evidence is produced only after operators run the suite against the selected deployed models; fixture tests do not count as model verification.
-- Enterprise Asset Onboarding V1 supports source registration, Manifest import, human review, existing-Runtime-asset publication, impact analysis and Role Pack stale marking. Scheduled source synchronization and automatic Policy/Skill generation are deliberately outside the Runtime and remain future connector work.
+- Enterprise Asset Onboarding & Remediation V1 supports governed source registration, batch file/folder discovery, bounded ZIP discovery, object-storage inventory discovery, deterministic metadata suggestions, optional model-assisted suggestions, quality diagnostics, human review, existing-Runtime-asset publication, impact analysis and Role Pack stale marking. Discovery always creates a Candidate; model output cannot approve or publish an asset. Direct cloud credential management, scheduled connector execution and automatic Policy/Skill generation remain outside V1.
 - Channel binding/configuration administration remains ownership-based rather than task-envelope-based.
 - Sandbox and external Runtime Hook capabilities retain boundary/invariant proof because their executors are not in-process HTTP routes. Every active in-process HTTP side-effect PEP now requires route-integration proof.

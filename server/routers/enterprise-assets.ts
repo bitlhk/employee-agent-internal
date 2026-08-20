@@ -8,6 +8,20 @@ import {
   newEnterpriseAssetCandidateId,
   targetTypeForEnterpriseAsset,
 } from "../_core/enterprise-asset-onboarding";
+import {
+  applyEnterpriseAssetModelSuggestion,
+  discoverObjectInventoryArtifact,
+  discoverUploadedArtifact,
+  discoverZipArtifacts,
+  enterpriseAssetIdForPath,
+  persistCandidateArtifact,
+  suggestEnterpriseAssetMetadata,
+  suggestEnterpriseAssetMetadataWithModel,
+  type DiscoveredEnterpriseArtifact,
+  type EnterpriseAssetDiagnostic,
+  type EnterpriseAssetModelSuggestion,
+} from "../_core/enterprise-asset-discovery";
+import { decodeBase64Strict, scanUploadForMalware } from "../_core/upload-security";
 import { listAgentRoleTemplates } from "../_core/role-templates";
 import { adminProcedure, router } from "../_core/trpc";
 import {
@@ -16,9 +30,11 @@ import {
   getEnterpriseMcpConnection,
   getKnowledgeDocumentByPublicId,
   importEnterpriseAssetCandidates,
+  listEnterpriseAssetCandidatesByChecksums,
   listApprovedSkillMarketItems,
   listEnterpriseAssetCandidates,
   listEnterpriseAssetSources,
+  markEnterpriseAssetSourceSynced,
   publishEnterpriseAssetCandidate,
   updateEnterpriseAssetCandidate,
   upsertEnterpriseAssetSource,
@@ -36,6 +52,45 @@ const sourceSchema = z.object({
 });
 
 const targetTypeSchema = z.enum(["knowledge_document", "enterprise_mcp", "skill", "policy", "role"]);
+
+const discoveryObservationsSchema = z.object({
+  parseStatus: z.enum(["ok", "failed"]).optional(),
+  ocrStatus: z.enum(["not_required", "ok", "failed"]).optional(),
+  tableStatus: z.enum(["not_present", "ok", "anomaly"]).optional(),
+}).optional();
+
+const discoveryInputSchema = z.object({
+  sourceId: z.string().min(3).max(128),
+  mode: z.enum(["files", "zip", "object_inventory"]),
+  files: z.array(z.object({
+    name: z.string().min(1).max(240),
+    relativePath: z.string().min(1).max(512).optional(),
+    contentBase64: z.string().min(1).max(72 * 1024 * 1024),
+    lastModified: z.string().datetime().optional(),
+  })).max(100).optional(),
+  zip: z.object({
+    name: z.string().min(1).max(240),
+    contentBase64: z.string().min(1).max(72 * 1024 * 1024),
+  }).optional(),
+  objects: z.array(z.object({
+    key: z.string().min(1).max(512),
+    checksum: z.string().regex(/^[a-fA-F0-9]{64}$/),
+    sizeBytes: z.number().int().nonnegative().max(1024 * 1024 * 1024),
+    sourceUri: z.string().min(1).max(1000),
+    etag: z.string().max(256).optional(),
+    lastModified: z.string().datetime().optional(),
+    observations: discoveryObservationsSchema,
+  })).max(100).optional(),
+  useModelSuggestion: z.boolean().default(false),
+  allowContentProcessing: z.boolean().default(false),
+}).superRefine((input, ctx) => {
+  if (input.mode === "files" && !input.files?.length) ctx.addIssue({ code: "custom", path: ["files"], message: "请选择至少一个文件" });
+  if (input.mode === "zip" && !input.zip) ctx.addIssue({ code: "custom", path: ["zip"], message: "请选择 ZIP 文件" });
+  if (input.mode === "object_inventory" && !input.objects?.length) ctx.addIssue({ code: "custom", path: ["objects"], message: "对象存储清单不能为空" });
+});
+
+const MAX_DISCOVERY_BYTES = 50 * 1024 * 1024;
+const TEXT_EXCERPT_EXTENSIONS = new Set(["md", "txt", "csv", "json", "yaml", "yml"]);
 
 function actorName(user: { id?: number | string | null; name?: string | null; email?: string | null }) {
   return String(user.name || user.email || user.id || "admin").slice(0, 128);
@@ -60,6 +115,78 @@ function assertRoles(metadata: z.infer<typeof enterpriseAssetMetadataSchema>) {
   const roles = new Set(listAgentRoleTemplates().map(role => role.id));
   for (const role of metadata.applicableRoles) {
     if (!roles.has(role)) throw new TRPCError({ code: "BAD_REQUEST", message: `未知岗位: ${role}` });
+  }
+}
+
+function candidateUri(candidateId: string, filename: string): string {
+  return `candidate://${candidateId}/${encodeURIComponent(filename)}`;
+}
+
+function unresolvedDiagnostics(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(item => item && typeof item === "object" && !(item as Record<string, unknown>).resolvedAt) as Array<Record<string, unknown>>;
+}
+
+async function uploadedArtifacts(input: z.infer<typeof discoveryInputSchema>): Promise<DiscoveredEnterpriseArtifact[]> {
+  if (input.mode === "object_inventory") {
+    return (input.objects || []).map(discoverObjectInventoryArtifact);
+  }
+  if (input.mode === "zip") {
+    const buffer = decodeBase64Strict(input.zip?.contentBase64 || "");
+    if (!buffer) throw new TRPCError({ code: "BAD_REQUEST", message: "ZIP 内容不是有效 Base64" });
+    const malware = await scanUploadForMalware(buffer);
+    if (!malware.ok) throw new TRPCError({ code: "BAD_REQUEST", message: malware.error });
+    try {
+      return discoverZipArtifacts(buffer);
+    } catch (error) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message.replace(/技能包/g, "压缩包") : "ZIP 解析失败" });
+    }
+  }
+  const artifacts: DiscoveredEnterpriseArtifact[] = [];
+  let totalBytes = 0;
+  for (const file of input.files || []) {
+    const content = decodeBase64Strict(file.contentBase64);
+    if (!content) throw new TRPCError({ code: "BAD_REQUEST", message: `${file.name} 不是有效 Base64` });
+    totalBytes += content.length;
+    if (totalBytes > MAX_DISCOVERY_BYTES) throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "单次发现文件总大小不能超过 50MB" });
+    const malware = await scanUploadForMalware(content);
+    if (!malware.ok) throw new TRPCError({ code: "BAD_REQUEST", message: `${file.name}: ${malware.error}` });
+    try {
+      artifacts.push(discoverUploadedArtifact({
+        name: file.name,
+        relativePath: file.relativePath,
+        content,
+        lastModified: file.lastModified,
+      }));
+    } catch (error) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : `${file.name} 解析失败` });
+    }
+  }
+  return artifacts;
+}
+
+async function modelSuggestions(input: {
+  enabled: boolean;
+  allowContentProcessing: boolean;
+  artifacts: DiscoveredEnterpriseArtifact[];
+  roles: Array<{ id: string; name: string }>;
+}): Promise<{ suggestions: Map<string, EnterpriseAssetModelSuggestion>; failed: boolean }> {
+  const suggestions = new Map<string, EnterpriseAssetModelSuggestion>();
+  if (!input.enabled) return { suggestions, failed: false };
+  try {
+    for (let offset = 0; offset < input.artifacts.length; offset += 20) {
+      const chunk = input.artifacts.slice(offset, offset + 20).map(artifact => ({
+        relativePath: artifact.relativePath,
+        ...(input.allowContentProcessing && artifact.content && TEXT_EXCERPT_EXTENSIONS.has(artifact.extension)
+          ? { excerpt: artifact.content.toString("utf8").slice(0, 2400) }
+          : {}),
+      }));
+      const result = await suggestEnterpriseAssetMetadataWithModel({ artifacts: chunk, roles: input.roles });
+      for (const [key, value] of result) suggestions.set(key, value);
+    }
+    return { suggestions, failed: false };
+  } catch {
+    return { suggestions, failed: true };
   }
 }
 
@@ -104,6 +231,7 @@ export const enterpriseAssetsRouter = router({
       candidates,
       summary: {
         sources: sources.length,
+        pendingRemediation: candidates.filter(row => unresolvedDiagnostics(row.diagnosticsJson).length > 0 && ["draft", "rejected"].includes(row.status)).length,
         pendingReview: candidates.filter(row => row.status === "review_pending").length,
         approved: candidates.filter(row => row.status === "approved").length,
         published: candidates.filter(row => row.status === "published").length,
@@ -124,6 +252,132 @@ export const enterpriseAssetsRouter = router({
     });
     await audit(ctx, "enterprise_asset.source.save_completed", input.sourceId, { sourceType: input.sourceType, syncMode: input.syncMode });
     return row;
+  }),
+
+  discoverArtifacts: adminProcedure.input(discoveryInputSchema).mutation(async ({ input, ctx }) => {
+    const source = await getEnterpriseAssetSource(input.sourceId);
+    if (!source || source.status !== "active") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "接入来源不存在或未启用" });
+    }
+    if (!new Set(["document_repository", "rule_catalog"]).has(source.sourceType)) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "当前发现入口仅支持文档库和规则目录" });
+    }
+    const artifacts = await uploadedArtifacts(input);
+    if (!artifacts.length || artifacts.length > 100) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "单次必须发现 1 到 100 个知识文件" });
+    }
+    const totalBytes = artifacts.reduce((sum, artifact) => sum + artifact.sizeBytes, 0);
+    if (input.mode !== "object_inventory" && totalBytes > MAX_DISCOVERY_BYTES) {
+      throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "单次发现文件总大小不能超过 50MB" });
+    }
+
+    const actor = actorName(ctx.user);
+    const roles = listAgentRoleTemplates()
+      .filter(role => role.status !== "disabled")
+      .map(role => ({ id: role.id, name: role.name }));
+    const model = await modelSuggestions({
+      enabled: input.useModelSuggestion,
+      allowContentProcessing: input.allowContentProcessing,
+      artifacts,
+      roles,
+    });
+    const existingByChecksum = new Map(
+      (await listEnterpriseAssetCandidatesByChecksums(artifacts.map(artifact => artifact.checksum)))
+        .map(candidate => [candidate.checksum, candidate] as const),
+    );
+    const firstPathByChecksum = new Map<string, string>();
+    const candidateArtifacts = new Map<string, DiscoveredEnterpriseArtifact>();
+    const candidates = artifacts.map(artifact => {
+      const deterministic = suggestEnterpriseAssetMetadata({
+        artifact,
+        sourceId: source.sourceId,
+        ownerDepartment: source.ownerDepartment,
+        roles,
+        externalProcessingAllowed: input.allowContentProcessing,
+      });
+      const suggested = applyEnterpriseAssetModelSuggestion({
+        ...deterministic,
+        suggestion: model.suggestions.get(artifact.relativePath),
+      });
+      const diagnostics: EnterpriseAssetDiagnostic[] = [...suggested.diagnostics];
+      const existing = existingByChecksum.get(artifact.checksum);
+      const firstPath = firstPathByChecksum.get(artifact.checksum);
+      if (existing || firstPath) {
+        diagnostics.push({
+          code: "DUPLICATE_CONTENT",
+          severity: "warning",
+          message: existing
+            ? `内容与已有候选 ${existing.enterpriseAssetId} v${existing.sourceVersion} 相同`
+            : `内容与本批次 ${firstPath} 相同`,
+        });
+      } else {
+        firstPathByChecksum.set(artifact.checksum, artifact.relativePath);
+      }
+      if (model.failed) diagnostics.push({
+        code: "MODEL_SUGGESTION_FAILED",
+        severity: "warning",
+        message: "模型元数据建议暂不可用，已保留确定性建议",
+      });
+      const candidateId = newEnterpriseAssetCandidateId();
+      candidateArtifacts.set(candidateId, artifact);
+      return {
+        candidateId,
+        sourceId: source.sourceId,
+        enterpriseAssetId: enterpriseAssetIdForPath(source.sourceId, artifact.relativePath),
+        assetType: "knowledge_document" as const,
+        displayName: artifact.displayName,
+        sourceUri: artifact.sourceUri || candidateUri(candidateId, artifact.displayName),
+        sourceVersion: suggested.sourceVersion,
+        checksum: artifact.checksum,
+        suggestedMetadataJson: suggested.metadata,
+        discoveryJson: {
+          mode: input.mode,
+          relativePath: artifact.relativePath,
+          extension: artifact.extension,
+          sizeBytes: artifact.sizeBytes,
+          sourceModifiedAt: artifact.sourceModifiedAt || null,
+          etag: artifact.etag || null,
+          discoveredAt: new Date().toISOString(),
+          contentStaged: Boolean(artifact.content),
+        },
+        diagnosticsJson: diagnostics,
+        status: "draft" as const,
+        createdBy: actor,
+        updatedBy: actor,
+      };
+    });
+
+    await audit(ctx, "enterprise_asset.discovery.requested", source.sourceId, {
+      mode: input.mode,
+      artifactCount: artifacts.length,
+      totalBytes,
+      modelSuggestion: input.useModelSuggestion,
+      contentProcessingAllowed: input.allowContentProcessing,
+    });
+    let rows;
+    try {
+      rows = await importEnterpriseAssetCandidates(candidates);
+    } catch (error) {
+      throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "资产发现结果存在版本冲突" });
+    }
+    for (const row of rows) {
+      const planned = candidates.find(candidate => candidate.enterpriseAssetId === row.enterpriseAssetId && candidate.sourceVersion === row.sourceVersion);
+      const artifact = planned ? candidateArtifacts.get(planned.candidateId) : undefined;
+      if (artifact?.content) persistCandidateArtifact(row.candidateId, artifact.displayName, artifact.content);
+    }
+    await markEnterpriseAssetSourceSynced(source.sourceId, actor);
+    await audit(ctx, "enterprise_asset.discovery.completed", source.sourceId, {
+      mode: input.mode,
+      artifactCount: rows.length,
+      remediationCount: candidates.filter(candidate => candidate.diagnosticsJson.length > 0).length,
+      candidateIds: rows.map(row => row.candidateId),
+    });
+    return {
+      discovered: artifacts.length,
+      candidates: rows,
+      remediationCount: candidates.filter(candidate => candidate.diagnosticsJson.length > 0).length,
+      modelSuggestionApplied: input.useModelSuggestion && !model.failed,
+    };
   }),
 
   importManifest: adminProcedure.input(z.object({
@@ -187,6 +441,12 @@ export const enterpriseAssetsRouter = router({
     const row = await updateEnterpriseAssetCandidate(candidate.candidateId, {
       confirmedMetadataJson: input.confirmedMetadata,
       impactAnalysisJson: impact,
+      diagnosticsJson: unresolvedDiagnostics(candidate.diagnosticsJson).map(diagnostic => ({
+        ...diagnostic,
+        resolution: "confirmed_by_reviewer",
+        resolvedAt: new Date().toISOString(),
+        resolvedBy: actorName(ctx.user),
+      })),
       status: "review_pending",
       reviewNote: null,
       updatedBy: actorName(ctx.user),

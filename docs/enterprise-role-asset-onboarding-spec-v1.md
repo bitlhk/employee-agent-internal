@@ -916,6 +916,55 @@ Reference：create_followup
 
 ## 18. 后续实施顺序
 
+### 18.1 Enterprise Asset Onboarding & Remediation V1 运行基线
+
+V1 供给侧入口复用既有 `enterprise_asset_sources` 和 `enterprise_asset_candidates`，不建立第二套知识资产模型：
+
+```text
+文件 / 文件夹 / ZIP / 对象存储目录清单
+                   ↓
+             Discovery
+                   ↓
+     确定性 Metadata Suggestion
+        + 可选模型辅助建议
+                   ↓
+          Quality Diagnosis
+                   ↓
+        Enterprise Asset Candidate
+                   ↓
+       人工确认 / 独立审核 / 发布
+                   ↓
+          Existing Runtime Asset
+                   ↓
+ ContextSourceBinding / Golden Task / Promote
+```
+
+冻结以下边界：
+
+1. 文件、文件夹和 ZIP 内容进入权限受限的候选暂存区；对象存储 V1 只接收受信目录清单，不保存云凭据，不主动下载正文。
+2. Discovery 支持缺 Owner、缺版本、制度缺生效日期、岗位无法识别、重复内容、疑似旧版本、正文解析失败、OCR 失败和表格异常等标准诊断。
+3. 模型辅助默认关闭；开启后只建议版本、生效日期、适用岗位、业务域和逻辑资产候选。正文摘要必须另行显式授权。
+4. 模型不能修改权限、密级、生命周期或发布状态，也不能创建 Production Binding。
+5. 诊断项经管理员确认后保留解决记录；候选资产仍必须经过原有审核与发布状态机。
+6. `logicalAssetCandidates` 只是后续 Shadow Binding 建议。V1 不跳过 Golden Task，不自动 Promote。
+7. Manifest 继续作为已有治理系统的高级集成契约，不再是日常批量接入的唯一入口。
+
+V1 支持的文件类型与现有 Knowledge Runtime 保持一致：Markdown、文本、CSV、JSON、YAML、PDF、DOCX、XLSX 和 PPTX。ZIP 必须通过条目数量、路径穿越、符号链接、加密条目、压缩算法、解压总量和压缩比检查。
+
+### 18.2 V1 验收路径
+
+```text
+上传制度 V3.3
+  ↓ 自动识别版本、岗位和逻辑资产候选
+  ↓ 诊断并人工补齐生效日期
+  ↓ 提交审核并发布到现有知识 Runtime 资产
+  ↓ 创建 Shadow Binding
+  ↓ Golden Task Regression
+  ↓ Atomic Promote
+```
+
+其中最后三步继续使用已经验证的 Context Resolution 与 Binding Promotion 能力，不在资产发现入口中重复实现。
+
 ```text
 Phase 0
 冻结本规范和岗位标杆任务矩阵 Schema

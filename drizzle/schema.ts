@@ -184,6 +184,8 @@ export const enterpriseAssetCandidates = mysqlTable("enterprise_asset_candidates
   sourceVersion: varchar("source_version", { length: 64 }).default("1.0").notNull(),
   checksum: varchar("checksum", { length: 64 }).notNull(),
   suggestedMetadataJson: json("suggested_metadata_json").$type<Record<string, unknown>>().notNull(),
+  discoveryJson: json("discovery_json").$type<Record<string, unknown> | null>(),
+  diagnosticsJson: json("diagnostics_json").$type<Array<Record<string, unknown>> | null>(),
   confirmedMetadataJson: json("confirmed_metadata_json").$type<Record<string, unknown> | null>(),
   status: mysqlEnum("status", ["draft", "review_pending", "approved", "rejected", "published", "stale"]).default("draft").notNull(),
   targetAssetType: mysqlEnum("target_asset_type", ["knowledge_document", "enterprise_mcp", "skill", "policy", "role"]),

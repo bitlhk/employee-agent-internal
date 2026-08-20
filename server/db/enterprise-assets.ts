@@ -60,6 +60,20 @@ export async function getEnterpriseAssetCandidate(candidateId: string) {
   return row || null;
 }
 
+export async function listEnterpriseAssetCandidatesByChecksums(checksums: string[]) {
+  if (!checksums.length) return [];
+  return (await database()).select().from(enterpriseAssetCandidates)
+    .where(inArray(enterpriseAssetCandidates.checksum, [...new Set(checksums)]));
+}
+
+export async function markEnterpriseAssetSourceSynced(sourceId: string, actor: string) {
+  await (await database()).update(enterpriseAssetSources).set({
+    lastSyncAt: new Date(),
+    updatedBy: actor,
+  }).where(eq(enterpriseAssetSources.sourceId, sourceId));
+  return getEnterpriseAssetSource(sourceId);
+}
+
 export async function upsertEnterpriseAssetCandidate(input: InsertEnterpriseAssetCandidate) {
   const db = await database();
   await db.insert(enterpriseAssetCandidates).values(input);

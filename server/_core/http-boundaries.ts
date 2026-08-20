@@ -10,6 +10,7 @@ const LARGE_JSON_UPLOAD_PATHS = new Set([
   "/api/coop/upload",
   "/api/desktop/files/upload",
   "/api/knowledge/documents/upload",
+  "/api/trpc/enterpriseAssets.discoverArtifacts",
 ]);
 
 const LARGE_RAW_UPLOAD_PATHS = new Set([
@@ -65,4 +66,3 @@ export const sanitizeServerErrorResponses: RequestHandler = (_req, res, next: Ne
   }) as Response["json"];
   next();
 };
-

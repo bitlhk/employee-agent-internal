@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
-import { Check, FileInput, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, Archive, Check, FileInput, FolderOpen, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Overview = RouterOutputs["enterpriseAssets"]["overview"];
@@ -29,6 +29,22 @@ const EMPTY_SOURCE = {
   ownerDepartment: "", ownerContact: "", syncMode: "manual" as const, status: "active" as const,
 };
 
+type DiscoveryMode = "files" | "zip" | "object_inventory";
+
+function fileBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",", 2)[1] || "");
+    reader.onerror = () => reject(reader.error || new Error(`无法读取 ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function candidateDiagnostics(candidate: Candidate): Array<Record<string, unknown>> {
+  if (!Array.isArray(candidate.diagnosticsJson)) return [];
+  return candidate.diagnosticsJson.filter(item => item && typeof item === "object" && !(item as Record<string, unknown>).resolvedAt) as Array<Record<string, unknown>>;
+}
+
 export function EnterpriseAssetsPanel() {
   const utils = trpc.useUtils();
   const { data, isLoading, refetch } = trpc.enterpriseAssets.overview.useQuery({});
@@ -37,6 +53,13 @@ export function EnterpriseAssetsPanel() {
   const [importOpen, setImportOpen] = useState(false);
   const [importSourceId, setImportSourceId] = useState("");
   const [manifestText, setManifestText] = useState("");
+  const [discoveryOpen, setDiscoveryOpen] = useState(false);
+  const [discoverySourceId, setDiscoverySourceId] = useState("");
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>("files");
+  const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
+  const [inventoryText, setInventoryText] = useState("");
+  const [useModelSuggestion, setUseModelSuggestion] = useState(false);
+  const [allowContentProcessing, setAllowContentProcessing] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<Candidate | null>(null);
   const [metadataText, setMetadataText] = useState("");
   const [rejectTarget, setRejectTarget] = useState<Candidate | null>(null);
@@ -53,6 +76,18 @@ export function EnterpriseAssetsPanel() {
     onSuccess: async result => { toast.success(`已导入 ${result.imported} 个候选资产`); setImportOpen(false); setManifestText(""); await invalidate(); },
     onError: error => toast.error(error.message),
   });
+  const discoverArtifacts = trpc.enterpriseAssets.discoverArtifacts.useMutation({
+    onSuccess: async result => {
+      toast.success(`已发现 ${result.discovered} 个资产，${result.remediationCount} 个需要确认`);
+      setDiscoveryOpen(false);
+      setDiscoveryFiles([]);
+      setInventoryText("");
+      setUseModelSuggestion(false);
+      setAllowContentProcessing(false);
+      await invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
   const submitReview = trpc.enterpriseAssets.submitReview.useMutation({
     onSuccess: async () => { toast.success("已提交审核"); setReviewTarget(null); await invalidate(); },
     onError: error => toast.error(error.message),
@@ -67,11 +102,14 @@ export function EnterpriseAssetsPanel() {
   });
 
   const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
-  const busy = saveSource.isPending || importManifest.isPending || submitReview.isPending || review.isPending || publish.isPending;
+  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || submitReview.isPending || review.isPending || publish.isPending;
 
   const openReview = (candidate: Candidate) => {
     const suggested = { ...((candidate.suggestedMetadataJson || {}) as Record<string, unknown>) };
     delete suggested.enterpriseId;
+    delete suggested.suggestedDomain;
+    delete suggested.logicalAssetCandidates;
+    delete suggested.suggestionMethod;
     setMetadataText(JSON.stringify(suggested, null, 2));
     setReviewTarget(candidate);
   };
@@ -93,27 +131,75 @@ export function EnterpriseAssetsPanel() {
     }
   };
 
+  const doDiscover = async () => {
+    if (!discoverySourceId) return;
+    try {
+      if (discoveryMode === "object_inventory") {
+        const objects = JSON.parse(inventoryText);
+        if (!Array.isArray(objects)) throw new Error("对象清单必须是 JSON 数组");
+        discoverArtifacts.mutate({
+          sourceId: discoverySourceId,
+          mode: discoveryMode,
+          objects,
+          useModelSuggestion,
+          allowContentProcessing: false,
+        });
+        return;
+      }
+      if (!discoveryFiles.length) throw new Error("请选择文件");
+      if (discoveryMode === "zip") {
+        const file = discoveryFiles[0];
+        discoverArtifacts.mutate({
+          sourceId: discoverySourceId,
+          mode: discoveryMode,
+          zip: { name: file.name, contentBase64: await fileBase64(file) },
+          useModelSuggestion,
+          allowContentProcessing,
+        });
+        return;
+      }
+      const files = await Promise.all(discoveryFiles.slice(0, 100).map(async file => ({
+        name: file.name,
+        relativePath: file.webkitRelativePath || file.name,
+        contentBase64: await fileBase64(file),
+        lastModified: new Date(file.lastModified).toISOString(),
+      })));
+      discoverArtifacts.mutate({
+        sourceId: discoverySourceId,
+        mode: discoveryMode,
+        files,
+        useModelSuggestion,
+        allowContentProcessing,
+      });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "资产发现输入无效");
+    }
+  };
+
   if (isLoading) return <div className="flex min-h-48 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-gray-900">企业岗位资产接入</h2>
-          <p className="mt-1 text-xs text-muted-foreground">候选资产经人工确认后映射到现有 Runtime 资产；不会产生第二套运行配置。</p>
+          <h2 className="text-base font-semibold text-gray-900">企业资产接入与整改</h2>
+          <p className="mt-1 text-xs text-muted-foreground">发现存量资产、自动诊断治理问题；人工确认后才可进入现有 Runtime Context 链路。</p>
         </div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />刷新</Button>
           <Button variant="outline" size="sm" onClick={() => { setImportSourceId(activeSources[0]?.sourceId || ""); setImportOpen(true); }} disabled={!activeSources.length}>
-            <FileInput className="mr-1.5 h-3.5 w-3.5" />导入 Manifest
+            <FileInput className="mr-1.5 h-3.5 w-3.5" />高级导入
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setDiscoverySourceId(activeSources[0]?.sourceId || ""); setDiscoveryOpen(true); }} disabled={!activeSources.length}>
+            <UploadCloud className="mr-1.5 h-3.5 w-3.5" />发现资产
           </Button>
           <Button size="sm" onClick={() => setSourceOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />登记来源</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {[
-          ["接入来源", data?.summary.sources || 0], ["待审核", data?.summary.pendingReview || 0], ["审核通过", data?.summary.approved || 0],
+          ["接入来源", data?.summary.sources || 0], ["待整改", data?.summary.pendingRemediation || 0], ["待审核", data?.summary.pendingReview || 0], ["审核通过", data?.summary.approved || 0],
           ["已发布", data?.summary.published || 0], ["待重验", data?.summary.stale || 0],
         ].map(([label, value]) => <Card key={String(label)} className="p-3"><div className="text-xl font-semibold text-gray-900">{value}</div><div className="mt-1 text-xs text-muted-foreground">{label}</div></Card>)}
       </div>
@@ -124,7 +210,9 @@ export function EnterpriseAssetsPanel() {
         </div>
         <div className="divide-y">
           {(data?.candidates || []).map(candidate => {
-            const impact = (candidate.impactAnalysisJson || {}) as any;
+            const impact = (candidate.impactAnalysisJson || {}) as { affectedTaskIds?: unknown };
+            const diagnostics = candidateDiagnostics(candidate);
+            const suggestion = (candidate.suggestedMetadataJson || {}) as { applicableRoles?: unknown; logicalAssetCandidates?: unknown; suggestionMethod?: unknown };
             return (
               <div key={candidate.candidateId} className="flex flex-col gap-3 px-4 py-4 xl:flex-row xl:items-center">
                 <div className="min-w-0 flex-1">
@@ -134,8 +222,14 @@ export function EnterpriseAssetsPanel() {
                     <Badge variant={candidate.status === "published" ? "default" : "secondary"}>{STATUS_LABELS[candidate.status] || candidate.status}</Badge>
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{candidate.enterpriseAssetId} · v{candidate.sourceVersion} · {candidate.sourceId}</div>
+                  {Array.isArray(suggestion.applicableRoles) && suggestion.applicableRoles.length > 0 && <div className="mt-1 text-xs text-muted-foreground">建议岗位：{suggestion.applicableRoles.map(String).join("、")}</div>}
+                  {Array.isArray(suggestion.logicalAssetCandidates) && suggestion.logicalAssetCandidates.length > 0 && <div className="mt-1 text-xs text-muted-foreground">逻辑资产候选：{suggestion.logicalAssetCandidates.map(String).join("、")}</div>}
                   {candidate.targetAssetId && <div className="mt-1 text-xs text-emerald-700">Runtime 映射：{candidate.targetAssetType} / {candidate.targetAssetId}</div>}
                   {Array.isArray(impact.affectedTaskIds) && impact.affectedTaskIds.length > 0 && <div className="mt-1 text-xs text-amber-700">需重跑：{impact.affectedTaskIds.join("、")}</div>}
+                  {diagnostics.length > 0 && <div className="mt-2 space-y-1 rounded border border-amber-200 bg-amber-50 px-2.5 py-2">
+                    {diagnostics.slice(0, 3).map((diagnostic, index) => <div key={`${String(diagnostic.code)}-${index}`} className="flex items-start gap-1.5 text-xs text-amber-800"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><span>{String(diagnostic.message || diagnostic.code || "需要人工确认")}</span></div>)}
+                    {diagnostics.length > 3 && <div className="text-xs text-amber-700">另有 {diagnostics.length - 3} 项待确认</div>}
+                  </div>}
                   {candidate.reviewNote && <div className="mt-1 text-xs text-red-600">评审意见：{candidate.reviewNote}</div>}
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
@@ -170,9 +264,68 @@ export function EnterpriseAssetsPanel() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>发现企业资产</DialogTitle>
+            <DialogDescription>扫描结果只生成候选资产。系统会建议元数据并标记治理问题，不会自动审核或发布。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>接入来源</Label>
+              <Select value={discoverySourceId} onValueChange={setDiscoverySourceId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{activeSources.map(item => <SelectItem key={item.sourceId} value={item.sourceId}>{item.displayName}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>发现方式</Label>
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                {([
+                  ["files", "文件 / 文件夹", FolderOpen],
+                  ["zip", "ZIP 压缩包", Archive],
+                  ["object_inventory", "对象存储清单", FileInput],
+                ] as const).map(([mode, label, Icon]) => <Button key={mode} type="button" size="sm" variant={discoveryMode === mode ? "default" : "outline"} onClick={() => { setDiscoveryMode(mode); setDiscoveryFiles([]); }}><Icon className="mr-1.5 h-3.5 w-3.5" />{label}</Button>)}
+              </div>
+            </div>
+
+            {discoveryMode === "files" && <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded border border-dashed px-3 py-5 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground">
+                <UploadCloud className="h-4 w-4" />选择文件
+                <input className="hidden" type="file" multiple accept=".md,.txt,.csv,.json,.yaml,.yml,.pdf,.docx,.xlsx,.pptx" onChange={event => setDiscoveryFiles(Array.from(event.currentTarget.files || []))} />
+              </label>
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded border border-dashed px-3 py-5 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground">
+                <FolderOpen className="h-4 w-4" />选择文件夹
+                <input className="hidden" type="file" multiple accept=".md,.txt,.csv,.json,.yaml,.yml,.pdf,.docx,.xlsx,.pptx" {...({ webkitdirectory: "", directory: "" } as Record<string, string>)} onChange={event => setDiscoveryFiles(Array.from(event.currentTarget.files || []))} />
+              </label>
+            </div>}
+
+            {discoveryMode === "zip" && <label className="flex cursor-pointer items-center justify-center gap-2 rounded border border-dashed px-3 py-6 text-sm text-muted-foreground hover:border-primary/50 hover:text-foreground">
+              <Archive className="h-4 w-4" />选择 ZIP 压缩包
+              <input className="hidden" type="file" accept=".zip,application/zip" onChange={event => setDiscoveryFiles(Array.from(event.currentTarget.files || []).slice(0, 1))} />
+            </label>}
+
+            {discoveryMode === "object_inventory" && <div>
+              <Label>对象清单 JSON</Label>
+              <Textarea className="mt-1.5 min-h-48 font-mono text-xs" value={inventoryText} onChange={event => setInventoryText(event.target.value)} placeholder={'[{\n  "key": "wealth/policy-v3.2.pdf",\n  "checksum": "64位SHA256",\n  "sizeBytes": 1024,\n  "sourceUri": "obs://bucket/wealth/policy-v3.2.pdf",\n  "lastModified": "2026-08-20T08:00:00.000Z"\n}]'} />
+              <p className="mt-1 text-xs text-muted-foreground">V1 接收对象存储导出的受信目录清单，不保存云凭据，也不主动拉取正文。</p>
+            </div>}
+
+            {discoveryMode !== "object_inventory" && discoveryFiles.length > 0 && <div className="text-xs text-muted-foreground">已选择 {discoveryFiles.length} 个文件，共 {(discoveryFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} MB</div>}
+
+            <div className="space-y-2 rounded border bg-muted/30 px-3 py-3">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={useModelSuggestion} onChange={event => { setUseModelSuggestion(event.target.checked); if (!event.target.checked) setAllowContentProcessing(false); }} />使用平台模型增强元数据建议</label>
+              <label className={`flex items-center gap-2 text-sm ${useModelSuggestion ? "" : "text-muted-foreground"}`}><input type="checkbox" disabled={!useModelSuggestion} checked={allowContentProcessing} onChange={event => setAllowContentProcessing(event.target.checked)} />允许向平台模型发送文本文件的有限摘要</label>
+              <p className="text-xs text-muted-foreground">模型只提供建议；权限、密级、生命周期和发布状态仍由确定性规则与人工审核决定。</p>
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setDiscoveryOpen(false)}>取消</Button><Button disabled={busy || !discoverySourceId || (discoveryMode === "object_inventory" ? !inventoryText.trim() : !discoveryFiles.length)} onClick={doDiscover}>{discoverArtifacts.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}开始发现</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>导入岗位资产 Manifest</DialogTitle><DialogDescription>仅接收 `linggan.enterprise-asset/v1`，单次最多 100 个候选资产。</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>高级导入 Manifest</DialogTitle><DialogDescription>用于已有治理系统对接。日常文件接入请使用“发现资产”；仅接收 `linggan.enterprise-asset/v1`。</DialogDescription></DialogHeader>
           <div><Label>接入来源</Label><Select value={importSourceId} onValueChange={setImportSourceId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{activeSources.map(item => <SelectItem key={item.sourceId} value={item.sourceId}>{item.displayName}</SelectItem>)}</SelectContent></Select></div>
           <div><Label>Manifest JSON</Label><Textarea className="min-h-72 font-mono text-xs" value={manifestText} onChange={e => setManifestText(e.target.value)} /></div>
           <DialogFooter><Button variant="outline" onClick={() => setImportOpen(false)}>取消</Button><Button disabled={busy || !importSourceId || !manifestText.trim()} onClick={doImport}>导入候选</Button></DialogFooter>

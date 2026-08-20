@@ -43,6 +43,7 @@ afterEach(async () => {
 describe("HTTP request and error boundaries", () => {
   it("only grants the large JSON budget to explicit upload routes", () => {
     expect(isLargeJsonUploadRequest({ path: "/api/claw/files/upload", originalUrl: "" } as never)).toBe(true);
+    expect(isLargeJsonUploadRequest({ path: "/api/trpc/enterpriseAssets.discoverArtifacts", originalUrl: "" } as never)).toBe(true);
     expect(isLargeJsonUploadRequest({ path: "/api/ordinary", originalUrl: "" } as never)).toBe(false);
     expect(requestEnvelopeLimit({ path: "/api/ordinary", originalUrl: "" } as never)).toBe(DEFAULT_JSON_LIMIT_BYTES);
   });
@@ -76,4 +77,3 @@ describe("HTTP request and error boundaries", () => {
     expect(await badRequest.json()).toEqual({ error: "invalid field" });
   });
 });
-
