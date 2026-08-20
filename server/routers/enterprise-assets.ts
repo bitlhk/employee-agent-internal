@@ -61,7 +61,7 @@ import {
   removeKnowledgeDocumentFiles,
 } from "../_core/knowledge-storage";
 import { queueKnowledgeIndex } from "../_core/knowledge-service";
-import { verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
+import { rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
 import { persistReferenceRolePackScenarioReport } from "../_core/reference-role-pack-release";
 
 const sourceSchema = z.object({
@@ -737,7 +737,7 @@ export const enterpriseAssetsRouter = router({
     const releaseByRole = new Map(releases.map(release => [release.rolePackId, release]));
     const missing = impact.affectedRolePackIds.filter(rolePackId => {
       const release = releaseByRole.get(rolePackId);
-      return !release?.verifiedAt || release.verifiedAt.getTime() <= stagedAt.getTime();
+      return !rolePackReleaseCoversCandidate(release?.verifiedAt, stagedAt);
     });
     if (missing.length) {
       throw new TRPCError({

@@ -79,12 +79,18 @@ function rowsFromResult(result: unknown): any[] {
   return Array.isArray(result) ? (Array.isArray(result[0]) ? result[0] : result) : [];
 }
 
-function isoDate(value: unknown): string | null {
+export function knowledgeTimestampIso(value: unknown): string | null {
   if (!value) return null;
   if (value instanceof Date) return value.toISOString();
-  const date = new Date(String(value));
+  const text = String(value).trim();
+  const mysqlUtc = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,6})?$/u.test(text)
+    ? `${text.replace(" ", "T")}Z`
+    : text;
+  const date = new Date(mysqlUtc);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
+
+const isoDate = knowledgeTimestampIso;
 
 function mapBase(row: any): KnowledgeBaseRecord {
   return {

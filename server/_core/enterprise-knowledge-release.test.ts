@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EnterpriseAssetCandidate } from "../../drizzle/schema";
 import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "../db";
 import type { EnterpriseAssetMetadata } from "./enterprise-asset-onboarding";
-import { verifyWealthPolicyCandidate } from "./enterprise-knowledge-release";
+import { rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "./enterprise-knowledge-release";
 
 const base: KnowledgeBaseRecord = {
   id: 1, publicId: "kb_wealth_policy", ownerUserId: 1, ownerGroupId: 1,
@@ -101,6 +101,12 @@ const metadata: EnterpriseAssetMetadata = {
 };
 
 describe("enterprise knowledge release", () => {
+  it("accepts a Role Pack verification persisted in the same database second", () => {
+    const candidateUpdatedAt = new Date("2026-08-20T23:07:31.000Z");
+    expect(rolePackReleaseCoversCandidate(new Date("2026-08-20T23:07:31.000Z"), candidateUpdatedAt)).toBe(true);
+    expect(rolePackReleaseCoversCandidate(new Date("2026-08-20T23:07:30.000Z"), candidateUpdatedAt)).toBe(false);
+  });
+
   it("validates a future wealth policy against its effective Context set", async () => {
     const result = await verifyWealthPolicyCandidate({
       candidate,

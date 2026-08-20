@@ -23,6 +23,13 @@ export type EnterpriseKnowledgeValidation = {
   validationFingerprint: string;
 };
 
+export function rolePackReleaseCoversCandidate(
+  releaseVerifiedAt: Date | null | undefined,
+  candidateUpdatedAt: Date,
+): boolean {
+  return Boolean(releaseVerifiedAt && releaseVerifiedAt.getTime() >= candidateUpdatedAt.getTime());
+}
+
 export async function verifyWealthPolicyCandidate(input: {
   candidate: EnterpriseAssetCandidate;
   metadata: EnterpriseAssetMetadata;

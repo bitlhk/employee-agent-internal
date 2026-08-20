@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isKnowledgeDocumentCurrentlyActive, type KnowledgeDocumentRecord } from "./knowledge";
+import {
+  isKnowledgeDocumentCurrentlyActive,
+  knowledgeTimestampIso,
+  type KnowledgeDocumentRecord,
+} from "./knowledge";
 
 function document(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDocumentRecord {
   return {
@@ -33,6 +37,11 @@ function document(overrides: Partial<KnowledgeDocumentRecord> = {}): KnowledgeDo
 
 describe("knowledge document governance", () => {
   const now = new Date("2026-07-28T00:00:00.000Z");
+
+  it("treats MySQL timestamp strings as UTC", () => {
+    expect(knowledgeTimestampIso("2026-08-20 23:13:10")).toBe("2026-08-20T23:13:10.000Z");
+    expect(knowledgeTimestampIso(new Date("2026-08-20T23:13:10.000Z"))).toBe("2026-08-20T23:13:10.000Z");
+  });
 
   it("indexes only active documents within their effective window", () => {
     expect(isKnowledgeDocumentCurrentlyActive(document(), now)).toBe(true);

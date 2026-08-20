@@ -1,0 +1,1114 @@
+{
+  "schemaVersion": "grace.demo-enterprise-assets/v1",
+  "generatedAt": "2026-08-20T00:00:00.000Z",
+  "disclaimer": "全部内容均为虚构演示资产，不代表任何真实机构、客户、产品、制度或投资意见。",
+  "sourceId": "demo-bank-assets-v1",
+  "ownerDepartment": "演示银行企业资产管理部",
+  "assetCount": 60,
+  "totalBytes": 855646,
+  "formatCounts": {
+    "docx": 14,
+    "md": 13,
+    "pdf": 11,
+    "pptx": 8,
+    "xlsx": 14
+  },
+  "departmentCounts": {
+    "财富管理部": 20,
+    "风险管理部": 15,
+    "保险业务部": 15,
+    "运营管理部": 10
+  },
+  "assets": [
+    {
+      "id": "wealth-policy-31",
+      "relativePath": "财富管理部/制度/私人银行产品销售适当性管理办法V3.1.pdf",
+      "title": "私人银行产品销售适当性管理办法",
+      "format": "pdf",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "3.1",
+      "effectiveDateRequired": true,
+      "series": "wealth-sales-suitability",
+      "summary": "历史版本，规定客户风险测评与产品销售的基础要求。",
+      "checksum": "523fe606c31668f5f2fbc1bd01a82c99440546961d35f6c802411f3a5d7a5f5c",
+      "sizeBytes": 888,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-policy-32",
+      "relativePath": "财富管理部/制度/私人银行产品销售适当性管理办法V3.2.pdf",
+      "title": "私人银行产品销售适当性管理办法",
+      "format": "pdf",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "3.2",
+      "effectiveDateRequired": true,
+      "series": "wealth-sales-suitability",
+      "supersedes": "wealth-policy-31",
+      "summary": "当前演示基线版本，增加风险测评有效期和双录要求。",
+      "checksum": "de550394de599391bdf6726560de2f96e4aa054c1655087e23fc2e8f844bbd55",
+      "sizeBytes": 888,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-policy-33",
+      "relativePath": "财富管理部/制度/私人银行产品销售适当性管理办法V3.3.pdf",
+      "title": "私人银行产品销售适当性管理办法",
+      "format": "pdf",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "3.3",
+      "effectiveDateRequired": true,
+      "series": "wealth-sales-suitability",
+      "supersedes": "wealth-policy-32",
+      "showcase": true,
+      "summary": "候选新版本，用于演示验证、待生效和有效 Context 切换。",
+      "checksum": "fa56b4828f56e84ae5c2fa4af952b5afa6d0284d26d73e15b167a8f1bebe4984",
+      "sizeBytes": 888,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-product-pool",
+      "relativePath": "财富管理部/产品/在售产品清单V2026.08.xlsx",
+      "title": "在售产品清单",
+      "format": "xlsx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "2026.08",
+      "summary": "演示产品风险等级、期限、起购金额和销售状态。",
+      "checksum": "1a54fe5c42bfadb7c0736640f88e368ce91e32c5523b59d27990bf9757f16943",
+      "sizeBytes": 5623,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-product-manual",
+      "relativePath": "财富管理部/产品/理财产品销售手册V2.0.docx",
+      "title": "理财产品销售手册",
+      "format": "docx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "2.0",
+      "summary": "产品讲解、风险揭示和客户沟通口径。",
+      "checksum": "69491d487bf866e9e2431c2a400f66c8e0dfb611da90996a997345a794384e72",
+      "sizeBytes": 37132,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-allocation-sop",
+      "relativePath": "财富管理部/SOP/资产配置方案制作规程V1.2.md",
+      "title": "资产配置方案制作规程",
+      "format": "md",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.2",
+      "effectiveDateRequired": true,
+      "summary": "资产配置建议的事实核验、分析和留痕步骤。",
+      "checksum": "c36693228d4428c31c36cd0ecc064c6bebe79ebb754f2cca81a3da20014000cf",
+      "sizeBytes": 911,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-previsit-sop",
+      "relativePath": "财富管理部/SOP/客户访前准备作业指引V1.1.pptx",
+      "title": "客户访前准备作业指引",
+      "format": "pptx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.1",
+      "effectiveDateRequired": true,
+      "summary": "访前材料、客户画像和沟通重点准备流程。",
+      "checksum": "bcabd09b73734502cd855caed28133660545025ab4e65ef9f1ef33f9a648bb93",
+      "sizeBytes": 29560,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-maturity-plan",
+      "relativePath": "财富管理部/产品/到期客户经营计划V1.0.xlsx",
+      "title": "到期客户经营计划",
+      "format": "xlsx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "summary": "到期产品、客户偏好和跟进节点样例。",
+      "checksum": "1d40617fea2c00e421acf767e6500953349da40caed7b6377c09fa7756f5acc6",
+      "sizeBytes": 5609,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-suitability-checklist",
+      "relativePath": "财富管理部/制度/产品适当性检查清单V2.0.xlsx",
+      "title": "产品适当性检查清单",
+      "format": "xlsx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "2.0",
+      "effectiveDateRequired": true,
+      "summary": "风险等级、期限、流动性和集中度检查项。",
+      "checksum": "9b1e1816a6337b15bde8f67b37903d79261d0a463cb43eefdbc818b9a2a96a91",
+      "sizeBytes": 5621,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-market-view",
+      "relativePath": "财富管理部/投研/市场观点2026-08-20.md",
+      "title": "财富市场观点",
+      "format": "md",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "2026.08.20",
+      "summary": "虚构市场观点，仅用于演示可选 Context。",
+      "checksum": "c6c3b6887ec6632820b6e74c15cdd3a0b25c5d0ffbaaa2da548a3d7470957046",
+      "sizeBytes": 889,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-communication",
+      "relativePath": "财富管理部/客户/高净值客户沟通指引.docx",
+      "title": "高净值客户沟通指引",
+      "format": "docx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": null,
+      "effectiveDateRequired": true,
+      "summary": "故意缺少版本，用于整改队列演示。",
+      "checksum": "3b1bf3f27c99282182111851da660b8f282cc1c044c7610fa625cdefeb4a82d7",
+      "sizeBytes": 37128,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE",
+        "MISSING_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-service-flow",
+      "relativePath": "财富管理部/客户/私人银行客户服务流程2025.docx",
+      "title": "私人银行客户服务流程",
+      "format": "docx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": null,
+      "summary": "故意使用不完整年份命名，验证版本补录。",
+      "checksum": "fa2d5d0b78d6d8d7db7d7fa22a4205d342595b6c8c1646b796ff6f28e8fea6fb",
+      "sizeBytes": 37133,
+      "expectedDiagnostics": [
+        "MISSING_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-faq",
+      "relativePath": "财富管理部/产品/产品销售问答V1.0.md",
+      "title": "产品销售问答",
+      "format": "md",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "summary": "产品费用、赎回和风险揭示常见问答。",
+      "checksum": "03ead8edc28854269ba3d089deda20e738eec86843e2079ad3f58a8176386f43",
+      "sizeBytes": 870,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-faq-copy",
+      "relativePath": "财富管理部/产品/产品销售问答最终版2.md",
+      "title": "产品销售问答",
+      "format": "md",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": null,
+      "oldVersion": true,
+      "duplicateOf": "wealth-faq",
+      "summary": "与产品销售问答V1.0内容完全相同，用于重复资产识别。",
+      "checksum": "03ead8edc28854269ba3d089deda20e738eec86843e2079ad3f58a8176386f43",
+      "sizeBytes": 870,
+      "expectedDiagnostics": [
+        "DUPLICATE_CONTENT",
+        "MISSING_VERSION",
+        "SUSPECTED_OLD_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-old-policy",
+      "relativePath": "财富管理部/制度/历史/财富客户分层管理办法V2.0.pdf",
+      "title": "财富客户分层管理办法",
+      "format": "pdf",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "2.0",
+      "effectiveDateRequired": true,
+      "oldVersion": true,
+      "summary": "历史制度，用于旧版本识别与排除说明。",
+      "checksum": "59afd75bc8a7b15f1cfff10b0c7e8d58a91649bb2922bfb2f22e6669bb601755",
+      "sizeBytes": 889,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE",
+        "SUSPECTED_OLD_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-training",
+      "relativePath": "财富管理部/培训/财富经理年度培训V1.0.pptx",
+      "title": "财富经理年度培训",
+      "format": "pptx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "summary": "财富客户经营和合规基础培训。",
+      "checksum": "7f8a8398755bbcb472e8f1d4e5e8a357b3926e67db316f3df9a47e97aa9263bc",
+      "sizeBytes": 29539,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-recording",
+      "relativePath": "财富管理部/制度/销售双录管理规定V1.0.docx",
+      "title": "销售双录管理规定",
+      "format": "docx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "双录触发、质检和异常升级要求。",
+      "checksum": "d46b51bf578b88b24212f809a1c3caae530694aabc5bc0d1340dc05a0e168ffd",
+      "sizeBytes": 37121,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_wealth_policy"
+      ]
+    },
+    {
+      "id": "wealth-disclosure",
+      "relativePath": "财富管理部/模板/产品风险揭示模板V1.0.md",
+      "title": "产品风险揭示模板",
+      "format": "md",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "summary": "演示风险揭示内容和人工确认边界。",
+      "checksum": "75395c8cd66a5f1de411f497b58b3b5b0e69c0051221fc764d6f4e103992e597",
+      "sizeBytes": 877,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-commentary",
+      "relativePath": "财富管理部/投研/大类资产月度观察V1.0.pdf",
+      "title": "大类资产月度观察",
+      "format": "pdf",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "summary": "虚构投研材料，不包含真实投资建议。",
+      "checksum": "57b12d248811f1fe4eaa9c719428b460e6a834a29c8b2b2f6810129fe3bd68f2",
+      "sizeBytes": 889,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "wealth-tiering",
+      "relativePath": "财富管理部/客户/客户分层指标定义V1.0.xlsx",
+      "title": "客户分层指标定义",
+      "format": "xlsx",
+      "department": "财富管理部",
+      "domain": "wealth",
+      "role": "wealth-manager",
+      "version": "1.0",
+      "summary": "客户分层指标和解释口径。",
+      "checksum": "6d0decb682ce6f73c86c2111cc11eab470a32086b933d3bd25dbd1b4e10485ae",
+      "sizeBytes": 5587,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-warning-10",
+      "relativePath": "风险管理部/制度/贷后风险预警管理办法V1.0.docx",
+      "title": "贷后风险预警管理办法",
+      "format": "docx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "series": "post-loan-warning",
+      "summary": "历史预警制度。",
+      "checksum": "69eaed1268c88a698f3e0e57285c1b885dd3e36101cbfe0ceab70eee61d73eaa",
+      "sizeBytes": 37106,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-warning-20",
+      "relativePath": "风险管理部/制度/贷后风险预警管理办法V2.0.docx",
+      "title": "贷后风险预警管理办法",
+      "format": "docx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "2.0",
+      "effectiveDateRequired": true,
+      "series": "post-loan-warning",
+      "supersedes": "risk-warning-10",
+      "summary": "现行预警制度，定义风险分层和升级时限。",
+      "checksum": "99918a8b1148f3fbee5113af2545a30d580f45ebd992864bfb0a069b04709955",
+      "sizeBytes": 37133,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-warning-21",
+      "relativePath": "风险管理部/制度/贷后风险预警管理办法V2.1.docx",
+      "title": "贷后风险预警管理办法",
+      "format": "docx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "2.1",
+      "effectiveDateRequired": true,
+      "series": "post-loan-warning",
+      "supersedes": "risk-warning-20",
+      "showcase": true,
+      "summary": "候选版本，增加舆情和司法信息核查要求。",
+      "checksum": "9f09860b1f3252f660883231c89de9f79108cfb47721e0d5bfe83474dde8567d",
+      "sizeBytes": 37134,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-indicators",
+      "relativePath": "风险管理部/规则/风险预警指标阈值V3.0.xlsx",
+      "title": "风险预警指标阈值",
+      "format": "xlsx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "3.0",
+      "summary": "逾期、担保、财务和舆情风险阈值样例。",
+      "checksum": "6a882884eb479a4188220ffb51701b6a4d553211ad79bc852bc59bb85f7e7330",
+      "sizeBytes": 5612,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-inspection",
+      "relativePath": "风险管理部/SOP/企业贷后检查作业规程V1.4.docx",
+      "title": "企业贷后检查作业规程",
+      "format": "docx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.4",
+      "effectiveDateRequired": true,
+      "summary": "贷后检查、证据收集和升级处置流程。",
+      "checksum": "62f13dbaba451eaf31890780369b953cb55218f4586d32c4bf7d5f9bc341d35f",
+      "sizeBytes": 37124,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-collateral",
+      "relativePath": "风险管理部/规则/抵质押物核查清单V1.1.xlsx",
+      "title": "抵质押物核查清单",
+      "format": "xlsx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.1",
+      "summary": "权属、估值、保险和处置检查项。",
+      "checksum": "56bcd5bbdab67e23e7af88418477a84cef75ce565897a3c03d89b44aa9e00b11",
+      "sizeBytes": 5605,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-reporting",
+      "relativePath": "风险管理部/SOP/风险事件升级处置指引V2.0.pptx",
+      "title": "风险事件升级处置指引",
+      "format": "pptx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "2.0",
+      "effectiveDateRequired": true,
+      "summary": "风险事件分级、升级和跟踪闭环。",
+      "checksum": "40e9548ad11f6e5fd0ee4769e1f4551c4e67f89b266fb30154704e9f18011bd7",
+      "sizeBytes": 29539,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-credit-rating",
+      "relativePath": "风险管理部/规则/企业信用评级映射V1.0.xlsx",
+      "title": "企业信用评级映射",
+      "format": "xlsx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "summary": "内部评级、预警等级和处置动作映射。",
+      "checksum": "71668fb7c903ee7b59b4dc3ee230fd89767d77bcd0bc1a59bddce2ec13eb28b8",
+      "sizeBytes": 5602,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-jurisdiction",
+      "relativePath": "风险管理部/制度/司法风险信息使用规定V1.0.pdf",
+      "title": "司法风险信息使用规定",
+      "format": "pdf",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "司法信息采集、核验和使用边界。",
+      "checksum": "c92f832ea2534abd5a6aef9e59b390abbc6d78e8ee8bac27034dd5badcbb6fd4",
+      "sizeBytes": 887,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-review",
+      "relativePath": "风险管理部/模板/贷后风险报告模板V1.0.md",
+      "title": "贷后风险报告模板",
+      "format": "md",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "summary": "风险事实、判断依据和后续动作模板。",
+      "checksum": "48e80e48e66243e94f813eabdbe157f00b18469cec8d2e0b3b1c26309e2f109c",
+      "sizeBytes": 877,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-unversioned",
+      "relativePath": "风险管理部/规则/行业风险观察口径.docx",
+      "title": "行业风险观察口径",
+      "format": "docx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": null,
+      "summary": "故意缺少版本，用于整改演示。",
+      "checksum": "df4c1c23694a9ea65ff3b4cb36e3358c6cccc9de3a0882b7048a41b6ae837f06",
+      "sizeBytes": 37114,
+      "expectedDiagnostics": [
+        "MISSING_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-archive",
+      "relativePath": "风险管理部/制度/历史/担保企业风险管理细则V1.0.pdf",
+      "title": "担保企业风险管理细则",
+      "format": "pdf",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "oldVersion": true,
+      "summary": "历史细则。",
+      "checksum": "3cdd8859a1c8ab3a1bf1c3f4759f61cb5ce9ef83fdf02ade0b996d6009d950eb",
+      "sizeBytes": 882,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE",
+        "SUSPECTED_OLD_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_risk_policy"
+      ]
+    },
+    {
+      "id": "risk-training",
+      "relativePath": "风险管理部/培训/贷后风险案例复盘V1.0.pptx",
+      "title": "贷后风险案例复盘",
+      "format": "pptx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "summary": "虚构案例培训材料。",
+      "checksum": "0b86404824ea6b6132ff8e4581c7ab94833b11ef5d1e1a75b6e8ce1c40a39248",
+      "sizeBytes": 29526,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-data-dictionary",
+      "relativePath": "风险管理部/数据/贷后指标数据字典V1.0.xlsx",
+      "title": "贷后指标数据字典",
+      "format": "xlsx",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "summary": "风险指标字段、来源和刷新频率。",
+      "checksum": "8d1d7a2785a9ec7ef7f2f6b2eeb6e4d99feefdc99cd7689b89409ee3cdd09e2c",
+      "sizeBytes": 5593,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "risk-audit-trail",
+      "relativePath": "风险管理部/SOP/风险处置留痕规范V1.0.md",
+      "title": "风险处置留痕规范",
+      "format": "md",
+      "department": "风险管理部",
+      "domain": "risk",
+      "role": "post-loan-risk-control",
+      "version": "1.0",
+      "summary": "风险事实、审批意见和执行回执留痕要求。",
+      "checksum": "3cb0f35ffabb95aa5d2756bbe3fdec33b04642964dfc50c71fa7f838d95261a1",
+      "sizeBytes": 894,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "insurance-sales-10",
+      "relativePath": "保险业务部/制度/保险销售行为管理办法V1.0.md",
+      "title": "保险销售行为管理办法",
+      "format": "md",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "series": "insurance-sales",
+      "summary": "历史保险销售制度。",
+      "checksum": "3f2a86e3e5432e04253cf95780fa480ae969857e6cdc1b0f2ab63f7c9a7412e2",
+      "sizeBytes": 842,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-sales-11",
+      "relativePath": "保险业务部/制度/保险销售行为管理办法V1.1.md",
+      "title": "保险销售行为管理办法",
+      "format": "md",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.1",
+      "effectiveDateRequired": true,
+      "series": "insurance-sales",
+      "supersedes": "insurance-sales-10",
+      "summary": "当前演示销售制度。",
+      "checksum": "489209705c624069c960659d67ec6a1b4c624f94012b73726b5483f52c37c118",
+      "sizeBytes": 842,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-sales-20",
+      "relativePath": "保险业务部/制度/保险销售行为管理办法V2.0.md",
+      "title": "保险销售行为管理办法",
+      "format": "md",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "2.0",
+      "effectiveDateRequired": true,
+      "series": "insurance-sales",
+      "supersedes": "insurance-sales-11",
+      "showcase": true,
+      "summary": "候选新版本，增加需求分析和回访要求。",
+      "checksum": "ca665e152c42eeea22da768a02871d379170b0e35c388a467f1e6b513967ec9a",
+      "sizeBytes": 896,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-products",
+      "relativePath": "保险业务部/产品/保险产品责任清单V2026.08.xlsx",
+      "title": "保险产品责任清单",
+      "format": "xlsx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "2026.08",
+      "summary": "车险、健康险和意外险责任样例。",
+      "checksum": "fc69600c4dfcea6cde33f2e74f3149874039bfcc80066b8df276fd37c8f0b0d3",
+      "sizeBytes": 5594,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "insurance-renewal",
+      "relativePath": "保险业务部/SOP/续保客户经营指引V1.2.docx",
+      "title": "续保客户经营指引",
+      "format": "docx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.2",
+      "effectiveDateRequired": true,
+      "summary": "续保客户筛选、访前准备和异议处理。",
+      "checksum": "8507c7ab96855e2d17aa60520100f7a0b5acd6b9e21a8f5f4363b6c9562c1549",
+      "sizeBytes": 37124,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-needs",
+      "relativePath": "保险业务部/SOP/客户保障需求分析规程V1.0.pptx",
+      "title": "客户保障需求分析规程",
+      "format": "pptx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "客户家庭责任、保障缺口和预算分析。",
+      "checksum": "f1794efd3be2fce6949eaf36b7f560cf2334bc5740a11e0d064b74794550fd12",
+      "sizeBytes": 29549,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-comparison",
+      "relativePath": "保险业务部/产品/保险产品对比表V1.0.xlsx",
+      "title": "保险产品对比表",
+      "format": "xlsx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "summary": "责任范围、免赔额和等待期对比。",
+      "checksum": "5285b54832a0e7c0417ee210ecb5f1d6be85aff354be0463bce783efe4007fa9",
+      "sizeBytes": 5591,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "insurance-claims",
+      "relativePath": "保险业务部/SOP/理赔协助操作指引V1.0.md",
+      "title": "理赔协助操作指引",
+      "format": "md",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "理赔材料清单和客户沟通边界。",
+      "checksum": "c933df8fb41419bca9429d9079024a83e0da345a587f19b0c36a720c8c236e90",
+      "sizeBytes": 864,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-disclosure",
+      "relativePath": "保险业务部/制度/保险产品风险揭示规定V1.0.pdf",
+      "title": "保险产品风险揭示规定",
+      "format": "pdf",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "费用、退保损失和除外责任揭示要求。",
+      "checksum": "6efb47c6a09b55a8a20c240ca292570762434d963ecf0e5094b1624f9a73a54c",
+      "sizeBytes": 895,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-script",
+      "relativePath": "保险业务部/培训/客户异议沟通陪练V1.0.pptx",
+      "title": "客户异议沟通陪练",
+      "format": "pptx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "summary": "虚构客户异议和规范回应示例。",
+      "checksum": "dae386755e2458505c2a46575d26ed6184392951f8f9e0759955c204e537dedb",
+      "sizeBytes": 29534,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "insurance-unversioned",
+      "relativePath": "保险业务部/客户/家庭保障访谈提纲.docx",
+      "title": "家庭保障访谈提纲",
+      "format": "docx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": null,
+      "summary": "故意缺少版本。",
+      "checksum": "f362c5722d5aa8106d680beeac55ee72b5bb4dcdb11b17fa4d8cbf6e38ce154d",
+      "sizeBytes": 37105,
+      "expectedDiagnostics": [
+        "MISSING_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "insurance-archive",
+      "relativePath": "保险业务部/制度/历史/保险回访管理细则V1.0.pdf",
+      "title": "保险回访管理细则",
+      "format": "pdf",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "oldVersion": true,
+      "summary": "历史回访制度。",
+      "checksum": "dcf6c6c0978cfec3939fad1a3ae7eff5eeb811686c5e98ee777d33c734abfc60",
+      "sizeBytes": 892,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE",
+        "SUSPECTED_OLD_VERSION"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-checklist",
+      "relativePath": "保险业务部/模板/投保资料检查清单V1.0.xlsx",
+      "title": "投保资料检查清单",
+      "format": "xlsx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "summary": "身份、健康告知和支付资料检查项。",
+      "checksum": "18b7ddfca6f64d839dff7411e4db310159252d89c58b6cbd8dd80d8d44af3b05",
+      "sizeBytes": 5600,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "insurance-record",
+      "relativePath": "保险业务部/制度/销售过程留痕规范V1.0.md",
+      "title": "销售过程留痕规范",
+      "format": "md",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "需求分析、产品说明和客户确认留痕。",
+      "checksum": "9d279b17caee269c8e6939b9495ad45e4bfd1f46668ae2a8011dbf4cce9e7cbf",
+      "sizeBytes": 882,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_insurance_policy"
+      ]
+    },
+    {
+      "id": "insurance-faq",
+      "relativePath": "保险业务部/产品/保险服务常见问答V1.0.docx",
+      "title": "保险服务常见问答",
+      "format": "docx",
+      "department": "保险业务部",
+      "domain": "insurance",
+      "role": "insurance-advisor",
+      "version": "1.0",
+      "summary": "保全、续期、理赔和退保常见问题。",
+      "checksum": "168b72718b838bdaeb2ea3695cc99cb466e93eceab02b7b68a0b1749e0ffb723",
+      "sizeBytes": 37120,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "audit-material-policy",
+      "relativePath": "运营管理部/智能审核/制度/业务材料审核管理办法V1.0.docx",
+      "title": "业务材料审核管理办法",
+      "format": "docx",
+      "department": "运营管理部",
+      "domain": "audit",
+      "role": "credential-compliance",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "审核受理、疑点升级和人工复核要求。",
+      "checksum": "a2fc1b1f481bb64324e9eea15efb664c207e4ea87a2f6a4df90760ae39cbd3f6",
+      "sizeBytes": 37130,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_audit_policy"
+      ]
+    },
+    {
+      "id": "audit-checklist",
+      "relativePath": "运营管理部/智能审核/规则/凭证审核检查清单V2.0.xlsx",
+      "title": "凭证审核检查清单",
+      "format": "xlsx",
+      "department": "运营管理部",
+      "domain": "audit",
+      "role": "credential-compliance",
+      "version": "2.0",
+      "summary": "凭证完整性、一致性和合规检查项。",
+      "checksum": "ff8f160af8180fcda2dffd5f0e238b94db962847bfc2b3158398e7530a6731e1",
+      "sizeBytes": 5598,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "audit-review-sop",
+      "relativePath": "运营管理部/智能审核/SOP/人工复核操作规程V1.1.pptx",
+      "title": "人工复核操作规程",
+      "format": "pptx",
+      "department": "运营管理部",
+      "domain": "audit",
+      "role": "credential-compliance",
+      "version": "1.1",
+      "effectiveDateRequired": true,
+      "summary": "疑点确认、复核责任和处理回执流程。",
+      "checksum": "1e0be961d28dc1f0049671c16915cb94ff33e98fbd347f96286abd651a3ca352",
+      "sizeBytes": 29545,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_audit_policy"
+      ]
+    },
+    {
+      "id": "audit-reason-codes",
+      "relativePath": "运营管理部/智能审核/规则/审核疑点原因码V1.0.xlsx",
+      "title": "审核疑点原因码",
+      "format": "xlsx",
+      "department": "运营管理部",
+      "domain": "audit",
+      "role": "credential-compliance",
+      "version": "1.0",
+      "summary": "缺件、金额异常和信息不一致原因码。",
+      "checksum": "2d64159d6e0bd2ffd8f02c19c9529aaadc498590c363227b3c4a7f9707ecc19d",
+      "sizeBytes": 5611,
+      "expectedDiagnostics": [],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "audit-evidence",
+      "relativePath": "运营管理部/智能审核/制度/审核证据留存规定V1.0.pdf",
+      "title": "审核证据留存规定",
+      "format": "pdf",
+      "department": "运营管理部",
+      "domain": "audit",
+      "role": "credential-compliance",
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "审核依据、证据和人工确认记录要求。",
+      "checksum": "21b0fb694a45700e12558212409b2d4f3ddacb6fcaaaaf2ed4a8bcd80fffa0cb",
+      "sizeBytes": 885,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE"
+      ],
+      "expectedLogicalAssetCandidates": [
+        "current_audit_policy"
+      ]
+    },
+    {
+      "id": "ops-service",
+      "relativePath": "运营管理部/流程/客户服务流程.docx",
+      "title": "客户服务流程",
+      "format": "docx",
+      "department": "运营管理部",
+      "domain": "general",
+      "role": null,
+      "version": null,
+      "summary": "故意缺少版本和岗位映射。",
+      "checksum": "5391380dd99139129ddeb20662f3bd866dd411e18ad4e755addaa388b2bd02bf",
+      "sizeBytes": 37105,
+      "expectedDiagnostics": [
+        "MISSING_VERSION",
+        "ROLE_UNRESOLVED"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "ops-handover",
+      "relativePath": "运营管理部/流程/跨部门交接SOP V1.0.md",
+      "title": "跨部门交接SOP",
+      "format": "md",
+      "department": "运营管理部",
+      "domain": "general",
+      "role": null,
+      "version": "1.0",
+      "summary": "故意保留通用域，供管理员补充适用岗位。",
+      "checksum": "7b87b79f1a93d44d56f57eca335f636be36c3e69f06014174441aef1f00937ac",
+      "sizeBytes": 884,
+      "expectedDiagnostics": [
+        "ROLE_UNRESOLVED"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "ops-contact",
+      "relativePath": "运营管理部/目录/内部服务通讯录V2026.08.xlsx",
+      "title": "内部服务通讯录",
+      "format": "xlsx",
+      "department": "运营管理部",
+      "domain": "general",
+      "role": null,
+      "version": "2026.08",
+      "summary": "演示不应直接进入岗位 Runtime 的通用资产。",
+      "checksum": "0289f7a27e33adb00cc4e3e6a9adbe4e57ab50277dc4608d55fbfe4201c0f60c",
+      "sizeBytes": 5598,
+      "expectedDiagnostics": [
+        "ROLE_UNRESOLVED"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "ops-emergency",
+      "relativePath": "运营管理部/制度/运营应急管理办法V1.0.pdf",
+      "title": "运营应急管理办法",
+      "format": "pdf",
+      "department": "运营管理部",
+      "domain": "general",
+      "role": null,
+      "version": "1.0",
+      "effectiveDateRequired": true,
+      "summary": "通用运营制度，需要人工确认岗位范围。",
+      "checksum": "c1f3e5515d4d648c2e01e8f74384718ee97b33c255a422b0b3b5dc0aaae439ef",
+      "sizeBytes": 886,
+      "expectedDiagnostics": [
+        "MISSING_EFFECTIVE_DATE",
+        "ROLE_UNRESOLVED"
+      ],
+      "expectedLogicalAssetCandidates": []
+    },
+    {
+      "id": "ops-training",
+      "relativePath": "运营管理部/培训/新员工操作培训V1.0.pptx",
+      "title": "新员工操作培训",
+      "format": "pptx",
+      "department": "运营管理部",
+      "domain": "general",
+      "role": null,
+      "version": "1.0",
+      "summary": "通用培训资产，需要人工确认岗位范围。",
+      "checksum": "1c3239c4fdd0efaa392e485dc597325020ec0ddbe734e879ece2e198e903313e",
+      "sizeBytes": 29534,
+      "expectedDiagnostics": [
+        "ROLE_UNRESOLVED"
+      ],
+      "expectedLogicalAssetCandidates": []
+    }
+  ]
+}
