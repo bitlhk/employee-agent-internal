@@ -50,13 +50,17 @@ All flags default to `false`; disabling them restores the legacy paths without r
 
 ## Readiness And Evidence
 
+- Provider Health and Context Readiness are separate signals. Provider Health reports whether LlamaIndex, MCP, or an API is reachable; it cannot establish that a task has the required facts.
+- Context Readiness is evaluated per `ContextNeed` from requiredness and usable returned Context. A healthy CRM with a missing customer risk level can still make an allocation task `BLOCKED`.
 - Missing required Binding or provider capability is `BLOCKED` before a governed result or write.
 - Missing optional knowledge is `DEGRADED`; WM-GT-02 can continue without the optional market view but must disclose the limitation.
 - A resolved provider that returns no usable Context is not `READY`. Receipts use bounded reason codes: `NO_BINDING`, `BINDING_DISABLED`, `CAPABILITY_MISMATCH`, `AMBIGUOUS_BINDING`, `NOT_ELIGIBLE`, `SOURCE_UNAVAILABLE`, `NO_USABLE_CONTEXT`, and `STALE_ASSET`.
 - A task resolves Knowledge and Business Data from one in-memory Binding snapshot. The snapshot fingerprint is carried into resolution evidence so a concurrent Promote cannot silently mix source versions within one task.
 - Receipt entries retain logical asset ID, Binding ID, provider type, and a SHA-256 resource-reference fingerprint. Raw physical references do not enter model content or the Receipt.
-- `TaskContextPack` and the Receipt carry an Effective Context Snapshot containing only logical asset IDs, asset/version identifiers, business-data timestamps, and a fingerprint. It never contains retrieved正文 or physical provider addresses.
+- `TaskContextPack` and the Receipt carry an Effective Context Snapshot containing only logical asset IDs, asset/version identifiers, business-data timestamps, and a fingerprint. It never contains retrieved text or physical provider addresses.
 - `Retrieved`, `Provided`, `Cited`, and `Applied` remain separate evidence semantics. A resolved Binding is not itself proof that content was retrieved or used.
+
+Operations views may show both Provider Health and task-level Context Readiness, but must not collapse them into one score. Employee-facing experiences translate missing Context into business language rather than exposing internal status or provider names.
 
 ## Deliberate Non-Goals
 
