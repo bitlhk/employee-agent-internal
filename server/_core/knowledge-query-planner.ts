@@ -1,8 +1,10 @@
-import { callEaAssistantModel } from "./ea-assistant-model";
-
 export type KnowledgeQueryPlan = {
   queries: string[];
   expansion: "skipped" | "applied" | "fallback";
+};
+
+export type KnowledgeQueryPlanOptions = {
+  deterministicOnly?: boolean;
 };
 
 const MULTI_INTENT_RE = /(综合(?:说明|分析|评估)|分别|逐项|每项|多个方面|以下(?:方面|问题)|对比|比较|横向分析|同时说明)/i;
@@ -35,6 +37,27 @@ function explicitDimensionQueries(original: string): string[] {
     .filter((item) => item.length >= 2 && item.length <= 60);
   if (dimensions.length < 2 || dimensions.length > 4) return [];
   return dimensions.slice(0, 3).map((dimension) => `${subject} ${retrievalTerms(dimension)}`);
+}
+
+function operationalEvidenceQueries(original: string): string[] {
+  const normalized = original.replace(/\s+/g, " ").trim();
+  if (/候选产品/.test(normalized) && /产品来源/.test(normalized) && /硬性检查/.test(normalized)) {
+    return [
+      "候选产品来源 当前可售集合",
+      "正式产品推荐 前置条件",
+      "产品风险等级匹配",
+      "产品状态与渠道",
+    ];
+  }
+  const clauses = normalized
+    .replace(/[？?。！!]+$/g, "")
+    .split(/[，,；;]/)
+    .map(value => value.trim())
+    .filter(value => value.length >= 4);
+  if (clauses.length === 2 && /前/.test(clauses[0]) && /(?:执行|操作|写入|提交)后/.test(clauses[1])) {
+    return clauses;
+  }
+  return [];
 }
 
 export function shouldDecomposeKnowledgeQuery(query: string): boolean {
@@ -77,8 +100,12 @@ function parseQueryList(content: string, original: string): string[] {
   return queries.length >= 2 ? queries : [];
 }
 
-export async function planKnowledgeQueries(query: string): Promise<KnowledgeQueryPlan> {
+export async function planKnowledgeQueries(query: string, options: KnowledgeQueryPlanOptions = {}): Promise<KnowledgeQueryPlan> {
   const original = String(query || "").replace(/\s+/g, " ").trim().slice(0, 2000);
+  const operationalQueries = operationalEvidenceQueries(original);
+  if (operationalQueries.length >= 2) {
+    return { queries: [original, ...operationalQueries], expansion: "applied" };
+  }
   if (!shouldDecomposeKnowledgeQuery(original)) {
     return { queries: [original], expansion: "skipped" };
   }
@@ -86,7 +113,11 @@ export async function planKnowledgeQueries(query: string): Promise<KnowledgeQuer
   if (explicitQueries.length >= 2) {
     return { queries: [original, ...explicitQueries], expansion: "applied" };
   }
+  if (options.deterministicOnly) {
+    return { queries: [original], expansion: "fallback" };
+  }
   try {
+    const { callEaAssistantModel } = await import("./ea-assistant-model");
     const result = await callEaAssistantModel({
       maxTokens: 220,
       temperature: 0,

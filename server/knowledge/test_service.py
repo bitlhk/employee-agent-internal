@@ -128,6 +128,28 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertGreater(result["metrics"]["eligible_filtered_out"], 0)
         self.assertTrue(result["metrics"]["candidate_exhausted"])
 
+    def test_diagnostics_are_bounded_content_free_and_governed(self):
+        service._build_index(service.IndexRequest(
+            knowledge_base_id="kb_testbase1",
+            documents=[self.document(), self.second_document()],
+        ))
+
+        result = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"],
+            eligible_document_ids=["doc_policy002"],
+            query="住宿标准",
+            top_k=3,
+            mode="forced",
+            diagnostics=True,
+        ))
+
+        stages = result["diagnostics"]["stages"]
+        self.assertEqual(set(stages), {"bm25", "vector", "rrf", "rerank", "final"})
+        for items in stages.values():
+            self.assertLessEqual(len(items), 50)
+            self.assertTrue({item["documentId"] for item in items}.issubset({"doc_policy002"}))
+            self.assertTrue(all("text" not in item and "matched_text" not in item for item in items))
+
     def test_explicit_empty_eligibility_never_falls_back_to_all_documents(self):
         result = service._search_indexes(service.MultiSearchRequest(
             knowledge_base_ids=["kb_testbase1"],
@@ -155,6 +177,25 @@ class KnowledgeServiceTest(unittest.TestCase):
         self.assertEqual({item["document_id"] for item in first["results"]}, {"doc_policy001"})
         self.assertEqual({item["document_id"] for item in second["results"]}, {"doc_policy002"})
         self.assertFalse(second["metrics"]["cache_hit"])
+
+    def test_certification_can_pin_bm25_and_disable_reranking(self):
+        service._build_index(service.IndexRequest(
+            knowledge_base_id="kb_testbase1",
+            documents=[self.document()],
+        ))
+        result = service._search_indexes(service.MultiSearchRequest(
+            knowledge_base_ids=["kb_testbase1"],
+            eligible_document_ids=["doc_policy001"],
+            query="北京住宿标准",
+            top_k=3,
+            mode="forced",
+            retrieval_strategy="bm25",
+            rerank="disabled",
+        ))
+
+        self.assertEqual(result["retrieval"], "bm25")
+        self.assertEqual(result["metrics"]["reranker"], "disabled_by_request")
+        self.assertEqual({item["document_id"] for item in result["results"]}, {"doc_policy001"})
 
     def test_version_switch_keeps_two_rollback_indexes(self):
         document = self.document()

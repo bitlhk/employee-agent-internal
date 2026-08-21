@@ -1,0 +1,27 @@
+{
+  "schema": "ea.provider-certification-profile.v1",
+  "profileId": "grace.llamaindex.wealth.v1",
+  "profileVersion": "1.0.0",
+  "providerType": "llamaindex",
+  "contextQualityBaselineFingerprint": "a7439134abfea0263864d9f37ffe3f8063892e498b49aa3df5c8e545e607c40a",
+  "datasetPath": "examples/wealth-manager-reference-role-pack/eval/context-golden-set.v1.json",
+  "rolePackId": "linggan-bank.wealth-manager",
+  "roleTemplate": "wealth-manager",
+  "topK": 6,
+  "repeat": 3,
+  "warmup": 1,
+  "thresholds": {
+    "minHitRate": 0.9,
+    "minDocumentRecall": 0.9,
+    "minVersionAccuracy": 1,
+    "maxForbiddenSourceRate": 0,
+    "minPositionHitRate": 0.9,
+    "minMrr": 0.8,
+    "maxEligibilityViolations": 0,
+    "minContextItemCompleteness": 1,
+    "maxErrorRate": 0,
+    "maxEmptyResultRate": 0,
+    "maxLatencyP95Ms": 2000,
+    "maxLatencyP99Ms": 3000
+  }
+}

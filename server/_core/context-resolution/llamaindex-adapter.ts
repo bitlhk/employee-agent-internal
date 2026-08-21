@@ -1,5 +1,6 @@
-import type { KnowledgeBaseRecord } from "../../db";
-import type { ContextSourceBindingV1 } from "../../../shared/context-resolution";
+import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "../../db";
+import type { ContextItemV1, ContextNeedV1, ContextSourceBindingV1 } from "../../../shared/context-resolution";
+import { buildContextItemV1 } from "./context-item";
 
 export type LlamaIndexBindingSelection = {
   binding: ContextSourceBindingV1;
@@ -28,3 +29,49 @@ export function selectLlamaIndexKnowledgeBases(input: {
   return { binding: input.binding, knowledgeBaseIds: [knowledgeBaseId], knowledgeBases: selected };
 }
 
+export type LlamaIndexRetrievedItem = {
+  documentId: string;
+  documentVersion: string;
+  position: string;
+  page?: number | null;
+  score?: number;
+};
+
+export function normalizeLlamaIndexContextItem(input: {
+  need: ContextNeedV1;
+  binding: ContextSourceBindingV1;
+  document: KnowledgeDocumentRecord;
+  retrieved: LlamaIndexRetrievedItem;
+  asOf: string;
+  retrievedAt?: string;
+}): ContextItemV1 {
+  if (input.binding.providerType !== "llamaindex") {
+    throw new Error("LlamaIndex normalization requires a llamaindex binding");
+  }
+  if (input.document.publicId !== input.retrieved.documentId) {
+    throw new Error("Retrieved document does not match the governed asset record");
+  }
+  if (input.document.versionLabel !== input.retrieved.documentVersion) {
+    throw new Error("Retrieved version does not match the governed asset version");
+  }
+  return buildContextItemV1({
+    need: input.need,
+    binding: input.binding,
+    assetId: input.document.sourceAssetId || input.document.publicId,
+    assetVersion: input.document.versionLabel,
+    contentHash: input.document.sha256,
+    asOf: input.asOf,
+    provenance: {
+      sourceDepartment: input.document.sourceDepartment,
+      authority: input.document.authority,
+      effectiveAt: input.document.effectiveAt,
+    },
+    citation: {
+      documentId: input.document.publicId,
+      page: input.retrieved.page ?? null,
+      position: input.retrieved.position,
+    },
+    retrievedAt: input.retrievedAt,
+    score: input.retrieved.score,
+  });
+}

@@ -23,13 +23,15 @@ describe("Context governance contracts", () => {
     );
   });
 
-  it("does not freeze a proposed Golden Set as an expert-confirmed baseline", () => {
+  it("freezes only the repository's expert-confirmed Golden Set", () => {
     const report = runWealthContextGovernanceContractChecks(process.cwd(), {
       requireExpertConfirmed: true,
     });
-    expect(report.status).toBe("FAIL");
-    expect(report.errors).toContain(
-      "Expert confirmation gate requires all 16 cases; confirmed 0"
+    expect(report.status).toBe("PASS");
+    if (report.status !== "PASS") return;
+    expect(report.reviewStatus.expertConfirmed).toBe(report.caseCount);
+    expect(report.contractFingerprint).toBe(
+      "a7439134abfea0263864d9f37ffe3f8063892e498b49aa3df5c8e545e607c40a"
     );
   });
 

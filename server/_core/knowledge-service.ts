@@ -136,9 +136,17 @@ export async function getKnowledgeServiceHealth(): Promise<{
   ok: boolean;
   engine: string;
   embeddingConfigured: boolean;
+  embeddingModel?: string;
   rerankerConfigured?: boolean;
+  rerankerModel?: string;
   parserVersion?: string;
   indexSchemaVersion?: number;
+  chunking?: {
+    parentSize: number;
+    parentOverlap: number;
+    childSize: number;
+    childOverlap: number;
+  };
   capabilities?: string[];
   error?: string;
 }> {
@@ -148,9 +156,17 @@ export async function getKnowledgeServiceHealth(): Promise<{
       ok: Boolean(payload?.ok),
       engine: String(payload?.engine || "llamaindex"),
       embeddingConfigured: Boolean(payload?.embedding_configured),
+      embeddingModel: String(payload?.embedding_model || "unknown"),
       rerankerConfigured: Boolean(payload?.reranker_configured),
+      rerankerModel: String(payload?.reranker_model || "unknown"),
       parserVersion: String(payload?.parser_version || ""),
       indexSchemaVersion: Number(payload?.index_schema_version || 1),
+      chunking: payload?.chunking ? {
+        parentSize: Number(payload.chunking.parent_size || 0),
+        parentOverlap: Number(payload.chunking.parent_overlap || 0),
+        childSize: Number(payload.chunking.child_size || 0),
+        childOverlap: Number(payload.chunking.child_overlap || 0),
+      } : undefined,
       capabilities: Array.isArray(payload?.capabilities) ? payload.capabilities.map(String) : [],
     };
   } catch (error) {

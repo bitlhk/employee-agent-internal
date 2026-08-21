@@ -84,6 +84,9 @@ class MultiSearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=4, ge=1, le=12)
     mode: Literal["auto", "forced"] = "auto"
+    retrieval_strategy: Literal["hybrid", "bm25", "vector"] = "hybrid"
+    rerank: Literal["configured", "disabled"] = "configured"
+    diagnostics: bool = False
 
 
 class CitationRequest(BaseModel):
@@ -709,6 +712,39 @@ def _rerank_candidates(
         return candidates, "fallback"
 
 
+def _diagnostic_candidates(
+    candidates: list[NodeWithScore] | list[tuple[TextNode, float]],
+    runtimes: dict[str, RuntimeIndex],
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Return bounded, content-free ranking evidence for governed diagnostics."""
+    items: list[dict[str, Any]] = []
+    for rank, candidate in enumerate(candidates[:limit], start=1):
+        if isinstance(candidate, NodeWithScore):
+            node = candidate.node
+            score = candidate.score
+        else:
+            node, score = candidate
+        knowledge_base_id = str(node.metadata.get("knowledge_base_id") or "")
+        parent_id = str(node.metadata.get("parent_id") or node.node_id)
+        runtime = runtimes.get(knowledge_base_id)
+        parent = runtime.parents.get(parent_id) if runtime else None
+        metadata = dict(parent.get("metadata") or {}) if isinstance(parent, dict) else dict(node.metadata)
+        items.append({
+            "rank": rank,
+            "score": round(float(score), 8) if score is not None else None,
+            "knowledgeBaseId": knowledge_base_id,
+            "documentId": str(node.metadata.get("document_id") or ""),
+            "documentName": str(node.metadata.get("document_name") or ""),
+            "documentVersion": str(metadata.get("document_version") or "1.0"),
+            "position": str(metadata.get("position") or "正文"),
+            "page": metadata.get("page"),
+            "chunkId": str(node.node_id),
+            "parentId": parent_id,
+        })
+    return items
+
+
 def _auto_query_candidate(value: str) -> bool:
     compact = re.sub(r"\s+", "", value).lower()
     if not compact or len(compact) < 4:
@@ -862,7 +898,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         else frozenset(_document_id(value) for value in request.eligible_document_ids)
     )
     if eligible_document_ids is not None and not eligible_document_ids:
-        return {
+        payload = {
             "ok": True,
             "triggered": False,
             "results": [],
@@ -875,6 +911,9 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
                 "eligible_ratio": 0, "candidate_exhausted": False,
             },
         }
+        if request.diagnostics:
+            payload["diagnostics"] = {"stages": {name: [] for name in ("bm25", "vector", "rrf", "rerank", "final")}}
+        return payload
 
     def document_is_eligible(node: TextNode) -> bool:
         return eligible_document_ids is None or str(node.metadata.get("document_id") or "") in eligible_document_ids
@@ -891,7 +930,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         if runtime.nodes:
             targets.append((knowledge_base_id, runtime))
     if not targets:
-        return {
+        payload = {
             "ok": True,
             "triggered": False,
             "results": [],
@@ -899,6 +938,9 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             "engine": "local",
             "metrics": {"knowledge_base_count": 0, "bm25_max_score": 0, "vector_min_distance": None, "reranker": "disabled", "cache_hit": False},
         }
+        if request.diagnostics:
+            payload["diagnostics"] = {"stages": {name: [] for name in ("bm25", "vector", "rrf", "rerank", "final")}}
+        return payload
 
     bm25_threshold = float(os.environ.get("KNOWLEDGE_AUTO_BM25_MIN_SCORE", "1.2"))
     vector_threshold = float(os.environ.get("KNOWLEDGE_AUTO_VECTOR_MAX_DISTANCE", "0.72"))
@@ -918,6 +960,9 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         vector_threshold,
         lexical_minimum_coverage,
         tuple(sorted(eligible_document_ids)) if eligible_document_ids is not None else None,
+        request.retrieval_strategy,
+        request.rerank,
+        request.diagnostics,
     )
     cached = _query_cache_get(cache_key)
     if cached is not None:
@@ -930,7 +975,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     eligible_filtered_out = 0
     bm25_candidates: list[NodeWithScore] = []
     bm25_max_score = 0.0
-    for knowledge_base_id, runtime in targets:
+    for knowledge_base_id, runtime in (targets if request.retrieval_strategy != "vector" else []):
         nodes_by_id = {str(node.node_id): node for node in runtime.nodes}
         runtime.bm25.similarity_top_k = min(max(runtime.bm25.similarity_top_k, governed_candidate_k), len(runtime.nodes))
         accepted_for_base = 0
@@ -956,7 +1001,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     vector_min_distance: float | None = None
     embed_model = _embedding_model()
     vector_policy_allowed = _vector_policy_allowed(targets, eligible_document_ids)
-    if auto_candidate and vector_policy_allowed and embed_model is not None and any(runtime.vector_index is not None for _, runtime in targets):
+    if request.retrieval_strategy != "bm25" and auto_candidate and vector_policy_allowed and embed_model is not None and any(runtime.vector_index is not None for _, runtime in targets):
         try:
             query_embedding = embed_model.get_query_embedding(request.query)
             query_bundle = QueryBundle(query_str=request.query, embedding=query_embedding)
@@ -1021,6 +1066,14 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         and eligible_filtered_out > 0
         and len(eligible_candidate_ids) < request.top_k
     )
+    runtimes = {knowledge_base_id: runtime for knowledge_base_id, runtime in targets}
+    diagnostic_stages = {
+        "bm25": _diagnostic_candidates(bm25_candidates, runtimes),
+        "vector": _diagnostic_candidates(vector_candidates, runtimes),
+        "rrf": [],
+        "rerank": [],
+        "final": [],
+    } if request.diagnostics else None
     result_sets: list[list[NodeWithScore]] = []
     if forced:
         if bm25_candidates:
@@ -1037,7 +1090,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             "ok": True,
             "triggered": False,
             "results": [],
-            "retrieval": "hybrid" if vector_candidates else "bm25",
+            "retrieval": request.retrieval_strategy if request.retrieval_strategy != "hybrid" else ("hybrid" if vector_candidates else "bm25"),
             "engine": "local",
             "metrics": {
                 "knowledge_base_count": len(targets),
@@ -1057,6 +1110,8 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
                 "candidate_exhausted": candidate_exhausted,
             },
         }
+        if diagnostic_stages is not None:
+            payload["diagnostics"] = {"stages": diagnostic_stages}
         _query_cache_put(cache_key, payload)
         return payload
 
@@ -1064,8 +1119,14 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
     document_counts: dict[str, int] = {}
     parent_counts: set[str] = set()
     fused = _rrf(result_sets, request.top_k * 6)
-    reranked, reranker_status = _rerank_candidates(request.query, fused)
-    runtimes = {knowledge_base_id: runtime for knowledge_base_id, runtime in targets}
+    reranked, reranker_status = (
+        _rerank_candidates(request.query, fused)
+        if request.rerank == "configured"
+        else (fused, "disabled_by_request")
+    )
+    if diagnostic_stages is not None:
+        diagnostic_stages["rrf"] = _diagnostic_candidates(fused, runtimes)
+        diagnostic_stages["rerank"] = _diagnostic_candidates(reranked, runtimes)
     prepared_candidates = []
     for node, score in reranked:
         knowledge_base_id = str(node.metadata.get("knowledge_base_id") or "")
@@ -1117,7 +1178,7 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
         "ok": True,
         "triggered": bool(results),
         "results": results,
-        "retrieval": "hybrid" if vector_candidates else "bm25",
+        "retrieval": request.retrieval_strategy if request.retrieval_strategy != "hybrid" else ("hybrid" if vector_candidates else "bm25"),
         "engine": "local",
         "metrics": {
             "knowledge_base_count": len(targets),
@@ -1137,6 +1198,23 @@ def _search_indexes(request: MultiSearchRequest) -> dict[str, Any]:
             "candidate_exhausted": candidate_exhausted,
         },
     }
+    if diagnostic_stages is not None:
+        diagnostic_stages["final"] = [
+            {
+                "rank": rank,
+                "score": item.get("score"),
+                "knowledgeBaseId": item.get("knowledge_base_id"),
+                "documentId": item.get("document_id"),
+                "documentName": item.get("document_name"),
+                "documentVersion": item.get("document_version"),
+                "position": item.get("position"),
+                "page": item.get("page"),
+                "chunkId": item.get("chunk_id"),
+                "parentId": item.get("parent_id"),
+            }
+            for rank, item in enumerate(results, start=1)
+        ]
+        payload["diagnostics"] = {"stages": diagnostic_stages}
     _query_cache_put(cache_key, payload)
     return payload
 
@@ -1195,13 +1273,21 @@ async def health(x_ea_knowledge_token: str | None = Header(default=None)):
         "ok": True,
         "engine": "llamaindex",
         "embedding_configured": _embedding_model() is not None,
+        "embedding_model": os.environ.get("KNOWLEDGE_EMBED_MODEL", "").strip() or "disabled",
         "reranker_configured": bool(_rerank_url() and os.environ.get("KNOWLEDGE_RERANK_API_KEY") and os.environ.get("KNOWLEDGE_RERANK_MODEL")),
+        "reranker_model": os.environ.get("KNOWLEDGE_RERANK_MODEL", "").strip() or "disabled",
         "ocr_available": bool(shutil.which("pdftoppm") and shutil.which("tesseract")),
         "index_schema_version": INDEX_SCHEMA_VERSION,
         "parser_version": PARSER_VERSION,
+        "chunking": {
+            "parent_size": PARENT_CHUNK_SIZE,
+            "parent_overlap": PARENT_CHUNK_OVERLAP,
+            "child_size": CHILD_CHUNK_SIZE,
+            "child_overlap": CHILD_CHUNK_OVERLAP,
+        },
         "capabilities": [
             "bm25", "vector", "rrf", "parent_child", "metadata", "versioned_index",
-            "structured_pdf", "optional_ocr", "optional_rerank",
+            "structured_pdf", "optional_ocr", "optional_rerank", "retrieval_strategy", "rerank_toggle",
         ],
     }
 

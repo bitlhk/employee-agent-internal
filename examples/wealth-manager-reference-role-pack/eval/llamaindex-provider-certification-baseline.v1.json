@@ -1,0 +1,105 @@
+{
+  "schema": "ea.provider-certification-baseline.v1",
+  "baselineId": "grace.llamaindex.wealth.v1",
+  "status": "certified",
+  "providerType": "llamaindex",
+  "performanceScope": {
+    "cache": "warm",
+    "warmupRequestsPerCase": 1,
+    "measuredRequestsPerCase": 3,
+    "coldStartEvaluated": false
+  },
+  "providerSnapshot": {
+    "providerType": "llamaindex",
+    "indexVersion": "v1787267507944-65668384",
+    "indexSchemaVersion": 2,
+    "parserVersion": "2.1",
+    "embeddingModel": "bge-m3",
+    "rerankerModel": "disabled",
+    "chunking": {
+      "parentSize": 1400,
+      "parentOverlap": 120,
+      "childSize": 420,
+      "childOverlap": 60
+    },
+    "capabilities": [
+      "bm25",
+      "vector",
+      "rrf",
+      "parent_child",
+      "metadata",
+      "versioned_index",
+      "structured_pdf",
+      "optional_ocr",
+      "optional_rerank",
+      "retrieval_strategy",
+      "rerank_toggle"
+    ],
+    "retrievalMode": "forced",
+    "topK": 6,
+    "queryPlanner": {
+      "mode": "deterministic-only",
+      "fingerprint": "58c683d11f9f8ae62bffd17888f61a1638d8f171f5fb275dad8a26e323a7adde"
+    },
+    "eligibilityFingerprint": "e15b5a73b377aa034495d6c9c49348201a09029b7543662bec21ca0b352cb3a0",
+    "eligibleDocumentIdsFingerprint": "4aee63ac593cf20072b30dffebc1e50b76abc4821985d65a3df0112e1130df68"
+  },
+  "report": {
+    "schema": "ea.provider-certification-report.v1",
+    "certificationId": "pcert_aecb0e843e312196a560",
+    "status": "certified",
+    "providerType": "llamaindex",
+    "profileId": "grace.llamaindex.wealth.v1",
+    "profileVersion": "1.0.0",
+    "certificationProfileFingerprint": "08f74285c4fe4c49738721a69dabe5da3fb4ed1b3eb5c6640a4f6cc3f8bb3afc",
+    "contextQualityBaselineFingerprint": "a7439134abfea0263864d9f37ffe3f8063892e498b49aa3df5c8e545e607c40a",
+    "providerConfigFingerprint": "422e28500cdecbf8b48f608da6e63c7d9d7a4e992ad688120659ae934dd24e3f",
+    "resourceRefFingerprint": "94cfe3361f014017371b4522f4127d06f063c6c8c87ed194194af24fb9a19c65",
+    "indexVersion": "v1787267507944-65668384",
+    "parserVersion": "2.1",
+    "evaluatedAt": "2026-08-21T06:37:18.169Z",
+    "checks": [
+      { "layer": "baseline", "code": "BASELINE_FINGERPRINT_MATCH", "passed": true, "actual": "a7439134abfea0263864d9f37ffe3f8063892e498b49aa3df5c8e545e607c40a", "expected": "a7439134abfea0263864d9f37ffe3f8063892e498b49aa3df5c8e545e607c40a" },
+      { "layer": "baseline", "code": "EXPERT_CONFIRMATION_REQUIRED", "passed": true, "actual": true, "expected": true },
+      { "layer": "retrieval", "code": "HIT_RATE", "passed": true, "actual": 1, "expected": 0.9 },
+      { "layer": "retrieval", "code": "DOCUMENT_RECALL", "passed": true, "actual": 1, "expected": 0.9 },
+      { "layer": "retrieval", "code": "VERSION_ACCURACY", "passed": true, "actual": 1, "expected": 1 },
+      { "layer": "retrieval", "code": "FORBIDDEN_SOURCE_RATE", "passed": true, "actual": 0, "expected": 0 },
+      { "layer": "retrieval", "code": "POSITION_HIT_RATE", "passed": true, "actual": 1, "expected": 0.9 },
+      { "layer": "retrieval", "code": "MRR", "passed": true, "actual": 0.9048, "expected": 0.8 },
+      { "layer": "governance", "code": "ELIGIBILITY_PUSHDOWN", "passed": true, "actual": true, "expected": true },
+      { "layer": "governance", "code": "ELIGIBILITY_VIOLATIONS", "passed": true, "actual": 0, "expected": 0 },
+      { "layer": "governance", "code": "GOVERNANCE_SCENARIOS", "passed": true, "actual": 0, "expected": 0 },
+      { "layer": "context_contract", "code": "CONTEXT_ITEM_COMPLETENESS", "passed": true, "actual": 1, "expected": 1 },
+      { "layer": "context_contract", "code": "EVIDENCE_STAGES_SEPARATED", "passed": true, "actual": true, "expected": true },
+      { "layer": "operations", "code": "ERROR_RATE", "passed": true, "actual": 0, "expected": 0 },
+      { "layer": "operations", "code": "EMPTY_RESULT_RATE", "passed": true, "actual": 0, "expected": 0 },
+      { "layer": "operations", "code": "LATENCY_P95", "passed": true, "actual": 7.9, "expected": 2000 },
+      { "layer": "operations", "code": "LATENCY_P99", "passed": true, "actual": 8.1, "expected": 3000 }
+    ],
+    "metrics": {
+      "retrieval": {
+        "hitRate": 1,
+        "documentRecall": 1,
+        "versionAccuracy": 1,
+        "forbiddenSourceRate": 0,
+        "positionHitRate": 1,
+        "mrr": 0.9048,
+        "latencyP95Ms": 7.9,
+        "latencyP99Ms": 8.1,
+        "errorRate": 0,
+        "emptyResultRate": 0,
+        "eligibility": { "pushdownApplied": true, "violations": [] }
+      },
+      "governance": { "passed": true, "scenarioCount": 7, "failedScenarios": [] },
+      "contextContract": {
+        "completeness": 1,
+        "normalizedItemCount": 42,
+        "invalidItemCount": 0,
+        "evidenceStagesSeparated": true
+      }
+    },
+    "failureCodes": [],
+    "certificationFingerprint": "b0a7f5195398e22eae44c252e5443b5487153cb4d9223b9e9d781d31c5e1a9e7"
+  }
+}

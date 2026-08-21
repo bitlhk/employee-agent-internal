@@ -68,6 +68,8 @@
     "context:contracts:verify": "tsx scripts/verify-context-governance-contracts.ts",
     "context:quality:verify": "pnpm context:contracts:verify && pnpm rolepack:wealth:contracts && pnpm knowledge:test",
     "context:quality:freeze": "tsx scripts/verify-context-governance-contracts.ts --require-expert-confirmed && pnpm rolepack:wealth:contracts && pnpm knowledge:test",
+    "context:provider:llamaindex:certify": "tsx scripts/certify-llamaindex-provider.ts",
+    "context:provider:llamaindex:baseline:verify": "tsx scripts/verify-llamaindex-provider-certification-baseline.ts",
     "rolepack:insurance:install": "tsx scripts/install-insurance-advisor-reference-pack.ts",
     "rolepack:insurance:contracts": "tsx scripts/run-insurance-role-pack-contracts.ts",
     "rolepack:insurance:scenarios": "tsx scripts/run-insurance-role-pack-scenarios.ts",

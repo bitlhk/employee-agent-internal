@@ -33,6 +33,42 @@ describe("knowledge query planner", () => {
     expect(mocks.callEaAssistantModel).not.toHaveBeenCalled();
   });
 
+  it("decomposes product source and hard checks into evidence-oriented policy queries", async () => {
+    const original = "资产配置方案筛选候选产品时，产品来源和硬性检查有什么要求？";
+
+    await expect(planKnowledgeQueries(original, { deterministicOnly: true })).resolves.toEqual({
+      queries: [
+        original,
+        "候选产品来源 当前可售集合",
+        "正式产品推荐 前置条件",
+        "产品风险等级匹配",
+        "产品状态与渠道",
+      ],
+      expansion: "applied",
+    });
+    expect(mocks.callEaAssistantModel).not.toHaveBeenCalled();
+  });
+
+  it("decomposes before-and-after operational evidence without a model", async () => {
+    const original = "创建客户跟进任务前需要确认哪些内容，执行后如何避免重复写入？";
+
+    await expect(planKnowledgeQueries(original, { deterministicOnly: true })).resolves.toEqual({
+      queries: [original, "创建客户跟进任务前需要确认哪些内容", "执行后如何避免重复写入"],
+      expansion: "applied",
+    });
+    expect(mocks.callEaAssistantModel).not.toHaveBeenCalled();
+  });
+
+  it("does not call a model when deterministic-only planning has no rule", async () => {
+    const original = "请分别说明产品适用对象、具体执行条件以及例外处理方式";
+
+    await expect(planKnowledgeQueries(original, { deterministicOnly: true })).resolves.toEqual({
+      queries: [original],
+      expansion: "fallback",
+    });
+    expect(mocks.callEaAssistantModel).not.toHaveBeenCalled();
+  });
+
   it("uses the model for compound questions without an explicit subject and dimension list", async () => {
     mocks.callEaAssistantModel.mockResolvedValue({
       content: JSON.stringify({ queries: ["产品适用对象", "产品例外条件"] }),
