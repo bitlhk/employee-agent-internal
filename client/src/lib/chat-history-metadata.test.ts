@@ -51,38 +51,73 @@ describe("mergeCachedAssistantMetadata", () => {
     ]);
     expect(result[0].toolCalls).toEqual([{ name: "search" }]);
   });
+
+  it("enriches compact history tool calls with a trusted cached receipt", () => {
+    const receipt = testReceipt();
+    const streamedResult = JSON.stringify({
+      content: [{ type: "text", text: "compact" }],
+      _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt },
+    });
+    const result = mergeCachedAssistantMetadata(
+      [
+        {
+          role: "assistant",
+          text: "制度回答",
+          toolCalls: [{ id: "call-1", name: "policy", result: "compact" }],
+        },
+      ],
+      [
+        {
+          role: "assistant",
+          text: "制度回答",
+          toolCalls: [
+            { id: "call-1", name: "policy", result: streamedResult },
+          ],
+        },
+      ],
+      textKey
+    );
+
+    expect((result[0].toolCalls?.[0] as { result?: string }).result).toBe(
+      streamedResult
+    );
+  });
 });
+
+function testReceipt() {
+  return {
+    schema: "ea.context-receipt.v1",
+    receiptId: "crpt_test",
+    taskId: "WM-GT-03",
+    taskLabel: "现行政策判断",
+    principalFingerprint: "p".repeat(64),
+    provided: {
+      knowledge: [],
+      businessData: [],
+      memory: [],
+      capabilities: [],
+    },
+    cited: { knowledgeAssetIds: [] },
+    applied: { policyDecisions: [], capabilityExecutions: [] },
+    excluded: [],
+    readiness: {
+      status: "READY",
+      requestedOutcome: "answer",
+      allowedOutcomes: [],
+      deniedOutcomes: [],
+      reasons: [],
+      remediation: [],
+      presentation: { completed: [], unavailable: [], nextSteps: [] },
+      decisionFingerprint: "r".repeat(64),
+    },
+    createdAt: "2026-08-21T00:00:00.000Z",
+    receiptFingerprint: "f".repeat(64),
+  };
+}
 
 describe("mergeCanonicalAssistantToolCalls", () => {
   it("does not replace a trusted streamed receipt with compact canonical history", () => {
-    const receipt = {
-      schema: "ea.context-receipt.v1",
-      receiptId: "crpt_test",
-      taskId: "WM-GT-03",
-      taskLabel: "现行政策判断",
-      principalFingerprint: "p".repeat(64),
-      provided: {
-        knowledge: [],
-        businessData: [],
-        memory: [],
-        capabilities: [],
-      },
-      cited: { knowledgeAssetIds: [] },
-      applied: { policyDecisions: [], capabilityExecutions: [] },
-      excluded: [],
-      readiness: {
-        status: "READY",
-        requestedOutcome: "answer",
-        allowedOutcomes: [],
-        deniedOutcomes: [],
-        reasons: [],
-        remediation: [],
-        presentation: { completed: [], unavailable: [], nextSteps: [] },
-        decisionFingerprint: "r".repeat(64),
-      },
-      createdAt: "2026-08-21T00:00:00.000Z",
-      receiptFingerprint: "f".repeat(64),
-    };
+    const receipt = testReceipt();
     const streamedResult = JSON.stringify({
       content: [{ type: "text", text: "compact" }],
       _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt },

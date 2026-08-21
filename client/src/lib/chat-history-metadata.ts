@@ -88,14 +88,36 @@ export function mergeCachedAssistantMetadata<T extends AssistantHistoryMessage>(
     const cached = cachedAssistants[matchIndex];
     const mergeTools =
       !hasItems(message.toolCalls) && hasItems(cached.toolCalls);
+    const enrichedToolCalls =
+      hasItems(message.toolCalls) && hasItems(cached.toolCalls)
+        ? mergeCanonicalAssistantToolCalls(
+            message.toolCalls as AssistantToolCall[],
+            cached.toolCalls as AssistantToolCall[]
+          )
+        : null;
+    const mergeTrustedToolResults = Boolean(
+      enrichedToolCalls?.some(
+        (tool, index) => tool !== message.toolCalls?.[index]
+      )
+    );
     const mergeSources =
       !hasItems(message.knowledgeSources) && hasItems(cached.knowledgeSources);
     const mergeReceiptBundle =
       !message.receiptBundle && Boolean(cached.receiptBundle);
-    if (!mergeTools && !mergeSources && !mergeReceiptBundle) continue;
+    if (
+      !mergeTools &&
+      !mergeTrustedToolResults &&
+      !mergeSources &&
+      !mergeReceiptBundle
+    )
+      continue;
     next[messageIndex] = {
       ...message,
-      ...(mergeTools ? { toolCalls: cached.toolCalls } : {}),
+      ...(mergeTools
+        ? { toolCalls: cached.toolCalls }
+        : mergeTrustedToolResults
+          ? { toolCalls: enrichedToolCalls }
+          : {}),
       ...(mergeSources ? { knowledgeSources: cached.knowledgeSources } : {}),
       ...(mergeReceiptBundle ? { receiptBundle: cached.receiptBundle } : {}),
     };
