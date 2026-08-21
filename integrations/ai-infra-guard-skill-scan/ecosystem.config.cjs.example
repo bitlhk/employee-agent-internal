@@ -14,6 +14,7 @@ module.exports = {
         AIG_SKILL_SCAN_HOST: "127.0.0.1",
         AIG_SKILL_SCAN_PORT: "18920",
         AIG_SKILL_SCAN_BIN: process.env.AIG_SKILL_SCAN_BIN || path.join(home, ".venvs", "aig-skill-scan", "bin", "aig-skill-scan"),
+        AIG_MCP_SCAN_BIN: process.env.AIG_MCP_SCAN_BIN || path.join(home, ".venvs", "aig-skill-scan", "bin", "aig-mcp-scan"),
         AIG_SKILL_SCAN_MODEL_ENV_PATH: process.env.AIG_SKILL_SCAN_MODEL_ENV_PATH || path.join(home, ".jiuwenswarm", "config", ".env"),
       },
       autorestart: true,

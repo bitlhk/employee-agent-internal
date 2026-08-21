@@ -1032,7 +1032,7 @@ export function beginSandboxExecution(): (outcome: OperationalOutcome, durationM
 }
 
 export function setSkillWorkQueue(input: {
-  lane: "scan" | "install";
+  lane: "scan" | "install" | "security";
   active: number;
   queued: number;
   concurrency: number;
@@ -1044,7 +1044,7 @@ export function setSkillWorkQueue(input: {
   skillWorkLimit.set({ lane: input.lane, kind: "queued" }, Math.max(0, input.maxQueued));
 }
 
-export function beginSkillWork(lane: "scan" | "install"): (outcome: "success" | "error") => void {
+export function beginSkillWork(lane: "scan" | "install" | "security"): (outcome: "success" | "error") => void {
   const startedAt = Date.now();
   let finished = false;
   return (outcome) => {
@@ -1055,7 +1055,7 @@ export function beginSkillWork(lane: "scan" | "install"): (outcome: "success" | 
   };
 }
 
-export function observeSkillWorkRejection(lane: "scan" | "install"): void {
+export function observeSkillWorkRejection(lane: "scan" | "install" | "security"): void {
   skillWorkRejections.inc({ lane });
 }
 

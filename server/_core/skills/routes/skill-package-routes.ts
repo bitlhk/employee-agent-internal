@@ -280,7 +280,7 @@ export function registerSkillPackageRoutes(app: Express): void {
       if (skillSecurityScannerEnabled()) {
         const file = Buffer.from(payload.fileBuf);
         setImmediate(() => {
-          void runSkillWork("scan", async () => {
+          void runSkillWork("security", async () => {
             const externalSecurity = await scanSkillPackageSecurity({
               file,
               filename: safeName,

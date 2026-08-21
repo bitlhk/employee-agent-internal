@@ -398,6 +398,12 @@ export class FileSkillRegistry implements SkillRegistry {
     }
   }
 
+  async listAllSkills(): Promise<SkillRegistryResult<Skill[]>> {
+    const out: Skill[] = [];
+    for (const skill of this.loadRegistry()) out.push(await this.finalizeSkill(skill.adoptId, skill));
+    return ok(out);
+  }
+
   async pruneRetiredRoleDefaults(
     adoptId: string,
     currentDefaultSkillIds: string[],

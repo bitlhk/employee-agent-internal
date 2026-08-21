@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/action-button";
 import { Card } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
-import { Cable, CheckCircle2, Fingerprint, KeyRound, Loader2, Pencil, Plus, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
+import { Cable, CheckCircle2, Fingerprint, KeyRound, Loader2, Pencil, Plus, RefreshCw, ScanSearch, ShieldCheck, Wrench } from "lucide-react";
 import { toast } from "sonner";
 
 type EnterpriseList = RouterOutputs["enterpriseMcp"]["list"];
@@ -107,7 +107,9 @@ function policyDraft(policy: EnterpriseToolPolicy) {
 
 export function EnterpriseMcpPanel() {
   const utils = trpc.useUtils();
-  const { data, isLoading, refetch } = trpc.enterpriseMcp.list.useQuery();
+  const { data, isLoading, refetch } = trpc.enterpriseMcp.list.useQuery(undefined, {
+    refetchInterval: query => (query.state.data as EnterpriseList | undefined)?.items.some(item => item.securityScan?.status === "pending") ? 5_000 : false,
+  });
   const [editOpen, setEditOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<ConnectorForm>({ ...EMPTY_FORM });
@@ -115,7 +117,40 @@ export function EnterpriseMcpPanel() {
   const [grantDraft, setGrantDraft] = useState<Record<string, "default" | "optional" | "">>({});
   const [toolsTarget, setToolsTarget] = useState<EnterpriseConnector | null>(null);
   const [toolDrafts, setToolDrafts] = useState<ReturnType<typeof policyDraft>[]>([]);
+  const [securityTarget, setSecurityTarget] = useState<EnterpriseConnector | null>(null);
+  const [securityDetailsTarget, setSecurityDetailsTarget] = useState<EnterpriseConnector | null>(null);
+  const [securityUploading, setSecurityUploading] = useState(false);
+  const securityInputRef = useRef<HTMLInputElement>(null);
   const invalidate = async () => utils.enterpriseMcp.list.invalidate();
+
+  const chooseSecuritySource = (connector: EnterpriseConnector) => {
+    setSecurityTarget(connector);
+    securityInputRef.current?.click();
+  };
+
+  const uploadSecuritySource = async (file?: File) => {
+    if (!file || !securityTarget) return;
+    if (!/\.zip$/i.test(file.name)) { toast.error("请上传 ZIP 格式的 MCP 源码包"); return; }
+    setSecurityUploading(true);
+    try {
+      const response = await fetch(`/api/admin/mcp-security-scan?serverId=${encodeURIComponent(securityTarget.serverId)}&filename=${encodeURIComponent(file.name)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: await file.arrayBuffer(),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || `请求失败：${response.status}`);
+      toast.success("MCP 源码安全扫描已进入异步队列");
+      await invalidate();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "MCP 安全扫描启动失败");
+    } finally {
+      setSecurityUploading(false);
+      setSecurityTarget(null);
+      if (securityInputRef.current) securityInputRef.current.value = "";
+    }
+  };
 
   const saveMutation = trpc.enterpriseMcp.save.useMutation({
     onSuccess: async () => { toast.success("企业连接器配置已保存"); setEditOpen(false); await invalidate(); },
@@ -154,6 +189,7 @@ export function EnterpriseMcpPanel() {
 
   return (
     <div className="space-y-4">
+      <input ref={securityInputRef} className="hidden" type="file" accept=".zip,application/zip" onChange={event => void uploadSecuritySource(event.target.files?.[0])} />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex items-center gap-2"><Cable className="h-5 w-5 text-gray-700" /><h2 className="text-lg font-semibold text-gray-900">企业连接器</h2></div>
@@ -193,12 +229,20 @@ export function EnterpriseMcpPanel() {
                     <div className="mt-2 truncate font-mono text-[11px] text-gray-400" title={connector.endpointUrl}>{connector.endpointUrl}</div>
                     {connector.lastError ? <div className="mt-2 text-xs text-red-600">{connector.lastError}</div> : null}
                     {connector.identityVerificationError ? <div className="mt-2 text-xs text-red-600">{connector.identityVerificationError}</div> : null}
+                    {connector.securityScan ? <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className={`text-xs ${connector.securityScan.verdict === "block" ? "text-red-700" : connector.securityScan.verdict === "review" ? "text-amber-700" : connector.securityScan.status === "completed" ? "text-green-700" : "text-gray-500"}`}>
+                        源码安全扫描：{connector.securityScan.status === "pending" ? "扫描中" : connector.securityScan.status === "failed" ? "扫描失败" : connector.securityScan.verdict === "block" ? "发现高风险" : connector.securityScan.verdict === "review" ? "需要复核" : "通过"}
+                        {connector.securityScan.summary ? ` · 高风险 ${connector.securityScan.summary.critical + connector.securityScan.summary.high} · 中风险 ${connector.securityScan.summary.medium}` : ""}
+                      </span>
+                      {connector.securityScan.status === "completed" ? <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setSecurityDetailsTarget(connector)}>查看报告</Button> : null}
+                    </div> : <div className="mt-2 text-xs text-gray-400">源码安全扫描：未验证</div>}
                     {!connector.readiness.readyForEnforcement ? <div className="mt-2 text-xs text-amber-700">进入强制运行前：{connector.readiness.blockers.join("；")}</div> : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <Button variant="outline" size="sm" onClick={() => discoverMutation.mutate({ serverId: connector.serverId })} disabled={discoverMutation.isPending}>{discoverMutation.isPending && discoverMutation.variables?.serverId === connector.serverId ? <Loader2 className="animate-spin" /> : <RefreshCw />}检测</Button>
                   <Button variant="outline" size="sm" onClick={() => verifyIdentityMutation.mutate({ serverId: connector.serverId })} disabled={verifyIdentityMutation.isPending || connector.authMode !== "oauth2_access_token" || !data?.identityProvider.configured}>{verifyIdentityMutation.isPending && verifyIdentityMutation.variables?.serverId === connector.serverId ? <Loader2 className="animate-spin" /> : <Fingerprint />}验证身份</Button>
+                  <Button variant="outline" size="sm" onClick={() => chooseSecuritySource(connector)} disabled={securityUploading || !data?.securityScanner.enabled}>{securityUploading && securityTarget?.serverId === connector.serverId ? <Loader2 className="animate-spin" /> : <ScanSearch />}安全扫描</Button>
                   <Button variant="outline" size="sm" onClick={() => { setToolDrafts(connector.policies.map(policyDraft)); setToolsTarget(connector); }}><Wrench />工具策略</Button>
                   <Button variant="outline" size="sm" onClick={() => openRoles(connector)}><ShieldCheck />岗位权限</Button>
                   <Button variant="ghost" size="icon-sm" title="编辑连接器" onClick={() => { setEditingId(connector.serverId); setForm(connectorForm(connector)); setEditOpen(true); }}><Pencil /></Button>
@@ -211,6 +255,22 @@ export function EnterpriseMcpPanel() {
       </div>
 
       <ConnectorDialog open={editOpen} editingId={editingId} form={form} setForm={setForm} identityConfigured={Boolean(data?.identityProvider.configured)} pending={saveMutation.isPending} onClose={() => setEditOpen(false)} onSave={() => saveMutation.mutate({ ...form, icon: form.icon || null, clearCredential: form.authMode === "none_shadow" })} />
+
+      <Dialog open={Boolean(securityDetailsTarget)} onOpenChange={open => !open && setSecurityDetailsTarget(null)}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader><DialogTitle>MCP 源码安全扫描</DialogTitle><DialogDescription>{securityDetailsTarget?.displayName} · Tencent AI-Infra-Guard 静态源码评估，不包含运行时远程攻击。</DialogDescription></DialogHeader>
+          <div className="max-h-[60vh] space-y-3 overflow-y-auto py-2">
+            {(securityDetailsTarget?.securityScan?.findings || []).length === 0 ? <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">本次扫描未发现需要报告的风险。</div> : null}
+            {(securityDetailsTarget?.securityScan?.findings || []).map((finding, index) => <div key={`${finding.ruleId}-${index}`} className="rounded-md border border-gray-200 p-3">
+              <div className="flex flex-wrap items-center gap-2"><Badge variant="outline">{finding.severity.toUpperCase()}</Badge><span className="font-mono text-xs text-gray-500">{finding.ruleId}</span></div>
+              <p className="mt-2 text-sm text-gray-800">{finding.message}</p>
+              {finding.file ? <p className="mt-1 font-mono text-xs text-gray-500">{finding.file}{finding.startLine ? `:${finding.startLine}` : ""}</p> : null}
+              {finding.remediation ? <p className="mt-2 text-xs text-gray-600">整改建议：{finding.remediation}</p> : null}
+            </div>)}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setSecurityDetailsTarget(null)}>关闭</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(rolesTarget)} onOpenChange={open => !open && setRolesTarget(null)}>
         <DialogContent className="sm:max-w-xl">

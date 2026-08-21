@@ -13,6 +13,8 @@ import {
 import { listAgentRoleTemplates } from "../_core/role-templates";
 import { enterpriseMcpIdentityStatus, issueEnterpriseMcpAccessToken } from "../_core/enterprise-mcp-identity";
 import { verifyEnterpriseMcpIdentityEnforcement } from "../_core/enterprise-mcp-identity-verification";
+import { getMcpSecurityScan } from "../_core/mcp-security-scan-store";
+import { mcpSecurityScannerEnabled } from "../_core/mcp-security-scanner";
 import { reconcileEnterpriseMcpRuntimeScopes } from "../_core/enterprise-mcp-runtime-reconcile";
 import {
   createEnterpriseMcpConnection,
@@ -170,6 +172,7 @@ export const enterpriseMcpRouter = router({
       if (connectionGrants.length === 0) blockers.push("尚未授权给岗位");
       return {
         ...toPublicEnterpriseMcpConnection(connection),
+        securityScan: getMcpSecurityScan(connection.serverId),
         policies,
         grants: connectionGrants,
         readiness: { readyForEnforcement: blockers.length === 0, blockers },
@@ -181,6 +184,7 @@ export const enterpriseMcpRouter = router({
         ...identityProvider,
         unauthenticatedShadowEnabled: String(process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW || "").trim().toLowerCase() === "true",
       },
+      securityScanner: { enabled: mcpSecurityScannerEnabled(), provider: "aig-mcp-scan", mode: "source_static" },
       roles: listAgentRoleTemplates().filter(role => role.status !== "disabled").map(role => ({
         id: role.id,
         name: role.name,

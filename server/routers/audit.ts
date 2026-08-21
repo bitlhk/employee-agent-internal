@@ -12,11 +12,13 @@ import {
   auditSecurityFindings,
   auditToolEvents,
   adminMfaCredentials,
+  enterpriseMcpConnections,
+  enterpriseMcpToolPolicies,
   skillMarketplace,
   users,
 } from "../../drizzle/schema";
 import { APP_ROOT } from "./helpers";
-import { auditActor, auditErrorMetadata, auditRequest, recordAuditRequired } from "../_core/audit-events";
+import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
 import { getAuditBaselineHealth } from "../_core/audit-health";
 import {
   deriveSecurityOverviewStatus,
@@ -24,6 +26,14 @@ import {
   traceabilityCoverage,
   type SecurityCapabilityStatus,
 } from "../_core/security-overview";
+import {
+  skillSecurityBackfillStatus,
+  skillSecurityInventory,
+  startSkillSecurityBackfill,
+} from "../_core/skills/skill-security-backfill";
+import { listMcpSecurityScans } from "../_core/mcp-security-scan-store";
+import { mcpSecurityScannerEnabled } from "../_core/mcp-security-scanner";
+import { getSecurityAssessment } from "../_core/security-assessment-store";
 
 const EXPORT_DIR = path.join(APP_ROOT, "data", "audit-exports");
 const EXPORT_TTL_MS = Number(process.env.AUDIT_EXPORT_TTL_MS || 24 * 60 * 60 * 1000);
@@ -426,6 +436,113 @@ export const auditRouter = router({
       })),
     };
   }),
+
+  securityValidationOverview: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "database unavailable" });
+    const [skills, connectionRows, connectionIdRows, policyRows] = await Promise.all([
+      skillSecurityInventory(),
+      db.select({
+        total: count(),
+        enforced: sql<number>`COALESCE(SUM(CASE WHEN ${enterpriseMcpConnections.lifecycleState} = 'enforced' THEN 1 ELSE 0 END), 0)`,
+        verified: sql<number>`COALESCE(SUM(CASE WHEN ${enterpriseMcpConnections.identityVerificationStatus} = 'verified' THEN 1 ELSE 0 END), 0)`,
+      }).from(enterpriseMcpConnections),
+      db.select({ serverId: enterpriseMcpConnections.serverId }).from(enterpriseMcpConnections),
+      db.select({
+        total: count(),
+        enabled: sql<number>`COALESCE(SUM(CASE WHEN ${enterpriseMcpToolPolicies.enabled} = 1 THEN 1 ELSE 0 END), 0)`,
+        approval: sql<number>`COALESCE(SUM(CASE WHEN ${enterpriseMcpToolPolicies.approvalMode} IN ('conditional', 'always') THEN 1 ELSE 0 END), 0)`,
+      }).from(enterpriseMcpToolPolicies),
+    ]);
+    const connections = connectionRows[0] || { total: 0, enforced: 0, verified: 0 };
+    const policies = policyRows[0] || { total: 0, enabled: 0, approval: 0 };
+    const skillCounts = skills.counts;
+    const agentRedteam = getSecurityAssessment("agent_redteam");
+    const activeMcpIds = new Set(connectionIdRows.map(row => row.serverId));
+    const mcpScans = listMcpSecurityScans().filter(scan => activeMcpIds.has(scan.serverId));
+    const mcpScanCounts = {
+      total: Number(connections.total),
+      completed: mcpScans.filter(scan => scan.status === "completed").length,
+      pending: mcpScans.filter(scan => scan.status === "pending").length,
+      failed: mcpScans.filter(scan => scan.status === "failed").length,
+      blocked: mcpScans.filter(scan => scan.verdict === "block").length,
+      review: mcpScans.filter(scan => scan.verdict === "review").length,
+    };
+    const mcpScanStatus = !mcpSecurityScannerEnabled()
+      ? "unavailable"
+      : mcpScanCounts.blocked > 0
+        ? "risk"
+        : mcpScanCounts.completed < mcpScanCounts.total || mcpScanCounts.pending + mcpScanCounts.failed > 0
+          ? "partial"
+          : mcpScanCounts.total > 0 ? "verified" : "unverified";
+    const skillStatus = !skills.enabled
+      ? "unavailable"
+      : skillCounts.highRisk > 0
+        ? "risk"
+        : skillCounts.unscanned + skillCounts.pending + skillCounts.failed > 0
+          ? "partial"
+          : skillCounts.total > 0 ? "verified" : "unverified";
+    const agentStatus = !agentRedteam
+      ? (String(process.env.EA_AGENT_REDTEAM_ENABLED || "false").toLowerCase() === "true" ? "unverified" : "not_enabled")
+      : agentRedteam.status === "failed"
+        ? "unavailable"
+        : agentRedteam.status === "running"
+          ? "partial"
+          : agentRedteam.verdict === "risk" ? "risk" : agentRedteam.verdict === "review" ? "partial" : "verified";
+    const agentDetail = !agentRedteam
+      ? "仅允许对隔离测试智能体执行；尚无已完成的红队基线"
+      : agentRedteam.status === "running"
+        ? `正在评测隔离目标 ${agentRedteam.targetLabel || agentRedteam.targetId}`
+        : agentRedteam.status === "failed"
+          ? `最近评测失败：${agentRedteam.errorCode || "执行异常"}`
+          : `测试 ${agentRedteam.summary?.totalTests || 0}，发现风险 ${agentRedteam.summary?.vulnerableTests || 0}（高 ${agentRedteam.summary?.high || 0} / 中 ${agentRedteam.summary?.medium || 0} / 低 ${agentRedteam.summary?.low || 0}）`;
+
+    return {
+      checkedAt: new Date().toISOString(),
+      runtimeProtection: [
+        { key: "context_eligibility", label: "Context Eligibility", status: "enforced", detail: "知识与业务数据在检索前执行岗位、权限、版本和生效时间过滤" },
+        { key: "mcp_identity", label: "MCP 身份与 Scope", status: Number(connections.verified) > 0 ? "enforced" : "partial", detail: `${Number(connections.verified)}/${Number(connections.total)} 个连接器完成可信身份验证` },
+        { key: "mcp_policy", label: "MCP 工具策略", status: Number(policies.enabled) > 0 ? "enforced" : "unverified", detail: `${Number(policies.enabled)} 个工具已启用治理策略，${Number(policies.approval)} 个要求人工确认` },
+        { key: "receipt", label: "Receipt 审计", status: "enforced", detail: "记录 Context、Policy 与 Capability 的运行依据和指纹" },
+        { key: "instruction_attack_observe", label: "Prompt Injection 信号监测", status: "partial", detail: "当前对用户输入进行规则检测并写入审计；处于观察模式，不作为实时阻断器" },
+        { key: "conversation_guard", label: "实时输入/输出内容护栏", status: "not_enabled", detail: "尚未接入每轮对话的 Prompt Injection、PII 和输出 DLP 拦截" },
+      ],
+      validations: [
+        {
+          key: "skill_scan",
+          label: "Skill 安全扫描",
+          provider: "Tencent AI-Infra-Guard / aig-skill-scan",
+          status: skillStatus,
+          detail: `已完成 ${skillCounts.completed}/${skillCounts.total}，未扫描 ${skillCounts.unscanned}，失败 ${skillCounts.failed}，高风险 ${skillCounts.highRisk}`,
+          inventory: skills,
+        },
+        { key: "mcp_scan", label: "MCP 安全扫描", provider: "Tencent AI-Infra-Guard / mcp-scan", status: mcpScanStatus, detail: `源码静态扫描 ${mcpScanCounts.completed}/${mcpScanCounts.total}，待复核 ${mcpScanCounts.review}，高风险 ${mcpScanCounts.blocked}，失败 ${mcpScanCounts.failed}`, inventory: mcpScanCounts },
+        { key: "agent_redteam", label: "Agent 红队测试", provider: "Tencent AI-Infra-Guard / aig-agent-scan", status: agentStatus, detail: agentDetail },
+        { key: "prompt_eval", label: "Prompt / 模型安全评测", provider: "Tencent AI-Infra-Guard / AIG-PromptSecurity", status: "not_integrated", detail: "组件尚未部署；当前磁盘余量不足，不会把它误报为已具备的运行能力" },
+      ],
+    };
+  }),
+
+  startSkillSecurityBackfill: adminProcedure.mutation(async ({ ctx }) => {
+    try {
+      const status = startSkillSecurityBackfill();
+      await recordAuditBestEffort({
+        action: "skill.security_backfill.started",
+        result: "success",
+        severity: "high",
+        ...auditActor(ctx.user),
+        ...auditRequest(ctx.req),
+        targetType: "skill_inventory",
+        targetId: status.runId || "skill-security-backfill",
+        metadata: { provider: "aig-skill-scan", mode: "observe" },
+      });
+      return status;
+    } catch (error) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: error instanceof Error ? error.message : "无法启动存量 Skill 补扫" });
+    }
+  }),
+
+  skillSecurityBackfillStatus: adminProcedure.query(() => skillSecurityBackfillStatus()),
 
   listEvents: adminProcedure
     .input(auditListSchema)

@@ -40,6 +40,7 @@ import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
 import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/MonitoringPanel";
 import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
 import { EnterpriseAssetsPanel } from "@/components/admin/EnterpriseAssetsPanel";
+import { SecurityAssurancePanel } from "@/components/admin/SecurityAssurancePanel";
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
   { value: "creating", label: "创建中" },
@@ -1713,6 +1714,7 @@ export default function ClawAdmin() {
             />
           </TabsContent>
           <TabsContent value="security-audit" className="space-y-4">
+            <SecurityAssurancePanel />
             <Card className="admin-panel-card p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">

@@ -5,7 +5,7 @@ import {
   setSkillWorkQueue,
 } from "../observability/metrics";
 
-export type SkillWorkLane = "scan" | "install";
+export type SkillWorkLane = "scan" | "install" | "security";
 
 function boundedInteger(value: string | undefined, fallback: number, min: number, max: number): number {
   const parsed = Number.parseInt(String(value || ""), 10);
@@ -14,15 +14,16 @@ function boundedInteger(value: string | undefined, fallback: number, min: number
 
 function createQueue(lane: SkillWorkLane): BoundedWorkQueue {
   const scan = lane === "scan";
+  const security = lane === "security";
   const concurrency = boundedInteger(
-    process.env[scan ? "EA_SKILL_SCAN_CONCURRENCY" : "EA_SKILL_INSTALL_CONCURRENCY"],
-    scan ? 4 : 2,
+    process.env[scan ? "EA_SKILL_SCAN_CONCURRENCY" : security ? "EA_SKILL_SECURITY_CONCURRENCY" : "EA_SKILL_INSTALL_CONCURRENCY"],
+    scan ? 4 : security ? 1 : 2,
     1,
     32,
   );
   const maxQueued = boundedInteger(
-    process.env[scan ? "EA_SKILL_SCAN_MAX_QUEUE" : "EA_SKILL_INSTALL_MAX_QUEUE"],
-    100,
+    process.env[scan ? "EA_SKILL_SCAN_MAX_QUEUE" : security ? "EA_SKILL_SECURITY_MAX_QUEUE" : "EA_SKILL_INSTALL_MAX_QUEUE"],
+    security ? 1_000 : 100,
     0,
     1_000,
   );
@@ -34,6 +35,7 @@ function createQueue(lane: SkillWorkLane): BoundedWorkQueue {
 const queues: Record<SkillWorkLane, BoundedWorkQueue> = {
   scan: createQueue("scan"),
   install: createQueue("install"),
+  security: createQueue("security"),
 };
 
 export async function runSkillWork<T>(lane: SkillWorkLane, task: () => Promise<T> | T): Promise<T> {
@@ -50,7 +52,7 @@ export async function runSkillWork<T>(lane: SkillWorkLane, task: () => Promise<T
 }
 
 export function skillWorkQueueSnapshots(): Record<SkillWorkLane, WorkQueueSnapshot> {
-  return { scan: queues.scan.snapshot(), install: queues.install.snapshot() };
+  return { scan: queues.scan.snapshot(), install: queues.install.snapshot(), security: queues.security.snapshot() };
 }
 
 export { WorkQueueFullError };

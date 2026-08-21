@@ -93,6 +93,7 @@ import { registerAuditIngestRoutes } from "./claw-audit-ingest";
 import { registerDesktopRoutes } from "./desktop";
 import { registerKnowledgeRoutes } from "./knowledge-routes";
 import { registerMonitoringRoutes } from "./monitoring-routes";
+import { registerMcpSecurityScanRoutes } from "./mcp-security-scan-routes";
 import { registerToolEgressRoutes } from "./tool-egress-routes";
 import { registerRuntimeGovernanceAttestationRoutes } from "./runtime-governance-attestation";
 import { registerGovernanceApprovalRoutes } from "./governance-approval-routes";
@@ -498,6 +499,7 @@ async function startServer() {
   registerMiscRoutes(app);
   registerAuditExportRoutes(app);
   registerAuditIngestRoutes(app);
+  registerMcpSecurityScanRoutes(app);
   registerDesktopRoutes(app);
   registerKnowledgeRoutes(app);
   registerMonitoringRoutes(app);

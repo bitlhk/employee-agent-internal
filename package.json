@@ -88,6 +88,7 @@
     "rolepack:replication:validate": "tsx scripts/run-role-replication-validation.ts",
     "audit:drain-dlq": "tsx scripts/drain-audit-dlq.ts",
     "audit:dependencies": "pnpm audit --prod --audit-level moderate",
+    "security:agent:redteam": "tsx scripts/run-aig-agent-redteam.ts",
     "stats:backfill": "tsx scripts/visit-stats-backfill.ts",
     "stats:reconcile": "tsx scripts/visit-stats-reconcile.ts",
     "compress:images": "tsx scripts/compress-images.ts",

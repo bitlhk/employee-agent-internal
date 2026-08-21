@@ -1,8 +1,11 @@
 {
   "repository": "https://github.com/Tencent/AI-Infra-Guard",
   "commit": "4908db1deab794a02ee9eaa77d3583ad590e7b27",
-  "package": "aig-skill-scan",
-  "packageVersion": "0.2.1",
+  "packages": {
+    "aig-skill-scan": "0.2.1",
+    "aig-mcp-scan": "0.2.0",
+    "aig-agent-scan": "0.1.0"
+  },
   "license": "Apache-2.0",
   "attribution": "Based on Tencent Zhuque Lab AI-Infra-Guard"
 }
