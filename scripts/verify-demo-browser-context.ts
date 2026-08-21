@@ -138,34 +138,42 @@ async function main() {
   const currentRun = excerpt.slice(excerpt.lastIndexOf(prompt));
   const browserMessageDiagnostics = await page.evaluate(() => {
     const diagnostics: Array<Record<string, unknown>> = [];
+    const recordOf = (value: unknown): Record<string, unknown> => (
+      value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+    );
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const key = window.localStorage.key(index);
       if (!key || !key.includes("messages")) continue;
       try {
         const messages = JSON.parse(window.localStorage.getItem(key) || "[]");
         if (!Array.isArray(messages)) continue;
-        for (const message of messages.slice(-4)) {
-          if (message?.role !== "assistant") continue;
+        for (const messageValue of messages.slice(-4)) {
+          const message = recordOf(messageValue);
+          if (message.role !== "assistant") continue;
+          const receiptBundle = recordOf(message.receiptBundle);
           diagnostics.push({
             storageKey: key,
             messageId: message?.id,
             hasReceiptBundle: Boolean(message?.receiptBundle),
-            receiptStages: Array.isArray(message?.receiptBundle?.stages)
-              ? message.receiptBundle.stages.map((stage: any) => ({
-                  taskId: stage?.taskId,
-                  receiptId: stage?.receiptId,
-                }))
+            receiptStages: Array.isArray(receiptBundle.stages)
+              ? receiptBundle.stages.map(stageValue => {
+                  const stage = recordOf(stageValue);
+                  return { taskId: stage.taskId, receiptId: stage.receiptId };
+                })
               : [],
-            toolCalls: Array.isArray(message?.toolCalls)
-              ? message.toolCalls.map((tool: any) => ({
-                  id: tool?.id,
-                  name: tool?.name,
-                  status: tool?.status,
-                  hasResult: Boolean(tool?.result),
+            toolCalls: Array.isArray(message.toolCalls)
+              ? message.toolCalls.map(toolValue => {
+                  const tool = recordOf(toolValue);
+                  return {
+                  id: tool.id,
+                  name: tool.name,
+                  status: tool.status,
+                  hasResult: Boolean(tool.result),
                   resultHasReceipt:
-                    typeof tool?.result === "string" &&
+                    typeof tool.result === "string" &&
                     tool.result.includes("eaContextReceipt"),
-                }))
+                  };
+                })
               : [],
           });
         }

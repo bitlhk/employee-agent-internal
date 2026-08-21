@@ -12,12 +12,14 @@ import {
   stringList, suggestionSourceEvidence, suggestionSourceLabel, toLocalDateTimeInput, unresolvedAssetDiagnostics,
   type AssetIssueGroup,
 } from "@/lib/enterprise-asset-experience";
-import { trpc, type RouterOutputs } from "@/lib/trpc";
+import { trpc, type RouterInputs, type RouterOutputs } from "@/lib/trpc";
 import { AlertTriangle, Archive, Check, Clock3, FileInput, FolderOpen, ListFilter, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, Sparkles, UploadCloud, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Overview = RouterOutputs["enterpriseAssets"]["overview"];
 type Candidate = Overview["candidates"][number];
+type ConfirmedMetadata = RouterInputs["enterpriseAssets"]["submitReview"]["confirmedMetadata"];
+type EnterpriseAssetSourceType = RouterInputs["enterpriseAssets"]["saveSource"]["sourceType"];
 
 const STATUS_LABELS: Record<string, string> = {
   draft: "草稿", review_pending: "待审核", approved: "审核通过", rejected: "已退回", published: "已发布", stale: "已失效",
@@ -41,7 +43,7 @@ const SOURCE_RUN_LABELS: Record<string, string> = {
 };
 
 const EMPTY_SOURCE = {
-  sourceId: "", displayName: "", sourceType: "document_repository" as const, sourceUri: "",
+  sourceId: "", displayName: "", sourceType: "document_repository" as EnterpriseAssetSourceType, sourceUri: "",
   ownerDepartment: "", ownerContact: "", syncMode: "manual" as const, status: "active" as const,
 };
 
@@ -311,7 +313,7 @@ export function EnterpriseAssetsPanel() {
     if (!reviewTarget) return;
     try {
       const confirmedMetadata = normalizedReviewMetadata(advancedMetadata ? JSON.parse(metadataText) : reviewMetadata);
-      submitReview.mutate({ candidateId: reviewTarget.candidateId, displayName: reviewDisplayName.trim(), sourceVersion: reviewSourceVersion.trim(), confirmedMetadata: confirmedMetadata as any });
+      submitReview.mutate({ candidateId: reviewTarget.candidateId, displayName: reviewDisplayName.trim(), sourceVersion: reviewSourceVersion.trim(), confirmedMetadata: confirmedMetadata as ConfirmedMetadata });
     } catch {
       toast.error("确认元数据不是有效 JSON");
     }
@@ -507,7 +509,7 @@ export function EnterpriseAssetsPanel() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div><Label>来源 ID</Label><Input value={source.sourceId} onChange={e => setSource({ ...source, sourceId: e.target.value })} placeholder="bank-wealth-policy" /></div>
             <div><Label>名称</Label><Input value={source.displayName} onChange={e => setSource({ ...source, displayName: e.target.value })} /></div>
-            <div><Label>来源类型</Label><Select value={source.sourceType} onValueChange={value => setSource({ ...source, sourceType: value as any })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[
+            <div><Label>来源类型</Label><Select value={source.sourceType} onValueChange={value => setSource({ ...source, sourceType: value as EnterpriseAssetSourceType })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[
               ["document_repository", "制度/文档库"], ["business_system", "业务系统"], ["rule_catalog", "规则目录"], ["workflow_catalog", "流程目录"], ["capability_service", "能力服务"], ["identity_directory", "IAM/组织目录"],
             ].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>责任部门</Label><Input value={source.ownerDepartment} onChange={e => setSource({ ...source, ownerDepartment: e.target.value })} /></div>

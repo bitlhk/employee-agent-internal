@@ -21,6 +21,30 @@ import { evaluateProviderCertification } from "../server/_core/provider-certific
 const DEFAULT_PROFILE = "examples/wealth-manager-reference-role-pack/eval/llamaindex-provider-certification.v1.json";
 const MANIFEST_PATH = "examples/wealth-manager-reference-role-pack/knowledge/manifest.json";
 
+type RetrievalEvaluationResult = {
+  hitRate?: number;
+  documentRecall?: number;
+  versionAccuracy?: number | null;
+  forbiddenSourceRate?: number | null;
+  positionHitRate?: number | null;
+  mrr?: number;
+  latencyP95Ms?: number;
+  latencyP99Ms?: number;
+  errorRate?: number;
+  emptyResultRate?: number;
+  eligibility?: { pushdownApplied?: boolean; violations?: unknown[] };
+  results?: Array<{
+    id: string;
+    actualItems: Array<{
+      documentId: string;
+      documentVersion: string;
+      position: string;
+      page?: number | null;
+      score?: number;
+    }>;
+  }>;
+};
+
 function argument(name: string): string {
   return String(process.argv.find(value => value.startsWith(`--${name}=`))?.split("=", 2)[1] || "").trim();
 }
@@ -65,7 +89,7 @@ function runRetrievalEvaluation(input: {
     "--output", input.output,
     ...input.eligibleDocumentIds.flatMap(id => ["--eligible-document-id", id]),
   ], { cwd: process.cwd(), stdio: ["ignore", "ignore", "inherit"], maxBuffer: 8 * 1024 * 1024 });
-  return readJson<any>(input.output);
+  return readJson<RetrievalEvaluationResult>(input.output);
 }
 
 async function main() {
@@ -146,7 +170,7 @@ async function main() {
     });
     const supportsStrategy = health.capabilities?.includes("retrieval_strategy") || false;
     const supportsRerankToggle = health.capabilities?.includes("rerank_toggle") || false;
-    const variantRuns: Record<string, any> = {};
+    const variantRuns: Record<string, RetrievalEvaluationResult> = {};
     if (supportsStrategy) {
       for (const strategy of ["bm25", "vector"] as const) {
         variantRuns[strategy] = runRetrievalEvaluation({
