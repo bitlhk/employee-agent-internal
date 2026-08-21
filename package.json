@@ -20,7 +20,7 @@
     "lint:dependencies": "node scripts/check-dependency-policy.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:integration:db": "RUN_DB_INTEGRATION_TESTS=1 vitest run server/db/governance-runtime.integration.test.ts server/db/role-pack-releases.integration.test.ts server/db/context-source-bindings.integration.test.ts",
+    "test:integration:db": "RUN_DB_INTEGRATION_TESTS=1 vitest run server/db/governance-runtime.integration.test.ts server/db/role-pack-releases.integration.test.ts server/db/context-source-bindings.integration.test.ts server/db/enterprise-asset-sync.integration.test.ts",
     "test:coverage": "vitest run --coverage",
     "test:coverage:critical": "node scripts/check-critical-coverage.mjs",
     "test:e2e:scroll": "playwright test --config playwright.scroll.config.ts",

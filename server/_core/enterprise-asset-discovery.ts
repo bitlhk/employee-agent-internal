@@ -14,6 +14,7 @@ export const enterpriseAssetDiagnosticCodeSchema = z.enum([
   "MISSING_OWNER",
   "MISSING_VERSION",
   "MISSING_EFFECTIVE_DATE",
+  "VERSION_CONTENT_CONFLICT",
   "ROLE_UNRESOLVED",
   "DUPLICATE_CONTENT",
   "SUSPECTED_OLD_VERSION",
@@ -31,6 +32,7 @@ export type EnterpriseAssetDiagnostic = {
 };
 
 export type DiscoveredEnterpriseArtifact = {
+  externalItemId: string;
   relativePath: string;
   displayName: string;
   extension: string;
@@ -298,6 +300,7 @@ export function discoverUploadedArtifact(input: {
   const validation = validateUploadContent(extension, input.content);
   if (!validation.ok) throw new Error(`${relativePath}: ${validation.error}`);
   return {
+    externalItemId: relativePath,
     relativePath,
     displayName: path.basename(relativePath),
     extension,
@@ -339,6 +342,7 @@ export function discoverZipArtifacts(buffer: Buffer): DiscoveredEnterpriseArtifa
 }
 
 export function discoverObjectInventoryArtifact(input: {
+  externalItemId?: string;
   key: string;
   checksum: string;
   sizeBytes: number;
@@ -351,6 +355,7 @@ export function discoverObjectInventoryArtifact(input: {
   const extension = knowledgeExtension(relativePath);
   if (!KNOWLEDGE_EXTENSIONS.has(extension)) throw new Error(`不支持的知识文件类型: .${extension || "unknown"}`);
   return {
+    externalItemId: String(input.externalItemId || relativePath).trim(),
     relativePath,
     displayName: path.basename(relativePath),
     extension,

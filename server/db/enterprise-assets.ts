@@ -1,11 +1,15 @@
 import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import {
   enterpriseAssetCandidates,
+  enterpriseAssetSourceItems,
+  enterpriseAssetSourceRuns,
   enterpriseAssetSources,
   knowledgeDocuments,
   rolePackReleases,
   type EnterpriseAssetCandidate,
+  type EnterpriseAssetSourceRun,
   type InsertEnterpriseAssetCandidate,
+  type InsertEnterpriseAssetSourceRun,
   type InsertEnterpriseAssetSource,
 } from "../../drizzle/schema";
 import { getDb } from "./connection";
@@ -25,6 +29,161 @@ export async function getEnterpriseAssetSource(sourceId: string) {
   const [row] = await (await database()).select().from(enterpriseAssetSources)
     .where(eq(enterpriseAssetSources.sourceId, sourceId)).limit(1);
   return row || null;
+}
+
+export async function listEnterpriseAssetSourceRuns(sourceId: string, limit = 20) {
+  return (await database()).select().from(enterpriseAssetSourceRuns)
+    .where(eq(enterpriseAssetSourceRuns.sourceId, sourceId))
+    .orderBy(desc(enterpriseAssetSourceRuns.startedAt))
+    .limit(Math.max(1, Math.min(limit, 100)));
+}
+
+export async function getEnterpriseAssetSourceRun(runId: string) {
+  const [row] = await (await database()).select().from(enterpriseAssetSourceRuns)
+    .where(eq(enterpriseAssetSourceRuns.runId, runId)).limit(1);
+  return row || null;
+}
+
+export async function listEnterpriseAssetSourceItems(sourceId: string) {
+  return (await database()).select().from(enterpriseAssetSourceItems)
+    .where(eq(enterpriseAssetSourceItems.sourceId, sourceId))
+    .orderBy(desc(enterpriseAssetSourceItems.lastSeenAt));
+}
+
+export async function beginEnterpriseAssetSourceRun(input: InsertEnterpriseAssetSourceRun) {
+  const db = await database();
+  await db.insert(enterpriseAssetSourceRuns).values({ ...input, activeRunKey: input.sourceId });
+  const [row] = await db.select().from(enterpriseAssetSourceRuns)
+    .where(eq(enterpriseAssetSourceRuns.runId, input.runId)).limit(1);
+  return row || null;
+}
+
+export async function failEnterpriseAssetSourceRun(input: {
+  runId: string;
+  error: Record<string, unknown>;
+  failedCount?: number;
+}) {
+  const db = await database();
+  await db.update(enterpriseAssetSourceRuns).set({
+    status: "failed",
+    activeRunKey: null,
+    scanComplete: false,
+    failedCount: input.failedCount || 1,
+    errorJson: input.error,
+    completedAt: new Date(),
+  }).where(and(
+    eq(enterpriseAssetSourceRuns.runId, input.runId),
+    eq(enterpriseAssetSourceRuns.status, "running"),
+  ));
+}
+
+export async function completeEnterpriseAssetSourceRun(input: {
+  runId: string;
+  sourceId: string;
+  status: Extract<EnterpriseAssetSourceRun["status"], "succeeded" | "partial">;
+  scanComplete: boolean;
+  cursorAfter?: string | null;
+  counts: {
+    discovered: number;
+    created: number;
+    changed: number;
+    unchanged: number;
+    missing: number;
+    failed: number;
+  };
+  items: Array<{
+    action: "seen" | "missing";
+    sourceItemId: string;
+    externalItemId: string;
+    enterpriseAssetId: string;
+    relativePath: string;
+    sourceUri?: string | null;
+    etag?: string | null;
+    sourceModifiedAt?: Date | null;
+    contentHash: string;
+    latestSourceVersion?: string | null;
+    sizeBytes: number;
+    latestCandidateId?: string | null;
+  }>;
+  actor: string;
+}) {
+  if (input.status === "partial" && input.scanComplete) {
+    throw new Error("A partial source scan cannot be marked complete");
+  }
+  const db = await database();
+  return db.transaction(async tx => {
+    const completedAt = new Date();
+    for (const item of input.items) {
+      if (item.action === "missing") {
+        await tx.update(enterpriseAssetSourceItems).set({
+          state: "missing",
+          missingSinceRunId: input.runId,
+        }).where(and(
+          eq(enterpriseAssetSourceItems.sourceId, input.sourceId),
+          eq(enterpriseAssetSourceItems.sourceItemId, item.sourceItemId),
+          eq(enterpriseAssetSourceItems.state, "active"),
+        ));
+        continue;
+      }
+      await tx.insert(enterpriseAssetSourceItems).values({
+        sourceItemId: item.sourceItemId,
+        sourceId: input.sourceId,
+        externalItemId: item.externalItemId,
+        enterpriseAssetId: item.enterpriseAssetId,
+        relativePath: item.relativePath,
+        sourceUri: item.sourceUri || null,
+        etag: item.etag || null,
+        sourceModifiedAt: item.sourceModifiedAt || null,
+        contentHash: item.contentHash,
+        latestSourceVersion: item.latestSourceVersion || null,
+        sizeBytes: item.sizeBytes,
+        state: "active",
+        lastSeenRunId: input.runId,
+        latestCandidateId: item.latestCandidateId || null,
+        lastSeenAt: completedAt,
+      }).onDuplicateKeyUpdate({ set: {
+        enterpriseAssetId: item.enterpriseAssetId,
+        relativePath: item.relativePath,
+        sourceUri: item.sourceUri || null,
+        etag: item.etag || null,
+        sourceModifiedAt: item.sourceModifiedAt || null,
+        contentHash: item.contentHash,
+        ...(item.latestSourceVersion ? { latestSourceVersion: item.latestSourceVersion } : {}),
+        sizeBytes: item.sizeBytes,
+        state: "active",
+        lastSeenRunId: input.runId,
+        missingSinceRunId: null,
+        ...(item.latestCandidateId ? { latestCandidateId: item.latestCandidateId } : {}),
+        lastSeenAt: completedAt,
+      } });
+    }
+    await tx.update(enterpriseAssetSourceRuns).set({
+      status: input.status,
+      activeRunKey: null,
+      scanComplete: input.scanComplete,
+      cursorAfter: input.cursorAfter || null,
+      discoveredCount: input.counts.discovered,
+      createdCount: input.counts.created,
+      changedCount: input.counts.changed,
+      unchangedCount: input.counts.unchanged,
+      missingCount: input.counts.missing,
+      failedCount: input.counts.failed,
+      completedAt,
+    }).where(and(
+      eq(enterpriseAssetSourceRuns.runId, input.runId),
+      eq(enterpriseAssetSourceRuns.status, "running"),
+    ));
+    if (input.status === "succeeded") {
+      await tx.update(enterpriseAssetSources).set({
+        lastSyncAt: completedAt,
+        updatedBy: input.actor,
+      }).where(eq(enterpriseAssetSources.sourceId, input.sourceId));
+    }
+    const [run] = await tx.select().from(enterpriseAssetSourceRuns)
+      .where(eq(enterpriseAssetSourceRuns.runId, input.runId)).limit(1);
+    if (!run || run.status !== input.status) throw new Error("Source sync run state changed; retry completion");
+    return run;
+  });
 }
 
 export async function upsertEnterpriseAssetSource(input: InsertEnterpriseAssetSource) {

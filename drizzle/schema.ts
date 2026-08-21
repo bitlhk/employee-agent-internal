@@ -166,10 +166,73 @@ export const enterpriseAssetSources = mysqlTable("enterprise_asset_sources", {
 export type EnterpriseAssetSource = typeof enterpriseAssetSources.$inferSelect;
 export type InsertEnterpriseAssetSource = typeof enterpriseAssetSources.$inferInsert;
 
+export const enterpriseAssetSourceRuns = mysqlTable("enterprise_asset_source_runs", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  runId: varchar("run_id", { length: 64 }).notNull(),
+  sourceId: varchar("source_id", { length: 128 }).notNull(),
+  activeRunKey: varchar("active_run_key", { length: 128 }),
+  scanMode: mysqlEnum("scan_mode", ["full", "incremental"]).notNull(),
+  status: mysqlEnum("status", ["running", "succeeded", "partial", "failed"]).default("running").notNull(),
+  scanComplete: boolean("scan_complete").default(false).notNull(),
+  cursorBefore: varchar("cursor_before", { length: 1000 }),
+  cursorAfter: varchar("cursor_after", { length: 1000 }),
+  resumeOfRunId: varchar("resume_of_run_id", { length: 64 }),
+  attempt: int("attempt").default(1).notNull(),
+  discoveredCount: int("discovered_count").default(0).notNull(),
+  createdCount: int("created_count").default(0).notNull(),
+  changedCount: int("changed_count").default(0).notNull(),
+  unchangedCount: int("unchanged_count").default(0).notNull(),
+  missingCount: int("missing_count").default(0).notNull(),
+  failedCount: int("failed_count").default(0).notNull(),
+  errorJson: json("error_json").$type<Record<string, unknown> | null>(),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+  createdBy: varchar("created_by", { length: 128 }).notNull(),
+}, table => ({
+  runIdUnique: uniqueIndex("uk_enterprise_asset_source_runs_public_id").on(table.runId),
+  activeRunUnique: uniqueIndex("uk_enterprise_asset_source_runs_active").on(table.activeRunKey),
+  sourceStatusIdx: index("idx_enterprise_asset_source_runs_source_status").on(table.sourceId, table.status, table.startedAt),
+}));
+
+export type EnterpriseAssetSourceRun = typeof enterpriseAssetSourceRuns.$inferSelect;
+export type InsertEnterpriseAssetSourceRun = typeof enterpriseAssetSourceRuns.$inferInsert;
+
+export const enterpriseAssetSourceItems = mysqlTable("enterprise_asset_source_items", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  sourceItemId: varchar("source_item_id", { length: 64 }).notNull(),
+  sourceId: varchar("source_id", { length: 128 }).notNull(),
+  externalItemId: varchar("external_item_id", { length: 512 }).notNull(),
+  enterpriseAssetId: varchar("enterprise_asset_id", { length: 128 }).notNull(),
+  relativePath: varchar("relative_path", { length: 700 }).notNull(),
+  sourceUri: varchar("source_uri", { length: 1000 }),
+  etag: varchar("etag", { length: 256 }),
+  sourceModifiedAt: timestamp("source_modified_at"),
+  contentHash: varchar("content_hash", { length: 64 }).notNull(),
+  latestSourceVersion: varchar("latest_source_version", { length: 64 }),
+  sizeBytes: bigint("size_bytes", { mode: "number", unsigned: true }).default(0).notNull(),
+  state: mysqlEnum("state", ["active", "missing", "retired"]).default("active").notNull(),
+  lastSeenRunId: varchar("last_seen_run_id", { length: 64 }).notNull(),
+  missingSinceRunId: varchar("missing_since_run_id", { length: 64 }),
+  latestCandidateId: varchar("latest_candidate_id", { length: 64 }),
+  firstSeenAt: timestamp("first_seen_at").defaultNow().notNull(),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  sourceItemIdUnique: uniqueIndex("uk_enterprise_asset_source_items_public_id").on(table.sourceItemId),
+  sourceExternalUnique: uniqueIndex("uk_enterprise_asset_source_items_external").on(table.sourceId, table.externalItemId),
+  sourceStateIdx: index("idx_enterprise_asset_source_items_source_state").on(table.sourceId, table.state, table.lastSeenAt),
+}));
+
+export type EnterpriseAssetSourceItem = typeof enterpriseAssetSourceItems.$inferSelect;
+export type InsertEnterpriseAssetSourceItem = typeof enterpriseAssetSourceItems.$inferInsert;
+
 export const enterpriseAssetCandidates = mysqlTable("enterprise_asset_candidates", {
   id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
   candidateId: varchar("candidate_id", { length: 64 }).notNull(),
   sourceId: varchar("source_id", { length: 128 }).notNull(),
+  syncRunId: varchar("sync_run_id", { length: 64 }),
+  sourceItemId: varchar("source_item_id", { length: 64 }),
   enterpriseAssetId: varchar("enterprise_asset_id", { length: 128 }).notNull(),
   assetType: mysqlEnum("asset_type", [
     "knowledge_document",
