@@ -442,12 +442,12 @@ export function EnterpriseAssetsPanel() {
               <p className="mt-1 text-xs text-muted-foreground">{assetListMode === "remediation" ? "按治理问题处理异常资产，正常资产无需逐份确认。" : "查看全部候选、审核和发布状态。"}</p>
             </div>
             <div className="flex rounded-[8px] border bg-white p-0.5">
-              <Button size="sm" variant={assetListMode === "remediation" ? "default" : "ghost"} className={assetListMode === "remediation" ? "h-7 rounded-[6px] hover:bg-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("remediation")}>待整改 {issueCounts.all}</Button>
-              <Button size="sm" variant={assetListMode === "all" ? "default" : "ghost"} className={assetListMode === "all" ? "h-7 rounded-[6px] hover:bg-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("all")}>全部资产 {data?.candidates.length || 0}</Button>
+              <Button aria-pressed={assetListMode === "remediation"} size="sm" variant="ghost" className={assetListMode === "remediation" ? "h-7 rounded-[6px] bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("remediation")}>{assetListMode === "remediation" && <Check className="h-3.5 w-3.5" />}待整改 {issueCounts.all}</Button>
+              <Button aria-pressed={assetListMode === "all"} size="sm" variant="ghost" className={assetListMode === "all" ? "h-7 rounded-[6px] bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("all")}>{assetListMode === "all" && <Check className="h-3.5 w-3.5" />}全部资产 {data?.candidates.length || 0}</Button>
             </div>
           </div>
           {assetListMode === "remediation" && <div className="mt-3 flex flex-wrap gap-1.5">
-            {ASSET_ISSUE_GROUPS.filter(group => group.id === "all" || issueCounts[group.id] > 0).map(group => <Button key={group.id} size="sm" variant={issueFilter === group.id ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setIssueFilter(group.id)}>{group.label} {issueCounts[group.id]}</Button>)}
+            {ASSET_ISSUE_GROUPS.map(group => <Button key={group.id} aria-pressed={issueFilter === group.id} size="sm" variant="ghost" className={issueFilter === group.id ? "h-7 bg-primary/10 px-2.5 text-xs text-primary hover:bg-primary/15 hover:text-primary" : "h-7 px-2.5 text-xs text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setIssueFilter(group.id)}>{issueFilter === group.id && <Check className="h-3 w-3" />}{group.label} {issueCounts[group.id]}</Button>)}
           </div>}
         </div>
         <div className="max-h-[70vh] divide-y overflow-y-auto">
@@ -590,7 +590,7 @@ export function EnterpriseAssetsPanel() {
 
             {discoveryMode !== "object_inventory" && discoveryFiles.length > 0 && <div className="text-xs text-muted-foreground">已选择 {discoveryFiles.length} 个文件，共 {(discoveryFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} MB</div>}
 
-            <div className="space-y-2 rounded border bg-white px-3 py-3">
+            <div className="space-y-2 rounded border border-primary/15 bg-primary/[0.035] px-3 py-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={useModelSuggestion} onChange={event => { setUseModelSuggestion(event.target.checked); if (!event.target.checked) setAllowContentProcessing(false); }} />使用平台模型增强元数据建议</label>
               <label className={`flex items-center gap-2 text-sm ${useModelSuggestion ? "" : "text-muted-foreground"}`}><input type="checkbox" disabled={!useModelSuggestion} checked={allowContentProcessing} onChange={event => setAllowContentProcessing(event.target.checked)} />允许向平台模型发送文本文件的有限摘要</label>
               <p className="text-xs text-muted-foreground">模型只提供建议；权限、密级、生命周期和发布状态仍由确定性规则与人工审核决定。</p>
@@ -614,7 +614,7 @@ export function EnterpriseAssetsPanel() {
                 <SelectContent>{filesystemSources.map(item => <SelectItem key={item.sourceId} value={item.sourceId}>{item.displayName} · {item.sourceUri}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="space-y-2 rounded border bg-white px-3 py-3">
+            <div className="space-y-2 rounded border border-primary/15 bg-primary/[0.035] px-3 py-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={filesystemUseModelSuggestion} onChange={event => { setFilesystemUseModelSuggestion(event.target.checked); if (!event.target.checked) setFilesystemAllowContentProcessing(false); }} />使用平台模型增强元数据建议</label>
               <label className={`flex items-center gap-2 text-sm ${filesystemUseModelSuggestion ? "" : "text-muted-foreground"}`}><input type="checkbox" disabled={!filesystemUseModelSuggestion} checked={filesystemAllowContentProcessing} onChange={event => setFilesystemAllowContentProcessing(event.target.checked)} />允许向平台模型发送文本文件的有限摘要</label>
               <p className="text-xs text-muted-foreground">目录必须位于服务端白名单挂载根目录内；符号链接不会被扫描。</p>
