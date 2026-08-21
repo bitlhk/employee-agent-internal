@@ -2,7 +2,7 @@
 
 验证日期：2026-08-21  
 验证范围：Demo Enterprise Asset Pack V1、企业资产接入、知识版本发布、财富经理 Context 消费  
-结论：**核心链路已验证，浏览器端到端演示尚未通过最终门禁。**
+结论：**核心生命周期与浏览器真实运行链均已通过，当前基线可用于端到端场景演示。**
 
 ## 1. 验证结果
 
@@ -29,9 +29,9 @@
 - Role Pack 验收时间与候选更新时间同秒时，发布门禁错误拒绝启用；现改为同秒验收有效，更早验收仍拒绝。
 - Knowledge SQL 时间字符串被按本地时区二次换算，造成 8 小时时差；现按 UTC 解析 MySQL TIMESTAMP 字符串。
 
-### 1.3 当前源码的 Context 消费
+### 1.3 受治理的 Context 消费
 
-直接调用当前源码运行的受治理 Platform MCP，结果通过：
+受治理 Platform MCP 与浏览器实际运行结果均通过：
 
 - 当前制度：`私人银行产品销售适当性管理办法V3.3.pdf`；
 - 版本：`3.3`；
@@ -41,30 +41,48 @@
 - Receipt：`ea.context-receipt.v1`；
 - Effective Context Snapshot 明确记录 V3.3、资产指纹和生效时间。
 
-这证明当前源码中的 `Asset Lifecycle -> Eligibility -> Context Resolution -> Receipt` 链路成立。
+这证明 `Asset Lifecycle -> Eligibility -> Context Resolution -> Receipt` 链路成立。
 
 ### 1.4 浏览器财富经理体验
 
-使用现有财富经理测试账号从浏览器发起“核验当前制度”任务，模型仍返回 V2.2。
+本地实际运行组件已对齐：
 
-原因不是 Resolver 选择错误，而是本地 JiuwenSwarm 的 Platform Tool 仍回调已安装在 `5180` 的旧版 EA；本次待验证源码运行在隔离的 `5182`。旧版 `wealth-policy-selection` 只接受配置文件名的精确命中，不支持同系列新版本选择。
+- EA / Platform MCP：提交 `0a601518`，不可变 release `20260821T010059Z-0a601518a3eb`；
+- JiuwenSwarm：提交 `14e75bb9`；
+- Browser、EA、Platform MCP、Knowledge Service 和 JiuwenSwarm 均走本地 `5180` 正式运行链。
 
-因此当前状态应定义为：
+使用现有财富经理测试账号从浏览器发起“核验当前制度”任务，验收结果：
 
-> **Core Context Chain Verified / Browser E2E Blocked by Local Runtime Version Skew**
+- 回答采用 V3.3；
+- “本次依据”面板可见；
+- 面板显示版本 `3.3` 与 `08/21 07:13` 生效时间；
+- 面板显示已过滤 1 份失效或尚未生效的同系列资料；
+- 浏览器刷新/历史对账后仍可从 Jiuwen 历史恢复可信 Receipt；
+- 无页面异常或 HTTP 5xx。
 
-在本地 EA 与 JiuwenSwarm Platform Tool 指向同一版本前，不能对外标记为“非开发人员端到端可演示”。
+机器验收报告：`reports/demo-enterprise-assets/wealth-agent-v33-aligned-report.json`，结果 `PASS`。
+
+本轮额外修复了三处真实链路缺陷：
+
+- JiuwenSwarm 在标准 MCP 结果复制过程中丢失 `_meta`；
+- EA 与 Jiuwen 之间未将可信原始工具元数据稳定桥接到响应证据；
+- 前端历史对账和 EA 历史解析会用紧凑工具结果覆盖 Receipt。
+
+当前状态定义为：
+
+> **GRACE Enterprise Asset Demo Baseline: End-to-End Scenario Ready**
+
+该结论由两组证据共同组成：管理界面/后端已验证 V3.2 -> V3.3 生命周期切换，浏览器正式运行链已验证当前有效 V3.3 与 Receipt。此次没有重新创建另一份未来生效资产，因此不宣称同一轮浏览器会话重复观察了生效前后两个时点。
 
 ## 2. 体验差距
 
 ### 必须补
 
-1. **本地发布一致性门禁**：前端、EA API、Platform MCP 和 JiuwenSwarm 必须使用同一构建版本；演示前自动检查并阻止版本漂移。
+1. **本地发布一致性门禁**：演示前自动检查前端、EA API、Platform MCP 和 JiuwenSwarm 的运行版本，防止版本再次漂移。
 2. **候选筛选与聚合**：60 行资产直接平铺，需支持待整改、缺 Owner、缺版本、重复、冲突、解析失败、部门和版本系列筛选。
 3. **字段化 Metadata**：当前依赖原始 JSON，管理员还需要理解 `documentSeriesId`、文档 publicId 和逻辑资产英文 ID。
 4. **版本关系选择**：应让管理员从同系列版本链中选择“替代 V3.2”，不应手工填写运行时文档 ID。
-5. **生效时间闭环复验**：UTC 修复后重新跑一次干净的 Pending Effective 场景，保留生效前和生效后的浏览器证据。
-6. **Receipt 业务化展示**：员工应看到“本次依据、版本、生效时间、已排除旧版本”，不应看到 `historicalVersionFiltered`、Schema 名等内部字段。
+5. **生效时间浏览器证据**：后续用新的未来生效候选保留 Pending Effective -> Active 的浏览器双时点证据。
 
 ### 后续补
 
@@ -84,14 +102,11 @@
 
 ## 3. 下一门禁
 
-进入 UI 产品化前，先完成以下最小门禁：
+运行链门禁已经通过。进入 UI 产品化前，只保留两项体验验证：
 
-1. 将本地已安装 EA/Platform MCP 更新到当前源码版本，或让隔离 JiuwenSwarm 明确指向 `5182`；
-2. 从浏览器重新执行财富经理现行政策核验；
-3. 确认回答和可视 Receipt 均显示 V3.3；
-4. 使用新的未来生效候选复验 Pending Effective -> Active；
-5. 再由不看代码的人员独立完成一次完整流程。
+1. 使用新的未来生效候选补一份 Pending Effective -> Active 浏览器双时点证据；
+2. 由不看代码的人员独立完成一次上传、整改、发布和财富经理核验流程。
 
-只有五项全部通过，状态才升级为：
+UI 优先级仍由真实操作摩擦决定，当前候选为 Metadata 字段化、整改队列筛选和建议依据/Provenance 展示，不扩展新的知识引擎或 Router。
 
-> **GRACE Enterprise Asset Demo Baseline: End-to-End Scenario Ready**
+本轮所有修改仅发生在本地环境，上海环境未变更。

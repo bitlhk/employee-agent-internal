@@ -190,7 +190,7 @@ async function main() {
   const receiptVersionPresent = /(?:V?3\.3|版本\s*3\.3)/i.test(receiptText);
   const receiptEffectiveAtPresent =
     /(?:生效|effective)/i.test(receiptText) &&
-    /2026[-年/]0?8[-月/]2[01]/i.test(receiptText);
+    /(?:2026[-年/])?0?8[-月/]2[01]/i.test(receiptText);
   const receiptExclusionPresent = /(?:排除|过滤|失效|替代|历史版本)/i.test(
     receiptText
   );
