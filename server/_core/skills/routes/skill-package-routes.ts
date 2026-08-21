@@ -27,6 +27,11 @@ import {
 } from "../skill-package-index";
 import { skillRegistry } from "../skill-registry";
 import { MAX_SKILL_PACKAGE_BYTES, parseSkillPackageBuffer } from "../skill-source";
+import {
+  pendingSkillSecurityScan,
+  scanSkillPackageSecurity,
+  skillSecurityScannerEnabled,
+} from "../skill-security-scanner";
 import { remapLegacySkillMarketPath, skillStoreUploadedDir } from "../skill-store";
 import { runSkillWork, WorkQueueFullError } from "../skill-work-queues";
 
@@ -237,9 +242,13 @@ export function registerSkillPackageRoutes(app: Express): void {
             failure.code = installedResult.error.kind;
             throw failure;
           }
+          const externalSecurity = skillSecurityScannerEnabled()
+            ? pendingSkillSecurityScan(sha256)
+            : undefined;
           await skillRegistry.updateScan(payload.adoptId, parsed.skillId, {
             warnings: parsed.warnings,
             scannedAt: new Date().toISOString(),
+            externalSecurity,
           });
           const reconciledResult = await skillRegistry.reconcile(payload.adoptId, { skillId: parsed.skillId });
           if (!reconciledResult.ok) {
@@ -264,7 +273,30 @@ export function registerSkillPackageRoutes(app: Express): void {
         report: reconciled.value,
         manifest: parsed.manifest || {},
         warnings: parsed.warnings,
+        securityScan: skillSecurityScannerEnabled()
+          ? { status: "pending", mode: "observe", provider: "aig-skill-scan" }
+          : { status: "disabled", mode: "observe", provider: "aig-skill-scan" },
       });
+      if (skillSecurityScannerEnabled()) {
+        const file = Buffer.from(payload.fileBuf);
+        setImmediate(() => {
+          void runSkillWork("scan", async () => {
+            const externalSecurity = await scanSkillPackageSecurity({
+              file,
+              filename: safeName,
+              subjectFingerprint: sha256,
+            });
+            const updated = await skillRegistry.updateScan(payload.adoptId, parsed.skillId, {
+              warnings: parsed.warnings,
+              scannedAt: new Date().toISOString(),
+              externalSecurity,
+            }, { expectedSecurityFingerprint: sha256 });
+            if (!updated.ok && updated.error.kind !== "validation_failed") {
+              logError("skill_package.security_scan_update_failed", new Error(updated.error.detail));
+            }
+          }).catch((error) => logError("skill_package.security_scan_failed", error));
+        });
+      }
     } catch (error) {
       logError("skill_package.upload_failed", error);
       applyQueueRetryHeader(res, error);

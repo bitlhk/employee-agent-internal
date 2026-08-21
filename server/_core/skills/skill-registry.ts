@@ -590,11 +590,22 @@ export class FileSkillRegistry implements SkillRegistry {
     return ok(out);
   }
 
-  async updateScan(adoptId: string, skillId: string, scan: SkillScanInfo): Promise<SkillRegistryResult<Skill>> {
+  async updateScan(
+    adoptId: string,
+    skillId: string,
+    scan: SkillScanInfo,
+    options: { expectedSecurityFingerprint?: string } = {},
+  ): Promise<SkillRegistryResult<Skill>> {
     return this.withMutation(async () => {
       const rows = this.loadRegistry();
       const skill = rows.find((x) => x.adoptId === adoptId && x.id === skillId);
       if (!skill) return err("not_found", "skill not found");
+      if (
+        options.expectedSecurityFingerprint
+        && skill.scan?.externalSecurity?.subjectFingerprint !== options.expectedSecurityFingerprint
+      ) {
+        return err("validation_failed", "skill security scan fingerprint is stale");
+      }
       const nextSkill = { ...skill, scan, updatedAt: iso(this.now) };
       this.saveRegistry(rows.map((x) => x === skill ? nextSkill : x));
       return ok(nextSkill);

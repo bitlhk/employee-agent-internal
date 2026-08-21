@@ -54,6 +54,31 @@ export type SkillSyncInfo = z.infer<typeof skillSyncInfoSchema>;
 export const skillScanInfoSchema = z.object({
   warnings: z.array(z.string()),
   scannedAt: z.string().min(1),
+  externalSecurity: z.object({
+    provider: z.literal("aig-skill-scan"),
+    mode: z.literal("observe"),
+    status: z.enum(["pending", "completed", "failed"]),
+    subjectFingerprint: z.string().min(1),
+    scannerVersion: z.string().optional(),
+    findings: z.array(z.object({
+      ruleId: z.string().min(1),
+      severity: z.enum(["critical", "high", "medium", "low", "info"]),
+      message: z.string(),
+      file: z.string().optional(),
+      startLine: z.number().int().positive().optional(),
+      fingerprint: z.string().optional(),
+      remediation: z.string().optional(),
+    })).optional(),
+    summary: z.object({
+      critical: z.number().int().nonnegative(),
+      high: z.number().int().nonnegative(),
+      medium: z.number().int().nonnegative(),
+      low: z.number().int().nonnegative(),
+      info: z.number().int().nonnegative(),
+    }).optional(),
+    errorCode: z.string().optional(),
+    scannedAt: z.string().optional(),
+  }).optional(),
 });
 export type SkillScanInfo = z.infer<typeof skillScanInfoSchema>;
 
@@ -128,7 +153,12 @@ export interface SkillRegistry {
   listSkills(adoptId: string): Promise<SkillRegistryResult<Skill[]>>;
   reconcile(adoptId: string, options?: SkillRegistryReconcileOptions): Promise<SkillRegistryResult<ReconcileReport>>;
   install(adoptId: string, source: SkillSource): Promise<SkillRegistryResult<Skill>>;
-  updateScan(adoptId: string, skillId: string, scan: SkillScanInfo): Promise<SkillRegistryResult<Skill>>;
+  updateScan(
+    adoptId: string,
+    skillId: string,
+    scan: SkillScanInfo,
+    options?: { expectedSecurityFingerprint?: string },
+  ): Promise<SkillRegistryResult<Skill>>;
   uninstall(adoptId: string, skillId: string): Promise<SkillRegistryResult<void>>;
   destroy(adoptId: string, skillId: string): Promise<SkillRegistryResult<void>>;
   setEnabled(adoptId: string, skillId: string, enabled: boolean): Promise<SkillRegistryResult<Skill>>;

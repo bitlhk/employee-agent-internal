@@ -1,0 +1,29 @@
+const path = require("path");
+
+const appRoot = process.env.APP_ROOT || path.resolve(__dirname, "../..");
+const home = process.env.HOME || "/home/ubuntu";
+
+module.exports = {
+  apps: [
+    {
+      name: "grace-aig-skill-scan",
+      cwd: appRoot,
+      script: path.join(appRoot, "integrations", "ai-infra-guard-skill-scan", "server.py"),
+      interpreter: process.env.AIG_SKILL_SCAN_PYTHON || path.join(home, ".venvs", "aig-skill-scan", "bin", "python"),
+      env: {
+        AIG_SKILL_SCAN_HOST: "127.0.0.1",
+        AIG_SKILL_SCAN_PORT: "18920",
+        AIG_SKILL_SCAN_BIN: process.env.AIG_SKILL_SCAN_BIN || path.join(home, ".venvs", "aig-skill-scan", "bin", "aig-skill-scan"),
+        AIG_SKILL_SCAN_MODEL_ENV_PATH: process.env.AIG_SKILL_SCAN_MODEL_ENV_PATH || path.join(home, ".jiuwenswarm", "config", ".env"),
+      },
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 3000,
+      max_memory_restart: "600M",
+      error_file: path.join(appRoot, "logs", "aig-skill-scan-error.log"),
+      out_file: path.join(appRoot, "logs", "aig-skill-scan-out.log"),
+      merge_logs: true,
+      watch: false,
+    },
+  ],
+};

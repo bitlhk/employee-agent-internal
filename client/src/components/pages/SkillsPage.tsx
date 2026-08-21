@@ -109,6 +109,22 @@ type RegistrySkill = {
   scan?: {
     warnings: string[];
     scannedAt: string;
+    externalSecurity?: {
+      provider: "aig-skill-scan";
+      mode: "observe";
+      status: "pending" | "completed" | "failed";
+      scannerVersion?: string;
+      findings?: Array<{
+        ruleId: string;
+        severity: "critical" | "high" | "medium" | "low" | "info";
+        message: string;
+        file?: string;
+        startLine?: number;
+      }>;
+      summary?: Record<"critical" | "high" | "medium" | "low" | "info", number>;
+      errorCode?: string;
+      scannedAt?: string;
+    };
   };
   capabilities?: string[];
   examples?: string[];
@@ -2040,6 +2056,35 @@ function SkillDetailModal({
                   <div>runtimePath: {skill.sync.runtimePath || "无"}</div>
                   <div>version: {skill.source.version || "未记录"}</div>
                   <div>scan: {skill.scan?.scannedAt || "未扫描"}</div>
+                  {skill.scan?.externalSecurity ? (
+                    <div className="skills-warning-list space-y-1">
+                      <div>
+                        AI-Infra-Guard：{skill.scan.externalSecurity.status === "pending"
+                          ? "扫描中"
+                          : skill.scan.externalSecurity.status === "completed"
+                            ? "已完成（观察模式）"
+                            : "扫描不可用（不影响当前运行）"}
+                      </div>
+                      {skill.scan.externalSecurity.summary ? (
+                        <div>
+                          高风险 {skill.scan.externalSecurity.summary.critical + skill.scan.externalSecurity.summary.high} ·
+                          中风险 {skill.scan.externalSecurity.summary.medium} ·
+                          低风险 {skill.scan.externalSecurity.summary.low + skill.scan.externalSecurity.summary.info}
+                        </div>
+                      ) : null}
+                      {(skill.scan.externalSecurity.findings || []).slice(0, 5).map((finding, idx) => (
+                        <div key={`${finding.ruleId}-${idx}`}>
+                          - [{finding.severity.toUpperCase()}] {finding.ruleId}：{finding.message}
+                          {finding.file ? `（${finding.file}${finding.startLine ? `:${finding.startLine}` : ""}）` : ""}
+                        </div>
+                      ))}
+                      {skill.scan.externalSecurity.errorCode ? (
+                        <div>状态码：{skill.scan.externalSecurity.errorCode}</div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div>AI-Infra-Guard：未启用</div>
+                  )}
                   {skill.scan?.warnings?.length ? (
                     <div className="skills-warning-list space-y-1">
                       <div>静态扫描提示：</div>
@@ -2098,9 +2143,9 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
   const [skillActivation, setSkillActivation] = useState<SkillActivationNoticeValue | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
-  const load = async () => {
+  const load = async (silent = false) => {
     if (!adoptId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const data = await fetchJson<{ items: RegistrySkill[] }>(`/api/claw/skills/registry?adoptId=${encodeURIComponent(adoptId)}`);
       setItems(Array.isArray(data.items) ? data.items : []);
@@ -2108,7 +2153,7 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
       toast.error(`技能加载失败${e?.message ? `: ${e.message}` : ""}`);
       setItems([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -2119,6 +2164,12 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
     if (skillTab === "mine" || skillTab === "market") setLastSkillView(skillTab);
     if (skillTab === "mine") void load();
   }, [adoptId, skillTab]);
+
+  useEffect(() => {
+    if (skillTab !== "mine" || !items.some((skill) => skill.scan?.externalSecurity?.status === "pending")) return;
+    const timer = window.setTimeout(() => void load(true), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [adoptId, items, skillTab]);
 
   useLayoutEffect(() => {
     if (section === "experts") setSkillTab("agent");
