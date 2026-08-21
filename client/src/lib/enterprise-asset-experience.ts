@@ -19,7 +19,7 @@ export type AssetIssueGroup =
 export const ASSET_ISSUE_GROUPS: Array<{ id: AssetIssueGroup; label: string }> =
   [
     { id: "all", label: "全部问题" },
-    { id: "owner", label: "缺责任部门" },
+    { id: "owner", label: "缺 Owner" },
     { id: "effective_at", label: "缺生效时间" },
     { id: "version", label: "版本问题" },
     { id: "duplicate", label: "重复资产" },
