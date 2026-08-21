@@ -37,6 +37,34 @@ class KnowledgeEvaluationTest(unittest.TestCase):
         self.assertEqual(summary["hitRate"], 0.0)
         self.assertEqual(summary["documentRecall"], 0.5)
 
+    def test_version_and_forbidden_sources_are_part_of_the_case_result(self):
+        case = {
+            "id": "case-version",
+            "query": "当前制度",
+            "expectedDocuments": ["制度V2.md"],
+            "expectedVersions": ["V2"],
+            "forbiddenDocuments": ["制度V1.md"],
+        }
+        passing = build_summary(
+            {"name": "版本测试"},
+            ["kb_testbase1"],
+            [(case, [{"document_name": "制度V2.md", "document_version": "V2"}], 20.0)],
+        )
+        failing = build_summary(
+            {"name": "版本测试"},
+            ["kb_testbase1"],
+            [(case, [
+                {"document_name": "制度V2.md", "document_version": "V2"},
+                {"document_name": "制度V1.md", "document_version": "V1"},
+            ], 20.0)],
+        )
+
+        self.assertEqual(passing["hitRate"], 1.0)
+        self.assertEqual(passing["versionAccuracy"], 1.0)
+        self.assertEqual(passing["forbiddenSourceRate"], 0.0)
+        self.assertEqual(failing["hitRate"], 0.0)
+        self.assertEqual(failing["forbiddenSourceRate"], 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

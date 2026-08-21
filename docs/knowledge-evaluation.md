@@ -12,6 +12,9 @@
 - `expectedDocuments`：应召回的文档名。
 - `expectedPages`：应召回的原文页码。
 - `expectedPositions`：应命中的章节路径片段。
+- `expectedVersions`：应命中的文档版本。
+- `forbiddenDocuments`：不得进入结果的历史、失效或非权威文档。
+- `evaluationLayers`：Context Golden Set 使用；包含 `retrieval` 时由本评测器执行。
 - `matchMode`：`any` 表示命中任一预期项，`all` 表示全部命中。
 - `tags`：岗位、文档类型或能力维度，用于分组查看退化。
 
@@ -23,6 +26,8 @@ pnpm knowledge:evaluate -- \
   --knowledge-base-id kb_xxx \
   --min-hit-rate 0.85 \
   --min-page-hit-rate 0.80 \
+  --min-version-accuracy 1.0 \
+  --max-forbidden-source-rate 0 \
   --max-p95-ms 1500 \
   --output /tmp/knowledge-evaluation.json \
   --markdown-output /tmp/knowledge-evaluation.md
@@ -35,7 +40,11 @@ pnpm knowledge:evaluate -- \
 - 命中率：文档、页码和章节约束同时满足的用例比例。
 - 文档召回率：预期文档在结果中的平均覆盖率。
 - 页码命中率：配置了页码基准的用例中，至少命中一个预期页的比例。
+- 版本准确率：配置了版本基准的用例中，命中预期版本的比例。
+- 禁止来源率：配置了禁止来源的用例中，实际召回禁止文档的比例；生产准入应为 `0`。
 - MRR：首个预期文档的平均倒数排名。
 - P50/P95：检索服务延迟，不含主模型生成耗时。
 
 评测结果用于发现回归，不应替代人工回答质量检查。正式发布前还应抽查引用是否支持原文结论、数值口径是否一致，以及回答是否越过资料证据进行推断。
+
+财富经理 `Context Golden Set V1` 位于 `examples/wealth-manager-reference-role-pack/eval/context-golden-set.v1.json`。其中检索层用例可由本脚本执行；Context Resolution 与任务运行时断言由 `pnpm context:contracts:verify` 和岗位运行时验证链消费。Golden Case 在知识专家确认前保持 `review.status=proposed`，不能作为已确认业务基线宣传。

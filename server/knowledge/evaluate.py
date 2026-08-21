@@ -22,6 +22,8 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--top-k", type=int, default=6)
     parser.add_argument("--min-hit-rate", type=float, default=0.0)
     parser.add_argument("--min-page-hit-rate", type=float, default=0.0)
+    parser.add_argument("--min-version-accuracy", type=float, default=0.0)
+    parser.add_argument("--max-forbidden-source-rate", type=float, default=None)
     parser.add_argument("--max-p95-ms", type=float, default=0.0)
     parser.add_argument("--output", default="", help="Optional JSON report path")
     parser.add_argument("--markdown-output", default="", help="Optional Markdown report path")
@@ -77,18 +79,31 @@ def _percentile(values: list[float], ratio: float) -> float:
 
 def _case_row(case: dict, results: list[dict], latency_ms: float) -> dict:
     actual_documents = [str(result.get("document_name") or "") for result in results]
+    actual_versions = [str(result.get("document_version") or "") for result in results]
     actual_pages = [int(result["page"]) for result in results if result.get("page") is not None]
     expected_documents = set(map(str, case.get("expectedDocuments") or []))
+    expected_versions = set(map(str, case.get("expectedVersions") or []))
+    forbidden_documents = set(map(str, case.get("forbiddenDocuments") or []))
     expected_pages = {int(page) for page in case.get("expectedPages") or []}
     expected_positions = [str(value).strip().lower() for value in case.get("expectedPositions") or [] if str(value).strip()]
     match_mode = str(case.get("matchMode") or "any").lower()
 
     matched_documents = expected_documents.intersection(actual_documents)
+    actual_expected_versions = [
+        str(result.get("document_version") or "")
+        for result in results
+        if not expected_documents or str(result.get("document_name") or "") in expected_documents
+    ]
+    matched_versions = expected_versions.intersection(actual_expected_versions)
+    forbidden_matches = forbidden_documents.intersection(actual_documents)
     matched_pages = expected_pages.intersection(actual_pages)
     actual_positions = [str(result.get("position") or "").lower() for result in results]
     matched_positions = [expected for expected in expected_positions if any(expected in actual for actual in actual_positions)]
     document_hit = not expected_documents or (
         matched_documents == expected_documents if match_mode == "all" else bool(matched_documents)
+    )
+    version_hit = not expected_versions or (
+        matched_versions == expected_versions if match_mode == "all" else bool(matched_versions)
     )
     page_hit = not expected_pages or (
         matched_pages == expected_pages if match_mode == "all" else bool(matched_pages)
@@ -99,15 +114,21 @@ def _case_row(case: dict, results: list[dict], latency_ms: float) -> dict:
     expected_rank_targets = expected_documents or set(actual_documents[:1])
     rank = next((index for index, name in enumerate(actual_documents, start=1) if name in expected_rank_targets), 0)
     return {
-        "id": case.get("id"),
+        "id": case.get("id") or case.get("caseId"),
         "query": case.get("query"),
         "tags": list(map(str, case.get("tags") or [])),
-        "hit": bool(document_hit and page_hit and position_hit),
+        "hit": bool(document_hit and version_hit and page_hit and position_hit and not forbidden_matches),
         "rank": rank or None,
         "latencyMs": round(latency_ms, 1),
         "expectedDocuments": sorted(expected_documents),
         "actualDocuments": actual_documents,
+        "forbiddenDocuments": sorted(forbidden_documents),
+        "forbiddenMatches": sorted(forbidden_matches),
         "documentRecall": round(len(matched_documents) / len(expected_documents), 4) if expected_documents else 1.0,
+        "expectedVersions": sorted(expected_versions),
+        "actualVersions": actual_versions,
+        "versionHit": version_hit,
+        "versionRecall": round(len(matched_versions) / len(expected_versions), 4) if expected_versions else None,
         "expectedPages": sorted(expected_pages),
         "actualPages": actual_pages,
         "pageRecall": round(len(matched_pages) / len(expected_pages), 4) if expected_pages else None,
@@ -121,6 +142,8 @@ def build_summary(dataset: dict, base_ids: list[str], evaluated: list[tuple[dict
     latencies = [latency for _case, _results, latency in evaluated]
     reciprocal_ranks = [1 / row["rank"] if row["rank"] else 0.0 for row in rows]
     page_rows = [row for row in rows if row["expectedPages"]]
+    version_rows = [row for row in rows if row["expectedVersions"]]
+    forbidden_rows = [row for row in rows if row["forbiddenDocuments"]]
     tags: dict[str, dict] = {}
     for tag in sorted({tag for row in rows for tag in row["tags"]}):
         tagged = [row for row in rows if tag in row["tags"]]
@@ -136,6 +159,8 @@ def build_summary(dataset: dict, base_ids: list[str], evaluated: list[tuple[dict
         "cases": len(rows),
         "hitRate": round(sum(1 for row in rows if row["hit"]) / len(rows), 4) if rows else 0.0,
         "pageHitRate": round(sum(1 for row in page_rows if row["pageRecall"] and row["pageRecall"] > 0) / len(page_rows), 4) if page_rows else None,
+        "versionAccuracy": round(sum(1 for row in version_rows if row["versionHit"]) / len(version_rows), 4) if version_rows else None,
+        "forbiddenSourceRate": round(sum(1 for row in forbidden_rows if row["forbiddenMatches"]) / len(forbidden_rows), 4) if forbidden_rows else None,
         "documentRecall": round(statistics.fmean(row["documentRecall"] for row in rows), 4) if rows else 0.0,
         "mrr": round(statistics.fmean(reciprocal_ranks), 4) if reciprocal_ranks else 0.0,
         "latencyP50Ms": round(statistics.median(latencies), 1) if latencies else 0.0,
@@ -147,6 +172,8 @@ def build_summary(dataset: dict, base_ids: list[str], evaluated: list[tuple[dict
 
 def markdown_report(summary: dict) -> str:
     page_hit = summary.get("pageHitRate")
+    version_accuracy = summary.get("versionAccuracy")
+    forbidden_source_rate = summary.get("forbiddenSourceRate")
     lines = [
         f"# {summary.get('dataset') or '知识检索评测'}",
         "",
@@ -156,6 +183,8 @@ def markdown_report(summary: dict) -> str:
         f"| 命中率 | {float(summary.get('hitRate') or 0):.1%} |",
         f"| 文档召回率 | {float(summary.get('documentRecall') or 0):.1%} |",
         f"| 页码命中率 | {float(page_hit):.1%} |" if page_hit is not None else "| 页码命中率 | 未设置页码基准 |",
+        f"| 版本准确率 | {float(version_accuracy):.1%} |" if version_accuracy is not None else "| 版本准确率 | 未设置版本基准 |",
+        f"| 禁止来源率 | {float(forbidden_source_rate):.1%} |" if forbidden_source_rate is not None else "| 禁止来源率 | 未设置禁止来源基准 |",
         f"| MRR | {float(summary.get('mrr') or 0):.4f} |",
         f"| 延迟 P50 | {summary.get('latencyP50Ms', 0)} ms |",
         f"| 延迟 P95 | {summary.get('latencyP95Ms', 0)} ms |",
@@ -167,8 +196,10 @@ def markdown_report(summary: dict) -> str:
     ]
     for row in summary.get("results") or []:
         actual = "、".join(row.get("actualDocuments") or [])
+        forbidden = "、".join(row.get("forbiddenMatches") or [])
         pages = ", ".join(map(str, row.get("actualPages") or []))
-        lines.append(f"| {row.get('id')} | {'是' if row.get('hit') else '否'} | {row.get('rank') or '-'} | {row.get('latencyMs')} ms | {actual}{f' · P{pages}' if pages else ''} |")
+        detail = f"{actual}{f' · P{pages}' if pages else ''}{f' · 禁止来源：{forbidden}' if forbidden else ''}"
+        lines.append(f"| {row.get('id')} | {'是' if row.get('hit') else '否'} | {row.get('rank') or '-'} | {row.get('latencyMs')} ms | {detail} |")
     return "\n".join(lines) + "\n"
 
 
@@ -177,7 +208,11 @@ def main() -> int:
     dataset = json.loads(Path(args.dataset).read_text("utf-8"))
     token = Path(args.token_file).read_text("utf-8").strip()
     evaluated = []
-    for case in dataset.get("cases") or []:
+    cases = [
+        case for case in dataset.get("cases") or []
+        if not case.get("evaluationLayers") or "retrieval" in case.get("evaluationLayers")
+    ]
+    for case in cases:
         results, latency_ms = search(args, token, str(case.get("query") or ""))
         evaluated.append((case, results, latency_ms))
     summary = build_summary(dataset, knowledge_base_ids(args), evaluated)
@@ -194,6 +229,10 @@ def main() -> int:
     failed = summary["hitRate"] < args.min_hit_rate
     if args.min_page_hit_rate and summary["pageHitRate"] is not None:
         failed = failed or summary["pageHitRate"] < args.min_page_hit_rate
+    if args.min_version_accuracy and summary["versionAccuracy"] is not None:
+        failed = failed or summary["versionAccuracy"] < args.min_version_accuracy
+    if args.max_forbidden_source_rate is not None and summary["forbiddenSourceRate"] is not None:
+        failed = failed or summary["forbiddenSourceRate"] > args.max_forbidden_source_rate
     if args.max_p95_ms:
         failed = failed or summary["latencyP95Ms"] > args.max_p95_ms
     return 2 if failed else 0

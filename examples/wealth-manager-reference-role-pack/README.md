@@ -13,6 +13,8 @@
 - `eval/wm-gt-05-cases.json`：方案草稿与跟进任务的确认、幂等和隔离 Demo 回执断言；
 - `eval/wm-gt-06-cases.json`：到期客户范围、优先级、降级和后续写入边界断言；
 - `knowledge/manifest.json`：财富经理岗位 Knowledge 的版本、生命周期、责任部门和标杆任务映射；正文保存在 `../financial-enterprise-knowledge-demo`。
+- `eval/context-golden-set.v1.json`：知识专家可确认的 Context 质量基线，覆盖版本、Eligibility、必需 Context 和引用定位；
+- `../logical-context-catalog.v1.json`：跨岗位逻辑 Context 轻量目录。现有生产 ID 保持不变，点式名称仅作为别名。
 
 首版岗位 Knowledge 包含 7 类员工材料：岗位边界、访前准备、资产配置、适当性细则、销售检查、CRM 留痕和产品到期经营。适当性细则同时保留 V2.2 现行版与 V2.1 历史版，用于验证 Knowledge Eligibility，不允许历史版进入当前任务 Context。
 
@@ -34,3 +36,5 @@ pnpm rolepack:wealth:install -- --apply --adopt-id=lgj-example
 演示客户和产品数据不得直接放入本目录，必须通过 MCP Fixture 提供。
 
 Knowledge Manifest 只是发布与验收清单，不参与运行时授权裁决；生产部署仍由知识库元数据、Role Asset Grants 和 Governance Policy 决定实际可见范围。
+
+Context Golden Set 与普通 Golden Task 的职责不同：前者验证“本次任务拿到的 Context 是否正确”，后者验证“岗位任务能否按边界完成”。运行 `pnpm context:contracts:verify` 可检查 Golden Set、Context Need 与 Logical Context Catalog 的契约一致性；知识专家确认前的案例保持 `proposed` 状态。

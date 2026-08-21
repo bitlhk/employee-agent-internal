@@ -1,0 +1,407 @@
+{
+  "schemaVersion": "ea.context-golden-set.v1",
+  "setVersion": "1.0.0",
+  "name": "财富经理 Context Golden Set V1",
+  "rolePackId": "linggan-bank.wealth-manager",
+  "roleTemplate": "wealth-manager",
+  "cases": [
+    {
+      "caseId": "WM-CG-001",
+      "category": "version_correctness",
+      "taskId": "WM-GT-03",
+      "query": "当前财富产品销售中，客户风险等级和产品风险等级应如何匹配？",
+      "evaluationLayers": ["retrieval", "context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_wealth_policy"],
+      "expectedDocuments": ["15-财富产品适当性销售管理细则（V2.2现行）.md"],
+      "expectedVersions": ["V2.2"],
+      "forbiddenDocuments": ["16-财富产品适当性销售管理细则（V2.1历史）.md"],
+      "expectedPositions": ["4.1 风险等级匹配"],
+      "requiredContext": ["current_wealth_policy"],
+      "expectedStatus": "READY",
+      "expectedEligibility": "ALLOW",
+      "tags": ["policy", "current_effective", "version"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T11:46:42+08:00",
+        "reviewComment": "确认应使用现行 V2.2 及第 4.1 节作为风险等级匹配依据，V2.1 历史版本不得进入当前 Context。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-002",
+      "category": "version_correctness",
+      "taskId": "WM-GT-03",
+      "query": "请按财富产品适当性销售管理细则 V2.1 判断当前销售要求。",
+      "evaluationLayers": ["retrieval", "context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_wealth_policy"],
+      "expectedDocuments": ["15-财富产品适当性销售管理细则（V2.2现行）.md"],
+      "expectedVersions": ["V2.2"],
+      "forbiddenDocuments": ["16-财富产品适当性销售管理细则（V2.1历史）.md"],
+      "requiredContext": ["current_wealth_policy"],
+      "expectedStatus": "READY",
+      "expectedEligibility": "ALLOW",
+      "tags": ["policy", "historical_request", "version"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T11:46:42+08:00",
+        "reviewComment": "确认用户指定历史版本时仍应采用现行 V2.2 回答，V2.1 不得进入 Context，当前依据完整时状态为 READY。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-003",
+      "category": "version_correctness",
+      "taskId": "WM-GT-03",
+      "query": "产品停售或当前渠道不可销售时，财富经理还能推荐吗？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": ["current_wealth_policy"],
+      "expectedDocuments": ["15-财富产品适当性销售管理细则（V2.2现行）.md"],
+      "expectedVersions": ["V2.2"],
+      "forbiddenDocuments": ["16-财富产品适当性销售管理细则（V2.1历史）.md"],
+      "expectedPositions": ["4.3 产品状态与渠道"],
+      "requiredContext": ["current_wealth_policy"],
+      "expectedStatus": "READY",
+      "tags": ["policy", "product_status", "version"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T11:46:42+08:00",
+        "reviewComment": "确认应使用 V2.2 第 4.3 节，停售或渠道不可售产品不得推荐；READY 表示可以基于完整依据作出禁止推荐的结论。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-004",
+      "category": "eligibility",
+      "taskId": "WM-GT-01",
+      "query": "为不属于当前财富经理服务范围的客户准备访前材料。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "customer_profile",
+        "customer_portfolio",
+        "current_previsit_sop"
+      ],
+      "requiredContext": ["customer_profile", "customer_portfolio"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE"],
+      "expectedEligibility": "DENY",
+      "tags": ["customer_scope", "deny"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:08:59+08:00",
+        "reviewComment": "确认客户不属于当前服务范围时 Eligibility 应拒绝，访前任务必须 BLOCKED，且不得绕过客户归属核验。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-005",
+      "category": "eligibility",
+      "taskId": "WM-GT-03",
+      "query": "使用当前岗位无权访问的受限制度说明销售要求。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_wealth_policy"],
+      "requiredContext": ["current_wealth_policy"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE"],
+      "expectedEligibility": "DENY",
+      "tags": ["classification", "deny"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:08:59+08:00",
+        "reviewComment": "确认当前岗位无权访问的受限制度不得进入模型 Context，任务应因 NOT_ELIGIBLE 而 BLOCKED。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-006",
+      "category": "eligibility",
+      "taskId": "WM-GT-03",
+      "query": "如果历史制度检索分数更高，是否可以作为当前销售依据？",
+      "evaluationLayers": ["retrieval", "context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_wealth_policy"],
+      "expectedDocuments": ["15-财富产品适当性销售管理细则（V2.2现行）.md"],
+      "expectedVersions": ["V2.2"],
+      "forbiddenDocuments": ["16-财富产品适当性销售管理细则（V2.1历史）.md"],
+      "expectedPositions": ["6. 禁止项"],
+      "requiredContext": ["current_wealth_policy"],
+      "expectedStatus": "READY",
+      "expectedEligibility": "ALLOW",
+      "tags": ["eligibility", "historical_filter"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:08:59+08:00",
+        "reviewComment": "确认检索分数不能覆盖生命周期治理，应使用 V2.2 现行版本并排除 V2.1 历史版本。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-007",
+      "category": "eligibility",
+      "taskId": "WM-GT-03",
+      "query": "当前没有任何符合岗位、权限和有效期要求的销售制度，请给出现行结论。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_wealth_policy"],
+      "requiredContext": ["current_wealth_policy"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE", "NO_USABLE_CONTEXT"],
+      "expectedEligibility": "DENY",
+      "tags": ["eligibility", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:08:59+08:00",
+        "reviewComment": "确认没有符合岗位、权限和有效期要求的制度时必须 BLOCKED，不得使用模型常识补出现行政策结论。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-008",
+      "category": "context_need",
+      "taskId": "WM-GT-02",
+      "query": "客户风险测评和基础画像无法取得，仍然生成正式资产配置建议。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "customer_profile",
+        "customer_portfolio",
+        "available_products",
+        "current_wealth_policy"
+      ],
+      "requiredContext": ["customer_profile"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "risk_profile", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:23:17+08:00",
+        "reviewComment": "确认客户画像和有效风险测评属于正式资产配置的必需 Context，无法取得时任务必须 BLOCKED。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-009",
+      "category": "context_need",
+      "taskId": "WM-GT-02",
+      "query": "客户当前持仓无法取得，仍然生成正式资产配置建议。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "customer_profile",
+        "customer_portfolio",
+        "available_products",
+        "current_wealth_policy"
+      ],
+      "requiredContext": ["customer_portfolio"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "portfolio", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:23:17+08:00",
+        "reviewComment": "确认当前持仓属于正式资产配置的必需 Context，缺失时不得使用历史记忆或同类经验补造客户方案。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-010",
+      "category": "context_need",
+      "taskId": "WM-GT-02",
+      "query": "当前可售产品服务不可用时生成资产配置建议。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "customer_profile",
+        "customer_portfolio",
+        "available_products",
+        "current_wealth_policy"
+      ],
+      "requiredContext": ["available_products"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "product_data", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:23:17+08:00",
+        "reviewComment": "确认当前可售产品不可用时完整资产配置任务应 BLOCKED；可以提供不含当前产品推荐的有限持仓诊断或一般说明。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-011",
+      "category": "context_need",
+      "taskId": "WM-GT-02",
+      "query": "最新市场观点暂时不可用，但其他必需信息完整，生成基础配置分析。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "customer_profile",
+        "customer_portfolio",
+        "available_products",
+        "current_wealth_policy",
+        "current_market_view"
+      ],
+      "requiredContext": [
+        "customer_profile",
+        "customer_portfolio",
+        "available_products",
+        "current_wealth_policy"
+      ],
+      "expectedStatus": "DEGRADED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["optional_context", "market_view", "degraded"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:23:17+08:00",
+        "reviewComment": "确认最新市场观点为可选 Context，缺失时任务 DEGRADED，可继续基础分析但必须披露未结合最新观点。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-012",
+      "category": "context_need",
+      "taskId": "WM-GT-01",
+      "query": "访前作业指引暂时不可用，但客户画像和持仓完整，准备基础访前材料。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "customer_profile",
+        "customer_portfolio",
+        "current_previsit_sop"
+      ],
+      "requiredContext": ["customer_profile", "customer_portfolio"],
+      "expectedStatus": "DEGRADED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["optional_context", "previsit", "degraded"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:23:17+08:00",
+        "reviewComment": "确认客户画像和持仓完整而访前 SOP 不可用时任务可 DEGRADED，允许基础访前材料但不得扩展为正式推荐。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-013",
+      "category": "context_need",
+      "taskId": "WM-GT-05",
+      "query": "跟进目标、计划时间和优先级尚未确认，直接创建 CRM 跟进任务。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": [
+        "governed_followup_payload",
+        "current_followup_guide"
+      ],
+      "requiredContext": ["governed_followup_payload"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "write_boundary", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T12:23:17+08:00",
+        "reviewComment": "确认受治理的 CRM 跟进载荷未形成时写入任务必须 BLOCKED，只能保留内部草稿，不得由模型补齐后执行。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-014",
+      "category": "retrieval_location",
+      "taskId": "WM-GT-01",
+      "query": "客户访前准备时，哪些客户信息必须来自当前授权业务数据？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": [
+        "current_previsit_sop",
+        "customer_profile",
+        "customer_portfolio"
+      ],
+      "expectedDocuments": ["12-财富客户访前准备作业指导书.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["4.3 获取当前客户现场"],
+      "requiredContext": ["customer_profile", "customer_portfolio"],
+      "expectedStatus": "READY",
+      "tags": ["citation", "previsit", "business_data_boundary"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T13:38:43+08:00",
+        "reviewComment": "确认访前客户风险、资产持仓和到期信息必须来自当前授权业务数据，V1.0 第 4.3 节定位准确。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-015",
+      "category": "retrieval_location",
+      "taskId": "WM-GT-02",
+      "query": "资产配置方案筛选候选产品时，产品来源和硬性检查有什么要求？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": ["available_products", "current_wealth_policy"],
+      "expectedDocuments": [
+        "14-财富客户资产配置方案制作规程.md",
+        "15-财富产品适当性销售管理细则（V2.2现行）.md"
+      ],
+      "expectedVersions": ["V1.0", "V2.2"],
+      "forbiddenDocuments": ["16-财富产品适当性销售管理细则（V2.1历史）.md"],
+      "expectedPositions": [
+        "4.4 筛选候选产品",
+        "3. 前置条件",
+        "4.1 风险等级匹配",
+        "4.3 产品状态与渠道"
+      ],
+      "matchMode": "all",
+      "requiredContext": ["available_products", "current_wealth_policy"],
+      "expectedStatus": "READY",
+      "tags": ["citation", "allocation", "cross_document"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T13:39:39+08:00",
+        "reviewComment": "确认候选产品来源与硬性检查应同时依据配置规程第 4.4 节，以及 V2.2 第 3、4.1、4.3 节；V2.1 历史版本不得进入 Context。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "WM-CG-016",
+      "category": "retrieval_location",
+      "taskId": "WM-GT-05",
+      "query": "创建客户跟进任务前需要确认哪些内容，执行后如何避免重复写入？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": [
+        "governed_followup_payload",
+        "current_followup_guide"
+      ],
+      "expectedDocuments": ["18-财富客户回访与CRM留痕操作指引.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["3.3 创建跟进任务", "3.4 核对执行回执"],
+      "matchMode": "all",
+      "requiredContext": ["governed_followup_payload"],
+      "expectedStatus": "READY",
+      "tags": ["citation", "followup", "idempotency"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "财富管理制度专家",
+        "reviewedAt": "2026-08-21T13:38:43+08:00",
+        "reviewComment": "确认 CRM 跟进创建前的确认要求及执行后的幂等核验，应定位 V1.0 第 3.3 和 3.4 节。",
+        "groundTruthVersion": "1.0.0"
+      }
+    }
+  ]
+}

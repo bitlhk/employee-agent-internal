@@ -1,0 +1,78 @@
+{
+  "schemaVersion": "ea.logical-context-catalog.v1",
+  "catalogVersion": "1.0.0",
+  "entries": [
+    {
+      "canonicalId": "customer_profile",
+      "contextType": "business_data",
+      "displayName": "客户画像",
+      "description": "当前授权客户的身份、归属、风险测评和基础服务信息。",
+      "aliases": ["customer.profile"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "customer_portfolio",
+      "contextType": "business_data",
+      "displayName": "客户持仓",
+      "description": "当前授权客户的资产结构、持仓、期限和流动性事实。",
+      "aliases": ["customer.portfolio"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "available_products",
+      "contextType": "business_data",
+      "displayName": "当前可售产品",
+      "description": "当前机构、组织、岗位和渠道可使用的产品集合。",
+      "aliases": ["product.available_set"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "current_previsit_sop",
+      "contextType": "knowledge",
+      "displayName": "现行访前准备指引",
+      "description": "当前有效的客户访前准备作业依据。",
+      "aliases": ["wealth.previsit_sop.current"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "current_wealth_policy",
+      "contextType": "knowledge",
+      "displayName": "现行财富销售制度",
+      "description": "当前有效的财富产品销售和适当性制度依据。",
+      "aliases": ["wealth.policy.sales.current"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "current_market_view",
+      "contextType": "knowledge",
+      "displayName": "当前市场观点",
+      "description": "经批准且满足时效要求的市场与投研观点。",
+      "aliases": ["wealth.market_view.current"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "current_followup_guide",
+      "contextType": "knowledge",
+      "displayName": "现行客户跟进指引",
+      "description": "当前有效的客户回访、跟进和业务留痕操作依据。",
+      "aliases": ["customer.followup_guide.current"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "customer_relationship_memory",
+      "contextType": "memory",
+      "displayName": "客户关系记忆",
+      "description": "已授权的客户沟通偏好和连续任务现场，不承载动态业务事实。",
+      "aliases": ["customer.relationship_memory"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "governed_followup_payload",
+      "contextType": "business_data",
+      "displayName": "受治理的跟进任务载荷",
+      "description": "与待确认业务动作绑定的客户、时间、优先级和任务内容。",
+      "aliases": ["customer.followup_payload.governed"],
+      "status": "active"
+    }
+  ]
+}

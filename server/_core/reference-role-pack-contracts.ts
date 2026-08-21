@@ -3,6 +3,12 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import type { ContextNeedPlanV1 } from "../../shared/context-resolution";
 import {
+  loadLogicalContextCatalog,
+  LOGICAL_CONTEXT_CATALOG_PATH,
+  validateContextNeedPlansAgainstCatalog,
+  validateLogicalContextCatalog,
+} from "./logical-context-catalog";
+import {
   expectedReferenceRoleTaskIds,
   referenceRolePack,
   type ReferenceRolePackDefinition,
@@ -114,6 +120,12 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
   const contextNeedManifestPath = config.contextNeedManifest
     ? path.join(packRoot, config.contextNeedManifest)
     : null;
+  const contextGoldenSetPath = config.contextGoldenSet
+    ? path.join(packRoot, config.contextGoldenSet)
+    : null;
+  if (contextGoldenSetPath && !existsSync(contextGoldenSetPath)) {
+    errors.push(`Context Golden Set is missing: ${config.contextGoldenSet}`);
+  }
   if (contextNeedManifestPath) {
     if (!existsSync(contextNeedManifestPath)) {
       errors.push(`Context need manifest is missing: ${config.contextNeedManifest}`);
@@ -127,6 +139,9 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
       if (manifest.schemaVersion !== "ea.reference-role-pack.context-needs.v1") errors.push("Context need manifest schema is unsupported");
       if (manifest.rolePackId !== config.rolePackId) errors.push(`Context need manifest rolePackId must be ${config.rolePackId}`);
       if (manifest.roleTemplate !== config.roleTemplate) errors.push(`Context need manifest roleTemplate must be ${config.roleTemplate}`);
+      const catalog = loadLogicalContextCatalog(root);
+      errors.push(...validateLogicalContextCatalog(catalog));
+      errors.push(...validateContextNeedPlansAgainstCatalog(manifest.plans || [], catalog));
       const seenTasks = new Set<string>();
       for (const plan of manifest.plans || []) {
         if (plan.schema !== "ea.context-need-plan.v1") errors.push(`${plan.taskId || "unknown"}: unsupported ContextNeedPlan schema`);
@@ -152,7 +167,8 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
     ...tasks.map((task) => path.join(evalRoot, task.file)),
     knowledgeManifestPath,
     ...config.skillManifests.map((file) => path.join(packRoot, file)),
-    ...(contextNeedManifestPath ? [contextNeedManifestPath] : []),
+    ...(contextNeedManifestPath ? [contextNeedManifestPath, path.join(root, LOGICAL_CONTEXT_CATALOG_PATH)] : []),
+    ...(contextGoldenSetPath ? [contextGoldenSetPath] : []),
     ...Array.from(new Set(capabilityEvidence.flatMap((item) => [
       item.implementation,
       item.test,
