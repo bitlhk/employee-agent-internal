@@ -76,7 +76,7 @@ import {
   type ExpertAgent,
   type ExpertAgentsResponse,
 } from "@/lib/expert-agents";
-import { mergeCachedAssistantMetadata } from "@/lib/chat-history-metadata";
+import { mergeCachedAssistantMetadata, mergeCanonicalAssistantToolCalls } from "@/lib/chat-history-metadata";
 import { isTaskReceiptBundleV1, type TaskReceiptBundleV1 } from "@shared/context-evidence";
 import {
   arrayBufferToBase64,
@@ -1598,7 +1598,9 @@ export default function Home() {
       next[idx] = {
         ...currentMessage,
         text: shouldMergeText ? canonicalText : currentText,
-        toolCalls: shouldMergeToolCalls ? canonicalToolCalls : currentMessage.toolCalls,
+        toolCalls: shouldMergeToolCalls
+          ? mergeCanonicalAssistantToolCalls(canonicalToolCalls, currentToolCalls)
+          : currentMessage.toolCalls,
         status: undefined,
         recovering: false,
         recovered: false,
