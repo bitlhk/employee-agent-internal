@@ -69,12 +69,23 @@ flock -w 120 9 || release_die "another release operation is active"
 
 if [[ -z "$SHARED_APP_ROOT" ]]; then
   if [[ -L "$DEPLOY_ROOT/current" ]]; then
-    SHARED_APP_ROOT="$(release_realpath "$DEPLOY_ROOT/current")"
+    current_root="$(release_realpath "$DEPLOY_ROOT/current")"
+    current_env="$(readlink -f "$current_root/.env" 2>/dev/null || true)"
+    current_data="$(readlink -f "$current_root/data" 2>/dev/null || true)"
+    current_logs="$(readlink -f "$current_root/logs" 2>/dev/null || true)"
+    [[ -n "$current_env" && -n "$current_data" && -n "$current_logs" ]] \
+      || release_die "current release has unresolved durable state links; pass --shared-root explicitly"
+    SHARED_APP_ROOT="$(dirname "$current_env")"
+    [[ "$current_data" == "$SHARED_APP_ROOT/data" && "$current_logs" == "$SHARED_APP_ROOT/logs" ]] \
+      || release_die "current release durable state does not share one root; pass --shared-root explicitly"
   else
     release_die "--shared-root is required for the first versioned deployment"
   fi
 fi
 SHARED_APP_ROOT="$(readlink -f "$SHARED_APP_ROOT")"
+case "$SHARED_APP_ROOT/" in
+  "$DEPLOY_ROOT/releases/"*) release_die "shared root must not be inside the versioned releases directory" ;;
+esac
 [[ -f "$SHARED_APP_ROOT/.env" ]] || release_die "shared root does not contain .env: $SHARED_APP_ROOT"
 mkdir -p "$SHARED_APP_ROOT/data" "$SHARED_APP_ROOT/logs"
 
