@@ -16,6 +16,8 @@ export type AssetSyncExistingItem = AssetSyncObservedItem & {
   sourceItemId: string;
   enterpriseAssetId: string;
   latestSourceVersion?: string | null;
+  latestCandidateId?: string | null;
+  lastSeenRunId?: string | null;
   state: "active" | "missing" | "retired";
 };
 

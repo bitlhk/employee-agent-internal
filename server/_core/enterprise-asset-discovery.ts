@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
 import { z } from "zod";
@@ -22,6 +22,7 @@ export const enterpriseAssetDiagnosticCodeSchema = z.enum([
   "TABLE_PARSE_ANOMALY",
   "CONTENT_PARSE_FAILED",
   "MODEL_SUGGESTION_FAILED",
+  "SOURCE_ITEM_DELETED",
 ]);
 
 export type EnterpriseAssetDiagnostic = {
@@ -39,6 +40,8 @@ export type DiscoveredEnterpriseArtifact = {
   sizeBytes: number;
   checksum: string;
   content?: Buffer;
+  loadContent?: () => Promise<Buffer>;
+  loadTextExcerpt?: (maxCharacters: number) => Promise<string>;
   sourceUri?: string;
   sourceModifiedAt?: string;
   etag?: string;
@@ -383,6 +386,12 @@ export function persistCandidateArtifact(candidateId: string, filename: string, 
   const target = candidateArtifactUri(candidateId, filename);
   writeFileSync(target.absolutePath, content, { mode: 0o600 });
   return target.uri;
+}
+
+export function removeCandidateArtifactFiles(candidateId: string): void {
+  if (!/^eac_[a-f0-9]{32}$/.test(candidateId)) return;
+  const root = path.resolve(process.env.ENTERPRISE_ASSET_STAGING_ROOT || path.join(APP_ROOT, "data", "enterprise-asset-candidates"));
+  rmSync(path.join(root, candidateId), { recursive: true, force: true });
 }
 
 export function readCandidateArtifact(candidateId: string, sourceUri: string): Buffer {

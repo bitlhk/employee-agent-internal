@@ -8,6 +8,7 @@ import {
 import {
   beginEnterpriseAssetSourceRun,
   completeEnterpriseAssetSourceRun,
+  failEnterpriseAssetSourceRun,
   listEnterpriseAssetSourceItems,
   listEnterpriseAssetSourceRuns,
   upsertEnterpriseAssetSource,
@@ -111,5 +112,50 @@ run("enterprise asset sync persistence", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ state: "missing", missingSinceRunId: `easr_${"3".repeat(32)}` });
     expect(runs.map(item => item.status)).toEqual(["succeeded", "succeeded"]);
+  });
+
+  it("releases the active-run lock after failure and records resumable lineage", async () => {
+    const failedRunId = `easr_${"5".repeat(32)}`;
+    const resumedRunId = `easr_${"6".repeat(32)}`;
+    await beginEnterpriseAssetSourceRun({
+      runId: failedRunId,
+      sourceId,
+      scanMode: "full",
+      status: "running",
+      scanComplete: false,
+      cursorBefore: "fs-v1:before",
+      createdBy: "integration-test",
+    });
+    await failEnterpriseAssetSourceRun({ runId: failedRunId, error: { message: "injected connector interruption" } });
+    await beginEnterpriseAssetSourceRun({
+      runId: resumedRunId,
+      sourceId,
+      scanMode: "full",
+      status: "running",
+      scanComplete: false,
+      cursorBefore: "fs-v1:before",
+      resumeOfRunId: failedRunId,
+      attempt: 2,
+      createdBy: "integration-test",
+    });
+    await completeEnterpriseAssetSourceRun({
+      runId: resumedRunId,
+      sourceId,
+      status: "succeeded",
+      scanComplete: true,
+      cursorAfter: "fs-v1:after",
+      counts: { discovered: 0, created: 0, changed: 0, unchanged: 0, missing: 0, failed: 0 },
+      items: [],
+      actor: "integration-test",
+    });
+    const runs = await listEnterpriseAssetSourceRuns(sourceId);
+    expect(runs.find(item => item.runId === failedRunId)).toMatchObject({ status: "failed", scanComplete: false, activeRunKey: null });
+    expect(runs.find(item => item.runId === resumedRunId)).toMatchObject({
+      status: "succeeded",
+      resumeOfRunId: failedRunId,
+      attempt: 2,
+      cursorBefore: "fs-v1:before",
+      cursorAfter: "fs-v1:after",
+    });
   });
 });

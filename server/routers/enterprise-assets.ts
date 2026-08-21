@@ -12,34 +12,20 @@ import {
   targetTypeForEnterpriseAsset,
 } from "../_core/enterprise-asset-onboarding";
 import {
-  applyEnterpriseAssetModelSuggestion,
   discoverObjectInventoryArtifact,
   discoverUploadedArtifact,
   discoverZipArtifacts,
-  enterpriseAssetIdForPath,
-  persistCandidateArtifact,
   readCandidateArtifact,
-  suggestEnterpriseAssetMetadata,
-  suggestEnterpriseAssetMetadataWithModel,
   type DiscoveredEnterpriseArtifact,
-  type EnterpriseAssetDiagnostic,
-  type EnterpriseAssetModelSuggestion,
 } from "../_core/enterprise-asset-discovery";
-import {
-  newEnterpriseAssetSourceRunId,
-  planEnterpriseAssetSync,
-  sourceVersionForContentChange,
-} from "../_core/enterprise-asset-sync";
+import { ingestEnterpriseAssetSource } from "../_core/enterprise-asset-ingestion";
+import { scanFilesystemSource } from "../_core/filesystem-source-connector";
 import { decodeBase64Strict, scanUploadForMalware } from "../_core/upload-security";
 import { listAgentRoleTemplates } from "../_core/role-templates";
 import { adminProcedure, router } from "../_core/trpc";
 import {
   getEnterpriseAssetCandidate,
   getEnterpriseAssetSource,
-  getEnterpriseAssetSourceRun,
-  beginEnterpriseAssetSourceRun,
-  completeEnterpriseAssetSourceRun,
-  failEnterpriseAssetSourceRun,
   getEnterpriseMcpConnection,
   getKnowledgeBaseById,
   getKnowledgeBaseByPublicId,
@@ -48,7 +34,6 @@ import {
   deleteKnowledgeDocumentRecord,
   findKnowledgeDocumentByHash,
   importEnterpriseAssetCandidates,
-  listEnterpriseAssetCandidatesByChecksums,
   listApprovedSkillMarketItems,
   listEnterpriseAssetCandidates,
   listEnterpriseAssetSources,
@@ -130,7 +115,6 @@ const discoveryInputSchema = z.object({
 });
 
 const MAX_DISCOVERY_BYTES = 50 * 1024 * 1024;
-const TEXT_EXCERPT_EXTENSIONS = new Set(["md", "txt", "csv", "json", "yaml", "yml"]);
 
 function actorName(user: { id?: number | string | null; name?: string | null; email?: string | null }) {
   return String(user.name || user.email || user.id || "admin").slice(0, 128);
@@ -156,10 +140,6 @@ function assertRoles(metadata: z.infer<typeof enterpriseAssetMetadataSchema>) {
   for (const role of metadata.applicableRoles) {
     if (!roles.has(role)) throw new TRPCError({ code: "BAD_REQUEST", message: `未知岗位: ${role}` });
   }
-}
-
-function candidateUri(candidateId: string, filename: string): string {
-  return `candidate://${candidateId}/${encodeURIComponent(filename)}`;
 }
 
 function unresolvedDiagnostics(value: unknown): Array<Record<string, unknown>> {
@@ -218,31 +198,6 @@ async function uploadedArtifacts(input: z.infer<typeof discoveryInputSchema>): P
     }
   }
   return artifacts;
-}
-
-async function modelSuggestions(input: {
-  enabled: boolean;
-  allowContentProcessing: boolean;
-  artifacts: DiscoveredEnterpriseArtifact[];
-  roles: Array<{ id: string; name: string }>;
-}): Promise<{ suggestions: Map<string, EnterpriseAssetModelSuggestion>; failed: boolean }> {
-  const suggestions = new Map<string, EnterpriseAssetModelSuggestion>();
-  if (!input.enabled) return { suggestions, failed: false };
-  try {
-    for (let offset = 0; offset < input.artifacts.length; offset += 20) {
-      const chunk = input.artifacts.slice(offset, offset + 20).map(artifact => ({
-        relativePath: artifact.relativePath,
-        ...(input.allowContentProcessing && artifact.content && TEXT_EXCERPT_EXTENSIONS.has(artifact.extension)
-          ? { excerpt: artifact.content.toString("utf8").slice(0, 2400) }
-          : {}),
-      }));
-      const result = await suggestEnterpriseAssetMetadataWithModel({ artifacts: chunk, roles: input.roles });
-      for (const [key, value] of result) suggestions.set(key, value);
-    }
-    return { suggestions, failed: false };
-  } catch {
-    return { suggestions, failed: true };
-  }
 }
 
 async function assertRuntimeTarget(targetType: z.infer<typeof targetTypeSchema>, targetId: string) {
@@ -361,225 +316,71 @@ export const enterpriseAssetsRouter = router({
     if (input.mode !== "object_inventory" && totalBytes > MAX_DISCOVERY_BYTES) {
       throw new TRPCError({ code: "PAYLOAD_TOO_LARGE", message: "单次发现文件总大小不能超过 50MB" });
     }
-
-    const actor = actorName(ctx.user);
-    const runId = newEnterpriseAssetSourceRunId();
-    const resumeRun = input.resumeOfRunId ? await getEnterpriseAssetSourceRun(input.resumeOfRunId) : null;
-    if (input.resumeOfRunId && (!resumeRun || resumeRun.sourceId !== source.sourceId || !["failed", "partial"].includes(resumeRun.status))) {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅可恢复当前来源失败或部分完成的同步批次" });
-    }
-    await beginEnterpriseAssetSourceRun({
-      runId,
-      sourceId: source.sourceId,
-      activeRunKey: source.sourceId,
-      scanMode: input.scanMode,
-      status: "running",
-      scanComplete: false,
-      cursorBefore: input.cursorBefore || resumeRun?.cursorAfter || null,
-      resumeOfRunId: input.resumeOfRunId || null,
-      attempt: resumeRun ? resumeRun.attempt + 1 : 1,
-      createdBy: actor,
-    });
-
     try {
-      await audit(ctx, "enterprise_asset.discovery.requested", source.sourceId, {
-        runId,
+      return await ingestEnterpriseAssetSource({
+        source,
+        actor: actorName(ctx.user),
         mode: input.mode,
         scanMode: input.scanMode,
-        scanComplete: input.scanComplete,
-        artifactCount: artifacts.length,
-        totalBytes,
-        modelSuggestion: input.useModelSuggestion,
-        contentProcessingAllowed: input.allowContentProcessing,
-      });
-      const existingItems = await listEnterpriseAssetSourceItems(source.sourceId);
-      const syncPlan = planEnterpriseAssetSync({
-        sourceId: source.sourceId,
-        scanMode: input.scanMode,
-        scanComplete: input.scanComplete,
-        observed: artifacts.map(artifact => ({
-          externalItemId: artifact.externalItemId,
-          relativePath: artifact.relativePath,
-          sourceUri: artifact.sourceUri || null,
-          etag: artifact.etag || null,
-          sourceModifiedAt: artifact.sourceModifiedAt || null,
-          contentHash: artifact.checksum,
-          sizeBytes: artifact.sizeBytes,
-        })),
-        existing: existingItems.map(item => ({
-          sourceItemId: item.sourceItemId,
-          externalItemId: item.externalItemId,
-          enterpriseAssetId: item.enterpriseAssetId,
-          relativePath: item.relativePath,
-          sourceUri: item.sourceUri,
-          etag: item.etag,
-          sourceModifiedAt: item.sourceModifiedAt?.toISOString() || null,
-          contentHash: item.contentHash,
-          latestSourceVersion: item.latestSourceVersion,
-          sizeBytes: item.sizeBytes,
-          state: item.state,
-        })),
-        enterpriseAssetIdForNewItem: item => enterpriseAssetIdForPath(source.sourceId, item.relativePath),
-      });
-      const artifactByExternalId = new Map(artifacts.map(artifact => [artifact.externalItemId, artifact]));
-      const candidateActions = syncPlan.actions.filter(action => action.candidateRequired && action.observed);
-      const candidateInputArtifacts = candidateActions.flatMap(action => {
-        const artifact = action.observed ? artifactByExternalId.get(action.observed.externalItemId) : null;
-        return artifact ? [artifact] : [];
-      });
-      const roles = listAgentRoleTemplates()
-        .filter(role => role.status !== "disabled")
-        .map(role => ({ id: role.id, name: role.name }));
-      const model = await modelSuggestions({
-        enabled: input.useModelSuggestion,
+        cursorBefore: input.cursorBefore,
+        resumeOfRunId: input.resumeOfRunId,
+        useModelSuggestion: input.useModelSuggestion,
         allowContentProcessing: input.allowContentProcessing,
-        artifacts: candidateInputArtifacts,
-        roles,
-      });
-      const existingByChecksum = new Map(
-        (await listEnterpriseAssetCandidatesByChecksums(candidateInputArtifacts.map(artifact => artifact.checksum)))
-          .map(candidate => [candidate.checksum, candidate] as const),
-      );
-      const firstPathByChecksum = new Map<string, string>();
-      const candidateArtifacts = new Map<string, DiscoveredEnterpriseArtifact>();
-      const candidates = candidateActions.map(action => {
-        const artifact = artifactByExternalId.get(action.observed!.externalItemId)!;
-        const deterministic = suggestEnterpriseAssetMetadata({
-          artifact,
-          sourceId: source.sourceId,
-          ownerDepartment: source.ownerDepartment,
-          roles,
-          externalProcessingAllowed: input.allowContentProcessing,
-        });
-        const suggested = applyEnterpriseAssetModelSuggestion({
-          ...deterministic,
-          suggestion: model.suggestions.get(artifact.relativePath),
-        });
-        const diagnostics: EnterpriseAssetDiagnostic[] = [...suggested.diagnostics];
-        const versionResolution = sourceVersionForContentChange({
-          suggestedVersion: suggested.sourceVersion,
-          previousVersion: action.kind === "content_changed" ? action.previous?.latestSourceVersion : null,
-          contentHash: artifact.checksum,
-        });
-        if (versionResolution.conflict) {
-          diagnostics.push({
-            code: "VERSION_CONTENT_CONFLICT",
-            severity: "warning",
-            field: "sourceVersion",
-            message: "来源内容已变化但版本号未更新，已生成不可覆盖的修订候选，请确认正式版本",
-          });
-        }
-        const existing = existingByChecksum.get(artifact.checksum);
-        const firstPath = firstPathByChecksum.get(artifact.checksum);
-        if (existing || firstPath) {
-          diagnostics.push({
-            code: "DUPLICATE_CONTENT",
-            severity: "warning",
-            message: existing
-              ? `内容与已有候选 ${existing.enterpriseAssetId} v${existing.sourceVersion} 相同`
-              : `内容与本批次 ${firstPath} 相同`,
-          });
-        } else {
-          firstPathByChecksum.set(artifact.checksum, artifact.relativePath);
-        }
-        if (model.failed) diagnostics.push({
-          code: "MODEL_SUGGESTION_FAILED",
-          severity: "warning",
-          message: "模型元数据建议暂不可用，已保留确定性建议",
-        });
-        const candidateId = newEnterpriseAssetCandidateId();
-        candidateArtifacts.set(candidateId, artifact);
-        return {
-          candidateId,
-          sourceId: source.sourceId,
-          syncRunId: runId,
-          sourceItemId: action.sourceItemId,
-          enterpriseAssetId: action.enterpriseAssetId,
-          assetType: "knowledge_document" as const,
-          displayName: artifact.displayName,
-          sourceUri: artifact.sourceUri || candidateUri(candidateId, artifact.displayName),
-          sourceVersion: versionResolution.sourceVersion,
-          checksum: artifact.checksum,
-          suggestedMetadataJson: suggested.metadata,
-          discoveryJson: {
-            runId,
-            mode: input.mode,
-            scanMode: input.scanMode,
-            relativePath: artifact.relativePath,
-            extension: artifact.extension,
-            sizeBytes: artifact.sizeBytes,
-            sourceModifiedAt: artifact.sourceModifiedAt || null,
-            etag: artifact.etag || null,
-            discoveredAt: new Date().toISOString(),
-            contentStaged: Boolean(artifact.content),
-          },
-          diagnosticsJson: diagnostics,
-          status: "draft" as const,
-          createdBy: actor,
-          updatedBy: actor,
-        };
-      });
-      const rows = await importEnterpriseAssetCandidates(candidates);
-      for (const row of rows) {
-        const planned = candidates.find(candidate => candidate.enterpriseAssetId === row.enterpriseAssetId && candidate.sourceVersion === row.sourceVersion);
-        const artifact = planned ? candidateArtifacts.get(planned.candidateId) : undefined;
-        if (artifact?.content) persistCandidateArtifact(row.candidateId, artifact.displayName, artifact.content);
-      }
-      const candidateBySourceItem = new Map(rows.flatMap(row => row.sourceItemId ? [[row.sourceItemId, row.candidateId] as const] : []));
-      await completeEnterpriseAssetSourceRun({
-        runId,
-        sourceId: source.sourceId,
-        status: "succeeded",
-        scanComplete: input.scanComplete,
-        cursorAfter: input.cursorAfter || null,
-        counts: { ...syncPlan.counts, failed: 0 },
-        items: syncPlan.actions.map(action => {
-          const item = action.observed || action.previous!;
-          return {
-            action: action.kind === "missing" ? "missing" as const : "seen" as const,
-            sourceItemId: action.sourceItemId,
-            externalItemId: item.externalItemId,
-            enterpriseAssetId: action.enterpriseAssetId,
-            relativePath: item.relativePath,
-            sourceUri: item.sourceUri || null,
-            etag: item.etag || null,
-            sourceModifiedAt: item.sourceModifiedAt ? new Date(item.sourceModifiedAt) : null,
-            contentHash: item.contentHash,
-            latestSourceVersion: candidateBySourceItem.has(action.sourceItemId)
-              ? rows.find(row => row.sourceItemId === action.sourceItemId)?.sourceVersion || action.previous?.latestSourceVersion || null
-              : action.previous?.latestSourceVersion || null,
-            sizeBytes: item.sizeBytes,
-            latestCandidateId: candidateBySourceItem.get(action.sourceItemId) || null,
-          };
+        discover: async () => ({
+          artifacts,
+          scanComplete: input.scanComplete,
+          cursorAfter: input.cursorAfter,
         }),
-        actor,
+        audit: async (phase, metadata) => {
+          await audit(ctx, `enterprise_asset.discovery.${phase}`, source.sourceId, metadata);
+        },
       });
-      await audit(ctx, "enterprise_asset.discovery.completed", source.sourceId, {
-        runId,
-        mode: input.mode,
-        artifactCount: rows.length,
-        unchangedCount: syncPlan.counts.unchanged,
-        missingCount: syncPlan.counts.missing,
-        deletionDetectionApplied: syncPlan.deletionDetectionApplied,
-        remediationCount: candidates.filter(candidate => candidate.diagnosticsJson.length > 0).length,
-        candidateIds: rows.map(row => row.candidateId),
-      });
-      return {
-        runId,
-        discovered: artifacts.length,
-        candidates: rows,
-        unchanged: syncPlan.counts.unchanged,
-        missing: syncPlan.counts.missing,
-        deletionDetectionApplied: syncPlan.deletionDetectionApplied,
-        remediationCount: candidates.filter(candidate => candidate.diagnosticsJson.length > 0).length,
-        modelSuggestionApplied: input.useModelSuggestion && !model.failed,
-      };
     } catch (error) {
-      await failEnterpriseAssetSourceRun({
-        runId,
-        error: { message: error instanceof Error ? error.message : "资产发现失败" },
-      }).catch(() => undefined);
       throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "资产发现结果存在版本冲突" });
+    }
+  }),
+
+  syncFilesystemSource: adminProcedure.input(z.object({
+    sourceId: z.string().min(3).max(128),
+    resumeOfRunId: z.string().max(64).nullable().optional(),
+    useModelSuggestion: z.boolean().default(false),
+    allowContentProcessing: z.boolean().default(false),
+  })).mutation(async ({ input, ctx }) => {
+    const source = await getEnterpriseAssetSource(input.sourceId);
+    if (!source || source.status !== "active") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "接入来源不存在或未启用" });
+    }
+    if (source.sourceType !== "document_repository" || !source.sourceUri) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Filesystem Connector 需要已启用的文档库来源和 file:// 地址" });
+    }
+    try {
+      return await ingestEnterpriseAssetSource({
+        source,
+        actor: actorName(ctx.user),
+        mode: "filesystem_connector",
+        scanMode: "full",
+        resumeOfRunId: input.resumeOfRunId,
+        useModelSuggestion: input.useModelSuggestion,
+        allowContentProcessing: input.allowContentProcessing,
+        discover: async () => {
+          const scan = await scanFilesystemSource({ sourceUri: source.sourceUri! });
+          return {
+            artifacts: scan.artifacts,
+            scanComplete: scan.scanComplete,
+            cursorAfter: scan.cursorAfter,
+            metadata: {
+              rootPath: scan.rootPath,
+              skippedSymlinks: scan.skippedSymlinks,
+              skippedUnsupported: scan.skippedUnsupported,
+            },
+          };
+        },
+        audit: async (phase, metadata) => {
+          await audit(ctx, `enterprise_asset.filesystem_sync.${phase}`, source.sourceId, metadata);
+        },
+      });
+    } catch (error) {
+      throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Filesystem Connector 同步失败" });
     }
   }),
 

@@ -89,6 +89,10 @@ export function EnterpriseAssetsPanel() {
   const [inventoryText, setInventoryText] = useState("");
   const [useModelSuggestion, setUseModelSuggestion] = useState(false);
   const [allowContentProcessing, setAllowContentProcessing] = useState(false);
+  const [filesystemSyncOpen, setFilesystemSyncOpen] = useState(false);
+  const [filesystemSyncSourceId, setFilesystemSyncSourceId] = useState("");
+  const [filesystemUseModelSuggestion, setFilesystemUseModelSuggestion] = useState(false);
+  const [filesystemAllowContentProcessing, setFilesystemAllowContentProcessing] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<Candidate | null>(null);
   const [reviewDisplayName, setReviewDisplayName] = useState("");
   const [reviewSourceVersion, setReviewSourceVersion] = useState("");
@@ -121,6 +125,16 @@ export function EnterpriseAssetsPanel() {
       setInventoryText("");
       setUseModelSuggestion(false);
       setAllowContentProcessing(false);
+      await invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const syncFilesystemSource = trpc.enterpriseAssets.syncFilesystemSource.useMutation({
+    onSuccess: async result => {
+      toast.success(`同步完成：新增 ${result.created}，变化 ${result.changed}，未变化 ${result.unchanged}，删除候选 ${result.tombstones}`);
+      setFilesystemSyncOpen(false);
+      setFilesystemUseModelSuggestion(false);
+      setFilesystemAllowContentProcessing(false);
       await invalidate();
     },
     onError: error => toast.error(error.message),
@@ -162,12 +176,15 @@ export function EnterpriseAssetsPanel() {
   });
 
   const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
+  const filesystemSources = useMemo(() => activeSources.filter(item => (
+    item.sourceType === "document_repository" && String(item.sourceUri || "").startsWith("file://")
+  )), [activeSources]);
   const remediationCandidates = useMemo(() => (data?.candidates || []).filter(candidate => ["draft", "rejected"].includes(candidate.status) && candidateDiagnostics(candidate).length > 0), [data?.candidates]);
   const issueCounts = useMemo(() => countAssetIssues(remediationCandidates), [remediationCandidates]);
   const visibleCandidates = useMemo(() => assetListMode === "all"
     ? (data?.candidates || [])
     : remediationCandidates.filter(candidate => assetMatchesIssue(candidate.diagnosticsJson, issueFilter)), [assetListMode, data?.candidates, issueFilter, remediationCandidates]);
-  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || submitReview.isPending
+  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || syncFilesystemSource.isPending || submitReview.isPending
     || review.isPending || publish.isPending || stageKnowledgeVersion.isPending
     || verifyKnowledgeVersion.isPending || activateKnowledgeVersion.isPending;
 
@@ -277,6 +294,9 @@ export function EnterpriseAssetsPanel() {
           <Button variant="outline" size="sm" onClick={() => { setDiscoverySourceId(activeSources[0]?.sourceId || ""); setDiscoveryOpen(true); }} disabled={!activeSources.length}>
             <UploadCloud className="mr-1.5 h-3.5 w-3.5" />发现资产
           </Button>
+          <Button variant="outline" size="sm" onClick={() => { setFilesystemSyncSourceId(filesystemSources[0]?.sourceId || ""); setFilesystemSyncOpen(true); }} disabled={!filesystemSources.length}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />同步挂载目录
+          </Button>
           <Button size="sm" onClick={() => setSourceOpen(true)}><Plus className="mr-1.5 h-3.5 w-3.5" />登记来源</Button>
         </div>
       </div>
@@ -367,7 +387,7 @@ export function EnterpriseAssetsPanel() {
               ["document_repository", "制度/文档库"], ["business_system", "业务系统"], ["rule_catalog", "规则目录"], ["workflow_catalog", "流程目录"], ["capability_service", "能力服务"], ["identity_directory", "IAM/组织目录"],
             ].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>责任部门</Label><Input value={source.ownerDepartment} onChange={e => setSource({ ...source, ownerDepartment: e.target.value })} /></div>
-            <div className="sm:col-span-2"><Label>来源地址</Label><Input value={source.sourceUri} onChange={e => setSource({ ...source, sourceUri: e.target.value })} placeholder="https://... 或内部来源标识" /></div>
+            <div className="sm:col-span-2"><Label>来源地址</Label><Input value={source.sourceUri} onChange={e => setSource({ ...source, sourceUri: e.target.value })} placeholder="file:///mnt/knowledge、https://... 或内部来源标识" /></div>
             <div className="sm:col-span-2"><Label>责任人/联系方式</Label><Input value={source.ownerContact} onChange={e => setSource({ ...source, ownerContact: e.target.value })} /></div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setSourceOpen(false)}>取消</Button><Button disabled={busy} onClick={() => saveSource.mutate({ ...source, sourceUri: source.sourceUri || null, ownerContact: source.ownerContact || null })}>保存</Button></DialogFooter>
@@ -430,6 +450,35 @@ export function EnterpriseAssetsPanel() {
             </div>
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDiscoveryOpen(false)}>取消</Button><Button disabled={busy || !discoverySourceId || (discoveryMode === "object_inventory" ? !inventoryText.trim() : !discoveryFiles.length)} onClick={doDiscover}>{discoverArtifacts.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}开始发现</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={filesystemSyncOpen} onOpenChange={setFilesystemSyncOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>同步挂载目录</DialogTitle>
+            <DialogDescription>执行一次受限完整扫描。新增和变化生成候选；确认删除生成退役整改项；未变化文件跳过。同步不会自动审核或发布。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>目录来源</Label>
+              <Select value={filesystemSyncSourceId} onValueChange={setFilesystemSyncSourceId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>{filesystemSources.map(item => <SelectItem key={item.sourceId} value={item.sourceId}>{item.displayName} · {item.sourceUri}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 rounded border bg-white px-3 py-3">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={filesystemUseModelSuggestion} onChange={event => { setFilesystemUseModelSuggestion(event.target.checked); if (!event.target.checked) setFilesystemAllowContentProcessing(false); }} />使用平台模型增强元数据建议</label>
+              <label className={`flex items-center gap-2 text-sm ${filesystemUseModelSuggestion ? "" : "text-muted-foreground"}`}><input type="checkbox" disabled={!filesystemUseModelSuggestion} checked={filesystemAllowContentProcessing} onChange={event => setFilesystemAllowContentProcessing(event.target.checked)} />允许向平台模型发送文本文件的有限摘要</label>
+              <p className="text-xs text-muted-foreground">目录必须位于服务端白名单挂载根目录内；符号链接不会被扫描。</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFilesystemSyncOpen(false)}>取消</Button>
+            <Button disabled={busy || !filesystemSyncSourceId} onClick={() => syncFilesystemSource.mutate({ sourceId: filesystemSyncSourceId, useModelSuggestion: filesystemUseModelSuggestion, allowContentProcessing: filesystemAllowContentProcessing })}>
+              {syncFilesystemSource.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}开始同步
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
