@@ -7,8 +7,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  ASSET_ISSUE_GROUPS, assetMatchesIssue, countAssetIssues, fromLocalDateTimeInput, normalizedReviewMetadata,
+  stringList, suggestionSourceEvidence, suggestionSourceLabel, toLocalDateTimeInput, unresolvedAssetDiagnostics,
+  type AssetIssueGroup,
+} from "@/lib/enterprise-asset-experience";
 import { trpc, type RouterOutputs } from "@/lib/trpc";
-import { AlertTriangle, Archive, Check, Clock3, FileInput, FolderOpen, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, UploadCloud, X } from "lucide-react";
+import { AlertTriangle, Archive, Check, Clock3, FileInput, FolderOpen, ListFilter, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, Sparkles, UploadCloud, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Overview = RouterOutputs["enterpriseAssets"]["overview"];
@@ -48,9 +53,25 @@ function fileBase64(file: File): Promise<string> {
   });
 }
 
-function candidateDiagnostics(candidate: Candidate): Array<Record<string, unknown>> {
-  if (!Array.isArray(candidate.diagnosticsJson)) return [];
-  return candidate.diagnosticsJson.filter(item => item && typeof item === "object" && !(item as Record<string, unknown>).resolvedAt) as Array<Record<string, unknown>>;
+function candidateDiagnostics(candidate: Candidate | null | undefined): Array<Record<string, unknown>> {
+  if (!candidate) return [];
+  return unresolvedAssetDiagnostics(candidate.diagnosticsJson) as Array<Record<string, unknown>>;
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+function FieldProvenance({ candidate, field, extracted = false }: { candidate: Candidate | null; field: string; extracted?: boolean }) {
+  if (!candidate) return null;
+  const confirmed = recordOf(candidate.confirmedMetadataJson);
+  const suggested = recordOf(candidate.suggestedMetadataJson);
+  const diagnostic = candidateDiagnostics(candidate).find(item => item.field === field);
+  if (Object.prototype.hasOwnProperty.call(confirmed, field)) {
+    return <div className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700"><UserCheck className="h-3 w-3" />人工确认{candidate.reviewedBy ? ` · ${candidate.reviewedBy}` : ""}{candidate.reviewedAt ? ` · ${new Date(candidate.reviewedAt).toLocaleString("zh-CN")}` : ""}</div>;
+  }
+  if (extracted) return <div className="mt-1 text-[11px] text-muted-foreground">系统提取 · 依据文件名与接入路径</div>;
+  return <div className="mt-1 text-[11px] text-muted-foreground">{suggestionSourceLabel(suggested.suggestionMethod)} · {diagnostic ? String(diagnostic.message || "待人工确认") : suggestionSourceEvidence(suggested.suggestionMethod)}</div>;
 }
 
 export function EnterpriseAssetsPanel() {
@@ -69,7 +90,13 @@ export function EnterpriseAssetsPanel() {
   const [useModelSuggestion, setUseModelSuggestion] = useState(false);
   const [allowContentProcessing, setAllowContentProcessing] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<Candidate | null>(null);
+  const [reviewDisplayName, setReviewDisplayName] = useState("");
+  const [reviewSourceVersion, setReviewSourceVersion] = useState("");
+  const [reviewMetadata, setReviewMetadata] = useState<Record<string, unknown>>({});
   const [metadataText, setMetadataText] = useState("");
+  const [advancedMetadata, setAdvancedMetadata] = useState(false);
+  const [assetListMode, setAssetListMode] = useState<"remediation" | "all">("remediation");
+  const [issueFilter, setIssueFilter] = useState<AssetIssueGroup>("all");
   const [rejectTarget, setRejectTarget] = useState<Candidate | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   const [publishTarget, setPublishTarget] = useState<Candidate | null>(null);
@@ -135,19 +162,39 @@ export function EnterpriseAssetsPanel() {
   });
 
   const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
+  const remediationCandidates = useMemo(() => (data?.candidates || []).filter(candidate => ["draft", "rejected"].includes(candidate.status) && candidateDiagnostics(candidate).length > 0), [data?.candidates]);
+  const issueCounts = useMemo(() => countAssetIssues(remediationCandidates), [remediationCandidates]);
+  const visibleCandidates = useMemo(() => assetListMode === "all"
+    ? (data?.candidates || [])
+    : remediationCandidates.filter(candidate => assetMatchesIssue(candidate.diagnosticsJson, issueFilter)), [assetListMode, data?.candidates, issueFilter, remediationCandidates]);
   const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || submitReview.isPending
     || review.isPending || publish.isPending || stageKnowledgeVersion.isPending
     || verifyKnowledgeVersion.isPending || activateKnowledgeVersion.isPending;
 
   const openReview = (candidate: Candidate) => {
-    const suggested = { ...((candidate.suggestedMetadataJson || {}) as Record<string, unknown>) };
-    suggested.logicalAssetIds = Array.isArray(suggested.logicalAssetCandidates) ? suggested.logicalAssetCandidates : [];
-    delete suggested.enterpriseId;
-    delete suggested.suggestedDomain;
-    delete suggested.logicalAssetCandidates;
-    delete suggested.suggestionMethod;
-    setMetadataText(JSON.stringify(suggested, null, 2));
+    const metadata = normalizedReviewMetadata(candidate.confirmedMetadataJson || candidate.suggestedMetadataJson);
+    setReviewDisplayName(candidate.displayName);
+    setReviewSourceVersion(candidate.sourceVersion);
+    setReviewMetadata(metadata);
+    setMetadataText(JSON.stringify(metadata, null, 2));
+    setAdvancedMetadata(false);
     setReviewTarget(candidate);
+  };
+
+  const updateMetadata = (field: string, value: unknown) => setReviewMetadata(current => ({ ...current, [field]: value }));
+
+  const toggleAdvancedMetadata = () => {
+    if (!advancedMetadata) {
+      setMetadataText(JSON.stringify(reviewMetadata, null, 2));
+      setAdvancedMetadata(true);
+      return;
+    }
+    try {
+      setReviewMetadata(normalizedReviewMetadata(JSON.parse(metadataText)));
+      setAdvancedMetadata(false);
+    } catch {
+      toast.error("高级元数据不是有效 JSON");
+    }
   };
 
   const doImport = () => {
@@ -161,7 +208,8 @@ export function EnterpriseAssetsPanel() {
   const doSubmitReview = () => {
     if (!reviewTarget) return;
     try {
-      submitReview.mutate({ candidateId: reviewTarget.candidateId, confirmedMetadata: JSON.parse(metadataText) });
+      const confirmedMetadata = normalizedReviewMetadata(advancedMetadata ? JSON.parse(metadataText) : reviewMetadata);
+      submitReview.mutate({ candidateId: reviewTarget.candidateId, displayName: reviewDisplayName.trim(), sourceVersion: reviewSourceVersion.trim(), confirmedMetadata: confirmedMetadata as any });
     } catch {
       toast.error("确认元数据不是有效 JSON");
     }
@@ -242,10 +290,22 @@ export function EnterpriseAssetsPanel() {
 
       <Card className="overflow-hidden border-border/50 bg-white/90">
         <div className="border-b px-4 py-3">
-          <h3 className="text-sm font-semibold text-gray-900">资产候选与发布状态</h3>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900"><ListFilter className="h-4 w-4 text-primary" />{assetListMode === "remediation" ? "整改队列" : "全部资产"}</h3>
+              <p className="mt-1 text-xs text-muted-foreground">{assetListMode === "remediation" ? "按治理问题处理异常资产，正常资产无需逐份确认。" : "查看全部候选、审核和发布状态。"}</p>
+            </div>
+            <div className="flex rounded border bg-muted/30 p-0.5">
+              <Button size="sm" variant={assetListMode === "remediation" ? "default" : "ghost"} className="h-7" onClick={() => setAssetListMode("remediation")}>待整改 {issueCounts.all}</Button>
+              <Button size="sm" variant={assetListMode === "all" ? "default" : "ghost"} className="h-7" onClick={() => setAssetListMode("all")}>全部资产 {data?.candidates.length || 0}</Button>
+            </div>
+          </div>
+          {assetListMode === "remediation" && <div className="mt-3 flex flex-wrap gap-1.5">
+            {ASSET_ISSUE_GROUPS.filter(group => group.id === "all" || issueCounts[group.id] > 0).map(group => <Button key={group.id} size="sm" variant={issueFilter === group.id ? "secondary" : "ghost"} className="h-7 px-2.5 text-xs" onClick={() => setIssueFilter(group.id)}>{group.label} {issueCounts[group.id]}</Button>)}
+          </div>}
         </div>
-        <div className="divide-y">
-          {(data?.candidates || []).map(candidate => {
+        <div className="max-h-[70vh] divide-y overflow-y-auto">
+          {visibleCandidates.map(candidate => {
             const impact = (candidate.impactAnalysisJson || {}) as { affectedTaskIds?: unknown };
             const diagnostics = candidateDiagnostics(candidate);
             const suggestion = (candidate.suggestedMetadataJson || {}) as { applicableRoles?: unknown; logicalAssetCandidates?: unknown; suggestionMethod?: unknown };
@@ -258,8 +318,9 @@ export function EnterpriseAssetsPanel() {
                     <Badge variant={candidate.status === "published" ? "default" : "secondary"}>{STATUS_LABELS[candidate.status] || candidate.status}</Badge>
                   </div>
                   <div className="mt-1 truncate text-xs text-muted-foreground">{candidate.enterpriseAssetId} · v{candidate.sourceVersion} · {candidate.sourceId}</div>
-                  {Array.isArray(suggestion.applicableRoles) && suggestion.applicableRoles.length > 0 && <div className="mt-1 text-xs text-muted-foreground">建议岗位：{suggestion.applicableRoles.map(String).join("、")}</div>}
+                  {Array.isArray(suggestion.applicableRoles) && suggestion.applicableRoles.length > 0 && <div className="mt-1 text-xs text-muted-foreground">建议岗位：{suggestion.applicableRoles.map(roleId => data?.roles.find(role => role.id === String(roleId))?.name || String(roleId)).join("、")}</div>}
                   {Array.isArray(suggestion.logicalAssetCandidates) && suggestion.logicalAssetCandidates.length > 0 && <div className="mt-1 text-xs text-muted-foreground">逻辑资产候选：{suggestion.logicalAssetCandidates.map(String).join("、")}</div>}
+                  <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Sparkles className="h-3 w-3" />{suggestionSourceLabel(suggestion.suggestionMethod)}{candidate.reviewedBy ? ` · 已由 ${candidate.reviewedBy} 确认` : " · 待人工确认"}</div>
                   {candidate.targetAssetId && <div className="mt-1 text-xs text-emerald-700">Runtime 映射：{candidate.targetAssetType} / {candidate.targetAssetId}</div>}
                   {candidate.assetType === "knowledge_document" && RELEASE_STATUS_LABELS[candidate.releaseStatus] && <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                     <Clock3 className="h-3 w-3" />{RELEASE_STATUS_LABELS[candidate.releaseStatus]}
@@ -292,7 +353,7 @@ export function EnterpriseAssetsPanel() {
               </div>
             );
           })}
-          {!data?.candidates.length && <div className="px-4 py-10 text-center text-sm text-muted-foreground">暂无候选资产</div>}
+          {!visibleCandidates.length && <div className="px-4 py-10 text-center text-sm text-muted-foreground">{assetListMode === "remediation" ? "当前筛选下没有待整改资产" : "暂无候选资产"}</div>}
         </div>
       </Card>
 
@@ -382,10 +443,82 @@ export function EnterpriseAssetsPanel() {
       </Dialog>
 
       <Dialog open={Boolean(reviewTarget)} onOpenChange={open => !open && setReviewTarget(null)}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader><DialogTitle>确认治理元数据</DialogTitle><DialogDescription>{reviewTarget?.displayName}。提交后进入独立审核，不会直接发布。</DialogDescription></DialogHeader>
-          <Textarea className="min-h-80 font-mono text-xs" value={metadataText} onChange={e => setMetadataText(e.target.value)} />
-          <DialogFooter><Button variant="outline" onClick={() => setReviewTarget(null)}>取消</Button><Button disabled={busy} onClick={doSubmitReview}>提交审核</Button></DialogFooter>
+        <DialogContent className="flex w-[min(72rem,calc(100vw-2rem))] max-w-none flex-col sm:max-w-5xl max-h-[92vh] overflow-hidden bg-white p-0 shadow-2xl">
+          <DialogHeader className="shrink-0 border-b px-6 py-4">
+            <div className="flex items-start justify-between gap-4 pr-8">
+              <div><DialogTitle>确认企业资产信息</DialogTitle><DialogDescription className="mt-1">确认后进入独立审核，不会直接发布或提供给岗位员工。</DialogDescription></div>
+              <Button variant="outline" size="sm" onClick={toggleAdvancedMetadata}>{advancedMetadata ? "返回字段表单" : "高级 JSON"}</Button>
+            </div>
+          </DialogHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+            {advancedMetadata ? <div>
+              <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">高级模式直接编辑治理契约。返回字段表单时会先校验 JSON，未知字段仍会保留。</div>
+              <Textarea className="min-h-[32rem] font-mono text-xs" value={metadataText} onChange={e => setMetadataText(e.target.value)} />
+            </div> : <div className="space-y-6">
+              <section>
+                <h4 className="text-sm font-semibold text-gray-900">基础信息</h4>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <div><Label>资产名称</Label><Input value={reviewDisplayName} onChange={event => setReviewDisplayName(event.target.value)} /><FieldProvenance candidate={reviewTarget!} field="displayName" extracted /></div>
+                  <div><Label>版本</Label><Input value={reviewSourceVersion} onChange={event => setReviewSourceVersion(event.target.value)} /><FieldProvenance candidate={reviewTarget!} field="sourceVersion" extracted /></div>
+                  <div><Label>资产类型</Label><Input value={reviewTarget ? TYPE_LABELS[reviewTarget.assetType] || reviewTarget.assetType : ""} disabled /></div>
+                  <div><Label>接入来源</Label><Input value={data?.sources.find(source => source.sourceId === reviewTarget?.sourceId)?.displayName || reviewTarget?.sourceId || ""} disabled /></div>
+                  <div className="sm:col-span-2"><Label>文件位置</Label><Input value={reviewTarget?.sourceUri || ""} disabled /></div>
+                </div>
+              </section>
+
+              <section className="border-t pt-5">
+                <h4 className="text-sm font-semibold text-gray-900">治理信息</h4>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div><Label>责任部门</Label><Input value={String(reviewMetadata.ownerDepartment || "")} onChange={event => updateMetadata("ownerDepartment", event.target.value)} /><FieldProvenance candidate={reviewTarget!} field="ownerDepartment" /></div>
+                  <div><Label>信息分级</Label><Select value={String(reviewMetadata.classification || "internal")} onValueChange={value => updateMetadata("classification", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="public">公开</SelectItem><SelectItem value="internal">内部</SelectItem><SelectItem value="sensitive">敏感</SelectItem><SelectItem value="restricted">严格受限</SelectItem></SelectContent></Select><FieldProvenance candidate={reviewTarget!} field="classification" /></div>
+                  <div><Label>权威等级</Label><Select value={String(reviewMetadata.authority || "reference")} onValueChange={value => updateMetadata("authority", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="official">正式制度</SelectItem><SelectItem value="approved">审核资料</SelectItem><SelectItem value="reference">参考资料</SelectItem><SelectItem value="personal">个人资料</SelectItem></SelectContent></Select><FieldProvenance candidate={reviewTarget!} field="authority" /></div>
+                  <div><Label>生命周期</Label><Select value={String(reviewMetadata.lifecycle || "draft")} onValueChange={value => updateMetadata("lifecycle", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">草稿</SelectItem><SelectItem value="active">计划生效</SelectItem><SelectItem value="expired">已失效</SelectItem><SelectItem value="archived">已归档</SelectItem></SelectContent></Select><FieldProvenance candidate={reviewTarget!} field="lifecycle" /></div>
+                  <div><Label>生效时间</Label><Input type="datetime-local" value={toLocalDateTimeInput(reviewMetadata.effectiveAt)} onChange={event => updateMetadata("effectiveAt", fromLocalDateTimeInput(event.target.value))} /><FieldProvenance candidate={reviewTarget!} field="effectiveAt" /></div>
+                  <div><Label>失效时间</Label><Input type="datetime-local" value={toLocalDateTimeInput(reviewMetadata.expiresAt)} onChange={event => updateMetadata("expiresAt", fromLocalDateTimeInput(event.target.value))} /><FieldProvenance candidate={reviewTarget!} field="expiresAt" /></div>
+                </div>
+              </section>
+
+              <section className="border-t pt-5">
+                <h4 className="text-sm font-semibold text-gray-900">业务范围</h4>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <div><Label>业务域</Label><Select value={String(reviewMetadata.businessDomain || "general")} onValueChange={value => updateMetadata("businessDomain", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="wealth">财富管理</SelectItem><SelectItem value="insurance">保险业务</SelectItem><SelectItem value="risk">风险管理</SelectItem><SelectItem value="audit">智能审核</SelectItem><SelectItem value="investment_research">投研投顾</SelectItem><SelectItem value="general">通用</SelectItem></SelectContent></Select><FieldProvenance candidate={reviewTarget!} field="businessDomain" /></div>
+                  <div><Label>适用机构</Label><Input value={stringList(reviewMetadata.applicableOrganizations).join("、")} onChange={event => updateMetadata("applicableOrganizations", stringList(event.target.value))} placeholder="留空表示由运行时机构范围控制" /><FieldProvenance candidate={reviewTarget!} field="applicableOrganizations" /></div>
+                  <div className="sm:col-span-2">
+                    <Label>适用岗位</Label>
+                    <div className="mt-1.5 grid gap-2 rounded border px-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {(data?.roles || []).map(role => {
+                        const checked = stringList(reviewMetadata.applicableRoles).includes(role.id);
+                        return <label key={role.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={checked} onChange={event => updateMetadata("applicableRoles", event.target.checked ? [...stringList(reviewMetadata.applicableRoles), role.id] : stringList(reviewMetadata.applicableRoles).filter(item => item !== role.id))} />{role.name}</label>;
+                      })}
+                    </div>
+                    <FieldProvenance candidate={reviewTarget!} field="applicableRoles" />
+                  </div>
+                </div>
+              </section>
+
+              <section className="border-t pt-5">
+                <h4 className="text-sm font-semibold text-gray-900">岗位运行关联</h4>
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <div><Label>逻辑资产标识</Label><Input value={stringList(reviewMetadata.logicalAssetIds).join("、")} onChange={event => updateMetadata("logicalAssetIds", stringList(event.target.value))} placeholder="例如 current_wealth_policy" /><FieldProvenance candidate={reviewTarget!} field="logicalAssetIds" /></div>
+                  <div><Label>关联岗位任务</Label><Input value={stringList(reviewMetadata.relatedTasks).join("、")} onChange={event => updateMetadata("relatedTasks", stringList(event.target.value))} placeholder="例如 WM-GT-02、WM-GT-03" /><FieldProvenance candidate={reviewTarget!} field="relatedTasks" /></div>
+                  <div><Label>文档系列标识</Label><Input value={String(reviewMetadata.documentSeriesId || "")} onChange={event => updateMetadata("documentSeriesId", event.target.value || null)} /><FieldProvenance candidate={reviewTarget!} field="documentSeriesId" /></div>
+                  <div><Label>替代版本标识</Label><Input value={String(reviewMetadata.supersedes || "")} onChange={event => updateMetadata("supersedes", event.target.value || null)} placeholder="没有替代关系时留空" /><FieldProvenance candidate={reviewTarget!} field="supersedes" /></div>
+                </div>
+                <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(reviewMetadata.externalProcessingAllowed)} onChange={event => updateMetadata("externalProcessingAllowed", event.target.checked)} />允许按企业策略进行外部模型处理</label>
+              </section>
+
+              <section className="border-t pt-5">
+                <h4 className="text-sm font-semibold text-gray-900">建议与问题依据</h4>
+                <div className="mt-2 rounded border bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 font-medium text-foreground"><Sparkles className="h-3.5 w-3.5 text-primary" />{suggestionSourceLabel(recordOf(reviewTarget?.suggestedMetadataJson).suggestionMethod)}</div>
+                  <div className="mt-1">{suggestionSourceEvidence(recordOf(reviewTarget?.suggestedMetadataJson).suggestionMethod)}</div>
+                  {candidateDiagnostics(reviewTarget!).map((diagnostic, index) => <div key={`${String(diagnostic.code)}-${index}`} className="mt-1.5 flex items-start gap-1.5 text-amber-700"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{String(diagnostic.message || diagnostic.code)}</div>)}
+                  <div className="mt-2">字段建议不代表资产可信度；责任部门、权威等级、生效时间和正式替代关系以人工确认为准。</div>
+                </div>
+              </section>
+            </div>}
+          </div>
+          <DialogFooter className="shrink-0 border-t px-6 py-4"><Button variant="outline" onClick={() => setReviewTarget(null)}>取消</Button><Button disabled={busy || !reviewDisplayName.trim() || !reviewSourceVersion.trim() || !String(reviewMetadata.ownerDepartment || "").trim() || !stringList(reviewMetadata.applicableRoles).length} onClick={doSubmitReview}>提交审核</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

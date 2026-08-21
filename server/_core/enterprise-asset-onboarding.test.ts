@@ -31,6 +31,7 @@ describe("enterprise asset onboarding contract", () => {
       }],
     });
     expect(parsed.assets[0].metadata.externalProcessingAllowed).toBe(false);
+    expect(parsed.assets[0].metadata.businessDomain).toBe("general");
   });
 
   it("rejects inconsistent lifecycle dates", () => {

@@ -261,6 +261,7 @@ export const enterpriseAssetsRouter = router({
     sourceId: z.string().max(128).optional(),
     status: z.enum(["draft", "review_pending", "approved", "rejected", "published", "stale"]).optional(),
   }).optional()).query(async ({ input }) => {
+    const roles = listAgentRoleTemplates();
     const [sources, candidates, knowledgeBases] = await Promise.all([
       listEnterpriseAssetSources(),
       listEnterpriseAssetCandidates(input || {}),
@@ -271,6 +272,7 @@ export const enterpriseAssetsRouter = router({
     )))).map(document => [document.publicId, document]));
     return {
       sources,
+      roles: roles.map(role => ({ id: role.id, name: role.name })),
       knowledgeBases: knowledgeBases.map(base => ({
         publicId: base.publicId,
         name: base.name,
@@ -496,6 +498,8 @@ export const enterpriseAssetsRouter = router({
 
   submitReview: adminProcedure.input(z.object({
     candidateId: z.string().min(3).max(64),
+    displayName: z.string().min(1).max(240).optional(),
+    sourceVersion: z.string().min(1).max(64).optional(),
     confirmedMetadata: enterpriseAssetMetadataSchema,
   })).mutation(async ({ input, ctx }) => {
     const candidate = await getEnterpriseAssetCandidate(input.candidateId);
@@ -506,12 +510,14 @@ export const enterpriseAssetsRouter = router({
     const impact = analyzeEnterpriseAssetImpact({
       assetType: candidate.assetType,
       enterpriseAssetId: candidate.enterpriseAssetId,
-      sourceVersion: candidate.sourceVersion,
+      sourceVersion: input.sourceVersion || candidate.sourceVersion,
       checksum: candidate.checksum,
       metadata: input.confirmedMetadata,
     });
     await audit(ctx, "enterprise_asset.review.requested", candidate.candidateId, { impact });
     const row = await updateEnterpriseAssetCandidate(candidate.candidateId, {
+      displayName: input.displayName || candidate.displayName,
+      sourceVersion: input.sourceVersion || candidate.sourceVersion,
       confirmedMetadataJson: input.confirmedMetadata,
       impactAnalysisJson: impact,
       diagnosticsJson: unresolvedDiagnostics(candidate.diagnosticsJson).map(diagnostic => ({

@@ -12,6 +12,7 @@ export const enterpriseAssetTypeSchema = z.enum([
 
 export const enterpriseAssetMetadataSchema = z.object({
   ownerDepartment: z.string().min(1).max(200),
+  businessDomain: z.string().min(1).max(64).default("general"),
   classification: z.enum(["public", "internal", "sensitive", "restricted"]),
   applicableRoles: z.array(z.string().min(1).max(64)).min(1).max(64),
   applicableOrganizations: z.array(z.string().min(1).max(128)).max(128).default([]),
