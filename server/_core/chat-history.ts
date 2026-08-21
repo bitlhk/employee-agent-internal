@@ -426,9 +426,24 @@ function applyJiuwenToolResultToCalls(calls: ChatHistoryToolCall[], event: any, 
   if (eventType !== "chat.tool_result") return calls;
   const nested = event?.tool_result && typeof event.tool_result === "object" ? event.tool_result : event;
   const id = String(nested?.tool_call_id || nested?.toolCallId || nested?.id || nested?.call_id || event?.tool_call_id || "").trim();
-  const result = nested?.result ?? nested?.content ?? nested?.output ?? event?.result ?? event?.content ?? "";
+  const rawOutput = nested?.raw_output ?? event?.raw_output;
+  const trustedRawOutput = rawOutput
+    && typeof rawOutput === "object"
+    && !Array.isArray(rawOutput)
+    && rawOutput?._meta?.eaMetadataIssuer === "employee-agent"
+      ? rawOutput
+      : null;
+  const result = trustedRawOutput
+    ?? nested?.result
+    ?? nested?.content
+    ?? nested?.output
+    ?? event?.result
+    ?? event?.content
+    ?? "";
   const isError = Boolean(nested?.is_error || nested?.isError || nested?.error || nested?.status === "failed" || event?.error);
-  const resultText = result == null || result === "" ? "" : compactJiuwenToolPayload(result);
+  const resultText = result == null || result === ""
+    ? ""
+    : compactJiuwenToolPayload(result, trustedRawOutput ? 120_000 : 6_000);
   const updateAt = id ? calls.findIndex((call) => call.id === id) : [...calls].reverse().findIndex((call) => call.status === "running");
   const idx = id ? updateAt : (updateAt >= 0 ? calls.length - 1 - updateAt : -1);
   if (idx >= 0) {

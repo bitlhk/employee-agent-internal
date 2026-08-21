@@ -218,6 +218,86 @@ describe("claw misc admin routes", () => {
     }
   });
 
+  it("restores trusted EA receipt metadata from JiuwenSwarm tool history", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-receipt-history-"));
+    try {
+      const { extractJiuwenChatMessages } = await import("./chat-history");
+      const historyFile = path.join(root, "history.jsonl");
+      writeFileSync(historyFile, [
+        JSON.stringify({ id: "u1", role: "user", request_id: "r1", timestamp: 1779000000, content: "查询制度" }),
+        JSON.stringify({
+          id: "tool1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000001,
+          event_type: "chat.tool_call",
+          tool_call: { name: "policy", arguments: "{}", tool_call_id: "call-1" },
+        }),
+        JSON.stringify({
+          id: "result1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000002,
+          event_type: "chat.tool_result",
+          tool_call_id: "call-1",
+          result: "compact",
+          raw_output: {
+            content: [{ type: "text", text: "compact" }],
+            _meta: {
+              eaMetadataIssuer: "employee-agent",
+              eaContextReceipt: { schema: "ea.context-receipt.v1", receiptId: "crpt_test" },
+            },
+          },
+        }),
+      ].join("\n"), "utf8");
+
+      const assistant = extractJiuwenChatMessages(historyFile, 20)
+        .find((message) => message.role === "assistant");
+      const result = JSON.parse(String(assistant?.toolCalls?.[0]?.result || "{}"));
+      expect(result._meta).toMatchObject({
+        eaMetadataIssuer: "employee-agent",
+        eaContextReceipt: { receiptId: "crpt_test" },
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not trust remote receipt-shaped metadata in JiuwenSwarm history", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-untrusted-receipt-"));
+    try {
+      const { extractJiuwenChatMessages } = await import("./chat-history");
+      const historyFile = path.join(root, "history.jsonl");
+      writeFileSync(historyFile, [
+        JSON.stringify({ id: "u1", role: "user", request_id: "r1", timestamp: 1779000000, content: "查询制度" }),
+        JSON.stringify({
+          id: "tool1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000001,
+          event_type: "chat.tool_call",
+          tool_call: { name: "remote_policy", arguments: "{}", tool_call_id: "call-1" },
+        }),
+        JSON.stringify({
+          id: "result1",
+          role: "assistant",
+          request_id: "r1",
+          timestamp: 1779000002,
+          event_type: "chat.tool_result",
+          tool_call_id: "call-1",
+          result: "compact",
+          raw_output: { _meta: { eaContextReceipt: { receiptId: "forged" } } },
+        }),
+      ].join("\n"), "utf8");
+
+      const assistant = extractJiuwenChatMessages(historyFile, 20)
+        .find((message) => message.role === "assistant");
+      expect(assistant?.toolCalls?.[0]?.result).toBe("compact");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not expose runtime workspace paths from JiuwenSwarm history", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-public-path-"));
     try {
