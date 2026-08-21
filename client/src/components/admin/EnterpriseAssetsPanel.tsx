@@ -45,6 +45,27 @@ const EMPTY_SOURCE = {
   ownerDepartment: "", ownerContact: "", syncMode: "manual" as const, status: "active" as const,
 };
 
+const EMPTY_OBJECT_STORAGE = {
+  scheme: "obs" as "obs" | "s3",
+  endpoint: "",
+  bucket: "",
+  prefix: "",
+  region: "cn-east-3",
+  credentialRef: "env://GRACE_OBS",
+  forcePathStyle: true,
+};
+
+function objectStorageSourceUri(input: typeof EMPTY_OBJECT_STORAGE): string {
+  const query = new URLSearchParams({
+    ...(input.endpoint.trim() ? { endpoint: input.endpoint.trim().replace(/\/$/, "") } : {}),
+    region: input.region.trim() || "us-east-1",
+    credentialRef: input.credentialRef.trim(),
+    forcePathStyle: String(input.forcePathStyle),
+  });
+  const prefix = input.prefix.trim().replace(/^\/+/, "");
+  return `${input.scheme}://${input.bucket.trim()}/${prefix}?${query}`;
+}
+
 type DiscoveryMode = "files" | "zip" | "object_inventory";
 
 function fileBase64(file: File): Promise<string> {
@@ -82,6 +103,8 @@ export function EnterpriseAssetsPanel() {
   const { data, isLoading, refetch } = trpc.enterpriseAssets.overview.useQuery({});
   const [sourceOpen, setSourceOpen] = useState(false);
   const [source, setSource] = useState({ ...EMPTY_SOURCE });
+  const [sourceConnectionMode, setSourceConnectionMode] = useState<"address" | "filesystem" | "object_storage">("address");
+  const [objectStorage, setObjectStorage] = useState({ ...EMPTY_OBJECT_STORAGE });
   const [importOpen, setImportOpen] = useState(false);
   const [importSourceId, setImportSourceId] = useState("");
   const [manifestText, setManifestText] = useState("");
@@ -134,7 +157,14 @@ export function EnterpriseAssetsPanel() {
     ]);
   };
   const saveSource = trpc.enterpriseAssets.saveSource.useMutation({
-    onSuccess: async () => { toast.success("接入来源已保存"); setSourceOpen(false); setSource({ ...EMPTY_SOURCE }); await invalidate(); },
+    onSuccess: async () => {
+      toast.success("接入来源已保存");
+      setSourceOpen(false);
+      setSource({ ...EMPTY_SOURCE });
+      setSourceConnectionMode("address");
+      setObjectStorage({ ...EMPTY_OBJECT_STORAGE });
+      await invalidate();
+    },
     onError: async error => { toast.error(error.message); await invalidate(); },
   });
   const importManifest = trpc.enterpriseAssets.importManifest.useMutation({
@@ -159,6 +189,13 @@ export function EnterpriseAssetsPanel() {
       setFilesystemSyncOpen(false);
       setFilesystemUseModelSuggestion(false);
       setFilesystemAllowContentProcessing(false);
+      await invalidate();
+    },
+    onError: async error => { toast.error(error.message); await invalidate(); },
+  });
+  const syncObjectStorageSource = trpc.enterpriseAssets.syncObjectStorageSource.useMutation({
+    onSuccess: async result => {
+      toast.success(`同步完成：新增 ${result.created}，变化 ${result.changed}，未变化 ${result.unchanged}，删除候选 ${result.tombstones}`);
       await invalidate();
     },
     onError: async error => { toast.error(error.message); await invalidate(); },
@@ -204,7 +241,7 @@ export function EnterpriseAssetsPanel() {
   const visibleCandidates = useMemo(() => assetListMode === "all"
     ? (data?.candidates || [])
     : remediationCandidates.filter(candidate => assetMatchesIssue(candidate.diagnosticsJson, issueFilter)), [assetListMode, data?.candidates, issueFilter, remediationCandidates]);
-  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || syncFilesystemSource.isPending || submitReview.isPending
+  const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || syncFilesystemSource.isPending || syncObjectStorageSource.isPending || submitReview.isPending
     || review.isPending || publish.isPending || stageKnowledgeVersion.isPending
     || verifyKnowledgeVersion.isPending || activateKnowledgeVersion.isPending;
   const latestSourceRun = sourceSyncStatus.data?.runs[0];
@@ -212,6 +249,29 @@ export function EnterpriseAssetsPanel() {
   const sourceRunError = latestSourceRun?.errorJson && typeof latestSourceRun.errorJson === "object"
     ? String((latestSourceRun.errorJson as Record<string, unknown>).message || "同步未完成")
     : "";
+  const operationsSourceUri = String(operationsSource?.sourceUri || "");
+  const operationsConnector = operationsSourceUri.startsWith("file://")
+    ? "filesystem"
+    : /^(?:s3|obs):\/\//.test(operationsSourceUri) ? "object_storage" : null;
+
+  const syncOperationsSource = (resumeOfRunId?: string) => {
+    if (!operationsSource || !operationsConnector) return;
+    const payload = {
+      sourceId: operationsSource.sourceId,
+      ...(resumeOfRunId ? { resumeOfRunId } : {}),
+      useModelSuggestion: false,
+      allowContentProcessing: false,
+    };
+    if (operationsConnector === "filesystem") syncFilesystemSource.mutate(payload);
+    else syncObjectStorageSource.mutate(payload);
+  };
+
+  const saveRegisteredSource = () => {
+    const sourceUri = source.sourceType === "document_repository" && sourceConnectionMode === "object_storage"
+      ? objectStorageSourceUri(objectStorage)
+      : source.sourceUri || null;
+    saveSource.mutate({ ...source, sourceUri, ownerContact: source.ownerContact || null });
+  };
 
   const openReview = (candidate: Candidate) => {
     const metadata = normalizedReviewMetadata(candidate.confirmedMetadataJson || candidate.suggestedMetadataJson);
@@ -344,8 +404,8 @@ export function EnterpriseAssetsPanel() {
               <SelectTrigger aria-label="选择来源同步状态" className="h-8 w-[min(20rem,70vw)]"><SelectValue /></SelectTrigger>
               <SelectContent>{operationsSources.map(item => <SelectItem key={item.sourceId} value={item.sourceId}>{item.displayName}</SelectItem>)}</SelectContent>
             </Select>
-            {operationsSource?.sourceUri?.startsWith("file://") && <Button data-testid="sync-selected-source" variant="outline" size="sm" disabled={busy} onClick={() => syncFilesystemSource.mutate({ sourceId: operationsSource.sourceId, useModelSuggestion: false, allowContentProcessing: false })}>
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncFilesystemSource.isPending ? "animate-spin" : ""}`} />立即同步
+            {operationsConnector && <Button data-testid="sync-selected-source" variant="outline" size="sm" disabled={busy} onClick={() => syncOperationsSource()}>
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${(syncFilesystemSource.isPending || syncObjectStorageSource.isPending) ? "animate-spin" : ""}`} />立即同步
             </Button>}
           </div>
         </div>
@@ -366,7 +426,7 @@ export function EnterpriseAssetsPanel() {
             <span className="mx-2">·</span><span>Run {latestSourceRun?.runId || "-"}</span>
             {sourceRunError && <div className="mt-1 text-red-600">失败原因：{sourceRunError}</div>}
           </div>
-          {latestSourceRun && ["failed", "partial"].includes(latestSourceRun.status) && operationsSource?.sourceUri?.startsWith("file://") && <Button data-testid="resume-source-sync" variant="outline" size="sm" disabled={busy} onClick={() => syncFilesystemSource.mutate({ sourceId: operationsSource.sourceId, resumeOfRunId: latestSourceRun.runId, useModelSuggestion: false, allowContentProcessing: false })}>
+          {latestSourceRun && ["failed", "partial"].includes(latestSourceRun.status) && operationsConnector && <Button data-testid="resume-source-sync" variant="outline" size="sm" disabled={busy} onClick={() => syncOperationsSource(latestSourceRun.runId)}>
             <RefreshCw className="mr-1.5 h-3.5 w-3.5" />恢复同步
           </Button>}
         </div>
@@ -442,7 +502,7 @@ export function EnterpriseAssetsPanel() {
       </Card>
 
       <Dialog open={sourceOpen} onOpenChange={setSourceOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
           <DialogHeader><DialogTitle>登记企业资产来源</DialogTitle><DialogDescription>登记权威来源和责任部门，正文或凭据不保存在这里。</DialogDescription></DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <div><Label>来源 ID</Label><Input value={source.sourceId} onChange={e => setSource({ ...source, sourceId: e.target.value })} placeholder="bank-wealth-policy" /></div>
@@ -451,10 +511,31 @@ export function EnterpriseAssetsPanel() {
               ["document_repository", "制度/文档库"], ["business_system", "业务系统"], ["rule_catalog", "规则目录"], ["workflow_catalog", "流程目录"], ["capability_service", "能力服务"], ["identity_directory", "IAM/组织目录"],
             ].map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
             <div><Label>责任部门</Label><Input value={source.ownerDepartment} onChange={e => setSource({ ...source, ownerDepartment: e.target.value })} /></div>
-            <div className="sm:col-span-2"><Label>来源地址</Label><Input value={source.sourceUri} onChange={e => setSource({ ...source, sourceUri: e.target.value })} placeholder="file:///mnt/knowledge、https://... 或内部来源标识" /></div>
+            {source.sourceType === "document_repository" && <div className="sm:col-span-2">
+              <Label>接入方式</Label>
+              <Select value={sourceConnectionMode} onValueChange={value => setSourceConnectionMode(value as typeof sourceConnectionMode)}>
+                <SelectTrigger aria-label="接入方式"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="address">通用来源地址</SelectItem>
+                  <SelectItem value="filesystem">挂载目录 / NAS</SelectItem>
+                  <SelectItem value="object_storage">OBS / S3 对象存储</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>}
+            {(source.sourceType !== "document_repository" || sourceConnectionMode !== "object_storage") && <div className="sm:col-span-2"><Label>来源地址</Label><Input value={source.sourceUri} onChange={e => setSource({ ...source, sourceUri: e.target.value })} placeholder={sourceConnectionMode === "filesystem" ? "file:///mnt/knowledge" : "https://... 或内部来源标识"} /></div>}
+            {source.sourceType === "document_repository" && sourceConnectionMode === "object_storage" && <div data-testid="object-storage-source-fields" className="sm:col-span-2 grid gap-3 rounded border border-border bg-white p-3 sm:grid-cols-2">
+              <div><Label>协议</Label><Select value={objectStorage.scheme} onValueChange={value => setObjectStorage({ ...objectStorage, scheme: value as "obs" | "s3" })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="obs">华为云 OBS</SelectItem><SelectItem value="s3">S3 兼容</SelectItem></SelectContent></Select></div>
+              <div><Label>Region</Label><Input data-testid="object-storage-region" value={objectStorage.region} onChange={event => setObjectStorage({ ...objectStorage, region: event.target.value })} /></div>
+              <div className="sm:col-span-2"><Label>Endpoint{objectStorage.scheme === "s3" ? "（AWS S3 可留空）" : ""}</Label><Input data-testid="object-storage-endpoint" value={objectStorage.endpoint} onChange={event => setObjectStorage({ ...objectStorage, endpoint: event.target.value })} placeholder="https://obs.cn-east-3.myhuaweicloud.com" /></div>
+              <div><Label>Bucket</Label><Input data-testid="object-storage-bucket" value={objectStorage.bucket} onChange={event => setObjectStorage({ ...objectStorage, bucket: event.target.value })} /></div>
+              <div><Label>Prefix</Label><Input data-testid="object-storage-prefix" value={objectStorage.prefix} onChange={event => setObjectStorage({ ...objectStorage, prefix: event.target.value })} placeholder="wealth/policy/" /></div>
+              <div className="sm:col-span-2"><Label>凭据引用（Credential Reference）</Label><Input data-testid="object-storage-credential-ref" value={objectStorage.credentialRef} onChange={event => setObjectStorage({ ...objectStorage, credentialRef: event.target.value })} placeholder="env://GRACE_OBS" /></div>
+              <label className="sm:col-span-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={objectStorage.forcePathStyle} onChange={event => setObjectStorage({ ...objectStorage, forcePathStyle: event.target.checked })} />使用 Path-style 地址</label>
+              <p className="sm:col-span-2 text-xs text-muted-foreground">这里只保存 Endpoint、Bucket、Prefix 与凭据引用。Access Key 和 Secret Key 必须由服务端 Secret/环境配置提供。</p>
+            </div>}
             <div className="sm:col-span-2"><Label>责任人/联系方式</Label><Input value={source.ownerContact} onChange={e => setSource({ ...source, ownerContact: e.target.value })} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setSourceOpen(false)}>取消</Button><Button disabled={busy} onClick={() => saveSource.mutate({ ...source, sourceUri: source.sourceUri || null, ownerContact: source.ownerContact || null })}>保存</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setSourceOpen(false)}>取消</Button><Button disabled={busy || (source.sourceType === "document_repository" && sourceConnectionMode === "object_storage" && ((objectStorage.scheme === "obs" && !objectStorage.endpoint.trim()) || !objectStorage.bucket.trim() || !objectStorage.credentialRef.trim()))} onClick={saveRegisteredSource}>{saveSource.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}保存</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

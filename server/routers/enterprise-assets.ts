@@ -20,6 +20,7 @@ import {
 } from "../_core/enterprise-asset-discovery";
 import { ingestEnterpriseAssetSource } from "../_core/enterprise-asset-ingestion";
 import { scanFilesystemSource } from "../_core/filesystem-source-connector";
+import { parseObjectStorageSourceUri, scanObjectStorageSource } from "../_core/object-storage-source-connector";
 import { decodeBase64Strict, scanUploadForMalware } from "../_core/upload-security";
 import { listAgentRoleTemplates } from "../_core/role-templates";
 import { adminProcedure, router } from "../_core/trpc";
@@ -288,6 +289,16 @@ export const enterpriseAssetsRouter = router({
 
   saveSource: adminProcedure.input(sourceSchema).mutation(async ({ input, ctx }) => {
     const actor = actorName(ctx.user);
+    if (/^(?:s3|obs):\/\//.test(input.sourceUri || "")) {
+      if (input.sourceType !== "document_repository") {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "OBS/S3 来源必须登记为制度/文档库" });
+      }
+      try {
+        parseObjectStorageSourceUri(input.sourceUri!);
+      } catch (error) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: error instanceof Error ? error.message : "对象存储来源配置无效" });
+      }
+    }
     await audit(ctx, "enterprise_asset.source.save_requested", input.sourceId, { sourceType: input.sourceType, syncMode: input.syncMode });
     const row = await upsertEnterpriseAssetSource({
       ...input,
@@ -381,6 +392,60 @@ export const enterpriseAssetsRouter = router({
       });
     } catch (error) {
       throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "Filesystem Connector 同步失败" });
+    }
+  }),
+
+  syncObjectStorageSource: adminProcedure.input(z.object({
+    sourceId: z.string().min(3).max(128),
+    resumeOfRunId: z.string().max(64).nullable().optional(),
+    useModelSuggestion: z.boolean().default(false),
+    allowContentProcessing: z.boolean().default(false),
+  })).mutation(async ({ input, ctx }) => {
+    const source = await getEnterpriseAssetSource(input.sourceId);
+    if (!source || source.status !== "active") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "接入来源不存在或未启用" });
+    }
+    if (source.sourceType !== "document_repository" || !source.sourceUri || !/^(?:s3|obs):\/\//.test(source.sourceUri)) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "OBS/S3 Connector 需要已启用的文档库来源和 s3:// 或 obs:// 地址" });
+    }
+    try {
+      const config = parseObjectStorageSourceUri(source.sourceUri);
+      const existingItems = await listEnterpriseAssetSourceItems(source.sourceId);
+      return await ingestEnterpriseAssetSource({
+        source,
+        actor: actorName(ctx.user),
+        mode: "object_storage_connector",
+        scanMode: "full",
+        resumeOfRunId: input.resumeOfRunId,
+        useModelSuggestion: input.useModelSuggestion,
+        allowContentProcessing: input.allowContentProcessing,
+        discover: async () => {
+          const scan = await scanObjectStorageSource({
+            sourceUri: source.sourceUri!,
+            existingItems,
+          });
+          return {
+            artifacts: scan.artifacts,
+            scanComplete: scan.scanComplete,
+            cursorAfter: scan.cursorAfter,
+            metadata: {
+              provider: config.scheme,
+              endpoint: config.endpoint || "aws-default",
+              bucket: config.bucket,
+              prefix: config.prefix,
+              pages: scan.pages,
+              downloaded: scan.downloaded,
+              reusedContentHashes: scan.reusedContentHashes,
+              skippedUnsupported: scan.skippedUnsupported,
+            },
+          };
+        },
+        audit: async (phase, metadata) => {
+          await audit(ctx, `enterprise_asset.object_storage_sync.${phase}`, source.sourceId, metadata);
+        },
+      });
+    } catch (error) {
+      throw new TRPCError({ code: "CONFLICT", message: error instanceof Error ? error.message : "OBS/S3 Connector 同步失败" });
     }
   }),
 

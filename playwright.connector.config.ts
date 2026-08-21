@@ -8,7 +8,7 @@ const baseURL = process.env.EA_CONNECTOR_E2E_BASE_URL || `http://127.0.0.1:${por
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "filesystem-connector.pw.ts",
+  testMatch: ["filesystem-connector.pw.ts", "object-storage-connector.pw.ts"],
   timeout: 120_000,
   fullyParallel: false,
   workers: 1,
@@ -32,6 +32,9 @@ export default defineConfig({
       CORS_ORIGIN: baseURL,
       PUBLIC_BASE_URL: baseURL,
       ENTERPRISE_FILESYSTEM_CONNECTOR_ROOTS: path.join(appRoot, "data", "enterprise-connectors"),
+      ENTERPRISE_OBJECT_STORAGE_ENDPOINTS: "http://127.0.0.1:5903",
+      EA_CONNECTOR_E2E_OBS_ACCESS_KEY_ID: "test-access-key",
+      EA_CONNECTOR_E2E_OBS_SECRET_ACCESS_KEY: "test-secret-key",
       ENTERPRISE_ASSET_STAGING_ROOT: path.join(appRoot, "data", "e2e-enterprise-asset-candidates"),
     },
   },
