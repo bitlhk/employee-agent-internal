@@ -6,6 +6,8 @@ Filesystem/NAS Connector V1 is the first implementation of the GRACE enterprise 
 
 It proves that a mounted enterprise document source can be converted continuously into governed Candidate Assets without bypassing review, release, Eligibility, or Context Resolution.
 
+Current baseline: **Product Loop Verified**. The dedicated browser test uses a real administrator session and the current worktree server to cover source registration, failure recovery, four incremental source changes, remediation, and review submission.
+
 ## Runtime chain
 
 ```text
@@ -30,6 +32,36 @@ sourceUri: file:///mnt/bank-knowledge/wealth
 ```
 
 The existing Enterprise Asset admin page exposes the same operation as **同步挂载目录** for registered `file://` document sources.
+
+The same page includes **来源同步状态** rather than a separate operations dashboard. It shows the latest Run status, last successful synchronization, created/changed/skipped/tombstone counts, source inventory, failure reason, and an explicit recovery action. Source health remains separate from task-level Context Readiness.
+
+## Four-step demonstration
+
+Prepare each source change, then click **同步挂载目录** in the admin page:
+
+```bash
+pnpm connector:filesystem:demo --step=1
+pnpm connector:filesystem:demo --step=2
+pnpm connector:filesystem:demo --step=3
+pnpm connector:filesystem:demo --step=4
+```
+
+The expected Run results are respectively:
+
+1. 10 New;
+2. 1 New, 2 Revision, 8 Skip;
+3. 1 metadata/path change with the same Source Item and Enterprise Asset, 10 Skip;
+4. 1 Tombstone Candidate, 10 Skip.
+
+The script only mutates a marked demo directory under an authorized Connector root. It refuses to reset a non-empty directory that does not contain its GRACE demo marker.
+
+The administrator browser flow is repeatable with:
+
+```bash
+pnpm test:e2e:connector
+```
+
+This test starts the current worktree on an isolated local port, creates a temporary administrator and source, exercises failure/resume plus all four change steps, verifies stable identity directly, submits one remediated Candidate for review, checks desktop/mobile layout, and removes its test data.
 
 The resolved source path must be contained by one of the server-side roots in `ENTERPRISE_FILESYSTEM_CONNECTOR_ROOTS`. Multiple Linux roots are colon-delimited. The default allowlist is the application-controlled `data/enterprise-connectors` directory.
 
@@ -80,6 +112,9 @@ The V1 tests cover:
 7. no deletion from incomplete or incremental scans;
 8. tombstones only from successful complete full scans;
 9. path allowlist and symbolic-link boundaries;
-10. duplicate active Run rejection.
+10. duplicate active Run rejection;
+11. failed Run visibility and browser recovery;
+12. administrator remediation and review submission;
+13. desktop and mobile operations layout without document overflow.
 
 OBS/S3, OA, SharePoint, and federated knowledge providers should reuse the same ingestion service and Source Run/Source Item contract. They differ only in source discovery and content materialization.

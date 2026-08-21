@@ -34,7 +34,7 @@ export async function getEnterpriseAssetSource(sourceId: string) {
 export async function listEnterpriseAssetSourceRuns(sourceId: string, limit = 20) {
   return (await database()).select().from(enterpriseAssetSourceRuns)
     .where(eq(enterpriseAssetSourceRuns.sourceId, sourceId))
-    .orderBy(desc(enterpriseAssetSourceRuns.startedAt))
+    .orderBy(desc(enterpriseAssetSourceRuns.startedAt), desc(enterpriseAssetSourceRuns.id))
     .limit(Math.max(1, Math.min(limit, 100)));
 }
 

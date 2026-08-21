@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/action-button";
 import { Card } from "@/components/ui/card";
@@ -35,6 +35,9 @@ const TYPE_LABELS: Record<string, string> = {
 };
 const TARGET_BY_TYPE: Record<string, "knowledge_document" | "enterprise_mcp" | "skill" | "policy" | "role"> = {
   knowledge_document: "knowledge_document", business_data: "enterprise_mcp", policy: "policy", skill: "skill", mcp_capability: "enterprise_mcp", role_identity: "role",
+};
+const SOURCE_RUN_LABELS: Record<string, string> = {
+  running: "同步中", succeeded: "成功", partial: "部分完成", failed: "失败",
 };
 
 const EMPTY_SOURCE = {
@@ -91,6 +94,7 @@ export function EnterpriseAssetsPanel() {
   const [allowContentProcessing, setAllowContentProcessing] = useState(false);
   const [filesystemSyncOpen, setFilesystemSyncOpen] = useState(false);
   const [filesystemSyncSourceId, setFilesystemSyncSourceId] = useState("");
+  const [operationsSourceId, setOperationsSourceId] = useState("");
   const [filesystemUseModelSuggestion, setFilesystemUseModelSuggestion] = useState(false);
   const [filesystemAllowContentProcessing, setFilesystemAllowContentProcessing] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<Candidate | null>(null);
@@ -108,10 +112,30 @@ export function EnterpriseAssetsPanel() {
   const [stageTarget, setStageTarget] = useState<Candidate | null>(null);
   const [targetKnowledgeBaseId, setTargetKnowledgeBaseId] = useState("");
 
-  const invalidate = async () => utils.enterpriseAssets.overview.invalidate();
+  const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
+  const operationsSources = useMemo(() => activeSources.filter(item => ["document_repository", "rule_catalog"].includes(item.sourceType)), [activeSources]);
+  const filesystemSources = useMemo(() => activeSources.filter(item => (
+    item.sourceType === "document_repository" && String(item.sourceUri || "").startsWith("file://")
+  )), [activeSources]);
+  const resolvedOperationsSourceId = operationsSourceId || operationsSources[0]?.sourceId || "";
+  const sourceSyncStatus = trpc.enterpriseAssets.sourceSyncStatus.useQuery(
+    { sourceId: resolvedOperationsSourceId || "disabled" },
+    { enabled: Boolean(resolvedOperationsSourceId) },
+  );
+
+  useEffect(() => {
+    if (!operationsSourceId && operationsSources[0]?.sourceId) setOperationsSourceId(operationsSources[0].sourceId);
+  }, [operationsSourceId, operationsSources]);
+
+  const invalidate = async () => {
+    await Promise.all([
+      utils.enterpriseAssets.overview.invalidate(),
+      utils.enterpriseAssets.sourceSyncStatus.invalidate(),
+    ]);
+  };
   const saveSource = trpc.enterpriseAssets.saveSource.useMutation({
     onSuccess: async () => { toast.success("接入来源已保存"); setSourceOpen(false); setSource({ ...EMPTY_SOURCE }); await invalidate(); },
-    onError: error => toast.error(error.message),
+    onError: async error => { toast.error(error.message); await invalidate(); },
   });
   const importManifest = trpc.enterpriseAssets.importManifest.useMutation({
     onSuccess: async result => { toast.success(`已导入 ${result.imported} 个候选资产`); setImportOpen(false); setManifestText(""); await invalidate(); },
@@ -137,7 +161,7 @@ export function EnterpriseAssetsPanel() {
       setFilesystemAllowContentProcessing(false);
       await invalidate();
     },
-    onError: error => toast.error(error.message),
+    onError: async error => { toast.error(error.message); await invalidate(); },
   });
   const submitReview = trpc.enterpriseAssets.submitReview.useMutation({
     onSuccess: async () => { toast.success("已提交审核"); setReviewTarget(null); await invalidate(); },
@@ -175,10 +199,6 @@ export function EnterpriseAssetsPanel() {
     onError: error => toast.error(error.message),
   });
 
-  const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
-  const filesystemSources = useMemo(() => activeSources.filter(item => (
-    item.sourceType === "document_repository" && String(item.sourceUri || "").startsWith("file://")
-  )), [activeSources]);
   const remediationCandidates = useMemo(() => (data?.candidates || []).filter(candidate => ["draft", "rejected"].includes(candidate.status) && candidateDiagnostics(candidate).length > 0), [data?.candidates]);
   const issueCounts = useMemo(() => countAssetIssues(remediationCandidates), [remediationCandidates]);
   const visibleCandidates = useMemo(() => assetListMode === "all"
@@ -187,6 +207,11 @@ export function EnterpriseAssetsPanel() {
   const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || syncFilesystemSource.isPending || submitReview.isPending
     || review.isPending || publish.isPending || stageKnowledgeVersion.isPending
     || verifyKnowledgeVersion.isPending || activateKnowledgeVersion.isPending;
+  const latestSourceRun = sourceSyncStatus.data?.runs[0];
+  const operationsSource = operationsSources.find(item => item.sourceId === resolvedOperationsSourceId);
+  const sourceRunError = latestSourceRun?.errorJson && typeof latestSourceRun.errorJson === "object"
+    ? String((latestSourceRun.errorJson as Record<string, unknown>).message || "同步未完成")
+    : "";
 
   const openReview = (candidate: Candidate) => {
     const metadata = normalizedReviewMetadata(candidate.confirmedMetadataJson || candidate.suggestedMetadataJson);
@@ -286,7 +311,7 @@ export function EnterpriseAssetsPanel() {
           <h2 className="text-base font-semibold text-gray-900">企业资产接入与整改</h2>
           <p className="mt-1 text-xs text-muted-foreground">发现存量资产、自动诊断治理问题；人工确认后才可进入现有 Runtime Context 链路。</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />刷新</Button>
           <Button variant="outline" size="sm" onClick={() => { setImportSourceId(activeSources[0]?.sourceId || ""); setImportOpen(true); }} disabled={!activeSources.length}>
             <FileInput className="mr-1.5 h-3.5 w-3.5" />高级导入
@@ -307,6 +332,45 @@ export function EnterpriseAssetsPanel() {
           ["已发布", data?.summary.published || 0], ["待重验", data?.summary.stale || 0],
         ].map(([label, value]) => <Card key={String(label)} className="p-3"><div className="text-xl font-semibold text-gray-900">{value}</div><div className="mt-1 text-xs text-muted-foreground">{label}</div></Card>)}
       </div>
+
+      {operationsSources.length > 0 && <Card data-testid="source-operations" className="overflow-hidden border-border/50 bg-white/90">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b px-4 py-3">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-900">来源同步状态</h3>
+            <p className="mt-1 text-xs text-muted-foreground">查看外部来源最近一次同步事实；来源正常不代表岗位 Context 已就绪。</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select value={resolvedOperationsSourceId} onValueChange={setOperationsSourceId}>
+              <SelectTrigger aria-label="选择来源同步状态" className="h-8 w-[min(20rem,70vw)]"><SelectValue /></SelectTrigger>
+              <SelectContent>{operationsSources.map(item => <SelectItem key={item.sourceId} value={item.sourceId}>{item.displayName}</SelectItem>)}</SelectContent>
+            </Select>
+            {operationsSource?.sourceUri?.startsWith("file://") && <Button data-testid="sync-selected-source" variant="outline" size="sm" disabled={busy} onClick={() => syncFilesystemSource.mutate({ sourceId: operationsSource.sourceId, useModelSuggestion: false, allowContentProcessing: false })}>
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${syncFilesystemSource.isPending ? "animate-spin" : ""}`} />立即同步
+            </Button>}
+          </div>
+        </div>
+        <div className="grid gap-px bg-border/60 sm:grid-cols-2 xl:grid-cols-6">
+          {[
+            ["最近状态", latestSourceRun ? SOURCE_RUN_LABELS[latestSourceRun.status] || latestSourceRun.status : "尚未同步"],
+            ["上次成功", operationsSource?.lastSyncAt ? new Date(operationsSource.lastSyncAt).toLocaleString("zh-CN") : "-"],
+            ["新增", latestSourceRun?.createdCount ?? 0],
+            ["变化", latestSourceRun?.changedCount ?? 0],
+            ["跳过", latestSourceRun?.unchangedCount ?? 0],
+            ["删除候选", latestSourceRun?.missingCount ?? 0],
+          ].map(([label, value]) => <div key={String(label)} data-testid={`source-run-${String(label)}`} className="min-w-0 bg-white px-4 py-3"><div className="truncate text-sm font-medium text-gray-900">{value}</div><div className="mt-1 text-xs text-muted-foreground">{label}</div></div>)}
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-xs text-muted-foreground">
+          <div className="min-w-0">
+            <span>在册 {sourceSyncStatus.data?.summary.active ?? 0}</span>
+            <span className="mx-2">·</span><span>待退役 {sourceSyncStatus.data?.summary.missing ?? 0}</span>
+            <span className="mx-2">·</span><span>Run {latestSourceRun?.runId || "-"}</span>
+            {sourceRunError && <div className="mt-1 text-red-600">失败原因：{sourceRunError}</div>}
+          </div>
+          {latestSourceRun && ["failed", "partial"].includes(latestSourceRun.status) && operationsSource?.sourceUri?.startsWith("file://") && <Button data-testid="resume-source-sync" variant="outline" size="sm" disabled={busy} onClick={() => syncFilesystemSource.mutate({ sourceId: operationsSource.sourceId, resumeOfRunId: latestSourceRun.runId, useModelSuggestion: false, allowContentProcessing: false })}>
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5" />恢复同步
+          </Button>}
+        </div>
+      </Card>}
 
       <Card className="overflow-hidden border-border/50 bg-white/90">
         <div className="border-b px-4 py-3">
