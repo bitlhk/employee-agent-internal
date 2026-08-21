@@ -1,5 +1,40 @@
 import { describe, expect, it } from "vitest";
-import { normalizeGovernanceApprovalToolEvent } from "./jiuwenclaw-event-normalizers";
+import { normalizeGovernanceApprovalToolEvent, normalizeJiuwenToolPayload } from "./jiuwenclaw-event-normalizers";
+
+describe("tool result normalization", () => {
+  it("preserves trusted EA metadata emitted as Jiuwen raw output", () => {
+    const rawOutput = {
+      content: [{ type: "text", text: "business result" }],
+      _meta: {
+        eaMetadataIssuer: "employee-agent",
+        eaContextReceipt: { schema: "ea.context-receipt.v1", receiptId: "r1" },
+      },
+    };
+
+    const result = normalizeJiuwenToolPayload("chat.tool_result", {
+      tool_result: {
+        tool_name: "get_wealth_policy_basis",
+        tool_call_id: "call-1",
+        result: "business result",
+        raw_output: rawOutput,
+      },
+    });
+
+    expect(result?.resultPayload).toEqual(rawOutput);
+  });
+
+  it("does not expose untrusted raw output", () => {
+    const result = normalizeJiuwenToolPayload("chat.tool_result", {
+      tool_result: {
+        tool_name: "third_party_tool",
+        result: "safe result",
+        raw_output: { _meta: { private: "value" } },
+      },
+    });
+
+    expect(result?.resultPayload).toBe("safe result");
+  });
+});
 
 describe("governance approval tool event normalization", () => {
   it("extracts structured governance metadata from a tool result", () => {

@@ -99,6 +99,15 @@ export function normalizeJiuwenToolPayload(
     pickFirstString(nested, ["name", "toolName", "tool_name", "tool"]) ||
     pickFirstString(fn, ["name"]);
   if (!toolName) return null;
+  const rawOutput = nested?.raw_output;
+  const trustedRawOutput = rawOutput
+    && typeof rawOutput === "object"
+    && !Array.isArray(rawOutput)
+    && (rawOutput as Record<string, unknown>)._meta
+    && typeof (rawOutput as Record<string, unknown>)._meta === "object"
+    && ((rawOutput as Record<string, unknown>)._meta as Record<string, unknown>).eaMetadataIssuer === "employee-agent"
+      ? rawOutput
+      : null;
   return {
     isResult,
     callId:
@@ -117,6 +126,7 @@ export function normalizeJiuwenToolPayload(
       delta?.args ??
       null,
     resultPayload:
+      trustedRawOutput ??
       nested.result ??
       nested.content ??
       nested.output ??
