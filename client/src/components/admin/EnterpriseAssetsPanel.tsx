@@ -295,9 +295,9 @@ export function EnterpriseAssetsPanel() {
               <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900"><ListFilter className="h-4 w-4 text-primary" />{assetListMode === "remediation" ? "整改队列" : "全部资产"}</h3>
               <p className="mt-1 text-xs text-muted-foreground">{assetListMode === "remediation" ? "按治理问题处理异常资产，正常资产无需逐份确认。" : "查看全部候选、审核和发布状态。"}</p>
             </div>
-            <div className="flex rounded border bg-muted/30 p-0.5">
-              <Button size="sm" variant={assetListMode === "remediation" ? "default" : "ghost"} className="h-7" onClick={() => setAssetListMode("remediation")}>待整改 {issueCounts.all}</Button>
-              <Button size="sm" variant={assetListMode === "all" ? "default" : "ghost"} className="h-7" onClick={() => setAssetListMode("all")}>全部资产 {data?.candidates.length || 0}</Button>
+            <div className="flex rounded-[8px] border bg-muted/30 p-0.5">
+              <Button size="sm" variant={assetListMode === "remediation" ? "default" : "ghost"} className={assetListMode === "remediation" ? "h-7 rounded-[6px] hover:bg-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("remediation")}>待整改 {issueCounts.all}</Button>
+              <Button size="sm" variant={assetListMode === "all" ? "default" : "ghost"} className={assetListMode === "all" ? "h-7 rounded-[6px] hover:bg-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("all")}>全部资产 {data?.candidates.length || 0}</Button>
             </div>
           </div>
           {assetListMode === "remediation" && <div className="mt-3 flex flex-wrap gap-1.5">
