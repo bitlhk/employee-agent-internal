@@ -295,7 +295,7 @@ export function EnterpriseAssetsPanel() {
               <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900"><ListFilter className="h-4 w-4 text-primary" />{assetListMode === "remediation" ? "整改队列" : "全部资产"}</h3>
               <p className="mt-1 text-xs text-muted-foreground">{assetListMode === "remediation" ? "按治理问题处理异常资产，正常资产无需逐份确认。" : "查看全部候选、审核和发布状态。"}</p>
             </div>
-            <div className="flex rounded-[8px] border bg-muted/30 p-0.5">
+            <div className="flex rounded-[8px] border bg-white p-0.5">
               <Button size="sm" variant={assetListMode === "remediation" ? "default" : "ghost"} className={assetListMode === "remediation" ? "h-7 rounded-[6px] hover:bg-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("remediation")}>待整改 {issueCounts.all}</Button>
               <Button size="sm" variant={assetListMode === "all" ? "default" : "ghost"} className={assetListMode === "all" ? "h-7 rounded-[6px] hover:bg-primary" : "h-7 rounded-[6px] text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setAssetListMode("all")}>全部资产 {data?.candidates.length || 0}</Button>
             </div>
@@ -423,7 +423,7 @@ export function EnterpriseAssetsPanel() {
 
             {discoveryMode !== "object_inventory" && discoveryFiles.length > 0 && <div className="text-xs text-muted-foreground">已选择 {discoveryFiles.length} 个文件，共 {(discoveryFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(1)} MB</div>}
 
-            <div className="space-y-2 rounded border bg-muted/30 px-3 py-3">
+            <div className="space-y-2 rounded border bg-white px-3 py-3">
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={useModelSuggestion} onChange={event => { setUseModelSuggestion(event.target.checked); if (!event.target.checked) setAllowContentProcessing(false); }} />使用平台模型增强元数据建议</label>
               <label className={`flex items-center gap-2 text-sm ${useModelSuggestion ? "" : "text-muted-foreground"}`}><input type="checkbox" disabled={!useModelSuggestion} checked={allowContentProcessing} onChange={event => setAllowContentProcessing(event.target.checked)} />允许向平台模型发送文本文件的有限摘要</label>
               <p className="text-xs text-muted-foreground">模型只提供建议；权限、密级、生命周期和发布状态仍由确定性规则与人工审核决定。</p>
