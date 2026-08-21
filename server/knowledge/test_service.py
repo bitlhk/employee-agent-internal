@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -87,6 +88,8 @@ class KnowledgeServiceTest(unittest.TestCase):
     def test_parent_child_index_returns_structured_citation(self):
         document = self.document()
         built = service._build_index(service.IndexRequest(knowledge_base_id="kb_testbase1", documents=[document]))
+        parse_result_path = service._document_cache_directory(service.INDEX_ROOT / "kb_testbase1", document) / "parse-result.json"
+        parse_result = json.loads(parse_result_path.read_text("utf-8"))
         result = service._search_indexes(service.MultiSearchRequest(
             knowledge_base_ids=["kb_testbase1"],
             query="北京住宿标准是多少",
@@ -95,6 +98,8 @@ class KnowledgeServiceTest(unittest.TestCase):
         ))
         hit = result["results"][0]
         self.assertEqual(built["index_schema_version"], 2)
+        self.assertEqual(parse_result["schema"], "ea.standard-parse-result.v1")
+        self.assertEqual(parse_result["contentHash"], document.sha256)
         self.assertEqual(hit["heading_path"], ["差旅制度", "住宿标准"])
         self.assertEqual(hit["document_version"], "2026.1")
         self.assertEqual(hit["authority"], "official")

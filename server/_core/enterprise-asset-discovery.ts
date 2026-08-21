@@ -5,6 +5,7 @@ import AdmZip from "adm-zip";
 import { z } from "zod";
 import { APP_ROOT } from "./helpers";
 import { callEaAssistantModel } from "./ea-assistant-model";
+import { parseStandardParseResult, type StandardParseResultV1 } from "../../shared/standard-parse-result";
 import { KNOWLEDGE_EXTENSIONS, knowledgeExtension, safeKnowledgeFilename } from "./knowledge-storage";
 import { validateSkillZipEnvelope, validateSkillZipMetadata, normalizeSkillZipEntryName } from "./skills/skill-zip-security";
 import { validateUploadContent } from "./upload-security";
@@ -44,6 +45,7 @@ export type DiscoveredEnterpriseArtifact = {
     ocrStatus?: "not_required" | "ok" | "failed";
     tableStatus?: "not_present" | "ok" | "anomaly";
   };
+  parseResult?: StandardParseResultV1;
 };
 
 export type EnterpriseAssetMetadataSuggestion = {
@@ -161,18 +163,27 @@ export function suggestEnterpriseAssetMetadata(input: {
   externalProcessingAllowed?: boolean;
 }): { metadata: EnterpriseAssetMetadataSuggestion; diagnostics: EnterpriseAssetDiagnostic[]; sourceVersion: string } {
   const { artifact } = input;
-  const version = extractEnterpriseAssetVersion(artifact.relativePath);
-  const policyLike = POLICY_RE.test(artifact.relativePath);
-  const role = roleAndDomain(artifact.relativePath, input.roles);
+  const parsedText = artifact.parseResult?.documentText.slice(0, 24_000) || "";
+  const evidence = `${artifact.relativePath}\n${parsedText}`;
+  const version = extractEnterpriseAssetVersion(artifact.relativePath)
+    || artifact.parseResult?.hints.versions[0]?.value
+    || null;
+  const effectiveDateHint = artifact.parseResult?.hints.effectiveDates[0]?.value || null;
+  const effectiveAt = effectiveDateHint ? `${effectiveDateHint}T00:00:00.000Z` : null;
+  const policyLike = POLICY_RE.test(evidence);
+  const role = roleAndDomain(evidence, input.roles);
   const diagnostics: EnterpriseAssetDiagnostic[] = [];
   if (!input.ownerDepartment.trim()) diagnostics.push({ code: "MISSING_OWNER", severity: "error", field: "ownerDepartment", message: "缺少责任部门" });
   if (!version) diagnostics.push({ code: "MISSING_VERSION", severity: "warning", field: "sourceVersion", message: "未识别到明确版本，已使用内容指纹作为候选版本" });
-  if (policyLike) diagnostics.push({ code: "MISSING_EFFECTIVE_DATE", severity: "warning", field: "effectiveAt", message: "制度类文档需要确认生效日期" });
+  if (policyLike && !effectiveAt) diagnostics.push({ code: "MISSING_EFFECTIVE_DATE", severity: "warning", field: "effectiveAt", message: "制度类文档需要确认生效日期" });
   if (!role.roleIds.length) diagnostics.push({ code: "ROLE_UNRESOLVED", severity: "warning", field: "applicableRoles", message: "未能从文件路径确定适用岗位" });
   if (OLD_VERSION_RE.test(artifact.relativePath)) diagnostics.push({ code: "SUSPECTED_OLD_VERSION", severity: "warning", field: "lifecycle", message: "文件名疑似历史或旧版本，请确认生命周期" });
   if (artifact.observations?.parseStatus === "failed") diagnostics.push({ code: "CONTENT_PARSE_FAILED", severity: "error", message: "正文解析失败，需要修复文件或解析配置" });
   if (artifact.observations?.ocrStatus === "failed") diagnostics.push({ code: "OCR_FAILED", severity: "error", message: "OCR 识别失败，需要人工处理扫描件" });
   if (artifact.observations?.tableStatus === "anomaly") diagnostics.push({ code: "TABLE_PARSE_ANOMALY", severity: "warning", message: "表格结构解析异常，需要复核" });
+  if (artifact.parseResult?.diagnostics.some(item => item.severity === "error")) {
+    diagnostics.push({ code: "CONTENT_PARSE_FAILED", severity: "error", message: "标准解析结果包含错误，需要复核解析诊断" });
+  }
 
   const logicalAssetCandidates = policyLike && role.domain !== "general"
     ? [`current_${role.domain}_policy`]
@@ -186,7 +197,7 @@ export function suggestEnterpriseAssetMetadata(input: {
       applicableOrganizations: [],
       lifecycle: "draft",
       authority: policyLike ? "official" : "reference",
-      effectiveAt: null,
+      effectiveAt,
       expiresAt: null,
       documentSeriesId: documentSeriesIdForPath(input.sourceId, artifact.relativePath),
       supersedes: null,
@@ -199,6 +210,17 @@ export function suggestEnterpriseAssetMetadata(input: {
     },
     diagnostics,
   };
+}
+
+export function attachStandardParseResult(
+  artifact: DiscoveredEnterpriseArtifact,
+  input: unknown,
+): DiscoveredEnterpriseArtifact {
+  const parseResult = parseStandardParseResult(input);
+  if (parseResult.contentHash !== artifact.checksum) {
+    throw new Error("StandardParseResult 与发现资产内容指纹不一致");
+  }
+  return { ...artifact, parseResult };
 }
 
 export async function suggestEnterpriseAssetMetadataWithModel(input: {

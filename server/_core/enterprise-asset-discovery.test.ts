@@ -2,12 +2,14 @@ import AdmZip from "adm-zip";
 import { describe, expect, it } from "vitest";
 import {
   applyEnterpriseAssetModelSuggestion,
+  attachStandardParseResult,
   discoverObjectInventoryArtifact,
   discoverZipArtifacts,
   enterpriseAssetIdForPath,
   extractEnterpriseAssetVersion,
   suggestEnterpriseAssetMetadata,
 } from "./enterprise-asset-discovery";
+import { STANDARD_PARSE_RESULT_SCHEMA, standardParseResultFingerprint } from "../../shared/standard-parse-result";
 
 const roles = [
   { id: "general-assistant", name: "通用助手" },
@@ -89,5 +91,52 @@ describe("enterprise asset discovery", () => {
       "OCR_FAILED",
       "TABLE_PARSE_ANOMALY",
     ]));
+  });
+
+  it("uses StandardParseResult hints without treating them as published facts", () => {
+    const artifact = discoverObjectInventoryArtifact({
+      key: "财富/销售材料.pdf",
+      checksum: "d".repeat(64),
+      sizeBytes: 4096,
+      sourceUri: "obs://bank/财富/销售材料.pdf",
+    });
+    const fingerprintBody = {
+      schema: STANDARD_PARSE_RESULT_SCHEMA,
+      parserVersion: "2.1",
+      contentHash: artifact.checksum,
+      source: { name: "销售材料.pdf", extension: "pdf", sizeBytes: 4096 },
+      documentText: "私人银行销售管理办法 V3.3。本办法自2026年9月1日起生效。",
+      segments: [{
+        segmentId: "segment-1",
+        position: "第一章 总则",
+        text: "私人银行销售管理办法 V3.3。本办法自2026年9月1日起生效。",
+        headingPath: ["第一章 总则"],
+        page: 1,
+        contentType: "text" as const,
+      }],
+      structure: { segmentCount: 1, sectionCount: 1, tableCount: 0, pageCount: 1 },
+      hints: {
+        dates: [],
+        versions: [{ value: "3.3", evidence: "管理办法 V3.3", position: "第一章 总则" }],
+        effectiveDates: [{ value: "2026-09-01", evidence: "自2026年9月1日起生效", position: "第一章 总则" }],
+      },
+      diagnostics: [],
+    };
+    const enriched = attachStandardParseResult(artifact, {
+      ...fingerprintBody,
+      generatedAt: "2026-08-21T00:00:00.000Z",
+      parseResultFingerprint: standardParseResultFingerprint(fingerprintBody),
+    });
+    const result = suggestEnterpriseAssetMetadata({
+      artifact: enriched,
+      sourceId: "bank-policy",
+      ownerDepartment: "财富管理部",
+      roles,
+    });
+
+    expect(result.sourceVersion).toBe("3.3");
+    expect(result.metadata.effectiveAt).toBe("2026-09-01T00:00:00.000Z");
+    expect(result.metadata.lifecycle).toBe("draft");
+    expect(result.diagnostics.map(item => item.code)).not.toContain("MISSING_EFFECTIVE_DATE");
   });
 });

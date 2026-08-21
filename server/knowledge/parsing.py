@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
+import hashlib
 import json
 import math
 import os
@@ -34,6 +36,9 @@ _HEADING_RE = re.compile(
     r"[（(][一二三四五六七八九十0-9]+[）)]|"
     r"【[^】]{1,60}】).{0,80}$"
 )
+_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(?:[-/.年](\d{1,2}))(?:[-/.月](\d{1,2})日?)?(?!\d)")
+_VERSION_RE = re.compile(r"(?:^|[^a-z0-9])v(?:ersion)?[\s_-]*(\d+(?:\.\d+){0,3})(?:[^a-z0-9]|$)|(?:版本|第)[\s_-]*(\d+(?:\.\d+){0,3})(?:版)?", re.IGNORECASE)
+_EFFECTIVE_DATE_RE = re.compile(r"(?:自|于)?\s*((?:20\d{2})[年./-]\d{1,2}(?:[月./-]\d{1,2}日?)?)\s*(?:起|开始)?\s*(?:生效|施行|执行|实施)")
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,116 @@ class ParsedSegment:
     heading_path: tuple[str, ...] = ()
     page: int | None = None
     content_type: str = "text"
+
+
+STANDARD_PARSE_RESULT_SCHEMA = "ea.standard-parse-result.v1"
+
+
+@dataclass(frozen=True)
+class ParseHint:
+    value: str
+    evidence: str
+    position: str
+
+
+@dataclass(frozen=True)
+class StandardParseResult:
+    parser_version: str
+    content_hash: str
+    generated_at: str
+    source_name: str
+    source_extension: str
+    source_size_bytes: int
+    document_text: str
+    segments: tuple[ParsedSegment, ...]
+    dates: tuple[ParseHint, ...]
+    versions: tuple[ParseHint, ...]
+    effective_dates: tuple[ParseHint, ...]
+    diagnostics: tuple[dict[str, str | None], ...]
+    fingerprint: str
+
+    def to_dict(self) -> dict:
+        pages = {segment.page for segment in self.segments if segment.page is not None}
+        sections = {segment.heading_path for segment in self.segments if segment.heading_path}
+        return {
+            "schema": STANDARD_PARSE_RESULT_SCHEMA,
+            "parserVersion": self.parser_version,
+            "contentHash": self.content_hash,
+            "generatedAt": self.generated_at,
+            "source": {
+                "name": self.source_name,
+                "extension": self.source_extension,
+                "sizeBytes": self.source_size_bytes,
+            },
+            "documentText": self.document_text,
+            "segments": [
+                {
+                    "segmentId": f"segment-{index}",
+                    "position": segment.position,
+                    "text": segment.text,
+                    "headingPath": list(segment.heading_path),
+                    "page": segment.page,
+                    "contentType": segment.content_type,
+                }
+                for index, segment in enumerate(self.segments, start=1)
+            ],
+            "structure": {
+                "segmentCount": len(self.segments),
+                "sectionCount": len(sections),
+                "tableCount": sum(1 for segment in self.segments if segment.content_type == "table"),
+                "pageCount": len(pages),
+            },
+            "hints": {
+                "dates": [_hint_dict(item) for item in self.dates],
+                "versions": [_hint_dict(item) for item in self.versions],
+                "effectiveDates": [_hint_dict(item) for item in self.effective_dates],
+            },
+            "diagnostics": list(self.diagnostics),
+            "parseResultFingerprint": self.fingerprint,
+        }
+
+
+def _hint_dict(value: ParseHint) -> dict[str, str]:
+    return {"value": value.value, "evidence": value.evidence, "position": value.position}
+
+
+def _canonical_json(value: dict) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _normalized_date(match: re.Match) -> str:
+    year = int(match.group(1))
+    month = int(match.group(2))
+    day = int(match.group(3) or 1)
+    try:
+        datetime(year, month, day)
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    except ValueError:
+        return match.group(0)
+
+
+def _parse_hints(segments: list[ParsedSegment]) -> tuple[tuple[ParseHint, ...], tuple[ParseHint, ...], tuple[ParseHint, ...]]:
+    dates: dict[str, ParseHint] = {}
+    versions: dict[str, ParseHint] = {}
+    effective_dates: dict[str, ParseHint] = {}
+    for segment in segments:
+        for line in [*segment.heading_path, *segment.text.splitlines()]:
+            evidence = clean_text(line)[:500]
+            if not evidence:
+                continue
+            for match in _DATE_RE.finditer(line):
+                value = _normalized_date(match)
+                dates.setdefault(value, ParseHint(value=value, evidence=evidence, position=segment.position))
+            for match in _VERSION_RE.finditer(line):
+                value = next((group for group in match.groups() if group), "")
+                if value:
+                    versions.setdefault(value, ParseHint(value=value, evidence=evidence, position=segment.position))
+            for match in _EFFECTIVE_DATE_RE.finditer(line):
+                date_match = _DATE_RE.search(match.group(1))
+                if date_match:
+                    value = _normalized_date(date_match)
+                    effective_dates.setdefault(value, ParseHint(value=value, evidence=evidence, position=segment.position))
+    return tuple(dates.values()), tuple(versions.values()), tuple(effective_dates.values())
 
 
 def clean_text(value: str) -> str:
@@ -496,3 +611,73 @@ def read_segments(source: Path) -> list[ParsedSegment]:
     if ext == ".xlsx":
         return _read_xlsx(source)
     raise ValueError(f"unsupported document type: {ext or 'unknown'}")
+
+
+def build_standard_parse_result(
+    source: Path,
+    *,
+    parser_version: str,
+    content_hash: str | None = None,
+) -> StandardParseResult:
+    source = source.resolve(strict=True)
+    actual_hash = hashlib.sha256(source.read_bytes()).hexdigest()
+    if content_hash and content_hash.lower() != actual_hash:
+        raise ValueError("source content hash does not match StandardParseResult input")
+    segments = tuple(read_segments(source))
+    document_text = clean_text("\n\n".join(segment.text for segment in segments if segment.text))
+    if len(document_text) > MAX_DOCUMENT_CHARS:
+        raise ValueError("StandardParseResult document text exceeds limit")
+    dates, versions, effective_dates = _parse_hints(list(segments))
+    pages = {segment.page for segment in segments if segment.page is not None}
+    sections = {segment.heading_path for segment in segments if segment.heading_path}
+    segment_payload = [
+        {
+            "segmentId": f"segment-{index}",
+            "position": segment.position,
+            "text": segment.text,
+            "headingPath": list(segment.heading_path),
+            "page": segment.page,
+            "contentType": segment.content_type,
+        }
+        for index, segment in enumerate(segments, start=1)
+    ]
+    body = {
+        "schema": STANDARD_PARSE_RESULT_SCHEMA,
+        "parserVersion": parser_version,
+        "contentHash": actual_hash,
+        "source": {
+            "name": source.name,
+            "extension": source.suffix.lower().lstrip("."),
+            "sizeBytes": source.stat().st_size,
+        },
+        "documentText": document_text,
+        "segments": segment_payload,
+        "structure": {
+            "segmentCount": len(segments),
+            "sectionCount": len(sections),
+            "tableCount": sum(1 for segment in segments if segment.content_type == "table"),
+            "pageCount": len(pages),
+        },
+        "hints": {
+            "dates": [_hint_dict(item) for item in dates],
+            "versions": [_hint_dict(item) for item in versions],
+            "effectiveDates": [_hint_dict(item) for item in effective_dates],
+        },
+        "diagnostics": [],
+    }
+    fingerprint = hashlib.sha256(_canonical_json(body).encode("utf-8")).hexdigest()
+    return StandardParseResult(
+        parser_version=parser_version,
+        content_hash=actual_hash,
+        generated_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        source_name=source.name,
+        source_extension=source.suffix.lower().lstrip("."),
+        source_size_bytes=source.stat().st_size,
+        document_text=document_text,
+        segments=segments,
+        dates=dates,
+        versions=versions,
+        effective_dates=effective_dates,
+        diagnostics=(),
+        fingerprint=fingerprint,
+    )

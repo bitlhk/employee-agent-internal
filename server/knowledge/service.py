@@ -25,7 +25,7 @@ from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_s
 from llama_index.core.node_parser import SentenceSplitter
 from llama_index.core.schema import Document, NodeWithScore, QueryBundle, TextNode
 from llama_index.retrievers.bm25 import BM25Retriever
-from parsing import ParsedSegment, clean_text, read_segments
+from parsing import ParsedSegment, StandardParseResult, build_standard_parse_result, clean_text
 
 
 APP_ROOT = Path(os.environ.get("APP_ROOT") or Path(__file__).resolve().parents[2]).resolve()
@@ -161,8 +161,13 @@ def _segment_heading(segment: ParsedSegment) -> str:
     return " > ".join(item for item in segment.heading_path if item)
 
 
-def _build_document_nodes(document: SourceDocument) -> tuple[list[TextNode], dict[str, dict[str, Any]]]:
+def _build_document_nodes(document: SourceDocument) -> tuple[list[TextNode], dict[str, dict[str, Any]], StandardParseResult]:
     source = _safe_source_path(document.path)
+    parse_result = build_standard_parse_result(
+        source,
+        parser_version=PARSER_VERSION,
+        content_hash=document.sha256 or None,
+    )
     parent_splitter = SentenceSplitter(chunk_size=PARENT_CHUNK_SIZE, chunk_overlap=PARENT_CHUNK_OVERLAP)
     child_splitter = SentenceSplitter(chunk_size=CHILD_CHUNK_SIZE, chunk_overlap=CHILD_CHUNK_OVERLAP)
     nodes: list[TextNode] = []
@@ -171,7 +176,7 @@ def _build_document_nodes(document: SourceDocument) -> tuple[list[TextNode], dic
     child_ordinal = 0
     total_chars = 0
 
-    for segment in read_segments(source):
+    for segment in parse_result.segments:
         if not segment.text:
             continue
         total_chars += len(segment.text)
@@ -218,7 +223,7 @@ def _build_document_nodes(document: SourceDocument) -> tuple[list[TextNode], dic
                         "ordinal": child_ordinal,
                     },
                 ))
-    return nodes, parents
+    return nodes, parents, parse_result
 
 
 @lru_cache(maxsize=1)
@@ -342,7 +347,8 @@ def _load_or_build_document_artifact(root: Path, document: SourceDocument) -> tu
     cache = _document_cache_directory(root, document)
     nodes_path = cache / "nodes.json"
     parents_path = cache / "parents.json"
-    if nodes_path.is_file() and parents_path.is_file():
+    parse_result_path = cache / "parse-result.json"
+    if nodes_path.is_file() and parents_path.is_file() and parse_result_path.is_file():
         try:
             nodes = [TextNode.from_dict(item) for item in json.loads(nodes_path.read_text("utf-8"))]
             parents = json.loads(parents_path.read_text("utf-8"))
@@ -351,10 +357,11 @@ def _load_or_build_document_artifact(root: Path, document: SourceDocument) -> tu
         except (OSError, ValueError, json.JSONDecodeError):
             shutil.rmtree(cache, ignore_errors=True)
 
-    nodes, parents = _build_document_nodes(document)
+    nodes, parents, parse_result = _build_document_nodes(document)
     cache.mkdir(parents=True, exist_ok=True)
     _write_json_atomic(nodes_path, [node.to_dict() for node in nodes])
     _write_json_atomic(parents_path, parents)
+    _write_json_atomic(parse_result_path, parse_result.to_dict())
     _write_json_atomic(cache / "manifest.json", {
         "parser_version": PARSER_VERSION,
         "fingerprint": _document_fingerprint(document),

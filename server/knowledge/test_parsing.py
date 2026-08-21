@@ -3,10 +3,27 @@ import tempfile
 import unittest
 import zipfile
 
-from parsing import _pdf_segments_from_pages, read_segments
+from parsing import _pdf_segments_from_pages, build_standard_parse_result, read_segments
 
 
 class KnowledgeParsingTest(unittest.TestCase):
+    def test_standard_parse_result_normalizes_structure_and_metadata_hints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "policy-v3.3.md"
+            source.write_text(
+                "# 私人银行销售管理办法 V3.3\n\n第一章 总则\n本办法自2026年9月1日起生效。\n\n## 检查表\n风险等级 | 产品等级",
+                "utf-8",
+            )
+            result = build_standard_parse_result(source, parser_version="2.1")
+            payload = result.to_dict()
+
+            self.assertEqual(payload["schema"], "ea.standard-parse-result.v1")
+            self.assertEqual(payload["contentHash"], result.content_hash)
+            self.assertEqual(payload["structure"]["segmentCount"], len(payload["segments"]))
+            self.assertIn("3.3", [item["value"] for item in payload["hints"]["versions"]])
+            self.assertIn("2026-09-01", [item["value"] for item in payload["hints"]["effectiveDates"]])
+            self.assertEqual(len(payload["parseResultFingerprint"]), 64)
+
     def test_markdown_preserves_heading_path(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "policy.md"
