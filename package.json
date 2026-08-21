@@ -31,6 +31,7 @@
     "demo:assets:verify": "NODE_ENV=test tsx scripts/verify-demo-enterprise-assets.ts",
     "demo:assets:e2e": "pnpm demo:assets:generate && pnpm demo:assets:verify",
     "connector:filesystem:demo": "tsx scripts/run-filesystem-connector-demo.ts",
+    "connector:obs:acceptance:fixtures": "tsx scripts/prepare-obs-acceptance-fixtures.ts",
     "knowledge:rolepack": "tsx scripts/import-demo-knowledge.ts",
     "knowledge:evaluate": "bash -lc '[[ \"$1\" == \"--\" ]] && shift; \"${KNOWLEDGE_PYTHON:-$HOME/.venvs/employee-agent-knowledge/bin/python}\" server/knowledge/evaluate.py \"$@\"' knowledge-evaluate",
     "load:capacity": "node scripts/load-test-capacity.mjs",

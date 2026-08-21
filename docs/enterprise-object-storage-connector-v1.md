@@ -117,3 +117,10 @@ pnpm exec playwright test e2e/object-storage-connector.pw.ts \
 The browser scenario verifies registration, paginated sync, failed download
 recovery, additions, revisions, unchanged skips, full-listing tombstones,
 remediation review, credential isolation, and desktop/mobile layout.
+
+Real Huawei Cloud OBS environment acceptance is intentionally separate from the
+protocol-level product loop. Execute
+`docs/huawei-obs-environment-acceptance-runbook-v1.md` before marking the
+connector `Environment Verified`. That acceptance stops at Candidate /
+Remediation and does not exercise the later Knowledge-indexing
+`StandardParseResult` path.
