@@ -68,6 +68,7 @@
     "rolepack:wealth:model-scenarios": "tsx scripts/run-wealth-role-pack-model-scenarios.ts",
     "context:wealth:bindings": "tsx scripts/configure-wealth-context-bindings.ts",
     "context:wealth:verify": "tsx scripts/verify-wealth-context-resolution.ts",
+    "context:assets:classify": "tsx scripts/classify-approved-runtime-assets.ts",
     "context:contracts:verify": "tsx scripts/verify-context-governance-contracts.ts",
     "context:quality:verify": "pnpm context:contracts:verify && pnpm rolepack:wealth:contracts && pnpm knowledge:test",
     "context:quality:freeze": "tsx scripts/verify-context-governance-contracts.ts --require-expert-confirmed && pnpm rolepack:wealth:contracts && pnpm knowledge:test",

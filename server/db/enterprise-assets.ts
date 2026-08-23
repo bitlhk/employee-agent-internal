@@ -287,6 +287,43 @@ export async function updateEnterpriseAssetCandidate(
   return getEnterpriseAssetCandidate(candidateId);
 }
 
+export async function classifyEnterpriseKnowledgeCandidate(input: {
+  candidateId: string;
+  decision: "searchable_only" | "runtime_candidate" | "archived";
+  reason: string;
+  confirmedMetadataJson: Record<string, unknown>;
+  impactAnalysisJson: Record<string, unknown>;
+  actor: string;
+}) {
+  const db = await database();
+  return db.transaction(async tx => {
+    const decidedAt = new Date();
+    const result = await tx.update(enterpriseAssetCandidates).set({
+      projectionDecision: input.decision,
+      projectionReason: input.reason,
+      projectionDecidedBy: input.actor,
+      projectionDecidedAt: decidedAt,
+      confirmedMetadataJson: input.confirmedMetadataJson,
+      impactAnalysisJson: input.impactAnalysisJson,
+      updatedBy: input.actor,
+    }).where(and(
+      eq(enterpriseAssetCandidates.candidateId, input.candidateId),
+      eq(enterpriseAssetCandidates.assetType, "knowledge_document"),
+      eq(enterpriseAssetCandidates.status, "approved"),
+      isNull(enterpriseAssetCandidates.targetAssetId),
+    ));
+    if (Number((result as any)[0]?.affectedRows || 0) !== 1) {
+      throw new Error("Asset classification state changed; refresh and retry");
+    }
+    const [classified] = await tx.select().from(enterpriseAssetCandidates)
+      .where(eq(enterpriseAssetCandidates.candidateId, input.candidateId)).limit(1);
+    if (!classified || classified.projectionDecision !== input.decision) {
+      throw new Error("Asset classification was not persisted");
+    }
+    return classified;
+  });
+}
+
 export async function staleRolePackReleases(rolePackIds: string[]) {
   if (!rolePackIds.length) return 0;
   const result = await (await database()).update(rolePackReleases).set({ status: "stale" }).where(and(

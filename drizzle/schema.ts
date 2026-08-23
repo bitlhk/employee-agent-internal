@@ -253,6 +253,10 @@ export const enterpriseAssetCandidates = mysqlTable("enterprise_asset_candidates
   status: mysqlEnum("status", ["draft", "review_pending", "approved", "rejected", "published", "stale"]).default("draft").notNull(),
   targetAssetType: mysqlEnum("target_asset_type", ["knowledge_document", "enterprise_mcp", "skill", "policy", "role"]),
   targetAssetId: varchar("target_asset_id", { length: 128 }),
+  projectionDecision: mysqlEnum("projection_decision", ["pending", "searchable_only", "runtime_candidate", "archived"]).default("pending").notNull(),
+  projectionReason: varchar("projection_reason", { length: 1000 }),
+  projectionDecidedBy: varchar("projection_decided_by", { length: 128 }),
+  projectionDecidedAt: timestamp("projection_decided_at"),
   impactAnalysisJson: json("impact_analysis_json").$type<Record<string, unknown> | null>(),
   reviewNote: text("review_note"),
   reviewedBy: varchar("reviewed_by", { length: 128 }),
@@ -272,6 +276,7 @@ export const enterpriseAssetCandidates = mysqlTable("enterprise_asset_candidates
   ),
   sourceStatusIdx: index("idx_enterprise_asset_candidates_source_status").on(table.sourceId, table.status),
   assetStatusIdx: index("idx_enterprise_asset_candidates_asset_status").on(table.assetType, table.status),
+  projectionDecisionIdx: index("idx_enterprise_asset_candidates_projection").on(table.projectionDecision, table.status),
 }));
 
 export type EnterpriseAssetCandidate = typeof enterpriseAssetCandidates.$inferSelect;

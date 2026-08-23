@@ -35,6 +35,7 @@ export type TaskContextPack = {
       assetId: string;
       version: string;
       contentHash: string;
+      candidateAssetFingerprint?: string;
       effectiveAt?: string | null;
       logicalAssetId?: string;
       bindingId?: string;

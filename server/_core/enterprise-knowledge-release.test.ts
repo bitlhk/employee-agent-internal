@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EnterpriseAssetCandidate } from "../../drizzle/schema";
 import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "../db";
 import type { EnterpriseAssetMetadata } from "./enterprise-asset-onboarding";
-import { enterpriseKnowledgeGateReadiness, rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "./enterprise-knowledge-release";
+import { enterpriseKnowledgeGateReadiness, rolePackReleaseCoversCandidate, validationProvidesCandidate, verifyWealthPolicyCandidate } from "./enterprise-knowledge-release";
 
 const base: KnowledgeBaseRecord = {
   id: 1, publicId: "kb_wealth_policy", ownerUserId: 1, ownerGroupId: 1,
@@ -133,6 +133,23 @@ describe("enterprise knowledge release", () => {
       evaluatedAsOf: "2026-09-01T00:00:00.000Z",
       taskIds: ["WM-GT-02", "WM-GT-03"],
     });
+    expect(result.validation.gateReceipts).toHaveLength(2);
+    expect(result.validation.gateReceipts.every(receipt => receipt.provided.knowledge.some(item => (
+      item.assetId === replacement.publicId
+      && item.candidateAssetFingerprint === result.validation.candidateAssetFingerprint
+    )))).toBe(true);
+    expect(validationProvidesCandidate({
+      validation: result.validation,
+      candidate,
+      metadata,
+      documentId: replacement.publicId,
+    })).toBe(true);
+    expect(validationProvidesCandidate({
+      validation: { ...result.validation, gateReceipts: [] },
+      candidate,
+      metadata,
+      documentId: replacement.publicId,
+    })).toBe(false);
     expect(result.validation.checks.every(check => check.passed)).toBe(true);
     expect(result.validation.validationFingerprint).toHaveLength(64);
   });

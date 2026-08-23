@@ -46,6 +46,7 @@ import {
   latestVerifiedRolePackReleases,
   publishEnterpriseAssetCandidate,
   activateEnterpriseKnowledgeCandidate,
+  classifyEnterpriseKnowledgeCandidate,
   stageEnterpriseKnowledgeCandidate,
   updateEnterpriseAssetCandidate,
   upsertEnterpriseAssetSource,
@@ -57,7 +58,7 @@ import {
   removeKnowledgeDocumentFiles,
 } from "../_core/knowledge-storage";
 import { queueKnowledgeIndex } from "../_core/knowledge-service";
-import { enterpriseKnowledgeGateReadiness, rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
+import { enterpriseKnowledgeGateReadiness, rolePackReleaseCoversCandidate, validationProvidesCandidate, verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
 import { persistReferenceRolePackScenarioReport } from "../_core/reference-role-pack-release";
 
 const sourceSchema = z.object({
@@ -72,6 +73,7 @@ const sourceSchema = z.object({
 });
 
 const targetTypeSchema = z.enum(["knowledge_document", "enterprise_mcp", "skill", "policy", "role"]);
+const projectionDecisionSchema = z.enum(["searchable_only", "runtime_candidate", "archived"]);
 
 const discoveryObservationsSchema = z.object({
   parseStatus: z.enum(["ok", "failed"]).optional(),
@@ -152,8 +154,12 @@ function knowledgeReleaseStatus(candidate: {
   status: string;
   targetAssetId?: string | null;
   confirmedMetadataJson?: unknown;
+  projectionDecision?: "pending" | "searchable_only" | "runtime_candidate" | "archived";
 }, document: Awaited<ReturnType<typeof getKnowledgeDocumentByPublicId>>): string {
   if (candidate.status === "approved" && !candidate.targetAssetId) {
+    if (candidate.projectionDecision === "pending") return "runtime_classification_required";
+    if (candidate.projectionDecision === "searchable_only") return "searchable_only";
+    if (candidate.projectionDecision === "archived") return "not_for_runtime";
     const parsed = enterpriseAssetMetadataSchema.safeParse(candidate.confirmedMetadataJson);
     return parsed.success ? enterpriseKnowledgeGateReadiness(parsed.data) : "metadata_confirmation_required";
   }
@@ -285,6 +291,9 @@ export const enterpriseAssetsRouter = router({
         pendingRemediation: candidates.filter(row => unresolvedDiagnostics(row.diagnosticsJson).length > 0 && ["draft", "rejected"].includes(row.status)).length,
         pendingReview: candidates.filter(row => row.status === "review_pending").length,
         approved: candidates.filter(row => row.status === "approved").length,
+        pendingRuntimeClassification: candidates.filter(row => row.assetType === "knowledge_document" && row.status === "approved" && row.projectionDecision === "pending").length,
+        searchableOnly: candidates.filter(row => row.assetType === "knowledge_document" && row.projectionDecision === "searchable_only").length,
+        runtimeCandidates: candidates.filter(row => row.assetType === "knowledge_document" && row.projectionDecision === "runtime_candidate").length,
         published: candidates.filter(row => row.status === "published").length,
         stale: candidates.filter(row => row.status === "stale").length,
       },
@@ -576,6 +585,69 @@ export const enterpriseAssetsRouter = router({
     return row;
   }),
 
+  classifyKnowledgeRuntime: adminProcedure.input(z.object({
+    candidateId: z.string().min(3).max(64),
+    decision: projectionDecisionSchema,
+    decisionReason: z.string().trim().min(8).max(1000),
+    logicalAssetIds: z.array(z.string().min(1).max(128)).max(16).default([]),
+    relatedTasks: z.array(z.string().min(1).max(64)).max(64).default([]),
+  })).mutation(async ({ input, ctx }) => {
+    const candidate = await getEnterpriseAssetCandidate(input.candidateId);
+    if (!candidate || candidate.assetType !== "knowledge_document" || candidate.status !== "approved"
+      || candidate.targetAssetId || !candidate.confirmedMetadataJson) {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "仅审核通过且尚未投影的知识资产可执行 Runtime 分类" });
+    }
+    const metadata = enterpriseAssetMetadataSchema.parse(candidate.confirmedMetadataJson);
+    if (input.decision === "archived" && metadata.lifecycle !== "archived") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "只有已归档资产可以选择不投影归档" });
+    }
+    if (input.decision !== "archived" && metadata.lifecycle !== "active") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "只有计划有效的资产可以建立检索或 Runtime 投影" });
+    }
+    if (input.decision === "runtime_candidate" && (!input.logicalAssetIds.length || !input.relatedTasks.length)) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Runtime Candidate 必须确认 Logical Context 和受影响 Golden Task" });
+    }
+    const confirmedMetadata = enterpriseAssetMetadataSchema.parse({
+      ...metadata,
+      logicalAssetIds: input.decision === "runtime_candidate" ? input.logicalAssetIds : [],
+      relatedTasks: input.decision === "runtime_candidate" ? input.relatedTasks : [],
+    });
+    const impact = analyzeEnterpriseAssetImpact({
+      assetType: candidate.assetType,
+      enterpriseAssetId: candidate.enterpriseAssetId,
+      sourceVersion: candidate.sourceVersion,
+      checksum: candidate.checksum,
+      metadata: confirmedMetadata,
+    });
+    const actor = actorName(ctx.user);
+    const classified = await classifyEnterpriseKnowledgeCandidate({
+      candidateId: candidate.candidateId,
+      decision: input.decision,
+      reason: input.decisionReason,
+      confirmedMetadataJson: confirmedMetadata,
+      impactAnalysisJson: {
+        ...impact,
+        runtimeClassification: {
+          schema: "ea.runtime-classification.v1",
+          decision: input.decision,
+          decisionReason: input.decisionReason,
+          logicalAssetIds: confirmedMetadata.logicalAssetIds,
+          relatedTasks: confirmedMetadata.relatedTasks,
+          decidedBy: actor,
+          decidedAt: new Date().toISOString(),
+        },
+      },
+      actor,
+    });
+    await audit(ctx, "enterprise_asset.runtime_classified", candidate.candidateId, {
+      decision: input.decision,
+      decisionReason: input.decisionReason,
+      logicalAssetIds: confirmedMetadata.logicalAssetIds,
+      relatedTasks: confirmedMetadata.relatedTasks,
+    });
+    return classified;
+  }),
+
   stageKnowledgeVersion: adminProcedure.input(z.object({
     candidateId: z.string().min(3).max(64),
     knowledgeBaseId: z.string().min(1).max(64),
@@ -586,6 +658,9 @@ export const enterpriseAssetsRouter = router({
     }
     if (candidate.targetAssetId) {
       throw new TRPCError({ code: "CONFLICT", message: "该知识版本已进入验证流程" });
+    }
+    if (candidate.projectionDecision !== "runtime_candidate") {
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该知识资产尚未分类为 Runtime Candidate" });
     }
     const metadata = enterpriseAssetMetadataSchema.parse(candidate.confirmedMetadataJson);
     const gateReadiness = enterpriseKnowledgeGateReadiness(metadata);
@@ -749,7 +824,8 @@ export const enterpriseAssetsRouter = router({
     if (!validation || validation.status !== "PASS"
       || validation.candidateId !== candidate.candidateId
       || validation.documentId !== document.publicId
-      || validation.checksum !== candidate.checksum) {
+      || validation.checksum !== candidate.checksum
+      || !validationProvidesCandidate({ validation, candidate, metadata, documentId: document.publicId })) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "该知识版本尚未通过候选级标杆任务验收" });
     }
     const impact = analyzeEnterpriseAssetImpact({

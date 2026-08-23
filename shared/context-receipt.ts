@@ -46,6 +46,7 @@ export type ContextReceiptV1 = {
       label: string;
       version: string;
       contentHash: string;
+      candidateAssetFingerprint?: string;
       effectiveAt?: string | null;
       logicalAssetId?: string;
       bindingId?: string;

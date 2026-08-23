@@ -13,7 +13,7 @@ import {
   type AssetIssueGroup,
 } from "@/lib/enterprise-asset-experience";
 import { trpc, type RouterInputs, type RouterOutputs } from "@/lib/trpc";
-import { AlertTriangle, Archive, Check, Clock3, FileInput, FolderOpen, ListFilter, Loader2, PackageCheck, Plus, RefreshCw, ShieldCheck, Sparkles, UploadCloud, UserCheck, X } from "lucide-react";
+import { AlertTriangle, Archive, Check, Clock3, FileInput, FolderOpen, ListFilter, Loader2, PackageCheck, Plus, RefreshCw, Search, ShieldCheck, Sparkles, UploadCloud, UserCheck, X } from "lucide-react";
 import { toast } from "sonner";
 
 type Overview = RouterOutputs["enterpriseAssets"]["overview"];
@@ -26,6 +26,8 @@ const STATUS_LABELS: Record<string, string> = {
 };
 const RELEASE_STATUS_LABELS: Record<string, string> = {
   ready_to_stage: "可进入岗位验证",
+  runtime_classification_required: "待确认 Runtime 用途",
+  searchable_only: "仅治理目录可查 · Agent 不可用",
   metadata_confirmation_required: "待确认治理信息",
   logical_context_mapping_required: "待补 Logical Context 映射",
   golden_task_mapping_required: "待补 Golden Task 影响",
@@ -133,6 +135,7 @@ export function EnterpriseAssetsPanel() {
   const [metadataText, setMetadataText] = useState("");
   const [advancedMetadata, setAdvancedMetadata] = useState(false);
   const [assetListMode, setAssetListMode] = useState<"remediation" | "all">("remediation");
+  const [assetSearch, setAssetSearch] = useState("");
   const [issueFilter, setIssueFilter] = useState<AssetIssueGroup>("all");
   const [rejectTarget, setRejectTarget] = useState<Candidate | null>(null);
   const [rejectNote, setRejectNote] = useState("");
@@ -140,6 +143,11 @@ export function EnterpriseAssetsPanel() {
   const [targetAssetId, setTargetAssetId] = useState("");
   const [stageTarget, setStageTarget] = useState<Candidate | null>(null);
   const [targetKnowledgeBaseId, setTargetKnowledgeBaseId] = useState("");
+  const [classificationTarget, setClassificationTarget] = useState<Candidate | null>(null);
+  const [projectionDecision, setProjectionDecision] = useState<"searchable_only" | "runtime_candidate" | "archived">("searchable_only");
+  const [projectionReason, setProjectionReason] = useState("");
+  const [projectionLogicalAssets, setProjectionLogicalAssets] = useState("");
+  const [projectionTasks, setProjectionTasks] = useState("");
 
   const activeSources = useMemo(() => (data?.sources || []).filter(item => item.status === "active"), [data?.sources]);
   const operationsSources = useMemo(() => activeSources.filter(item => ["document_repository", "rule_catalog"].includes(item.sourceType)), [activeSources]);
@@ -214,6 +222,14 @@ export function EnterpriseAssetsPanel() {
     onSuccess: async (_result, variables) => { toast.success(variables.decision === "approve" ? "资产已审核通过" : "资产已退回"); setRejectTarget(null); setRejectNote(""); await invalidate(); },
     onError: error => toast.error(error.message),
   });
+  const classifyKnowledgeRuntime = trpc.enterpriseAssets.classifyKnowledgeRuntime.useMutation({
+    onSuccess: async () => {
+      toast.success("Runtime 用途已确认");
+      setClassificationTarget(null);
+      await invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
   const publish = trpc.enterpriseAssets.publish.useMutation({
     onSuccess: async () => { toast.success("资产映射已发布，相关岗位包需重新验收"); setPublishTarget(null); setTargetAssetId(""); await invalidate(); },
     onError: error => toast.error(error.message),
@@ -244,11 +260,21 @@ export function EnterpriseAssetsPanel() {
 
   const remediationCandidates = useMemo(() => (data?.candidates || []).filter(candidate => ["draft", "rejected"].includes(candidate.status) && candidateDiagnostics(candidate).length > 0), [data?.candidates]);
   const issueCounts = useMemo(() => countAssetIssues(remediationCandidates), [remediationCandidates]);
-  const visibleCandidates = useMemo(() => assetListMode === "all"
+  const unsearchedCandidates = useMemo(() => assetListMode === "all"
     ? (data?.candidates || [])
     : remediationCandidates.filter(candidate => assetMatchesIssue(candidate.diagnosticsJson, issueFilter)), [assetListMode, data?.candidates, issueFilter, remediationCandidates]);
+  const visibleCandidates = useMemo(() => {
+    const query = assetSearch.trim().toLowerCase();
+    if (!query) return unsearchedCandidates;
+    return unsearchedCandidates.filter(candidate => {
+      const metadata = recordOf(candidate.confirmedMetadataJson || candidate.suggestedMetadataJson);
+      return [candidate.displayName, candidate.enterpriseAssetId, candidate.sourceVersion, candidate.sourceId,
+        metadata.ownerDepartment, metadata.businessDomain, ...(Array.isArray(metadata.applicableRoles) ? metadata.applicableRoles : [])]
+        .some(value => String(value || "").toLowerCase().includes(query));
+    });
+  }, [assetSearch, unsearchedCandidates]);
   const busy = saveSource.isPending || importManifest.isPending || discoverArtifacts.isPending || syncFilesystemSource.isPending || syncObjectStorageSource.isPending || submitReview.isPending
-    || review.isPending || publish.isPending || stageKnowledgeVersion.isPending
+    || review.isPending || classifyKnowledgeRuntime.isPending || publish.isPending || stageKnowledgeVersion.isPending
     || verifyKnowledgeVersion.isPending || activateKnowledgeVersion.isPending;
   const latestSourceRun = sourceSyncStatus.data?.runs[0];
   const operationsSource = operationsSources.find(item => item.sourceId === resolvedOperationsSourceId);
@@ -290,6 +316,28 @@ export function EnterpriseAssetsPanel() {
   };
 
   const updateMetadata = (field: string, value: unknown) => setReviewMetadata(current => ({ ...current, [field]: value }));
+
+  const openClassification = (candidate: Candidate) => {
+    const metadata = recordOf(candidate.confirmedMetadataJson);
+    const decision = candidate.projectionDecision === "runtime_candidate" || candidate.projectionDecision === "archived"
+      ? candidate.projectionDecision : "searchable_only";
+    setProjectionDecision(decision);
+    setProjectionReason(candidate.projectionReason || "仅供企业资产治理与管理员检索，不进入岗位 Agent Runtime");
+    setProjectionLogicalAssets(stringList(metadata.logicalAssetIds).join(", "));
+    setProjectionTasks(stringList(metadata.relatedTasks).join(", "));
+    setClassificationTarget(candidate);
+  };
+
+  const submitClassification = () => {
+    if (!classificationTarget) return;
+    classifyKnowledgeRuntime.mutate({
+      candidateId: classificationTarget.candidateId,
+      decision: projectionDecision,
+      decisionReason: projectionReason.trim(),
+      logicalAssetIds: projectionDecision === "runtime_candidate" ? stringList(projectionLogicalAssets) : [],
+      relatedTasks: projectionDecision === "runtime_candidate" ? stringList(projectionTasks) : [],
+    });
+  };
 
   const toggleAdvancedMetadata = () => {
     if (!advancedMetadata) {
@@ -392,10 +440,10 @@ export function EnterpriseAssetsPanel() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        {[
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7">
+          {[
           ["接入来源", data?.summary.sources || 0], ["待整改", data?.summary.pendingRemediation || 0], ["待审核", data?.summary.pendingReview || 0], ["审核通过", data?.summary.approved || 0],
-          ["已发布", data?.summary.published || 0], ["待重验", data?.summary.stale || 0],
+          ["待定用途", data?.summary.pendingRuntimeClassification || 0], ["已发布", data?.summary.published || 0], ["待重验", data?.summary.stale || 0],
         ].map(([label, value]) => <Card key={String(label)} className="p-3"><div className="text-xl font-semibold text-gray-900">{value}</div><div className="mt-1 text-xs text-muted-foreground">{label}</div></Card>)}
       </div>
 
@@ -453,6 +501,10 @@ export function EnterpriseAssetsPanel() {
           {assetListMode === "remediation" && <div className="mt-3 flex flex-wrap gap-1.5">
             {ASSET_ISSUE_GROUPS.map(group => <Button key={group.id} aria-pressed={issueFilter === group.id} size="sm" variant="ghost" className={issueFilter === group.id ? "h-7 bg-primary/10 px-2.5 text-xs text-primary hover:bg-primary/15 hover:text-primary" : "h-7 px-2.5 text-xs text-muted-foreground hover:bg-primary/5 hover:text-foreground"} onClick={() => setIssueFilter(group.id)}>{issueFilter === group.id && <Check className="h-3 w-3" />}{group.label} {issueCounts[group.id]}</Button>)}
           </div>}
+          <div className="relative mt-3 max-w-md">
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+            <Input aria-label="搜索企业资产" className="h-8 pl-8 text-xs" value={assetSearch} onChange={event => setAssetSearch(event.target.value)} placeholder="按名称、版本、部门、业务域或岗位搜索" />
+          </div>
         </div>
         <div className="max-h-[70vh] divide-y overflow-y-auto">
           {visibleCandidates.map(candidate => {
@@ -477,6 +529,7 @@ export function EnterpriseAssetsPanel() {
                     {candidate.runtimeDocument?.effectiveAt && candidate.releaseStatus === "validated_pending_effective" ? ` · ${new Date(candidate.runtimeDocument.effectiveAt).toLocaleString("zh-CN")} 生效` : ""}
                   </div>}
                   {candidate.validationStatus && <div className={`mt-1 text-xs ${candidate.validationStatus === "PASS" ? "text-emerald-700" : "text-red-600"}`}>候选级标杆任务：{candidate.validationStatus === "PASS" ? "已通过" : "未通过"}</div>}
+                  {candidate.projectionDecidedBy && <div className="mt-1 text-xs text-muted-foreground">用途决策：{candidate.projectionDecidedBy}{candidate.projectionDecidedAt ? ` · ${new Date(candidate.projectionDecidedAt).toLocaleString("zh-CN")}` : ""}{candidate.projectionReason ? ` · ${candidate.projectionReason}` : ""}</div>}
                   {Array.isArray(impact.affectedTaskIds) && impact.affectedTaskIds.length > 0 && <div className="mt-1 text-xs text-amber-700">需重跑：{impact.affectedTaskIds.join("、")}</div>}
                   {diagnostics.length > 0 && <div className="mt-2 space-y-1 rounded border border-amber-200 bg-amber-50 px-2.5 py-2">
                     {diagnostics.slice(0, 3).map((diagnostic, index) => <div key={`${String(diagnostic.code)}-${index}`} className="flex items-start gap-1.5 text-xs text-amber-800"><AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /><span>{String(diagnostic.message || diagnostic.code || "需要人工确认")}</span></div>)}
@@ -490,6 +543,7 @@ export function EnterpriseAssetsPanel() {
                     <Button size="sm" onClick={() => review.mutate({ candidateId: candidate.candidateId, decision: "approve" })}><Check className="mr-1.5 h-3.5 w-3.5" />通过</Button>
                     <Button variant="outline" size="sm" onClick={() => setRejectTarget(candidate)}><X className="mr-1.5 h-3.5 w-3.5" />退回</Button>
                   </>}
+                  {candidate.status === "approved" && candidate.assetType === "knowledge_document" && !candidate.targetAssetId && <Button variant="outline" size="sm" disabled={busy} onClick={() => openClassification(candidate)}><ListFilter className="mr-1.5 h-3.5 w-3.5" />{candidate.projectionDecision === "pending" ? "确定 Runtime 用途" : "调整 Runtime 用途"}</Button>}
                   {candidate.status === "approved" && candidate.assetType === "knowledge_document" && !candidate.targetAssetId && candidate.releaseStatus === "ready_to_stage" && <Button size="sm" onClick={() => {
                     setStageTarget(candidate);
                     const role = Array.isArray((candidate.confirmedMetadataJson as { applicableRoles?: unknown } | null)?.applicableRoles)
@@ -731,6 +785,31 @@ export function EnterpriseAssetsPanel() {
           <DialogHeader><DialogTitle>发布 Runtime 映射</DialogTitle><DialogDescription>必须绑定到已存在的 {publishTarget ? TARGET_BY_TYPE[publishTarget.assetType] : "Runtime 资产"}。发布会使受影响岗位包进入待重验状态。</DialogDescription></DialogHeader>
           <div><Label>目标资产 ID</Label><Input value={targetAssetId} onChange={e => setTargetAssetId(e.target.value)} placeholder="现有知识 publicId、MCP serverId、Skill ID 或岗位 ID" /></div>
           <DialogFooter><Button variant="outline" onClick={() => setPublishTarget(null)}>取消</Button><Button disabled={busy || !targetAssetId.trim()} onClick={() => publishTarget && publish.mutate({ candidateId: publishTarget.candidateId, targetAssetType: TARGET_BY_TYPE[publishTarget.assetType], targetAssetId: targetAssetId.trim() })}>确认发布</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(classificationTarget)} onOpenChange={open => !open && setClassificationTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确定 Runtime 用途</DialogTitle>
+            <DialogDescription>治理审核通过不代表 Agent 可以使用。请选择该资产的投影方式，并记录本次业务决定。</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div><Label>用途</Label><Select value={projectionDecision} onValueChange={value => setProjectionDecision(value as typeof projectionDecision)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+              <SelectItem value="searchable_only">仅治理目录可查</SelectItem>
+              <SelectItem value="runtime_candidate">进入岗位 Runtime 候选</SelectItem>
+              <SelectItem value="archived">归档，不建立投影</SelectItem>
+            </SelectContent></Select></div>
+            {projectionDecision === "runtime_candidate" && <div className="grid gap-3 sm:grid-cols-2">
+              <div><Label>Logical Context</Label><Input value={projectionLogicalAssets} onChange={event => setProjectionLogicalAssets(event.target.value)} placeholder="例如 current_wealth_policy" /></div>
+              <div><Label>受影响 Golden Task</Label><Input value={projectionTasks} onChange={event => setProjectionTasks(event.target.value)} placeholder="例如 WM-GT-02、WM-GT-03" /></div>
+            </div>}
+            <div><Label>决定原因</Label><Textarea value={projectionReason} onChange={event => setProjectionReason(event.target.value)} placeholder="说明为什么该资产只供治理检索、需要进入 Runtime，或应归档" /></div>
+            <div className="rounded border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              “仅治理目录可查”不会写入 Agent 可访问的知识索引；“进入岗位 Runtime 候选”仍需暂存、Golden Task 和 Candidate Fingerprint 门禁，分类本身不会发布资产。
+            </div>
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setClassificationTarget(null)}>取消</Button><Button disabled={busy || projectionReason.trim().length < 8 || (projectionDecision === "runtime_candidate" && (!stringList(projectionLogicalAssets).length || !stringList(projectionTasks).length))} onClick={submitClassification}>确认用途</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
