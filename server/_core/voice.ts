@@ -1,6 +1,6 @@
 import express from "express";
 import { spawn } from "node:child_process";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import os from "node:os";
@@ -13,58 +13,15 @@ const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 const MAX_REALTIME_QUEUE_BYTES = 2 * 1024 * 1024;
 const MAX_REALTIME_SESSION_MS = 65_000;
 
-function buildRtasrUrl(appId: string, apiKey: string): string {
-  const ts = Math.floor(Date.now() / 1000).toString();
-  const base = createHash("md5").update(appId + ts).digest("hex");
-  const signa = createHmac("sha1", apiKey).update(base).digest("base64");
-  return `wss://rtasr.xfyun.cn/v1/ws?appid=${encodeURIComponent(appId)}&ts=${encodeURIComponent(ts)}&signa=${encodeURIComponent(signa)}&lang=cn`;
-}
-
-type RtasrResult = {
-  action: string;
-  code: string;
-  desc: string;
-  text: string;
-  segmentId: string;
-};
-
-export function parseRtasrResult(raw: string): RtasrResult {
-  const message = JSON.parse(raw);
-  const code = String(message.code ?? "0");
-  const action = String(message.action || "");
-  const desc = String(message.desc || message.message || "");
-  let data = message.data;
-  if (typeof data === "string" && data.trim()) {
-    try {
-      data = JSON.parse(data);
-    } catch {}
-  }
-  const sentence = data?.cn?.st;
-  const parts: string[] = [];
-  for (const item of Array.isArray(sentence?.rt) ? sentence.rt : []) {
-    for (const word of Array.isArray(item?.ws) ? item.ws : []) {
-      const candidate = Array.isArray(word?.cw) ? word.cw[0] : undefined;
-      if (candidate?.w) parts.push(String(candidate.w));
-    }
-  }
-  return {
-    action,
-    code,
-    desc,
-    text: parts.join("").trim(),
-    segmentId: String(sentence?.bg ?? sentence?.sn ?? "current"),
-  };
-}
-
-function humanizeRtasrError(code: string, desc: string): string {
-  if (code === "10105" && /no appid info/i.test(desc)) {
-    return "当前讯飞账号未开通实时语音转写服务";
-  }
-  if (code === "10105" && /client_ip/i.test(desc)) {
-    return "讯飞实时语音转写拒绝了当前服务器 IP";
-  }
-  if (code === "10110") return "讯飞实时语音转写鉴权失败";
-  return desc || `讯飞实时转写错误 ${code}`;
+function buildIatUrl(apiSecret: string, apiKey: string): string {
+  const host = "iat-api.xfyun.cn";
+  const wsPath = "/v2/iat";
+  const date = new Date().toUTCString();
+  const signOrigin = `host: ${host}\ndate: ${date}\nGET ${wsPath} HTTP/1.1`;
+  const signature = createHmac("sha256", apiSecret).update(signOrigin).digest("base64");
+  const authOrigin = `api_key="${apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
+  const authorization = Buffer.from(authOrigin).toString("base64");
+  return `wss://${host}${wsPath}?authorization=${authorization}&date=${encodeURIComponent(date)}&host=${host}`;
 }
 
 type XfyunWord = { cw?: Array<{ w?: string }> };
@@ -146,16 +103,7 @@ async function transcribeWithXfyun(input: {
   apiSecret: string;
   apiKey: string;
 }): Promise<string> {
-  const host = "iat-api.xfyun.cn";
-  const wsPath = "/v2/iat";
-  const date = new Date().toUTCString();
-  const signOrigin = `host: ${host}\ndate: ${date}\nGET ${wsPath} HTTP/1.1`;
-  const signature = createHmac("sha256", input.apiSecret)
-    .update(signOrigin)
-    .digest("base64");
-  const authOrigin = `api_key="${input.apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`;
-  const authorization = Buffer.from(authOrigin).toString("base64");
-  const wsUrl = `wss://${host}${wsPath}?authorization=${authorization}&date=${encodeURIComponent(date)}&host=${host}`;
+  const wsUrl = buildIatUrl(input.apiSecret, input.apiKey);
   const segments = new Map<number, string>();
 
   await new Promise<void>((resolve, reject) => {
@@ -451,18 +399,23 @@ export function registerVoiceWsRoutes(server: Server): void {
 
   wss.on("connection", (client: WS, _req: IncomingMessage, meta: { adoptId: string; userId: number }) => {
     const appId = String(process.env.XFYUN_APPID || "").trim();
+    const apiSecret = String(process.env.XFYUN_API_SECRET || "").trim();
     const apiKey = String(process.env.XFYUN_API_KEY || "").trim();
-    if (!appId || !apiKey) {
+    if (!appId || !apiSecret || !apiKey) {
       client.send(JSON.stringify({ type: "error", error: "讯飞实时转写未配置" }));
       client.close();
       return;
     }
 
-    const upstream = new WS(buildRtasrUrl(appId, apiKey));
-    const segments = new Map<string, string>();
+    // IAT is already enabled for the platform account and supports incremental
+    // results. Using it here avoids requiring the separately licensed RTASR SKU.
+    const upstream = new WS(buildIatUrl(apiSecret, apiKey));
+    const segments = new Map<number, string>();
     let upstreamReady = false;
     let ended = false;
     let queue = Buffer.alloc(0);
+    let frameIndex = 0;
+    let sentFinalFrame = false;
     let flushTimer: ReturnType<typeof setInterval> | undefined;
     const sessionTimeout = setTimeout(() => {
       sendClient({ type: "error", error: "单次语音输入最长 60 秒" });
@@ -472,7 +425,7 @@ export function registerVoiceWsRoutes(server: Server): void {
     const sendClient = (payload: unknown) => {
       if (client.readyState === WS.OPEN) client.send(JSON.stringify(payload));
     };
-    const transcript = () => [...segments.values()].join("").trim();
+    const transcript = () => joinXfyunIatSegments(segments);
     const cleanup = () => {
       clearTimeout(sessionTimeout);
       if (flushTimer) clearInterval(flushTimer);
@@ -486,37 +439,70 @@ export function registerVoiceWsRoutes(server: Server): void {
     };
     const flushFrame = () => {
       if (!upstreamReady || upstream.readyState !== WS.OPEN) return;
-      if (queue.length >= 1280) {
-        upstream.send(queue.subarray(0, 1280));
-        queue = queue.subarray(1280);
-      } else if (ended) {
-        if (queue.length) upstream.send(queue);
-        queue = Buffer.alloc(0);
-        upstream.send(Buffer.from(JSON.stringify({ end: true })));
+      if (queue.length > 0) {
+        const end = Math.min(1280, queue.length);
+        const chunk = queue.subarray(0, end);
+        queue = queue.subarray(end);
+        const firstFrame = frameIndex === 0;
+        upstream.send(JSON.stringify({
+          common: firstFrame ? { app_id: appId } : undefined,
+          business: firstFrame ? {
+            language: "zh_cn",
+            domain: "iat",
+            accent: "mandarin",
+            vad_eos: 3000,
+            dwa: "wpgs",
+          } : undefined,
+          data: {
+            status: firstFrame ? 0 : 1,
+            format: "audio/L16;rate=16000",
+            encoding: "raw",
+            audio: chunk.toString("base64"),
+          },
+        }));
+        frameIndex += 1;
+      } else if (ended && !sentFinalFrame) {
+        sentFinalFrame = true;
+        upstream.send(JSON.stringify({
+          ...(frameIndex === 0 ? {
+            common: { app_id: appId },
+            business: { language: "zh_cn", domain: "iat", accent: "mandarin", vad_eos: 3000, dwa: "wpgs" },
+          } : {}),
+          data: {
+            status: 2,
+            format: "audio/L16;rate=16000",
+            encoding: "raw",
+            audio: "",
+          },
+        }));
         if (flushTimer) clearInterval(flushTimer);
         flushTimer = undefined;
       }
     };
 
+    upstream.on("open", () => {
+      upstreamReady = true;
+      flushTimer = setInterval(flushFrame, 40);
+      sendClient({ type: "ready" });
+    });
     upstream.on("message", raw => {
       try {
-        const result = parseRtasrResult(String(raw));
-        if (result.code !== "0") {
-          sendClient({ type: "error", error: humanizeRtasrError(result.code, result.desc) });
+        const message = JSON.parse(String(raw));
+        if (Number(message.code) !== 0) {
+          sendClient({ type: "error", error: message.message || `讯飞实时识别错误 ${message.code}` });
           cleanup();
           return;
         }
-        if (result.text) {
-          segments.set(result.segmentId, result.text);
+        if (message.data?.result) {
+          applyXfyunIatResult(segments, message.data.result);
           sendClient({ type: "text", transcript: transcript() });
         }
-        if (result.action === "started") {
-          upstreamReady = true;
-          if (!flushTimer) flushTimer = setInterval(flushFrame, 40);
-          sendClient({ type: "ready" });
+        if (message.data?.status === 2) {
+          sendClient({ type: "done", transcript: transcript() });
+          cleanup();
         }
       } catch (error) {
-        console.warn("[rtasr] parse warning:", error);
+        console.warn("[voice-realtime] parse warning:", error);
       }
     });
     upstream.on("error", error => {
@@ -524,7 +510,7 @@ export function registerVoiceWsRoutes(server: Server): void {
       cleanup();
     });
     upstream.on("close", () => {
-      sendClient({ type: "done", transcript: transcript() });
+      if (!sentFinalFrame) sendClient({ type: "error", error: "讯飞实时语音连接提前关闭" });
       cleanup();
     });
 
@@ -546,6 +532,6 @@ export function registerVoiceWsRoutes(server: Server): void {
     client.on("close", cleanup);
     client.on("error", cleanup);
 
-    console.info("[rtasr] connected", { adoptId: meta.adoptId, userId: meta.userId });
+    console.info("[voice-realtime] connected", { adoptId: meta.adoptId, userId: meta.userId });
   });
 }
