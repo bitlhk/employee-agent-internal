@@ -71,7 +71,7 @@ export type ContextReceiptV1 = {
       contentHash: string;
       sourceType?: string;
       asOf?: string;
-      usageType: "preference" | "relationship_observation" | "procedure" | "inference";
+      usageType: "preference" | "relationship_observation" | "procedure" | "inference" | "work_state";
       assurance: "REFERENCE_ONLY";
     }>;
     capabilities: Array<{

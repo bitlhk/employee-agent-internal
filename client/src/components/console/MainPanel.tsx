@@ -5,6 +5,7 @@ import { KnowledgePage } from "@/components/pages/KnowledgePage";
 import { SchedulePageV2 } from "@/components/pages/SchedulePageV2";
 import { SettingsPage } from "@/components/pages/SettingsPage";
 import { CollabPage } from "@/components/pages/CollabPage";
+import { WorkContinuityPage } from "@/components/pages/WorkContinuityPage";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import type { PageKey } from "@/components/console/Sidebar";
 import type { ReactNode } from "react";
@@ -20,6 +21,7 @@ const PANEL_PAGE_ORDER: PanelPageKey[] = [
   "knowledge",
   "workspace",
   "schedule",
+  "work",
   "collab",
   "settings",
 ];
@@ -104,6 +106,7 @@ export function MainPanel({
     if (page === "knowledge") return <KnowledgePage adoptId={adoptId || ""} />;
     if (page === "workspace") return <WorkspacePage adoptId={adoptId || ""} />;
     if (page === "schedule") return <SchedulePageV2 adoptId={adoptId || ""} />;
+    if (page === "work") return <WorkContinuityPage adoptId={adoptId || ""} />;
     if (page === "collab") return <CollabPage adoptId={adoptId || ""} active={activePage === "collab"} />;
     return <SettingsPage />;
   };

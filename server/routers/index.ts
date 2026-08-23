@@ -13,6 +13,7 @@ import { auditRouter } from "./audit";
 import { knowledgeRouter } from "./knowledge";
 import { enterpriseMcpRouter } from "./enterprise-mcp";
 import { enterpriseAssetsRouter } from "./enterprise-assets";
+import { workContinuityRouter } from "./work-continuity";
 
 export const appRouter = router({
   // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -33,6 +34,7 @@ export const appRouter = router({
   knowledge: knowledgeRouter,
   enterpriseMcp: enterpriseMcpRouter,
   enterpriseAssets: enterpriseAssetsRouter,
+  workContinuity: workContinuityRouter,
 });
 
 export type AppRouter = typeof appRouter;

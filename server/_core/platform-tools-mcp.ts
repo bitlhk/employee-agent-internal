@@ -20,11 +20,7 @@ import { evaluateGovernance, governanceFingerprint, principalFingerprint } from 
 import { platformMcpPolicyAdapter } from "./governance/platform-mcp-policy";
 import { resolveRuntimePrincipal, resolveRuntimePrincipalV2 } from "./governance/principal";
 import { authorizePlatformMcpExecution } from "./governance/platform-mcp-execution-authority";
-import {
-  buildCapabilitySnapshot,
-  buildTaskContextPack,
-  buildTaskExecutionEnvelope,
-} from "./governance/task-execution-envelope";
+import { buildCapabilitySnapshot, buildTaskContextPack, buildTaskExecutionEnvelope } from "./governance/task-execution-envelope";
 import { evaluateWealthTaskReadiness, readinessCheck } from "./governance/wealth-task-readiness";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
@@ -33,10 +29,7 @@ import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
 import { buildWealthAllocationContextReceipt, buildWealthPolicyContextReceipt } from "./wealth-context-receipts";
 import { attachContextReceipt } from "./governance/context-receipt";
-import {
-  handlePostLoanRiskEscalationTool,
-  POST_LOAN_RISK_ESCALATION_TOOL,
-} from "./post-loan-risk-tool-handler";
+import { handlePostLoanRiskEscalationTool, POST_LOAN_RISK_ESCALATION_TOOL } from "./post-loan-risk-tool-handler";
 import { GOVERNED_ROLE_POLICY_TOOLS, handleGovernedRolePolicyTool } from "./governed-role-policy-tools";
 import { summarizePlatformAgents } from "./platform-agent-summary";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
@@ -45,6 +38,7 @@ import { wealthAllocationModelContent, wealthPolicyModelContent } from "./wealth
 import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } from "./wealth-role-pack-release";
 import { resolveWealthPolicyBasis, resolveWealthSuitabilityPolicySource } from "./wealth-policy-source";
 import { buildWealthAllocationTaskContextPack, finalizeWealthPolicyResolutionEvidence, observeWealthAllocationRuntimeSources, observeWealthPolicyRuntimeSource, resolveWealthAllocationRuntimeSources, resolveWealthPolicyRuntimeSource } from "./context-resolution/wealth-runtime-sources";
+import { GOVERNED_WORK_PLATFORM_TOOLS, handleGovernedWorkPlatformTool, isGovernedWorkPlatformTool } from "./governed-work-platform-tools";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -133,6 +127,7 @@ const TOOLS = [
     description: "List active work preferences learned by the current EA employee agent. Use when the user asks what is remembered about their work style.",
     inputSchema: { type: "object", properties: {} },
   },
+  ...GOVERNED_WORK_PLATFORM_TOOLS,
   {
     name: "get_wealth_policy_basis",
     description: [
@@ -477,6 +472,8 @@ async function callTool(
       ...active.map((item) => `- [${item.id}] ${item.content}`),
     ].join("\n"));
   }
+
+  if (isGovernedWorkPlatformTool(name)) return handleGovernedWorkPlatformTool({ req, name, args, adoption: claw, adoptId, sessionId: principal.principal.sessionId });
 
   if (name === "get_user_channels") {
     const channels = ["conversation"];

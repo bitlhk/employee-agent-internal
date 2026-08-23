@@ -7,11 +7,12 @@ import {
   Plug,
   Timer,
   Users,
+  ListTodo,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { SessionList, type SessionListConversation } from "./SessionList";
 
-export type PageKey = "chat" | "skills" | "experts" | "connectors" | "agent" | "knowledge" | "workspace" | "schedule" | "collab" | "settings";
+export type PageKey = "chat" | "skills" | "experts" | "connectors" | "work" | "agent" | "knowledge" | "workspace" | "schedule" | "collab" | "settings";
 
 type NavItem = { key: PageKey; label: string; icon: any; adminOnly?: boolean };
 
@@ -24,6 +25,7 @@ export const primaryItems: NavItem[] = [
   { key: "connectors", label: "连接器", icon: Plug },
   { key: "collab", label: "协作", icon: Users },
   { key: "schedule", label: "定时任务", icon: Timer },
+  { key: "work", label: "工作事项", icon: ListTodo },
 ];
 
 const secondaryItems: NavItem[] = [
@@ -31,7 +33,7 @@ const secondaryItems: NavItem[] = [
   { key: "knowledge", label: "知识", icon: BookOpen },
 ];
 
-const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "agent", "knowledge", "workspace", "schedule", "collab", "settings"]);
+const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "work", "agent", "knowledge", "workspace", "schedule", "collab", "settings"]);
 
 export function isPageKey(value: unknown): value is PageKey {
   return PAGE_KEYS.has(String(value || "") as PageKey);

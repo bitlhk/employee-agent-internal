@@ -1328,6 +1328,78 @@ export const a2aCapabilityIntentExecutions = mysqlTable("a2a_capability_intent_e
 export type A2ACapabilityIntentExecution = typeof a2aCapabilityIntentExecutions.$inferSelect;
 export type InsertA2ACapabilityIntentExecution = typeof a2aCapabilityIntentExecutions.$inferInsert;
 
+// Confirmed work state is separate from preference memory. Draft extraction is
+// not an enterprise fact until a user-confirmed capability transition succeeds.
+export const governedWorkItems = mysqlTable("governed_work_items", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  workItemId: varchar("work_item_id", { length: 64 }).notNull(),
+  organizationId: varchar("organization_id", { length: 128 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  roleTemplate: varchar("role_template", { length: 64 }).notNull(),
+  type: mysqlEnum("type", ["decision", "action_item", "open_question"]).notNull(),
+  subject: varchar("subject", { length: 240 }).notNull(),
+  description: text("description"),
+  ownerPrincipalId: varchar("owner_principal_id", { length: 128 }),
+  ownerDisplayName: varchar("owner_display_name", { length: 160 }),
+  dueAt: timestamp("due_at"),
+  status: mysqlEnum("status", ["draft", "confirmed", "open", "in_progress", "done", "cancelled"]).notNull().default("draft"),
+  sourceType: mysqlEnum("source_type", ["meeting"]).notNull().default("meeting"),
+  sourceId: varchar("source_id", { length: 128 }).notNull(),
+  sourceFingerprint: varchar("source_fingerprint", { length: 64 }).notNull(),
+  sourceExcerpt: varchar("source_excerpt", { length: 1000 }).notNull(),
+  extractionJson: json("extraction_json").$type<Record<string, unknown>>().notNull(),
+  confirmedBy: varchar("confirmed_by", { length: 128 }),
+  confirmedAt: timestamp("confirmed_at"),
+  relatedContextJson: json("related_context_json").$type<string[]>().notNull(),
+  version: int("version").notNull().default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  workItemIdUnique: uniqueIndex("uk_governed_work_item_id").on(table.workItemId),
+  scopeStatusIdx: index("idx_governed_work_item_scope_status").on(table.organizationId, table.userId, table.adoptId, table.status),
+  sourceIdx: index("idx_governed_work_item_source").on(table.organizationId, table.sourceId),
+  dueIdx: index("idx_governed_work_item_due").on(table.adoptId, table.status, table.dueAt),
+}));
+
+export type GovernedWorkItem = typeof governedWorkItems.$inferSelect;
+export type InsertGovernedWorkItem = typeof governedWorkItems.$inferInsert;
+
+export const governedWorkItemExecutions = mysqlTable("governed_work_item_executions", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  executionReceiptId: varchar("execution_receipt_id", { length: 64 }).notNull(),
+  workItemId: varchar("work_item_id", { length: 64 }).notNull(),
+  organizationId: varchar("organization_id", { length: 128 }).notNull(),
+  userId: int("user_id").notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  capabilityId: varchar("capability_id", { length: 128 }).notNull(),
+  capabilityVersion: varchar("capability_version", { length: 32 }).notNull(),
+  operation: mysqlEnum("operation", ["confirm", "start", "complete", "cancel"]).notNull(),
+  fromStatus: mysqlEnum("from_status", ["draft", "confirmed", "open", "in_progress", "done", "cancelled"]).notNull(),
+  toStatus: mysqlEnum("to_status", ["draft", "confirmed", "open", "in_progress", "done", "cancelled"]).notNull(),
+  status: mysqlEnum("status", ["completed", "failed", "blocked"]).notNull(),
+  requestedBy: varchar("requested_by", { length: 128 }).notNull(),
+  confirmedBy: varchar("confirmed_by", { length: 128 }),
+  confirmedAt: timestamp("confirmed_at"),
+  approvalId: varchar("approval_id", { length: 64 }),
+  idempotencyKey: varchar("idempotency_key", { length: 191 }).notNull(),
+  payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+  contextReceiptFingerprint: varchar("context_receipt_fingerprint", { length: 64 }),
+  resultFingerprint: varchar("result_fingerprint", { length: 64 }),
+  errorCode: varchar("error_code", { length: 128 }),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  completedAt: timestamp("completed_at"),
+}, table => ({
+  receiptUnique: uniqueIndex("uk_governed_work_execution_receipt").on(table.executionReceiptId),
+  idempotencyUnique: uniqueIndex("uk_governed_work_execution_idempotency").on(table.organizationId, table.userId, table.adoptId, table.idempotencyKey),
+  itemCreatedIdx: index("idx_governed_work_execution_item").on(table.workItemId, table.createdAt),
+  approvalIdx: index("idx_governed_work_execution_approval").on(table.approvalId),
+}));
+
+export type GovernedWorkItemExecution = typeof governedWorkItemExecutions.$inferSelect;
+export type InsertGovernedWorkItemExecution = typeof governedWorkItemExecutions.$inferInsert;
+
 export const cronJobCreations = mysqlTable("cron_job_creations", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   adoptId: varchar("adopt_id", { length: 64 }).notNull(),

@@ -11,6 +11,7 @@ const PAGE_LABELS: Record<string, string> = {
   workspace: "工作空间",
   collab: "协作",
   schedule: "定时任务",
+  work: "工作事项",
   settings: "设置",
 };
 

@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "ea.logical-context-catalog-extension.v1",
+  "extensionVersion": "1.0.0",
+  "baselineCatalogVersion": "1.0.0",
+  "entries": [
+    {
+      "canonicalId": "governed_work_state",
+      "contextType": "memory",
+      "displayName": "已确认工作状态",
+      "description": "经用户确认的决定、待办和开放问题，用于跨交互接续工作，不包含未确认的模型推断。",
+      "aliases": ["work.state.confirmed"],
+      "status": "active"
+    }
+  ],
+  "plans": [
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "grace-governed-work-continuity",
+      "planVersion": "1.0.0",
+      "rolePackId": "role:{runtime-role-template}",
+      "roleTemplate": "{runtime-role-template}",
+      "taskId": "GWC-GT-02",
+      "needs": [
+        {
+          "needId": "confirmed_work_state",
+          "logicalAssetId": "governed_work_state",
+          "contextType": "memory",
+          "requiredness": "required",
+          "purpose": "接续经用户确认的工作状态，不从会议原文重新推断。",
+          "freshness": { "mode": "latest" },
+          "requiredCapabilities": ["read_work_state"]
+        }
+      ]
+    }
+  ]
+}

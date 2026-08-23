@@ -44,6 +44,7 @@ const RULES: readonly GovernanceRule[] = [
       "mcp_platform_tools_get_user_channels",
       "mcp_platform_tools_list_available_agents",
       "mcp_platform_tools_list_learned_preferences",
+      "mcp_platform_tools_list_governed_work_items",
       "mcp_platform_tools_get_wealth_policy_basis",
       "mcp_platform_tools_prepare_wealth_previsit_context",
       "mcp_platform_tools_prepare_wealth_maturity_context",
@@ -63,6 +64,14 @@ const RULES: readonly GovernanceRule[] = [
     approvalMode: "never",
     auditLevel: "strong",
     idempotencyRequired: false,
+  },
+  {
+    exact: ["mcp_platform_tools_update_governed_work_item"],
+    sideEffect: "write",
+    policyRequired: true,
+    approvalMode: "always",
+    auditLevel: "strong",
+    idempotencyRequired: true,
   },
   {
     exact: ["mcp_platform_tools_create_scheduled_task"],

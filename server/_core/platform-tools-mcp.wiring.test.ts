@@ -11,6 +11,9 @@ const mocks = vi.hoisted(() => ({
   resolveWealthPolicyBasis: vi.fn(),
   resolveWealthPrevisitKnowledgeBasis: vi.fn(),
   authorizeExecutionAuthority: vi.fn(),
+  governedWorkView: vi.fn(),
+  transitionGovernedWorkItem: vi.fn(),
+  enforceGovernanceApproval: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -56,6 +59,18 @@ vi.mock("./agent-memory-retrieval", () => ({
     }],
     activeCount: 1,
   })),
+}));
+vi.mock("./governed-work-continuity", () => ({
+  governedWorkView: mocks.governedWorkView,
+  transitionGovernedWorkItem: mocks.transitionGovernedWorkItem,
+}));
+vi.mock("./governance/approval-service", () => ({
+  enforceGovernanceApproval: mocks.enforceGovernanceApproval,
+  approvalRequiredToolResult: (input: any) => ({
+    content: [{ type: "text", text: `approval required ${input.approvalId}` }],
+    isError: true,
+    _meta: { eaGovernance: { code: "EA_APPROVAL_REQUIRED", ...input } },
+  }),
 }));
 vi.mock("./observability/metrics", () => ({
   beginMcpCall: vi.fn(() => () => undefined),
@@ -145,6 +160,41 @@ beforeEach(async () => {
     currentSnapshotId: "authz_current",
     effectiveAuthorityFingerprint: "e".repeat(64),
   });
+  mocks.governedWorkView.mockResolvedValue({
+    items: [{
+      workItemId: "gwk_00000000-0000-4000-8000-000000000001",
+      type: "action_item",
+      subject: "准备王总资产配置方案",
+      ownerDisplayName: "小李",
+      dueAt: "2026-08-26T10:00:00.000Z",
+      status: "open",
+      version: 2,
+      confirmation: { confirmedAt: "2026-08-23T02:00:00.000Z" },
+      relatedContext: ["customer_profile"],
+    }],
+    executions: [],
+    context: {},
+    receipt: {
+      schema: "ea.context-receipt.v1",
+      receiptId: "crpt_work",
+      taskId: "GWC-GT-02",
+      taskLabel: "接续已确认工作",
+      principalFingerprint: "a".repeat(64),
+      effectiveContextSnapshot: { capturedAt: "2026-08-23T02:00:00.000Z", items: [], snapshotFingerprint: "b".repeat(64) },
+      provided: { knowledge: [], businessData: [], memory: [], capabilities: [] },
+      cited: { knowledgeAssetIds: [] },
+      applied: { policyDecisions: [], capabilityExecutions: [] },
+      excluded: [],
+      readiness: { status: "READY", requestedOutcome: "continue", allowedOutcomes: [], deniedOutcomes: [], reasons: [], remediation: [], presentation: { completed: [], unavailable: [], nextSteps: [] }, decisionFingerprint: "c".repeat(64) },
+      createdAt: "2026-08-23T02:00:00.000Z",
+      receiptFingerprint: "d".repeat(64),
+    },
+  });
+  mocks.enforceGovernanceApproval.mockResolvedValue({
+    effect: "REQUIRE_APPROVAL",
+    reason: "需要确认",
+    requirement: { approvalId: "apr_00000000-0000-4000-8000-000000000001", expiresAt: new Date("2026-08-23T03:00:00.000Z") },
+  });
   mocks.prepareWealthMaturityContext.mockResolvedValue({
     schema: "ea.wealth-maturity-context.v1",
     status: "ready",
@@ -222,6 +272,42 @@ afterEach(async () => {
 });
 
 describe("platform MCP PEP wiring", () => {
+  it("provides confirmed work state as governed Context instead of conversation inference", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "work-state", method: "tools/call",
+        params: { name: "list_governed_work_items", arguments: {} },
+      }),
+    });
+    const body = await response.json() as any;
+    expect(body.result?.isError).not.toBe(true);
+    expect(body.result?.content?.[0]?.text).toContain("EA_GOVERNED_WORK_CONTEXT");
+    expect(body.result?.content?.[0]?.text).toContain("gwk_00000000-0000-4000-8000-000000000001");
+    expect(body.result?._meta?.eaContextReceipt?.taskId).toBe("GWC-GT-02");
+  });
+
+  it("requires explicit governance approval before changing a work item", async () => {
+    mocks.runtimeAttested = true;
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "work-complete", method: "tools/call",
+        params: { name: "update_governed_work_item", arguments: {
+          work_item_id: "gwk_00000000-0000-4000-8000-000000000001",
+          operation: "complete",
+          idempotency_key: "complete-work-001",
+        } },
+      }),
+    });
+    const body = await response.json() as any;
+    expect(body.result?.isError).toBe(true);
+    expect(body.result?._meta?.eaGovernance?.code).toBe("EA_APPROVAL_REQUIRED");
+    expect(mocks.transitionGovernedWorkItem).not.toHaveBeenCalled();
+  });
+
   it("returns a governed current-policy basis without depending on business MCP", async () => {
     const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
       method: "POST",
