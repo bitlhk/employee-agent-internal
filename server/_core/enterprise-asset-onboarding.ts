@@ -61,6 +61,9 @@ export function newEnterpriseAssetCandidateId(): string {
 const ROLE_PACK_BY_ROLE: Record<string, string> = {
   "wealth-manager": "linggan-bank.wealth-manager",
   "insurance-advisor": "linggan-insurance.insurance-advisor",
+  "post-loan-risk-control": "linggan-bank.post-loan-risk-control",
+  "credential-compliance": "linggan-bank.smart-audit",
+  "investment-researcher": "linggan-finance.investment-research",
 };
 
 export function analyzeEnterpriseAssetImpact(input: {

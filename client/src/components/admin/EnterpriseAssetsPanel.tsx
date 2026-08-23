@@ -26,6 +26,10 @@ const STATUS_LABELS: Record<string, string> = {
 };
 const RELEASE_STATUS_LABELS: Record<string, string> = {
   ready_to_stage: "可进入岗位验证",
+  metadata_confirmation_required: "待确认治理信息",
+  logical_context_mapping_required: "待补 Logical Context 映射",
+  golden_task_mapping_required: "待补 Golden Task 影响",
+  not_for_runtime: "无需进入岗位 Runtime",
   awaiting_validation: "待标杆任务验收",
   validated_pending_effective: "已验证，等待生效",
   active: "当前有效",
@@ -486,7 +490,7 @@ export function EnterpriseAssetsPanel() {
                     <Button size="sm" onClick={() => review.mutate({ candidateId: candidate.candidateId, decision: "approve" })}><Check className="mr-1.5 h-3.5 w-3.5" />通过</Button>
                     <Button variant="outline" size="sm" onClick={() => setRejectTarget(candidate)}><X className="mr-1.5 h-3.5 w-3.5" />退回</Button>
                   </>}
-                  {candidate.status === "approved" && candidate.assetType === "knowledge_document" && !candidate.targetAssetId && <Button size="sm" onClick={() => {
+                  {candidate.status === "approved" && candidate.assetType === "knowledge_document" && !candidate.targetAssetId && candidate.releaseStatus === "ready_to_stage" && <Button size="sm" onClick={() => {
                     setStageTarget(candidate);
                     const role = Array.isArray((candidate.confirmedMetadataJson as { applicableRoles?: unknown } | null)?.applicableRoles)
                       ? String((candidate.confirmedMetadataJson as { applicableRoles: unknown[] }).applicableRoles[0] || "") : "";

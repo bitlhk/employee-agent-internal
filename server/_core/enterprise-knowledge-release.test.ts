@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EnterpriseAssetCandidate } from "../../drizzle/schema";
 import type { KnowledgeBaseRecord, KnowledgeDocumentRecord } from "../db";
 import type { EnterpriseAssetMetadata } from "./enterprise-asset-onboarding";
-import { rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "./enterprise-knowledge-release";
+import { enterpriseKnowledgeGateReadiness, rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "./enterprise-knowledge-release";
 
 const base: KnowledgeBaseRecord = {
   id: 1, publicId: "kb_wealth_policy", ownerUserId: 1, ownerGroupId: 1,
@@ -101,6 +101,17 @@ const metadata: EnterpriseAssetMetadata = {
 };
 
 describe("enterprise knowledge release", () => {
+  it("requires a Logical Context and Golden Task impact contract before staging", () => {
+    expect(enterpriseKnowledgeGateReadiness({ lifecycle: "archived", logicalAssetIds: [], relatedTasks: [] }))
+      .toBe("not_for_runtime");
+    expect(enterpriseKnowledgeGateReadiness({ lifecycle: "active", logicalAssetIds: [], relatedTasks: [] }))
+      .toBe("logical_context_mapping_required");
+    expect(enterpriseKnowledgeGateReadiness({ lifecycle: "active", logicalAssetIds: ["current_market_view"], relatedTasks: [] }))
+      .toBe("golden_task_mapping_required");
+    expect(enterpriseKnowledgeGateReadiness({ lifecycle: "active", logicalAssetIds: ["current_market_view"], relatedTasks: ["WM-GT-02"] }))
+      .toBe("ready_to_stage");
+  });
+
   it("accepts a Role Pack verification persisted in the same database second", () => {
     const candidateUpdatedAt = new Date("2026-08-20T23:07:31.000Z");
     expect(rolePackReleaseCoversCandidate(new Date("2026-08-20T23:07:31.000Z"), candidateUpdatedAt)).toBe(true);

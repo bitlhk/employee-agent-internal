@@ -23,6 +23,21 @@ export type EnterpriseKnowledgeValidation = {
   validationFingerprint: string;
 };
 
+export type EnterpriseKnowledgeGateReadiness =
+  | "ready_to_stage"
+  | "not_for_runtime"
+  | "logical_context_mapping_required"
+  | "golden_task_mapping_required";
+
+export function enterpriseKnowledgeGateReadiness(
+  metadata: Pick<EnterpriseAssetMetadata, "lifecycle" | "logicalAssetIds" | "relatedTasks">,
+): EnterpriseKnowledgeGateReadiness {
+  if (metadata.lifecycle !== "active") return "not_for_runtime";
+  if (!metadata.logicalAssetIds.length) return "logical_context_mapping_required";
+  if (!metadata.relatedTasks.length) return "golden_task_mapping_required";
+  return "ready_to_stage";
+}
+
 export function rolePackReleaseCoversCandidate(
   releaseVerifiedAt: Date | null | undefined,
   candidateUpdatedAt: Date,

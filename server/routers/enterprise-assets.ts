@@ -57,7 +57,7 @@ import {
   removeKnowledgeDocumentFiles,
 } from "../_core/knowledge-storage";
 import { queueKnowledgeIndex } from "../_core/knowledge-service";
-import { rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
+import { enterpriseKnowledgeGateReadiness, rolePackReleaseCoversCandidate, verifyWealthPolicyCandidate } from "../_core/enterprise-knowledge-release";
 import { persistReferenceRolePackScenarioReport } from "../_core/reference-role-pack-release";
 
 const sourceSchema = z.object({
@@ -151,8 +151,12 @@ function unresolvedDiagnostics(value: unknown): Array<Record<string, unknown>> {
 function knowledgeReleaseStatus(candidate: {
   status: string;
   targetAssetId?: string | null;
+  confirmedMetadataJson?: unknown;
 }, document: Awaited<ReturnType<typeof getKnowledgeDocumentByPublicId>>): string {
-  if (candidate.status === "approved" && !candidate.targetAssetId) return "ready_to_stage";
+  if (candidate.status === "approved" && !candidate.targetAssetId) {
+    const parsed = enterpriseAssetMetadataSchema.safeParse(candidate.confirmedMetadataJson);
+    return parsed.success ? enterpriseKnowledgeGateReadiness(parsed.data) : "metadata_confirmation_required";
+  }
   if (candidate.status === "approved" && document?.lifecycle === "draft") return "awaiting_validation";
   if (candidate.status !== "published" || !document) return candidate.status;
   if (document.lifecycle !== "active") return "inactive";
@@ -584,8 +588,14 @@ export const enterpriseAssetsRouter = router({
       throw new TRPCError({ code: "CONFLICT", message: "该知识版本已进入验证流程" });
     }
     const metadata = enterpriseAssetMetadataSchema.parse(candidate.confirmedMetadataJson);
-    if (metadata.lifecycle !== "active") {
-      throw new TRPCError({ code: "PRECONDITION_FAILED", message: "请先确认该资产计划进入有效生命周期" });
+    const gateReadiness = enterpriseKnowledgeGateReadiness(metadata);
+    if (gateReadiness !== "ready_to_stage") {
+      const message = ({
+        not_for_runtime: "该资产不计划进入有效生命周期，无需运行岗位门禁",
+        logical_context_mapping_required: "请先确认该知识服务的 Logical Context 映射",
+        golden_task_mapping_required: "请先确认该知识影响的 Golden Task",
+      } as const)[gateReadiness];
+      throw new TRPCError({ code: "PRECONDITION_FAILED", message });
     }
     if (metadata.authority === "official" && !metadata.effectiveAt) {
       throw new TRPCError({ code: "PRECONDITION_FAILED", message: "正式制度必须确认生效时间" });
