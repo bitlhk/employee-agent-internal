@@ -1,7 +1,8 @@
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, type ChangeEvent, type ClipboardEvent, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
-import { Mic, Paperclip, Upload, X } from "lucide-react";
+import { Keyboard, Mic, Paperclip, Upload, X } from "lucide-react";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
 import { prepareChatAttachments } from "@/lib/image-compress";
+import { RealtimeVoiceCapture, type RealtimeVoiceStatus } from "@/lib/realtime-voice";
 
 type MentionUser = {
   userId: number;
@@ -32,6 +33,7 @@ type ChatInputProps = {
   voiceOnRight?: boolean;
   historyStorageKey?: string;
   showUtilityButtons?: boolean;
+  adoptId?: string;
 };
 
 const MAX_INPUT_HISTORY = 30;
@@ -117,6 +119,7 @@ export function ChatInput({
   voiceOnRight = false,
   historyStorageKey,
   showUtilityButtons = true,
+  adoptId,
 }: ChatInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -136,6 +139,17 @@ export function ChatInput({
   const [transcribing, setTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const realtimeCaptureRef = useRef<RealtimeVoiceCapture | null>(null);
+  const voicePressActiveRef = useRef(false);
+  const voiceCancelRef = useRef(false);
+  const voicePressStartYRef = useRef(0);
+  const voiceBaseDraftRef = useRef("");
+  const [coarsePointer, setCoarsePointer] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeVoiceStatus>("idle");
+  const [realtimeTranscript, setRealtimeTranscript] = useState("");
+  const [voiceCancelPending, setVoiceCancelPending] = useState(false);
+  const [voiceNotice, setVoiceNotice] = useState("");
 
   // ── @mention 状态 ──
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -478,6 +492,88 @@ export function ChatInput({
     else startRecording();
   };
 
+  const appendVoiceTranscript = useCallback((base: string, transcript: string) => {
+    const separator = base && !base.endsWith(" ") && !base.endsWith("\n") ? " " : "";
+    onChange(`${base}${separator}${transcript}`);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [onChange]);
+
+  const startPushToTalk = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!adoptId || streaming || disabled || realtimeStatus !== "idle") return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    voicePressActiveRef.current = true;
+    voiceCancelRef.current = false;
+    voicePressStartYRef.current = event.clientY;
+    voiceBaseDraftRef.current = value;
+    setVoiceCancelPending(false);
+    setRealtimeTranscript("");
+    setVoiceNotice("");
+
+    const capture = new RealtimeVoiceCapture(adoptId, {
+      onStatus: setRealtimeStatus,
+      onTranscript: setRealtimeTranscript,
+      onComplete: transcript => {
+        appendVoiceTranscript(voiceBaseDraftRef.current, transcript);
+        setRealtimeTranscript("");
+        setVoiceMode(false);
+        if (realtimeCaptureRef.current === capture) realtimeCaptureRef.current = null;
+      },
+      onError: setVoiceNotice,
+    });
+    realtimeCaptureRef.current = capture;
+    void capture.start().catch(error => {
+      capture.cancel();
+      if (realtimeCaptureRef.current === capture) realtimeCaptureRef.current = null;
+      const message = error instanceof Error ? error.message : String(error);
+      setVoiceNotice(message.includes("Permission") || message.includes("denied")
+        ? "请允许麦克风权限后重试"
+        : `无法启动录音：${message}`);
+    });
+  }, [adoptId, appendVoiceTranscript, disabled, realtimeStatus, streaming, value]);
+
+  const movePushToTalk = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (!voicePressActiveRef.current) return;
+    const shouldCancel = voicePressStartYRef.current - event.clientY > 64;
+    voiceCancelRef.current = shouldCancel;
+    setVoiceCancelPending(shouldCancel);
+  }, []);
+
+  const finishPushToTalk = useCallback(() => {
+    if (!voicePressActiveRef.current) return;
+    voicePressActiveRef.current = false;
+    setVoiceCancelPending(false);
+    const capture = realtimeCaptureRef.current;
+    if (!capture) return;
+    if (voiceCancelRef.current) {
+      capture.cancel();
+      realtimeCaptureRef.current = null;
+      setRealtimeTranscript("");
+      setVoiceNotice("已取消语音输入");
+    } else {
+      capture.finish();
+    }
+  }, []);
+
+  const cancelPushToTalk = useCallback(() => {
+    voicePressActiveRef.current = false;
+    voiceCancelRef.current = true;
+    setVoiceCancelPending(false);
+    realtimeCaptureRef.current?.cancel();
+    realtimeCaptureRef.current = null;
+    setRealtimeTranscript("");
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(pointer: coarse), (max-width: 767px)");
+    const update = () => setCoarsePointer(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  useEffect(() => () => realtimeCaptureRef.current?.cancel(), []);
+
   // mentionIndex 变化时，把当前高亮项滚入可视区（修复键盘 ↑↓ 翻不到列表底部的问题）
   useEffect(() => {
     if (!mentionOpen) return;
@@ -525,17 +621,27 @@ export function ChatInput({
   }, [recording, transcribing, value]);
 
   const attachmentControlDisabled = streaming || submittingAttachments;
+  const mobilePushToTalkAvailable = coarsePointer && Boolean(adoptId);
   const voiceControl = (
     <button
       type="button"
-      onClick={toggleRecording}
-      title={recording ? "停止录音" : "语音输入"}
-      aria-label={recording ? "停止录音" : "语音输入"}
-      className={`lingxia-toolbar-icon ${recording ? "is-active" : ""}`}
-      style={recording ? { color: "var(--oc-accent)" } : undefined}
+      onClick={() => {
+        if (mobilePushToTalkAvailable) {
+          if (voiceMode) cancelPushToTalk();
+          setVoiceMode(current => !current);
+        } else {
+          toggleRecording();
+        }
+      }}
+      title={voiceMode ? "返回文字输入" : recording ? "停止录音" : "语音输入"}
+      aria-label={voiceMode ? "返回文字输入" : recording ? "停止录音" : "语音输入"}
+      className={`lingxia-toolbar-icon ${recording || voiceMode ? "is-active" : ""}`}
+      style={recording || voiceMode ? { color: "var(--oc-accent)" } : undefined}
       disabled={transcribing}
     >
-      <Mic size={16} strokeWidth={1.8} aria-hidden="true" />
+      {voiceMode
+        ? <Keyboard size={18} strokeWidth={1.8} aria-hidden="true" />
+        : <Mic size={16} strokeWidth={1.8} aria-hidden="true" />}
     </button>
   );
 
@@ -671,7 +777,33 @@ export function ChatInput({
         )}
 
         <div className="lingxia-composer-editor px-4 pt-3 pb-1">
-          {recording ? (
+          {voiceMode && mobilePushToTalkAvailable ? (
+            <div className="lingxia-push-to-talk-wrap">
+              <button
+                type="button"
+                className={`lingxia-push-to-talk ${voiceCancelPending ? "is-cancelling" : ""} ${realtimeStatus !== "idle" ? "is-active" : ""}`}
+                onPointerDown={startPushToTalk}
+                onPointerMove={movePushToTalk}
+                onPointerUp={finishPushToTalk}
+                onPointerCancel={cancelPushToTalk}
+                onContextMenu={event => event.preventDefault()}
+                disabled={streaming || disabled || realtimeStatus === "finalizing"}
+              >
+                {realtimeStatus === "finalizing"
+                  ? "识别中…"
+                  : voiceCancelPending
+                    ? "松开取消"
+                    : realtimeStatus === "recording" || realtimeStatus === "starting"
+                      ? "松开结束，上滑取消"
+                      : "按住说话"}
+              </button>
+              {realtimeTranscript ? (
+                <div className="lingxia-push-to-talk-transcript">{realtimeTranscript}</div>
+              ) : voiceNotice ? (
+                <div className="lingxia-push-to-talk-notice">{voiceNotice}</div>
+              ) : null}
+            </div>
+          ) : recording ? (
             <div className="flex items-center gap-2" style={{ minHeight: 22, color: "var(--oc-accent)" }}>
               <span className="animate-pulse" style={{ fontSize: 14 }}>●</span>
               <span className="text-sm">正在录音… 点击麦克风停止</span>

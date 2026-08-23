@@ -4818,6 +4818,7 @@ export default function Home() {
 
             {/* 输入区 */}
             <ChatInput
+              adoptId={resolvedAdoptId || undefined}
               value={lingxiaInput}
               onChange={setLingxiaInput}
               onSend={async (files = []) => {

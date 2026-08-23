@@ -11252,6 +11252,59 @@ html:has(:root[data-theme-mode="light"]) body {
 .lingxia-toolbar-icon.is-active {
   background: rgba(128,128,128,0.12);
 }
+
+.lingxia-push-to-talk-wrap {
+  display: grid;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.lingxia-push-to-talk {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--oc-border);
+  border-radius: 8px;
+  background: var(--oc-bg-hover);
+  color: var(--oc-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.lingxia-push-to-talk.is-active {
+  border-color: color-mix(in oklab, var(--oc-accent) 55%, var(--oc-border));
+  background: color-mix(in oklab, var(--oc-accent) 10%, var(--oc-bg-hover));
+  color: var(--oc-accent);
+}
+
+.lingxia-push-to-talk.is-cancelling {
+  border-color: #ef4444;
+  background: color-mix(in oklab, #ef4444 12%, var(--oc-bg-hover));
+  color: #ef4444;
+}
+
+.lingxia-push-to-talk:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.lingxia-push-to-talk-transcript,
+.lingxia-push-to-talk-notice {
+  max-height: 48px;
+  overflow: hidden;
+  color: var(--oc-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.lingxia-push-to-talk-notice {
+  color: #d97706;
+}
 :root[data-theme-mode="light"] .lingxia-toolbar-icon:hover {
   background: rgba(0,0,0,0.06) !important;
 }
@@ -17451,6 +17504,21 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 }
 
 @media (max-width: 640px) {
+  .main-chat-composer {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .main-chat-composer .lingxia-toolbar-icon,
+  .main-chat-composer .lingxia-send-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .main-chat-composer .lingxia-composer-editor {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
   .lingxia-readiness-banner {
     margin-left: 16px;
     margin-right: 16px;

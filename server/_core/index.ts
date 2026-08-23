@@ -54,7 +54,7 @@ import { fileURLToPath } from "url";
 import compression from "compression";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerExternalOAuthRoutes } from "./external-oauth-routes";
-import { registerVoiceRoutes } from "./voice";
+import { registerVoiceRoutes, registerVoiceWsRoutes } from "./voice";
 import { startRecycler } from "./recycler";
 import { registerCronRoutes } from "./claw-cron";
 import { registerJiuwenWebhookRoutes } from "./jiuwen-webhook";
@@ -464,6 +464,7 @@ async function startServer() {
   // OAuth callback under /api/oauth/callback
   registerExternalOAuthRoutes(app);
   registerVoiceRoutes(app);
+  registerVoiceWsRoutes(server);
   registerJiuwenWebhookRoutes(app);
   registerCronRoutes(app);
   registerNotifyRoutes(app);
