@@ -24,6 +24,11 @@ describe("internal runtime tokens", () => {
       .toBe("urn:ea:internal-mcp:role-mcp");
   });
 
+  it("maps the Customer Profile Provider to its own audience", () => {
+    expect(internalMcpAudience("/api/internal/customer-profile/mcp"))
+      .toBe("urn:ea:internal-mcp:customer-profile");
+  });
+
   it("leaves standalone loopback MCP endpoints outside the EA gateway audience namespace", () => {
     expect(optionalInternalMcpAudience("/mcp")).toBeNull();
     expect(() => internalMcpAudience("/mcp")).toThrow(/Unsupported internal MCP audience path/);

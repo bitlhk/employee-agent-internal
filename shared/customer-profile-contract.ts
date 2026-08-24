@@ -155,13 +155,28 @@ export type CustomerProfileProjectionResultV1 = {
   logicalContextId: "customer_profile";
   projectionId: string;
   projectionVersion: string;
+  taskId?: string;
   subjectId: string;
   purposeId: string;
   status: "READY" | "DEGRADED" | "BLOCKED";
+  reasonCodes: string[];
   fields: CustomerProfileProjectedFieldV1[];
   missingRequiredFields: string[];
   conflictingFields: string[];
+  invalidFields: string[];
+  invalidProvenanceFields: string[];
   appliedPurposeFilter: true;
   filteredFieldCount: number;
+  sourceEvidence: Array<{
+    sourceContractId: string;
+    sourceSystem: string;
+    sourceRecordRef: string;
+    asOf: string;
+    productionReady: boolean;
+    providerGapCount: number;
+    resultFingerprint: string;
+  }>;
+  businessContractFingerprint: string;
+  principalFingerprint: string;
   generatedAt: string;
 };

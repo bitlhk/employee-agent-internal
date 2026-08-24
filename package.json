@@ -81,6 +81,7 @@
     "context:insurance:gate-b:environment": "tsx scripts/verify-enterprise-shared-binding-gate-b-environment.ts",
     "customer-profile:verify": "tsx scripts/verify-customer-profile-contracts.ts",
     "customer-profile:freeze": "tsx scripts/verify-customer-profile-contracts.ts --require-domain-confirmed",
+    "customer-profile:provider:verify": "pnpm customer-profile:freeze && vitest run server/_core/customer-profile-source-adapters.test.ts server/_core/customer-profile-provider.test.ts server/_core/customer-profile-mcp.test.ts server/_core/internal-runtime-token.test.ts server/_core/operational-capacity.test.ts",
     "context:provider:llamaindex:certify": "tsx scripts/certify-llamaindex-provider.ts",
     "context:provider:llamaindex:baseline:verify": "tsx scripts/verify-llamaindex-provider-certification-baseline.ts",
     "rolepack:insurance:install": "tsx scripts/install-insurance-advisor-reference-pack.ts",
