@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "ea.customer-profile-source-readiness-evidence.v1",
+  "environment": "work.linggan.top",
+  "evaluatedAt": "2026-08-24T08:16:16.411Z",
+  "runtimeRelease": "20260824T072610Z-a9a862770633-local2",
+  "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
+  "sourceMappingFingerprint": "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd",
+  "status": "SOURCE_REMEDIATION_PENDING",
+  "containsCustomerValues": false,
+  "productionBindingChanged": false,
+  "roles": [
+    {
+      "roleTemplate": "wealth-manager",
+      "projectionId": "WealthCustomerProfileV1",
+      "purposeId": "wealth_advisory",
+      "sourceContractId": "wealth-assistant-customer-v2.1",
+      "status": "BLOCKED",
+      "principalAuthorized": true,
+      "subjectInScope": true,
+      "declaredMappedFieldCount": 16,
+      "observedFieldCount": 16,
+      "reportFingerprint": "5dce9faf7b6216983c6698b69b9d1e1dc069cac545863c40d63de23eafa9030f",
+      "taskBlocks": [
+        {
+          "taskId": "WM-GT-01",
+          "missingRequiredFields": [
+            "relationship.recentContactSummary",
+            "subject.customerStatus"
+          ]
+        },
+        {
+          "taskId": "WM-GT-02",
+          "missingRequiredFields": [
+            "preferences.investmentHorizon",
+            "preferences.liquidityNeeds",
+            "subject.customerStatus"
+          ]
+        },
+        {
+          "taskId": "WM-GT-03",
+          "missingRequiredFields": ["subject.customerStatus"]
+        },
+        {
+          "taskId": "WM-GT-04",
+          "missingRequiredFields": ["subject.customerStatus"]
+        }
+      ]
+    },
+    {
+      "roleTemplate": "insurance-advisor",
+      "projectionId": "InsuranceCustomerProfileV1",
+      "purposeId": "insurance_advisory",
+      "sourceContractId": "insurance-customer-profile-demo-v1",
+      "status": "BLOCKED",
+      "principalAuthorized": false,
+      "subjectInScope": false,
+      "declaredMappedFieldCount": 14,
+      "observedFieldCount": 0,
+      "reportFingerprint": "e09f6f44ee4a98ffbe01a8c1ed37d9fca21b7d86fe317a804a0c20fcff25a802",
+      "taskBlocks": [
+        {
+          "taskId": "IA-GT-01",
+          "declaredMissingRequiredFields": [
+            "insurance.claimsRiskSummary",
+            "insurance.currentCoverageSummary",
+            "insurance.renewalAt",
+            "insurance.renewalStatus",
+            "serviceScope.inScope"
+          ]
+        },
+        {
+          "taskId": "IA-GT-02",
+          "declaredMissingRequiredFields": [
+            "insurance.currentCoverageSummary",
+            "serviceScope.inScope"
+          ]
+        }
+      ]
+    }
+  ]
+}

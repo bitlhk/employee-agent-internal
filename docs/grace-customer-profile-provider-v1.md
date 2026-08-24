@@ -131,3 +131,6 @@ Shadow availability is not Production activation. Promotion remains prohibited u
 - Wealth and Insurance Candidate Provided;
 - zero cross-role leakage;
 - dual-role Golden Task PASS under one immutable validation snapshot.
+
+The executable source-readiness assessment and the current local environment
+gaps are recorded in `docs/grace-customer-profile-source-readiness-v1.md`.
