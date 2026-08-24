@@ -28,6 +28,7 @@ import { resolveAgentRoleTemplate } from "./role-templates";
 import { onboardBuiltinSkillsForAdopt } from "./skills/skill-onboarding";
 import { ensureEnterpriseRuntimeBindingForAdoption } from "./enterprise-runtime-assets";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
+import { issueMobileRealtimeVoiceTicket } from "./voice";
 
 const MINI_EXPERIENCE_TTL_DAYS = 30;
 const MINI_EXPERIENCE_TIMEOUT_MS = 120_000;
@@ -678,6 +679,38 @@ export function registerMiniExperienceRoutes(app: Express): void {
       }
       logError("miniprogram_experience.history_failed", error);
       res.status(503).json({ error: "历史会话暂时不可用" });
+    }
+  });
+
+  app.post("/api/internal/miniprogram/experience/voice/realtime-ticket", async (req, res) => {
+    if (!isExperienceRequestAuthorized(req)) {
+      res.status(experienceToken() ? 401 : 503).json({ error: "实时语音渠道未配置" });
+      return;
+    }
+    try {
+      const input = MiniExperienceAccountInput.parse(req.body);
+      const resolved = await resolveRegisteredAdoption({
+        ...input,
+        message: "voice",
+        conversationId: "channel-voice-realtime",
+        selectedSkillIds: [],
+      });
+      if (!resolved.adoption) {
+        res.status(404).json({ error: "岗位智能体不存在" });
+        return;
+      }
+      res.setHeader("cache-control", "no-store");
+      res.json(issueMobileRealtimeVoiceTicket({
+        adoptId: String(resolved.adoption.adoptId),
+        userId: resolved.userId,
+      }));
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: error.issues[0]?.message || "请求参数无效" });
+        return;
+      }
+      logError("miniprogram_experience.voice_ticket_failed", error);
+      res.status(503).json({ error: "实时语音暂时不可用" });
     }
   });
 

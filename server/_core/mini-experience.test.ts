@@ -337,6 +337,38 @@ describe("EA Mini Program experience route", () => {
     ]);
   });
 
+  it("issues a short-lived realtime voice ticket for the owned adoption", async () => {
+    const registeredAdoption = {
+      ...adoption,
+      userId: 77,
+      adoptId: "lgj-existing1234",
+      agentId: "jiuwen_lgj-existing1234",
+      permissionProfile: "plus",
+      ttlDays: 0,
+      expiresAt: null,
+    };
+    mocks.listClawsByUserId.mockResolvedValue([registeredAdoption]);
+
+    const response = await post(
+      `${baseUrl}/api/internal/miniprogram/experience/voice/realtime-ticket`,
+      {
+        subject: "a".repeat(64),
+        identity: {
+          name: "已注册用户",
+          verifiedEmail: "user@example.com",
+          onboardingComplete: true,
+        },
+      },
+      process.env.MINIPROGRAM_EXPERIENCE_TOKEN
+    );
+
+    expect(response.status, response.body).toBe(200);
+    expect(JSON.parse(response.body)).toEqual({
+      ticket: expect.stringMatching(/^[a-f0-9]{64}$/u),
+      expiresIn: 45,
+    });
+  });
+
   it("provisions one deterministic adoption for a registered user without one", async () => {
     const registeredAdoption = {
       ...adoption,

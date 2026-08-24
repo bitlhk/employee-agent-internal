@@ -12,6 +12,40 @@ import { isAuthorizedInternalRequest, resolveRequesterUserId } from "./helpers";
 const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 const MAX_REALTIME_QUEUE_BYTES = 2 * 1024 * 1024;
 const MAX_REALTIME_SESSION_MS = 65_000;
+const MOBILE_REALTIME_TICKET_MS = 45_000;
+const mobileRealtimeTickets = new Map<string, {
+  adoptId: string;
+  userId: number;
+  expiresAt: number;
+}>();
+
+export function issueMobileRealtimeVoiceTicket(input: {
+  adoptId: string;
+  userId: number;
+}): { ticket: string; expiresIn: number } {
+  const now = Date.now();
+  for (const [ticket, value] of mobileRealtimeTickets) {
+    if (value.expiresAt <= now) mobileRealtimeTickets.delete(ticket);
+  }
+  if (mobileRealtimeTickets.size >= 500) {
+    const oldest = mobileRealtimeTickets.keys().next().value;
+    if (oldest) mobileRealtimeTickets.delete(oldest);
+  }
+  const ticket = randomUUID().replace(/-/gu, "") + randomUUID().replace(/-/gu, "");
+  mobileRealtimeTickets.set(ticket, {
+    adoptId: input.adoptId,
+    userId: input.userId,
+    expiresAt: now + MOBILE_REALTIME_TICKET_MS,
+  });
+  return { ticket, expiresIn: Math.floor(MOBILE_REALTIME_TICKET_MS / 1000) };
+}
+
+function consumeMobileRealtimeVoiceTicket(ticket: string) {
+  const value = mobileRealtimeTickets.get(ticket);
+  mobileRealtimeTickets.delete(ticket);
+  if (!value || value.expiresAt <= Date.now()) return null;
+  return value;
+}
 
 function buildIatUrl(apiSecret: string, apiKey: string): string {
   const host = "iat-api.xfyun.cn";
@@ -403,6 +437,19 @@ export function registerVoiceWsRoutes(server: Server): void {
 
   server.on("upgrade", async (req, socket, head) => {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
+    const mobilePath = "/api/internal/miniprogram/experience/voice/realtime";
+    if (url.pathname === mobilePath) {
+      const ticket = consumeMobileRealtimeVoiceTicket(String(url.searchParams.get("ticket") || ""));
+      if (!ticket) {
+        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, ws => {
+        wss.emit("connection", ws, req, { ...ticket, audioFormat: "mp3" });
+      });
+      return;
+    }
     if (url.pathname !== "/api/claw/voice/rtasr") return;
 
     try {
@@ -430,7 +477,7 @@ export function registerVoiceWsRoutes(server: Server): void {
       }
 
       wss.handleUpgrade(req, socket, head, ws => {
-        wss.emit("connection", ws, req, { adoptId, userId });
+        wss.emit("connection", ws, req, { adoptId, userId, audioFormat: "pcm" });
       });
     } catch (error) {
       console.error("[rtasr] upgrade error:", error);
@@ -439,7 +486,11 @@ export function registerVoiceWsRoutes(server: Server): void {
     }
   });
 
-  wss.on("connection", (client: WS, _req: IncomingMessage, meta: { adoptId: string; userId: number }) => {
+  wss.on("connection", (client: WS, _req: IncomingMessage, meta: {
+    adoptId: string;
+    userId: number;
+    audioFormat: "pcm" | "mp3";
+  }) => {
     const appId = String(process.env.XFYUN_APPID || "").trim();
     const apiSecret = String(process.env.XFYUN_API_SECRET || "").trim();
     const apiKey = String(process.env.XFYUN_API_KEY || "").trim();
@@ -459,6 +510,7 @@ export function registerVoiceWsRoutes(server: Server): void {
     let frameIndex = 0;
     let sentFinalFrame = false;
     let flushTimer: ReturnType<typeof setInterval> | undefined;
+    let transcoder: ReturnType<typeof spawn> | null = null;
     const sessionTimeout = setTimeout(() => {
       sendClient({ type: "error", error: "单次语音输入最长 60 秒" });
       cleanup();
@@ -475,6 +527,10 @@ export function registerVoiceWsRoutes(server: Server): void {
       try {
         if (upstream.readyState === WS.OPEN || upstream.readyState === WS.CONNECTING) upstream.close();
       } catch {}
+      try {
+        transcoder?.kill("SIGKILL");
+      } catch {}
+      transcoder = null;
       try {
         if (client.readyState === WS.OPEN) client.close();
       } catch {}
@@ -556,9 +612,46 @@ export function registerVoiceWsRoutes(server: Server): void {
       cleanup();
     });
 
+    if (meta.audioFormat === "mp3") {
+      transcoder = spawn("ffmpeg", [
+        "-nostdin", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+        "-ar", "16000", "-ac", "1", "-f", "s16le", "pipe:1",
+      ], { stdio: ["pipe", "pipe", "pipe"] });
+      let stderr = "";
+      transcoder.stdout?.on("data", data => {
+        const chunk = Buffer.from(data);
+        if (queue.length + chunk.length > MAX_REALTIME_QUEUE_BYTES) {
+          sendClient({ type: "error", error: "实时录音缓存过大，请重试" });
+          cleanup();
+          return;
+        }
+        queue = Buffer.concat([queue, chunk]);
+      });
+      transcoder.stdout?.on("end", () => {
+        ended = true;
+      });
+      transcoder.stderr?.on("data", data => {
+        if (stderr.length < 2048) stderr += String(data).slice(0, 2048 - stderr.length);
+      });
+      transcoder.on("error", error => {
+        sendClient({ type: "error", error: error.message || "实时音频转换失败" });
+        cleanup();
+      });
+      transcoder.on("close", code => {
+        if (code && !sentFinalFrame) {
+          sendClient({ type: "error", error: stderr.trim() || "实时音频转换失败" });
+          cleanup();
+        }
+      });
+    }
+
     client.on("message", (data, isBinary) => {
       if (isBinary) {
         const chunk = Buffer.from(data as Buffer);
+        if (meta.audioFormat === "mp3") {
+          if (transcoder?.stdin?.writable) transcoder.stdin.write(chunk);
+          return;
+        }
         if (queue.length + chunk.length > MAX_REALTIME_QUEUE_BYTES) {
           sendClient({ type: "error", error: "实时录音缓存过大，请重试" });
           cleanup();
@@ -568,12 +661,19 @@ export function registerVoiceWsRoutes(server: Server): void {
         return;
       }
       try {
-        if (JSON.parse(String(data))?.type === "end") ended = true;
+        if (JSON.parse(String(data))?.type === "end") {
+          if (meta.audioFormat === "mp3") transcoder?.stdin?.end();
+          else ended = true;
+        }
       } catch {}
     });
     client.on("close", cleanup);
     client.on("error", cleanup);
 
-    console.info("[voice-realtime] connected", { adoptId: meta.adoptId, userId: meta.userId });
+    console.info("[voice-realtime] connected", {
+      adoptId: meta.adoptId,
+      userId: meta.userId,
+      audioFormat: meta.audioFormat,
+    });
   });
 }
