@@ -2,7 +2,7 @@
 
 ## Status
 
-**Engineering Complete / Local Shadow Pending**
+**Engineering Complete / Local Shadow Verified / Production Binding Unchanged**
 
 The Provider is an internal, shadow-only MCP boundary. It is registered inside EA but is not included in the Jiuwen managed MCP server set, is not referenced by a Role Pack or Skill, and does not change any Production Binding.
 
@@ -44,6 +44,33 @@ One canonical `customer_profile` can serve different roles without returning the
 - Same Binding or source identity never implies the same data visibility.
 
 The current Wealth and Insurance demo sources remain `productionReady=false` because they do not yet provide all required authorization, authoritative as-of, field projection and provenance semantics. The Shadow Provider therefore exposes their governance gaps without promoting their payloads.
+
+## Local environment verification
+
+Verified on 2026-08-24 against:
+
+```text
+work.linggan.top
+release: 20260824T072610Z-a9a862770633-local2
+source commit: a9a862770633fc70d5331a7f76ed60ae6e4407e1
+```
+
+The internal health endpoint reported `mode=shadow`. A real active Wealth Manager Runtime Principal selected one customer from the existing authorized Wealth Customer MCP and called the Shadow Provider. The Provider returned:
+
+```text
+projection: WealthCustomerProfileV1
+purpose: wealth_advisory
+status: BLOCKED
+reason: CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING
+reason: CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY
+projected field count: 0
+source evidence count: 1
+Provided Business Data: 0
+Excluded Business Data: 1
+Context Receipt fingerprint: present
+```
+
+This is the expected fail-closed result for the current legacy source contract. It verifies the environment wiring and governance boundary; it does not pass Gate B and does not certify the legacy Wealth Customer MCP.
 
 ## Runtime surface
 
