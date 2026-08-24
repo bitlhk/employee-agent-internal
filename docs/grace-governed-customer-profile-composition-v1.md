@@ -2,12 +2,14 @@
 
 ## Status
 
-**Stages 1-3 Verified / Gate B Source Input Blocked / No Promotion**
+**Stages 1-3 Verified / Demo Composition Locally Verified / Gate B Production Source Blocked / No Promotion**
 
 This work package evaluates whether existing Wealth and Insurance Customer MCPs
 can provide one governed `customer_profile` contract with role-specific
-projections. It does not manufacture missing customer facts and does not treat
-Gateway compatibility as source authority.
+projections. Production evaluation does not manufacture missing customer facts
+and does not treat Gateway compatibility as source authority. A separate,
+explicit Demo assurance mode may compose synthetic facts for stable Demo subject
+ids; those facts remain ineligible for Production assurance.
 
 ## Stage 1 - Source inventory
 
@@ -79,14 +81,54 @@ produce `BLOCKED`; no model inference can satisfy the gate.
 Verification:
 
 ```text
-Customer Profile Provider tests: 33/33 PASS
+Customer Profile Provider tests: 37/37 PASS
 Business contract fingerprint: fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0
 ```
 
+## Demo facts composition
+
+The local Demo environment composes the existing Insurance Customer MCP with a
+small GRACE-owned synthetic contributor. It is enabled only when both flags are
+explicitly set:
+
+```text
+EA_CUSTOMER_PROFILE_PROVIDER_SHADOW_ENABLED=true
+EA_CUSTOMER_PROFILE_DEMO_FACTS_ENABLED=true
+```
+
+The upstream source remains authoritative for the fields it already supplies.
+The synthetic contributor only fills the missing renewal, coverage and
+claims-risk fields for stable Demo subject ids. It cannot overwrite an upstream
+field, subject mismatches and conflicting values still fail closed, and unknown
+subject ids receive no synthetic facts.
+
+Local runtime evidence on 2026-08-24:
+
+```text
+environment:                 work.linggan.top
+release:                     20260824T095435Z-4f18f22ae138
+source commit:               4f18f22ae138fb8c7c192447baeae6c58fc43d42
+provider mode:               shadow
+required assurance:          demo
+projection status:           DEGRADED
+missing required fields:     0
+remaining gaps:              optional fields only
+source evidence:             2
+Provided Business Data:      1 customer_profile
+Context Receipt fingerprint: present
+unknown subject behavior:    SUBJECT_OUT_OF_SCOPE / zero sources
+```
+
+Field-level Provenance shows that existing profile and vehicle fields came from
+`insurance_customer_profile`, while the supplemental fields came from
+`grace_demo_insurance_facts`. `DEGRADED` is intentionally preserved rather than
+inventing more optional data. This result proves the Demo composition path; it
+does not authorize the data or satisfy the Production Gate B source contract.
+
 ## Stage 4 - Gate B rerun
 
-The complete environment Gate was rerun without changing the Golden Set,
-Resolver, Eligibility or authorization:
+The complete Production-assurance environment Gate was rerun without changing
+the Golden Set, Resolver, Eligibility or authorization:
 
 ```bash
 pnpm context:insurance:gate-b:environment

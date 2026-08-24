@@ -2,7 +2,7 @@
 
 ## Status
 
-**Engineering Complete / Local Shadow Verified / Production Binding Unchanged**
+**Engineering Complete / Local Shadow and Demo Composition Verified / Production Binding Unchanged**
 
 The Provider is an internal, shadow-only MCP boundary. It is registered inside EA but is not included in the Jiuwen managed MCP server set, is not referenced by a Role Pack or Skill, and does not change any Production Binding.
 
@@ -43,7 +43,7 @@ One canonical `customer_profile` can serve different roles without returning the
 - A source marked `productionReady=false` cannot produce Provided Context.
 - Same Binding or source identity never implies the same data visibility.
 
-The current Wealth and Insurance demo sources remain `productionReady=false` because they do not yet provide all required authorization, authoritative as-of, field projection and provenance semantics. The Shadow Provider therefore exposes their governance gaps without promoting their payloads.
+The current Wealth and Insurance demo sources remain `productionReady=false` because they do not yet provide all required authorization, authoritative as-of, field projection and provenance semantics. The Shadow Provider therefore exposes their governance gaps without promoting their payloads. An explicit Demo assurance mode may consume sources marked `demo`; the default Production assurance continues to reject them.
 
 ## Local environment verification
 
@@ -72,6 +72,40 @@ Context Receipt fingerprint: present
 
 This is the expected fail-closed result for the current legacy source contract. It verifies the environment wiring and governance boundary; it does not pass Gate B and does not certify the legacy Wealth Customer MCP.
 
+### Insurance Demo composition
+
+The local immutable release below enables the Shadow Provider and the synthetic
+Demo contributor without changing any Production Binding:
+
+```text
+work.linggan.top
+release: 20260824T095435Z-4f18f22ae138
+source commit: 4f18f22ae138fb8c7c192447baeae6c58fc43d42
+provider version: 1.2.0
+mode: shadow
+assurance mode: demo
+```
+
+A real Insurance Advisor Runtime Principal requested stable Demo subject `1`.
+The Provider composed two sources, retained upstream field provenance, supplied
+only missing insurance facts from `grace_demo_insurance_facts`, and returned:
+
+```text
+projection: InsuranceCustomerProfileV1
+purpose: insurance_advisory
+status: DEGRADED
+reason: CUSTOMER_PROFILE_OPTIONAL_FIELD_MISSING
+missing required fields: 0
+source evidence count: 2
+Provided Business Data: 1
+Context Receipt and snapshot fingerprints: present
+```
+
+Stable subject `999` returned `SUBJECT_OUT_OF_SCOPE`, zero sources and zero
+fields. This proves that the contributor does not invent facts for unknown
+customers. Unit verification also proves that the same `demo` sources are
+rejected when the Provider uses its default Production assurance.
+
 ## Runtime surface
 
 ```text
@@ -85,6 +119,14 @@ The MCP tool is visible only when:
 ```text
 EA_CUSTOMER_PROFILE_PROVIDER_SHADOW_ENABLED=true
 ```
+
+Synthetic Demo facts additionally require:
+
+```text
+EA_CUSTOMER_PROFILE_DEMO_FACTS_ENABLED=true
+```
+
+The second flag is ignored unless Shadow mode is enabled.
 
 Tool:
 
