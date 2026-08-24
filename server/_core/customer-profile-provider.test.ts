@@ -182,6 +182,57 @@ describe("Customer Profile Provider", () => {
     expect(result.fields).toEqual([]);
   });
 
+  it("composes disjoint canonical facts while preserving source provenance", () => {
+    const complete = completeSource();
+    const customerMaster = completeSource({
+      sourceContractId: "enterprise-customer-master-v1",
+      sourceSystem: "enterprise_customer_master",
+      sourceRecordRef: "customer-master:record-001",
+      fields: complete.fields.filter(
+        field => !field.path.startsWith("insurance.")
+      ),
+    });
+    customerMaster.resultFingerprint =
+      customerProfileSourceFingerprint(customerMaster);
+
+    const insurancePolicy = completeSource({
+      sourceContractId: "insurance-policy-facts-v1",
+      sourceSystem: "insurance_policy_system",
+      sourceRecordRef: "insurance-policy:record-001",
+      fields: complete.fields
+        .filter(field => field.path.startsWith("insurance."))
+        .map(field => ({
+          ...field,
+          provenance: {
+            ...field.provenance,
+            sourceSystem: "insurance_policy_system",
+            sourceRecordRef: "insurance-policy:record-001",
+          },
+        })),
+    });
+    insurancePolicy.resultFingerprint =
+      customerProfileSourceFingerprint(insurancePolicy);
+
+    const result = projectCustomerProfile(
+      request({
+        roleTemplate: "insurance-advisor",
+        taskId: "IA-GT-01",
+        sources: [customerMaster, insurancePolicy],
+      })
+    );
+
+    expect(result.status).toBe("READY");
+    expect(result.sourceEvidence).toHaveLength(2);
+    expect(
+      result.fields.find(field => field.path === "subject.subjectId")
+        ?.provenance.sourceSystem
+    ).toBe("enterprise_customer_master");
+    expect(
+      result.fields.find(field => field.path === "insurance.renewalAt")
+        ?.provenance.sourceSystem
+    ).toBe("insurance_policy_system");
+  });
+
   it("enforces task-required fields before a profile can be provided", () => {
     const source = completeSource();
     source.fields = source.fields.filter(

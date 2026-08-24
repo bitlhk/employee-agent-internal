@@ -1,0 +1,214 @@
+{
+  "schemaVersion": "ea.customer-profile-source-inventory.v1",
+  "assessedAt": "2026-08-24T09:26:21.371Z",
+  "environment": "work.linggan.top",
+  "status": "SOURCE_INPUT_BLOCKED",
+  "containsCustomerValues": false,
+  "sources": [
+    {
+      "roleTemplate": "wealth-manager",
+      "sourceContractId": "wealth-assistant-customer-v2.1",
+      "sourceSystem": "wealth_assistant_customer",
+      "productionReady": false,
+      "sourceNativePrincipalAuthorized": true,
+      "sourceNativeSubjectInScope": true,
+      "rawShapePaths": [],
+      "mappedFieldPaths": [
+        "contact.maskedPhone",
+        "demographics.age",
+        "demographics.ageBand",
+        "demographics.occupationCategory",
+        "preferences.riskPreference",
+        "relationship.customerTier",
+        "risk.investmentRiskLevel",
+        "risk.investmentRiskValidUntil",
+        "serviceScope.inScope",
+        "serviceScope.ownerOrganizationRef",
+        "serviceScope.ownerPrincipalRef",
+        "subject.displayName",
+        "subject.subjectId",
+        "subject.subjectType",
+        "wealth.assetAllocationSummary",
+        "wealth.aumBand"
+      ],
+      "providerGaps": [
+        "No runtime purpose is accepted or enforced.",
+        "No versioned field projection is applied before returning the MCP payload.",
+        "The source updatedAt is retrieval time, not authoritative per-field asOf.",
+        "Customer status and governed recent-contact summary are not available as canonical facts.",
+        "Insurance vehicle, renewal, coverage and claims fields are absent.",
+        "Field-level denial evidence and filtered-field count are absent."
+      ],
+      "taskCoverage": [
+        {
+          "taskIds": ["WM-GT-01"],
+          "requiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "serviceScope.inScope",
+            "relationship.recentContactSummary"
+          ],
+          "presentRequiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "serviceScope.inScope"
+          ],
+          "missingRequiredFields": [
+            "subject.customerStatus",
+            "relationship.recentContactSummary"
+          ],
+          "ready": false
+        },
+        {
+          "taskIds": ["WM-GT-02"],
+          "requiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "serviceScope.inScope",
+            "risk.investmentRiskLevel",
+            "risk.investmentRiskValidUntil",
+            "preferences.investmentHorizon",
+            "preferences.liquidityNeeds"
+          ],
+          "presentRequiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "serviceScope.inScope",
+            "risk.investmentRiskLevel",
+            "risk.investmentRiskValidUntil"
+          ],
+          "missingRequiredFields": [
+            "subject.customerStatus",
+            "preferences.investmentHorizon",
+            "preferences.liquidityNeeds"
+          ],
+          "ready": false
+        },
+        {
+          "taskIds": ["WM-GT-03", "WM-GT-04"],
+          "requiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "serviceScope.inScope",
+            "risk.investmentRiskLevel",
+            "risk.investmentRiskValidUntil"
+          ],
+          "presentRequiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "serviceScope.inScope",
+            "risk.investmentRiskLevel",
+            "risk.investmentRiskValidUntil"
+          ],
+          "missingRequiredFields": ["subject.customerStatus"],
+          "ready": false
+        }
+      ]
+    },
+    {
+      "roleTemplate": "insurance-advisor",
+      "sourceContractId": "insurance-customer-profile-demo-v1",
+      "sourceSystem": "insurance_customer_profile",
+      "productionReady": false,
+      "sourceNativePrincipalAuthorized": false,
+      "sourceNativeSubjectInScope": false,
+      "rawShapePaths": [
+        "age",
+        "annual_mileage",
+        "bio",
+        "city",
+        "contact_strategy",
+        "customer_status",
+        "driving_record",
+        "gender",
+        "id",
+        "name",
+        "occupation",
+        "protection_gap",
+        "risk_preference",
+        "vehicle_info"
+      ],
+      "mappedFieldPaths": [
+        "demographics.age",
+        "demographics.ageBand",
+        "demographics.city",
+        "demographics.occupationCategory",
+        "insurance.annualMileageBand",
+        "insurance.drivingRiskSummary",
+        "insurance.protectionGaps",
+        "insurance.vehicleSummary",
+        "preferences.communicationPreference",
+        "preferences.riskPreference",
+        "subject.customerStatus",
+        "subject.displayName",
+        "subject.subjectId",
+        "subject.subjectType"
+      ],
+      "providerGaps": [
+        "The service is an unauthenticated Demo/Shadow provider.",
+        "No tenant, organization, principal, purpose or customer-row authorization is enforced.",
+        "No authoritative source asOf or field-level provenance is returned.",
+        "Renewal date/status, current coverage and claims summary are absent.",
+        "Vehicle identity is an unstructured string rather than a governed masked record.",
+        "Field-level denial evidence and filtered-field count are absent."
+      ],
+      "taskCoverage": [
+        {
+          "taskIds": ["IA-GT-01"],
+          "requiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "serviceScope.inScope",
+            "insurance.vehicleSummary",
+            "insurance.renewalAt",
+            "insurance.renewalStatus",
+            "insurance.currentCoverageSummary",
+            "insurance.claimsRiskSummary"
+          ],
+          "presentRequiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "insurance.vehicleSummary"
+          ],
+          "missingRequiredFields": [
+            "serviceScope.inScope",
+            "insurance.renewalAt",
+            "insurance.renewalStatus",
+            "insurance.currentCoverageSummary",
+            "insurance.claimsRiskSummary"
+          ],
+          "ready": false
+        },
+        {
+          "taskIds": ["IA-GT-02"],
+          "requiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "serviceScope.inScope",
+            "insurance.vehicleSummary",
+            "insurance.currentCoverageSummary",
+            "insurance.protectionGaps"
+          ],
+          "presentRequiredFields": [
+            "subject.subjectId",
+            "subject.displayName",
+            "subject.customerStatus",
+            "insurance.vehicleSummary",
+            "insurance.protectionGaps"
+          ],
+          "missingRequiredFields": [
+            "serviceScope.inScope",
+            "insurance.currentCoverageSummary"
+          ],
+          "ready": false
+        }
+      ]
+    }
+  ]
+}
