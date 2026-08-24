@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Express, Request } from "express";
+import type { ContextSourceBindingV1 } from "../../shared/context-resolution";
 import type { RuntimePrincipalV2 } from "./governance/contracts";
 import {
   governanceFingerprint,
@@ -25,9 +26,12 @@ import {
   type CustomerProfileProviderInputV1,
 } from "./customer-profile-provider";
 import { recordAuditBestEffort, auditRequest } from "./audit-events";
+import { listContextSourceBindingContracts } from "../db/context-source-bindings";
+import { resolveContextSources } from "./context-resolution/source-resolver";
+import { sharedBindingCandidateFingerprint } from "./context-resolution/shared-binding-validation-snapshot";
 
 const SERVICE_NAME = "customer-profile-provider";
-const SERVICE_VERSION = "1.2.0";
+const SERVICE_VERSION = "1.3.0";
 const TOOL_NAME = "get_governed_customer_profile";
 
 type JsonObject = Record<string, unknown>;
@@ -39,6 +43,11 @@ export type CustomerProfileSourceLoaderV1 = (input: {
   request?: Request;
 }) => Promise<CustomerProfileCompatibilityLoadResultV1>;
 
+export type CustomerProfileBindingResolverV1 = (input: {
+  principal: RuntimePrincipalV2;
+  stage: "shadow" | "production";
+}) => Promise<ContextSourceBindingV1>;
+
 export type CustomerProfileProviderToolResultV1 = {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
@@ -47,6 +56,7 @@ export type CustomerProfileProviderToolResultV1 = {
 
 type RegisterCustomerProfileMcpOptionsV1 = {
   sourceLoader?: CustomerProfileSourceLoaderV1;
+  bindingResolver?: CustomerProfileBindingResolverV1;
 };
 
 const TOOL = {
@@ -84,21 +94,32 @@ const TOOL = {
   },
 };
 
-function shadowEnabled(): boolean {
-  return (
-    String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_SHADOW_ENABLED || "")
-      .trim()
-      .toLowerCase() === "true"
-  );
+type CustomerProfileProviderModeV1 = "disabled" | "shadow" | "production";
+
+function enabled(name: string): boolean {
+  return String(process.env[name] || "").trim().toLowerCase() === "true";
+}
+
+export function customerProfileProviderMode(): CustomerProfileProviderModeV1 {
+  const explicit = String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "")
+    .trim()
+    .toLowerCase();
+  if (explicit === "disabled" || explicit === "shadow" || explicit === "production")
+    return explicit;
+  return enabled("EA_CUSTOMER_PROFILE_PROVIDER_SHADOW_ENABLED")
+    ? "shadow"
+    : "disabled";
+}
+
+function bindingRequired(): boolean {
+  return Boolean(String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "").trim());
 }
 
 function demoFactsEnabled(): boolean {
-  return (
-    shadowEnabled() &&
-    String(process.env.EA_CUSTOMER_PROFILE_DEMO_FACTS_ENABLED || "")
-      .trim()
-      .toLowerCase() === "true"
-  );
+  if (!enabled("EA_CUSTOMER_PROFILE_DEMO_FACTS_ENABLED")) return false;
+  const mode = customerProfileProviderMode();
+  return mode === "shadow"
+    || (mode === "production" && enabled("EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED"));
 }
 
 function firstString(...values: unknown[]): string {
@@ -179,8 +200,9 @@ function remediationFor(reasonCodes: string[]): string[] {
 function providerReceipt(input: {
   principal: RuntimePrincipalV2;
   projection: ReturnType<typeof projectCustomerProfile>;
+  binding?: ContextSourceBindingV1;
 }) {
-  const { projection, principal } = input;
+  const { projection, principal, binding } = input;
   const provided =
     projection.status === "BLOCKED"
       ? []
@@ -193,6 +215,16 @@ function providerReceipt(input: {
             resultFingerprint: governanceFingerprint(projection),
             logicalAssetId: "customer_profile",
             providerType: "mcp" as const,
+            ...(binding
+              ? {
+                  bindingId: binding.bindingId,
+                  resourceRefFingerprint: governanceFingerprint(binding.resourceRef),
+                  candidateBindingFingerprint:
+                    binding.stage === "shadow"
+                      ? sharedBindingCandidateFingerprint(binding)
+                      : undefined,
+                }
+              : {}),
           },
         ];
   const allowed = projection.status !== "BLOCKED";
@@ -261,9 +293,10 @@ function providerReceipt(input: {
 function textResult(
   projection: ReturnType<typeof projectCustomerProfile>,
   principal: RuntimePrincipalV2,
-  loaded: CustomerProfileCompatibilityLoadResultV1
+  loaded: CustomerProfileCompatibilityLoadResultV1,
+  binding?: ContextSourceBindingV1,
 ): CustomerProfileProviderToolResultV1 {
-  const receipt = providerReceipt({ projection, principal });
+  const receipt = providerReceipt({ projection, principal, binding });
   return attachContextReceipt(
     {
       content: [
@@ -342,6 +375,7 @@ export async function executeCustomerProfileProviderTool(input: {
   args: JsonObject;
   sourceLoader?: CustomerProfileSourceLoaderV1;
   request?: Request;
+  binding?: ContextSourceBindingV1;
 }): Promise<CustomerProfileProviderToolResultV1> {
   const subjectId = firstString(
     input.args.customer_id,
@@ -377,9 +411,64 @@ export async function executeCustomerProfileProviderTool(input: {
   return textResult(
     projectCustomerProfile(projectionInput),
     input.principal,
-    loaded
+    loaded,
+    input.binding,
   );
 }
+
+function rolePackId(roleTemplate: string): string {
+  if (roleTemplate === "wealth-manager") return "linggan-bank.wealth-manager";
+  if (roleTemplate === "insurance-advisor")
+    return "linggan-insurance.insurance-advisor";
+  return roleTemplate;
+}
+
+export const defaultCustomerProfileBindingResolver: CustomerProfileBindingResolverV1 =
+  async input => {
+    const bindings = await listContextSourceBindingContracts({
+      organizationId: input.principal.organizationId,
+      rolePackId: rolePackId(input.principal.roleTemplate),
+      stage: input.stage,
+    });
+    const plan = resolveContextSources({
+      organizationId: input.principal.organizationId,
+      stage: input.stage,
+      bindings,
+      plan: {
+        schema: "ea.context-need-plan.v1",
+        planId: `customer-profile.${input.principal.roleTemplate}.${input.stage}`,
+        planVersion: "1.0.0",
+        rolePackId: rolePackId(input.principal.roleTemplate),
+        roleTemplate: input.principal.roleTemplate,
+        taskId: input.principal.taskId || "CUSTOMER-PROFILE-RUNTIME",
+        needs: [
+          {
+            needId: "customer-profile",
+            logicalAssetId: "customer_profile",
+            contextType: "business_data",
+            requiredness: "required",
+            purpose: `${input.principal.roleTemplate} governed customer profile`,
+            freshness: { mode: "latest" },
+            requiredCapabilities: ["point_read"],
+          },
+        ],
+      },
+    });
+    const resolution = plan.resolutions[0];
+    if (resolution?.status !== "resolved" || !resolution.binding) {
+      throw new Error(
+        `CUSTOMER_PROFILE_BINDING_${resolution?.reasonCode || "UNRESOLVED"}`
+      );
+    }
+    if (
+      resolution.binding.providerType !== "mcp"
+      || resolution.binding.resourceRef
+        !== "mcp://customer-profile/get_governed_customer_profile"
+    ) {
+      throw new Error("CUSTOMER_PROFILE_BINDING_TARGET_MISMATCH");
+    }
+    return resolution.binding;
+  };
 
 function ok(id: unknown, result: unknown) {
   return { jsonrpc: "2.0", id: id ?? null, result };
@@ -414,7 +503,8 @@ async function runtimePrincipal(req: Request) {
 async function handleMessage(
   req: Request,
   message: JsonObject,
-  sourceLoader?: CustomerProfileSourceLoaderV1
+  sourceLoader?: CustomerProfileSourceLoaderV1,
+  bindingResolver?: CustomerProfileBindingResolverV1,
 ) {
   const id = message.id;
   const method = String(message.method || "");
@@ -424,17 +514,20 @@ async function handleMessage(
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: SERVICE_NAME, version: SERVICE_VERSION },
       instructions:
-        "Shadow-only governed Customer Profile projections. Runtime role and purpose come from signed identity.",
+        "Governed Customer Profile projections. Runtime role and purpose come from signed identity.",
     });
   if (method === "ping") return ok(id, {});
   if (method === "resources/list") return ok(id, { resources: [] });
   if (method === "prompts/list") return ok(id, { prompts: [] });
   if (method === "tools/list")
-    return ok(id, { tools: shadowEnabled() ? [TOOL] : [] });
+    return ok(id, {
+      tools: customerProfileProviderMode() === "disabled" ? [] : [TOOL],
+    });
   if (method !== "tools/call")
     return err(id, -32601, `Method not found: ${method}`);
-  if (!shadowEnabled())
-    return err(id, -32010, "Customer Profile Provider shadow is disabled");
+  const mode = customerProfileProviderMode();
+  if (mode === "disabled")
+    return err(id, -32010, "Customer Profile Provider is disabled");
 
   const params = object(message.params);
   if (String(params.name || "") !== TOOL_NAME)
@@ -442,14 +535,24 @@ async function handleMessage(
   const args = object(params.arguments);
   const taskId = firstString(args.task_id, args.taskId).slice(0, 128);
   const principal = await runtimePrincipal(req);
+  const binding = bindingRequired()
+    ? await (bindingResolver || defaultCustomerProfileBindingResolver)({
+        principal,
+        stage: mode === "production" ? "production" : "shadow",
+      })
+    : undefined;
   const result = await executeCustomerProfileProviderTool({
     principal,
     args,
     sourceLoader,
     request: req,
+    binding,
   });
   await recordAuditBestEffort({
-    action: "governance.customer_profile.shadow_evaluated",
+    action:
+      mode === "production"
+        ? "governance.customer_profile.runtime_provided"
+        : "governance.customer_profile.shadow_evaluated",
     result: result.isError ? "denied" : "success",
     severity: result.isError ? "medium" : "info",
     actorType: "agent",
@@ -469,6 +572,8 @@ async function handleMessage(
       taskId: taskId || null,
       receiptFingerprint:
         object(result._meta?.eaContextReceipt).receiptFingerprint || null,
+      providerMode: mode,
+      bindingId: binding?.bindingId || null,
     },
   });
   return ok(id, result);
@@ -486,8 +591,11 @@ export function registerCustomerProfileMcpRoutes(
       status: "ok",
       name: SERVICE_NAME,
       version: SERVICE_VERSION,
-      mode: shadowEnabled() ? "shadow" : "disabled",
+      mode: customerProfileProviderMode(),
       assuranceMode: demoFactsEnabled() ? "demo" : "production",
+      demoRuntimeAllowed:
+        customerProfileProviderMode() === "production"
+        && enabled("EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED"),
     });
   });
 
@@ -520,11 +628,21 @@ export function registerCustomerProfileMcpRoutes(
         ? (
             await Promise.all(
               body.map(item =>
-                handleMessage(req, object(item), options.sourceLoader)
+                handleMessage(
+                  req,
+                  object(item),
+                  options.sourceLoader,
+                  options.bindingResolver,
+                )
               )
             )
           ).filter(Boolean)
-        : await handleMessage(req, object(body), options.sourceLoader);
+        : await handleMessage(
+            req,
+            object(body),
+            options.sourceLoader,
+            options.bindingResolver,
+          );
       res.setHeader(
         "Mcp-Session-Id",
         `customer-profile-${trustedAdoptId(req)}`

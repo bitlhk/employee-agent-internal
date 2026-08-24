@@ -51,7 +51,7 @@ function roleAsset(root: string, file: string): string {
 
 export async function runInsuranceRolePackControlledScenarios(root = process.cwd()) {
   const contract = runInsuranceRolePackContractChecks(root);
-  const customerReceipt = readReceipt("insurance_customer_profile", "get_customer_profile_by_name");
+  const customerReceipt = readReceipt("customer_profile", "get_governed_customer_profile");
   const productReceipt = readReceipt("insurance_product_exam_points", "search_products");
   const detailReceipt = readReceipt("insurance_product_exam_points", "get_product_detail");
   const examReceipt = readReceipt("insurance_product_exam_points", "get_exam_points");

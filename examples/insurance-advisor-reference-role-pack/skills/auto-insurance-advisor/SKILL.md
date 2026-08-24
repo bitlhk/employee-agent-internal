@@ -4,7 +4,7 @@ displayName: 车险顾问岗位助手
 description: >-
   面向保险顾问的车险客户经营与培训编排技能。用于查询授权客户画像、识别保障需求、
   查询当前产品和培训考点、生成产品讲解与异议处理建议，并在核保、理赔、投诉和敏感信息场景安全转人工。
-version: 1.0.0
+version: 1.1.0
 category: 保险
 tags: [insurance-advisor, auto-insurance, customer-context, governed-context]
 ---
@@ -24,7 +24,7 @@ tags: [insurance-advisor, auto-insurance, customer-context, governed-context]
 | 业务能力 | 标准工具 | 用途 |
 |---|---|---|
 | 客户列表 | `list_customer_profiles` | 在当前授权范围内选择演示客户 |
-| 客户详情 | `get_customer_profile_by_name` | 获取当前客户画像、车辆和保障需求 |
+| 受治理客户详情 | `get_governed_customer_profile` | 按当前岗位、用途和客户范围获取字段裁剪后的客户画像 |
 | 产品列表 | `list_products` | 获取当前产品目录 |
 | 产品搜索 | `search_products` | 按用户需求筛选产品候选 |
 | 产品详情 | `get_product_detail` | 获取产品责任、限制和数据时间 |
@@ -37,7 +37,7 @@ tags: [insurance-advisor, auto-insurance, customer-context, governed-context]
 ### 1. 客户访前准备与续保准备
 
 1. 用户未指定客户时，先用 `list_customer_profiles` 在授权范围内帮助选择，不猜测客户身份。
-2. 用 `get_customer_profile_by_name` 获取本轮客户数据。
+2. 用 `get_governed_customer_profile` 获取本轮受治理客户数据；不得绕过该入口直接读取领域客户详情。
 3. 结合当前有效的访前、续保和信息保护知识，输出客户概况、车辆与保障观察、待核实事项、3 至 5 条谈话要点和下一步动作。
 4. 工具没有返回的字段标记“待核实”，不得补写。
 

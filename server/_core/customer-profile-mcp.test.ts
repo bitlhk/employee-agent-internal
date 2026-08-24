@@ -10,6 +10,7 @@ import {
   vi,
 } from "vitest";
 import type { RuntimePrincipalV2 } from "./governance/contracts";
+import type { ContextSourceBindingV1 } from "../../shared/context-resolution";
 import {
   customerProfileSourceFingerprint,
   type NormalizedCustomerProfileSourceV1,
@@ -114,6 +115,22 @@ const sourceLoader = vi.fn<CustomerProfileSourceLoaderV1>(async () => ({
   notes: [],
 }));
 
+const shadowBinding: ContextSourceBindingV1 = {
+  schema: "ea.context-source-binding.v1",
+  bindingId: "ctxb-shared-customer-profile",
+  organizationId: principal.organizationId,
+  rolePackId: "*",
+  bindingScope: "enterprise_shared",
+  logicalAssetId: "customer_profile",
+  contextType: "business_data",
+  providerType: "mcp",
+  resourceRef: "mcp://customer-profile/get_governed_customer_profile",
+  capabilities: ["point_read"],
+  bindingVersion: "1.shared.customer-profile-v1",
+  stage: "shadow",
+  status: "active",
+};
+
 function projectionFrom(result: { content: Array<{ text: string }> }) {
   return JSON.parse(result.content[0]?.text || "{}") as Record<string, unknown>;
 }
@@ -160,6 +177,27 @@ describe("Customer Profile MCP tool", () => {
       containsCustomerValues: false,
     });
   });
+
+  it("records the exact Shadow Binding candidate in the trusted receipt", async () => {
+    const result = await executeCustomerProfileProviderTool({
+      principal,
+      args: { customer_id: "CUST-001", task_id: "WM-GT-01" },
+      sourceLoader,
+      binding: shadowBinding,
+    });
+    expect(result._meta?.eaContextReceipt).toMatchObject({
+      provided: {
+        businessData: [
+          expect.objectContaining({
+            bindingId: shadowBinding.bindingId,
+            logicalAssetId: "customer_profile",
+            candidateBindingFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
+            resourceRefFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
+          }),
+        ],
+      },
+    });
+  });
 });
 
 describe("Customer Profile MCP route", () => {
@@ -179,6 +217,8 @@ describe("Customer Profile MCP route", () => {
   });
 
   afterEach(() => {
+    delete process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE;
+    delete process.env.EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED;
     process.env.EA_CUSTOMER_PROFILE_PROVIDER_SHADOW_ENABLED = "true";
     mocks.authorize.mockResolvedValue(true);
     mocks.getClawByAdoptId.mockResolvedValue({

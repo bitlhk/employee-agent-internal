@@ -39,6 +39,7 @@ const MANAGED_MCP_SERVERS = [
   ["custom_mcp_gateway", "/api/internal/custom-mcp/mcp", "urn:ea:internal-mcp:custom-mcp"],
   ["enterprise_mcp_gateway", "/api/internal/enterprise-mcp/mcp", "urn:ea:internal-mcp:enterprise-mcp"],
   ["role_mcp_gateway", "/api/internal/role-mcp/mcp", "urn:ea:internal-mcp:role-mcp"],
+  ["customer_profile", "/api/internal/customer-profile/mcp", "urn:ea:internal-mcp:customer-profile"],
 ] as const;
 
 function managedMcpServerId(name: string, bindingId: string): string {

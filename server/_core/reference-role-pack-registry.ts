@@ -81,6 +81,7 @@ const definitions = [
     capabilityProofs: {
       list_customer_profiles: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
       get_customer_profile_by_name: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
+      get_governed_customer_profile: { owner: "employee-agent", implementation: "server/_core/customer-profile-mcp.ts", test: "server/_core/customer-profile-mcp.test.ts" },
       list_products: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
       search_products: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },
       get_product_detail: { owner: "enterprise-mcp", implementation: "scripts/configure-insurance-marker-mcps.ts", test: "server/_core/insurance-advisor-reference-assets.test.ts" },

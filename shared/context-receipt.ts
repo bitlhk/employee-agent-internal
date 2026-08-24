@@ -64,6 +64,7 @@ export type ContextReceiptV1 = {
       bindingId?: string;
       providerType?: "llamaindex" | "mcp" | "api";
       resourceRefFingerprint?: string;
+      candidateBindingFingerprint?: string;
     }>;
     memory: Array<{
       memoryId: string;

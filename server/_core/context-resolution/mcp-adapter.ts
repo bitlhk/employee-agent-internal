@@ -8,6 +8,10 @@ export type McpBindingTarget = {
 const SERVICES: Record<string, () => string> = {
   "wealth-customer": () => String(process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp").trim(),
   "wealth-product": () => String(process.env.WEALTH_PRODUCT_MCP_URL || "http://127.0.0.1:18007/mcp").trim(),
+  "customer-profile": () => String(
+    process.env.EA_CUSTOMER_PROFILE_MCP_URL
+      || `http://127.0.0.1:${process.env.PORT || "5180"}/api/internal/customer-profile/mcp`,
+  ).trim(),
 };
 
 export function mcpResourceRef(service: string, toolName: string): string {

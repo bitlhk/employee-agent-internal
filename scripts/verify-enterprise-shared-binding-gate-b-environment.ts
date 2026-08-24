@@ -30,6 +30,7 @@ import {
 } from "../server/_core/governance/contracts";
 import { runWealthRolePackControlledScenarios } from "../server/_core/wealth-role-pack-scenarios";
 import { listContextSourceBindingContracts } from "../server/db/context-source-bindings";
+import { promoteShadowContextSourceBindings } from "../server/db/context-source-bindings";
 import { closeDbConnection, getDb } from "../server/db/connection";
 import { latestVerifiedRolePackReleases } from "../server/db/role-pack-releases";
 import { resolveEffectiveRoleAssets } from "../server/db/role-assets";
@@ -37,7 +38,9 @@ import { runGovernedMemoryPurposeEnvironment } from "./verify-governed-memory-pu
 
 const SNAPSHOT_PATH = "examples/insurance-advisor-reference-role-pack/eval/shared-binding-validation-snapshot.v1.json";
 const EXPECTED_SNAPSHOT = "ccf1a10b181bbf1955b3605a8bfc0d9772a91224e7a45e9c8da304181995cbc7";
-const ORGANIZATION_ID = "org_role_scale_shadow_20260824";
+const ORGANIZATION_ID = String(
+  process.env.EA_DEMO_ORGANIZATION_ID || "org_linggan_finance",
+).trim();
 const TARGET_IDS = ["customer_profile", "customer_relationship_memory", "governed_work_state"] as const;
 
 function sha256(value: string | Buffer): string {
@@ -46,6 +49,12 @@ function sha256(value: string | Buffer): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function productionBindingId(logicalAssetId: string): string {
+  return `ctxb_shared_production_${sha256(
+    `${ORGANIZATION_ID}|enterprise_shared|${logicalAssetId}|production`,
+  ).slice(0, 24)}`;
 }
 
 async function runtimePrincipal(roleTemplate: "wealth-manager" | "insurance-advisor"): Promise<RuntimePrincipalV2> {
@@ -128,46 +137,61 @@ function firstCustomerId(value: unknown): string | null {
   return null;
 }
 
+async function wealthCustomerId(principal: RuntimePrincipalV2): Promise<string> {
+  const endpointUrl = String(
+    process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp",
+  ).trim();
+  const list = parseInternalMcpJsonResult(await callInternalMcpTool({
+    endpointUrl,
+    toolName: "wealth_assistant_customer_list",
+    args: { page: 1, pageSize: 1 },
+    agentId: principal.agentId,
+    adoptId: principal.adoptionId,
+    sessionId: principal.sessionId,
+    timeoutMs: 30_000,
+  }));
+  const customerId = firstCustomerId(list);
+  if (!customerId) throw new Error("CUSTOMER_PROFILE_EMPTY");
+  return customerId;
+}
+
 async function retrieveCustomerProfile(input: {
   principal: RuntimePrincipalV2;
   binding: ContextSourceBindingV1;
 }): Promise<{ source: ContextReceiptV1["provided"]["businessData"][number] | null; error?: string }> {
   try {
     const target = resolveMcpBindingTarget(input.binding);
-    const list = parseInternalMcpJsonResult(await callInternalMcpTool({
-      endpointUrl: target.endpointUrl,
-      toolName: "wealth_assistant_customer_list",
-      args: { page: 1, pageSize: 1 },
-      agentId: input.principal.agentId,
-      adoptId: input.principal.adoptionId,
-      sessionId: input.principal.sessionId,
-      timeoutMs: 30_000,
-    }));
-    const customerId = firstCustomerId(list);
-    if (!customerId) return { source: null, error: "CUSTOMER_PROFILE_EMPTY" };
-    const detail = parseInternalMcpJsonResult(await callInternalMcpTool({
+    const customerId = input.principal.roleTemplate === "wealth-manager"
+      ? await wealthCustomerId(input.principal)
+      : String(process.env.EA_GATE_B_INSURANCE_CUSTOMER_ID || "1").trim();
+    const result = await callInternalMcpTool({
       endpointUrl: target.endpointUrl,
       toolName: target.toolName,
-      args: { customerId },
+      args: {
+        customer_id: customerId,
+        task_id: input.principal.roleTemplate === "wealth-manager" ? "WM-GT-01" : "IA-GT-01",
+      },
       agentId: input.principal.agentId,
       adoptId: input.principal.adoptionId,
       sessionId: input.principal.sessionId,
       timeoutMs: 30_000,
-    }));
-    return {
-      source: {
-        sourceSystem: "wealth_customer_mcp",
-        label: "当前授权客户画像",
-        entityRef: `customer:${sha256(customerId).slice(0, 24)}`,
-        asOf: String(detail.updatedAt || new Date().toISOString()),
-        resultFingerprint: governanceFingerprint(detail),
-        logicalAssetId: input.binding.logicalAssetId,
-        bindingId: input.binding.bindingId,
-        providerType: input.binding.providerType,
-        resourceRefFingerprint: governanceFingerprint(input.binding.resourceRef),
-        candidateBindingFingerprint: sharedBindingCandidateFingerprint(input.binding),
-      },
-    };
+    });
+    const projection = parseInternalMcpJsonResult(result);
+    const meta = result._meta && typeof result._meta === "object"
+      ? result._meta as Record<string, unknown>
+      : {};
+    const receipt = meta.eaContextReceipt as ContextReceiptV1 | undefined;
+    const source = receipt?.provided.businessData.find(item => (
+      item.bindingId === input.binding.bindingId
+      && item.candidateBindingFingerprint === sharedBindingCandidateFingerprint(input.binding)
+    )) || null;
+    if (!source) {
+      const reasons = Array.isArray(projection.reasonCodes)
+        ? projection.reasonCodes.map(String).join(",")
+        : "CUSTOMER_PROFILE_NOT_PROVIDED";
+      return { source: null, error: reasons };
+    }
+    return { source };
   } catch (error) {
     return { source: null, error: errorMessage(error) };
   }
@@ -277,6 +301,9 @@ async function main() {
   const candidates = bindings.filter(binding => TARGET_IDS.includes(binding.logicalAssetId as typeof TARGET_IDS[number]));
   const releases = await latestVerifiedRolePackReleases(frozen.rolePackReleases.map(release => release.rolePackId));
   const providerFiles = [
+    "shared/customer-profile-contract.ts",
+    "server/_core/customer-profile-provider.ts",
+    "server/_core/customer-profile-mcp.ts",
     "shared/memory-purpose.ts",
     "server/_core/agent-memory-retrieval.ts",
     "server/_core/context-resolution/governed-memory-provider.ts",
@@ -417,6 +444,29 @@ async function main() {
   } catch (error) {
     gateError = errorMessage(error);
   }
+  const promote = process.argv.includes("--promote");
+  const promotionReviewApproved = process.argv.includes(
+    "--promotion-review-approved",
+  );
+  let promotedBindings: Array<{ bindingId: string; logicalAssetId: string }> = [];
+  if (promote) {
+    if (!promotionReviewApproved)
+      throw new Error("SHARED_BINDING_PROMOTION_REVIEW_REQUIRED");
+    if (gateError || !gateFingerprint)
+      throw new Error(`SHARED_BINDING_PROMOTION_GATE_BLOCKED:${gateError || "UNKNOWN"}`);
+    const rows = await promoteShadowContextSourceBindings({
+      bindings: candidates.map(binding => ({
+        shadowBindingId: binding.bindingId,
+        productionBindingId: productionBindingId(binding.logicalAssetId),
+      })),
+      sharedValidation: validation,
+      actor: "enterprise-shared-binding-promotion-review",
+      promotionId: `ctxp_gate_b_${gateFingerprint.slice(0, 24)}`,
+    });
+    promotedBindings = rows
+      .map(row => ({ bindingId: row.bindingId, logicalAssetId: row.logicalAssetId }))
+      .sort((left, right) => left.logicalAssetId.localeCompare(right.logicalAssetId));
+  }
   const report = {
     schema: "ea.enterprise-shared-binding-gate-b-environment-report.v1",
     status: gateError ? "BLOCKED" as const : "PASS" as const,
@@ -447,7 +497,8 @@ async function main() {
     },
     gateFingerprint,
     gateError,
-    promotionPerformed: false,
+    promotionPerformed: promotedBindings.length > 0,
+    promotedBindings,
   };
   return { ...report, reportFingerprint: governanceFingerprint(report) };
 }
