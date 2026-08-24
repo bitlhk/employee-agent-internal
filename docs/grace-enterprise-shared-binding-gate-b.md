@@ -88,3 +88,18 @@ The Customer MCP recovery and the Insurance Customer Profile authorization revie
 ## Promotion Boundary
 
 Gate B remains blocked with `SHARED_BINDING_CANDIDATE_NOT_PROVIDED`. Production Shared Binding count must remain zero. Promotion Review may start only after both roles produce a Receipt with all three candidate fingerprints under the same immutable snapshot.
+
+## Post-checkpoint Environment Update
+
+On 2026-08-24, the Wealth Customer Provider dependency was restored without changing authorization:
+
+- the upstream CRM API remained healthy on its host-local interface;
+- its public application port remained unexposed;
+- a PM2-managed, loopback-only SSH tunnel restored the private transport path;
+- `wealth-assistant-customer-mcp` was pointed to the loopback tunnel and restarted;
+- Wealth Manager Candidate Provided recovered from `2/3` to `3/3`;
+- Insurance Advisor remained unauthorized and stayed at `2/3`;
+- the Gate validation snapshot remained `799ec8c235e756f4530851eca6d6d6d7acaea09f675adbf6fff87e677bb49ba4`;
+- no Production Shared Binding or Promote operation was created.
+
+The independent Insurance authorization review concluded `NOT APPROVED / Provider Scope Gap`; see `docs/insurance-customer-profile-authorization-review-v1.md`.
