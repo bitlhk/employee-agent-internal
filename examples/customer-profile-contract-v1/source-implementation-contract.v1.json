@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "ea.customer-profile-source-implementation-contract.v1",
+  "contractVersion": "1.0.0",
+  "status": "engineering_candidate",
+  "sourceContractId": "enterprise-customer-profile-source-v1",
+  "canonicalLogicalContextId": "customer_profile",
+  "baseline": {
+    "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
+    "sourceRemediationPlanFingerprint": "261d8ae911f28187a10bd23465270b8843685de144836da20b4b5d6d31f937cb"
+  },
+  "invocation": {
+    "toolName": "get_governed_customer_profile",
+    "allowedArguments": ["subjectId"],
+    "forbiddenArguments": [
+      "organizationId",
+      "principalId",
+      "principalFingerprint",
+      "roleTemplate",
+      "purposeId",
+      "authorizationSnapshotId",
+      "authorizationFingerprint"
+    ],
+    "sourceAuthorizationAttributes": [
+      "organizationId",
+      "principalFingerprint",
+      "authorizationSnapshotId",
+      "authorizationFingerprint",
+      "subjectId"
+    ],
+    "purposeProjectionOwner": "ea_customer_profile_provider"
+  },
+  "response": {
+    "schemaPath": "examples/customer-profile-contract-v1/customer-profile-source-envelope.v1.schema.json",
+    "requiredRemediationFields": [
+      "subject.subjectId",
+      "subject.customerStatus",
+      "serviceScope.inScope",
+      "relationship.recentContactSummary",
+      "preferences.investmentHorizon",
+      "preferences.liquidityNeeds",
+      "insurance.renewalAt",
+      "insurance.renewalStatus",
+      "insurance.currentCoverageSummary",
+      "insurance.claimsRiskSummary"
+    ],
+    "stableSubjectRequired": true,
+    "fieldLevelProvenanceRequired": true,
+    "authoritativeBusinessAsOfRequired": true,
+    "rowAuthorizationEvidenceRequired": true,
+    "rawSourcePayloadAllowed": false
+  },
+  "activationPolicy": {
+    "runtimeActivationAllowed": false,
+    "autoAuthorize": false,
+    "activeSourceMappingMayChange": false,
+    "productionBindingMayChange": false,
+    "requiresEnvironmentEvidence": true,
+    "requiresNewAuthorizationFingerprint": true,
+    "requiresFullGateBRerun": true,
+    "requiresPromotionReview": true
+  }
+}

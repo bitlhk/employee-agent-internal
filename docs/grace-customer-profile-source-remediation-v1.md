@@ -2,7 +2,7 @@
 
 ## Status
 
-**Data Owner Confirmed / Source Implementation Pending / Runtime Unchanged**
+**Data Owner Confirmed / Source Contract Implemented / Provider Implementation Pending / Runtime Unchanged**
 
 The plan converts the local Source Readiness result into nine owned remediation
 items. It is a proposed review artifact, not an active source mapping, Role
@@ -104,3 +104,9 @@ Promotion Review
 ```
 
 No current Production Binding or Runtime path is changed by this plan.
+
+The confirmed work items are now represented by Customer Profile Source
+Contract V1. Its machine-readable Envelope and fail-closed conformance checks are
+documented in `docs/grace-customer-profile-source-contract-v1.md`. This creates
+an implementation target for source owners but does not activate either current
+source.

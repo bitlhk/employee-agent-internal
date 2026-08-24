@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grace.linggan.top/contracts/customer-profile-source-envelope.v1.schema.json",
+  "title": "GRACE Customer Profile Source Envelope V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sourceContractId",
+    "sourceContractVersion",
+    "sourceContractFingerprint",
+    "sourceSystem",
+    "subjectId",
+    "sourceRecordRef",
+    "businessAsOf",
+    "observedAt",
+    "authorizationEvidence",
+    "fields",
+    "deniedFields",
+    "sourceResultFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "ea.customer-profile-source-envelope.v1"
+    },
+    "sourceContractId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceContractVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceContractFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "sourceSystem": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sourceRecordRef": {
+      "type": "string",
+      "minLength": 1
+    },
+    "businessAsOf": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "observedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "authorizationEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organizationId",
+        "principalFingerprint",
+        "authorizationSnapshotId",
+        "authorizationFingerprint",
+        "subjectInScope",
+        "rowScopeApplied",
+        "evaluatedAt"
+      ],
+      "properties": {
+        "organizationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "principalFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "authorizationSnapshotId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authorizationFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "subjectInScope": {
+          "const": true
+        },
+        "rowScopeApplied": {
+          "const": true
+        },
+        "evaluatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "value", "provenance"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[a-z][a-zA-Z0-9]*(?:\\.[a-z][a-zA-Z0-9]*)+$"
+          },
+          "value": {},
+          "provenance": {
+            "$ref": "#/$defs/provenance"
+          }
+        }
+      }
+    },
+    "deniedFields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "reasonCode"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "sourceResultFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sourceSystem",
+        "sourceRecordRef",
+        "asOf",
+        "observedAt",
+        "mappingRuleVersion"
+      ],
+      "properties": {
+        "sourceSystem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceRecordRef": {
+          "type": "string",
+          "minLength": 1
+        },
+        "asOf": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "mappingRuleVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

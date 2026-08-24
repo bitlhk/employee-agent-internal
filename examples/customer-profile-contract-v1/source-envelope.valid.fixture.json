@@ -1,0 +1,209 @@
+{
+  "schemaVersion": "ea.customer-profile-source-envelope.v1",
+  "sourceContractId": "enterprise-customer-profile-source-v1",
+  "sourceContractVersion": "1.0.0",
+  "sourceContractFingerprint": "1d7d415e5baf950c81f45334aadb93e37caf37a3ee6693fac76c20d8302323f0",
+  "sourceSystem": "enterprise_customer_profile_fixture",
+  "subjectId": "DEMO-CUSTOMER-001",
+  "sourceRecordRef": "enterprise-customer:demo-record-001",
+  "businessAsOf": "2026-08-24T08:00:00.000Z",
+  "observedAt": "2026-08-24T08:00:01.000Z",
+  "authorizationEvidence": {
+    "organizationId": "demo-bank",
+    "principalFingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+    "authorizationSnapshotId": "auth-snapshot-demo-001",
+    "authorizationFingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+    "subjectInScope": true,
+    "rowScopeApplied": true,
+    "evaluatedAt": "2026-08-24T08:00:00.500Z"
+  },
+  "fields": [
+    {
+      "path": "subject.subjectId",
+      "value": "DEMO-CUSTOMER-001",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "subject.subjectType",
+      "value": "individual_customer",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "subject.displayName",
+      "value": "演示客户",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "subject.customerStatus",
+      "value": "active",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "serviceScope.inScope",
+      "value": true,
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "relationship.recentContactSummary",
+      "value": "最近一次受治理联系已完成",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T07:30:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "preferences.investmentHorizon",
+      "value": "three_to_five_years",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "preferences.liquidityNeeds",
+      "value": "retain_six_months_liquidity",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "risk.investmentRiskLevel",
+      "value": "C3",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "risk.investmentRiskValidUntil",
+      "value": "2027-08-24T00:00:00.000Z",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "insurance.vehicleSummary",
+      "value": [
+        {
+          "vehicleRef": "masked-demo-vehicle"
+        }
+      ],
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "insurance.renewalAt",
+      "value": "2026-09-15T00:00:00.000Z",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "insurance.renewalStatus",
+      "value": "renewal_due",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "insurance.currentCoverageSummary",
+      "value": "交强险及商业险在保",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "insurance.claimsRiskSummary",
+      "value": "近一年无重大出险记录",
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    },
+    {
+      "path": "insurance.protectionGaps",
+      "value": ["medical"],
+      "provenance": {
+        "sourceSystem": "enterprise_customer_profile_fixture",
+        "sourceRecordRef": "enterprise-customer:demo-record-001",
+        "asOf": "2026-08-24T08:00:00.000Z",
+        "observedAt": "2026-08-24T08:00:01.000Z",
+        "mappingRuleVersion": "fixture-v1"
+      }
+    }
+  ],
+  "deniedFields": [
+    {
+      "path": "contact.fullPhone",
+      "reasonCode": "FIELD_NOT_IN_CANONICAL_CONTRACT"
+    }
+  ],
+  "sourceResultFingerprint": "9a67a284ee47eaf7526a902ddccb1d2fa6ebd31a7ce309d912f421f5cd26e2cc"
+}

@@ -135,6 +135,82 @@ export type CustomerProfileSourceMappingSetV1 = {
   sources: CustomerProfileSourceContractV1[];
 };
 
+export type CustomerProfileSourceImplementationStatusV1 =
+  | "engineering_candidate"
+  | "environment_verified"
+  | "production_approved";
+
+export type CustomerProfileSourceImplementationContractV1 = {
+  schemaVersion: "ea.customer-profile-source-implementation-contract.v1";
+  contractVersion: string;
+  status: CustomerProfileSourceImplementationStatusV1;
+  sourceContractId: string;
+  canonicalLogicalContextId: "customer_profile";
+  baseline: {
+    businessContractFingerprint: string;
+    sourceRemediationPlanFingerprint: string;
+  };
+  invocation: {
+    toolName: string;
+    allowedArguments: ["subjectId"];
+    forbiddenArguments: string[];
+    sourceAuthorizationAttributes: string[];
+    purposeProjectionOwner: "ea_customer_profile_provider";
+  };
+  response: {
+    schemaPath: string;
+    requiredRemediationFields: string[];
+    stableSubjectRequired: true;
+    fieldLevelProvenanceRequired: true;
+    authoritativeBusinessAsOfRequired: true;
+    rowAuthorizationEvidenceRequired: true;
+    rawSourcePayloadAllowed: false;
+  };
+  activationPolicy: {
+    runtimeActivationAllowed: false;
+    autoAuthorize: false;
+    activeSourceMappingMayChange: false;
+    productionBindingMayChange: false;
+    requiresEnvironmentEvidence: true;
+    requiresNewAuthorizationFingerprint: true;
+    requiresFullGateBRerun: true;
+    requiresPromotionReview: true;
+  };
+};
+
+export type CustomerProfileSourceAuthorizationEvidenceV1 = {
+  organizationId: string;
+  principalFingerprint: string;
+  authorizationSnapshotId: string;
+  authorizationFingerprint: string;
+  subjectInScope: true;
+  rowScopeApplied: true;
+  evaluatedAt: string;
+};
+
+export type CustomerProfileSourceEnvelopeV1 = {
+  schemaVersion: "ea.customer-profile-source-envelope.v1";
+  sourceContractId: string;
+  sourceContractVersion: string;
+  sourceContractFingerprint: string;
+  sourceSystem: string;
+  subjectId: string;
+  sourceRecordRef: string;
+  businessAsOf: string;
+  observedAt: string;
+  authorizationEvidence: CustomerProfileSourceAuthorizationEvidenceV1;
+  fields: Array<{
+    path: string;
+    value: unknown;
+    provenance: CustomerProfileFieldProvenanceV1;
+  }>;
+  deniedFields: Array<{
+    path: string;
+    reasonCode: string;
+  }>;
+  sourceResultFingerprint: string;
+};
+
 export type CustomerProfileFieldProvenanceV1 = {
   sourceSystem: string;
   sourceRecordRef: string;
