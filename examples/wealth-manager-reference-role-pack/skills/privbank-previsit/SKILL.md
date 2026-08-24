@@ -5,7 +5,7 @@ description: >-
   面向财富经理的客户访前准备技能。用于客户拜访、季度回顾、产品到期沟通和资产配置会谈前，
   通过授权客户 MCP 获取当前画像、持仓、风险测评、到期事项和历史沟通，并结合当前有效岗位制度，
   生成内部访前简报、3至5条谈话要点、待核实事项和会后行动清单。
-version: 1.2.0
+version: 1.3.0
 category: 财富管理
 tags: [wealth-manager, banking, customer-previsit, governed-context]
 ---
@@ -38,7 +38,8 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 | `prepare_wealth_previsit_context` | 一次性核验岗位身份、客户范围、当前客户事实、数据时间和有效访前 SOP，并返回任务 Readiness |
 | `wealth_assistant_context_probe` | 核验当前财富经理身份和数据范围 |
 | `wealth_assistant_customer_list` | 在授权范围内选择客户 |
-| `wealth_assistant_customer_detail` | 获取当前客户画像、持仓、风险测评、到期事项和近期互动 |
+| `get_governed_customer_profile` | 按财富岗位、当前用途和客户范围获取字段裁剪后的统一客户画像 |
+| `wealth_assistant_customer_detail` | 获取财富领域持仓、风险测评、到期事项和近期互动 |
 | `get_wealth_policy_basis` | 核验当前岗位适用的现行销售与适当性制度版本 |
 | `prepare_wealth_allocation_context` | 获取客户、产品和当前有效制度，并返回经过确定性适当性 Policy 筛选的候选产品 |
 
@@ -52,11 +53,13 @@ tags: [wealth-manager, banking, customer-previsit, governed-context]
 
 ### 2. 核验身份和客户归属
 
-优先调用 `prepare_wealth_previsit_context`。该工具不可用时，才按 `wealth_assistant_context_probe` → `wealth_assistant_customer_detail` 的兼容链路执行。身份验证、客户归属或数据范围失败时停止读取，不得换工具绕过。
+先调用 `wealth_assistant_context_probe` 核验身份。用户未指定可验证客户时，调用 `wealth_assistant_customer_list` 协助选择，并把列表返回的稳定客户标识（例如 `customerId` 或 `CUST_NO`）原样传给后续工具；不得使用展示序号、姓名或模型生成值替代客户身份。
+
+用 `get_governed_customer_profile` 获取本轮统一客户画像。该入口不可用或拒绝时，不得改用领域客户详情补造画像。需要财富领域持仓、到期和互动数据时，再调用 `prepare_wealth_previsit_context`；该工具不可用时，才按 `wealth_assistant_customer_detail` 的兼容链路读取领域事实。身份验证、客户归属或数据范围失败时停止读取，不得换工具绕过。
 
 ### 3. 获取当前业务现场
 
-从 `prepare_wealth_previsit_context`（兼容链路为 `wealth_assistant_customer_detail`）获取：
+从 `get_governed_customer_profile` 获取当前岗位允许的客户基础画像，从 `prepare_wealth_previsit_context`（兼容链路为 `wealth_assistant_customer_detail`）获取财富领域事实：
 
 - 风险等级、测评日期和有效期；
 - AUM 和主要持仓；

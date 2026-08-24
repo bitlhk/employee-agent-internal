@@ -20,12 +20,14 @@ describe("wealth manager reference role pack", () => {
     );
     expect(parsed.skillId).toBe("privbank-previsit");
     expect(parsed.displayName).toBe("财富客户访前准备");
-    expect(parsed.manifest?.version).toBe("1.2.0");
+    expect(parsed.manifest?.version).toBe("1.3.0");
     expect(parsed.warnings).toEqual([]);
     const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("客户事实和产品事实不得通过网页搜索补齐");
     expect(skillMarkdown).toContain("prepare_wealth_allocation_context");
     expect(skillMarkdown).toContain("get_wealth_policy_basis");
+    expect(skillMarkdown).toContain("稳定客户标识");
+    expect(skillMarkdown).toContain("get_governed_customer_profile");
     expect(skillMarkdown).toContain("正式候选产品只能来自该工具返回的 `eligibleProducts`");
     expect(skillMarkdown).toContain("默认不执行通知、外发、CRM 写入");
   });
@@ -34,7 +36,7 @@ describe("wealth manager reference role pack", () => {
     const skillDir = path.join(root, "skills", "wealth-manager-assistant");
     const parsed = parseSkillSourceDirectory(skillDir, "wealth-manager-assistant");
     expect(parsed.skillId).toBe("wealth-manager-assistant");
-    expect(parsed.manifest?.version).toBe("1.3.0");
+    expect(parsed.manifest?.version).toBe("1.4.0");
     expect(parsed.warnings).toEqual([]);
     const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("正式候选产品、推荐理由或推荐话术");
@@ -42,6 +44,8 @@ describe("wealth manager reference role pack", () => {
     expect(skillMarkdown).toContain("仅做产品资料查询时才使用原始产品只读工具");
     expect(skillMarkdown).toContain("Policy Code、Decision ID 和规则版本属于执行证据");
     expect(skillMarkdown).toContain("prepare_wealth_maturity_context");
+    expect(skillMarkdown).toContain("稳定客户标识");
+    expect(skillMarkdown).toContain("get_governed_customer_profile");
     expect(skillMarkdown).toContain("确认前不得声称任务已创建");
   });
 

@@ -28,7 +28,9 @@ category: 财富管理
 | 工具 | 用途 |
 |------|------|
 | `wealth_assistant_context_probe` | 确认当前客户经理身份 |
-| `wealth_assistant_customer_list` | 查询客户及其持仓信息 |
+| `wealth_assistant_customer_list` | 在授权范围内选择客户并取得稳定客户标识 |
+| `get_governed_customer_profile` | 获取当前财富用途允许的统一客户画像 |
+| `wealth_assistant_customer_detail` | 获取财富领域持仓、资产和到期信息 |
 | `prepare_wealth_allocation_context` | 返回经过当前制度和确定性适当性 Policy 筛选的正式候选产品 |
 
 平台已统一管理工具鉴权和连接，Skill 中只需声明依赖工具，由 Agent 运行时自动调度调用。
@@ -47,10 +49,11 @@ category: 财富管理
 ## 执行步骤
 
 1. 调用 `wealth_assistant_context_probe`，确认客户经理身份
-2. 调用 `wealth_assistant_customer_list` 获取客户信息和可用的持仓数据
-3. 分析当前配置结构、风险和效率
-4. 如需形成正式产品候选，调用 `prepare_wealth_allocation_context`；只使用 `eligibleProducts`，不得推荐 `excludedProducts`
-5. 输出配置诊断报告和优化建议
+2. 必要时调用 `wealth_assistant_customer_list` 选择客户，并原样传递其稳定客户标识
+3. 调用 `get_governed_customer_profile` 获取客户画像，调用 `wealth_assistant_customer_detail` 获取持仓和资产数据
+4. 分析当前配置结构、风险和效率
+5. 如需形成正式产品候选，调用 `prepare_wealth_allocation_context`；只使用 `eligibleProducts`，不得推荐 `excludedProducts`
+6. 输出配置诊断报告和优化建议
 
 ## 分析框架
 

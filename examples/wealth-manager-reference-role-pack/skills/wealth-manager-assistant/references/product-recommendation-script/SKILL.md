@@ -30,7 +30,8 @@ category: 财富管理-营销话术
 | 工具 | 用途 |
 |------|------|
 | `wealth_assistant_context_probe` | 确认当前客户经理身份 |
-| `wealth_assistant_customer_list` | 查询客户信息（用于个性化话术定制） |
+| `wealth_assistant_customer_list` | 在授权范围内选择客户并取得稳定客户标识 |
+| `get_governed_customer_profile` | 获取当前财富用途允许的统一客户画像 |
 | `prepare_wealth_allocation_context` | 获取客户、当前产品和经过确定性适当性 Policy 筛选的正式候选集合 |
 
 平台已统一管理工具鉴权和连接，Skill 中只需声明依赖工具，由 Agent 运行时自动调度调用。不要在 Skill 中硬编码路径、token 或启动本地进程。
@@ -53,7 +54,7 @@ category: 财富管理-营销话术
 
 1. 调用 `wealth_assistant_context_probe` 确认当前客户经理身份
 2. 如用户给出了客户或产品信息，调用相应工具获取补充数据
-   - 客户信息 → `wealth_assistant_customer_list`
+   - 客户信息 → 必要时先用 `wealth_assistant_customer_list` 选择客户，再把稳定客户标识传给 `get_governed_customer_profile`
    - 客户化正式产品信息 → `prepare_wealth_allocation_context`
 3. 如果用户已经给足信息，可以直接生成话术
 4. 确定话术场景（电话/微信/面谈/短信）

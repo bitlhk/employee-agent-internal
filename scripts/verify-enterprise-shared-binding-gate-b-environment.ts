@@ -37,7 +37,7 @@ import { resolveEffectiveRoleAssets } from "../server/db/role-assets";
 import { runGovernedMemoryPurposeEnvironment } from "./verify-governed-memory-purpose-environment";
 
 const SNAPSHOT_PATH = "examples/insurance-advisor-reference-role-pack/eval/shared-binding-validation-snapshot.v1.json";
-const EXPECTED_SNAPSHOT = "015f9a157bc2cb5311b8d865f08cbdb768f601388894d659602192681c771e9f";
+const EXPECTED_SNAPSHOT = "4d115dafceca923889b0001e35a606c35dc9eca7e5e337ec7ab65cbc5bf4b2f6";
 const ORGANIZATION_ID = String(
   process.env.EA_DEMO_ORGANIZATION_ID || "org_linggan_finance",
 ).trim();

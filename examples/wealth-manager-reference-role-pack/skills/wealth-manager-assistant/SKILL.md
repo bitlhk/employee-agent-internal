@@ -3,7 +3,7 @@ name: wealth-manager-assistant
 description: >-
   客户经理财富助手主技能，面向银行客户经理的客户经营、资产配置、产品匹配、推荐理由、推荐话术和合规问答场景。
   当用户要求分析客户、查询客户列表、筛选产品、生成资产配置报告、准备产品推荐理由或营销话术时使用。
-version: 1.3.0
+version: 1.4.0
 author: 李文华
 category: 财富管理
 tags: [wealth-manager, banking, customer-management, product-recommendation, compliance]
@@ -33,7 +33,8 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 |---|---|
 | `wealth_assistant_context_probe` | 确认当前客户经理身份、权限和数据范围 |
 | `wealth_assistant_customer_list` | 查询当前客户经理可见客户列表 |
-| `wealth_assistant_customer_detail` | 查询单个客户完整画像、资产、持仓、到期产品和推荐信息 |
+| `get_governed_customer_profile` | 按财富岗位、当前用途和客户范围获取字段裁剪后的统一客户画像 |
+| `wealth_assistant_customer_detail` | 查询单个客户的财富领域资产、持仓、到期产品和推荐信息 |
 | `get_wealth_policy_basis` | 获取当前岗位可用的现行适当性制度版本和安全聚合的有效期过滤证据 |
 | `prepare_wealth_maturity_context` | 在当前用户授权客户范围内生成有数量上限的到期经营清单和优先级 |
 | `prepare_wealth_allocation_context` | 为指定客户准备经过当前制度和确定性适当性 Policy 筛选的正式候选产品集合 |
@@ -46,15 +47,16 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 ## 执行总原则
 
-1. 涉及客户数据前，先调用 `wealth_assistant_context_probe` 确认身份。
-2. 不编造客户、资产、持仓、产品收益、风险等级和到期信息。
-3. 面向具体客户形成正式候选产品、推荐理由或推荐话术时，必须调用 `prepare_wealth_allocation_context`；只能推荐其 `eligibleProducts`，不得把 `excludedProducts` 或原始产品搜索结果作为推荐候选。
-4. 用户询问“最新、现行、当前适用”的销售或适当性制度时，先调用 `get_wealth_policy_basis`；没有现行依据时不得使用模型先验补答企业政策。
-5. 用户要求梳理近期到期客户时，必须调用 `prepare_wealth_maturity_context`，不得用历史清单、网页或记忆补造到期事实。
-6. 生成方案或跟进建议不等于写入业务系统。只有用户明确要求创建，并完成操作确认后，才能调用当前环境已授权的方案草稿或跟进任务写工具。
-7. 涉及收益表现时，只能使用历史/过往/参考表述，必须提示历史业绩不代表未来表现。
-8. 不承诺收益，不暗示保本，不替客户做最终购买决策。
-9. 不输出身份证号、手机号等敏感信息；工具返回敏感字段时，默认脱敏或摘要化。
+1. 涉及客户数据前，先调用 `wealth_assistant_context_probe` 确认身份。用户未指定可验证客户时，调用 `wealth_assistant_customer_list`，并把返回的稳定客户标识（例如 `customerId` 或 `CUST_NO`）原样传给后续工具，不得使用展示序号、姓名或模型生成值替代身份。
+2. 客户基础画像必须调用 `get_governed_customer_profile` 获取；不得使用财富领域详情工具绕过岗位、用途和字段投影。资产、持仓、到期和推荐信息继续使用财富领域工具。
+3. 不编造客户、资产、持仓、产品收益、风险等级和到期信息。
+4. 面向具体客户形成正式候选产品、推荐理由或推荐话术时，必须调用 `prepare_wealth_allocation_context`；只能推荐其 `eligibleProducts`，不得把 `excludedProducts` 或原始产品搜索结果作为推荐候选。
+5. 用户询问“最新、现行、当前适用”的销售或适当性制度时，先调用 `get_wealth_policy_basis`；没有现行依据时不得使用模型先验补答企业政策。
+6. 用户要求梳理近期到期客户时，必须调用 `prepare_wealth_maturity_context`，不得用历史清单、网页或记忆补造到期事实。
+7. 生成方案或跟进建议不等于写入业务系统。只有用户明确要求创建，并完成操作确认后，才能调用当前环境已授权的方案草稿或跟进任务写工具。
+8. 涉及收益表现时，只能使用历史/过往/参考表述，必须提示历史业绩不代表未来表现。
+9. 不承诺收益，不暗示保本，不替客户做最终购买决策。
+10. 不输出身份证号、手机号等敏感信息；工具返回敏感字段时，默认脱敏或摘要化。
 
 ## 场景路由
 
@@ -66,8 +68,9 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 1. 调 `wealth_assistant_context_probe`
 2. 调 `wealth_assistant_customer_list`
-3. 结合用户提供的跟进记录，整理重点客户、可跟进机会、待办动作和明日计划
-4. 不编造客户互动记录
+3. 需要展开具体客户时，把列表返回的稳定客户标识传给 `get_governed_customer_profile`
+4. 结合用户提供的跟进记录，整理重点客户、可跟进机会、待办动作和明日计划
+5. 不编造客户互动记录
 
 参考：`references/daily-client-work-summary/SKILL.md`
 
@@ -78,9 +81,10 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 流程：
 
 1. 调 `wealth_assistant_context_probe`
-2. 调 `wealth_assistant_customer_detail` 获取客户资产和持仓
-3. 需要形成正式产品候选时调 `prepare_wealth_allocation_context`；仅做产品资料查询时才使用原始产品只读工具
-4. 输出配置结构、风险暴露、收益效率、流动性、优化建议和风险提示
+2. 用稳定客户标识调用 `get_governed_customer_profile` 获取客户基础画像
+3. 调 `wealth_assistant_customer_detail` 获取客户资产和持仓
+4. 需要形成正式产品候选时调 `prepare_wealth_allocation_context`；仅做产品资料查询时才使用原始产品只读工具
+5. 输出配置结构、风险暴露、收益效率、流动性、优化建议和风险提示
 
 参考：`references/asset-allocation-report/SKILL.md`
 
@@ -91,10 +95,11 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 流程：
 
 1. 调 `wealth_assistant_context_probe`
-2. 调 `wealth_assistant_customer_detail` 或 `wealth_assistant_customer_list` 获取客户风险等级和需求
-3. 调 `prepare_wealth_allocation_context` 获取经过确定性适当性 Policy 筛选的产品
-4. 只使用 `eligibleProducts` 输出候选，不强行给唯一结论
-5. 使用 `excludedProducts` 解释排除原因，但不得推荐
+2. 必要时用 `wealth_assistant_customer_list` 选择客户，并把稳定客户标识传给 `get_governed_customer_profile` 获取客户风险等级和需求
+3. 调 `wealth_assistant_customer_detail` 获取财富领域资产事实
+4. 调 `prepare_wealth_allocation_context` 获取经过确定性适当性 Policy 筛选的产品
+5. 只使用 `eligibleProducts` 输出候选，不强行给唯一结论
+6. 使用 `excludedProducts` 解释排除原因，但不得推荐
 
 ### 4. 推荐理由生成
 

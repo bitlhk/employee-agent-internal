@@ -15,6 +15,7 @@
 
 - `wealth_assistant_context_probe`
 - `wealth_assistant_customer_list`
+- `get_governed_customer_profile`（统一、按岗位用途裁剪的客户画像）
 - `wealth_assistant_customer_detail`
 - `prepare_wealth_allocation_context`（具体客户的正式产品候选必须使用）
 - `wealth_assistant_product_search`

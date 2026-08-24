@@ -52,10 +52,10 @@
   ],
   "rolePackReleases": [
     {
-      "releaseId": "linggan-bank.wealth-manager@7e10eb5caa7cfe4c:wm-golden-task-v3",
+      "releaseId": "linggan-bank.wealth-manager@008a8b0e33eb7182:wm-golden-task-v3",
       "rolePackId": "linggan-bank.wealth-manager",
       "verificationLevel": "controlled_scenario",
-      "assetSetFingerprint": "7e10eb5caa7cfe4c1e1d68fc8f8fa5f9842588f5ae1d715d184098485327613c",
+      "assetSetFingerprint": "008a8b0e33eb718270310f3b34f60586ac83c2123b08c581a5413ec3e07bd130",
       "verifiedAt": null
     },
     {
@@ -78,5 +78,5 @@
       "planVersion": "1.0.0"
     }
   ],
-  "snapshotFingerprint": "015f9a157bc2cb5311b8d865f08cbdb768f601388894d659602192681c771e9f"
+  "snapshotFingerprint": "4d115dafceca923889b0001e35a606c35dc9eca7e5e337ec7ab65cbc5bf4b2f6"
 }
