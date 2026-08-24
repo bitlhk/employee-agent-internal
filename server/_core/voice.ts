@@ -7,7 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { WebSocket as WS, WebSocketServer } from "ws";
 import { createContext } from "./context";
-import { resolveRequesterUserId } from "./helpers";
+import { isAuthorizedInternalRequest, resolveRequesterUserId } from "./helpers";
 
 const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
 const MAX_REALTIME_QUEUE_BYTES = 2 * 1024 * 1024;
@@ -201,6 +201,48 @@ async function requireAuthenticatedUser(req: express.Request, res: express.Respo
 }
 
 export function registerVoiceRoutes(app: express.Express) {
+  app.post("/api/internal/miniprogram/experience/transcribe", async (req, res) => {
+    const token = String(process.env.MINIPROGRAM_EXPERIENCE_TOKEN || "").trim();
+    if (token.length < 32 || !isAuthorizedInternalRequest(req, token)) {
+      res.status(token ? 401 : 503).json({ error: "语音转写渠道未配置" });
+      return;
+    }
+    try {
+      const audioBuffer = await readRequestBody(req);
+      if (audioBuffer.length === 0) {
+        res.status(400).json({ error: "没有收到录音内容" });
+        return;
+      }
+      const appId = String(process.env.XFYUN_APPID || "").trim();
+      const apiSecret = String(process.env.XFYUN_API_SECRET || "").trim();
+      const apiKey = String(process.env.XFYUN_API_KEY || "").trim();
+      if (!appId || !apiSecret || !apiKey) {
+        res.status(503).json({ error: "讯飞语音服务未配置" });
+        return;
+      }
+      const pcmBuffer = await transcodeToPcm(audioBuffer);
+      const text = await transcribeWithXfyun({ pcmBuffer, appId, apiSecret, apiKey });
+      if (!text) {
+        res.status(422).json({ error: "没有识别到清晰语音，请靠近麦克风后重试" });
+        return;
+      }
+      res.setHeader("cache-control", "no-store");
+      res.json({ text });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message === "EA_AUDIO_TOO_LARGE") {
+        res.status(413).json({ error: "录音过大，请缩短后重试" });
+        return;
+      }
+      if (message.startsWith("EA_AUDIO_TRANSCODE_FAILED")) {
+        res.status(400).json({ error: "录音格式暂不支持，请重新录制" });
+        return;
+      }
+      console.error("[voice-internal] error:", error);
+      res.status(500).json({ error: "语音识别暂时不可用" });
+    }
+  });
+
   app.post("/api/claw/voice/transcribe", async (req, res) => {
     try {
       if (!(await requireAuthenticatedUser(req, res))) return;
