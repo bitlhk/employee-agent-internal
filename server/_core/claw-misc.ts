@@ -25,6 +25,8 @@ import {
   deleteAgentTasksByConversation,
   listAgentTasksByConversation,
 } from "../db/agents";
+import { getSkillIdentityBySkillId } from "../db";
+import { publishSkillVersionFromSource } from "./skills/skill-market-v2-service";
 import {
   buildExpertTaskHistoryMessages,
   expertConversationIdFromSessionKey,
@@ -697,6 +699,8 @@ export function registerMiscRoutes(app: express.Express) {
           if (buf.length > MAX_SKILL_PACKAGE_BYTES) { res.status(413).json({ error: "File too large (max 50MB)" }); return; }
 
           const filename = decodeURIComponent(String(req.header("x-skill-filename") || "uploaded.zip")).trim() || "uploaded.zip";
+          const requestedVersion = String(req.header("x-skill-version") || "").trim();
+          const changelog = decodeURIComponent(String(req.header("x-skill-changelog") || "")).trim().slice(0, 8_000);
           const malwareScan = await scanUploadForMalware(buf);
           if (!malwareScan.ok) {
             res.status(400).json({ error: "file_malware_scan_failed", message: malwareScan.error });
@@ -714,29 +718,47 @@ export function registerMiscRoutes(app: express.Express) {
           } finally {
             try { rmSync(tmpZip, { force: true }); } catch {}
           }
-
-          const { insertSkillMarketItem } = await import("../db");
-          const marketItemId = await insertSkillMarketItem({
-            skillId: parsed.skillId,
-            name: parsed.displayName || parsed.skillId,
-            description: parsed.description || null,
-            author: "管理员上传",
-            authorUserId: ctx.user!.id,
-            version: String(parsed.manifest?.version || "1.0.0"),
-            category: "general",
-            origin: "opensource",
-            status: "pending",
-            license: String(parsed.manifest?.license || "MIT"),
-            packagePath: finalDir,
-          });
+          const existingIdentity = await getSkillIdentityBySkillId(parsed.skillId);
+          if (existingIdentity?.maintainerType === "user") {
+            rmSync(finalDir, { recursive: true, force: true });
+            res.status(409).json({
+              error: "该技能由用户维护，管理员不能替用户发布新版本",
+              code: "SKILL_MAINTAINER_MISMATCH",
+            });
+            return;
+          }
+          let release;
+          try {
+            release = await publishSkillVersionFromSource({
+              action: existingIdentity ? "publish_new_version" : "create_new_skill",
+              sourcePath: finalDir,
+              actorUserId: ctx.user!.id,
+              isPlatformAdmin: true,
+              maintainerType: "system",
+              organizationId: null,
+              visibility: "platform",
+              selectedIdentityId: existingIdentity?.identityId,
+              requestedVersion: requestedVersion || String(parsed.manifest?.version || "1.0.0"),
+              changelog,
+              authorLabel: "系统管理员维护",
+              sourceOrigin: "opensource",
+              category: "general",
+              license: String(parsed.manifest?.license || "MIT"),
+            });
+          } finally {
+            rmSync(finalDir, { recursive: true, force: true });
+          }
 
           res.json({
             ok: true,
             uploadId: parsed.skillId,
             name: parsed.displayName || parsed.skillId,
             description: parsed.description || "",
-            path: finalDir,
-            marketItemId,
+            path: release.artifactSha256,
+            marketItemId: release.legacyMarketId,
+            identityId: release.identityId,
+            versionId: release.versionId,
+            version: release.version,
             warnings: parsed.warnings,
           });
         } catch (err: any) {

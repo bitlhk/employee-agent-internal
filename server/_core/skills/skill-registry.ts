@@ -17,6 +17,7 @@ import type {
   SkillRegistry,
   SkillRegistryError,
   SkillRegistryResult,
+  SkillRegistryInstallOptions,
   SkillRegistryReconcileOptions,
   SkillScanInfo,
   SkillSource,
@@ -333,11 +334,16 @@ export class FileSkillRegistry implements SkillRegistry {
     return path.join(await this.runtimeRoot(adoptId), skillId);
   }
 
-  private async prepareInstallSource(adoptId: string, source: SkillSource): Promise<SkillSource> {
+  private async prepareInstallSource(
+    adoptId: string,
+    source: SkillSource,
+    options: SkillRegistryInstallOptions,
+  ): Promise<SkillSource> {
     if (source.kind !== "marketplace") return source;
     if (!source.sourcePath || !existsSync(source.sourcePath)) {
       throw new Error("marketplace skill source is missing");
     }
+    if (options.preserveImmutableSourcePath) return source;
     const agentSourcePath = skillStoreMarketplaceInstallDir(adoptId, source.skillId);
     if (path.resolve(source.sourcePath) === path.resolve(agentSourcePath)) return source;
     if (existsSync(agentSourcePath)) rmSync(agentSourcePath, { recursive: true, force: true });
@@ -533,16 +539,16 @@ export class FileSkillRegistry implements SkillRegistry {
     return ok({ adoptId, startedAt, finishedAt: iso(this.now), scanned, changed, failed, items });
   }
 
-  async install(adoptId: string, source: SkillSource): Promise<SkillRegistryResult<Skill>> {
-    return this.withMutation(() => this.installUnlocked(adoptId, source));
+  async install(adoptId: string, source: SkillSource, options: SkillRegistryInstallOptions = {}): Promise<SkillRegistryResult<Skill>> {
+    return this.withMutation(() => this.installUnlocked(adoptId, source, options));
   }
 
-  private async installUnlocked(adoptId: string, source: SkillSource): Promise<SkillRegistryResult<Skill>> {
+  private async installUnlocked(adoptId: string, source: SkillSource, options: SkillRegistryInstallOptions): Promise<SkillRegistryResult<Skill>> {
     const rows = this.loadRegistry();
     const now = iso(this.now);
     const existing = rows.find((x) => x.adoptId === adoptId && x.id === source.skillId);
     const versionCompare = compareVersionString(source.version, existing?.source.version);
-    if (existing?.source.kind === "marketplace" && source.kind === "marketplace" && versionCompare < 0) {
+    if (existing?.source.kind === "marketplace" && source.kind === "marketplace" && versionCompare < 0 && !options.allowVersionDowngrade) {
       console.warn("[SKILL-REGISTRY][VERSION-DOWNGRADE] marketplace source version is older than installed version; keeping installed copy", {
         adoptId,
         skillId: source.skillId,
@@ -551,15 +557,27 @@ export class FileSkillRegistry implements SkillRegistry {
       });
       return ok(await this.finalizeSkill(adoptId, existing));
     }
-    if (existing?.source.kind === "marketplace" && source.kind === "marketplace" && versionCompare > 0) {
-      const runtimePath = existing.sync.runtimePath || await this.runtimePath(adoptId, source.skillId);
-      if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
-    }
     let preparedSource = source;
     try {
-      preparedSource = await this.prepareInstallSource(adoptId, source);
+      preparedSource = await this.prepareInstallSource(adoptId, source, options);
     } catch (e: any) {
       return err("source_missing", String(e?.message || e));
+    }
+    const runtimePath = await this.runtimePath(adoptId, preparedSource.skillId);
+    if (
+      existing?.source.kind === "marketplace"
+      && preparedSource.kind === "marketplace"
+      && versionCompare !== 0
+      && (versionCompare > 0 || options.allowVersionDowngrade)
+    ) {
+      try {
+        await this.installer.installFromSource(preparedSource.sourcePath!, runtimePath);
+      } catch (error) {
+        return err(
+          "sync_failed",
+          error instanceof Error ? error.message : String(error)
+        );
+      }
     }
     const skill: Skill = {
       id: preparedSource.skillId,
@@ -568,7 +586,7 @@ export class FileSkillRegistry implements SkillRegistry {
       state: "syncing",
       enabled: true,
       review: { state: "none" },
-      sync: { runtimePath: await this.runtimePath(adoptId, preparedSource.skillId) },
+      sync: { runtimePath },
       scan: existing?.scan,
       capabilities: [],
       examples: [],

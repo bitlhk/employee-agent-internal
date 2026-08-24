@@ -78,6 +78,16 @@ interface MarketSkill {
   license: string;
   roleTag: string;
   provider: string;
+  identityId?: string;
+  versionId?: string;
+  artifactSha256?: string;
+  installedVersion?: string;
+  versions: Array<{
+    versionId: string;
+    version: string;
+    artifactSha256: string;
+    submittedAt?: string;
+  }>;
 }
 
 const MARKET_CACHE_PREFIX = "employee-agent:skill-market:v9:";
@@ -187,6 +197,16 @@ function normalizeMarketSkills(list: any[]): MarketSkill[] {
     license: String(s.license || "MIT"),
     roleTag: String(s.roleTag || s.role_tag || ""),
     provider: String(s.provider || ""),
+    identityId: String(s.identityId || "") || undefined,
+    versionId: String(s.versionId || "") || undefined,
+    artifactSha256: String(s.artifactSha256 || "") || undefined,
+    installedVersion: String(s.installedVersion || "") || undefined,
+    versions: Array.isArray(s.versions) ? s.versions.map((version: Record<string, unknown>) => ({
+      versionId: String(version.versionId || ""),
+      version: String(version.version || ""),
+      artifactSha256: String(version.artifactSha256 || ""),
+      submittedAt: version.submittedAt ? String(version.submittedAt) : undefined,
+    })).filter((version: { versionId: string; version: string }) => version.versionId && version.version) : [],
   }));
 }
 
@@ -266,6 +286,16 @@ export function MarketplacePage({
         const list = d?.items || d?.result?.data?.json || d?.result?.data || [];
         const normalized = normalizeMarketSkills(Array.isArray(list) ? list : []);
         setItems(normalized);
+        setInstalledMarket((previous) => {
+          const next = { ...previous };
+          for (const item of normalized) {
+            if (!item.installedVersion) continue;
+            const installed = { skillId: item.skillId, version: item.installedVersion };
+            next[`skill:${item.skillId}`] = installed;
+            next[String(item.id)] = installed;
+          }
+          return next;
+        });
         try { window.localStorage.setItem(marketCacheKey(adoptId), JSON.stringify(normalized)); } catch {}
       })
       .catch((error) => {
@@ -336,24 +366,27 @@ export function MarketplacePage({
     return { installed, installedVersion, canUpdate };
   };
 
-  const onInstall = async (item: MarketSkill) => {
+  const onInstall = async (item: MarketSkill, target?: MarketSkill["versions"][number]) => {
     if (!adoptId || installing) return;
     setInstalling(item.id);
     try {
+      const targetVersionId = target?.versionId || item.versionId;
+      const targetVersion = target?.version || item.version;
       const r = await fetch("/api/trpc/claw.marketInstall", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ json: { marketId: item.id, adoptId } }),
+        body: JSON.stringify({ json: { marketId: item.id, adoptId, versionId: targetVersionId } }),
       });
       const d = await r.json();
       if (d?.error) throw new Error(d.error?.message || "安装失败");
-      toast.success(`已安装：${item.title}`);
+      const operation = String(d?.result?.data?.json?.operation || d?.result?.data?.operation || "install");
+      toast.success(`${operation === "rollback" ? "已回滚" : operation === "update" ? "已更新" : "已安装"}：${item.title} v${targetVersion}`);
       const installedSkillId = String(d?.result?.data?.json?.skillId || d?.result?.data?.skillId || item.skillId);
       setInstalledMarket((prev) => {
         const next = {
           ...prev,
-          [String(item.id)]: { skillId: installedSkillId, version: item.version },
-          [`skill:${installedSkillId}`]: { skillId: installedSkillId, version: item.version },
+          [String(item.id)]: { skillId: installedSkillId, version: targetVersion },
+          [`skill:${installedSkillId}`]: { skillId: installedSkillId, version: targetVersion },
         };
         try { window.localStorage.setItem(marketInstalledCacheKey(adoptId), JSON.stringify(next)); } catch {}
         return next;
@@ -369,7 +402,7 @@ export function MarketplacePage({
 
   const onUninstall = async (item: MarketSkill) => {
     if (!adoptId || installing) return;
-    const installed = installedMarket[String(item.id)];
+    const installed = installedMarket[String(item.id)] || installedMarket[`skill:${item.skillId}`];
     if (!installed?.skillId) return;
     const ok = await confirm({
       title: "卸载技能？",
@@ -588,6 +621,31 @@ export function MarketplacePage({
                     <div><span>技能 ID</span><strong>{selectedSkill.skillId}</strong></div>
                     <div><span>审核</span><strong><ShieldCheck size={12} />静态扫描通过</strong></div>
                   </div>
+
+                  {selectedSkill.versions.length > 0 && (
+                    <div className="skills-market-detail__section">
+                      <div className="skills-market-detail__label">已审核版本</div>
+                      <div className="space-y-2">
+                        {selectedSkill.versions.map((version) => {
+                          const active = installedVersion === version.version;
+                          const latest = selectedSkill.versionId === version.versionId;
+                          return (
+                            <div key={version.versionId} className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-xs">
+                              <span className="min-w-0">
+                                <strong>v{version.version}</strong>
+                                <span className="ml-2 text-muted-foreground">{active ? "当前安装" : latest ? "最新版本" : "历史版本"}</span>
+                              </span>
+                              {!active && installed ? (
+                                <button className="skills-btn skills-btn--ghost" type="button" disabled={installing === selectedSkill.id} onClick={() => onInstall(selectedSkill, version)}>
+                                  <RefreshCw size={12} />{latest ? "更新" : "回滚"}
+                                </button>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="skills-market-detail__actions">
                     <div className="skills-market-detail__action-buttons">

@@ -1501,6 +1501,151 @@ export const skillMarketplace = mysqlTable("skill_marketplace", {
 export type SkillMarketItem = typeof skillMarketplace.$inferSelect;
 export type InsertSkillMarketItem = typeof skillMarketplace.$inferInsert;
 
+// Skill Market V2 keeps the stable Skill identity separate from immutable
+// release artifacts. skill_marketplace remains a compatibility projection
+// during the V1 rollout.
+export const skillIdentities = mysqlTable("skill_identities", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  identityId: varchar("identity_id", { length: 64 }).notNull(),
+  skillId: varchar("skill_id", { length: 64 }).notNull(),
+  maintainerType: mysqlEnum("maintainer_type", ["system", "user"]).notNull(),
+  maintainerUserId: int("maintainer_user_id"),
+  organizationId: varchar("organization_id", { length: 128 }),
+  visibility: mysqlEnum("visibility", ["organization", "platform"]).notNull(),
+  sourceOrigin: varchar("source_origin", { length: 64 }).notNull(),
+  upstreamAuthor: varchar("upstream_author", { length: 256 }),
+  upstreamRepository: varchar("upstream_repository", { length: 1024 }),
+  upstreamLicense: varchar("upstream_license", { length: 256 }),
+  displayName: varchar("display_name", { length: 128 }).notNull(),
+  description: text("description"),
+  category: varchar("category", { length: 64 }).default("general").notNull(),
+  status: mysqlEnum("status", ["active", "archived"]).default("active").notNull(),
+  latestApprovedVersionId: varchar("latest_approved_version_id", { length: 64 }),
+  legacyPrimaryMarketId: int("legacy_primary_market_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  identityIdUnique: uniqueIndex("uk_skill_identities_public_id").on(table.identityId),
+  skillIdUnique: uniqueIndex("uk_skill_identities_skill_id").on(table.skillId),
+  maintainerIdx: index("idx_skill_identities_maintainer").on(table.maintainerType, table.maintainerUserId),
+  catalogIdx: index("idx_skill_identities_catalog").on(table.visibility, table.organizationId, table.status),
+}));
+
+export type SkillIdentity = typeof skillIdentities.$inferSelect;
+export type InsertSkillIdentity = typeof skillIdentities.$inferInsert;
+
+export const skillVersions = mysqlTable("skill_versions", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  versionId: varchar("version_id", { length: 64 }).notNull(),
+  skillIdentityId: varchar("skill_identity_id", { length: 64 }).notNull(),
+  legacyMarketId: int("legacy_market_id"),
+  version: varchar("version", { length: 32 }).notNull(),
+  legacyOriginalVersion: varchar("legacy_original_version", { length: 32 }),
+  artifactSha256: varchar("artifact_sha256", { length: 64 }).notNull(),
+  artifactSize: bigint("artifact_size", { mode: "number", unsigned: true }).notNull(),
+  artifactPath: varchar("artifact_path", { length: 1024 }).notNull(),
+  status: mysqlEnum("status", ["pending", "approved", "rejected", "withdrawn", "revoked"]).default("pending").notNull(),
+  changelog: text("changelog"),
+  submittedBy: int("submitted_by").notNull(),
+  submittedAt: timestamp("submitted_at").defaultNow().notNull(),
+  reviewedBy: int("reviewed_by"),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNote: text("review_note"),
+  scanPolicyFingerprint: varchar("scan_policy_fingerprint", { length: 64 }).notNull(),
+  scanResultFingerprint: varchar("scan_result_fingerprint", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  versionIdUnique: uniqueIndex("uk_skill_versions_public_id").on(table.versionId),
+  identityVersionUnique: uniqueIndex("uk_skill_versions_identity_version").on(table.skillIdentityId, table.version),
+  identityDigestUnique: uniqueIndex("uk_skill_versions_identity_digest").on(table.skillIdentityId, table.artifactSha256),
+  legacyMarketUnique: uniqueIndex("uk_skill_versions_legacy_market").on(table.legacyMarketId),
+  identityStatusIdx: index("idx_skill_versions_identity_status").on(table.skillIdentityId, table.status, table.submittedAt),
+}));
+
+export type SkillVersion = typeof skillVersions.$inferSelect;
+export type InsertSkillVersion = typeof skillVersions.$inferInsert;
+
+export const agentSkillAssignments = mysqlTable("agent_skill_assignments", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  assignmentId: varchar("assignment_id", { length: 64 }).notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  skillIdentityId: varchar("skill_identity_id", { length: 64 }).notNull(),
+  assignmentSource: mysqlEnum("assignment_source", ["personal", "role_preinstall"]).notNull(),
+  assignmentRef: varchar("assignment_ref", { length: 128 }).notNull(),
+  requestedVersionId: varchar("requested_version_id", { length: 64 }).notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  assignmentIdUnique: uniqueIndex("uk_agent_skill_assignments_public_id").on(table.assignmentId),
+  sourceUnique: uniqueIndex("uk_agent_skill_assignments_source").on(table.adoptId, table.skillIdentityId, table.assignmentSource, table.assignmentRef),
+  effectiveIdx: index("idx_agent_skill_assignments_effective").on(table.adoptId, table.skillIdentityId, table.enabled),
+}));
+
+export const agentSkillInstallations = mysqlTable("agent_skill_installations", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  skillIdentityId: varchar("skill_identity_id", { length: 64 }).notNull(),
+  activeVersionId: varchar("active_version_id", { length: 64 }),
+  activeArtifactSha256: varchar("active_artifact_sha256", { length: 64 }),
+  desiredVersionId: varchar("desired_version_id", { length: 64 }),
+  desiredArtifactSha256: varchar("desired_artifact_sha256", { length: 64 }),
+  installState: mysqlEnum("install_state", ["ready", "installing", "updating", "rolling_back", "failed", "quarantined", "disabled"]).default("installing").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  operationId: varchar("operation_id", { length: 64 }),
+  operationGeneration: int("operation_generation").default(0).notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at"),
+  lastError: text("last_error"),
+  installedBy: int("installed_by"),
+  installedAt: timestamp("installed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  adoptionSkillUnique: uniqueIndex("uk_agent_skill_installations_scope").on(table.adoptId, table.skillIdentityId),
+  operationIdx: index("idx_agent_skill_installations_operation").on(table.operationId),
+  stateLeaseIdx: index("idx_agent_skill_installations_state_lease").on(table.installState, table.leaseExpiresAt),
+}));
+
+export const agentSkillInstallEvents = mysqlTable("agent_skill_install_events", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  eventId: varchar("event_id", { length: 64 }).notNull(),
+  operationId: varchar("operation_id", { length: 64 }).notNull(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  skillIdentityId: varchar("skill_identity_id", { length: 64 }).notNull(),
+  fromVersionId: varchar("from_version_id", { length: 64 }),
+  toVersionId: varchar("to_version_id", { length: 64 }),
+  operation: mysqlEnum("operation", ["install", "update", "rollback", "uninstall", "reconcile"]).notNull(),
+  status: mysqlEnum("status", ["started", "succeeded", "failed"]).notNull(),
+  actorUserId: int("actor_user_id"),
+  artifactSha256: varchar("artifact_sha256", { length: 64 }),
+  detailJson: json("detail_json").$type<Record<string, unknown> | null>(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => ({
+  eventIdUnique: uniqueIndex("uk_agent_skill_install_events_public_id").on(table.eventId),
+  operationIdx: index("idx_agent_skill_install_events_operation").on(table.operationId, table.createdAt),
+  adoptionIdx: index("idx_agent_skill_install_events_adoption").on(table.adoptId, table.createdAt),
+}));
+
+export const roleSkillPreinstalls = mysqlTable("role_skill_preinstalls", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  roleKey: varchar("role_key", { length: 64 }).notNull(),
+  skillIdentityId: varchar("skill_identity_id", { length: 64 }).notNull(),
+  versionId: varchar("version_id", { length: 64 }).notNull(),
+  artifactSha256: varchar("artifact_sha256", { length: 64 }).notNull(),
+  rolePackReleaseId: varchar("role_pack_release_id", { length: 128 }).notNull(),
+  goldenTaskRunId: varchar("golden_task_run_id", { length: 128 }).notNull(),
+  providedArtifactSha256: varchar("provided_artifact_sha256", { length: 64 }).notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  updatedBy: int("updated_by").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  roleSkillUnique: uniqueIndex("uk_role_skill_preinstalls_scope").on(table.roleKey, table.skillIdentityId),
+  enabledIdx: index("idx_role_skill_preinstalls_enabled").on(table.roleKey, table.enabled),
+}));
+
 // ── Role-based Skill/MCP grants ──
 export const roleAssetGrants = mysqlTable("role_asset_grants", {
   id: int("id").autoincrement().primaryKey(),

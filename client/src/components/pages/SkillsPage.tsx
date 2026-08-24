@@ -2039,7 +2039,7 @@ function SkillDetailModal({
                   </button>
                 )}
                 {sourceCanRename(skill) && <button className="skills-btn" disabled={busy} onClick={() => onRename(skill)}><Pencil size={13} /> 重命名</button>}
-                {sourceCanPublish(skill) && <button className="skills-btn" disabled={busy} onClick={() => onPublish(skill)}><Store size={13} /> 提交到中队专区</button>}
+                {sourceCanPublish(skill) && <button className="skills-btn" disabled={busy} onClick={() => onPublish(skill)}><Store size={13} /> 发布 / 更新到技能市场</button>}
                 {sourceCanUninstall(skill) && <button className="skills-btn" disabled={busy} onClick={() => onUninstall(skill)}><Trash2 size={13} /> 卸载</button>}
                 {sourceCanDestroy(skill) && <button className="skills-btn" disabled={busy} onClick={() => onDestroy(skill)}><Trash2 size={13} /> 删除</button>}
               </div>
@@ -2278,16 +2278,48 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
     });
   };
 
-  const onPublish = (skill: RegistrySkill) => {
-    const version = prompt("发布版本号", skill.source.version || "1.0.0")?.trim() || "1.0.0";
-    if (!version) return;
-    void mutate(skill, "已提交审核", async () => {
-      await fetchJson("/api/claw/skill-market/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ adoptId: skill.adoptId, skillId: skill.id, version }),
+  const onPublish = async (skill: RegistrySkill) => {
+    try {
+      const publications = await fetchJson<{ items: Array<{
+        identityId: string;
+        skillId: string;
+        versions: Array<{ version: string; status: string }>;
+      }> }>(`/api/claw/skill-market/publications?adoptId=${encodeURIComponent(skill.adoptId)}`);
+      const existing = publications.items.find(item => item.skillId === skill.id);
+      const latest = existing?.versions
+        .map(item => item.version)
+        .filter(value => /^\d+\.\d+\.\d+$/.test(value))
+        .sort((left, right) => {
+          const a = left.split(".").map(Number);
+          const b = right.split(".").map(Number);
+          return b[0] - a[0] || b[1] - a[1] || b[2] - a[2];
+        })[0];
+      const suggested = latest
+        ? latest.replace(/(\d+)$/, value => String(Number(value) + 1))
+        : (/^\d+\.\d+\.\d+$/.test(String(skill.source.version || "")) ? String(skill.source.version) : "1.0.0");
+      const version = prompt(existing ? "发布新版本号" : "首次发布版本号", suggested)?.trim();
+      if (!version) return;
+      if (!/^\d+\.\d+\.\d+$/.test(version)) {
+        toast.error("版本号必须使用 MAJOR.MINOR.PATCH，例如 1.1.0");
+        return;
+      }
+      const changelog = prompt(existing ? "本次更新说明" : "发布说明", existing ? "更新技能能力与说明" : "首次发布")?.trim() || "";
+      void mutate(skill, existing ? "新版本已提交审核" : "技能已提交审核", async () => {
+        await fetchJson("/api/claw/skill-market/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            adoptId: skill.adoptId,
+            skillId: skill.id,
+            version,
+            changelog,
+            selectedIdentityId: existing?.identityId,
+          }),
+        });
       });
-    });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "读取发布记录失败");
+    }
   };
 
   const onUploadFile = async (file: File) => {

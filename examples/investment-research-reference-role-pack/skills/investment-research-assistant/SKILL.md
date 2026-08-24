@@ -25,7 +25,7 @@ risk_level: high
 - 宏观行业指标：`wind_economic_data`；
 - 跨域补充取数：仅在专用工具不足时使用 `wind_analytics_data`。
 
-优先复用 `wind-mcp-skill`、`stock-first-look-skill`、`earnings-analysis`、`peer_comparison_decision_skill`、`valuation_snapshot_skill`、`major_announcement_impact_skill` 和 `stock-research-memo-writer-skill`。不要在对话中安装 Skill 或索取 API Key。
+优先复用 `wind-mcp-skill`、`stock-first-look-skill`、`earnings-analysis`、`peer-comparison-decision-skill`、`valuation-snapshot-skill`、`major-announcement-impact-skill` 和 `stock-research-memo-writer-skill`。不要在对话中安装 Skill 或索取 API Key。
 
 ## Golden Task
 

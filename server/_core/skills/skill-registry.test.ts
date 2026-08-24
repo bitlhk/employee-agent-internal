@@ -415,6 +415,47 @@ describe("FileSkillRegistry.reconcile", () => {
     }
   });
 
+  it("activates an older marketplace version only for an explicit rollback", async () => {
+    const root = tempRoot();
+    try {
+      const source = path.join(root, "marketplace", "market-rollback");
+      const runtime = path.join(root, ".openclaw", "workspace-trial_lgc-test", "skills", "market-rollback");
+      mkdirSync(source, { recursive: true });
+      mkdirSync(runtime, { recursive: true });
+      writeFileSync(path.join(source, "SKILL.md"), "# Market Rollback v1\n", "utf-8");
+      writeFileSync(path.join(runtime, "SKILL.md"), "# Market Rollback v2\n", "utf-8");
+
+      const existing = makeSkill(root, "market-rollback");
+      existing.source = {
+        kind: "marketplace",
+        skillId: "market-rollback",
+        displayName: "Market Rollback",
+        sourcePath: source,
+        marketplaceId: "22",
+        version: "2.0.0",
+      };
+      existing.sync.runtimePath = runtime;
+      writeJson(path.join(root, "data", "skill-registry.json"), [existing]);
+
+      const installed = await registry(root).install("lgc-test", {
+        kind: "marketplace",
+        skillId: "market-rollback",
+        displayName: "Market Rollback",
+        sourcePath: source,
+        marketplaceId: "21",
+        version: "1.0.0",
+      }, { allowVersionDowngrade: true });
+
+      expect(installed.ok).toBe(true);
+      expect(readFileSync(path.join(runtime, "SKILL.md"), "utf-8")).toBe("# Market Rollback v1\n");
+      const rows = JSON.parse(readFileSync(path.join(root, "data", "skill-registry.json"), "utf-8"));
+      expect(rows[0].source.version).toBe("1.0.0");
+      expect(rows[0].source.marketplaceId).toBe("21");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not create duplicate registry entries on repeated marketplace install", async () => {
     const root = tempRoot();
     try {

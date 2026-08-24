@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it } from "vitest";
@@ -64,6 +64,28 @@ describe("FileSystemSkillInstaller", () => {
       symlinkSync(external, path.join(source, "reference.txt"));
       await expect(installer.installFromSource(source, runtime)).rejects.toThrow("must not contain symbolic links");
       expect(existsSync(runtime)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves the active runtime when a replacement package is invalid", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "skill-installer-atomic-"));
+    try {
+      const source = path.join(root, "source");
+      const runtime = path.join(root, "runtime", "skill");
+      const external = path.join(root, "external.txt");
+      mkdirSync(source, { recursive: true });
+      mkdirSync(runtime, { recursive: true });
+      writeFileSync(path.join(source, "SKILL.md"), "# Invalid replacement\n", "utf8");
+      writeFileSync(path.join(runtime, "SKILL.md"), "# Active version\n", "utf8");
+      writeFileSync(external, "external\n", "utf8");
+      symlinkSync(external, path.join(source, "reference.txt"));
+
+      await expect(new FileSystemSkillInstaller().installFromSource(source, runtime))
+        .rejects.toThrow("must not contain symbolic links");
+
+      expect(readFileSync(path.join(runtime, "SKILL.md"), "utf8")).toBe("# Active version\n");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

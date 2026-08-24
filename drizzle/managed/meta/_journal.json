@@ -218,6 +218,13 @@
       "when": 1788163200000,
       "tag": "0030_governed_memory_purpose_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788249600000,
+      "tag": "0031_skill_market_versioning_v1",
+      "breakpoints": true
     }
   ]
 }

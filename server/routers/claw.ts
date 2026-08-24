@@ -22,12 +22,15 @@ import {
   getSystemConfigNumber,
   upsertSystemConfig,
   listSkillMarketItems,
-  listApprovedSkillMarketItems,
   getSkillMarketItem,
   insertSkillMarketItem,
   updateSkillMarketItem,
   deleteSkillMarketItem,
-  incrementSkillDownload,
+  getSkillVersionByLegacyMarketId,
+  getSkillIdentityById,
+  listSkillVersionsByIdentity,
+  reviewSkillVersionByLegacyMarketId,
+  listSkillMarketV2Projection,
   resolveEffectiveRoleAssets,
   previewRoleAssetSeedSync,
   syncRoleAssetSeed,
@@ -61,14 +64,12 @@ import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills"
 import { roleSkillPreferences } from "../_core/skills/role-skill-preferences";
 import { setAgentSkillEnabled } from "../_core/skills/skill-enable-service";
 import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
-import { toPublicSkillMarketItem } from "../_core/skills/skill-market-policy";
 import {
   remapLegacySkillMarketPath,
   skillStoreMarketplaceDir,
   safeSkillStorePath,
   removeSkillStorePath,
 } from "../_core/skills/skill-store";
-import type { SkillSource } from "../../shared/types/skill";
 import {
   getAgentRoleTemplate,
   getRoleSkillMcpBaseline,
@@ -101,6 +102,7 @@ import {
   updateAgentMemory,
 } from "../_core/agent-memory";
 import { contextMemoryFeedbackProcedure, contextMemoryPreviewsProcedure } from "./claw-context-memory-feedback";
+import { clawSkillMarketProcedures } from "./claw-skill-market";
 import { restoreMemoryVersionProcedure } from "./claw-memory-version";
 import {
   acceptMemoryConflictProcedure,
@@ -993,7 +995,33 @@ export const clawRouter = router({
     adminListMarketSkills: adminProcedure
       .input(z.object({ status: z.string().optional() }).optional())
       .query(async ({ input }) => {
-        return listSkillMarketItems(input?.status);
+        const rows = await listSkillMarketItems(input?.status);
+        const projection = await listSkillMarketV2Projection(
+          rows.map(row => String(row.skillId || "")).filter(Boolean),
+          undefined,
+          true,
+        ).catch(() => ({ identities: [], versions: [], installations: [] }));
+        const identityBySkillId = new Map(projection.identities.map(identity => [identity.skillId, identity]));
+        const versionByMarketId = new Map(projection.versions
+          .filter(version => version.legacyMarketId)
+          .map(version => [Number(version.legacyMarketId), version]));
+        const versionCount = new Map<string, number>();
+        for (const version of projection.versions) {
+          versionCount.set(version.skillIdentityId, (versionCount.get(version.skillIdentityId) || 0) + 1);
+        }
+        return rows.map(row => {
+          const identity = identityBySkillId.get(String(row.skillId || ""));
+          const version = versionByMarketId.get(Number(row.id));
+          return {
+            ...row,
+            identityId: identity?.identityId,
+            maintainerType: identity?.maintainerType,
+            maintainerUserId: identity?.maintainerUserId,
+            versionId: version?.versionId,
+            artifactSha256: version?.artifactSha256,
+            versionCount: identity ? versionCount.get(identity.identityId) || 0 : 0,
+          };
+        });
       }),
 
     adminRoleAssetCatalog: adminProcedure.query(async () => {
@@ -1169,6 +1197,17 @@ export const clawRouter = router({
       .mutation(async ({ input, ctx }) => {
         const item = await getSkillMarketItem(input.id);
         if (!item) throw new TRPCError({ code: "NOT_FOUND" });
+        const v2Version = await getSkillVersionByLegacyMarketId(input.id);
+        if (
+          input.status === "approved"
+          && v2Version
+          && Number(v2Version.submittedBy) === Number(ctx.user!.id)
+        ) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "发布人不能审核自己的技能版本，请由另一位管理员复核",
+          });
+        }
         if (input.status === "approved") {
           await recordAuditRequired({
             action: "skill.market.approved.requested",
@@ -1202,8 +1241,10 @@ export const clawRouter = router({
             }
           }
           const statusDir = safeChildPath(marketDir, input.status);
-          const newDir = safeChildPath(statusDir, `${itemSkillId}-${item.id}`);
-          if (oldDir !== newDir) {
+          const newDir = v2Version
+            ? oldDir
+            : safeChildPath(statusDir, `${itemSkillId}-${item.id}`);
+          if (!v2Version && oldDir !== newDir) {
             try {
               mkdirSync(path.dirname(newDir), { recursive: true });
               if (existsSync(oldDir)) {
@@ -1217,7 +1258,7 @@ export const clawRouter = router({
               }
             } catch {}
           }
-          if (input.status === "approved") {
+          if (input.status === "approved" && !v2Version) {
             const origin = String((item as any).origin || "opensource");
             const approvedRows = await listSkillMarketItems("approved");
             for (const row of approvedRows) {
@@ -1227,8 +1268,35 @@ export const clawRouter = router({
               await updateSkillMarketItem(Number(row.id), { status: "offline" });
             }
           }
+          if (v2Version) {
+            await reviewSkillVersionByLegacyMarketId({
+              legacyMarketId: input.id,
+              status: input.status === "offline" ? "withdrawn" : input.status,
+              reviewedBy: ctx.user!.id,
+              reviewNote: input.reviewNote || null,
+            });
+            const identity = await getSkillIdentityById(v2Version.skillIdentityId);
+            const versions = await listSkillVersionsByIdentity(v2Version.skillIdentityId);
+            const latestMarketId = versions.find(version => (
+              version.versionId === identity?.latestApprovedVersionId
+            ))?.legacyMarketId;
+            const marketRows = await listSkillMarketItems();
+            for (const row of marketRows) {
+              if (String(row.skillId || "") !== String(item.skillId || "")) continue;
+              const linked = versions.find(version => Number(version.legacyMarketId) === Number(row.id));
+              if (!linked || linked.status !== "approved") continue;
+              await updateSkillMarketItem(Number(row.id), {
+                status: Number(row.id) === Number(latestMarketId) ? "approved" : "offline",
+              });
+            }
+          }
+          const compatibilityStatus = v2Version && input.status === "approved"
+            ? (await getSkillIdentityById(v2Version.skillIdentityId))?.latestApprovedVersionId === v2Version.versionId
+              ? "approved"
+              : "offline"
+            : input.status;
           await updateSkillMarketItem(input.id, {
-            status: input.status,
+            status: compatibilityStatus,
             reviewNote: input.reviewNote || null,
             packagePath: newDir,
           });
@@ -1382,6 +1450,13 @@ export const clawRouter = router({
       .input(z.object({ id: z.number() }))
       .mutation(async ({ input, ctx }) => {
         const item = await getSkillMarketItem(input.id);
+        const version = await getSkillVersionByLegacyMarketId(input.id);
+        if (version) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "版本化技能保留发布审计记录；请使用拒绝或下架，不支持物理删除",
+          });
+        }
         if (item?.packagePath) {
           try {
             const packagePath = safeSkillStorePath(remapLegacySkillMarketPath(String(item.packagePath)));
@@ -1405,80 +1480,7 @@ export const clawRouter = router({
         return { ok: true };
       }),
 
-    // 用户端浏览已上架技能。技能市场全量开放；岗位只决定默认预装 skill 和 MCP 权限。
-    marketList: protectedProcedure
-      .input(z.object({ adoptId: z.string().min(1).max(64).optional() }).optional())
-      .query(async ({ input, ctx }) => {
-        await syncGlobalOpenSourceSkillGrants({ actor: "market-list" });
-        const rows = await listApprovedSkillMarketItems();
-        const items = rows.map((row) => toPublicSkillMarketItem(row));
-        const adoptId = String(input?.adoptId || "").trim();
-        if (!adoptId) return items;
-        await assertClawOwnerOrThrow(ctx, adoptId);
-        return items;
-      }),
-
-    // 用户安装（复制到 workspace/skills/）
-    marketInstall: protectedProcedure
-      .input(z.object({ marketId: z.number(), adoptId: z.string().min(1).max(64) }))
-      .mutation(async ({ input, ctx }) => {
-        if (String(input.adoptId).startsWith("lgh-")) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Legacy runtime has been archived.",
-          });
-        }
-        const item = await getSkillMarketItem(input.marketId);
-        if (!item || item.status !== "approved") throw new TRPCError({ code: "NOT_FOUND", message: "技能不存在或未上架" });
-        await assertClawOwnerOrThrow(ctx, input.adoptId);
-        const claw = await getClawByAdoptId(input.adoptId);
-        // DB may contain legacy .openclaw skill-market paths. New installs read
-        // through SKILL_STORE first and only use legacy paths as compatibility.
-        const resolvedPackagePath = remapLegacySkillMarketPath(item.packagePath || "");
-        if (!resolvedPackagePath || !existsSync(resolvedPackagePath)) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "技能包源不存在" });
-        }
-
-        const parsed = parseSkillSourceDirectory(resolvedPackagePath, item.skillId || item.name || "market-skill");
-        const source: SkillSource = {
-          kind: "marketplace",
-          skillId: parsed.skillId || item.skillId,
-          displayName: item.name || parsed.displayName || item.skillId,
-          description: item.description || parsed.description || "",
-          sourcePath: resolvedPackagePath,
-          marketplaceId: String(item.id),
-          version: String(item.version || parsed.manifest?.version || "1.0.0"),
-        };
-        const installed = await skillRegistry.install(input.adoptId, source);
-        if (!installed.ok) {
-          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: installed.error.detail });
-        }
-        await skillRegistry.updateScan(input.adoptId, source.skillId, {
-          warnings: parsed.warnings,
-          scannedAt: new Date().toISOString(),
-        });
-        await incrementSkillDownload(input.marketId);
-        await recordAuditBestEffort({
-          action: "skill.installed",
-          ...auditActor(ctx.user),
-          ...auditRequest(ctx.req),
-          targetType: "skill",
-          targetId: source.skillId,
-          targetName: source.displayName,
-          resourceType: "agent",
-          resourceId: input.adoptId,
-          agentInstanceId: input.adoptId,
-          runtimeType: resolveClawRuntime(input.adoptId),
-          runtimeAgentId: String(claw?.agentId || ""),
-          metadata: {
-            marketplaceId: input.marketId,
-            version: source.version,
-            warningCount: parsed.warnings.length,
-            roleTemplate: String((claw as any)?.roleTemplate || "general-assistant"),
-          },
-        });
-        return { ok: true, skillId: source.skillId, name: source.displayName, item: installed.value, warnings: parsed.warnings };
-      }),
+    ...clawSkillMarketProcedures,
 
     adminGetConfig: adminProcedure.query(async () => {
       const visibility = (await getSystemConfigValue("claw_visibility", "internal")).trim() || "internal";

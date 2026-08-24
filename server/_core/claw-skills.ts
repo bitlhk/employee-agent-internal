@@ -35,6 +35,7 @@ import {
   resolveEffectiveRoleAssets,
   resolvePersistedAgentMcpSelection,
   setAgentMcpPreference,
+  disableAgentSkillInstallation,
 } from "../db";
 import { roleExperience } from "../../shared/role-experience";
 import type { RoleHomeConnectorState } from "./role-home-runtime";
@@ -1075,6 +1076,11 @@ export function registerSkillRoutes(app: express.Express) {
           .json({ error: result.error.detail, kind: result.error.kind });
         return;
       }
+      await disableAgentSkillInstallation({
+        adoptId,
+        skillId,
+        actorUserId: Number(claw.userId || 0),
+      }).catch(() => undefined);
       res.json({ ok: true });
     } catch (e) {
       console.error("[skills registry] uninstall failed", e);

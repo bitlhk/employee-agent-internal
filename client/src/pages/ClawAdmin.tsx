@@ -41,6 +41,7 @@ import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/Monitor
 import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
 import { EnterpriseAssetsPanel } from "@/components/admin/EnterpriseAssetsPanel";
 import { SecurityAssurancePanel } from "@/components/admin/SecurityAssurancePanel";
+import { uploadSystemSkillPackage } from "@/lib/skill-market-release";
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
   { value: "creating", label: "创建中" },
@@ -670,19 +671,10 @@ export default function ClawAdmin() {
   };
 
   const handleSkillUpload = async (file: File) => {
-    if (!/\.zip$/i.test(file.name)) {
-      toast.error("请上传 .zip 技能包");
-      return;
-    }
     setSkillUploading(true);
     try {
-      const res = await fetch("/api/claw/skill-market/upload", {
-        method: "POST",
-        headers: { "x-skill-filename": encodeURIComponent(file.name) },
-        body: await file.arrayBuffer(),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast.error(data.error || "上传失败"); return; }
+      const data = await uploadSystemSkillPackage(file);
+      if (!data) return;
       if (!data.marketItemId) {
         await publishSkillMutation.mutateAsync({
           skillId: data.uploadId || data.name,
@@ -694,9 +686,9 @@ export default function ClawAdmin() {
         });
       }
       await refetchMarket();
-      toast.success(`已上传并进入待审核: ${data.name}`);
-    } catch (e: any) {
-      toast.error("上传失败: " + (e.message || ""));
+      toast.success(`已上传 ${data.name} v${data.version}，等待另一位管理员审核`);
+    } catch (error) {
+      toast.error(`上传失败: ${error instanceof Error ? error.message : "未知错误"}`);
     } finally {
       setSkillUploading(false);
     }
@@ -1244,7 +1236,7 @@ export default function ClawAdmin() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-semibold text-gray-900">技能广场管理</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">审核、上下架、管理广场中的共享技能</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">系统技能由管理员维护；用户技能由提交人发布版本，管理员负责审核</p>
                 </div>
                 <Button size="sm" variant="outline" className="admin-secondary-action" onClick={() => refetchMarket()}>
                   <RefreshCw className="w-3.5 h-3.5 mr-1.5" />刷新
@@ -1272,11 +1264,17 @@ export default function ClawAdmin() {
                               <span className={"text-[10px] px-1.5 py-0.5 rounded border font-medium " + (stColors[item.status] || "")}>{stLabels[item.status] || item.status}</span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-700">{originLabel}</span>
                               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">{catLabels[item.category] || item.category}</span>
+                              {item.maintainerType ? (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                                  {item.maintainerType === "system" ? "系统维护" : "用户维护"}
+                                </span>
+                              ) : null}
                             </div>
                             <div className="text-xs text-muted-foreground mt-1">{item.description || "—"}</div>
                             <div className="mt-2">{renderGrantSummary("skill", item.skillId)}</div>
                             <div className="text-[10px] text-muted-foreground mt-1">
-                              v{item.version} · {item.author} · {item.license} · 安装 {item.downloadCount} 次
+                              v{item.version} · {item.author} · {item.license} · {item.versionCount || 1} 个版本 · 安装 {item.downloadCount} 次
+                              {item.artifactSha256 ? <span className="ml-2 font-mono">SHA {String(item.artifactSha256).slice(0, 10)}</span> : null}
                               {item.reviewNote && <span className="ml-2 text-yellow-600">审核备注: {item.reviewNote}</span>}
                             </div>
                           </div>
@@ -1307,7 +1305,9 @@ export default function ClawAdmin() {
                             {(item.status === "offline" || item.status === "rejected") && (
                               <Button size="sm" variant="outline" className="admin-secondary-action h-7 text-xs" onClick={() => reviewSkillMutation.mutate({ id: item.id, status: "approved" })}>重新上架</Button>
                             )}
-                            <Button size="sm" variant="ghost" className="admin-danger-ghost-action h-7 text-xs" onClick={() => { void handleDeleteMarketSkill(item.id); }}>删除</Button>
+                            {!item.versionId ? (
+                              <Button size="sm" variant="ghost" className="admin-danger-ghost-action h-7 text-xs" onClick={() => { void handleDeleteMarketSkill(item.id); }}>删除</Button>
+                            ) : null}
                           </div>
                         </div>
                       </div>

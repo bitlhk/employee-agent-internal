@@ -149,10 +149,15 @@ export type SkillRegistryReconcileOptions = {
   skillId?: string;
 };
 
+export type SkillRegistryInstallOptions = {
+  allowVersionDowngrade?: boolean;
+  preserveImmutableSourcePath?: boolean;
+};
+
 export interface SkillRegistry {
   listSkills(adoptId: string): Promise<SkillRegistryResult<Skill[]>>;
   reconcile(adoptId: string, options?: SkillRegistryReconcileOptions): Promise<SkillRegistryResult<ReconcileReport>>;
-  install(adoptId: string, source: SkillSource): Promise<SkillRegistryResult<Skill>>;
+  install(adoptId: string, source: SkillSource, options?: SkillRegistryInstallOptions): Promise<SkillRegistryResult<Skill>>;
   updateScan(
     adoptId: string,
     skillId: string,

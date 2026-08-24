@@ -1,6 +1,7 @@
 import { execFile } from "child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync } from "fs";
-import { cp, mkdir, mkdtemp, rm } from "fs/promises";
+import { cp, mkdir, mkdtemp, rename, rm } from "fs/promises";
 import os from "os";
 import path from "path";
 import { promisify } from "util";
@@ -21,7 +22,10 @@ export type SkillInstallResult = {
 };
 
 export interface SkillInstaller {
-  installFromSource(sourcePath: string, runtimePath: string): Promise<SkillInstallResult>;
+  installFromSource(
+    sourcePath: string,
+    runtimePath: string
+  ): Promise<SkillInstallResult>;
   canInstall(sourcePath: string): boolean;
 }
 
@@ -47,7 +51,9 @@ function findSkillRoot(dir: string, depth = 0): string | null {
   }
   if (candidates.length === 1) return candidates[0];
   if (candidates.length > 1) {
-    throw new Error("zip contains multiple skill roots; please upload one skill package at a time");
+    throw new Error(
+      "zip contains multiple skill roots; please upload one skill package at a time"
+    );
   }
   return null;
 }
@@ -59,9 +65,13 @@ function assertPhysicalDirectoryTree(rootDir: string): void {
   }
   const walk = (dir: string, relativeDir: string) => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      const relativePath = relativeDir
+        ? `${relativeDir}/${entry.name}`
+        : entry.name;
       if (entry.isSymbolicLink()) {
-        throw new Error(`skill source must not contain symbolic links: ${relativePath}`);
+        throw new Error(
+          `skill source must not contain symbolic links: ${relativePath}`
+        );
       }
       if (entry.isDirectory()) walk(path.join(dir, entry.name), relativePath);
     }
@@ -69,7 +79,10 @@ function assertPhysicalDirectoryTree(rootDir: string): void {
   walk(rootDir, "");
 }
 
-async function safeExtractZip(zipPath: string, destPath: string): Promise<void> {
+async function safeExtractZip(
+  zipPath: string,
+  destPath: string
+): Promise<void> {
   const script = `
 import os, stat, sys, zipfile
 zip_path, dest = sys.argv[1], sys.argv[2]
@@ -129,14 +142,21 @@ with zipfile.ZipFile(zip_path) as z:
                     raise RuntimeError("zip actual extracted size exceeds limit")
                 output.write(chunk)
 `;
-  await execFileAsync("python3", [
-    "-c", script, zipPath, destPath,
-    String(MAX_SKILL_ZIP_ENTRIES),
-    String(MAX_SKILL_ZIP_UNCOMPRESSED_BYTES),
-    String(MAX_SKILL_ZIP_COMPRESSION_RATIO),
-    String(MAX_SKILL_ZIP_PATH_DEPTH),
-    String(MAX_SKILL_ZIP_PATH_BYTES),
-  ], { timeout: 60_000, maxBuffer: 256 * 1024 });
+  await execFileAsync(
+    "python3",
+    [
+      "-c",
+      script,
+      zipPath,
+      destPath,
+      String(MAX_SKILL_ZIP_ENTRIES),
+      String(MAX_SKILL_ZIP_UNCOMPRESSED_BYTES),
+      String(MAX_SKILL_ZIP_COMPRESSION_RATIO),
+      String(MAX_SKILL_ZIP_PATH_DEPTH),
+      String(MAX_SKILL_ZIP_PATH_BYTES),
+    ],
+    { timeout: 60_000, maxBuffer: 256 * 1024 }
+  );
 }
 
 export class FileSystemSkillInstaller implements SkillInstaller {
@@ -144,40 +164,85 @@ export class FileSystemSkillInstaller implements SkillInstaller {
     if (!existsSync(sourcePath)) return false;
     try {
       const stat = lstatSync(sourcePath);
-      return !stat.isSymbolicLink() && (stat.isDirectory() || isZipSource(sourcePath));
+      return (
+        !stat.isSymbolicLink() &&
+        (stat.isDirectory() || isZipSource(sourcePath))
+      );
     } catch {
       return false;
     }
   }
 
-  async installFromSource(sourcePath: string, runtimePath: string): Promise<SkillInstallResult> {
+  async installFromSource(
+    sourcePath: string,
+    runtimePath: string
+  ): Promise<SkillInstallResult> {
     if (!existsSync(sourcePath)) throw new Error("skill source is missing");
     const stat = lstatSync(sourcePath);
-    if (stat.isSymbolicLink()) throw new Error("skill source must not be a symbolic link");
+    if (stat.isSymbolicLink())
+      throw new Error("skill source must not be a symbolic link");
     if (stat.isDirectory()) assertPhysicalDirectoryTree(sourcePath);
-    await rm(runtimePath, { recursive: true, force: true });
-    await mkdir(path.dirname(runtimePath), { recursive: true });
-
-    if (stat.isDirectory()) {
-      await cp(sourcePath, runtimePath, { recursive: true });
+    if (path.resolve(sourcePath) === path.resolve(runtimePath)) {
+      if (!stat.isDirectory())
+        throw new Error("an archive cannot install over itself");
+      assertPhysicalDirectoryTree(sourcePath);
       normalizeSkillRuntimePermissions(runtimePath);
       return { kind: "directory", sourceRoot: sourcePath };
     }
 
-    if (!isZipSource(sourcePath)) {
-      throw new Error("unsupported skill source; expected directory or .zip package");
-    }
+    const operationId = randomUUID();
+    const stagingPath = `${runtimePath}.staging-${operationId}`;
+    const backupPath = `${runtimePath}.backup-${operationId}`;
+    await mkdir(path.dirname(runtimePath), { recursive: true });
+    await rm(stagingPath, { recursive: true, force: true });
+    await rm(backupPath, { recursive: true, force: true });
 
-    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "lingxia-skill-"));
+    let result: SkillInstallResult;
     try {
-      await safeExtractZip(sourcePath, tempRoot);
-      const skillRoot = findSkillRoot(tempRoot);
-      if (!skillRoot) throw new Error("zip package does not contain SKILL.md");
-      await cp(skillRoot, runtimePath, { recursive: true });
-      normalizeSkillRuntimePermissions(runtimePath);
-      return { kind: "zip", sourceRoot: skillRoot };
-    } finally {
-      await rm(tempRoot, { recursive: true, force: true });
+      if (stat.isDirectory()) {
+        await cp(sourcePath, stagingPath, { recursive: true });
+        normalizeSkillRuntimePermissions(stagingPath);
+        result = { kind: "directory", sourceRoot: sourcePath };
+      } else {
+        if (!isZipSource(sourcePath)) {
+          throw new Error(
+            "unsupported skill source; expected directory or .zip package"
+          );
+        }
+
+        const tempRoot = await mkdtemp(
+          path.join(os.tmpdir(), "lingxia-skill-")
+        );
+        try {
+          await safeExtractZip(sourcePath, tempRoot);
+          const skillRoot = findSkillRoot(tempRoot);
+          if (!skillRoot)
+            throw new Error("zip package does not contain SKILL.md");
+          await cp(skillRoot, stagingPath, { recursive: true });
+          normalizeSkillRuntimePermissions(stagingPath);
+          result = { kind: "zip", sourceRoot: skillRoot };
+        } finally {
+          await rm(tempRoot, { recursive: true, force: true });
+        }
+      }
+
+      if (existsSync(runtimePath)) await rename(runtimePath, backupPath);
+      try {
+        await rename(stagingPath, runtimePath);
+      } catch (error) {
+        if (existsSync(backupPath) && !existsSync(runtimePath)) {
+          await rename(backupPath, runtimePath);
+        }
+        throw error;
+      }
+      await rm(backupPath, { recursive: true, force: true });
+      return result;
+    } catch (error) {
+      await rm(stagingPath, { recursive: true, force: true });
+      if (existsSync(backupPath) && !existsSync(runtimePath)) {
+        await rename(backupPath, runtimePath);
+      }
+      throw error;
     }
   }
 }
