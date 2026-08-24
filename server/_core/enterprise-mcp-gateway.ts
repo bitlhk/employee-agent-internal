@@ -40,14 +40,10 @@ import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { attachReferenceRoleTaskReceipt } from "./reference-role-task-evidence";
 import {
-  contextBindingEvidence,
-  contextResolutionEvidence,
-  observeWealthContextResolutionShadow,
-  resolveWealthContextPlan,
-  resolvedContextBinding,
-  type ContextBindingEvidence,
-} from "./context-resolution/wealth-source-resolution";
-import type { ContextResolutionEvidenceV1 } from "../../shared/context-resolution";
+  observeReferenceRoleTaskContextShadow,
+  prepareReferenceRoleTaskContext,
+  type ReferenceRoleTaskContextPreparation,
+} from "./reference-role-task-context";
 
 const SERVICE_NAME = "enterprise-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -317,8 +313,7 @@ async function gatewayCall(
   const startedAt = Date.now();
   let requestId = "";
   let receiptReserved = false;
-  let followupBindingEvidence: ContextBindingEvidence | null = null;
-  let followupContextResolution: ContextResolutionEvidenceV1 | undefined;
+  let roleTaskContext: ReferenceRoleTaskContextPreparation = { sourceBinding: null };
   let auditState: {
     entry: ExposedTool;
     policyDecisionId: string;
@@ -485,23 +480,14 @@ async function gatewayCall(
     }
     if (approval.effect === "DENY") return await block(approval.reason, "APPROVAL_DENIED");
 
-    const isWealthFollowup = context.roleKey === "wealth-manager"
-      && entry.connection.serverId === "wealth_governance_demo"
-      && entry.tool.name === "demo_create_followup_task";
-    if (isWealthFollowup) {
-      const contextResolution = await resolveWealthContextPlan({
-        taskId: "WM-GT-05",
-        organizationId: tenantId,
-        contextType: "business_data",
-      });
-      if (contextResolution.mode === "binding") {
-        const payloadBinding = resolvedContextBinding(contextResolution.plan, "governed_followup_payload");
-        if (!payloadBinding || payloadBinding.providerType !== "api") {
-          return await block("必需跟进任务上下文来源尚未完成受治理绑定。", "REQUIRED_CONTEXT_BINDING_MISSING");
-        }
-        followupBindingEvidence = contextBindingEvidence(payloadBinding);
-        followupContextResolution = contextResolutionEvidence([contextResolution.plan]);
-      }
+    roleTaskContext = await prepareReferenceRoleTaskContext({
+      roleTemplate: context.roleKey,
+      serverId: entry.connection.serverId,
+      toolName: entry.tool.name,
+      organizationId: tenantId,
+    });
+    if (roleTaskContext.rejection) {
+      return await block(roleTaskContext.rejection.reason, roleTaskContext.rejection.errorCode);
     }
 
     const reservation = await reserveEnterpriseMcpCall({
@@ -569,21 +555,12 @@ async function gatewayCall(
       },
     });
     metricOutcome = failed ? "error" : "success";
-    if (isWealthFollowup) {
-      await observeWealthContextResolutionShadow({
-        taskId: "WM-GT-05",
-        principal: {
-          organizationId: tenantId,
-          adoptionId: context.adoptId,
-          agentId: context.agentId,
-        },
-        observed: [{
-          logicalAssetId: "governed_followup_payload",
-          providerType: "api",
-          resourceRef: "api://employee-agent/enterprise-mcp/governed-followup-intent",
-        }],
-      });
-    }
+    await observeReferenceRoleTaskContextShadow({
+      preparation: roleTaskContext,
+      organizationId: tenantId,
+      adoptionId: context.adoptId,
+      agentId: context.agentId,
+    });
     return attachReferenceRoleTaskReceipt({
       result,
       roleTemplate: context.roleKey,
@@ -605,8 +582,8 @@ async function gatewayCall(
       externalRequestId: externalId,
       approvalId: approval.approval?.approvalId || null,
       idempotencyProtected: Boolean(idemKey),
-      sourceBinding: followupBindingEvidence,
-      contextResolution: followupContextResolution,
+      sourceBinding: roleTaskContext.sourceBinding,
+      contextResolution: roleTaskContext.contextResolution,
     });
   } catch (error) {
     metricOutcome = "error";
