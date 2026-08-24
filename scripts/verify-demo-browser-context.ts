@@ -106,6 +106,26 @@ async function main() {
 
   const composer = page.locator("textarea").last();
   await composer.waitFor({ state: "visible", timeout: 15_000 });
+
+  // Continue an existing persisted demo conversation. The role-home quick ask
+  // uses a transient Jiuwen session and is not the browser path under test here.
+  const verificationHistory = page
+    .locator(".session-list-item")
+    .filter({ hasText: prompt.slice(0, 10) });
+  await verificationHistory.first().waitFor({ state: "visible", timeout: 10_000 }).catch(() => undefined);
+  const historySeeded = (await verificationHistory.count()) > 0;
+  if (historySeeded) {
+    await verificationHistory.first().click();
+    await page.waitForTimeout(2_000);
+  }
+
+  const assistantMessages = page.locator(".lingxia-ai-bubble-wrap");
+  const userMessages = page.locator(".lingxia-message-user");
+  const receiptButtons = page.getByRole("button", { name: /本次依据/ });
+  const baselineAssistantCount = await assistantMessages.count();
+  const baselineUserCount = await userMessages.count();
+  const baselineReceiptCount = await receiptButtons.count();
+
   await composer.fill(prompt);
   await composer.press("Enter");
 
@@ -117,11 +137,28 @@ async function main() {
     Date.now() + Number(process.env.DEMO_BROWSER_TIMEOUT_MS || 180_000);
   while (Date.now() < deadline) {
     await page.waitForTimeout(1_000);
-    excerpt = await body.innerText();
+    const assistantCount = await assistantMessages.count();
+    const userCount = await userMessages.count();
+    const receiptCount = await receiptButtons.count();
+    excerpt = assistantCount > baselineAssistantCount
+      ? await assistantMessages.last().innerText()
+      : "";
     const hasExpectedVersion = expectedVersion.test(excerpt);
     const hasCompletionSignal =
       excerpt.includes("处理完成") || excerpt.includes("内容由 AI 生成");
-    if (hasExpectedVersion && hasCompletionSignal) {
+    const hasNewConversationTurn =
+      userCount > baselineUserCount && assistantCount > baselineAssistantCount;
+    const hasNewReceipt = receiptCount > baselineReceiptCount;
+    const stopButton = page.getByTitle("停止生成");
+    const streaming =
+      (await stopButton.count()) > 0 && (await stopButton.first().isVisible());
+    if (
+      hasNewConversationTurn &&
+      hasNewReceipt &&
+      hasExpectedVersion &&
+      hasCompletionSignal &&
+      !streaming
+    ) {
       finished = true;
       break;
     }
@@ -132,15 +169,12 @@ async function main() {
     // Give late tool-result events a bounded window instead of requiring the
     // entire page text to become byte-for-byte stable.
     await page.waitForTimeout(6_000);
-    excerpt = await body.innerText();
+    excerpt = await assistantMessages.last().innerText();
   }
 
-  const currentRun = excerpt.slice(excerpt.lastIndexOf(prompt));
+  const currentRun = excerpt;
   const browserMessageDiagnostics = await page.evaluate(() => {
     const diagnostics: Array<Record<string, unknown>> = [];
-    const recordOf = (value: unknown): Record<string, unknown> => (
-      value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
-    );
     for (let index = 0; index < window.localStorage.length; index += 1) {
       const key = window.localStorage.key(index);
       if (!key || !key.includes("messages")) continue;
@@ -148,30 +182,38 @@ async function main() {
         const messages = JSON.parse(window.localStorage.getItem(key) || "[]");
         if (!Array.isArray(messages)) continue;
         for (const messageValue of messages.slice(-4)) {
-          const message = recordOf(messageValue);
+          const message = messageValue && typeof messageValue === "object" && !Array.isArray(messageValue)
+            ? messageValue as Record<string, unknown>
+            : {};
           if (message.role !== "assistant") continue;
-          const receiptBundle = recordOf(message.receiptBundle);
+          const receiptBundle = message.receiptBundle && typeof message.receiptBundle === "object" && !Array.isArray(message.receiptBundle)
+            ? message.receiptBundle as Record<string, unknown>
+            : {};
           diagnostics.push({
             storageKey: key,
             messageId: message?.id,
             hasReceiptBundle: Boolean(message?.receiptBundle),
             receiptStages: Array.isArray(receiptBundle.stages)
               ? receiptBundle.stages.map(stageValue => {
-                  const stage = recordOf(stageValue);
+                  const stage = stageValue && typeof stageValue === "object" && !Array.isArray(stageValue)
+                    ? stageValue as Record<string, unknown>
+                    : {};
                   return { taskId: stage.taskId, receiptId: stage.receiptId };
                 })
               : [],
             toolCalls: Array.isArray(message.toolCalls)
               ? message.toolCalls.map(toolValue => {
-                  const tool = recordOf(toolValue);
+                  const tool = toolValue && typeof toolValue === "object" && !Array.isArray(toolValue)
+                    ? toolValue as Record<string, unknown>
+                    : {};
                   return {
-                  id: tool.id,
-                  name: tool.name,
-                  status: tool.status,
-                  hasResult: Boolean(tool.result),
-                  resultHasReceipt:
-                    typeof tool.result === "string" &&
-                    tool.result.includes("eaContextReceipt"),
+                    id: tool.id,
+                    name: tool.name,
+                    status: tool.status,
+                    hasResult: Boolean(tool.result),
+                    resultHasReceipt:
+                      typeof tool.result === "string" &&
+                      tool.result.includes("eaContextReceipt"),
                   };
                 })
               : [],
@@ -183,8 +225,8 @@ async function main() {
     }
     return diagnostics;
   });
-  const receiptButton = page.getByRole("button", { name: /本次依据/ }).last();
-  const receiptVisible = (await receiptButton.count()) > 0;
+  const receiptButton = receiptButtons.last();
+  const receiptVisible = (await receiptButtons.count()) > baselineReceiptCount;
   let receiptText = "";
   if (receiptVisible) {
     await receiptButton.click();
@@ -216,6 +258,10 @@ async function main() {
     baseUrl,
     adoptId,
     prompt,
+    historySeeded,
+    baselineAssistantCount,
+    baselineUserCount,
+    baselineReceiptCount,
     finished,
     elapsedMs: Date.now() - startedAt,
     expectedVersionPresent: expectedVersion.test(currentRun),
@@ -264,3 +310,4 @@ async function main() {
 }
 
 await main();
+process.exit(process.exitCode || 0);
