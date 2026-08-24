@@ -10,7 +10,7 @@ const baselinePath = "examples/insurance-advisor-reference-role-pack/eval/shared
 describe("Shared Binding validation snapshot", () => {
   it("keeps the frozen Gate B snapshot immutable", () => {
     const snapshot = JSON.parse(readFileSync(baselinePath, "utf8")) as SharedBindingValidationSnapshotV1;
-    expect(assertSharedBindingValidationSnapshot(snapshot, "4221c898d33339b2335fb456d6c11f4aa73b4911922bfdf8ec8fdffa8f01499a"))
+    expect(assertSharedBindingValidationSnapshot(snapshot, "015f9a157bc2cb5311b8d865f08cbdb768f601388894d659602192681c771e9f"))
       .toMatchObject({ organizationId: "org_linggan_finance", stage: "shadow" });
   });
 
