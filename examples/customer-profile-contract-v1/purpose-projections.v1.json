@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "ea.customer-profile-purpose-projections.v1",
+  "projectionSetVersion": "1.0.0",
+  "status": "engineering_proposed",
+  "canonicalLogicalContextId": "customer_profile",
+  "projections": [
+    {
+      "projectionId": "WealthCustomerProfileV1",
+      "projectionVersion": "1.0.0",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "roleTemplate": "wealth-manager",
+      "purposeId": "wealth_advisory",
+      "access": "allow",
+      "fields": [
+        { "path": "subject.subjectId", "exposure": "raw" },
+        { "path": "subject.subjectType", "exposure": "raw" },
+        { "path": "subject.displayName", "exposure": "raw" },
+        { "path": "subject.customerStatus", "exposure": "raw" },
+        { "path": "serviceScope.inScope", "exposure": "raw" },
+        { "path": "demographics.ageBand", "exposure": "derived" },
+        { "path": "demographics.occupationCategory", "exposure": "summary" },
+        { "path": "contact.maskedPhone", "exposure": "masked" },
+        { "path": "relationship.customerTier", "exposure": "raw" },
+        { "path": "relationship.lastContactAt", "exposure": "raw" },
+        { "path": "relationship.recentContactSummary", "exposure": "summary" },
+        { "path": "relationship.confirmedNeeds", "exposure": "summary" },
+        { "path": "preferences.riskPreference", "exposure": "summary" },
+        { "path": "preferences.investmentHorizon", "exposure": "summary" },
+        { "path": "preferences.liquidityNeeds", "exposure": "summary" },
+        {
+          "path": "preferences.communicationPreference",
+          "exposure": "summary"
+        },
+        { "path": "risk.investmentRiskLevel", "exposure": "raw" },
+        { "path": "risk.investmentRiskValidUntil", "exposure": "raw" },
+        { "path": "risk.complianceFlags", "exposure": "summary" },
+        { "path": "wealth.aumBand", "exposure": "derived" },
+        { "path": "wealth.assetAllocationSummary", "exposure": "summary" }
+      ],
+      "requiredCoreFields": [
+        "subject.subjectId",
+        "subject.displayName",
+        "subject.customerStatus",
+        "serviceScope.inScope"
+      ],
+      "taskRequirements": [
+        {
+          "taskIds": ["WM-GT-01"],
+          "requiredFields": ["relationship.recentContactSummary"]
+        },
+        {
+          "taskIds": ["WM-GT-02"],
+          "requiredFields": [
+            "risk.investmentRiskLevel",
+            "risk.investmentRiskValidUntil",
+            "preferences.investmentHorizon",
+            "preferences.liquidityNeeds"
+          ]
+        },
+        {
+          "taskIds": ["WM-GT-03", "WM-GT-04"],
+          "requiredFields": [
+            "risk.investmentRiskLevel",
+            "risk.investmentRiskValidUntil"
+          ]
+        }
+      ],
+      "conditions": [
+        "principal_authorized",
+        "subject_in_service_scope",
+        "purpose_matches_wealth_advisory"
+      ],
+      "decisionReason": "Wealth tasks require governed customer identity, relationship and suitability facts; detailed balances and holdings remain in customer_portfolio.",
+      "review": { "status": "proposed" }
+    },
+    {
+      "projectionId": "InsuranceCustomerProfileV1",
+      "projectionVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "purposeId": "insurance_advisory",
+      "access": "allow",
+      "fields": [
+        { "path": "subject.subjectId", "exposure": "raw" },
+        { "path": "subject.subjectType", "exposure": "raw" },
+        { "path": "subject.displayName", "exposure": "raw" },
+        { "path": "subject.customerStatus", "exposure": "raw" },
+        { "path": "serviceScope.inScope", "exposure": "raw" },
+        { "path": "demographics.age", "exposure": "raw" },
+        { "path": "demographics.occupationCategory", "exposure": "summary" },
+        { "path": "demographics.city", "exposure": "summary" },
+        { "path": "contact.maskedPhone", "exposure": "masked" },
+        { "path": "relationship.lastContactAt", "exposure": "raw" },
+        { "path": "relationship.recentContactSummary", "exposure": "summary" },
+        { "path": "relationship.confirmedNeeds", "exposure": "summary" },
+        { "path": "preferences.riskPreference", "exposure": "summary" },
+        { "path": "preferences.budgetConcern", "exposure": "summary" },
+        { "path": "preferences.servicePreference", "exposure": "summary" },
+        {
+          "path": "preferences.communicationPreference",
+          "exposure": "summary"
+        },
+        { "path": "risk.complianceFlags", "exposure": "summary" },
+        { "path": "insurance.vehicleSummary", "exposure": "summary" },
+        { "path": "insurance.annualMileageBand", "exposure": "derived" },
+        { "path": "insurance.drivingRiskSummary", "exposure": "summary" },
+        { "path": "insurance.renewalAt", "exposure": "raw" },
+        { "path": "insurance.renewalStatus", "exposure": "raw" },
+        { "path": "insurance.currentCoverageSummary", "exposure": "summary" },
+        { "path": "insurance.claimsRiskSummary", "exposure": "summary" },
+        { "path": "insurance.protectionGaps", "exposure": "summary" }
+      ],
+      "requiredCoreFields": [
+        "subject.subjectId",
+        "subject.displayName",
+        "subject.customerStatus",
+        "serviceScope.inScope"
+      ],
+      "taskRequirements": [
+        {
+          "taskIds": ["IA-GT-01"],
+          "requiredFields": [
+            "insurance.vehicleSummary",
+            "insurance.renewalAt",
+            "insurance.renewalStatus",
+            "insurance.currentCoverageSummary",
+            "insurance.claimsRiskSummary"
+          ]
+        },
+        {
+          "taskIds": ["IA-GT-02"],
+          "requiredFields": [
+            "insurance.vehicleSummary",
+            "insurance.currentCoverageSummary",
+            "insurance.protectionGaps"
+          ]
+        }
+      ],
+      "conditions": [
+        "principal_authorized",
+        "subject_in_service_scope",
+        "purpose_matches_insurance_advisory"
+      ],
+      "decisionReason": "Insurance tasks reuse the customer subject while receiving only the minimum vehicle, renewal, coverage and customer-service fields required by the insurance purpose.",
+      "review": { "status": "proposed" }
+    },
+    {
+      "projectionId": "InvestmentResearchCustomerProfileDeniedV1",
+      "projectionVersion": "1.0.0",
+      "rolePackId": "linggan-finance.investment-research",
+      "roleTemplate": "investment-researcher",
+      "purposeId": "investment_research",
+      "access": "deny",
+      "fields": [],
+      "requiredCoreFields": [],
+      "taskRequirements": [],
+      "conditions": [],
+      "decisionReason": "The current investment-research Role Pack explicitly prohibits customer account, holdings and suitability context.",
+      "review": { "status": "proposed" }
+    },
+    {
+      "projectionId": "PostLoanRiskCustomerProfileDeniedV1",
+      "projectionVersion": "1.0.0",
+      "rolePackId": "linggan-bank.post-loan-risk-control",
+      "roleTemplate": "post-loan-risk-control",
+      "purposeId": "post_loan_risk_control",
+      "access": "deny",
+      "fields": [],
+      "requiredCoreFields": [],
+      "taskRequirements": [],
+      "conditions": [],
+      "alternativeLogicalContextId": "enterprise_profile",
+      "decisionReason": "The current post-loan Role Pack operates on enterprise borrowers; it must use enterprise_profile rather than an individual customer_profile.",
+      "review": { "status": "proposed" }
+    },
+    {
+      "projectionId": "AuditCustomerSubjectProjectionV1",
+      "projectionVersion": "1.0.0",
+      "rolePackId": "linggan-bank.smart-audit",
+      "roleTemplate": "credential-compliance",
+      "purposeId": "audit_review",
+      "access": "conditional",
+      "fields": [
+        { "path": "subject.subjectId", "exposure": "raw" },
+        { "path": "subject.subjectType", "exposure": "raw" },
+        { "path": "subject.displayName", "exposure": "masked" },
+        { "path": "subject.customerStatus", "exposure": "raw" },
+        { "path": "serviceScope.inScope", "exposure": "raw" },
+        { "path": "risk.complianceFlags", "exposure": "summary" }
+      ],
+      "requiredCoreFields": [
+        "subject.subjectId",
+        "subject.customerStatus",
+        "serviceScope.inScope"
+      ],
+      "taskRequirements": [],
+      "conditions": [
+        "principal_authorized",
+        "active_case_scope",
+        "case_subject_matches",
+        "purpose_matches_audit_review"
+      ],
+      "decisionReason": "Audit may verify a task-bound customer subject but must not browse the general customer profile or receive relationship, wealth, insurance or contact details.",
+      "review": { "status": "proposed" }
+    }
+  ]
+}

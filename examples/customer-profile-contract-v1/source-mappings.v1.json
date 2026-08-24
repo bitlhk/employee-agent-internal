@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "ea.customer-profile-source-mappings.v1",
+  "mappingSetVersion": "1.0.0",
+  "status": "engineering_proposed",
+  "canonicalLogicalContextId": "customer_profile",
+  "sources": [
+    {
+      "sourceContractId": "wealth-assistant-customer-v2.1",
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceKind": "mcp",
+      "environment": "local_demo",
+      "productionReady": false,
+      "stableSubjectPaths": [
+        "data.customer.CUST_NO",
+        "data.customers[].CUST_NO"
+      ],
+      "mappings": [
+        {
+          "sourcePath": "data.customer.CUST_NO",
+          "targetPath": "subject.subjectId",
+          "transform": "opaque_subject_ref"
+        },
+        {
+          "sourcePath": "$constant.individual_customer",
+          "targetPath": "subject.subjectType",
+          "transform": "constant"
+        },
+        {
+          "sourcePath": "data.customer.CUST_NAME",
+          "targetPath": "subject.displayName",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "$authorization.inScope",
+          "targetPath": "serviceScope.inScope",
+          "transform": "boolean"
+        },
+        {
+          "sourcePath": "$authorization.organizationRef",
+          "targetPath": "serviceScope.ownerOrganizationRef",
+          "transform": "opaque_ref"
+        },
+        {
+          "sourcePath": "$authorization.principalRef",
+          "targetPath": "serviceScope.ownerPrincipalRef",
+          "transform": "opaque_ref"
+        },
+        {
+          "sourcePath": "data.customer.AGE",
+          "targetPath": "demographics.age",
+          "transform": "integer"
+        },
+        {
+          "sourcePath": "data.customer.AGE",
+          "targetPath": "demographics.ageBand",
+          "transform": "age_to_band"
+        },
+        {
+          "sourcePath": "data.customer.INDSY_CHRCC_CD",
+          "targetPath": "demographics.occupationCategory",
+          "transform": "code_to_occupation_category"
+        },
+        {
+          "sourcePath": "data.customer.CUST_PHONE_NO",
+          "targetPath": "contact.maskedPhone",
+          "transform": "mask_phone"
+        },
+        {
+          "sourcePath": "data.customer.CUST_LVL_CD",
+          "targetPath": "relationship.customerTier",
+          "transform": "code_to_customer_tier"
+        },
+        {
+          "sourcePath": "data.activityInfo.CHREM_INVST_RT_CD",
+          "targetPath": "preferences.riskPreference",
+          "transform": "code_to_risk_preference"
+        },
+        {
+          "sourcePath": "data.customer.CUSTM_RSK_LVL_CD",
+          "targetPath": "risk.investmentRiskLevel",
+          "transform": "code_to_risk_level"
+        },
+        {
+          "sourcePath": "data.customer.CUST_RSK_RT_VLD_DT",
+          "targetPath": "risk.investmentRiskValidUntil",
+          "transform": "date"
+        },
+        {
+          "sourcePath": "data.assetInfo.FINC_AST_CNY_BAL",
+          "targetPath": "wealth.aumBand",
+          "transform": "amount_to_aum_band"
+        },
+        {
+          "sourcePath": "data.assetInfo",
+          "targetPath": "wealth.assetAllocationSummary",
+          "transform": "balances_to_minimized_summary"
+        }
+      ],
+      "excludedSourceRoots": [
+        "data.customer.CUST_PHONE_NO.raw",
+        "data.customer.RSDNC_ST_CD",
+        "data.customer.NTV_PLC",
+        "data.customer.HGHST_EDU",
+        "data.customer.WRK_UNT_DESC",
+        "data.activityInfo.bankingActivityMetrics",
+        "data.assetInfo.exactBalances",
+        "data.recommendations",
+        "data.heldProducts",
+        "data.maturedProducts"
+      ],
+      "providerGaps": [
+        "No runtime purpose is accepted or enforced.",
+        "No versioned field projection is applied before returning the MCP payload.",
+        "The source updatedAt is retrieval time, not authoritative per-field asOf.",
+        "Customer status and governed recent-contact summary are not available as canonical facts.",
+        "Insurance vehicle, renewal, coverage and claims fields are absent.",
+        "Field-level denial evidence and filtered-field count are absent."
+      ]
+    },
+    {
+      "sourceContractId": "insurance-customer-profile-demo-v1",
+      "sourceSystem": "insurance_customer_profile",
+      "sourceKind": "mcp",
+      "environment": "remote_demo",
+      "productionReady": false,
+      "stableSubjectPaths": ["id"],
+      "mappings": [
+        {
+          "sourcePath": "id",
+          "targetPath": "subject.subjectId",
+          "transform": "opaque_subject_ref"
+        },
+        {
+          "sourcePath": "$constant.individual_customer",
+          "targetPath": "subject.subjectType",
+          "transform": "constant"
+        },
+        {
+          "sourcePath": "name",
+          "targetPath": "subject.displayName",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "customer_status",
+          "targetPath": "subject.customerStatus",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "age",
+          "targetPath": "demographics.age",
+          "transform": "integer"
+        },
+        {
+          "sourcePath": "age",
+          "targetPath": "demographics.ageBand",
+          "transform": "age_to_band"
+        },
+        {
+          "sourcePath": "occupation",
+          "targetPath": "demographics.occupationCategory",
+          "transform": "normalize_occupation"
+        },
+        {
+          "sourcePath": "city",
+          "targetPath": "demographics.city",
+          "transform": "city_only"
+        },
+        {
+          "sourcePath": "risk_preference",
+          "targetPath": "preferences.riskPreference",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "contact_strategy",
+          "targetPath": "preferences.communicationPreference",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "vehicle_info",
+          "targetPath": "insurance.vehicleSummary",
+          "transform": "parse_vehicle_summary"
+        },
+        {
+          "sourcePath": "annual_mileage",
+          "targetPath": "insurance.annualMileageBand",
+          "transform": "mileage_to_band"
+        },
+        {
+          "sourcePath": "driving_record",
+          "targetPath": "insurance.drivingRiskSummary",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "protection_gap",
+          "targetPath": "insurance.protectionGaps",
+          "transform": "text_to_string_array"
+        }
+      ],
+      "excludedSourceRoots": ["bio.raw", "contact_strategy.raw"],
+      "providerGaps": [
+        "The service is an unauthenticated Demo/Shadow provider.",
+        "No tenant, organization, principal, purpose or customer-row authorization is enforced.",
+        "No authoritative source asOf or field-level provenance is returned.",
+        "Renewal date/status, current coverage and claims summary are absent.",
+        "Vehicle identity is an unstructured string rather than a governed masked record.",
+        "Field-level denial evidence and filtered-field count are absent."
+      ]
+    }
+  ]
+}

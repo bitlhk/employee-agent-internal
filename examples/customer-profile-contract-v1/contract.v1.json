@@ -1,0 +1,282 @@
+{
+  "schemaVersion": "ea.customer-profile-contract.v1",
+  "contractVersion": "1.0.0",
+  "status": "engineering_proposed",
+  "canonicalLogicalContextId": "customer_profile",
+  "subjectType": "individual_customer",
+  "identityRule": {
+    "stableSubjectIdRequired": true,
+    "heuristicIdentityMergeAllowed": false,
+    "displayNameIsIdentityProof": false
+  },
+  "provenanceRule": {
+    "fieldLevelRequired": true,
+    "requiredAttributes": [
+      "sourceSystem",
+      "sourceRecordRef",
+      "asOf",
+      "observedAt",
+      "mappingRuleVersion"
+    ]
+  },
+  "conflictRule": {
+    "modelMayResolveEnterpriseFacts": false,
+    "newestValueAutomaticallyWins": false,
+    "unresolvedConflictStatus": "BLOCKED"
+  },
+  "missingDataRule": {
+    "requiredFieldStatus": "BLOCKED",
+    "optionalFieldStatus": "DEGRADED",
+    "modelMayFillMissingFacts": false
+  },
+  "fields": [
+    {
+      "path": "subject.subjectId",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Stable opaque enterprise customer subject reference.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "subject.subjectType",
+      "dataType": "string",
+      "sensitivity": "internal",
+      "description": "Canonical subject type; individual_customer in V1.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "subject.displayName",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Customer display name; not sufficient identity proof.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "subject.customerStatus",
+      "dataType": "string",
+      "sensitivity": "internal",
+      "description": "Current customer relationship or service status.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "serviceScope.inScope",
+      "dataType": "boolean",
+      "sensitivity": "restricted",
+      "description": "Whether the subject is in the current principal and purpose service scope.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "serviceScope.ownerOrganizationRef",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Opaque owning organization reference.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "serviceScope.ownerPrincipalRef",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Opaque owning principal reference; never a display field.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "demographics.age",
+      "dataType": "integer",
+      "sensitivity": "sensitive",
+      "description": "Age when required by product or suitability rules.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "demographics.ageBand",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Derived age band for minimized display.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "demographics.occupationCategory",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Normalized occupation category.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "demographics.city",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "City-level location only; detailed address is excluded.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "contact.maskedPhone",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Masked phone value; full phone is excluded from the canonical profile.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "relationship.customerTier",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Enterprise customer relationship tier.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "relationship.lastContactAt",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Most recent governed contact timestamp.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "relationship.recentContactSummary",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Governed summary of recent customer contact.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "relationship.confirmedNeeds",
+      "dataType": "string_array",
+      "sensitivity": "sensitive",
+      "description": "Customer needs explicitly confirmed through governed sources.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "preferences.riskPreference",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Confirmed preference; not a replacement for formal risk rating.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "preferences.investmentHorizon",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Confirmed investment horizon.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "preferences.liquidityNeeds",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Confirmed liquidity need summary.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "preferences.budgetConcern",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Confirmed insurance or service budget concern.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "preferences.servicePreference",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Confirmed service preference.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "preferences.communicationPreference",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Confirmed communication preference.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "risk.investmentRiskLevel",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Current formal investment risk level.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "risk.investmentRiskValidUntil",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Validity boundary of the formal investment risk assessment.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "risk.complianceFlags",
+      "dataType": "string_array",
+      "sensitivity": "restricted",
+      "description": "Governed compliance or escalation flags; no raw case material.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "wealth.aumBand",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Derived AUM band; exact balances stay in customer_portfolio.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "wealth.assetAllocationSummary",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Minimized allocation summary; detailed holdings stay in customer_portfolio.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.vehicleSummary",
+      "dataType": "object_array",
+      "sensitivity": "restricted",
+      "description": "Masked vehicle identity, brand/type, energy type, count and usage summary.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.annualMileageBand",
+      "dataType": "string",
+      "sensitivity": "sensitive",
+      "description": "Derived annual mileage band.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.drivingRiskSummary",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Minimized driving or claims risk summary without raw case material.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.renewalAt",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Current insurance renewal date.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.renewalStatus",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Current renewal workflow status.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.currentCoverageSummary",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Current coverage summary from an authoritative source.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.claimsRiskSummary",
+      "dataType": "string",
+      "sensitivity": "restricted",
+      "description": "Claims or high-risk summary required for escalation.",
+      "provenanceRequired": true
+    },
+    {
+      "path": "insurance.protectionGaps",
+      "dataType": "string_array",
+      "sensitivity": "restricted",
+      "description": "Governed protection gaps; model suggestions are not accepted as facts.",
+      "provenanceRequired": true
+    }
+  ],
+  "domainReview": {
+    "status": "proposed"
+  }
+}
