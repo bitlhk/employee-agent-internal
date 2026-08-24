@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import mysql, { type Pool } from "mysql2/promise";
+import mysql, { type Pool, type RowDataPacket } from "mysql2/promise";
 import { afterAll, describe, expect, it } from "vitest";
 import type { ContextSourceBinding } from "../../drizzle/schema";
 import { closeDbConnection } from "./connection";
@@ -11,6 +11,7 @@ import {
   upsertContextSourceBinding,
 } from "./context-source-bindings";
 import { persistRolePackRelease } from "./role-pack-releases";
+import { sharedBindingCandidateFingerprint } from "../_core/context-resolution/shared-binding-validation-snapshot";
 
 const suite = process.env.RUN_DB_INTEGRATION_TESTS === "1" ? describe : describe.skip;
 const suffix = randomUUID().replace(/-/g, "").slice(0, 12);
@@ -21,9 +22,9 @@ let pool: Pool;
 suite("Context Source Binding promotion", () => {
   afterAll(async () => {
     if (pool) {
-      await pool.query("DELETE FROM context_source_binding_promotions WHERE role_pack_id = ?", [rolePackId]);
-      await pool.query("DELETE FROM context_source_bindings WHERE role_pack_id = ?", [rolePackId]);
-      await pool.query("DELETE FROM role_pack_releases WHERE role_pack_id = ?", [rolePackId]);
+      await pool.query("DELETE FROM context_source_binding_promotions WHERE promotion_id LIKE ?", [`%${suffix}%`]);
+      await pool.query("DELETE FROM context_source_bindings WHERE binding_id LIKE ?", [`%${suffix}%`]);
+      await pool.query("DELETE FROM role_pack_releases WHERE release_id LIKE ?", [`%${suffix}%`]);
     }
     await closeDbConnection();
     await pool?.end();
@@ -124,5 +125,103 @@ suite("Context Source Binding promotion", () => {
       promotionId: winningPromotionId,
       actor: "integration-test-rollback",
     })).rejects.toThrow(/not found/);
+  });
+
+  it("atomically replaces exact role mappings with one shared Binding set and restores them on rollback", async () => {
+    const roles = [`wealth-${suffix}`, `insurance-${suffix}`];
+    const logicalAssets = ["customer_profile", "customer_relationship_memory", "governed_work_state"];
+    const releases = new Map<string, string>();
+    for (const targetRolePackId of roles) {
+      const releaseId = `${targetRolePackId}@verified-${suffix}`;
+      releases.set(targetRolePackId, releaseId);
+      await persistRolePackRelease({
+        releaseId,
+        rolePackId: targetRolePackId,
+        evalSuiteVersion: "shared-v1",
+        assetSetFingerprint: "8".repeat(64),
+        verificationLevel: "controlled_scenario",
+        status: "verified",
+        contractReport: { status: "PASS" },
+        scenarioReport: { status: "PASS" },
+      });
+      for (const logicalAssetId of logicalAssets) {
+        await upsertContextSourceBinding({
+          bindingId: `ctxb-exact-${targetRolePackId}-${logicalAssetId}-${suffix}`,
+          organizationId,
+          rolePackId: targetRolePackId,
+          bindingScope: "role_pack",
+          logicalAssetId,
+          contextType: logicalAssetId === "customer_profile" ? "business_data" : "memory",
+          providerType: logicalAssetId === "customer_profile" ? "mcp" : "api",
+          resourceRef: `api://exact/${targetRolePackId}/${logicalAssetId}`,
+          capabilitiesJson: ["read"],
+          stage: "production",
+          createdBy: "integration-test",
+          updatedBy: "integration-test",
+        });
+      }
+    }
+    const mappings = [];
+    for (const logicalAssetId of logicalAssets) {
+      const shadowBindingId = `ctxb-shared-shadow-${logicalAssetId}-${suffix}`;
+      await upsertContextSourceBinding({
+        bindingId: shadowBindingId,
+        organizationId,
+        rolePackId: "*",
+        bindingScope: "enterprise_shared",
+        logicalAssetId,
+        contextType: logicalAssetId === "customer_profile" ? "business_data" : "memory",
+        providerType: logicalAssetId === "customer_profile" ? "mcp" : "api",
+        resourceRef: `api://shared/${logicalAssetId}`,
+        capabilitiesJson: ["read"],
+        stage: "shadow",
+        createdBy: "integration-test",
+        updatedBy: "integration-test",
+      });
+      mappings.push({ shadowBindingId, productionBindingId: `ctxb-shared-production-${logicalAssetId}-${suffix}` });
+    }
+    const promotionId = `ctxp-shared-${suffix}`;
+    const sharedBindings = await listContextSourceBindingContracts({
+      organizationId,
+      rolePackId: roles[0],
+      stage: "shadow",
+    });
+    const validationSnapshotFingerprint = "s".repeat(64);
+    const providedCandidateFingerprints = Object.fromEntries(
+      sharedBindings.map(binding => [binding.bindingId, sharedBindingCandidateFingerprint(binding)]),
+    );
+    const promoted = await promoteShadowContextSourceBindings({
+      bindings: mappings,
+      actor: "integration-test",
+      promotionId,
+      sharedValidation: {
+        schema: "ea.shared-binding-promotion-validation.v1",
+        validationSnapshotFingerprint,
+        expectedBindingIds: mappings.map(item => item.shadowBindingId),
+        sharedBindingIdentityCount: 3,
+        expectedSharedBindingIdentityCount: 3,
+        purposeIsolationPassed: true,
+        eligibilityViolationCount: 0,
+        roleValidations: roles.map(targetRolePackId => ({
+          rolePackId: targetRolePackId,
+          verifiedReleaseId: releases.get(targetRolePackId)!,
+          goldenTaskPassed: true,
+          validationSnapshotFingerprint,
+          goldenTaskReportFingerprint: `${targetRolePackId}:${suffix}`.padEnd(64, "0").slice(0, 64),
+          providedCandidateFingerprints,
+        })),
+      },
+    });
+    expect(promoted).toHaveLength(3);
+    expect(promoted.every(binding => binding.bindingScope === "enterprise_shared" && binding.rolePackId === "*")).toBe(true);
+    const [exactCount] = await pool.query<Array<RowDataPacket & { count: number | string }>>(
+      "SELECT COUNT(*) AS count FROM context_source_bindings WHERE binding_id LIKE ? AND binding_scope = 'role_pack'",
+      [`ctxb-exact-%-${suffix}`],
+    );
+    expect(Number(exactCount[0].count)).toBe(0);
+
+    const restored = await rollbackContextSourceBindingPromotion({ promotionId, actor: "integration-test-rollback" });
+    expect(restored).toHaveLength(6);
+    expect(restored.every(binding => binding.bindingScope === "role_pack")).toBe(true);
   });
 });

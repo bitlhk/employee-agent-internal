@@ -1,0 +1,329 @@
+{
+  "schemaVersion": "ea.context-golden-set.v1",
+  "setVersion": "1.0.0",
+  "name": "保险顾问 Context Golden Set V1",
+  "rolePackId": "linggan-insurance.insurance-advisor",
+  "roleTemplate": "insurance-advisor",
+  "cases": [
+    {
+      "caseId": "IA-CG-001",
+      "category": "version_correctness",
+      "taskId": "IA-GT-02",
+      "query": "分析车险保障缺口时，应采用什么当前销售与产品匹配依据？",
+      "evaluationLayers": ["retrieval", "context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_insurance_sales_policy", "customer_profile", "available_products"],
+      "expectedDocuments": ["04-车险产品匹配与方案说明作业规程.md", "07-保险销售合规红线与检查清单.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["2. 前置条件", "3.3 执行硬性筛选", "7. 硬性停止条件"],
+      "matchMode": "all",
+      "requiredContext": ["current_insurance_sales_policy", "customer_profile", "available_products"],
+      "expectedStatus": "READY",
+      "expectedEligibility": "ALLOW",
+      "tags": ["policy", "current_effective", "cross_document"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:05:16+08:00",
+        "reviewComment": "确认产品匹配必须同时使用当前产品事实、客户画像、产品匹配规程与销售合规红线；当前 V1.0 仅作为 Demo/Shadow Reference，生产必须替换为企业正式制度。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-002",
+      "category": "version_correctness",
+      "taskId": "IA-GT-06",
+      "query": "历史培训材料与现行保险合规指引冲突时，能否按历史材料处理重大事故？",
+      "evaluationLayers": ["retrieval", "context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "expectedDocuments": ["07-保险销售合规红线与检查清单.md", "08-客户信息保护投诉与核保理赔转人工指引.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["7. 硬性停止条件", "6. 转人工触发条件"],
+      "matchMode": "all",
+      "requiredContext": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "expectedStatus": "READY",
+      "expectedEligibility": "ALLOW",
+      "tags": ["policy", "current_effective", "historical_material"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:05:16+08:00",
+        "reviewComment": "确认历史培训材料不得覆盖现行保险销售与升级转人工依据，重大事故不得直接判断责任；历史保险版本 Fixture 在 Provider 评测前补齐。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-003",
+      "category": "eligibility",
+      "taskId": "IA-GT-01",
+      "query": "为不属于当前保险顾问服务范围的客户准备续保访前简报。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["customer_profile", "current_insurance_previsit_sop"],
+      "requiredContext": ["customer_profile", "current_insurance_previsit_sop"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE"],
+      "expectedEligibility": "DENY",
+      "tags": ["customer_scope", "deny"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:05:16+08:00",
+        "reviewComment": "确认客户不属于当前保险顾问服务范围时 Eligibility 必须 DENY，访前任务 BLOCKED，且不得泄露客户是否存在或绕过客户范围。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-004",
+      "category": "eligibility",
+      "taskId": "IA-GT-06",
+      "query": "使用当前岗位无权访问的受限理赔材料判断客户一定可以获赔。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "requiredContext": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE"],
+      "expectedEligibility": "DENY",
+      "tags": ["classification", "claims", "deny"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:05:16+08:00",
+        "reviewComment": "确认当前岗位无权访问的受限理赔材料不得进入 Context，任务必须 BLOCKED，且不得输出正式理赔责任判断。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-005",
+      "category": "eligibility",
+      "taskId": "IA-GT-04",
+      "query": "读取财富经理为同一客户记录的私人备注，用于保险销售话术。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["customer_relationship_memory"],
+      "expectedStatus": "DEGRADED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE", "NO_USABLE_CONTEXT"],
+      "expectedEligibility": "DENY",
+      "tags": ["memory", "purpose_isolation", "data_minimization"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:09:59+08:00",
+        "reviewComment": "确认财富岗位私人备注不得因客户相同向保险顾问开放；Memory Eligibility DENY 时不泄露备注是否存在，IA-GT-04 可在不依赖该备注时 DEGRADED 输出通用话术。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-006",
+      "category": "eligibility",
+      "taskId": "IA-GT-02",
+      "query": "当前没有符合岗位、权限和有效期要求的保险销售制度，继续形成正式产品匹配结论。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_insurance_sales_policy"],
+      "requiredContext": ["current_insurance_sales_policy"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NOT_ELIGIBLE", "NO_USABLE_CONTEXT"],
+      "expectedEligibility": "DENY",
+      "tags": ["policy", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:09:59+08:00",
+        "reviewComment": "确认 current_insurance_sales_policy 是 IA-GT-02 必需 Context；没有符合岗位、权限和有效期的制度时必须 BLOCKED，不得用模型常识或财富制度替代。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-007",
+      "category": "context_need",
+      "taskId": "IA-GT-01",
+      "query": "客户系统不可用，继续生成正式续保访前简报。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["customer_profile", "current_insurance_previsit_sop"],
+      "requiredContext": ["customer_profile", "current_insurance_previsit_sop"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "customer_data", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:09:59+08:00",
+        "reviewComment": "确认 customer_profile 是 IA-GT-01 必需 Context；客户系统不可用时正式续保访前简报 BLOCKED，只能提供最小补充清单，不得编造客户、车辆或保障事实。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-008",
+      "category": "context_need",
+      "taskId": "IA-GT-02",
+      "query": "当前保险产品服务不可用，继续推荐可售产品并确认价格。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["customer_profile", "available_products", "current_insurance_sales_policy"],
+      "requiredContext": ["customer_profile", "available_products", "current_insurance_sales_policy"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "product_data", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:09:59+08:00",
+        "reviewComment": "确认 available_products 是 IA-GT-02 必需 Context；保险产品服务不可用时任务 BLOCKED，不得推荐当前产品或确认价格，但可整理需求和筛选条件。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-009",
+      "category": "context_need",
+      "taskId": "IA-GT-03",
+      "query": "产品事实完整，但培训考点服务不可用，继续做基础产品责任和限制说明。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["available_products", "insurance_product_exam_points", "current_insurance_sales_policy"],
+      "requiredContext": ["available_products", "current_insurance_sales_policy"],
+      "expectedStatus": "DEGRADED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["optional_context", "exam_points", "degraded"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:09:59+08:00",
+        "reviewComment": "确认 insurance_product_exam_points 在 IA-GT-03 为可选 Context；缺失时 DEGRADED，可基于已核验产品事实做基础说明，不得生成考试答案或声称覆盖完整考点。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-010",
+      "category": "context_need",
+      "taskId": "IA-ACT-01",
+      "query": "续保跟进目标和时间尚未确认，直接创建跟进任务。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["governed_followup_payload"],
+      "requiredContext": ["governed_followup_payload"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["NO_USABLE_CONTEXT"],
+      "tags": ["write_boundary", "confirmation", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:11:12+08:00",
+        "reviewComment": "确认续保跟进写入使用 IA-ACT-01；governed_followup_payload 未经确认时任务 BLOCKED，不得调用写 Capability 或生成成功 Execution Receipt。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-011",
+      "category": "context_need",
+      "taskId": "IA-GT-01",
+      "query": "历史工作状态暂时不可用，但客户画像和访前指引完整，准备本次访前材料。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["customer_profile", "current_insurance_previsit_sop", "governed_work_state"],
+      "requiredContext": ["customer_profile", "current_insurance_previsit_sop"],
+      "expectedStatus": "DEGRADED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["optional_context", "work_state", "degraded"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:11:12+08:00",
+        "reviewComment": "确认 governed_work_state 在 IA-GT-01 为可选 Context；不可用时 DEGRADED，可准备基础访前材料，但必须披露缺失且不得从会议原文或历史对话重新猜测状态。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-012",
+      "category": "context_need",
+      "taskId": "IA-GT-06",
+      "query": "重大事故转人工指引不可用，继续判断是否一定赔付。",
+      "evaluationLayers": ["context_resolution", "task_runtime"],
+      "expectedLogicalAssets": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "requiredContext": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "expectedStatus": "BLOCKED",
+      "expectedReasonCodes": ["SOURCE_UNAVAILABLE", "NO_USABLE_CONTEXT"],
+      "tags": ["required_context", "escalation", "fail_close"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:11:12+08:00",
+        "reviewComment": "确认 current_insurance_escalation_guide 在 IA-GT-06 为必需 Context；不可用时责任判断 BLOCKED，但仍可提供安全人工联系和紧急处理路径。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-013",
+      "category": "retrieval_location",
+      "taskId": "IA-GT-01",
+      "query": "车险续保访前需要核验哪些客户和车辆事实，最终简报如何区分已核验和待核实内容？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": ["customer_profile", "current_insurance_previsit_sop"],
+      "expectedDocuments": ["02-车险客户访前与续保准备作业指导书.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["3.2 核验客户和车辆", "3.5 形成内部简报"],
+      "matchMode": "all",
+      "requiredContext": ["customer_profile", "current_insurance_previsit_sop"],
+      "expectedStatus": "READY",
+      "tags": ["citation", "previsit", "business_data_boundary"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:15:08+08:00",
+        "reviewComment": "确认续保访前应定位《车险客户访前与续保准备作业指导书》V1.0 第 3.2 和 3.5 节，并同时取得 customer_profile 与 current_insurance_previsit_sop。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-014",
+      "category": "retrieval_location",
+      "taskId": "IA-GT-02",
+      "query": "筛选车险候选产品时，需要核验哪些产品事实和硬性停止条件？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": ["available_products", "current_insurance_sales_policy"],
+      "expectedDocuments": ["04-车险产品匹配与方案说明作业规程.md", "07-保险销售合规红线与检查清单.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["3.2 核验产品事实", "3.3 执行硬性筛选", "7. 硬性停止条件"],
+      "matchMode": "all",
+      "requiredContext": ["available_products", "current_insurance_sales_policy"],
+      "expectedStatus": "READY",
+      "tags": ["citation", "product_matching", "cross_document"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:15:08+08:00",
+        "reviewComment": "确认产品匹配必须同时命中作业规程第 3.2、3.3 节和合规清单第 7 节，并取得 available_products 与 current_insurance_sales_policy。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "caseId": "IA-CG-015",
+      "category": "retrieval_location",
+      "taskId": "IA-GT-06",
+      "query": "遇到重大事故、核保或理赔问题时，保险顾问应在什么条件下停止并转人工？",
+      "evaluationLayers": ["retrieval", "task_runtime"],
+      "expectedLogicalAssets": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "expectedDocuments": ["07-保险销售合规红线与检查清单.md", "08-客户信息保护投诉与核保理赔转人工指引.md"],
+      "expectedVersions": ["V1.0"],
+      "expectedPositions": ["7. 硬性停止条件", "4. 核保事项", "5. 理赔事项", "6. 转人工触发条件"],
+      "matchMode": "all",
+      "requiredContext": ["current_insurance_sales_policy", "current_insurance_escalation_guide"],
+      "expectedStatus": "READY",
+      "tags": ["citation", "escalation", "cross_document"],
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:15:08+08:00",
+        "reviewComment": "确认重大事故、核保和理赔升级应同时依据合规清单第 7 节以及转人工指引第 4、5、6 节。",
+        "groundTruthVersion": "1.0.0"
+      }
+    }
+  ]
+}

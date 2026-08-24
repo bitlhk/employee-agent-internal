@@ -1,0 +1,82 @@
+{
+  "schema": "ea.shared-binding-validation-snapshot.v1",
+  "organizationId": "org_role_scale_shadow_20260824",
+  "stage": "shadow",
+  "providerContractFingerprint": "5d21f0f65de1bf9831df6853892a3dd36330d91437f5780cdcba152414ff77a5",
+  "bindings": [
+    {
+      "bindingId": "ctxb_shared_shadow_customer_profile_20260824",
+      "bindingScope": "enterprise_shared",
+      "logicalAssetId": "customer_profile",
+      "contextType": "business_data",
+      "providerType": "mcp",
+      "resourceRef": "mcp://wealth-customer/wealth_assistant_customer_detail",
+      "capabilities": [
+        "point_read"
+      ],
+      "bindingVersion": "1.shared-shadow.1",
+      "stage": "shadow",
+      "status": "active"
+    },
+    {
+      "bindingId": "ctxb_shared_shadow_customer_relationship_memory_20260824",
+      "bindingScope": "enterprise_shared",
+      "logicalAssetId": "customer_relationship_memory",
+      "contextType": "memory",
+      "providerType": "api",
+      "resourceRef": "api://employee-agent/agent-memory/relevant",
+      "capabilities": [
+        "purpose_filter",
+        "relevant_retrieval"
+      ],
+      "bindingVersion": "1.shared-shadow.purpose-v1",
+      "stage": "shadow",
+      "status": "active"
+    },
+    {
+      "bindingId": "ctxb_shared_shadow_governed_work_state_20260824",
+      "bindingScope": "enterprise_shared",
+      "logicalAssetId": "governed_work_state",
+      "contextType": "memory",
+      "providerType": "api",
+      "resourceRef": "api://employee-agent/governed-work-items",
+      "capabilities": [
+        "purpose_filter",
+        "read_work_state",
+        "relevant_retrieval"
+      ],
+      "bindingVersion": "1.shared-shadow.purpose-v1",
+      "stage": "shadow",
+      "status": "active"
+    }
+  ],
+  "rolePackReleases": [
+    {
+      "releaseId": "linggan-bank.wealth-manager@853319cc5d9c3923:wm-golden-task-v3",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "verificationLevel": "controlled_scenario",
+      "assetSetFingerprint": "853319cc5d9c3923896b7658e13b07504d2e1a479d6bf411d3ad7967c6f436d1",
+      "verifiedAt": "2026-08-20T23:11:51.000Z"
+    },
+    {
+      "releaseId": "linggan-insurance.insurance-advisor@4856d055cac44c53:ia-golden-task-v1",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "verificationLevel": "controlled_scenario",
+      "assetSetFingerprint": "4856d055cac44c5331704e0c35d0b1e8ccbd336f42530e4b6df8966c17fd9c08",
+      "verifiedAt": "2026-08-17T23:49:37.000Z"
+    }
+  ],
+  "plans": [
+    {
+      "rolePackId": "linggan-bank.wealth-manager",
+      "planId": "linggan-bank.wealth-manager.shared-shadow.environment",
+      "planVersion": "1.0.0"
+    },
+    {
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-01.context",
+      "planVersion": "1.0.0"
+    }
+  ],
+  "snapshotFingerprint": "ccf1a10b181bbf1955b3605a8bfc0d9772a91224e7a45e9c8da304181995cbc7"
+}

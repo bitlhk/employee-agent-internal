@@ -8,6 +8,7 @@ const binding: ContextSourceBindingV1 = {
   bindingId: "wealth-policy",
   organizationId: "org-a",
   rolePackId: "linggan-bank.wealth-manager",
+  bindingScope: "role_pack",
   logicalAssetId: "current_wealth_policy",
   contextType: "knowledge",
   providerType: "llamaindex",

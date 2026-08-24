@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "ea.logical-context-catalog-extension.v1",
+  "extensionVersion": "1.0.0",
+  "baselineCatalogVersion": "1.0.0",
+  "status": "expert_confirmed",
+  "rolePackId": "linggan-insurance.insurance-advisor",
+  "entries": [
+    {
+      "canonicalId": "current_insurance_previsit_sop",
+      "contextType": "knowledge",
+      "displayName": "现行保险续保访前指引",
+      "description": "当前有效的保险客户访前、车辆核验和续保准备作业依据。",
+      "aliases": ["insurance.previsit_sop.current"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "current_insurance_sales_policy",
+      "contextType": "knowledge",
+      "displayName": "现行保险销售制度",
+      "description": "当前有效的保险产品匹配、销售表达、合规红线和停止条件依据。",
+      "aliases": ["insurance.policy.sales.current"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "insurance_product_exam_points",
+      "contextType": "business_data",
+      "displayName": "保险产品培训考点",
+      "description": "与当前保险产品绑定且带数据时点的讲解、培训和考试要点。",
+      "aliases": ["insurance.product.exam_points"],
+      "status": "active"
+    },
+    {
+      "canonicalId": "current_insurance_escalation_guide",
+      "contextType": "knowledge",
+      "displayName": "现行保险升级转人工指引",
+      "description": "当前有效的客户信息保护、投诉、核保、理赔和重大事故转人工依据。",
+      "aliases": ["insurance.escalation_guide.current"],
+      "status": "active"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   getItem: vi.fn(),
   listExecutions: vi.fn(),
   listItems: vi.fn(),
+  listPurposeItems: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -16,6 +17,7 @@ vi.mock("../db", () => ({
   getGovernedWorkItem: mocks.getItem,
   listGovernedWorkItemExecutions: mocks.listExecutions,
   listGovernedWorkItems: mocks.listItems,
+  listGovernedWorkItemsForPurpose: mocks.listPurposeItems,
 }));
 
 import {
@@ -26,6 +28,7 @@ import {
   transitionGovernedWorkItem,
 } from "./governed-work-continuity";
 import type { RuntimePrincipalV2 } from "./governance/contracts";
+import type { ContextSourceBindingV1 } from "../../shared/context-resolution";
 
 const principal: RuntimePrincipalV2 = {
   tenantId: "tn_demo",
@@ -42,6 +45,34 @@ const principal: RuntimePrincipalV2 = {
   identityVersion: "2",
 };
 
+const insurancePrincipal: RuntimePrincipalV2 = {
+  ...principal,
+  userId: 8,
+  adoptionId: "lgj-insurance",
+  agentId: "insurance-agent",
+  roleTemplate: "insurance-advisor",
+  workspaceId: "/workspace/lgj-insurance",
+  sessionId: "session-2",
+  authorizationSnapshotId: "authz-2",
+  authorizationFingerprint: "c".repeat(64),
+};
+
+const sharedWorkBinding: ContextSourceBindingV1 = {
+  schema: "ea.context-source-binding.v1",
+  bindingId: "ctxb-shared-governed-work-state",
+  organizationId: principal.organizationId,
+  rolePackId: "*",
+  bindingScope: "enterprise_shared",
+  logicalAssetId: "governed_work_state",
+  contextType: "memory",
+  providerType: "api",
+  resourceRef: "api://employee-agent/governed-work-items",
+  capabilities: ["read_work_state", "relevant_retrieval", "purpose_filter"],
+  bindingVersion: "shadow-v1",
+  stage: "shadow",
+  status: "active",
+};
+
 function row(input: Partial<any> = {}) {
   const now = new Date("2026-08-23T10:00:00.000Z");
   return {
@@ -51,6 +82,11 @@ function row(input: Partial<any> = {}) {
     userId: principal.userId,
     adoptId: principal.adoptionId,
     roleTemplate: principal.roleTemplate,
+    visibilityClass: "principal_private",
+    purposeScopeJson: ["wealth_advisory"],
+    purposeScopeVersion: "1",
+    subjectId: null,
+    scopeProvenanceJson: null,
     type: "action_item",
     subject: "准备王总资产配置方案",
     description: "小李下周三前准备王总资产配置方案",
@@ -83,7 +119,17 @@ beforeEach(() => {
   mocks.rows = [];
   mocks.executions = [];
   mocks.createDrafts.mockImplementation(async (inputs: any[]) => inputs.map((input, index) => row({ id: index + 1, ...input })));
-  mocks.listItems.mockImplementation(async (input: { statuses?: string[] }) => mocks.rows.filter(item => !input.statuses || input.statuses.includes(item.status)));
+  mocks.listItems.mockImplementation(async (input: {
+    organizationId: string;
+    userId: number;
+    adoptId: string;
+    statuses?: string[];
+  }) => mocks.rows.filter(item => (
+    item.organizationId === input.organizationId
+    && item.userId === input.userId
+    && item.adoptId === input.adoptId
+    && (!input.statuses || input.statuses.includes(item.status))
+  )));
   mocks.listExecutions.mockImplementation(async () => mocks.executions);
   mocks.getItem.mockImplementation(async (_scope: unknown, workItemId: string) => mocks.rows.find(item => item.workItemId === workItemId) || null);
   mocks.executeTransition.mockImplementation(async (input: any) => {
@@ -149,7 +195,32 @@ describe("GRACE governed work continuity", () => {
       type: item.type,
       subject: item.subject,
       status: item.status,
-    }));
+  }));
+  mocks.listPurposeItems.mockImplementation(async (input: { scope: {
+    organizationId: string;
+    userId: number;
+    adoptionId: string;
+    roleTemplate: string;
+    purposeId: string;
+    subjectId?: string;
+  }; statuses?: string[] }) => {
+    const candidates = mocks.rows.filter(item => (
+      item.organizationId === input.scope.organizationId
+      && (!input.statuses || input.statuses.includes(item.status))
+    ));
+    const items = candidates.filter(item => (
+      item.purposeScopeJson?.includes(input.scope.purposeId)
+      && (!item.subjectId || item.subjectId === input.scope.subjectId)
+      && (
+        item.visibilityClass === "enterprise_shared"
+        || (item.visibilityClass === "role_private" && item.roleTemplate === input.scope.roleTemplate)
+        || (item.visibilityClass === "principal_private"
+          && item.userId === input.scope.userId
+          && item.adoptId === input.scope.adoptionId)
+      )
+    ));
+    return { items, candidateRecordCount: candidates.length, filteredRecordCount: candidates.length - items.length };
+  });
     const formal = await governedWorkContext({ principal });
     expect(formal.items).toHaveLength(0);
     expect(formal.receipt.provided.memory).toHaveLength(0);
@@ -212,5 +283,117 @@ describe("GRACE governed work continuity", () => {
       userId: principal.userId,
       adoptId: principal.adoptionId,
     }), mocks.rows[0].workItemId);
+  });
+
+  it("uses one shared Binding while principal and Purpose keep work state isolated", async () => {
+    const wealthItem = row({ status: "open", confirmedBy: "财富专家", confirmedAt: new Date() });
+    const insuranceItem = row({
+      id: 2,
+      workItemId: "gwk_00000000-0000-4000-8000-000000000002",
+      userId: insurancePrincipal.userId,
+      adoptId: insurancePrincipal.adoptionId,
+      roleTemplate: insurancePrincipal.roleTemplate,
+      purposeScopeJson: ["insurance_advisory"],
+      subject: "准备客户续保方案",
+      status: "open",
+      confirmedBy: "保险专家",
+      confirmedAt: new Date(),
+    });
+    mocks.rows = [wealthItem, insuranceItem];
+
+    const wealth = await governedWorkContext({
+      principal,
+      binding: sharedWorkBinding,
+      purpose: "继续财富配置跟进任务",
+      purposeId: "wealth_advisory",
+    });
+    const insurance = await governedWorkContext({
+      principal: insurancePrincipal,
+      binding: sharedWorkBinding,
+      purpose: "继续保险续保跟进任务",
+      purposeId: "insurance_advisory",
+    });
+
+    expect(wealth.items.map(item => item.workItemId)).toEqual([wealthItem.workItemId]);
+    expect(insurance.items.map(item => item.workItemId)).toEqual([insuranceItem.workItemId]);
+    expect(wealth.receipt.resolution?.needs[0]).toMatchObject({
+      bindingId: sharedWorkBinding.bindingId,
+      bindingScope: "enterprise_shared",
+      purpose: "继续财富配置跟进任务",
+    });
+    expect(insurance.receipt.resolution?.needs[0]).toMatchObject({
+      bindingId: sharedWorkBinding.bindingId,
+      bindingScope: "enterprise_shared",
+      purpose: "继续保险续保跟进任务",
+    });
+    expect(wealth.receipt.principalFingerprint).not.toBe(insurance.receipt.principalFingerprint);
+    expect(wealth.receipt.resolution?.needs[0].purposeFilter).toMatchObject({
+      requestedPurposeId: "wealth_advisory",
+      appliedPurposeFilter: true,
+      returnedRecordCount: 1,
+    });
+    expect(insurance.receipt.resolution?.needs[0].purposeFilter).toMatchObject({
+      requestedPurposeId: "insurance_advisory",
+      appliedPurposeFilter: true,
+      returnedRecordCount: 1,
+    });
+    await expect(governedWorkContext({ principal, binding: sharedWorkBinding, purpose: " " }))
+      .rejects.toThrow("WORK_CONTEXT_PURPOSE_REQUIRED");
+  });
+
+  it("returns a cross-purpose shared fact while excluding role-local and other-subject records", async () => {
+    mocks.rows = [
+      row({ workItemId: "gwk-wealth-private", status: "open" }),
+      row({
+        id: 2,
+        workItemId: "gwk-insurance-private",
+        userId: insurancePrincipal.userId,
+        adoptId: insurancePrincipal.adoptionId,
+        roleTemplate: insurancePrincipal.roleTemplate,
+        purposeScopeJson: ["insurance_advisory"],
+        subject: "保险岗位私有工作事项",
+        status: "open",
+      }),
+      row({
+        id: 3,
+        workItemId: "gwk-enterprise-shared",
+        visibilityClass: "enterprise_shared",
+        purposeScopeJson: ["insurance_advisory", "wealth_advisory"],
+        subjectId: "customer-001",
+        subject: "客户确认的跨岗位跟进事实",
+        status: "open",
+      }),
+      row({
+        id: 4,
+        workItemId: "gwk-other-customer",
+        visibilityClass: "enterprise_shared",
+        purposeScopeJson: ["insurance_advisory", "wealth_advisory"],
+        subjectId: "customer-002",
+        subject: "其他客户工作事项",
+        status: "open",
+      }),
+    ];
+
+    const wealth = await governedWorkContext({
+      principal,
+      binding: sharedWorkBinding,
+      purpose: "财富客户跟进",
+      purposeId: "wealth_advisory",
+      subjectId: "customer-001",
+    });
+    const insurance = await governedWorkContext({
+      principal: insurancePrincipal,
+      binding: sharedWorkBinding,
+      purpose: "保险客户跟进",
+      purposeId: "insurance_advisory",
+      subjectId: "customer-001",
+    });
+
+    expect(wealth.items.map(item => item.workItemId).sort()).toEqual(["gwk-enterprise-shared", "gwk-wealth-private"]);
+    expect(insurance.items.map(item => item.workItemId).sort()).toEqual(["gwk-enterprise-shared", "gwk-insurance-private"]);
+    expect(wealth.items.some(item => item.workItemId === "gwk-insurance-private")).toBe(false);
+    expect(insurance.items.some(item => item.workItemId === "gwk-wealth-private")).toBe(false);
+    expect(wealth.items.some(item => item.workItemId === "gwk-other-customer")).toBe(false);
+    expect(insurance.items.some(item => item.workItemId === "gwk-other-customer")).toBe(false);
   });
 });

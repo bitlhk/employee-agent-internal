@@ -22,6 +22,14 @@ type ReceiptMemoryRef = {
   sourceType?: string;
   asOf?: string;
   usageType?: ContextReceiptV1["provided"]["memory"][number]["usageType"];
+  purposeId?: string;
+  visibilityClass?: ContextReceiptV1["provided"]["memory"][number]["visibilityClass"];
+  subjectId?: string;
+  logicalAssetId?: string;
+  bindingId?: string;
+  providerType?: ContextReceiptV1["provided"]["memory"][number]["providerType"];
+  resourceRefFingerprint?: string;
+  candidateBindingFingerprint?: string;
 };
 
 export type ContextReceiptAppliedPolicy = ContextReceiptV1["applied"]["policyDecisions"][number];
@@ -188,6 +196,14 @@ export function buildContextReceiptFromEnvelope(input: {
           ...(item.asOf ? { asOf: item.asOf } : {}),
           usageType: item.usageType || "relationship_observation",
           assurance: "REFERENCE_ONLY" as const,
+          ...(item.purposeId ? { purposeId: item.purposeId } : {}),
+          ...(item.visibilityClass ? { visibilityClass: item.visibilityClass } : {}),
+          ...(item.subjectId ? { subjectId: item.subjectId } : {}),
+          ...(item.logicalAssetId ? { logicalAssetId: item.logicalAssetId } : {}),
+          ...(item.bindingId ? { bindingId: item.bindingId } : {}),
+          ...(item.providerType ? { providerType: item.providerType } : {}),
+          ...(item.resourceRefFingerprint ? { resourceRefFingerprint: item.resourceRefFingerprint } : {}),
+          ...(item.candidateBindingFingerprint ? { candidateBindingFingerprint: item.candidateBindingFingerprint } : {}),
         })),
       capabilities: input.envelope.capabilitySnapshot.capabilityIds.map((capabilityId) => ({
         capabilityId,

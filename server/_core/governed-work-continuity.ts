@@ -16,7 +16,16 @@ import {
   getGovernedWorkItem,
   listGovernedWorkItemExecutions,
   listGovernedWorkItems,
+  listGovernedWorkItemsForPurpose,
 } from "../db";
+import {
+  MEMORY_PURPOSE_FILTER_EVIDENCE_SCHEMA,
+  canonicalPurposeIdForRoleTemplate,
+  normalizePurposeIds,
+  type GovernedMemoryVisibilityV1,
+  type MemoryPurposeFilterEvidenceV1,
+  type MemoryRetrievalScopeV1,
+} from "../../shared/memory-purpose";
 import { resolveContextSources } from "./context-resolution/source-resolver";
 import { buildContextReceipt } from "./governance/context-receipt";
 import { governanceFingerprint, principalFingerprint, type RuntimePrincipalV2 } from "./governance/contracts";
@@ -174,6 +183,10 @@ function publicWorkItem(row: GovernedWorkItem): GovernedWorkItemV1 {
     userId: row.userId,
     adoptionId: row.adoptId,
     roleTemplate: row.roleTemplate,
+    visibilityClass: row.visibilityClass,
+    purposeIds: Array.isArray(row.purposeScopeJson) ? normalizePurposeIds(row.purposeScopeJson) : [],
+    purposeScopeVersion: row.purposeScopeVersion,
+    subjectId: row.subjectId,
     type: row.type,
     subject: row.subject,
     description: row.description,
@@ -224,18 +237,35 @@ export async function createMeetingWorkDrafts(input: {
   meetingText: string;
   meetingAt?: Date;
   sourceId?: string;
+  purposeIds?: string[];
+  visibilityClass?: GovernedMemoryVisibilityV1;
+  subjectId?: string | null;
 }) {
   const sourceText = cleanText(input.meetingText, 30_000);
   const drafts = extractMeetingWorkDrafts({ meetingText: sourceText, meetingAt: input.meetingAt });
   if (!drafts.length) throw new Error("NO_WORK_ITEMS_EXTRACTED");
   const sourceId = cleanText(input.sourceId, 128) || `mtg_${randomUUID()}`;
   const sourceFingerprint = sha256(sourceText);
+  const purposeIds = normalizePurposeIds(input.purposeIds?.length
+    ? input.purposeIds
+    : [canonicalPurposeIdForRoleTemplate(input.principal.roleTemplate)]);
+  const visibilityClass = input.visibilityClass || "principal_private";
   const rows = await createGovernedWorkItemDrafts(drafts.map(draft => ({
     workItemId: `gwk_${randomUUID()}`,
     organizationId: input.principal.organizationId,
     userId: input.principal.userId,
     adoptId: input.principal.adoptionId,
     roleTemplate: input.principal.roleTemplate,
+    visibilityClass,
+    purposeScopeJson: purposeIds,
+    purposeScopeVersion: "1",
+    subjectId: input.subjectId || null,
+    scopeProvenanceJson: {
+      source: "governed_work",
+      recordedBy: principalFingerprint(input.principal),
+      recordedAt: new Date().toISOString(),
+      reason: "User-confirmed meeting work state",
+    },
     type: draft.type,
     subject: draft.subject,
     description: draft.description,
@@ -255,7 +285,13 @@ export async function createMeetingWorkDrafts(input: {
   return { sourceId, sourceFingerprint, items: rows.map(publicWorkItem) };
 }
 
-function workResolutionEvidence(principal: RuntimePrincipalV2): ContextResolutionEvidenceV1 {
+function workResolutionEvidence(
+  principal: RuntimePrincipalV2,
+  purpose: string,
+  bindingOverride?: ContextSourceBindingV1,
+  purposeFilter?: MemoryPurposeFilterEvidenceV1,
+): ContextResolutionEvidenceV1 {
+  const sharedProvider = bindingOverride?.bindingScope === "enterprise_shared";
   const plan = {
     schema: "ea.context-need-plan.v1" as const,
     planId: WORK_PLAN_ID,
@@ -268,16 +304,19 @@ function workResolutionEvidence(principal: RuntimePrincipalV2): ContextResolutio
       logicalAssetId: WORK_LOGICAL_CONTEXT_ID,
       contextType: "memory" as const,
       requiredness: "required" as const,
-      purpose: "Recall user-confirmed work state without re-inferring meeting text.",
+      purpose,
       freshness: { mode: "latest" as const },
-      requiredCapabilities: ["read_work_state"],
+      requiredCapabilities: sharedProvider
+        ? ["relevant_retrieval", "purpose_filter"]
+        : ["read_work_state"],
     }],
   };
-  const binding: ContextSourceBindingV1 = {
+  const binding: ContextSourceBindingV1 = bindingOverride || {
     schema: "ea.context-source-binding.v1",
     bindingId: `builtin.${principal.roleTemplate}.governed-work-state`,
     organizationId: principal.organizationId,
     rolePackId: plan.rolePackId,
+    bindingScope: "role_pack",
     logicalAssetId: WORK_LOGICAL_CONTEXT_ID,
     contextType: "memory",
     providerType: "api",
@@ -287,7 +326,12 @@ function workResolutionEvidence(principal: RuntimePrincipalV2): ContextResolutio
     stage: "production",
     status: "active",
   };
-  const resolved = resolveContextSources({ plan, bindings: [binding], organizationId: principal.organizationId });
+  const resolved = resolveContextSources({
+    plan,
+    bindings: [binding],
+    organizationId: principal.organizationId,
+    stage: binding.stage,
+  });
   return {
     schema: "ea.context-resolution-evidence.v1",
     planId: resolved.planId,
@@ -302,8 +346,13 @@ function workResolutionEvidence(principal: RuntimePrincipalV2): ContextResolutio
       ...(item.reasonCode ? { reasonCode: item.reasonCode } : {}),
       ...(item.binding ? {
         bindingId: item.binding.bindingId,
+        bindingScope: item.binding.bindingScope || "role_pack",
+        bindingVersion: item.binding.bindingVersion,
         providerType: item.binding.providerType,
         resourceRefFingerprint: governanceFingerprint(item.binding.resourceRef),
+        rolePackId: plan.rolePackId,
+        purpose: item.need.purpose,
+        ...(purposeFilter ? { purposeFilter } : {}),
       } : {}),
     })),
     bindingSnapshotFingerprint: resolved.bindingSnapshotFingerprint,
@@ -315,8 +364,38 @@ export async function governedWorkContext(input: {
   principal: RuntimePrincipalV2;
   statuses?: GovernedWorkItemStatusV1[];
   limit?: number;
+  purpose?: string;
+  purposeId?: string;
+  subjectId?: string;
+  binding?: ContextSourceBindingV1;
 }) {
-  const rows = await listGovernedWorkItems({
+  const purpose = (input.purpose || "Recall user-confirmed work state without re-inferring meeting text.").trim();
+  if (!purpose) throw new Error("WORK_CONTEXT_PURPOSE_REQUIRED");
+  const purposeId = String(input.purposeId || canonicalPurposeIdForRoleTemplate(input.principal.roleTemplate)).trim();
+  if (!purposeId) throw new Error("WORK_CONTEXT_PURPOSE_ID_REQUIRED");
+  const sharedProvider = input.binding?.bindingScope === "enterprise_shared";
+  const initialResolution = workResolutionEvidence(input.principal, purpose, input.binding);
+  if (sharedProvider && initialResolution.status !== "READY") {
+    throw new Error(`WORK_CONTEXT_PROVIDER_CONTRACT_MISMATCH:${initialResolution.needs[0]?.reasonCode || "UNKNOWN"}`);
+  }
+  const retrievalScope: MemoryRetrievalScopeV1 = {
+    organizationId: input.principal.organizationId,
+    userId: input.principal.userId,
+    adoptionId: input.principal.adoptionId,
+    roleTemplate: input.principal.roleTemplate,
+    rolePackId: input.binding?.rolePackId || `role:${input.principal.roleTemplate}`,
+    purposeId,
+    requestedPurpose: purpose,
+    ...(input.subjectId ? { subjectId: input.subjectId } : {}),
+  };
+  const scoped = sharedProvider
+    ? await listGovernedWorkItemsForPurpose({
+        scope: retrievalScope,
+        statuses: input.statuses || ACTIVE_STATUSES,
+        limit: input.limit,
+      })
+    : null;
+  const rows = scoped?.items || await listGovernedWorkItems({
     organizationId: input.principal.organizationId,
     userId: input.principal.userId,
     adoptId: input.principal.adoptionId,
@@ -325,7 +404,21 @@ export async function governedWorkContext(input: {
   });
   const items = rows.map(publicWorkItem);
   const assembledAt = new Date().toISOString();
-  const resolution = workResolutionEvidence(input.principal);
+  const purposeFilter = scoped ? (() => {
+    const body = {
+      schema: MEMORY_PURPOSE_FILTER_EVIDENCE_SCHEMA,
+      requestedPurposeId: purposeId,
+      requestedPurpose: purpose,
+      appliedPurposeFilter: true as const,
+      scopeVersion: "1",
+      candidateRecordCount: scoped.candidateRecordCount,
+      filteredRecordCount: scoped.filteredRecordCount,
+      eligibleRecordCount: scoped.items.length,
+      returnedRecordCount: items.length,
+    };
+    return { ...body, filterFingerprint: governanceFingerprint(body) };
+  })() : undefined;
+  const resolution = workResolutionEvidence(input.principal, purpose, input.binding, purposeFilter);
   const context = buildTaskContextPack({
     resolution,
     knowledge: { selectedAssets: [], eligibilityFingerprint: governanceFingerprint([]) },
@@ -356,6 +449,9 @@ export async function governedWorkContext(input: {
         asOf: item.updatedAt,
         usageType: "work_state",
         assurance: "REFERENCE_ONLY",
+        purposeId,
+        visibilityClass: item.visibilityClass,
+        ...(item.subjectId ? { subjectId: item.subjectId } : {}),
       })),
       capabilities: [{ capabilityId: "grace.work_item", label: "工作事项状态管理", version: "1", sideEffect: "write" }],
     },

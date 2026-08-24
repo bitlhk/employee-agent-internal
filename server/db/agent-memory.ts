@@ -1,4 +1,10 @@
 import { sql } from "drizzle-orm";
+import {
+  isPurposeScopedRecordVisible,
+  normalizePurposeIds,
+  type GovernedMemoryVisibilityV1,
+  type MemoryRetrievalScopeV1,
+} from "../../shared/memory-purpose";
 import { getDb } from "./connection";
 
 export type AgentMemoryMode = "learn_and_use" | "use_only" | "off";
@@ -13,6 +19,12 @@ export type AgentMemoryRecord = {
   userId: number;
   adoptId: string;
   roleTemplate: string;
+  organizationId: string | null;
+  visibilityClass: GovernedMemoryVisibilityV1;
+  purposeIds: string[];
+  purposeScopeVersion: string;
+  subjectId: string | null;
+  scopeProvenance: Record<string, unknown> | null;
   scope: "role" | "user";
   kind: AgentMemoryKind;
   status: AgentMemoryStatus;
@@ -107,12 +119,45 @@ function isoDate(value: unknown): string | null {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function stringArray(value: unknown): string[] {
+  if (typeof value === "string") {
+    try {
+      return normalizePurposeIds(JSON.parse(value));
+    } catch {
+      return [];
+    }
+  }
+  return normalizePurposeIds(Array.isArray(value) ? value : []);
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 function mapMemory(row: any): AgentMemoryRecord {
   return {
     id: Number(row.id),
     userId: Number(row.user_id),
     adoptId: String(row.adopt_id || ""),
     roleTemplate: String(row.role_template || "general-assistant"),
+    organizationId: row.organization_id ? String(row.organization_id) : null,
+    visibilityClass: ["role_private", "enterprise_shared"].includes(String(row.visibility_class))
+      ? row.visibility_class as GovernedMemoryVisibilityV1
+      : "principal_private",
+    purposeIds: stringArray(row.purpose_scope_json),
+    purposeScopeVersion: String(row.purpose_scope_version || "1"),
+    subjectId: row.subject_id ? String(row.subject_id) : null,
+    scopeProvenance: recordValue(row.scope_provenance_json),
     scope: row.scope === "user" ? "user" : "role",
     kind: String(row.kind || "preference") as AgentMemoryKind,
     status: String(row.status || "candidate") as AgentMemoryStatus,
@@ -173,7 +218,9 @@ function mapSynthesis(row: any): AgentMemorySynthesisRecord {
 }
 
 const MEMORY_SELECT = sql.raw(`
-  id, user_id, adopt_id, role_template, scope, kind, status, canonical_key,
+  id, user_id, adopt_id, role_template, organization_id, visibility_class,
+  purpose_scope_json, purpose_scope_version, subject_id, scope_provenance_json,
+  scope, kind, status, canonical_key,
   content, source, confidence, evidence_count, version, last_observed_at,
   last_used_at, expires_at, created_at, updated_at
 `);
@@ -234,6 +281,46 @@ export async function listAgentMemories(input: {
   return rowsFromResult(result).map(mapMemory);
 }
 
+export async function listAgentMemoriesForPurpose(input: {
+  scope: MemoryRetrievalScopeV1;
+  statuses?: AgentMemoryStatus[];
+  limit?: number;
+}): Promise<{
+  memories: AgentMemoryRecord[];
+  candidateRecordCount: number;
+  filteredRecordCount: number;
+}> {
+  const db = await getDb();
+  if (!db) return { memories: [], candidateRecordCount: 0, filteredRecordCount: 0 };
+  const statuses = input.statuses?.length ? input.statuses : ["active"];
+  const limit = Math.min(Math.max(input.limit || 500, 1), 1_000);
+  const result: unknown = await db.execute(sql`
+    SELECT ${MEMORY_SELECT}
+    FROM agent_memory_items
+    WHERE organization_id = ${input.scope.organizationId}
+      AND status IN (${sql.join(statuses.map((status) => sql`${status}`), sql`, `)})
+      AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+    ORDER BY updated_at DESC
+    LIMIT ${limit}
+  `);
+  const candidates = rowsFromResult(result).map(mapMemory);
+  const memories = candidates.filter(memory => isPurposeScopedRecordVisible({
+    organizationId: memory.organizationId,
+    userId: memory.userId,
+    adoptionId: memory.adoptId,
+    roleTemplate: memory.roleTemplate,
+    visibilityClass: memory.visibilityClass,
+    purposeIds: memory.purposeIds,
+    subjectId: memory.subjectId,
+    purposeScopeVersion: memory.purposeScopeVersion,
+  }, input.scope));
+  return {
+    memories,
+    candidateRecordCount: candidates.length,
+    filteredRecordCount: candidates.length - memories.length,
+  };
+}
+
 export async function getAgentMemoryById(userId: number, adoptId: string, id: number): Promise<AgentMemoryRecord | null> {
   const db = await getDb();
   if (!db) return null;
@@ -264,6 +351,12 @@ export async function createAgentMemory(input: {
   userId: number;
   adoptId: string;
   roleTemplate: string;
+  organizationId?: string | null;
+  visibilityClass?: GovernedMemoryVisibilityV1;
+  purposeIds?: string[];
+  purposeScopeVersion?: string;
+  subjectId?: string | null;
+  scopeProvenance?: Record<string, unknown> | null;
   scope: "role" | "user";
   kind: AgentMemoryKind;
   status: AgentMemoryStatus;
@@ -275,12 +368,23 @@ export async function createAgentMemory(input: {
 }): Promise<AgentMemoryRecord> {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
+  const visibilityClass = input.visibilityClass || "principal_private";
+  const purposeIds = normalizePurposeIds(input.purposeIds);
+  const governedScope = Boolean(input.organizationId || purposeIds.length || visibilityClass !== "principal_private");
+  if (governedScope && (!input.organizationId || !purposeIds.length || !input.scopeProvenance)) {
+    throw new Error("PURPOSE_SCOPE_INCOMPLETE");
+  }
   await db.execute(sql`
     INSERT INTO agent_memory_items (
-      user_id, adopt_id, role_template, scope, kind, status, canonical_key,
+      user_id, adopt_id, role_template, organization_id, visibility_class,
+      purpose_scope_json, purpose_scope_version, subject_id, scope_provenance_json,
+      scope, kind, status, canonical_key,
       content, source, confidence, evidence_count, expires_at
     ) VALUES (
-      ${input.userId}, ${input.adoptId}, ${input.roleTemplate}, ${input.scope}, ${input.kind},
+      ${input.userId}, ${input.adoptId}, ${input.roleTemplate}, ${input.organizationId || null}, ${visibilityClass},
+      ${purposeIds.length ? JSON.stringify(purposeIds) : null}, ${input.purposeScopeVersion || "1"},
+      ${input.subjectId || null}, ${input.scopeProvenance ? JSON.stringify(input.scopeProvenance) : null},
+      ${input.scope}, ${input.kind},
       ${input.status}, ${input.canonicalKey}, ${input.content}, ${input.source}, ${input.confidence}, 0,
       ${input.expiresAt || null}
     )

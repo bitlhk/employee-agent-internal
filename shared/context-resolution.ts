@@ -6,11 +6,16 @@ export type ContextTypeV1 = "knowledge" | "business_data" | "memory";
 export type ContextRequirednessV1 = "required" | "optional";
 export type ContextProviderTypeV1 = "llamaindex" | "mcp" | "api";
 export type ContextBindingStageV1 = "production" | "shadow";
+export type ContextBindingScopeV1 = "role_pack" | "enterprise_shared";
 export type ContextResolutionReasonCodeV1 =
   | "NO_BINDING"
+  | "NO_SHARED_BINDING"
   | "BINDING_DISABLED"
   | "CAPABILITY_MISMATCH"
   | "AMBIGUOUS_BINDING"
+  | "EXACT_BINDING_DISABLED"
+  | "EXACT_BINDING_CAPABILITY_MISMATCH"
+  | "AMBIGUOUS_SHARED_BINDING"
   | "NOT_ELIGIBLE"
   | "SOURCE_UNAVAILABLE"
   | "NO_USABLE_CONTEXT"
@@ -50,6 +55,7 @@ export type ContextSourceBindingV1 = {
   bindingId: string;
   organizationId: string;
   rolePackId: string;
+  bindingScope: ContextBindingScopeV1;
   logicalAssetId: string;
   contextType: ContextTypeV1;
   providerType: ContextProviderTypeV1;
@@ -124,8 +130,14 @@ export type ContextResolutionEvidenceV1 = {
     resolutionStatus: "resolved" | "missing" | "ambiguous";
     reasonCode?: ContextResolutionReasonCodeV1;
     bindingId?: string;
+    bindingScope?: ContextBindingScopeV1;
+    bindingVersion?: string;
     providerType?: ContextProviderTypeV1;
     resourceRefFingerprint?: string;
+    rolePackId?: string;
+    purpose?: string;
+    eligibilityScopeFingerprint?: string;
+    purposeFilter?: import("./memory-purpose").MemoryPurposeFilterEvidenceV1;
   }>;
   bindingSnapshotFingerprint: string;
   resolutionFingerprint: string;

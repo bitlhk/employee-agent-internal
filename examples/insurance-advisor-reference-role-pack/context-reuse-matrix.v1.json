@@ -1,0 +1,256 @@
+{
+  "schemaVersion": "ea.cross-role-context-reuse-matrix.v1",
+  "matrixVersion": "1.0.0",
+  "status": "needs_resolution",
+  "sourceRolePackId": "linggan-bank.wealth-manager",
+  "targetRolePackId": "linggan-insurance.insurance-advisor",
+  "targetRoleTemplate": "insurance-advisor",
+  "expertReview": {
+    "status": "expert_confirmed",
+    "reviewerId": "IA-EXPERT-01",
+    "reviewerRole": "保险销售与合规专家",
+    "reviewedAt": "2026-08-24T10:04:01+08:00",
+    "reviewComment": "确认 10 个 Insurance Context Need 的语义复用、新增、requiredness 与物理 Binding 期望；6 个复用、4 个保险专属，3 个属于应共享物理 Binding 的统计分母。",
+    "groundTruthVersion": "1.0.0"
+  },
+  "measurement": {
+    "totalUniqueContextNeeds": 10,
+    "existingCanonicalContextReuseCount": 6,
+    "existingLogicalContextReuseRatio": 0.6,
+    "sharedContextBindingIdentityEligibleCount": 3,
+    "sharedContextBindingIdentityCount": 0,
+    "sharedContextBindingIdentityRate": 0,
+    "targetExistingLogicalContextReuseRatio": 0.6,
+    "targetSharedContextBindingIdentityRate": 1
+  },
+  "bindingIdentityContract": {
+    "requiredDimensions": [
+      "canonical_logical_context_id",
+      "enterprise_asset_or_runtime_source_identity",
+      "production_binding_id",
+      "resolver_and_eligibility_path"
+    ],
+    "principalMayDiffer": true,
+    "rolePurposeMayDiffer": true
+  },
+  "needs": [
+    {
+      "logicalAssetId": "customer_profile",
+      "contextType": "business_data",
+      "taskIds": ["IA-GT-01", "IA-GT-02", "IA-GT-04"],
+      "decision": "reuse",
+      "existingCanonicalId": true,
+      "bindingIdentityExpected": true,
+      "sameRuntimeSource": false,
+      "sameProductionBinding": false,
+      "evidence": "财富经理生产来源为 wealth_assistant_customer_detail；保险顾问当前使用独立 Demo MCP insurance_customer_profile。",
+      "resolution": "保留 canonical ID；生产实现前确认企业客户主数据是否能提供按岗位投影的同源画像。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T09:58:27+08:00",
+        "reviewComment": "确认复用 customer_profile 的客户主体语义；真实企业同一客户主数据服务应共享 Binding，但不同岗位必须继续按 Principal、Role、Purpose 和客户范围返回不同 Eligible 数据。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "available_products",
+      "contextType": "business_data",
+      "taskIds": ["IA-GT-02", "IA-GT-03", "IA-GT-04", "IA-GT-05"],
+      "decision": "reuse",
+      "existingCanonicalId": true,
+      "bindingIdentityExpected": false,
+      "sameRuntimeSource": false,
+      "sameProductionBinding": false,
+      "evidence": "canonical 定义允许按机构、岗位和渠道返回可用产品，但保险产品当前来自 insurance_product_exam_points Demo MCP。",
+      "resolution": "复用 canonical ID；不得把财富产品集合当成保险产品集合，需由受治理的岗位投影或选择策略提供。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T09:58:27+08:00",
+        "reviewComment": "确认 available_products 表示当前机构、岗位和渠道可使用的产品集合；复用 Context Contract，不要求财富产品与保险产品共享物理 Binding。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "current_followup_guide",
+      "contextType": "knowledge",
+      "taskIds": ["IA-GT-01", "IA-GT-04"],
+      "decision": "reuse",
+      "existingCanonicalId": true,
+      "bindingIdentityExpected": false,
+      "sameEnterpriseAsset": false,
+      "sameProductionBinding": false,
+      "evidence": "保险资产 ia-auto-objection-guide 承载保险回访规则；财富经理当前没有对应的 active production binding。",
+      "resolution": "复用客户跟进语义；保险专属资产继续由 Eligibility 和岗位用途约束。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T09:58:27+08:00",
+        "reviewComment": "确认复用 current_followup_guide 的跟进、回访和留痕语义；财富与保险使用岗位专属知识资产和 Binding，并通过同一 Eligibility 机制选择不同 Eligible Asset Set。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "customer_relationship_memory",
+      "contextType": "memory",
+      "taskIds": ["IA-GT-01", "IA-GT-04"],
+      "decision": "reuse",
+      "existingCanonicalId": true,
+      "bindingIdentityExpected": true,
+      "sameRuntimeSource": false,
+      "sameProductionBinding": false,
+      "evidence": "财富经理已绑定 agent-memory/relevant；保险顾问尚未声明 Context Need 或 Production Binding。",
+      "resolution": "只复用经确认的客户沟通偏好和连续任务现场，不写入模型推断。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:02:34+08:00",
+        "reviewComment": "确认 customer_relationship_memory 复用同一企业客户关系记忆服务和共享 Binding；读取必须按 Organization、Principal、Role、Purpose 和 Customer 隔离，财富岗位私人备注不得自动向保险岗位开放。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "governed_followup_payload",
+      "contextType": "business_data",
+      "taskIds": ["IA-ACT-01"],
+      "decision": "reuse",
+      "existingCanonicalId": true,
+      "bindingIdentityExpected": false,
+      "sameRuntimeSource": false,
+      "sameProductionBinding": false,
+      "evidence": "保险 Role Pack 已复用 demo_create_followup_task 能力，但尚未复用对应 Context Binding。",
+      "resolution": "保持确认、幂等和 Execution Receipt 门禁；只在创建跟进任务时声明。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:02:34+08:00",
+        "reviewComment": "确认 governed_followup_payload 复用确认、幂等和回执 Contract，但财富与保险可写入不同 CRM 或任务系统，不要求共享物理 Binding。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "governed_work_state",
+      "contextType": "memory",
+      "taskIds": ["IA-GT-01"],
+      "decision": "reuse",
+      "existingCanonicalId": true,
+      "bindingIdentityExpected": true,
+      "sameRuntimeSource": true,
+      "sameProductionBinding": false,
+      "evidence": "WP2 使用同一 governed work item 存储和 Resolver 路径，但内建 bindingId 包含 roleTemplate。",
+      "resolution": "复用 Work Continuity 契约；Binding Identity 口径解决前不能计为同一 Production Binding。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:02:34+08:00",
+        "reviewComment": "确认 governed_work_state 复用 WP2 Work State Service 和共享 Binding；必须按 Purpose 与 Subject 隔离，未确认、已关闭或其他用途的工作状态不得错误返回。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "current_insurance_previsit_sop",
+      "contextType": "knowledge",
+      "taskIds": ["IA-GT-01"],
+      "decision": "insurance_specific",
+      "existingCanonicalId": false,
+      "sameEnterpriseAsset": false,
+      "sameProductionBinding": false,
+      "evidence": "现有 current_previsit_sop 明确定义为财富客户访前依据，保险续保准备的业务步骤不同。",
+      "resolution": "新增保险领域 canonical Context，不通过 alias 假复用。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:02:34+08:00",
+        "reviewComment": "确认 current_insurance_previsit_sop 为保险专属 canonical Context 和 Binding；IA-GT-01 中为 required，缺失时正式续保访前简报必须 BLOCKED。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "current_insurance_sales_policy",
+      "contextType": "knowledge",
+      "taskIds": ["IA-GT-02", "IA-GT-03", "IA-GT-04", "IA-GT-05", "IA-GT-06"],
+      "decision": "insurance_specific",
+      "existingCanonicalId": false,
+      "sameEnterpriseAsset": false,
+      "sameProductionBinding": false,
+      "evidence": "保险销售合规、产品匹配和禁止承诺边界不能由财富销售制度替代。",
+      "resolution": "由保险正式制度资产支持；Reference Knowledge 仅可用于 Demo/Shadow。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:04:01+08:00",
+        "reviewComment": "确认 current_insurance_sales_policy 为保险专属 canonical Context 和 Binding；IA-GT-02..06 按声明 required，Reference Knowledge 只能用于 Demo/Shadow，生产必须使用正式制度资产。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "insurance_product_exam_points",
+      "contextType": "business_data",
+      "taskIds": ["IA-GT-03", "IA-GT-05"],
+      "decision": "insurance_specific",
+      "existingCanonicalId": false,
+      "sameRuntimeSource": false,
+      "sameProductionBinding": false,
+      "evidence": "培训考点是保险岗位特有的当前产品事实，不属于通用 available_products。",
+      "resolution": "保留独立 Context，正式生产前补可信身份、数据时点和责任人。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:04:01+08:00",
+        "reviewComment": "确认 insurance_product_exam_points 为保险专属 business_data Context；IA-GT-03/05 为 optional，缺失时 DEGRADED，不得编造考试答案或产品特定评分。",
+        "groundTruthVersion": "1.0.0"
+      }
+    },
+    {
+      "logicalAssetId": "current_insurance_escalation_guide",
+      "contextType": "knowledge",
+      "taskIds": ["IA-GT-06"],
+      "decision": "insurance_specific",
+      "existingCanonicalId": false,
+      "sameEnterpriseAsset": false,
+      "sameProductionBinding": false,
+      "evidence": "核保、理赔、投诉和重大事故升级路径具有保险领域专属性。",
+      "resolution": "新增保险领域 canonical Context，并保持业务副作用 fail closed。",
+      "review": {
+        "status": "expert_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "保险销售与合规专家",
+        "reviewedAt": "2026-08-24T10:04:01+08:00",
+        "reviewComment": "确认 current_insurance_escalation_guide 为保险专属 canonical Context 和 Binding；IA-GT-06 required，缺失时正式判断 BLOCKED，但可提供安全人工联系和紧急处理路径。",
+        "groundTruthVersion": "1.0.0"
+      }
+    }
+  ],
+  "blockingFindings": [
+    {
+      "code": "NO_INSURANCE_CONTEXT_NEED_PLAN",
+      "severity": "high",
+      "message": "保险顾问尚未声明正式 ContextNeedPlan，当前仍通过岗位工具和知识资产直接表达依赖。"
+    },
+    {
+      "code": "NO_INSURANCE_PRODUCTION_BINDINGS",
+      "severity": "high",
+      "message": "当前生产只有财富经理 Context Binding，保险顾问没有 Production Binding。"
+    },
+    {
+      "code": "ROLE_SCOPED_BINDING_IDENTITY",
+      "severity": "high",
+      "message": "Resolver 和唯一键按 rolePackId 隔离，同一 Binding 记录当前不能被两个 Role Pack 直接共享。"
+    },
+    {
+      "code": "INSURANCE_PROVIDERS_ARE_DEMO",
+      "severity": "high",
+      "message": "保险客户和产品 MCP 仍为 Demo/Mock，不能计入生产级 Shared Binding Identity。"
+    }
+  ]
+}

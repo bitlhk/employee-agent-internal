@@ -1,0 +1,285 @@
+{
+  "schemaVersion": "ea.reference-role-pack.context-needs.v1",
+  "status": "expert_confirmed",
+  "rolePackId": "linggan-insurance.insurance-advisor",
+  "roleTemplate": "insurance-advisor",
+  "plans": [
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-01.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-GT-01",
+      "needs": [
+        {
+          "needId": "customer-profile",
+          "logicalAssetId": "customer_profile",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "核验客户归属并取得当前授权的客户、车辆和保障画像",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "insurance-previsit-sop",
+          "logicalAssetId": "current_insurance_previsit_sop",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的车险访前与续保准备作业依据",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        },
+        {
+          "needId": "relationship-memory",
+          "logicalAssetId": "customer_relationship_memory",
+          "contextType": "memory",
+          "requiredness": "optional",
+          "purpose": "补充当前 Purpose 允许的已确认客户沟通偏好",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 2592000 },
+          "requiredCapabilities": ["relevant_retrieval", "purpose_filter"]
+        },
+        {
+          "needId": "governed-work-state",
+          "logicalAssetId": "governed_work_state",
+          "contextType": "memory",
+          "requiredness": "optional",
+          "purpose": "读取当前 Purpose 允许的已确认续保工作状态",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 2592000 },
+          "requiredCapabilities": ["relevant_retrieval", "purpose_filter"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-ACT-01.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-ACT-01",
+      "needs": [
+        {
+          "needId": "followup-payload",
+          "logicalAssetId": "governed_followup_payload",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "在用户确认创建续保跟进任务时提供受治理的动作载荷",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 600 },
+          "requiredCapabilities": ["task_state_read"]
+        },
+        {
+          "needId": "followup-guide",
+          "logicalAssetId": "current_followup_guide",
+          "contextType": "knowledge",
+          "requiredness": "optional",
+          "purpose": "应用当前有效的跟进、回访和留痕指引",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-02.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-GT-02",
+      "needs": [
+        {
+          "needId": "customer-profile",
+          "logicalAssetId": "customer_profile",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得客户当前车辆、保障需求和风险相关事实",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "available-products",
+          "logicalAssetId": "available_products",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得当前岗位、机构和渠道可用的保险产品集合",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["search"]
+        },
+        {
+          "needId": "insurance-sales-policy",
+          "logicalAssetId": "current_insurance_sales_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的产品匹配和保险销售合规依据",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-03.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-GT-03",
+      "needs": [
+        {
+          "needId": "available-products",
+          "logicalAssetId": "available_products",
+          "contextType": "business_data",
+          "requiredness": "required",
+          "purpose": "取得当前产品责任、限制、状态和渠道事实",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read", "search"]
+        },
+        {
+          "needId": "insurance-product-exam-points",
+          "logicalAssetId": "insurance_product_exam_points",
+          "contextType": "business_data",
+          "requiredness": "optional",
+          "purpose": "补充与当前产品绑定的培训考点，不替代产品事实",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 86400 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "insurance-sales-policy",
+          "logicalAssetId": "current_insurance_sales_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的产品讲解、免责说明和禁止承诺依据",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-04.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-GT-04",
+      "needs": [
+        {
+          "needId": "customer-profile",
+          "logicalAssetId": "customer_profile",
+          "contextType": "business_data",
+          "requiredness": "optional",
+          "purpose": "在客户特定话术中取得最小必要客户事实",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "available-products",
+          "logicalAssetId": "available_products",
+          "contextType": "business_data",
+          "requiredness": "optional",
+          "purpose": "在产品特定话术中取得当前产品事实",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "followup-guide",
+          "logicalAssetId": "current_followup_guide",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的异议处理、回访和留痕指引",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        },
+        {
+          "needId": "insurance-sales-policy",
+          "logicalAssetId": "current_insurance_sales_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "约束价格、承保和理赔承诺等销售表达",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        },
+        {
+          "needId": "relationship-memory",
+          "logicalAssetId": "customer_relationship_memory",
+          "contextType": "memory",
+          "requiredness": "optional",
+          "purpose": "只读取当前 Purpose 允许的已确认沟通偏好",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 2592000 },
+          "requiredCapabilities": ["relevant_retrieval", "purpose_filter"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-05.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-GT-05",
+      "needs": [
+        {
+          "needId": "available-products",
+          "logicalAssetId": "available_products",
+          "contextType": "business_data",
+          "requiredness": "optional",
+          "purpose": "在产品特定陪练中取得当前产品事实",
+          "freshness": { "mode": "realtime", "maxAgeSeconds": 300 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "insurance-product-exam-points",
+          "logicalAssetId": "insurance_product_exam_points",
+          "contextType": "business_data",
+          "requiredness": "optional",
+          "purpose": "为产品特定陪练和评分提供当前考点",
+          "freshness": { "mode": "latest", "maxAgeSeconds": 86400 },
+          "requiredCapabilities": ["point_read"]
+        },
+        {
+          "needId": "insurance-sales-policy",
+          "logicalAssetId": "current_insurance_sales_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "约束陪练评分中的合规红线和禁止行为",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        }
+      ]
+    },
+    {
+      "schema": "ea.context-need-plan.v1",
+      "planId": "linggan-insurance.insurance-advisor.IA-GT-06.context",
+      "planVersion": "1.0.0",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "roleTemplate": "insurance-advisor",
+      "taskId": "IA-GT-06",
+      "needs": [
+        {
+          "needId": "insurance-sales-policy",
+          "logicalAssetId": "current_insurance_sales_policy",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的保险销售停止条件和合规红线",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        },
+        {
+          "needId": "insurance-escalation-guide",
+          "logicalAssetId": "current_insurance_escalation_guide",
+          "contextType": "knowledge",
+          "requiredness": "required",
+          "purpose": "应用当前有效的客户信息保护、投诉、核保和理赔转人工依据",
+          "freshness": { "mode": "current_effective" },
+          "authority": "reference",
+          "requiredCapabilities": ["metadata_filter", "citation"]
+        }
+      ]
+    }
+  ]
+}

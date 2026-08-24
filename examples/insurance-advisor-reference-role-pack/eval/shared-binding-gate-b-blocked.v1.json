@@ -1,0 +1,60 @@
+{
+  "schema": "ea.enterprise-shared-binding-gate-b-blocked-evidence.v1",
+  "status": "core_validation_pass_environment_dependency_blocked",
+  "contextSnapshotFingerprint": "ccf1a10b181bbf1955b3605a8bfc0d9772a91224e7a45e9c8da304181995cbc7",
+  "validationSnapshotFingerprint": "799ec8c235e756f4530851eca6d6d6d7acaea09f675adbf6fff87e677bb49ba4",
+  "authorizationFingerprints": {
+    "linggan-bank.wealth-manager": "58923ff2deae2c5a9420803d162b53d2f71d1395a5564cdb5b9d09a41ec24c3d",
+    "linggan-insurance.insurance-advisor": "8678b1401d0f9421afe95f6db9601f9b08e610bb0caca96f4377a92b8fd9ea8e"
+  },
+  "coreValidation": {
+    "snapshotIntegrity": "PASS",
+    "sharedBindingIdentity": "3/3",
+    "purposeIsolation": "PASS",
+    "eligibilityViolationCount": 0,
+    "crossRoleLeakageCount": 0,
+    "exactBindingSemantics": "PASS",
+    "wealthGoldenTasks": "PASS",
+    "insuranceGoldenTasks": "PASS"
+  },
+  "candidateProvided": {
+    "linggan-bank.wealth-manager": {
+      "count": 2,
+      "expected": 3,
+      "providedLogicalAssetIds": [
+        "customer_relationship_memory",
+        "governed_work_state"
+      ],
+      "missingLogicalAssetIds": [
+        "customer_profile"
+      ]
+    },
+    "linggan-insurance.insurance-advisor": {
+      "count": 2,
+      "expected": 3,
+      "providedLogicalAssetIds": [
+        "customer_relationship_memory",
+        "governed_work_state"
+      ],
+      "missingLogicalAssetIds": [
+        "customer_profile"
+      ]
+    }
+  },
+  "environmentBlockers": [
+    {
+      "logicalAssetId": "customer_profile",
+      "rolePackId": "linggan-bank.wealth-manager",
+      "code": "CUSTOMER_PROVIDER_UPSTREAM_UNAVAILABLE"
+    },
+    {
+      "logicalAssetId": "customer_profile",
+      "rolePackId": "linggan-insurance.insurance-advisor",
+      "code": "INSURANCE_PRINCIPAL_NOT_AUTHORIZED"
+    }
+  ],
+  "gateError": "SHARED_BINDING_CANDIDATE_NOT_PROVIDED",
+  "fullRerunRequiredAfterDependencyChange": true,
+  "promotionPerformed": false,
+  "evidenceFingerprint": "3789490573299b561a6cbb0ddff614e0e5ccc9fb156be641e2d540da5aff90f8"
+}

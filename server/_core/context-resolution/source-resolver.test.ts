@@ -35,6 +35,7 @@ function binding(overrides: Partial<ContextSourceBindingV1> = {}): ContextSource
     bindingId: "binding-policy",
     organizationId: "org-a",
     rolePackId: plan.rolePackId,
+    bindingScope: "role_pack",
     logicalAssetId: "current_wealth_policy",
     contextType: "knowledge",
     providerType: "llamaindex",
@@ -100,7 +101,7 @@ describe("deterministic context source resolver", () => {
       bindings: [binding({ status: "disabled" })],
       organizationId: "org-a",
     });
-    expect(disabled.resolutions[0].reasonCode).toBe("BINDING_DISABLED");
+    expect(disabled.resolutions[0].reasonCode).toBe("EXACT_BINDING_DISABLED");
 
     const disabledOverride = resolveContextSources({
       plan: { ...plan, needs: [plan.needs[0]] },
@@ -110,14 +111,103 @@ describe("deterministic context source resolver", () => {
       ],
       organizationId: "org-a",
     });
-    expect(disabledOverride.resolutions[0].reasonCode).toBe("BINDING_DISABLED");
+    expect(disabledOverride.resolutions[0].reasonCode).toBe("EXACT_BINDING_DISABLED");
 
     const mismatch = resolveContextSources({
       plan: { ...plan, needs: [{ ...plan.needs[0], requiredCapabilities: ["citation"] }] },
       bindings: [binding({ capabilities: ["metadata_filter"] })],
       organizationId: "org-a",
     });
-    expect(mismatch.resolutions[0].reasonCode).toBe("CAPABILITY_MISMATCH");
+    expect(mismatch.resolutions[0].reasonCode).toBe("EXACT_BINDING_CAPABILITY_MISMATCH");
+  });
+
+  it("falls back to one enterprise-shared binding for different Role Packs", () => {
+    const shared = binding({
+      bindingId: "shared-customer-profile",
+      rolePackId: "*",
+      bindingScope: "enterprise_shared",
+      logicalAssetId: "customer_profile",
+      contextType: "business_data",
+      providerType: "mcp",
+      resourceRef: "mcp://crm/customer_profile",
+      capabilities: ["point_read"],
+    });
+    const need = {
+      ...plan.needs[0],
+      logicalAssetId: "customer_profile",
+      contextType: "business_data" as const,
+      requiredCapabilities: ["point_read"],
+    };
+    const wealth = resolveContextSources({
+      plan: { ...plan, needs: [need] },
+      bindings: [shared],
+      organizationId: "org-a",
+    });
+    const insurance = resolveContextSources({
+      plan: { ...plan, rolePackId: "linggan-insurance.insurance-advisor", needs: [need] },
+      bindings: [shared],
+      organizationId: "org-a",
+    });
+    expect(wealth.resolutions[0].binding?.bindingId).toBe("shared-customer-profile");
+    expect(insurance.resolutions[0].binding?.bindingId).toBe("shared-customer-profile");
+  });
+
+  it("never falls back to shared when an exact override is disabled or incompatible", () => {
+    const shared = binding({
+      bindingId: "shared-policy",
+      rolePackId: "*",
+      bindingScope: "enterprise_shared",
+      capabilities: ["citation"],
+    });
+    const disabled = resolveContextSources({
+      plan: { ...plan, needs: [{ ...plan.needs[0], requiredCapabilities: ["citation"] }] },
+      bindings: [shared, binding({ status: "disabled" })],
+      organizationId: "org-a",
+    });
+    expect(disabled.resolutions[0].binding).toBeNull();
+    expect(disabled.resolutions[0].reasonCode).toBe("EXACT_BINDING_DISABLED");
+
+    const mismatch = resolveContextSources({
+      plan: { ...plan, needs: [{ ...plan.needs[0], requiredCapabilities: ["citation"] }] },
+      bindings: [shared, binding({ capabilities: ["metadata_filter"] })],
+      organizationId: "org-a",
+    });
+    expect(mismatch.resolutions[0].binding).toBeNull();
+    expect(mismatch.resolutions[0].reasonCode).toBe("EXACT_BINDING_CAPABILITY_MISMATCH");
+  });
+
+  it("fails closed on ambiguous shared bindings and distinguishes a missing shared mapping", () => {
+    const shared = binding({
+      bindingId: "shared-policy-a",
+      rolePackId: "*",
+      bindingScope: "enterprise_shared",
+    });
+    const ambiguous = resolveContextSources({
+      plan: { ...plan, needs: [plan.needs[0]] },
+      bindings: [shared, { ...shared, bindingId: "shared-policy-b", resourceRef: "kb://other" }],
+      organizationId: "org-a",
+    });
+    expect(ambiguous.resolutions[0].reasonCode).toBe("AMBIGUOUS_SHARED_BINDING");
+
+    const missing = resolveContextSources({
+      plan: { ...plan, needs: [plan.needs[1]] },
+      bindings: [shared],
+      organizationId: "org-a",
+    });
+    expect(missing.resolutions[0].reasonCode).toBe("NO_SHARED_BINDING");
+  });
+
+  it("rejects organization-wildcard shared bindings", () => {
+    const resolved = resolveContextSources({
+      plan: { ...plan, needs: [plan.needs[0]] },
+      bindings: [binding({
+        organizationId: "*",
+        rolePackId: "*",
+        bindingScope: "enterprise_shared",
+      })],
+      organizationId: "org-a",
+    });
+    expect(resolved.resolutions[0].reasonCode).toBe("NO_BINDING");
   });
 
   it("fails readiness when a healthy binding returns no usable Context", () => {

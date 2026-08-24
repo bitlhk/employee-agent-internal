@@ -8,6 +8,7 @@ function binding(resourceRef: string, providerType: ContextSourceBindingV1["prov
     bindingId: "ctxb-customer",
     organizationId: "org-a",
     rolePackId: "linggan-bank.wealth-manager",
+    bindingScope: "role_pack",
     logicalAssetId: "customer_profile",
     contextType: "business_data",
     providerType,

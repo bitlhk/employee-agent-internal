@@ -52,6 +52,7 @@ export type ContextReceiptV1 = {
       bindingId?: string;
       providerType?: "llamaindex" | "mcp" | "api";
       resourceRefFingerprint?: string;
+      candidateBindingFingerprint?: string;
     }>;
     businessData: Array<{
       sourceSystem: string;
@@ -73,6 +74,14 @@ export type ContextReceiptV1 = {
       asOf?: string;
       usageType: "preference" | "relationship_observation" | "procedure" | "inference" | "work_state";
       assurance: "REFERENCE_ONLY";
+      purposeId?: string;
+      visibilityClass?: import("./memory-purpose").GovernedMemoryVisibilityV1;
+      subjectId?: string;
+      logicalAssetId?: string;
+      bindingId?: string;
+      providerType?: "llamaindex" | "mcp" | "api";
+      resourceRefFingerprint?: string;
+      candidateBindingFingerprint?: string;
     }>;
     capabilities: Array<{
       capabilityId: string;

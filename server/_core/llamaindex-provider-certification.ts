@@ -139,6 +139,7 @@ export function evaluateLlamaIndexContextContract(input: {
       bindingId: "provider-certification",
       organizationId: "certification",
       rolePackId: input.goldenSet.rolePackId,
+      bindingScope: "role_pack",
       logicalAssetId,
       contextType: "knowledge",
       providerType: "llamaindex",

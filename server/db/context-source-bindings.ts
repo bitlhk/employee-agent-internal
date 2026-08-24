@@ -8,6 +8,10 @@ import {
   type InsertContextSourceBinding,
 } from "../../drizzle/schema";
 import type { ContextSourceBindingV1 } from "../../shared/context-resolution";
+import {
+  assertSharedBindingPromotionGate,
+  type SharedBindingPromotionValidationV1,
+} from "../_core/context-resolution/shared-binding-promotion-gate";
 import { getDb } from "./connection";
 
 async function database() {
@@ -22,6 +26,7 @@ export function contextSourceBindingContract(row: ContextSourceBinding): Context
     bindingId: row.bindingId,
     organizationId: row.organizationId,
     rolePackId: row.rolePackId,
+    bindingScope: row.bindingScope,
     logicalAssetId: row.logicalAssetId,
     contextType: row.contextType,
     providerType: row.providerType,
@@ -42,16 +47,24 @@ export async function listContextSourceBindingContracts(input: {
   const db = await database();
   const rows = await db.select().from(contextSourceBindings).where(and(
     inArray(contextSourceBindings.organizationId, [input.organizationId, "*"]),
-    eq(contextSourceBindings.rolePackId, input.rolePackId),
+    inArray(contextSourceBindings.rolePackId, [input.rolePackId, "*"]),
     input.stage ? eq(contextSourceBindings.stage, input.stage) : undefined,
   ));
   return rows.map(contextSourceBindingContract);
 }
 
 export async function upsertContextSourceBinding(input: InsertContextSourceBinding): Promise<ContextSourceBinding> {
+  const bindingScope = input.bindingScope || "role_pack";
+  if (bindingScope === "enterprise_shared" && (input.rolePackId !== "*" || input.organizationId === "*")) {
+    throw new Error("Enterprise-shared Context binding requires rolePackId=* and a concrete organization");
+  }
+  if (bindingScope === "role_pack" && input.rolePackId === "*") {
+    throw new Error("Role-pack Context binding requires a concrete Role Pack");
+  }
   const db = await database();
-  await db.insert(contextSourceBindings).values(input).onDuplicateKeyUpdate({
+  await db.insert(contextSourceBindings).values({ ...input, bindingScope }).onDuplicateKeyUpdate({
     set: {
+      bindingScope,
       providerType: input.providerType,
       resourceRef: input.resourceRef,
       capabilitiesJson: input.capabilitiesJson,
@@ -92,7 +105,8 @@ export async function promoteShadowContextSourceBinding(input: {
 
 export async function promoteShadowContextSourceBindings(input: {
   bindings: Array<{ shadowBindingId: string; productionBindingId: string }>;
-  verifiedReleaseId: string;
+  verifiedReleaseId?: string;
+  sharedValidation?: SharedBindingPromotionValidationV1;
   actor: string;
   promotionId?: string;
 }): Promise<ContextSourceBinding[]> {
@@ -106,6 +120,9 @@ export async function promoteShadowContextSourceBindings(input: {
       eq(contextSourceBindings.status, "active"),
     ));
     if (shadows.length !== shadowIds.length) throw new Error("Active shadow Context binding set is incomplete");
+    const bindingScopes = new Set(shadows.map(row => row.bindingScope));
+    if (bindingScopes.size !== 1) throw new Error("Atomic Context binding promotion cannot mix Binding scopes");
+    const sharedPromotion = shadows[0].bindingScope === "enterprise_shared";
     const rolePackIds = new Set(shadows.map((row) => row.rolePackId));
     const organizationIds = new Set(shadows.map((row) => row.organizationId));
     if (rolePackIds.size !== 1 || organizationIds.size !== 1) {
@@ -113,18 +130,44 @@ export async function promoteShadowContextSourceBindings(input: {
     }
     const rolePackId = shadows[0].rolePackId;
     const organizationId = shadows[0].organizationId;
-    const [release] = await tx.select().from(rolePackReleases).where(and(
-      eq(rolePackReleases.releaseId, input.verifiedReleaseId),
-      eq(rolePackReleases.rolePackId, rolePackId),
-      eq(rolePackReleases.status, "verified"),
-    )).limit(1);
-    if (!release || release.verificationLevel === "contract") {
-      throw new Error("Shadow Context binding requires a Golden Task verified Role Pack release");
+    let releaseReference: string;
+    let validationEvidence: Record<string, unknown> | null = null;
+    let affectedRolePackIds = [rolePackId];
+    if (sharedPromotion) {
+      if (rolePackId !== "*" || organizationId === "*") throw new Error("Invalid enterprise-shared Binding scope");
+      const gate = assertSharedBindingPromotionGate(
+        input.sharedValidation,
+        shadows.map(contextSourceBindingContract),
+      );
+      for (const roleValidation of gate.normalized.roleValidations) {
+        const [release] = await tx.select().from(rolePackReleases).where(and(
+          eq(rolePackReleases.releaseId, roleValidation.verifiedReleaseId),
+          eq(rolePackReleases.rolePackId, roleValidation.rolePackId),
+          eq(rolePackReleases.status, "verified"),
+        )).limit(1);
+        if (!release || release.verificationLevel === "contract") {
+          throw new Error("Shared Context binding requires Golden Task verified releases for every affected Role Pack");
+        }
+      }
+      releaseReference = `shared:${gate.validationFingerprint}`;
+      validationEvidence = gate.normalized as unknown as Record<string, unknown>;
+      affectedRolePackIds = gate.normalized.roleValidations.map(item => item.rolePackId);
+    } else {
+      if (!input.verifiedReleaseId) throw new Error("Role-pack Context binding promotion requires verifiedReleaseId");
+      const [release] = await tx.select().from(rolePackReleases).where(and(
+        eq(rolePackReleases.releaseId, input.verifiedReleaseId),
+        eq(rolePackReleases.rolePackId, rolePackId),
+        eq(rolePackReleases.status, "verified"),
+      )).limit(1);
+      if (!release || release.verificationLevel === "contract") {
+        throw new Error("Shadow Context binding requires a Golden Task verified Role Pack release");
+      }
+      releaseReference = release.releaseId;
     }
     const promotedLogicalAssets = shadows.map((row) => row.logicalAssetId);
     const previousProduction = await tx.select().from(contextSourceBindings).where(and(
       eq(contextSourceBindings.organizationId, organizationId),
-      eq(contextSourceBindings.rolePackId, rolePackId),
+      inArray(contextSourceBindings.rolePackId, sharedPromotion ? ["*", ...affectedRolePackIds] : [rolePackId]),
       eq(contextSourceBindings.stage, "production"),
       inArray(contextSourceBindings.logicalAssetId, promotedLogicalAssets),
     ));
@@ -136,6 +179,7 @@ export async function promoteShadowContextSourceBindings(input: {
         bindingId: productionBindingId,
         organizationId: shadow.organizationId,
         rolePackId: shadow.rolePackId,
+        bindingScope: shadow.bindingScope,
         logicalAssetId: shadow.logicalAssetId,
         contextType: shadow.contextType,
         providerType: shadow.providerType,
@@ -144,24 +188,34 @@ export async function promoteShadowContextSourceBindings(input: {
         bindingVersion: shadow.bindingVersion,
         stage: "production",
         status: "active",
-        verifiedReleaseId: release.releaseId,
+        verifiedReleaseId: releaseReference,
         createdBy: input.actor,
         updatedBy: input.actor,
       }).onDuplicateKeyUpdate({
         set: {
+          bindingScope: shadow.bindingScope,
           providerType: shadow.providerType,
           resourceRef: shadow.resourceRef,
           capabilitiesJson: shadow.capabilitiesJson,
           bindingVersion: shadow.bindingVersion,
           status: "active",
-          verifiedReleaseId: release.releaseId,
+          verifiedReleaseId: releaseReference,
           updatedBy: input.actor,
         },
       });
     }
+    if (sharedPromotion) {
+      await tx.delete(contextSourceBindings).where(and(
+        eq(contextSourceBindings.organizationId, organizationId),
+        inArray(contextSourceBindings.rolePackId, affectedRolePackIds),
+        eq(contextSourceBindings.bindingScope, "role_pack"),
+        eq(contextSourceBindings.stage, "production"),
+        inArray(contextSourceBindings.logicalAssetId, promotedLogicalAssets),
+      ));
+    }
     await tx.update(contextSourceBindings).set({
       status: "disabled",
-      verifiedReleaseId: release.releaseId,
+      verifiedReleaseId: releaseReference,
       updatedBy: input.actor,
     }).where(inArray(contextSourceBindings.bindingId, shadowIds));
     const productionIds = input.bindings.map((item) => item.productionBindingId);
@@ -170,16 +224,17 @@ export async function promoteShadowContextSourceBindings(input: {
       eq(contextSourceBindings.stage, "production"),
       eq(contextSourceBindings.status, "active"),
     ));
-    if (production.length !== productionIds.length || production.some((row) => row.verifiedReleaseId !== release.releaseId)) {
+    if (production.length !== productionIds.length || production.some((row) => row.verifiedReleaseId !== releaseReference)) {
       throw new Error("Context binding promotion failed");
     }
     await tx.insert(contextSourceBindingPromotions).values({
       promotionId: input.promotionId || `ctxp_${randomUUID().replace(/-/g, "")}`,
       organizationId,
       rolePackId,
-      verifiedReleaseId: release.releaseId,
+      verifiedReleaseId: releaseReference,
       previousSnapshotJson: previousProduction.map(contextSourceBindingContract),
       promotedSnapshotJson: production.map(contextSourceBindingContract),
+      validationEvidenceJson: validationEvidence,
       status: "active",
       createdBy: input.actor,
     });
@@ -188,7 +243,7 @@ export async function promoteShadowContextSourceBindings(input: {
 }
 
 function snapshotKey(binding: ContextSourceBindingV1): string {
-  return `${binding.logicalAssetId}|${binding.contextType}`;
+  return `${binding.organizationId}|${binding.bindingScope || "role_pack"}|${binding.rolePackId}|${binding.logicalAssetId}|${binding.contextType}|${binding.bindingId}`;
 }
 
 function comparableSnapshot(bindings: ContextSourceBindingV1[]): string {
@@ -197,6 +252,7 @@ function comparableSnapshot(bindings: ContextSourceBindingV1[]): string {
       bindingId: binding.bindingId,
       organizationId: binding.organizationId,
       rolePackId: binding.rolePackId,
+      bindingScope: binding.bindingScope || "role_pack",
       logicalAssetId: binding.logicalAssetId,
       contextType: binding.contextType,
       providerType: binding.providerType,
@@ -223,27 +279,26 @@ export async function rollbackContextSourceBindingPromotion(input: {
     if (!promotion) throw new Error("Active Context binding promotion not found");
     const previous = promotion.previousSnapshotJson as ContextSourceBindingV1[];
     const promoted = promotion.promotedSnapshotJson as ContextSourceBindingV1[];
-    const logicalAssets = promoted.map((binding) => binding.logicalAssetId);
+    const bindingIds = [...new Set([...previous, ...promoted].map(binding => binding.bindingId))];
     const currentRows = await tx.select().from(contextSourceBindings).where(and(
       eq(contextSourceBindings.organizationId, promotion.organizationId),
-      eq(contextSourceBindings.rolePackId, promotion.rolePackId),
       eq(contextSourceBindings.stage, "production"),
-      inArray(contextSourceBindings.logicalAssetId, logicalAssets),
+      inArray(contextSourceBindings.bindingId, bindingIds),
     ));
     if (comparableSnapshot(currentRows.map(contextSourceBindingContract)) !== comparableSnapshot(promoted)) {
       throw new Error("Production Context bindings changed after promotion; rollback refused");
     }
     await tx.delete(contextSourceBindings).where(and(
       eq(contextSourceBindings.organizationId, promotion.organizationId),
-      eq(contextSourceBindings.rolePackId, promotion.rolePackId),
       eq(contextSourceBindings.stage, "production"),
-      inArray(contextSourceBindings.logicalAssetId, logicalAssets),
+      inArray(contextSourceBindings.bindingId, bindingIds),
     ));
     for (const binding of previous) {
       await tx.insert(contextSourceBindings).values({
         bindingId: binding.bindingId,
         organizationId: binding.organizationId,
         rolePackId: binding.rolePackId,
+        bindingScope: binding.bindingScope || "role_pack",
         logicalAssetId: binding.logicalAssetId,
         contextType: binding.contextType,
         providerType: binding.providerType,
@@ -265,9 +320,8 @@ export async function rollbackContextSourceBindingPromotion(input: {
     if (!previous.length) return [];
     return tx.select().from(contextSourceBindings).where(and(
       eq(contextSourceBindings.organizationId, promotion.organizationId),
-      eq(contextSourceBindings.rolePackId, promotion.rolePackId),
       eq(contextSourceBindings.stage, "production"),
-      inArray(contextSourceBindings.logicalAssetId, previous.map((binding) => binding.logicalAssetId)),
+      inArray(contextSourceBindings.bindingId, previous.map(binding => binding.bindingId)),
     ));
   });
 }

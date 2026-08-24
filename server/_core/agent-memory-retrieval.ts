@@ -1,9 +1,15 @@
 import {
   getAgentMemoryMode,
   listAgentMemories,
+  listAgentMemoriesForPurpose,
   markAgentMemoriesUsed,
   type AgentMemoryRecord,
 } from "../db";
+import {
+  MEMORY_PURPOSE_FILTER_EVIDENCE_SCHEMA,
+  type MemoryPurposeFilterEvidenceV1,
+  type MemoryRetrievalScopeV1,
+} from "../../shared/memory-purpose";
 import { observeMemoryRetrieval } from "./observability/metrics";
 import { governanceFingerprint } from "./governance/contracts";
 
@@ -20,6 +26,9 @@ export type SelectedAgentMemoryRef = {
   sourceType: AgentMemoryRecord["source"];
   asOf: string;
   usageType: "preference" | "relationship_observation" | "procedure" | "inference";
+  purposeId?: string;
+  visibilityClass?: AgentMemoryRecord["visibilityClass"];
+  subjectId?: string;
 };
 
 function memoryUsageType(kind: AgentMemoryRecord["kind"]): SelectedAgentMemoryRef["usageType"] {
@@ -42,6 +51,8 @@ function memoryRef(item: AgentMemoryRecord): SelectedAgentMemoryRef {
     sourceType: item.source,
     asOf: new Date(item.updatedAt).toISOString(),
     usageType: memoryUsageType(item.kind),
+    ...(item.visibilityClass ? { visibilityClass: item.visibilityClass } : {}),
+    ...(item.subjectId ? { subjectId: item.subjectId } : {}),
   };
 }
 
@@ -166,6 +177,79 @@ export async function buildRelevantAgentMemoryContext(input: {
       selectedIds,
       selectedRefs: relevant.map(memoryRef),
       activeCount: memories.length,
+    };
+  } catch (error) {
+    observeMemoryRetrieval({ outcome: "error", durationMs: Date.now() - startedAt });
+    throw error;
+  }
+}
+
+export async function buildPurposeScopedRelevantAgentMemoryContext(input: {
+  adoptionId: number;
+  query: string;
+  scope: MemoryRetrievalScopeV1;
+}): Promise<{
+  context: string;
+  selectedIds: number[];
+  selectedRefs: SelectedAgentMemoryRef[];
+  activeCount: number;
+  purposeFilter: MemoryPurposeFilterEvidenceV1;
+}> {
+  const startedAt = Date.now();
+  const enabled = !/^(0|false|no|off)$/i.test(String(process.env.EA_MANAGED_MEMORY_ENABLED || "true"));
+  const emptyEvidence = (candidateRecordCount = 0): MemoryPurposeFilterEvidenceV1 => {
+    const body = {
+      schema: MEMORY_PURPOSE_FILTER_EVIDENCE_SCHEMA,
+      requestedPurposeId: input.scope.purposeId,
+      requestedPurpose: input.scope.requestedPurpose,
+      appliedPurposeFilter: true as const,
+      scopeVersion: "1",
+      candidateRecordCount,
+      filteredRecordCount: candidateRecordCount,
+      eligibleRecordCount: 0,
+      returnedRecordCount: 0,
+    };
+    return { ...body, filterFingerprint: governanceFingerprint(body) };
+  };
+  if (!enabled || await getAgentMemoryMode(input.adoptionId) === "off") {
+    observeMemoryRetrieval({ outcome: "disabled", durationMs: Date.now() - startedAt });
+    return { context: "", selectedIds: [], selectedRefs: [], activeCount: 0, purposeFilter: emptyEvidence() };
+  }
+  try {
+    const filtered = await listAgentMemoriesForPurpose({ scope: input.scope, statuses: ["active"], limit: 1_000 });
+    const coreIds = selectCoreAgentMemories(filtered.memories).map(item => item.id);
+    const relevant = selectRelevantAgentMemories({ query: input.query, memories: filtered.memories, excludeIds: coreIds });
+    const selectedIds = relevant.map(item => item.id);
+    for (const memory of relevant) {
+      void markAgentMemoriesUsed({
+        userId: memory.userId,
+        adoptId: memory.adoptId,
+        memoryIds: [memory.id],
+      }).catch(() => {});
+    }
+    const evidenceBody = {
+      schema: MEMORY_PURPOSE_FILTER_EVIDENCE_SCHEMA,
+      requestedPurposeId: input.scope.purposeId,
+      requestedPurpose: input.scope.requestedPurpose,
+      appliedPurposeFilter: true as const,
+      scopeVersion: "1",
+      candidateRecordCount: filtered.candidateRecordCount,
+      filteredRecordCount: filtered.filteredRecordCount,
+      eligibleRecordCount: filtered.memories.length,
+      returnedRecordCount: relevant.length,
+    };
+    const purposeFilter = { ...evidenceBody, filterFingerprint: governanceFingerprint(evidenceBody) };
+    observeMemoryRetrieval({
+      outcome: selectedIds.length ? "selected" : "empty",
+      durationMs: Date.now() - startedAt,
+      selectedCount: selectedIds.length,
+    });
+    return {
+      context: renderRelevantAgentMemoryContext(relevant),
+      selectedIds,
+      selectedRefs: relevant.map(item => ({ ...memoryRef(item), purposeId: input.scope.purposeId })),
+      activeCount: filtered.memories.length,
+      purposeFilter,
     };
   } catch (error) {
     observeMemoryRetrieval({ outcome: "error", durationMs: Date.now() - startedAt });

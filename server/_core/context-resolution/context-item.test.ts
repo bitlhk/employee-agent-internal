@@ -17,6 +17,7 @@ describe("ContextItemV1", () => {
       bindingId: "ctxb-policy",
       organizationId: "org-a",
       rolePackId: "linggan-bank.wealth-manager",
+      bindingScope: "role_pack",
       logicalAssetId: need.logicalAssetId,
       contextType: need.contextType,
       providerType: "llamaindex",

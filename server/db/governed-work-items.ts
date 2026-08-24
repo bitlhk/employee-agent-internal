@@ -7,6 +7,10 @@ import {
   type InsertGovernedWorkItem,
 } from "../../drizzle/schema";
 import type { GovernedWorkItemStatusV1, WorkExecutionOperationV1 } from "../../shared/work-continuity";
+import {
+  isPurposeScopedRecordVisible,
+  type MemoryRetrievalScopeV1,
+} from "../../shared/memory-purpose";
 import { getDb } from "./connection";
 
 async function database() {
@@ -31,6 +35,18 @@ export type GovernedWorkScope = {
 
 export async function createGovernedWorkItemDrafts(inputs: InsertGovernedWorkItem[]) {
   if (!inputs.length) return [];
+  for (const input of inputs) {
+    const purposeIds = Array.isArray(input.purposeScopeJson) ? input.purposeScopeJson.map(String).filter(Boolean) : [];
+    const governedScope = Boolean(
+      input.visibilityClass
+      || purposeIds.length
+      || input.subjectId
+      || input.scopeProvenanceJson,
+    );
+    if (governedScope && (!purposeIds.length || !input.scopeProvenanceJson)) {
+      throw new Error("PURPOSE_SCOPE_INCOMPLETE");
+    }
+  }
   const db = await database();
   return db.transaction(async tx => {
     await tx.insert(governedWorkItems).values(inputs);
@@ -62,6 +78,38 @@ export async function listGovernedWorkItems(input: GovernedWorkScope & {
     ...(statuses ? [inArray(governedWorkItems.status, statuses)] : []),
   )).orderBy(desc(governedWorkItems.updatedAt), desc(governedWorkItems.id))
     .limit(Math.max(1, Math.min(input.limit || 100, 200)));
+}
+
+export async function listGovernedWorkItemsForPurpose(input: {
+  scope: MemoryRetrievalScopeV1;
+  statuses?: GovernedWorkItemStatusV1[];
+  limit?: number;
+}): Promise<{
+  items: GovernedWorkItem[];
+  candidateRecordCount: number;
+  filteredRecordCount: number;
+}> {
+  const statuses = input.statuses?.length ? input.statuses : undefined;
+  const candidates = await (await database()).select().from(governedWorkItems).where(and(
+    eq(governedWorkItems.organizationId, input.scope.organizationId),
+    ...(statuses ? [inArray(governedWorkItems.status, statuses)] : []),
+  )).orderBy(desc(governedWorkItems.updatedAt), desc(governedWorkItems.id))
+    .limit(Math.max(1, Math.min(input.limit || 500, 1_000)));
+  const items = candidates.filter(item => isPurposeScopedRecordVisible({
+    organizationId: item.organizationId,
+    userId: item.userId,
+    adoptionId: item.adoptId,
+    roleTemplate: item.roleTemplate,
+    visibilityClass: item.visibilityClass,
+    purposeIds: Array.isArray(item.purposeScopeJson) ? item.purposeScopeJson : [],
+    subjectId: item.subjectId,
+    purposeScopeVersion: item.purposeScopeVersion,
+  }, input.scope));
+  return {
+    items,
+    candidateRecordCount: candidates.length,
+    filteredRecordCount: candidates.length - items.length,
+  };
 }
 
 export async function listGovernedWorkItemExecutions(scope: GovernedWorkScope, workItemIds: string[]) {

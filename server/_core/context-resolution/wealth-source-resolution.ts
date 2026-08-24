@@ -31,6 +31,8 @@ export type WealthTaskContextSnapshot = {
 export type ContextBindingEvidence = {
   logicalAssetId: string;
   bindingId: string;
+  bindingScope: "role_pack" | "enterprise_shared";
+  bindingVersion: string;
   providerType: "llamaindex" | "mcp" | "api";
   resourceRefFingerprint: string;
 };
@@ -39,6 +41,8 @@ export function contextBindingEvidence(binding: ContextSourceBindingV1 | null): 
   return binding ? {
     logicalAssetId: binding.logicalAssetId,
     bindingId: binding.bindingId,
+    bindingScope: binding.bindingScope || "role_pack",
+    bindingVersion: binding.bindingVersion,
     providerType: binding.providerType,
     resourceRefFingerprint: createHash("sha256").update(binding.resourceRef).digest("hex"),
   } : null;
@@ -60,8 +64,12 @@ export function contextResolutionEvidence(
       ...(resolution.reasonCode ? { reasonCode: resolution.reasonCode } : {}),
       ...(bindingEvidence ? {
         bindingId: bindingEvidence.bindingId,
+        bindingScope: bindingEvidence.bindingScope,
+        bindingVersion: bindingEvidence.bindingVersion,
         providerType: bindingEvidence.providerType,
         resourceRefFingerprint: bindingEvidence.resourceRefFingerprint,
+        rolePackId: available[0].rolePackId,
+        purpose: resolution.need.purpose,
       } : {}),
     });
   }

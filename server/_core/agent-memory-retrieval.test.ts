@@ -8,6 +8,8 @@ import {
 
 const memory = (id: number, content: string, patch: Partial<AgentMemoryRecord> = {}): AgentMemoryRecord => ({
   id, userId: 1, adoptId: "lgj-test", roleTemplate: "wealth-manager", scope: "role",
+  organizationId: "org-test", visibilityClass: "principal_private",
+  purposeIds: ["wealth_advisory"], purposeScopeVersion: "1", subjectId: null, scopeProvenance: null,
   kind: "entity", status: "active", canonicalKey: `memory.${id}`, content,
   source: "automatic", confidence: 80, evidenceCount: 2, version: 1,
   lastObservedAt: new Date().toISOString(), lastUsedAt: null, expiresAt: null,

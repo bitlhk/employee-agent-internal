@@ -287,6 +287,7 @@ export const contextSourceBindings = mysqlTable("context_source_bindings", {
   bindingId: varchar("binding_id", { length: 128 }).notNull(),
   organizationId: varchar("organization_id", { length: 128 }).notNull(),
   rolePackId: varchar("role_pack_id", { length: 128 }).notNull(),
+  bindingScope: mysqlEnum("binding_scope", ["role_pack", "enterprise_shared"]).default("role_pack").notNull(),
   logicalAssetId: varchar("logical_asset_id", { length: 128 }).notNull(),
   contextType: mysqlEnum("context_type", ["knowledge", "business_data", "memory"]).notNull(),
   providerType: mysqlEnum("provider_type", ["llamaindex", "mcp", "api"]).notNull(),
@@ -315,6 +316,12 @@ export const contextSourceBindings = mysqlTable("context_source_bindings", {
     table.stage,
     table.status,
   ),
+  scopeStageStatusIdx: index("idx_context_source_bindings_scope_stage_status").on(
+    table.organizationId,
+    table.bindingScope,
+    table.stage,
+    table.status,
+  ),
 }));
 
 export type ContextSourceBinding = typeof contextSourceBindings.$inferSelect;
@@ -330,6 +337,7 @@ export const contextSourceBindingPromotions = mysqlTable("context_source_binding
   verifiedReleaseId: varchar("verified_release_id", { length: 128 }).notNull(),
   previousSnapshotJson: json("previous_snapshot_json").$type<ContextSourceBindingV1Snapshot[]>().notNull(),
   promotedSnapshotJson: json("promoted_snapshot_json").$type<ContextSourceBindingV1Snapshot[]>().notNull(),
+  validationEvidenceJson: json("validation_evidence_json").$type<Record<string, unknown> | null>(),
   status: mysqlEnum("status", ["active", "rolled_back"]).default("active").notNull(),
   createdBy: varchar("created_by", { length: 128 }).notNull(),
   rolledBackBy: varchar("rolled_back_by", { length: 128 }),
@@ -348,6 +356,7 @@ type ContextSourceBindingV1Snapshot = {
   bindingId: string;
   organizationId: string;
   rolePackId: string;
+  bindingScope: "role_pack" | "enterprise_shared";
   logicalAssetId: string;
   contextType: "knowledge" | "business_data" | "memory";
   providerType: "llamaindex" | "mcp" | "api";
@@ -1337,6 +1346,11 @@ export const governedWorkItems = mysqlTable("governed_work_items", {
   userId: int("user_id").notNull(),
   adoptId: varchar("adopt_id", { length: 64 }).notNull(),
   roleTemplate: varchar("role_template", { length: 64 }).notNull(),
+  visibilityClass: mysqlEnum("visibility_class", ["principal_private", "role_private", "enterprise_shared"]).default("principal_private").notNull(),
+  purposeScopeJson: json("purpose_scope_json").$type<string[] | null>(),
+  purposeScopeVersion: varchar("purpose_scope_version", { length: 32 }).default("1").notNull(),
+  subjectId: varchar("subject_id", { length: 128 }),
+  scopeProvenanceJson: json("scope_provenance_json").$type<Record<string, unknown> | null>(),
   type: mysqlEnum("type", ["decision", "action_item", "open_question"]).notNull(),
   subject: varchar("subject", { length: 240 }).notNull(),
   description: text("description"),
@@ -1358,6 +1372,7 @@ export const governedWorkItems = mysqlTable("governed_work_items", {
 }, table => ({
   workItemIdUnique: uniqueIndex("uk_governed_work_item_id").on(table.workItemId),
   scopeStatusIdx: index("idx_governed_work_item_scope_status").on(table.organizationId, table.userId, table.adoptId, table.status),
+  purposeScopeIdx: index("idx_governed_work_item_purpose_scope").on(table.organizationId, table.visibilityClass, table.roleTemplate, table.status),
   sourceIdx: index("idx_governed_work_item_source").on(table.organizationId, table.sourceId),
   dueIdx: index("idx_governed_work_item_due").on(table.adoptId, table.status, table.dueAt),
 }));
@@ -1787,6 +1802,12 @@ export const agentMemoryItems = mysqlTable("agent_memory_items", {
   userId:             int("user_id").notNull(),
   adoptId:            varchar("adopt_id", { length: 64 }).notNull(),
   roleTemplate:       varchar("role_template", { length: 64 }).notNull(),
+  organizationId:     varchar("organization_id", { length: 128 }),
+  visibilityClass:    mysqlEnum("visibility_class", ["principal_private", "role_private", "enterprise_shared"]).default("principal_private").notNull(),
+  purposeScopeJson:   json("purpose_scope_json").$type<string[] | null>(),
+  purposeScopeVersion:varchar("purpose_scope_version", { length: 32 }).default("1").notNull(),
+  subjectId:          varchar("subject_id", { length: 128 }),
+  scopeProvenanceJson:json("scope_provenance_json").$type<Record<string, unknown> | null>(),
   scope:              mysqlEnum("scope", ["role", "user"]).default("role").notNull(),
   kind:               mysqlEnum("kind", ["preference", "instruction", "entity", "procedure"]).default("preference").notNull(),
   status:             mysqlEnum("status", ["candidate", "active", "superseded", "forgotten", "rejected", "expired"]).default("candidate").notNull(),
@@ -1807,6 +1828,7 @@ export const agentMemoryItems = mysqlTable("agent_memory_items", {
   adoptStatusIdx: index("idx_agent_memory_adopt_status").on(table.adoptId, table.status, table.updatedAt),
   userStatusIdx: index("idx_agent_memory_user_status").on(table.userId, table.status, table.updatedAt),
   roleKindIdx: index("idx_agent_memory_role_kind").on(table.roleTemplate, table.kind, table.status),
+  purposeScopeIdx: index("idx_agent_memory_purpose_scope").on(table.organizationId, table.visibilityClass, table.roleTemplate, table.status),
 }));
 
 export type AgentMemoryItem = typeof agentMemoryItems.$inferSelect;

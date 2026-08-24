@@ -41,6 +41,7 @@ export type TaskContextPack = {
       bindingId?: string;
       providerType?: "llamaindex" | "mcp" | "api";
       resourceRefFingerprint?: string;
+      candidateBindingFingerprint?: string;
     }>;
     eligibilityFingerprint: string;
   };

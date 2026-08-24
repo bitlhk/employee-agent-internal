@@ -23,6 +23,10 @@ export type GovernedWorkItemV1 = {
   userId: number;
   adoptionId: string;
   roleTemplate: string;
+  visibilityClass: import("./memory-purpose").GovernedMemoryVisibilityV1;
+  purposeIds: string[];
+  purposeScopeVersion: string;
+  subjectId: string | null;
   type: GovernedWorkItemTypeV1;
   subject: string;
   description?: string | null;
