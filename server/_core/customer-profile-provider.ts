@@ -28,6 +28,7 @@ export type CustomerProfileProviderReasonCodeV1 =
   | "CUSTOMER_PROFILE_SOURCE_FINGERPRINT_INVALID"
   | "CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"
   | "CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY"
+  | "CUSTOMER_PROFILE_PROVIDER_NOT_DEMO_READY"
   | "CUSTOMER_PROFILE_OPTIONAL_FIELD_MISSING";
 
 export type CustomerProfileProviderInputV1 = {
@@ -40,6 +41,7 @@ export type CustomerProfileProviderInputV1 = {
   auditCaseScopeVerified?: boolean;
   auditCaseSubjectMatches?: boolean;
   sources: NormalizedCustomerProfileSourceV1[];
+  requiredAssuranceLevel?: "demo" | "production";
   now?: Date;
   root?: string;
 };
@@ -91,6 +93,9 @@ function sourceEvidence(sources: NormalizedCustomerProfileSourceV1[]) {
     sourceRecordRef: source.sourceRecordRef,
     asOf: source.asOf,
     productionReady: source.productionReady,
+    assuranceLevel:
+      source.assuranceLevel ||
+      (source.productionReady ? "production" : "candidate"),
     providerGapCount: source.providerGaps.length,
     resultFingerprint: source.resultFingerprint,
   }));
@@ -285,7 +290,15 @@ export function projectCustomerProfile(
       fieldPath =>
         !requiredPaths.includes(fieldPath) && !providedPaths.has(fieldPath)
     );
-  const unreadySource = input.sources.some(source => !source.productionReady);
+  const requiredAssuranceLevel = input.requiredAssuranceLevel || "production";
+  const unreadySource = input.sources.some(source => {
+    const assuranceLevel =
+      source.assuranceLevel ||
+      (source.productionReady ? "production" : "candidate");
+    return requiredAssuranceLevel === "production"
+      ? assuranceLevel !== "production" || !source.productionReady
+      : !["demo", "production"].includes(assuranceLevel);
+  });
   const reasonCodes: CustomerProfileProviderReasonCodeV1[] = [];
   if (conflicts.length) reasonCodes.push("CUSTOMER_PROFILE_FIELD_CONFLICT");
   if (invalidFields.some(field => field.endsWith(":resultFingerprint")))
@@ -297,7 +310,11 @@ export function projectCustomerProfile(
   if (missingRequiredFields.length)
     reasonCodes.push("CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING");
   if (unreadySource)
-    reasonCodes.push("CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY");
+    reasonCodes.push(
+      requiredAssuranceLevel === "production"
+        ? "CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY"
+        : "CUSTOMER_PROFILE_PROVIDER_NOT_DEMO_READY"
+    );
 
   const filteredFieldCount = Math.max(0, merged.size - projectedFields.length);
   if (reasonCodes.length) {

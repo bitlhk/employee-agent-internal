@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "ea.demo-insurance-customer-facts.v1",
+  "factsVersion": "1.0.0",
+  "status": "synthetic_demo",
+  "containsRealCustomerData": false,
+  "sourceSystem": "grace_demo_insurance_facts",
+  "businessAsOf": "2026-08-24T09:00:00.000Z",
+  "records": [
+    {
+      "subjectId": "1",
+      "renewalAt": "2026-09-08T00:00:00.000Z",
+      "renewalStatus": "due_soon",
+      "currentCoverageSummary": "Demo: compulsory traffic, vehicle damage and third-party liability coverage are active.",
+      "claimsRiskSummary": "Demo: no material claims escalation flag in the current synthetic period."
+    },
+    {
+      "subjectId": "2",
+      "renewalAt": "2026-09-18T00:00:00.000Z",
+      "renewalStatus": "due_soon",
+      "currentCoverageSummary": "Demo: compulsory traffic and third-party liability coverage are active; vehicle damage scope requires confirmation.",
+      "claimsRiskSummary": "Demo: one low-severity claim is recorded in the synthetic review window."
+    },
+    {
+      "subjectId": "3",
+      "renewalAt": "2026-10-03T00:00:00.000Z",
+      "renewalStatus": "active",
+      "currentCoverageSummary": "Demo: compulsory traffic, vehicle damage and third-party liability coverage are active.",
+      "claimsRiskSummary": "Demo: no material claims escalation flag in the current synthetic period."
+    },
+    {
+      "subjectId": "4",
+      "renewalAt": "2026-08-30T00:00:00.000Z",
+      "renewalStatus": "urgent_followup",
+      "currentCoverageSummary": "Demo: compulsory traffic and third-party liability coverage are active; renewal confirmation is pending.",
+      "claimsRiskSummary": "Demo: repeated minor claims require advisor verification before recommendation."
+    },
+    {
+      "subjectId": "5",
+      "renewalAt": "2026-11-12T00:00:00.000Z",
+      "renewalStatus": "active",
+      "currentCoverageSummary": "Demo: compulsory traffic, vehicle damage and third-party liability coverage are active.",
+      "claimsRiskSummary": "Demo: no material claims escalation flag in the current synthetic period."
+    },
+    {
+      "subjectId": "6",
+      "renewalAt": "2026-09-25T00:00:00.000Z",
+      "renewalStatus": "due_soon",
+      "currentCoverageSummary": "Demo: compulsory traffic and vehicle damage coverage are active; third-party liability limit requires confirmation.",
+      "claimsRiskSummary": "Demo: one medium-severity synthetic claim requires manual review."
+    },
+    {
+      "subjectId": "7",
+      "renewalAt": "2026-12-06T00:00:00.000Z",
+      "renewalStatus": "active",
+      "currentCoverageSummary": "Demo: compulsory traffic, vehicle damage and third-party liability coverage are active.",
+      "claimsRiskSummary": "Demo: no material claims escalation flag in the current synthetic period."
+    },
+    {
+      "subjectId": "8",
+      "renewalAt": "2026-09-02T00:00:00.000Z",
+      "renewalStatus": "urgent_followup",
+      "currentCoverageSummary": "Demo: compulsory traffic coverage is active; commercial coverage renewal is pending.",
+      "claimsRiskSummary": "Demo: claim-history completeness requires advisor verification."
+    },
+    {
+      "subjectId": "9",
+      "renewalAt": "2026-10-20T00:00:00.000Z",
+      "renewalStatus": "active",
+      "currentCoverageSummary": "Demo: compulsory traffic, vehicle damage and third-party liability coverage are active.",
+      "claimsRiskSummary": "Demo: no material claims escalation flag in the current synthetic period."
+    },
+    {
+      "subjectId": "10",
+      "renewalAt": "2026-09-14T00:00:00.000Z",
+      "renewalStatus": "due_soon",
+      "currentCoverageSummary": "Demo: compulsory traffic and third-party liability coverage are active; additional coverage requires confirmation.",
+      "claimsRiskSummary": "Demo: one low-severity claim is recorded in the synthetic review window."
+    }
+  ]
+}

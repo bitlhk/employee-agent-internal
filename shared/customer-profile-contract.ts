@@ -249,6 +249,7 @@ export type CustomerProfileProjectionResultV1 = {
     sourceRecordRef: string;
     asOf: string;
     productionReady: boolean;
+    assuranceLevel: "candidate" | "demo" | "production";
     providerGapCount: number;
     resultFingerprint: string;
   }>;

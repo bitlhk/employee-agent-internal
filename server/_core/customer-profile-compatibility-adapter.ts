@@ -1,9 +1,11 @@
 import type { RuntimePrincipalV2 } from "./governance/contracts";
 import { principalFingerprint } from "./governance/contracts";
 import {
+  customerProfileSourceFingerprint,
   normalizeCustomerProfileSource,
   type NormalizedCustomerProfileSourceV1,
 } from "./customer-profile-source-adapters";
+import { loadDemoInsuranceCustomerFacts } from "./customer-profile-demo-facts";
 import {
   callInternalMcpTool,
   parseInternalMcpJsonResult,
@@ -103,18 +105,19 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
       sessionId: input.principal.sessionId,
     })
   );
+  const source = normalizeCustomerProfileSource({
+    sourceContractId: "wealth-assistant-customer-v2.1",
+    payload,
+    authorization: {
+      inScope,
+      organizationRef: input.principal.organizationId,
+      principalRef: principalFingerprint(input.principal),
+    },
+  });
+  source.assuranceLevel = "demo";
+  source.resultFingerprint = customerProfileSourceFingerprint(source);
   return {
-    sources: [
-      normalizeCustomerProfileSource({
-        sourceContractId: "wealth-assistant-customer-v2.1",
-        payload,
-        authorization: {
-          inScope,
-          organizationRef: input.principal.organizationId,
-          principalRef: principalFingerprint(input.principal),
-        },
-      }),
-    ],
+    sources: [source],
     principalAuthorized: true,
     subjectInScope: inScope,
     notes: [],
@@ -151,6 +154,7 @@ export async function loadInsuranceCustomerProfileCompatibilitySource(input: {
   principal: RuntimePrincipalV2;
   subjectId: string;
   callEnterpriseTool: CustomerProfileEnterpriseSourceCallerV1;
+  includeDemoFacts?: boolean;
 }): Promise<CustomerProfileCompatibilityLoadResultV1> {
   const requestedSubjectId = stableId(input.subjectId);
   if (!requestedSubjectId)
@@ -183,23 +187,38 @@ export async function loadInsuranceCustomerProfileCompatibilitySource(input: {
   if (safeName(payload.name) !== locatorName)
     throw new Error("CUSTOMER_PROFILE_LEGACY_LOCATOR_MISMATCH");
 
+  const legacy = normalizeCustomerProfileSource({
+    sourceContractId: "insurance-customer-profile-demo-v1",
+    payload,
+    authorization: {
+      inScope: true,
+      organizationRef: input.principal.organizationId,
+      principalRef: principalFingerprint(input.principal),
+    },
+  });
+  legacy.assuranceLevel = "demo";
+  legacy.resultFingerprint = customerProfileSourceFingerprint(legacy);
+  const sources = [legacy];
+  if (input.includeDemoFacts) {
+    const supplement = loadDemoInsuranceCustomerFacts({
+      subjectId: requestedSubjectId,
+      organizationRef: input.principal.organizationId,
+      principalRef: principalFingerprint(input.principal),
+    });
+    if (supplement) sources.push(supplement);
+  }
   return {
-    sources: [
-      normalizeCustomerProfileSource({
-        sourceContractId: "insurance-customer-profile-demo-v1",
-        payload,
-        authorization: {
-          inScope: true,
-          organizationRef: input.principal.organizationId,
-          principalRef: principalFingerprint(input.principal),
-        },
-      }),
-    ],
+    sources,
     principalAuthorized: true,
     subjectInScope: true,
     notes: [
       "legacy Insurance detail lookup was bound to a stable id selected from the governed Enterprise MCP result",
       "source remains Demo/Shadow and is not production ready",
+      ...(input.includeDemoFacts
+        ? [
+            "missing Insurance policy facts were supplied by a synthetic GRACE Demo contributor",
+          ]
+        : []),
     ],
   };
 }

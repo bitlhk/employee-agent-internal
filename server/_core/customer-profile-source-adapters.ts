@@ -22,6 +22,7 @@ export type NormalizedCustomerProfileSourceV1 = {
   asOf: string;
   observedAt: string;
   productionReady: boolean;
+  assuranceLevel?: "candidate" | "demo" | "production";
   providerGaps: string[];
   fields: NormalizedCustomerProfileFieldV1[];
   resultFingerprint: string;
@@ -293,6 +294,7 @@ export function normalizeCustomerProfileSource(input: {
     asOf,
     observedAt,
     productionReady: source.productionReady,
+    assuranceLevel: source.productionReady ? "production" : "candidate",
     providerGaps: [...source.providerGaps],
     fields,
     resultFingerprint: "",

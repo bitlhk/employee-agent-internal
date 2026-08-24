@@ -27,7 +27,7 @@ import {
 import { recordAuditBestEffort, auditRequest } from "./audit-events";
 
 const SERVICE_NAME = "customer-profile-provider";
-const SERVICE_VERSION = "1.1.0";
+const SERVICE_VERSION = "1.2.0";
 const TOOL_NAME = "get_governed_customer_profile";
 
 type JsonObject = Record<string, unknown>;
@@ -92,6 +92,15 @@ function shadowEnabled(): boolean {
   );
 }
 
+function demoFactsEnabled(): boolean {
+  return (
+    shadowEnabled() &&
+    String(process.env.EA_CUSTOMER_PROFILE_DEMO_FACTS_ENABLED || "")
+      .trim()
+      .toLowerCase() === "true"
+  );
+}
+
 function firstString(...values: unknown[]): string {
   for (const value of values) {
     const text = String(value ?? "").trim();
@@ -143,6 +152,10 @@ function remediationFor(reasonCodes: string[]): string[] {
   if (reasonCodes.includes("CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY"))
     remediation.push(
       "Complete source authorization, authoritative asOf and purpose-aware field projection before promotion."
+    );
+  if (reasonCodes.includes("CUSTOMER_PROFILE_PROVIDER_NOT_DEMO_READY"))
+    remediation.push(
+      "Provide a source explicitly approved for the isolated Demo assurance level."
     );
   if (reasonCodes.includes("CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"))
     remediation.push(
@@ -268,6 +281,11 @@ function textResult(
             source => source.sourceContractId
           ),
           sourceSystems: loaded.sources.map(source => source.sourceSystem),
+          assuranceLevels: loaded.sources.map(
+            source =>
+              source.assuranceLevel ||
+              (source.productionReady ? "production" : "candidate")
+          ),
           principalAuthorized: loaded.principalAuthorized,
           subjectInScope: loaded.subjectInScope,
           notes: loaded.notes.map(note => note.slice(0, 500)),
@@ -296,6 +314,7 @@ export const defaultCustomerProfileSourceLoader: CustomerProfileSourceLoaderV1 =
       return loadInsuranceCustomerProfileCompatibilitySource({
         principal: input.principal,
         subjectId: input.subjectId,
+        includeDemoFacts: demoFactsEnabled(),
         callEnterpriseTool: async call =>
           executeEnterpriseMcpGatewayTool({
             req: input.request as Request,
@@ -353,6 +372,7 @@ export async function executeCustomerProfileProviderTool(input: {
     principalAuthorized: loaded.principalAuthorized,
     subjectInScope: loaded.subjectInScope,
     sources: loaded.sources,
+    requiredAssuranceLevel: demoFactsEnabled() ? "demo" : "production",
   };
   return textResult(
     projectCustomerProfile(projectionInput),
@@ -467,6 +487,7 @@ export function registerCustomerProfileMcpRoutes(
       name: SERVICE_NAME,
       version: SERVICE_VERSION,
       mode: shadowEnabled() ? "shadow" : "disabled",
+      assuranceMode: demoFactsEnabled() ? "demo" : "production",
     });
   });
 

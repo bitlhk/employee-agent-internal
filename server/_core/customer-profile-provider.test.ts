@@ -162,6 +162,31 @@ describe("Customer Profile Provider", () => {
     });
   });
 
+  it("accepts Demo-assured sources only for an explicit Demo evaluation", () => {
+    const demoSource = completeSource({
+      productionReady: false,
+      assuranceLevel: "demo",
+    });
+    demoSource.resultFingerprint = customerProfileSourceFingerprint(demoSource);
+
+    const demo = projectCustomerProfile(
+      request({
+        sources: [demoSource],
+        requiredAssuranceLevel: "demo",
+      })
+    );
+    const production = projectCustomerProfile(
+      request({ sources: [demoSource] })
+    );
+
+    expect(demo.status).toBe("READY");
+    expect(demo.sourceEvidence[0]?.assuranceLevel).toBe("demo");
+    expect(production.status).toBe("BLOCKED");
+    expect(production.reasonCodes).toContain(
+      "CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY"
+    );
+  });
+
   it("blocks conflicting enterprise facts instead of selecting a winner", () => {
     const second = completeSource({
       sourceContractId: "enterprise-customer-secondary-v1",

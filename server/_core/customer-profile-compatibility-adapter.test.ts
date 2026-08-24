@@ -4,6 +4,8 @@ import {
   loadInsuranceCustomerProfileCompatibilitySource,
   type CustomerProfileEnterpriseSourceCallerV1,
 } from "./customer-profile-compatibility-adapter";
+import { projectCustomerProfile } from "./customer-profile-provider";
+import { principalFingerprint } from "./governance/contracts";
 
 const principal: RuntimePrincipalV2 = {
   userId: 22,
@@ -103,6 +105,57 @@ describe("Customer Profile compatibility adapter", () => {
         "insurance.protectionGaps",
       ])
     );
+  });
+
+  it("adds only the missing synthetic Demo facts when explicitly enabled", async () => {
+    const loaded = await loadInsuranceCustomerProfileCompatibilitySource({
+      principal,
+      subjectId: "1",
+      callEnterpriseTool: caller(),
+      includeDemoFacts: true,
+    });
+
+    expect(loaded.sources).toHaveLength(2);
+    expect(loaded.sources.map(source => source.sourceSystem)).toEqual([
+      "insurance_customer_profile",
+      "grace_demo_insurance_facts",
+    ]);
+    expect(
+      loaded.sources.every(source => source.assuranceLevel === "demo")
+    ).toBe(true);
+    expect(loaded.sources[1]?.fields.map(field => field.path).sort()).toEqual([
+      "insurance.claimsRiskSummary",
+      "insurance.currentCoverageSummary",
+      "insurance.renewalAt",
+      "insurance.renewalStatus",
+      "serviceScope.inScope",
+    ]);
+
+    const projection = projectCustomerProfile({
+      roleTemplate: "insurance-advisor",
+      taskId: "IA-GT-01",
+      requestedSubjectId: "1",
+      principalFingerprint: principalFingerprint(principal),
+      principalAuthorized: loaded.principalAuthorized,
+      subjectInScope: loaded.subjectInScope,
+      sources: loaded.sources,
+      requiredAssuranceLevel: "demo",
+    });
+    expect(projection.status).toBe("DEGRADED");
+    expect(projection.reasonCodes).toEqual([
+      "CUSTOMER_PROFILE_OPTIONAL_FIELD_MISSING",
+    ]);
+    expect(
+      projection.fields.find(field => field.path === "insurance.vehicleSummary")
+        ?.provenance.sourceSystem
+    ).toBe("insurance_customer_profile");
+    expect(
+      projection.fields.find(field => field.path === "insurance.renewalStatus")
+        ?.provenance.sourceSystem
+    ).toBe("grace_demo_insurance_facts");
+    expect(
+      projection.fields.some(field => field.path.startsWith("wealth."))
+    ).toBe(false);
   });
 
   it("does not use a display name as identity proof", async () => {
