@@ -56,14 +56,14 @@
       "rolePackId": "linggan-bank.wealth-manager",
       "verificationLevel": "controlled_scenario",
       "assetSetFingerprint": "853319cc5d9c3923896b7658e13b07504d2e1a479d6bf411d3ad7967c6f436d1",
-      "verifiedAt": "2026-08-20T23:11:51.000Z"
+      "verifiedAt": null
     },
     {
       "releaseId": "linggan-insurance.insurance-advisor@ce7637b867f38e08:ia-golden-task-v1",
       "rolePackId": "linggan-insurance.insurance-advisor",
       "verificationLevel": "controlled_scenario",
       "assetSetFingerprint": "ce7637b867f38e0872de99e481a5e87a7e966905da6d042a854b5cff9d5d26d6",
-      "verifiedAt": "2026-08-24T10:35:46.000Z"
+      "verifiedAt": null
     }
   ],
   "plans": [
@@ -78,5 +78,5 @@
       "planVersion": "1.0.0"
     }
   ],
-  "snapshotFingerprint": "e9991aaf6edc1b008ed32c026bf9e36412987bd9c58c0174ac59a498dbf4d7fc"
+  "snapshotFingerprint": "4221c898d33339b2335fb456d6c11f4aa73b4911922bfdf8ec8fdffa8f01499a"
 }

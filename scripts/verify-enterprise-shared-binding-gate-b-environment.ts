@@ -37,7 +37,7 @@ import { resolveEffectiveRoleAssets } from "../server/db/role-assets";
 import { runGovernedMemoryPurposeEnvironment } from "./verify-governed-memory-purpose-environment";
 
 const SNAPSHOT_PATH = "examples/insurance-advisor-reference-role-pack/eval/shared-binding-validation-snapshot.v1.json";
-const EXPECTED_SNAPSHOT = "e9991aaf6edc1b008ed32c026bf9e36412987bd9c58c0174ac59a498dbf4d7fc";
+const EXPECTED_SNAPSHOT = "4221c898d33339b2335fb456d6c11f4aa73b4911922bfdf8ec8fdffa8f01499a";
 const ORGANIZATION_ID = String(
   process.env.EA_DEMO_ORGANIZATION_ID || "org_linggan_finance",
 ).trim();
@@ -329,7 +329,7 @@ async function main() {
       rolePackId: release.rolePackId,
       verificationLevel: release.verificationLevel,
       assetSetFingerprint: release.assetSetFingerprint,
-      verifiedAt: release.verifiedAt?.toISOString() || null,
+      verifiedAt: null,
     })),
     plans: frozen.plans,
   });

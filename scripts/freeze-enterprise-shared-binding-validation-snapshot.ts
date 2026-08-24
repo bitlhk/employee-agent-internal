@@ -67,7 +67,7 @@ async function main() {
       rolePackId: release.rolePackId,
       verificationLevel: release.verificationLevel,
       assetSetFingerprint: release.assetSetFingerprint,
-      verifiedAt: release.verifiedAt?.toISOString() || null,
+      verifiedAt: null,
     })),
     plans: [
       {
