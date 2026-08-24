@@ -104,6 +104,51 @@ export function loadDemoInsuranceCustomerFacts(input: {
   return source;
 }
 
+export function buildDemoWealthCustomerFacts(input: {
+  subjectId: string;
+  observedAt?: string;
+}): NormalizedCustomerProfileSourceV1 {
+  const subjectId = String(input.subjectId || "").trim();
+  if (!subjectId) throw new Error("CUSTOMER_PROFILE_DEMO_FACTS_SUBJECT_INVALID");
+  const observedAt = input.observedAt || new Date().toISOString();
+  const asOf = "2026-08-24T09:00:00.000Z";
+  const sourceSystem = "grace_demo_wealth_facts";
+  const sourceRecordRef = `${sourceSystem}:subject-${subjectId}`;
+  const provenance = {
+    sourceSystem,
+    sourceRecordRef,
+    asOf,
+    observedAt,
+    mappingRuleVersion: "1.0.0",
+  };
+  const source: NormalizedCustomerProfileSourceV1 = {
+    sourceContractId: "grace-demo-wealth-facts-v1",
+    sourceSystem,
+    subjectId,
+    sourceRecordRef,
+    asOf,
+    observedAt,
+    productionReady: false,
+    assuranceLevel: "demo",
+    providerGaps: ["Synthetic Demo facts must never satisfy a Production assurance gate."],
+    fields: [
+      {
+        path: "subject.customerStatus",
+        value: "active_demo",
+        provenance,
+      },
+      {
+        path: "relationship.recentContactSummary",
+        value: "Demo: recent follow-up status requires advisor confirmation.",
+        provenance,
+      },
+    ],
+    resultFingerprint: "",
+  };
+  source.resultFingerprint = customerProfileSourceFingerprint(source);
+  return source;
+}
+
 export function resetDemoCustomerFactsCacheForTests(): void {
   cachedPack = null;
 }

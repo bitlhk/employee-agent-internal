@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { loadDemoInsuranceCustomerFacts } from "./customer-profile-demo-facts";
+import {
+  buildDemoWealthCustomerFacts,
+  loadDemoInsuranceCustomerFacts,
+} from "./customer-profile-demo-facts";
 import { customerProfileSourceFingerprint } from "./customer-profile-source-adapters";
 
 describe("Customer Profile Demo facts", () => {
@@ -39,5 +42,24 @@ describe("Customer Profile Demo facts", () => {
         principalRef: "principal-demo",
       })
     ).toBeNull();
+  });
+
+  it("adds only the minimum synthetic Wealth facts after subject resolution", () => {
+    const source = buildDemoWealthCustomerFacts({
+      subjectId: "CUST-DEMO-01",
+      observedAt: "2026-08-24T10:00:00.000Z",
+    });
+    expect(source).toMatchObject({
+      sourceContractId: "grace-demo-wealth-facts-v1",
+      sourceSystem: "grace_demo_wealth_facts",
+      subjectId: "CUST-DEMO-01",
+      assuranceLevel: "demo",
+      productionReady: false,
+    });
+    expect(source.fields.map(field => field.path).sort()).toEqual([
+      "relationship.recentContactSummary",
+      "subject.customerStatus",
+    ]);
+    expect(source.resultFingerprint).toBe(customerProfileSourceFingerprint(source));
   });
 });

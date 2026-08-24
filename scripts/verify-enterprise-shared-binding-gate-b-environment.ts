@@ -37,7 +37,7 @@ import { resolveEffectiveRoleAssets } from "../server/db/role-assets";
 import { runGovernedMemoryPurposeEnvironment } from "./verify-governed-memory-purpose-environment";
 
 const SNAPSHOT_PATH = "examples/insurance-advisor-reference-role-pack/eval/shared-binding-validation-snapshot.v1.json";
-const EXPECTED_SNAPSHOT = "ccf1a10b181bbf1955b3605a8bfc0d9772a91224e7a45e9c8da304181995cbc7";
+const EXPECTED_SNAPSHOT = "e9991aaf6edc1b008ed32c026bf9e36412987bd9c58c0174ac59a498dbf4d7fc";
 const ORGANIZATION_ID = String(
   process.env.EA_DEMO_ORGANIZATION_ID || "org_linggan_finance",
 ).trim();
@@ -128,7 +128,13 @@ function firstCustomerId(value: unknown): string | null {
       continue;
     }
     const row = current as Record<string, unknown>;
-    const id = row.customerId ?? row.customer_id ?? row.customerCode ?? row.customer_code ?? row.id;
+    const id =
+      row.CUST_NO
+      ?? row.customerId
+      ?? row.customer_id
+      ?? row.customerCode
+      ?? row.customer_code
+      ?? row.id;
     if (typeof id === "string" || typeof id === "number") return String(id);
     for (const key of ["data", "customers", "items", "records", "rows", "list", "result"]) {
       if (key in row) queue.push(row[key]);
@@ -302,6 +308,9 @@ async function main() {
   const releases = await latestVerifiedRolePackReleases(frozen.rolePackReleases.map(release => release.rolePackId));
   const providerFiles = [
     "shared/customer-profile-contract.ts",
+    "server/_core/customer-profile-source-adapters.ts",
+    "server/_core/customer-profile-compatibility-adapter.ts",
+    "server/_core/customer-profile-demo-facts.ts",
     "server/_core/customer-profile-provider.ts",
     "server/_core/customer-profile-mcp.ts",
     "shared/memory-purpose.ts",

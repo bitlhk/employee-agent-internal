@@ -36,7 +36,7 @@ tags: [insurance-advisor, auto-insurance, customer-context, governed-context]
 
 ### 1. 客户访前准备与续保准备
 
-1. 用户未指定客户时，先用 `list_customer_profiles` 在授权范围内帮助选择，不猜测客户身份。
+1. 用户未指定客户时，先用 `list_customer_profiles` 在授权范围内帮助选择，不猜测客户身份；后续传递列表返回的稳定客户标识，不使用展示序号替代身份。
 2. 用 `get_governed_customer_profile` 获取本轮受治理客户数据；不得绕过该入口直接读取领域客户详情。
 3. 结合当前有效的访前、续保和信息保护知识，输出客户概况、车辆与保障观察、待核实事项、3 至 5 条谈话要点和下一步动作。
 4. 工具没有返回的字段标记“待核实”，不得补写。

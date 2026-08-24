@@ -5,7 +5,10 @@ import {
   normalizeCustomerProfileSource,
   type NormalizedCustomerProfileSourceV1,
 } from "./customer-profile-source-adapters";
-import { loadDemoInsuranceCustomerFacts } from "./customer-profile-demo-facts";
+import {
+  buildDemoWealthCustomerFacts,
+  loadDemoInsuranceCustomerFacts,
+} from "./customer-profile-demo-facts";
 import {
   callInternalMcpTool,
   parseInternalMcpJsonResult,
@@ -70,6 +73,7 @@ function parsedMcpResult(result: Record<string, unknown>): JsonObject {
 export async function loadWealthCustomerProfileCompatibilitySource(input: {
   principal: RuntimePrincipalV2;
   subjectId: string;
+  includeDemoFacts?: boolean;
 }): Promise<CustomerProfileCompatibilityLoadResultV1> {
   const endpointUrl = String(
     process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp"
@@ -117,10 +121,17 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
   source.assuranceLevel = "demo";
   source.resultFingerprint = customerProfileSourceFingerprint(source);
   return {
-    sources: [source],
+    sources: [
+      source,
+      ...(input.includeDemoFacts
+        ? [buildDemoWealthCustomerFacts({ subjectId: source.subjectId })]
+        : []),
+    ],
     principalAuthorized: true,
     subjectInScope: inScope,
-    notes: [],
+    notes: input.includeDemoFacts
+      ? ["missing Wealth governance facts were supplied by a synthetic GRACE Demo contributor"]
+      : [],
   };
 }
 

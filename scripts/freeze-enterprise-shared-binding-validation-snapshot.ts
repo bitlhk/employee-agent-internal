@@ -21,6 +21,9 @@ const TARGET_IDS = [
 ];
 const PROVIDER_FILES = [
   "shared/customer-profile-contract.ts",
+  "server/_core/customer-profile-source-adapters.ts",
+  "server/_core/customer-profile-compatibility-adapter.ts",
+  "server/_core/customer-profile-demo-facts.ts",
   "server/_core/customer-profile-provider.ts",
   "server/_core/customer-profile-mcp.ts",
   "shared/memory-purpose.ts",

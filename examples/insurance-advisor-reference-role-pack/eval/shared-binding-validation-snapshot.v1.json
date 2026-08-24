@@ -1,40 +1,25 @@
 {
   "schema": "ea.shared-binding-validation-snapshot.v1",
-  "organizationId": "org_role_scale_shadow_20260824",
+  "organizationId": "org_linggan_finance",
   "stage": "shadow",
-  "providerContractFingerprint": "5d21f0f65de1bf9831df6853892a3dd36330d91437f5780cdcba152414ff77a5",
+  "providerContractFingerprint": "79664b3bc4f68491edf0c767a18250c615073438f5b767e185f73dfa275bacfe",
   "bindings": [
     {
-      "bindingId": "ctxb_shared_shadow_customer_profile_20260824",
+      "bindingId": "ctxb_shared_shadow_1397827fa54143572d78e751",
       "bindingScope": "enterprise_shared",
       "logicalAssetId": "customer_profile",
       "contextType": "business_data",
       "providerType": "mcp",
-      "resourceRef": "mcp://wealth-customer/wealth_assistant_customer_detail",
+      "resourceRef": "mcp://customer-profile/get_governed_customer_profile",
       "capabilities": [
         "point_read"
       ],
-      "bindingVersion": "1.shared-shadow.1",
+      "bindingVersion": "1.shared.customer-profile-v1",
       "stage": "shadow",
       "status": "active"
     },
     {
-      "bindingId": "ctxb_shared_shadow_customer_relationship_memory_20260824",
-      "bindingScope": "enterprise_shared",
-      "logicalAssetId": "customer_relationship_memory",
-      "contextType": "memory",
-      "providerType": "api",
-      "resourceRef": "api://employee-agent/agent-memory/relevant",
-      "capabilities": [
-        "purpose_filter",
-        "relevant_retrieval"
-      ],
-      "bindingVersion": "1.shared-shadow.purpose-v1",
-      "stage": "shadow",
-      "status": "active"
-    },
-    {
-      "bindingId": "ctxb_shared_shadow_governed_work_state_20260824",
+      "bindingId": "ctxb_shared_shadow_7246f004f2891d745046b532",
       "bindingScope": "enterprise_shared",
       "logicalAssetId": "governed_work_state",
       "contextType": "memory",
@@ -45,7 +30,22 @@
         "read_work_state",
         "relevant_retrieval"
       ],
-      "bindingVersion": "1.shared-shadow.purpose-v1",
+      "bindingVersion": "1.shared.purpose-v1",
+      "stage": "shadow",
+      "status": "active"
+    },
+    {
+      "bindingId": "ctxb_shared_shadow_db9211dbdd7e9389fbf128b3",
+      "bindingScope": "enterprise_shared",
+      "logicalAssetId": "customer_relationship_memory",
+      "contextType": "memory",
+      "providerType": "api",
+      "resourceRef": "api://employee-agent/agent-memory/relevant",
+      "capabilities": [
+        "purpose_filter",
+        "relevant_retrieval"
+      ],
+      "bindingVersion": "1.shared.purpose-v1",
       "stage": "shadow",
       "status": "active"
     }
@@ -59,11 +59,11 @@
       "verifiedAt": "2026-08-20T23:11:51.000Z"
     },
     {
-      "releaseId": "linggan-insurance.insurance-advisor@4856d055cac44c53:ia-golden-task-v1",
+      "releaseId": "linggan-insurance.insurance-advisor@ce7637b867f38e08:ia-golden-task-v1",
       "rolePackId": "linggan-insurance.insurance-advisor",
       "verificationLevel": "controlled_scenario",
-      "assetSetFingerprint": "4856d055cac44c5331704e0c35d0b1e8ccbd336f42530e4b6df8966c17fd9c08",
-      "verifiedAt": "2026-08-17T23:49:37.000Z"
+      "assetSetFingerprint": "ce7637b867f38e0872de99e481a5e87a7e966905da6d042a854b5cff9d5d26d6",
+      "verifiedAt": "2026-08-24T10:35:46.000Z"
     }
   ],
   "plans": [
@@ -78,5 +78,5 @@
       "planVersion": "1.0.0"
     }
   ],
-  "snapshotFingerprint": "ccf1a10b181bbf1955b3605a8bfc0d9772a91224e7a45e9c8da304181995cbc7"
+  "snapshotFingerprint": "e9991aaf6edc1b008ed32c026bf9e36412987bd9c58c0174ac59a498dbf4d7fc"
 }

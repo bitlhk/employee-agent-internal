@@ -21,7 +21,10 @@ import { closeDbConnection, getDb } from "../server/db/connection";
 import { createGovernedWorkItemDrafts } from "../server/db/governed-work-items";
 import { latestVerifiedRolePackReleases } from "../server/db/role-pack-releases";
 
-const organizationId = process.env.GRACE_SHARED_SHADOW_ORG || "org_role_scale_shadow_20260824";
+const organizationId =
+  process.env.GRACE_SHARED_SHADOW_ORG
+  || process.env.EA_DEMO_ORGANIZATION_ID
+  || "org_role_scale_shadow_20260824";
 const suffix = randomUUID().slice(0, 8);
 const subjectId = `customer-purpose-${suffix}`;
 const otherSubjectId = `customer-other-${suffix}`;
