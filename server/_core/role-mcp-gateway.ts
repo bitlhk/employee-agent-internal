@@ -139,6 +139,23 @@ export function normalizeTrustedRuntimeMcpConfig(raw: Record<string, unknown>): 
   return { endpointUrl, headers, timeoutMs: Number(raw.timeoutMs || raw.timeout_ms || 60_000) };
 }
 
+export function bindRoleMcpRuntimeIdentity(
+  config: TrustedRuntimeMcpConfig,
+  identity: { agentId: string },
+): TrustedRuntimeMcpConfig {
+  const agentId = String(identity.agentId || "").trim();
+  if (!/^[A-Za-z0-9._:-]{3,160}$/.test(agentId)) {
+    throw new Error("trusted runtime Agent identity is invalid");
+  }
+  return {
+    ...config,
+    headers: {
+      ...config.headers,
+      "x-linggan-agent-id": agentId,
+    },
+  };
+}
+
 export function roleMcpGatewayToolName(serverId: string, remoteName: string): string {
   const serverHash = createHash("sha256").update(serverId).digest("hex").slice(0, 8);
   const toolHash = createHash("sha256").update(remoteName).digest("hex").slice(0, 8);
@@ -257,7 +274,11 @@ async function callTool(context: RuntimeContext, exposedName: string, args: Reco
       source: SERVICE_NAME,
       metadata: { roleKey: context.roleKey, serverId: entry.serverId, sideEffect: "read_or_compute" },
     });
-    const result = await callTrustedRuntimeMcpTool(entry.config, entry.tool.name, args);
+    const result = await callTrustedRuntimeMcpTool(
+      bindRoleMcpRuntimeIdentity(entry.config, context),
+      entry.tool.name,
+      args,
+    );
     const failed = Boolean(result.isError);
     outcome = failed ? "error" : "success";
     await recordAuditBestEffort({

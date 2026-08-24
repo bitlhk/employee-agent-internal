@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bindRoleMcpRuntimeIdentity,
   normalizeTrustedRuntimeMcpConfig,
   roleMcpGatewayToolName,
   roleMcpToolIsSafe,
@@ -63,5 +64,27 @@ describe("role MCP gateway", () => {
       timeoutMs: 60_000,
     });
     expect(normalizeTrustedRuntimeMcpConfig({ command: "python", args: ["server.py"] })).toBeNull();
+  });
+
+  it("injects the verified runtime Agent identity over static connector headers", () => {
+    expect(bindRoleMcpRuntimeIdentity({
+      endpointUrl: "http://127.0.0.1:17892/mcp",
+      headers: {
+        Authorization: "Bearer connector-token",
+        "x-linggan-agent-id": "stale-agent",
+      },
+      timeoutMs: 10_000,
+    }, { agentId: "jiuwen_lgj-wealth" })).toEqual({
+      endpointUrl: "http://127.0.0.1:17892/mcp",
+      headers: {
+        Authorization: "Bearer connector-token",
+        "x-linggan-agent-id": "jiuwen_lgj-wealth",
+      },
+      timeoutMs: 10_000,
+    });
+    expect(() => bindRoleMcpRuntimeIdentity({
+      endpointUrl: "http://127.0.0.1:17892/mcp",
+      headers: {},
+    }, { agentId: "invalid agent id" })).toThrow("trusted runtime Agent identity is invalid");
   });
 });
