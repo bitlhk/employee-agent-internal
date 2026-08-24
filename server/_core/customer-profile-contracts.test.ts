@@ -19,13 +19,21 @@ describe("Customer Profile Contract V1", () => {
     expect(report.evidenceFingerprint).toMatch(/^[a-f0-9]{64}$/u);
   });
 
-  it("keeps engineering proposals out of the domain-confirmed freeze gate", () => {
+  it("freezes only the repository's domain-confirmed business contract", () => {
     const report = runCustomerProfileContractChecks(process.cwd(), {
       requireDomainConfirmed: true,
     });
-    expect(report.status).toBe("FAIL");
-    expect(report.errors).toContain(
-      "Domain confirmation gate requires all 6 reviews and all contract artifacts; confirmed 0"
+    expect(report.status).toBe("PASS");
+    if (report.status !== "PASS") return;
+    expect(report.domainReview).toEqual({ confirmed: 6, total: 6 });
+    expect(report.businessContractFingerprint).toBe(
+      "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0"
+    );
+    expect(report.sourceMappingFingerprint).toBe(
+      "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd"
+    );
+    expect(report.evidenceFingerprint).toBe(
+      "994b1701d61e8ba93f255d69176a3479794b61756c81a1ed7c78fdcf961af8ff"
     );
   });
 

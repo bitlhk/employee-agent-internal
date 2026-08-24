@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.customer-profile-purpose-projections.v1",
   "projectionSetVersion": "1.0.0",
-  "status": "engineering_proposed",
+  "status": "domain_confirmed",
   "canonicalLogicalContextId": "customer_profile",
   "projections": [
     {
@@ -71,7 +71,14 @@
         "purpose_matches_wealth_advisory"
       ],
       "decisionReason": "Wealth tasks require governed customer identity, relationship and suitability facts; detailed balances and holdings remain in customer_portfolio.",
-      "review": { "status": "proposed" }
+      "review": {
+        "status": "domain_confirmed",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "Wealth Management Policy Expert",
+        "reviewedAt": "2026-08-24T14:37:23+08:00",
+        "reviewComment": "Confirmed the wealth_advisory purpose boundary, minimized field projection, separation from customer_portfolio, and task-required field semantics for WM-GT-01 through WM-GT-04.",
+        "groundTruthVersion": "1.0.0"
+      }
     },
     {
       "projectionId": "InsuranceCustomerProfileV1",
@@ -142,7 +149,14 @@
         "purpose_matches_insurance_advisory"
       ],
       "decisionReason": "Insurance tasks reuse the customer subject while receiving only the minimum vehicle, renewal, coverage and customer-service fields required by the insurance purpose.",
-      "review": { "status": "proposed" }
+      "review": {
+        "status": "domain_confirmed",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "Insurance Sales and Compliance Expert",
+        "reviewedAt": "2026-08-24T14:43:12+08:00",
+        "reviewComment": "Confirmed the insurance_advisory purpose boundary, minimized Insurance projection, exclusion of Wealth-private data, IA-GT-01 and IA-GT-02 required fields, and fail-closed behavior while the current Demo Provider retains field and governance gaps.",
+        "groundTruthVersion": "1.0.0"
+      }
     },
     {
       "projectionId": "InvestmentResearchCustomerProfileDeniedV1",
@@ -156,7 +170,14 @@
       "taskRequirements": [],
       "conditions": [],
       "decisionReason": "The current investment-research Role Pack explicitly prohibits customer account, holdings and suitability context.",
-      "review": { "status": "proposed" }
+      "review": {
+        "status": "domain_confirmed",
+        "reviewerId": "IR-EXPERT-01",
+        "reviewerRole": "Investment Research Business and Compliance Expert",
+        "reviewedAt": "2026-08-24T14:45:47+08:00",
+        "reviewComment": "Confirmed that the current investment-researcher Role has no customer-service purpose and must not access customer_profile. This decision does not apply to a future customer-facing Investment Advisor Role.",
+        "groundTruthVersion": "1.0.0"
+      }
     },
     {
       "projectionId": "PostLoanRiskCustomerProfileDeniedV1",
@@ -171,7 +192,14 @@
       "conditions": [],
       "alternativeLogicalContextId": "enterprise_profile",
       "decisionReason": "The current post-loan Role Pack operates on enterprise borrowers; it must use enterprise_profile rather than an individual customer_profile.",
-      "review": { "status": "proposed" }
+      "review": {
+        "status": "domain_confirmed",
+        "reviewerId": "RC-EXPERT-01",
+        "reviewerRole": "Post-loan Risk Management Expert",
+        "reviewedAt": "2026-08-24T14:49:07+08:00",
+        "reviewComment": "Confirmed that the current post-loan Risk Role operates on enterprise borrowers, must deny individual customer_profile, and must use enterprise_profile. A future retail individual-loan Risk Role requires a separate review.",
+        "groundTruthVersion": "1.0.0"
+      }
     },
     {
       "projectionId": "AuditCustomerSubjectProjectionV1",
@@ -201,7 +229,14 @@
         "purpose_matches_audit_review"
       ],
       "decisionReason": "Audit may verify a task-bound customer subject but must not browse the general customer profile or receive relationship, wealth, insurance or contact details.",
-      "review": { "status": "proposed" }
+      "review": {
+        "status": "domain_confirmed",
+        "reviewerId": "AU-EXPERT-01",
+        "reviewerRole": "Smart Audit and Compliance Expert",
+        "reviewedAt": "2026-08-24T14:50:00+08:00",
+        "reviewComment": "Confirmed the case-bound conditional projection, minimum subject and compliance fields, denial of broad customer data, and fail-closed behavior when case, subject, purpose or authorization does not match.",
+        "groundTruthVersion": "1.0.0"
+      }
     }
   ]
 }

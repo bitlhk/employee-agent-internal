@@ -2,11 +2,24 @@
 
 ## Status
 
-> **Engineering Complete / Domain Validation Pending**
+> **Domain Confirmed / Provider Implementation Pending**
 
 This phase defines a governed customer-data contract. It does not deploy a new
 Customer MCP, change Runtime Binding, grant new Role permissions, or alter the
 local and Shanghai environments.
+
+## Confirmed baseline
+
+| Evidence                      | Value                                                              |
+| ----------------------------- | ------------------------------------------------------------------ |
+| Domain reviews                | `6/6 confirmed`                                                    |
+| Business contract fingerprint | `fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0` |
+| Source mapping fingerprint    | `849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd` |
+| Combined evidence fingerprint | `994b1701d61e8ba93f255d69176a3479794b61756c81a1ed7c78fdcf961af8ff` |
+
+Any change to the canonical fields or Role projections creates a new business
+contract baseline. A source schema or mapping change creates a new Provider
+mapping baseline without silently redefining the business contract.
 
 ## Why this contract exists
 
@@ -78,8 +91,8 @@ so a Provider change cannot silently redefine business Ground Truth.
 | Post-loan Risk Control | Deny        | Current Role works on enterprise borrowers; use `enterprise_profile`    |
 | Smart Audit            | Conditional | Only case-bound subject identity, service scope and compliance flags    |
 
-These decisions are engineering proposals until the responsible domain owners
-confirm them. A similar field name is not sufficient evidence for reuse.
+These decisions are confirmed by the responsible domain reviewers. A similar
+field name remains insufficient evidence for reuse or Provider authorization.
 
 ### Role coverage boundary
 
@@ -94,7 +107,8 @@ enterprise-risk Role. It does not define the policy for every future risk Role.
 
 ## Source assessment
 
-Both current source contracts are intentionally marked `productionReady=false`.
+Both current source contracts remain intentionally marked
+`productionReady=false`.
 
 ### Wealth Customer MCP
 
@@ -134,12 +148,12 @@ Provider evidence and are not promoted by a domain reviewer.
 
 ## Next gate
 
-Domain owners review the canonical contract and five Role projections. Only
-after that review may the next phase implement a local Customer Profile Provider
-facade and its purpose-aware field projection. Existing Wealth and Insurance MCPs
-remain independent source systems during that implementation.
+The canonical contract and five Role projections are domain-confirmed. The next
+phase may implement a local Customer Profile Provider facade and its
+purpose-aware field projection. Existing Wealth and Insurance MCPs remain
+independent source systems during that implementation.
 
-The six required reviews are:
+The six completed reviews are:
 
 1. Customer data owner: canonical identity, provenance, conflict and
    missing-data rules.

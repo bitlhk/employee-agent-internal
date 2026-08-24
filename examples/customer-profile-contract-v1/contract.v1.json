@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.customer-profile-contract.v1",
   "contractVersion": "1.0.0",
-  "status": "engineering_proposed",
+  "status": "domain_confirmed",
   "canonicalLogicalContextId": "customer_profile",
   "subjectType": "individual_customer",
   "identityRule": {
@@ -277,6 +277,11 @@
     }
   ],
   "domainReview": {
-    "status": "proposed"
+    "status": "domain_confirmed",
+    "reviewerId": "CP-DATA-EXPERT-01",
+    "reviewerRole": "Customer Data Governance Owner",
+    "reviewedAt": "2026-08-24T14:34:52+08:00",
+    "reviewComment": "Confirmed stable subject identity, field-level provenance, fail-closed conflict and missing-data rules, all 35 canonical fields, and the boundary excluding raw contact, exact balances, holdings and recommendations.",
+    "groundTruthVersion": "1.0.0"
   }
 }
