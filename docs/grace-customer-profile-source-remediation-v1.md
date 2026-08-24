@@ -2,7 +2,7 @@
 
 ## Status
 
-**Engineering Complete / Data Owner Review Active / Runtime Unchanged**
+**Data Owner Confirmed / Source Implementation Pending / Runtime Unchanged**
 
 The plan converts the local Source Readiness result into nine owned remediation
 items. It is a proposed review artifact, not an active source mapping, Role
@@ -17,7 +17,7 @@ examples/customer-profile-contract-v1/source-remediation-plan.v1.json
 Plan fingerprint:
 
 ```text
-b807dce2c46c5aafcd3a12cf68cea25285cdafd6051ab896040860217d734403
+261d8ae911f28187a10bd23465270b8843685de144836da20b4b5d6d31f937cb
 ```
 
 ## Read-only source discovery
@@ -70,6 +70,7 @@ The complete IDs, fields and exit criteria are in the machine-readable plan.
 
 ```bash
 pnpm customer-profile:sources:remediation:verify
+pnpm customer-profile:sources:remediation:freeze
 ```
 
 The verifier requires:
@@ -83,10 +84,9 @@ The verifier requires:
 
 ## Review and activation boundary
 
-All nine items are assigned and currently have review status
-`domain_reviewing`; none is `domain_confirmed`. Data owners may move an item to
-`domain_confirmed` or `needs_resolution`. Confirming the plan alone does not
-make a source production-ready.
+All nine items are `domain_confirmed` with reviewer identity, role, timestamp,
+comment and Ground Truth version. The freeze command requires this complete
+evidence. Confirming the plan does not make a source production-ready.
 
 After implemented provider evidence is available, GRACE must create a new
 source contract candidate and rerun:

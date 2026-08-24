@@ -111,7 +111,8 @@ export function loadCustomerProfileSourceRemediationPlan(
 
 export function verifyCustomerProfileSourceRemediationPlan(
   plan: CustomerProfileSourceRemediationPlanV1,
-  root = process.cwd()
+  root = process.cwd(),
+  options: { requireDomainConfirmed?: boolean } = {}
 ) {
   const errors: string[] = [];
   if (plan.schemaVersion !== "ea.customer-profile-source-remediation-plan.v1")
@@ -240,6 +241,12 @@ export function verifyCustomerProfileSourceRemediationPlan(
     reviewCounts.domain_confirmed !== plan.workItems.length
   )
     errors.push("Confirmed plan requires every work item to be confirmed");
+  if (
+    options.requireDomainConfirmed &&
+    (plan.status !== "domain_confirmed" ||
+      reviewCounts.domain_confirmed !== plan.workItems.length)
+  )
+    errors.push("Source remediation plan is not fully domain confirmed");
   return {
     schemaVersion: "ea.customer-profile-source-remediation-report.v1",
     status: errors.length ? "FAIL" : "PASS",

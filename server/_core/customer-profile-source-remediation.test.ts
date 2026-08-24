@@ -74,4 +74,25 @@ describe("Customer Profile source remediation plan", () => {
       "W-01-authoritative-customer-status: domain_confirmed requires complete review evidence"
     );
   });
+
+  it("freezes only a fully domain-confirmed plan", () => {
+    const confirmed = clonePlan();
+    expect(
+      verifyCustomerProfileSourceRemediationPlan(confirmed, process.cwd(), {
+        requireDomainConfirmed: true,
+      }).status
+    ).toBe("PASS");
+
+    confirmed.status = "domain_reviewing";
+    confirmed.workItems[0]!.review.status = "domain_reviewing";
+    const report = verifyCustomerProfileSourceRemediationPlan(
+      confirmed,
+      process.cwd(),
+      { requireDomainConfirmed: true }
+    );
+    expect(report.status).toBe("FAIL");
+    expect(report.errors).toContain(
+      "Source remediation plan is not fully domain confirmed"
+    );
+  });
 });

@@ -85,6 +85,7 @@
     "customer-profile:sources:assess": "tsx scripts/assess-customer-profile-source-readiness.ts",
     "customer-profile:sources:require-ready": "tsx scripts/assess-customer-profile-source-readiness.ts --require-ready",
     "customer-profile:sources:remediation:verify": "tsx scripts/verify-customer-profile-source-remediation.ts && vitest run server/_core/customer-profile-source-remediation.test.ts",
+    "customer-profile:sources:remediation:freeze": "tsx scripts/verify-customer-profile-source-remediation.ts --require-domain-confirmed && vitest run server/_core/customer-profile-source-remediation.test.ts",
     "customer-profile:sources:remediation:review": "tsx scripts/review-customer-profile-source-remediation.ts",
     "context:provider:llamaindex:certify": "tsx scripts/certify-llamaindex-provider.ts",
     "context:provider:llamaindex:baseline:verify": "tsx scripts/verify-llamaindex-provider-certification-baseline.ts",

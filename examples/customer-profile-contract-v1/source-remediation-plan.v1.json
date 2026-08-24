@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.customer-profile-source-remediation-plan.v1",
   "planVersion": "1.0.0",
-  "status": "domain_reviewing",
+  "status": "domain_confirmed",
   "baseline": {
     "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
     "sourceMappingFingerprint": "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd",
@@ -32,9 +32,12 @@
         "Field provenance identifies the authoritative source record and business asOf."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "CP-DATA-EXPERT-01",
-        "reviewerRole": "Customer Data Governance Owner"
+        "reviewerRole": "Customer Data Governance Owner",
+        "reviewComment": "确认客户状态必须依据数据责任方认可的有效客户标识码表；查询时间不得替代企业事实时间，字段必须保留权威来源、业务 asOf、映射版本和结果指纹。",
+        "reviewedAt": "2026-08-24T08:39:33.337Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -59,9 +62,12 @@
         "WM-GT-01 receives both required fields with provenance."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "WM-EXPERT-01",
-        "reviewerRole": "Wealth Management Domain Expert"
+        "reviewerRole": "Wealth Management Domain Expert",
+        "reviewComment": "确认联系次数只能形成确定性摘要，不能伪造最后联系时间；投资期限和流动性需求必须来自正式适当性数据源，模型不得从余额、持仓或风险等级推断。",
+        "reviewedAt": "2026-08-24T08:39:33.938Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -81,9 +87,12 @@
         "WM-GT-02 receives both fields with business asOf and provenance."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "WM-EXPERT-01",
-        "reviewerRole": "Wealth Management Domain Expert"
+        "reviewerRole": "Wealth Management Domain Expert",
+        "reviewComment": "确认联系次数只能形成确定性摘要，不能伪造最后联系时间；投资期限和流动性需求必须来自正式适当性数据源，模型不得从余额、持仓或风险等级推断。",
+        "reviewedAt": "2026-08-24T08:39:33.938Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -105,9 +114,12 @@
         "Source result fingerprint changes when authoritative facts change."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "CP-DATA-EXPERT-01",
-        "reviewerRole": "Customer Data Governance Owner"
+        "reviewerRole": "Customer Data Governance Owner",
+        "reviewComment": "确认客户状态必须依据数据责任方认可的有效客户标识码表；查询时间不得替代企业事实时间，字段必须保留权威来源、业务 asOf、映射版本和结果指纹。",
+        "reviewedAt": "2026-08-24T08:39:33.337Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -124,9 +136,12 @@
         "Subject mismatch and unknown subject fail closed."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "IA-EXPERT-01",
-        "reviewerRole": "Insurance Sales and Compliance Expert"
+        "reviewerRole": "Insurance Sales and Compliance Expert",
+        "reviewComment": "确认保险客户查询必须使用稳定企业客户 ID，并按组织、Runtime Principal、insurance_advisory Purpose 和客户行范围授权；续保、当前保障和最小化理赔风险摘要必须来自权威系统并提供业务 asOf、字段级 Provenance、投影版本和过滤证据，原始理赔材料不得进入 customer_profile。",
+        "reviewedAt": "2026-08-24T08:44:07.226Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -143,9 +158,12 @@
         "Authorization decision fingerprint is included in Gate B snapshot input."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "IA-EXPERT-01",
-        "reviewerRole": "Insurance Sales and Compliance Expert"
+        "reviewerRole": "Insurance Sales and Compliance Expert",
+        "reviewComment": "确认保险客户查询必须使用稳定企业客户 ID，并按组织、Runtime Principal、insurance_advisory Purpose 和客户行范围授权；续保、当前保障和最小化理赔风险摘要必须来自权威系统并提供业务 asOf、字段级 Provenance、投影版本和过滤证据，原始理赔材料不得进入 customer_profile。",
+        "reviewedAt": "2026-08-24T08:44:07.226Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -167,9 +185,12 @@
         "Claims data is minimized to the approved risk summary."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "IA-EXPERT-01",
-        "reviewerRole": "Insurance Sales and Compliance Expert"
+        "reviewerRole": "Insurance Sales and Compliance Expert",
+        "reviewComment": "确认保险客户查询必须使用稳定企业客户 ID，并按组织、Runtime Principal、insurance_advisory Purpose 和客户行范围授权；续保、当前保障和最小化理赔风险摘要必须来自权威系统并提供业务 asOf、字段级 Provenance、投影版本和过滤证据，原始理赔材料不得进入 customer_profile。",
+        "reviewedAt": "2026-08-24T08:44:07.226Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -193,9 +214,12 @@
         "The Provider records applied projection and filtered-field count."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "IA-EXPERT-01",
-        "reviewerRole": "Insurance Sales and Compliance Expert"
+        "reviewerRole": "Insurance Sales and Compliance Expert",
+        "reviewComment": "确认保险客户查询必须使用稳定企业客户 ID，并按组织、Runtime Principal、insurance_advisory Purpose 和客户行范围授权；续保、当前保障和最小化理赔风险摘要必须来自权威系统并提供业务 asOf、字段级 Provenance、投影版本和过滤证据，原始理赔材料不得进入 customer_profile。",
+        "reviewedAt": "2026-08-24T08:44:07.226Z",
+        "groundTruthVersion": "1.0.0"
       }
     },
     {
@@ -215,9 +239,12 @@
         "Conflicting or unresolved identity blocks the combined profile."
       ],
       "review": {
-        "status": "domain_reviewing",
+        "status": "domain_confirmed",
         "reviewerId": "CP-DATA-EXPERT-01",
-        "reviewerRole": "Customer Data Governance Owner"
+        "reviewerRole": "Customer Data Governance Owner",
+        "reviewComment": "确认财富 CUST_NO 与保险 id 不得默认视为同一客户；必须由企业客户主数据提供统一 Subject ID 或具备责任方、版本和生效时间的权威 Crosswalk，禁止按姓名、手机号或模型相似度自动合并，身份冲突或无法解析时组合画像必须 BLOCKED。",
+        "reviewedAt": "2026-08-24T08:44:30.501Z",
+        "groundTruthVersion": "1.0.0"
       }
     }
   ]
