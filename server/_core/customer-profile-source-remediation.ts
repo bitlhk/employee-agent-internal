@@ -49,6 +49,7 @@ export type CustomerProfileSourceRemediationPlanV1 = {
       reviewerRole?: string;
       reviewedAt?: string;
       reviewComment?: string;
+      groundTruthVersion?: string;
     };
   }>;
 };
@@ -167,6 +168,12 @@ export function verifyCustomerProfileSourceRemediationPlan(
     contracts.sourceMappings.sources.map(source => source.sourceContractId)
   );
   const coveredFields = new Set<string>();
+  const reviewCounts: Record<ReviewStatus, number> = {
+    proposed: 0,
+    domain_reviewing: 0,
+    domain_confirmed: 0,
+    needs_resolution: 0,
+  };
   for (const item of plan.workItems) {
     if (!item.ownerRole.trim())
       errors.push(`${item.workItemId}: ownerRole required`);
@@ -174,15 +181,36 @@ export function verifyCustomerProfileSourceRemediationPlan(
       errors.push(`${item.workItemId}: exit criteria required`);
     if (!item.proposedResolution.trim())
       errors.push(`${item.workItemId}: proposed resolution required`);
-    if (
-      ![
-        "proposed",
-        "domain_reviewing",
-        "domain_confirmed",
-        "needs_resolution",
-      ].includes(item.review.status)
-    )
+    if (!Object.hasOwn(reviewCounts, item.review.status))
       errors.push(`${item.workItemId}: unsupported review status`);
+    else reviewCounts[item.review.status] += 1;
+    if (
+      item.review.status === "domain_reviewing" &&
+      (!item.review.reviewerId?.trim() || !item.review.reviewerRole?.trim())
+    )
+      errors.push(
+        `${item.workItemId}: domain_reviewing requires reviewer identity and role`
+      );
+    if (
+      item.review.status === "needs_resolution" &&
+      (!item.review.reviewerId?.trim() ||
+        !item.review.reviewerRole?.trim() ||
+        !item.review.reviewComment?.trim())
+    )
+      errors.push(
+        `${item.workItemId}: needs_resolution requires reviewer identity, role and comment`
+      );
+    if (
+      item.review.status === "domain_confirmed" &&
+      (!item.review.reviewerId?.trim() ||
+        !item.review.reviewerRole?.trim() ||
+        !item.review.reviewedAt?.trim() ||
+        !item.review.reviewComment?.trim() ||
+        !item.review.groundTruthVersion?.trim())
+    )
+      errors.push(
+        `${item.workItemId}: domain_confirmed requires complete review evidence`
+      );
     for (const sourceContractId of item.sourceContractIds) {
       if (!sourceContracts.has(sourceContractId))
         errors.push(
@@ -202,16 +230,27 @@ export function verifyCustomerProfileSourceRemediationPlan(
   for (const path of forbiddenKeyPaths(plan))
     errors.push(`Sensitive input is forbidden in remediation plan: ${path}`);
 
-  const confirmed = plan.workItems.filter(
-    item => item.review.status === "domain_confirmed"
-  ).length;
+  if (
+    plan.status === "proposed" &&
+    reviewCounts.proposed !== plan.workItems.length
+  )
+    errors.push("Proposed plan must not contain active reviews");
+  if (
+    plan.status === "domain_confirmed" &&
+    reviewCounts.domain_confirmed !== plan.workItems.length
+  )
+    errors.push("Confirmed plan requires every work item to be confirmed");
   return {
     schemaVersion: "ea.customer-profile-source-remediation-report.v1",
     status: errors.length ? "FAIL" : "PASS",
     planVersion: plan.planVersion,
     planStatus: plan.status,
     workItemCount: plan.workItems.length,
-    review: { confirmed, total: plan.workItems.length },
+    review: {
+      ...reviewCounts,
+      confirmed: reviewCounts.domain_confirmed,
+      total: plan.workItems.length,
+    },
     runtimeActivationAllowed: false,
     planFingerprint: governanceFingerprint(plan),
     errors,

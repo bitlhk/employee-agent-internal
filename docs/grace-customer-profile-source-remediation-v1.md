@@ -2,7 +2,7 @@
 
 ## Status
 
-**Engineering Complete / Data Owner Review Pending / Runtime Unchanged**
+**Engineering Complete / Data Owner Review Active / Runtime Unchanged**
 
 The plan converts the local Source Readiness result into nine owned remediation
 items. It is a proposed review artifact, not an active source mapping, Role
@@ -83,9 +83,10 @@ The verifier requires:
 
 ## Review and activation boundary
 
-All nine items currently have review status `proposed`. Data owners may move an
-item to `domain_reviewing`, `domain_confirmed` or `needs_resolution`. Confirming
-the plan alone does not make a source production-ready.
+All nine items are assigned and currently have review status
+`domain_reviewing`; none is `domain_confirmed`. Data owners may move an item to
+`domain_confirmed` or `needs_resolution`. Confirming the plan alone does not
+make a source production-ready.
 
 After implemented provider evidence is available, GRACE must create a new
 source contract candidate and rerun:

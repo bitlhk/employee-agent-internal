@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.customer-profile-source-remediation-plan.v1",
   "planVersion": "1.0.0",
-  "status": "proposed",
+  "status": "domain_reviewing",
   "baseline": {
     "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
     "sourceMappingFingerprint": "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd",
@@ -32,7 +32,9 @@
         "Field provenance identifies the authoritative source record and business asOf."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "CP-DATA-EXPERT-01",
+        "reviewerRole": "Customer Data Governance Owner"
       }
     },
     {
@@ -57,7 +59,9 @@
         "WM-GT-01 receives both required fields with provenance."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "Wealth Management Domain Expert"
       }
     },
     {
@@ -77,7 +81,9 @@
         "WM-GT-02 receives both fields with business asOf and provenance."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "WM-EXPERT-01",
+        "reviewerRole": "Wealth Management Domain Expert"
       }
     },
     {
@@ -99,7 +105,9 @@
         "Source result fingerprint changes when authoritative facts change."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "CP-DATA-EXPERT-01",
+        "reviewerRole": "Customer Data Governance Owner"
       }
     },
     {
@@ -116,7 +124,9 @@
         "Subject mismatch and unknown subject fail closed."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "Insurance Sales and Compliance Expert"
       }
     },
     {
@@ -133,7 +143,9 @@
         "Authorization decision fingerprint is included in Gate B snapshot input."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "Insurance Sales and Compliance Expert"
       }
     },
     {
@@ -155,7 +167,9 @@
         "Claims data is minimized to the approved risk summary."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "Insurance Sales and Compliance Expert"
       }
     },
     {
@@ -179,7 +193,9 @@
         "The Provider records applied projection and filtered-field count."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "IA-EXPERT-01",
+        "reviewerRole": "Insurance Sales and Compliance Expert"
       }
     },
     {
@@ -199,7 +215,9 @@
         "Conflicting or unresolved identity blocks the combined profile."
       ],
       "review": {
-        "status": "proposed"
+        "status": "domain_reviewing",
+        "reviewerId": "CP-DATA-EXPERT-01",
+        "reviewerRole": "Customer Data Governance Owner"
       }
     }
   ]
