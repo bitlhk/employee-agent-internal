@@ -103,3 +103,6 @@ The next valid progression requires real source remediation:
 6. rerun the complete dual-role Gate B.
 
 No Production Binding may be promoted from this assessment.
+
+The owned remediation work and data-owner review boundary are defined in
+`docs/grace-customer-profile-source-remediation-v1.md`.

@@ -1,0 +1,206 @@
+{
+  "schemaVersion": "ea.customer-profile-source-remediation-plan.v1",
+  "planVersion": "1.0.0",
+  "status": "proposed",
+  "baseline": {
+    "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
+    "sourceMappingFingerprint": "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd",
+    "environmentEvidence": "examples/customer-profile-contract-v1/source-readiness-local.v1.json"
+  },
+  "activationPolicy": {
+    "autoActivate": false,
+    "autoAuthorize": false,
+    "activeSourceMappingMayChange": false,
+    "productionBindingMayChange": false,
+    "requiresDataOwnerReview": true,
+    "requiresNewSourceContractFingerprint": true,
+    "requiresNewAuthorizationFingerprint": true,
+    "requiresFullGateBRerun": true
+  },
+  "workItems": [
+    {
+      "workItemId": "W-01-authoritative-customer-status",
+      "sourceContractIds": ["wealth-assistant-customer-v2.1"],
+      "ownerRole": "Wealth Customer Data Owner",
+      "category": "mapping_candidate",
+      "affectedFields": ["subject.customerStatus"],
+      "observedSourcePaths": ["data.activityInfo.PRVT_VLD_CUST_IND"],
+      "proposedResolution": "Confirm the indicator codebook and map only an authoritative active/inactive customer status. Do not infer status from customer visibility alone.",
+      "exitCriteria": [
+        "Data owner confirms the source field semantics and codebook version.",
+        "Mapping tests cover every supported code and fail closed for unknown codes.",
+        "Field provenance identifies the authoritative source record and business asOf."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "W-02-governed-recent-contact-summary",
+      "sourceContractIds": ["wealth-assistant-customer-v2.1"],
+      "ownerRole": "Wealth CRM Data Owner",
+      "category": "derivation_candidate",
+      "affectedFields": [
+        "relationship.lastContactAt",
+        "relationship.recentContactSummary"
+      ],
+      "observedSourcePaths": [
+        "data.activityInfo.LST_30_DAY_CNTCT_CNT",
+        "data.activityInfo.LST_60_DAY_CNTCT_CNT",
+        "data.activityInfo.LST_90_DAY_CNTCT_CNT",
+        "data.activityInfo.LST_180_DAY_CNTCT_CNT"
+      ],
+      "proposedResolution": "Use confirmed CRM contact facts to produce a deterministic summary. Counts alone cannot establish lastContactAt and must not be converted into a fabricated contact timestamp.",
+      "exitCriteria": [
+        "CRM owner confirms count definitions and supplies authoritative last-contact time when required.",
+        "The summary contains only deterministic facts and its derivation version is recorded.",
+        "WM-GT-01 receives both required fields with provenance."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "W-03-investment-preference-facts",
+      "sourceContractIds": ["wealth-assistant-customer-v2.1"],
+      "ownerRole": "Wealth Suitability Data Owner",
+      "category": "upstream_fact_required",
+      "affectedFields": [
+        "preferences.investmentHorizon",
+        "preferences.liquidityNeeds"
+      ],
+      "observedSourcePaths": [],
+      "proposedResolution": "Supply confirmed suitability preference facts from the responsible system. The model and EA adapter must not infer them from balances, holdings or risk level.",
+      "exitCriteria": [
+        "An authoritative source and field codebook are registered.",
+        "The current principal is authorized for the selected customer row.",
+        "WM-GT-02 receives both fields with business asOf and provenance."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "W-04-authoritative-time-and-provenance",
+      "sourceContractIds": ["wealth-assistant-customer-v2.1"],
+      "ownerRole": "Wealth Customer Provider Owner",
+      "category": "provider_contract_required",
+      "affectedFields": [
+        "subject.customerStatus",
+        "relationship.recentContactSummary",
+        "preferences.investmentHorizon",
+        "preferences.liquidityNeeds"
+      ],
+      "observedSourcePaths": ["updatedAt"],
+      "proposedResolution": "Return authoritative business asOf and field provenance. The current updatedAt is retrieval time and cannot be promoted as enterprise fact time.",
+      "exitCriteria": [
+        "Business asOf is returned separately from retrieval observedAt.",
+        "Every projected field has source system, source record, asOf and mapping version.",
+        "Source result fingerprint changes when authoritative facts change."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "I-01-stable-subject-lookup",
+      "sourceContractIds": ["insurance-customer-profile-demo-v1"],
+      "ownerRole": "Insurance Customer Provider Owner",
+      "category": "provider_contract_required",
+      "affectedFields": ["subject.subjectId"],
+      "observedSourcePaths": ["id"],
+      "proposedResolution": "Expose point lookup by stable customer subject id. Name-based fuzzy lookup remains a locator only and cannot prove identity.",
+      "exitCriteria": [
+        "A stable enterprise subject id is accepted by the point-read tool.",
+        "Display name is not used as identity proof.",
+        "Subject mismatch and unknown subject fail closed."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "I-02-runtime-row-purpose-authorization",
+      "sourceContractIds": ["insurance-customer-profile-demo-v1"],
+      "ownerRole": "Insurance Data Authorization Owner",
+      "category": "authorization_required",
+      "affectedFields": ["serviceScope.inScope"],
+      "observedSourcePaths": [],
+      "proposedResolution": "Authorize the signed Insurance Runtime Principal for a specific customer row and insurance_advisory purpose. Public Demo access is not authorization evidence.",
+      "exitCriteria": [
+        "Organization, principal, purpose and customer row are evaluated by a trusted authorization decision.",
+        "Unauthorized and out-of-scope customers return no field values.",
+        "Authorization decision fingerprint is included in Gate B snapshot input."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "I-03-insurance-policy-facts",
+      "sourceContractIds": ["insurance-customer-profile-demo-v1"],
+      "ownerRole": "Insurance Policy Data Owner",
+      "category": "upstream_fact_required",
+      "affectedFields": [
+        "insurance.renewalAt",
+        "insurance.renewalStatus",
+        "insurance.currentCoverageSummary",
+        "insurance.claimsRiskSummary"
+      ],
+      "observedSourcePaths": [],
+      "proposedResolution": "Supply renewal, current coverage and minimized claims-risk facts from authoritative policy and claims systems. Raw claim material must not enter customer_profile.",
+      "exitCriteria": [
+        "IA-GT-01 receives all four facts with field-level provenance.",
+        "IA-GT-02 receives currentCoverageSummary with field-level provenance.",
+        "Claims data is minimized to the approved risk summary."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "I-04-authoritative-time-and-provenance",
+      "sourceContractIds": ["insurance-customer-profile-demo-v1"],
+      "ownerRole": "Insurance Customer Provider Owner",
+      "category": "provider_contract_required",
+      "affectedFields": [
+        "subject.customerStatus",
+        "insurance.vehicleSummary",
+        "insurance.renewalAt",
+        "insurance.renewalStatus",
+        "insurance.currentCoverageSummary",
+        "insurance.claimsRiskSummary"
+      ],
+      "observedSourcePaths": [],
+      "proposedResolution": "Return authoritative business asOf and field-level provenance for every insurance projection fact.",
+      "exitCriteria": [
+        "Business asOf is distinct from retrieval time.",
+        "Every projected field includes source record and mapping version.",
+        "The Provider records applied projection and filtered-field count."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    },
+    {
+      "workItemId": "X-01-enterprise-customer-identity-crosswalk",
+      "sourceContractIds": [
+        "wealth-assistant-customer-v2.1",
+        "insurance-customer-profile-demo-v1"
+      ],
+      "ownerRole": "Enterprise Customer Master Data Owner",
+      "category": "enterprise_identity_required",
+      "affectedFields": ["subject.subjectId"],
+      "observedSourcePaths": ["data.customer.CUST_NO", "id"],
+      "proposedResolution": "Register an authoritative cross-system customer identity or make both sources emit the same enterprise subject id. Do not merge records by name, phone or model similarity.",
+      "exitCriteria": [
+        "Both sources resolve to one governed enterprise subject id.",
+        "Crosswalk ownership, version and effective time are auditable.",
+        "Conflicting or unresolved identity blocks the combined profile."
+      ],
+      "review": {
+        "status": "proposed"
+      }
+    }
+  ]
+}
