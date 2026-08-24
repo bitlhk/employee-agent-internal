@@ -134,3 +134,7 @@ Shadow availability is not Production activation. Promotion remains prohibited u
 
 The executable source-readiness assessment and the current local environment
 gaps are recorded in `docs/grace-customer-profile-source-readiness-v1.md`.
+
+The deployed legacy Insurance MCP compatibility path and its fail-closed local
+Shadow evidence are recorded in
+`docs/grace-customer-profile-compatibility-adapter-v1.md`.
