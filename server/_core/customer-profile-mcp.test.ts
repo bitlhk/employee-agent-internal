@@ -152,6 +152,13 @@ describe("Customer Profile MCP tool", () => {
       },
       readiness: { status: "READY" },
     });
+    expect(result._meta?.eaCustomerProfileAdapter).toMatchObject({
+      schemaVersion: "ea.customer-profile-adapter-evidence.v1",
+      sourceCount: 1,
+      principalAuthorized: true,
+      subjectInScope: true,
+      containsCustomerValues: false,
+    });
   });
 });
 

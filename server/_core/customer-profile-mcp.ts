@@ -14,14 +14,12 @@ import { isAuthorizedInternalRequest } from "./helpers";
 import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
 import { internalMcpAudience } from "./internal-runtime-token";
 import {
-  callInternalMcpTool,
-  parseInternalMcpJsonResult,
-} from "./internal-mcp-client";
+  loadInsuranceCustomerProfileCompatibilitySource,
+  loadWealthCustomerProfileCompatibilitySource,
+  type CustomerProfileCompatibilityLoadResultV1,
+} from "./customer-profile-compatibility-adapter";
+import { executeEnterpriseMcpGatewayTool } from "./enterprise-mcp-gateway";
 import { getClawByAdoptId, getUserById } from "../db";
-import {
-  normalizeCustomerProfileSource,
-  type NormalizedCustomerProfileSourceV1,
-} from "./customer-profile-source-adapters";
 import {
   projectCustomerProfile,
   type CustomerProfileProviderInputV1,
@@ -29,23 +27,17 @@ import {
 import { recordAuditBestEffort, auditRequest } from "./audit-events";
 
 const SERVICE_NAME = "customer-profile-provider";
-const SERVICE_VERSION = "1.0.0";
+const SERVICE_VERSION = "1.1.0";
 const TOOL_NAME = "get_governed_customer_profile";
 
 type JsonObject = Record<string, unknown>;
-
-type CustomerProfileSourceLoadResultV1 = {
-  sources: NormalizedCustomerProfileSourceV1[];
-  principalAuthorized: boolean;
-  subjectInScope: boolean;
-  notes: string[];
-};
 
 export type CustomerProfileSourceLoaderV1 = (input: {
   principal: RuntimePrincipalV2;
   subjectId: string;
   customerName?: string;
-}) => Promise<CustomerProfileSourceLoadResultV1>;
+  request?: Request;
+}) => Promise<CustomerProfileCompatibilityLoadResultV1>;
 
 export type CustomerProfileProviderToolResultV1 = {
   content: Array<{ type: "text"; text: string }>;
@@ -255,7 +247,8 @@ function providerReceipt(input: {
 
 function textResult(
   projection: ReturnType<typeof projectCustomerProfile>,
-  principal: RuntimePrincipalV2
+  principal: RuntimePrincipalV2,
+  loaded: CustomerProfileCompatibilityLoadResultV1
 ): CustomerProfileProviderToolResultV1 {
   const receipt = providerReceipt({ projection, principal });
   return attachContextReceipt(
@@ -267,80 +260,55 @@ function textResult(
         },
       ],
       ...(projection.status === "BLOCKED" ? { isError: true } : {}),
+      _meta: {
+        eaCustomerProfileAdapter: {
+          schemaVersion: "ea.customer-profile-adapter-evidence.v1",
+          sourceCount: loaded.sources.length,
+          sourceContractIds: loaded.sources.map(
+            source => source.sourceContractId
+          ),
+          sourceSystems: loaded.sources.map(source => source.sourceSystem),
+          principalAuthorized: loaded.principalAuthorized,
+          subjectInScope: loaded.subjectInScope,
+          notes: loaded.notes.map(note => note.slice(0, 500)),
+          containsCustomerValues: false,
+        },
+      },
     },
     receipt
   );
 }
 
-async function loadWealthSource(input: {
-  principal: RuntimePrincipalV2;
-  subjectId: string;
-}): Promise<CustomerProfileSourceLoadResultV1> {
-  const endpointUrl = String(
-    process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp"
-  ).trim();
-  const probe = parseInternalMcpJsonResult(
-    await callInternalMcpTool({
-      endpointUrl,
-      toolName: "wealth_assistant_context_probe",
-      args: {},
-      agentId: input.principal.agentId,
-      adoptId: input.principal.adoptionId,
-      sessionId: input.principal.sessionId,
-    })
-  );
-  const probeData = object(probe.data);
-  const inScope =
-    probe.allowed !== false && probeData.allowed !== false && !probe.error;
-  if (!inScope) {
-    return {
-      sources: [],
-      principalAuthorized: true,
-      subjectInScope: false,
-      notes: ["wealth source did not confirm customer service scope"],
-    };
-  }
-  const payload = parseInternalMcpJsonResult(
-    await callInternalMcpTool({
-      endpointUrl,
-      toolName: "wealth_assistant_customer_detail",
-      args: { customerId: input.subjectId },
-      agentId: input.principal.agentId,
-      adoptId: input.principal.adoptionId,
-      sessionId: input.principal.sessionId,
-    })
-  );
-  return {
-    sources: [
-      normalizeCustomerProfileSource({
-        sourceContractId: "wealth-assistant-customer-v2.1",
-        payload,
-        authorization: {
-          inScope,
-          organizationRef: input.principal.organizationId,
-          principalRef: principalFingerprint(input.principal),
-        },
-      }),
-    ],
-    principalAuthorized: true,
-    subjectInScope: inScope,
-    notes: [],
-  };
-}
-
 export const defaultCustomerProfileSourceLoader: CustomerProfileSourceLoaderV1 =
   async input => {
     if (input.principal.roleTemplate === "wealth-manager")
-      return loadWealthSource(input);
+      return loadWealthCustomerProfileCompatibilitySource(input);
     if (input.principal.roleTemplate === "insurance-advisor") {
-      return {
-        sources: [],
-        principalAuthorized: false,
-        subjectInScope: false,
-        notes: [
-          "insurance customer source remains blocked until row-level authorization and purpose-aware projection are production ready",
-        ],
-      };
+      if (!input.request)
+        return {
+          sources: [],
+          principalAuthorized: false,
+          subjectInScope: false,
+          notes: [
+            "insurance compatibility adapter requires the authenticated EA request context",
+          ],
+        };
+      return loadInsuranceCustomerProfileCompatibilitySource({
+        principal: input.principal,
+        subjectId: input.subjectId,
+        callEnterpriseTool: async call =>
+          executeEnterpriseMcpGatewayTool({
+            req: input.request as Request,
+            adoptId: input.principal.adoptionId,
+            sessionId: input.principal.sessionId,
+            serverId: call.serverId,
+            toolName: call.toolName,
+            arguments: call.args,
+            taskAuthorizationSnapshotId:
+              input.principal.authorizationSnapshotId,
+            executionOrigin: "customer_profile_adapter",
+          }),
+      });
     }
     return {
       sources: [],
@@ -354,6 +322,7 @@ export async function executeCustomerProfileProviderTool(input: {
   principal: RuntimePrincipalV2;
   args: JsonObject;
   sourceLoader?: CustomerProfileSourceLoaderV1;
+  request?: Request;
 }): Promise<CustomerProfileProviderToolResultV1> {
   const subjectId = firstString(
     input.args.customer_id,
@@ -374,6 +343,7 @@ export async function executeCustomerProfileProviderTool(input: {
     principal: input.principal,
     subjectId,
     ...(customerName ? { customerName } : {}),
+    ...(input.request ? { request: input.request } : {}),
   });
   const projectionInput: CustomerProfileProviderInputV1 = {
     roleTemplate: input.principal.roleTemplate,
@@ -384,7 +354,11 @@ export async function executeCustomerProfileProviderTool(input: {
     subjectInScope: loaded.subjectInScope,
     sources: loaded.sources,
   };
-  return textResult(projectCustomerProfile(projectionInput), input.principal);
+  return textResult(
+    projectCustomerProfile(projectionInput),
+    input.principal,
+    loaded
+  );
 }
 
 function ok(id: unknown, result: unknown) {
@@ -452,6 +426,7 @@ async function handleMessage(
     principal,
     args,
     sourceLoader,
+    request: req,
   });
   await recordAuditBestEffort({
     action: "governance.customer_profile.shadow_evaluated",

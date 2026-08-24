@@ -13,7 +13,10 @@ import {
 } from "../db";
 import { getClawByAdoptId, getClawByAgentId } from "../db/claw";
 import { auditActor, auditRequest, recordAuditRequired } from "./audit-events";
-import { callCustomMcpTool, type CustomMcpEndpointConfig } from "./custom-mcp-client";
+import {
+  callCustomMcpTool,
+  type CustomMcpEndpointConfig,
+} from "./custom-mcp-client";
 import {
   enterpriseMcpIdentityStatus,
   enterpriseMcpJwks,
@@ -31,11 +34,24 @@ import { internalMcpAudience } from "./internal-runtime-token";
 import { beginMcpCall } from "./observability/metrics";
 import { stableToolInputHash } from "./tool-governance";
 import { guardToolEgress } from "./tool-egress-policy";
-import { evaluateGovernance, type GovernanceOperation } from "./governance/contracts";
-import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
+import {
+  evaluateGovernance,
+  type GovernanceOperation,
+} from "./governance/contracts";
+import {
+  approvalRequiredToolResult,
+  enforceGovernanceApproval,
+} from "./governance/approval-service";
 import { enterpriseMcpPolicyAdapter } from "./governance/enterprise-mcp-policy-adapter";
-import { resolveRuntimePrincipal, resolveRuntimePrincipalV2, type PrincipalResolution } from "./governance/principal";
-import { authorizeExecutionAuthority, requiresExecutionAuthority } from "./governance/execution-authority";
+import {
+  resolveRuntimePrincipal,
+  resolveRuntimePrincipalV2,
+  type PrincipalResolution,
+} from "./governance/principal";
+import {
+  authorizeExecutionAuthority,
+  requiresExecutionAuthority,
+} from "./governance/execution-authority";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { attachReferenceRoleTaskReceipt } from "./reference-role-task-evidence";
@@ -50,7 +66,9 @@ const SERVICE_VERSION = "1.0.0";
 const MAX_ACTIVE_CALLS_PER_AGENT = 4;
 const activeCalls = new Map<string, number>();
 
-type Connection = Awaited<ReturnType<typeof listEnterpriseMcpConnections>>[number];
+type Connection = Awaited<
+  ReturnType<typeof listEnterpriseMcpConnections>
+>[number];
 type Policy = Awaited<ReturnType<typeof listEnterpriseMcpToolPolicies>>[number];
 
 type RuntimeContext = {
@@ -83,7 +101,10 @@ type GatewayCallControls = {
   approvalId?: string | null;
   taskAuthorizationSnapshotId?: string | null;
   runtimeAttested?: boolean;
-  executionOrigin?: "jiuwenswarm" | "a2a_local_executor";
+  executionOrigin?:
+    | "jiuwenswarm"
+    | "a2a_local_executor"
+    | "customer_profile_adapter";
 };
 
 function ok(id: unknown, result: unknown) {
@@ -95,7 +116,10 @@ function err(id: unknown, code: number, message: string) {
 }
 
 function textResult(text: string, isError = false) {
-  return { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) };
+  return {
+    content: [{ type: "text", text }],
+    ...(isError ? { isError: true } : {}),
+  };
 }
 
 function hasRequestId(id: unknown): boolean {
@@ -103,7 +127,11 @@ function hasRequestId(id: unknown): boolean {
 }
 
 function cleanError(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error || "Enterprise MCP call failed")).slice(0, 1_000);
+  return (
+    error instanceof Error
+      ? error.message
+      : String(error || "Enterprise MCP call failed")
+  ).slice(0, 1_000);
 }
 
 function stableHash(value: unknown): string {
@@ -119,10 +147,21 @@ function stableHash(value: unknown): string {
 function stripUntrustedEaMetadata<T>(value: T): T {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const result = value as Record<string, unknown>;
-  if (!result._meta || typeof result._meta !== "object" || Array.isArray(result._meta)) return value;
-  const meta = { ...result._meta as Record<string, unknown> };
-  const reservedKeys = ["eaMetadataIssuer", "eaContextReceipt", "eaInteractionGrant", "eaResponseEvidence", "eaTaskReceiptBundle"];
-  if (!reservedKeys.some((key) => key in meta)) return value;
+  if (
+    !result._meta ||
+    typeof result._meta !== "object" ||
+    Array.isArray(result._meta)
+  )
+    return value;
+  const meta = { ...(result._meta as Record<string, unknown>) };
+  const reservedKeys = [
+    "eaMetadataIssuer",
+    "eaContextReceipt",
+    "eaInteractionGrant",
+    "eaResponseEvidence",
+    "eaTaskReceiptBundle",
+  ];
+  if (!reservedKeys.some(key => key in meta)) return value;
   delete meta.eaContextReceipt;
   delete meta.eaMetadataIssuer;
   delete meta.eaInteractionGrant;
@@ -131,16 +170,34 @@ function stripUntrustedEaMetadata<T>(value: T): T {
   return { ...result, _meta: meta } as T;
 }
 
-export function enterpriseMcpGatewayToolName(serverId: string, remoteToolName: string): string {
-  const serverDigest = createHash("sha256").update(serverId).digest("hex").slice(0, 8);
-  const toolDigest = createHash("sha256").update(remoteToolName).digest("hex").slice(0, 8);
-  const safeName = remoteToolName.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "tool";
+export function enterpriseMcpGatewayToolName(
+  serverId: string,
+  remoteToolName: string
+): string {
+  const serverDigest = createHash("sha256")
+    .update(serverId)
+    .digest("hex")
+    .slice(0, 8);
+  const toolDigest = createHash("sha256")
+    .update(remoteToolName)
+    .digest("hex")
+    .slice(0, 8);
+  const safeName =
+    remoteToolName.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") ||
+    "tool";
   const prefix = `enterprise_${serverDigest}_`;
-  return `${prefix}${safeName.slice(0, Math.max(1, 119 - prefix.length))}_${toolDigest}`.slice(0, 128);
+  return `${prefix}${safeName.slice(0, Math.max(1, 119 - prefix.length))}_${toolDigest}`.slice(
+    0,
+    128
+  );
 }
 
 async function trustedAdoptId(req: Request): Promise<string> {
-  for (const name of ["x-jiuwen-channel-id", "x-agent-adopt-id", "x-workforce-agent-adopt-id"]) {
+  for (const name of [
+    "x-jiuwen-channel-id",
+    "x-agent-adopt-id",
+    "x-workforce-agent-adopt-id",
+  ]) {
     const value = String(req.headers[name] || "").trim();
     if (/^lgj-[A-Za-z0-9_-]{3,60}$/.test(value)) return value;
   }
@@ -150,15 +207,22 @@ async function trustedAdoptId(req: Request): Promise<string> {
   return String(claw?.adoptId || "");
 }
 
-async function runtimeContextForAdoptId(adoptId: string, sessionId?: unknown): Promise<RuntimeContext> {
+async function runtimeContextForAdoptId(
+  adoptId: string,
+  sessionId?: unknown
+): Promise<RuntimeContext> {
   if (!adoptId) throw new Error("trusted Agent identity is missing");
   const claw = await getClawByAdoptId(adoptId);
-  if (!claw || !["active", "expiring"].includes(String(claw.status || ""))) throw new Error("Agent is not active");
+  if (!claw || !["active", "expiring"].includes(String(claw.status || "")))
+    throw new Error("Agent is not active");
   const user = await getUserById(Number(claw.userId || 0));
   if (!user) throw new Error("Agent owner is unavailable");
   const roleKey = String(claw.roleTemplate || "general-assistant").trim();
   const effectiveAssets = await resolveEffectiveRoleAssets(roleKey);
-  const selection = await resolvePersistedAgentMcpSelection(adoptId, effectiveAssets);
+  const selection = await resolvePersistedAgentMcpSelection(
+    adoptId,
+    effectiveAssets
+  );
   return {
     adoptId,
     agentId: String(claw.agentId || adoptId),
@@ -176,7 +240,7 @@ async function runtimeContextForAdoptId(adoptId: string, sessionId?: unknown): P
 async function runtimeContext(req: Request): Promise<RuntimeContext> {
   return await runtimeContextForAdoptId(
     await trustedAdoptId(req),
-    req.headers["x-linggan-session-id"],
+    req.headers["x-linggan-session-id"]
   );
 }
 
@@ -185,18 +249,29 @@ function policyDraft(policy: Policy): EnterpriseMcpToolPolicyDraft {
     toolName: policy.toolName,
     enabled: Boolean(policy.enabled),
     sideEffect: policy.sideEffect,
-    requiredScopes: Array.isArray(policy.requiredScopes) ? policy.requiredScopes : [],
-    allowedRoles: Array.isArray(policy.allowedRoles) ? policy.allowedRoles : null,
+    requiredScopes: Array.isArray(policy.requiredScopes)
+      ? policy.requiredScopes
+      : [],
+    allowedRoles: Array.isArray(policy.allowedRoles)
+      ? policy.allowedRoles
+      : null,
     identityModeOverride: policy.identityModeOverride || null,
     approvalMode: policy.approvalMode,
     auditLevel: policy.auditLevel,
     idempotencyRequired: Boolean(policy.idempotencyRequired),
-    argumentPolicyJson: policy.argumentPolicyJson && typeof policy.argumentPolicyJson === "object" ? policy.argumentPolicyJson : null,
+    argumentPolicyJson:
+      policy.argumentPolicyJson && typeof policy.argumentPolicyJson === "object"
+        ? policy.argumentPolicyJson
+        : null,
   };
 }
 
 function shadowRuntimeEnabled(): boolean {
-  return String(process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW || "").trim().toLowerCase() === "true";
+  return (
+    String(process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW || "")
+      .trim()
+      .toLowerCase() === "true"
+  );
 }
 
 async function catalogTools(): Promise<ExposedTool[]> {
@@ -205,18 +280,39 @@ async function catalogTools(): Promise<ExposedTool[]> {
   const exposed: ExposedTool[] = [];
   for (const connection of connections) {
     if (connection.lifecycleState === "disabled") continue;
-    if (connection.lifecycleState === "shadow" && !shadowRuntimeEnabled()) continue;
+    if (connection.lifecycleState === "shadow" && !shadowRuntimeEnabled())
+      continue;
     if (connection.healthStatus !== "ready") continue;
-    if (connection.authMode === "oauth2_access_token" && !identity.configured) continue;
-    if (connection.authMode === "oauth2_access_token" && connection.lifecycleState === "enforced" && connection.identityVerificationStatus !== "verified") continue;
-    if (connection.authMode === "none_shadow" && connection.lifecycleState !== "shadow") continue;
-    const snapshots = Array.isArray(connection.toolsJson) ? connection.toolsJson as CustomMcpToolSnapshot[] : [];
-    const policyByName = new Map((await listEnterpriseMcpToolPolicies(connection.serverId)).map(policy => [policy.toolName, policy]));
+    if (connection.authMode === "oauth2_access_token" && !identity.configured)
+      continue;
+    if (
+      connection.authMode === "oauth2_access_token" &&
+      connection.lifecycleState === "enforced" &&
+      connection.identityVerificationStatus !== "verified"
+    )
+      continue;
+    if (
+      connection.authMode === "none_shadow" &&
+      connection.lifecycleState !== "shadow"
+    )
+      continue;
+    const snapshots = Array.isArray(connection.toolsJson)
+      ? (connection.toolsJson as CustomMcpToolSnapshot[])
+      : [];
+    const policyByName = new Map(
+      (await listEnterpriseMcpToolPolicies(connection.serverId)).map(policy => [
+        policy.toolName,
+        policy,
+      ])
+    );
     for (const tool of snapshots) {
       const policy = policyByName.get(tool.name);
       if (!policy?.enabled) continue;
       exposed.push({
-        exposedName: enterpriseMcpGatewayToolName(connection.serverId, tool.name),
+        exposedName: enterpriseMcpGatewayToolName(
+          connection.serverId,
+          tool.name
+        ),
         connection,
         policy,
         tool,
@@ -227,37 +323,74 @@ async function catalogTools(): Promise<ExposedTool[]> {
 }
 
 async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
-  return (await catalogTools()).filter((entry) =>
-    context.enabledServerIds.has(entry.connection.serverId)
-    && enterpriseMcpRoleAllowed(policyDraft(entry.policy), context.roleKey)
+  return (await catalogTools()).filter(
+    entry =>
+      context.enabledServerIds.has(entry.connection.serverId) &&
+      enterpriseMcpRoleAllowed(policyDraft(entry.policy), context.roleKey)
   );
 }
 
 function idempotencyKey(args: Record<string, unknown>): string {
-  return String(args.idempotency_key || args.idempotencyKey || "").trim().slice(0, 191);
+  return String(args.idempotency_key || args.idempotencyKey || "")
+    .trim()
+    .slice(0, 191);
 }
 
 function externalRequestId(result: Record<string, unknown>): string | null {
-  const meta = result._meta && typeof result._meta === "object" ? result._meta as Record<string, unknown> : null;
-  const value = result.externalRequestId || result.external_request_id || result.recordId
-    || meta?.externalRequestId || meta?.external_request_id || meta?.recordId
-    || result.requestId || result.request_id || meta?.requestId || meta?.request_id;
+  const meta =
+    result._meta && typeof result._meta === "object"
+      ? (result._meta as Record<string, unknown>)
+      : null;
+  const value =
+    result.externalRequestId ||
+    result.external_request_id ||
+    result.recordId ||
+    meta?.externalRequestId ||
+    meta?.external_request_id ||
+    meta?.recordId ||
+    result.requestId ||
+    result.request_id ||
+    meta?.requestId ||
+    meta?.request_id;
   return value ? String(value).slice(0, 128) : null;
 }
 
-async function endpointConfig(entry: ExposedTool, token: string | null): Promise<CustomMcpEndpointConfig> {
+async function endpointConfig(
+  entry: ExposedTool,
+  token: string | null
+): Promise<CustomMcpEndpointConfig> {
   if (entry.connection.authMode === "static_bearer_legacy") {
     const credential = revealEnterpriseMcpCredential(entry.connection);
-    if (!credential) throw new Error("Enterprise MCP static credential is missing");
-    return { endpointUrl: entry.connection.endpointUrl, authType: "bearer", credential, timeoutMs: entry.connection.timeoutMs };
+    if (!credential)
+      throw new Error("Enterprise MCP static credential is missing");
+    return {
+      endpointUrl: entry.connection.endpointUrl,
+      authType: "bearer",
+      credential,
+      timeoutMs: entry.connection.timeoutMs,
+    };
   }
   if (entry.connection.authMode === "oauth2_access_token") {
     if (!token) throw new Error("Enterprise MCP identity token is unavailable");
-    return { endpointUrl: entry.connection.endpointUrl, authType: "bearer", credential: token, timeoutMs: entry.connection.timeoutMs };
+    return {
+      endpointUrl: entry.connection.endpointUrl,
+      authType: "bearer",
+      credential: token,
+      timeoutMs: entry.connection.timeoutMs,
+    };
   }
   return token
-    ? { endpointUrl: entry.connection.endpointUrl, authType: "bearer", credential: token, timeoutMs: entry.connection.timeoutMs }
-    : { endpointUrl: entry.connection.endpointUrl, authType: "none", timeoutMs: entry.connection.timeoutMs };
+    ? {
+        endpointUrl: entry.connection.endpointUrl,
+        authType: "bearer",
+        credential: token,
+        timeoutMs: entry.connection.timeoutMs,
+      }
+    : {
+        endpointUrl: entry.connection.endpointUrl,
+        authType: "none",
+        timeoutMs: entry.connection.timeoutMs,
+      };
 }
 
 async function auditCall(input: {
@@ -273,12 +406,17 @@ async function auditCall(input: {
   const event = {
     action: `mcp.enterprise_tool.${input.phase}`,
     result: input.result,
-    severity: input.result === "success" ? "info" as const : "high" as const,
+    severity:
+      input.result === "success" ? ("info" as const) : ("high" as const),
     ...auditActor(input.context.user),
     ...auditRequest(input.req),
     requestId: input.requestId,
     targetType: "mcp_tool",
-    targetId: `${input.entry.connection.serverId}:${input.entry.tool.name}`.slice(0, 128),
+    targetId:
+      `${input.entry.connection.serverId}:${input.entry.tool.name}`.slice(
+        0,
+        128
+      ),
     targetName: input.entry.tool.name,
     resourceType: "mcp_server",
     resourceId: input.entry.connection.serverId,
@@ -303,17 +441,20 @@ async function gatewayCall(
   exposedName: string,
   args: Record<string, unknown>,
   req: Request,
-  controls: GatewayCallControls = {},
+  controls: GatewayCallControls = {}
 ) {
   const current = activeCalls.get(context.adoptId) || 0;
-  if (current >= MAX_ACTIVE_CALLS_PER_AGENT) return textResult("当前企业连接器调用较多，请稍后重试。", true);
+  if (current >= MAX_ACTIVE_CALLS_PER_AGENT)
+    return textResult("当前企业连接器调用较多，请稍后重试。", true);
   activeCalls.set(context.adoptId, current + 1);
   const finishMetric = beginMcpCall("enterprise");
   let metricOutcome: "success" | "empty" | "error" = "empty";
   const startedAt = Date.now();
   let requestId = "";
   let receiptReserved = false;
-  let roleTaskContext: ReferenceRoleTaskContextPreparation = { sourceBinding: null };
+  let roleTaskContext: ReferenceRoleTaskContextPreparation = {
+    sourceBinding: null,
+  };
   let auditState: {
     entry: ExposedTool;
     policyDecisionId: string;
@@ -323,12 +464,19 @@ async function gatewayCall(
     sideEffect: EnterpriseMcpToolPolicyDraft["sideEffect"];
   } | null = null;
   try {
-    const entry = (await exposedTools(context)).find(item => item.exposedName === exposedName);
-    if (!entry) return textResult("该企业工具未授权、已停用或不属于当前岗位。", true);
+    const entry = (await exposedTools(context)).find(
+      item => item.exposedName === exposedName
+    );
+    if (!entry)
+      return textResult("该企业工具未授权、已停用或不属于当前岗位。", true);
     const policy = policyDraft(entry.policy);
-    const identityMode = policy.identityModeOverride || entry.connection.identityMode;
+    const identityMode =
+      policy.identityModeOverride || entry.connection.identityMode;
     requestId = `emcp_${randomUUID()}`;
-    const tenantId = enterpriseMcpTenantId(context.user.organization, context.user.id);
+    const tenantId = enterpriseMcpTenantId(
+      context.user.organization,
+      context.user.id
+    );
     const argsHash = stableToolInputHash(args);
     const idemKey = idempotencyKey(args);
     const operation: GovernanceOperation = {
@@ -339,7 +487,9 @@ async function gatewayCall(
       payloadHash: argsHash,
     };
     let effectivePrincipal = context.principal;
-    let executionAuthority: Awaited<ReturnType<typeof authorizeExecutionAuthority>> | null = null;
+    let executionAuthority: Awaited<
+      ReturnType<typeof authorizeExecutionAuthority>
+    > | null = null;
     if (requiresExecutionAuthority(policy.sideEffect)) {
       const principalV2 = await resolveRuntimePrincipalV2({
         adoption: context.adoption,
@@ -348,13 +498,17 @@ async function gatewayCall(
       });
       if (!principalV2.complete) {
         metricOutcome = "error";
-        return textResult("当前执行身份无法形成可验证授权快照，已停止该操作。", true);
+        return textResult(
+          "当前执行身份无法形成可验证授权快照，已停止该操作。",
+          true
+        );
       }
       executionAuthority = await authorizeExecutionAuthority({
         principal: principalV2.principal,
-        taskAuthorizationSnapshotId: controls.taskAuthorizationSnapshotId
-          || String(req.headers["x-ea-authorization-snapshot-id"] || "").trim()
-          || null,
+        taskAuthorizationSnapshotId:
+          controls.taskAuthorizationSnapshotId ||
+          String(req.headers["x-ea-authorization-snapshot-id"] || "").trim() ||
+          null,
         operation,
       });
       if (executionAuthority.effect !== "ALLOW") {
@@ -366,7 +520,10 @@ async function gatewayCall(
           ...auditActor(context.user),
           ...auditRequest(req),
           targetType: "mcp_tool",
-          targetId: `${entry.connection.serverId}:${entry.tool.name}`.slice(0, 128),
+          targetId: `${entry.connection.serverId}:${entry.tool.name}`.slice(
+            0,
+            128
+          ),
           workspaceId: principalV2.principal.workspaceId,
           agentInstanceId: context.adoptId,
           runtimeAgentId: context.agentId,
@@ -378,32 +535,54 @@ async function gatewayCall(
             ruleVersion: executionAuthority.ruleVersion,
             taskSnapshotId: executionAuthority.taskSnapshotId,
             currentSnapshotId: executionAuthority.currentSnapshotId,
-            effectiveAuthorityFingerprint: executionAuthority.effectiveAuthorityFingerprint,
+            effectiveAuthorityFingerprint:
+              executionAuthority.effectiveAuthorityFingerprint,
           },
         });
         return textResult(executionAuthority.reason, true);
       }
-      effectivePrincipal = { principal: executionAuthority.effectivePrincipal, complete: true, issues: [] };
+      effectivePrincipal = {
+        principal: executionAuthority.effectivePrincipal,
+        complete: true,
+        issues: [],
+      };
     }
-    const governance = await evaluateGovernance({
-      principal: effectivePrincipal.principal,
-      operation,
-      context: { serverId: entry.connection.serverId, approvalMode: policy.approvalMode },
-    }, [enterpriseMcpPolicyAdapter({
-      policy,
-      principal: effectivePrincipal,
-      runtimeAttested: controls.runtimeAttested ?? runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
-    })], {
-      effect: "DENY",
-      policyCode: "EA_ENTERPRISE_MCP_POLICY_UNAVAILABLE",
-      ruleVersion: "enterprise-mcp-v2",
-      reason: "企业 MCP 治理策略不可用，已阻止执行。",
-      obligations: [{ type: "AUDIT", level: "strong" }],
-    });
+    const governance = await evaluateGovernance(
+      {
+        principal: effectivePrincipal.principal,
+        operation,
+        context: {
+          serverId: entry.connection.serverId,
+          approvalMode: policy.approvalMode,
+        },
+      },
+      [
+        enterpriseMcpPolicyAdapter({
+          policy,
+          principal: effectivePrincipal,
+          runtimeAttested:
+            controls.runtimeAttested ??
+            runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+        }),
+      ],
+      {
+        effect: "DENY",
+        policyCode: "EA_ENTERPRISE_MCP_POLICY_UNAVAILABLE",
+        ruleVersion: "enterprise-mcp-v2",
+        reason: "企业 MCP 治理策略不可用，已阻止执行。",
+        obligations: [{ type: "AUDIT", level: "strong" }],
+      }
+    );
     const policyDecisionId = governance.decisionId;
 
     await auditCall({
-      phase: "requested", entry, context, req, requestId, policyDecisionId, result: "success",
+      phase: "requested",
+      entry,
+      context,
+      req,
+      requestId,
+      policyDecisionId,
+      result: "success",
       metadata: {
         argsHash,
         sideEffect: policy.sideEffect,
@@ -414,19 +593,44 @@ async function gatewayCall(
         ruleVersion: governance.ruleVersion,
         principalFingerprint: governance.principalFingerprint,
         operationFingerprint: governance.operationFingerprint,
-        executionAuthorityFingerprint: executionAuthority?.effectiveAuthorityFingerprint || null,
+        executionAuthorityFingerprint:
+          executionAuthority?.effectiveAuthorityFingerprint || null,
         executionOrigin: controls.executionOrigin || "jiuwenswarm",
       },
     });
-    auditState = { entry, policyDecisionId, argsHash, identityMode, tenantId, sideEffect: policy.sideEffect };
+    auditState = {
+      entry,
+      policyDecisionId,
+      argsHash,
+      identityMode,
+      tenantId,
+      sideEffect: policy.sideEffect,
+    };
 
     const block = async (reason: string, errorCode: string) => {
       if (receiptReserved) {
-        await completeEnterpriseMcpCall({ requestId, status: "blocked", durationMs: Date.now() - startedAt, errorCode });
+        await completeEnterpriseMcpCall({
+          requestId,
+          status: "blocked",
+          durationMs: Date.now() - startedAt,
+          errorCode,
+        });
       }
       await auditCall({
-        phase: "completed", entry, context, req, requestId, policyDecisionId, result: "denied",
-        metadata: { reason, errorCode, argsHash, sideEffect: policy.sideEffect, identityMode },
+        phase: "completed",
+        entry,
+        context,
+        req,
+        requestId,
+        policyDecisionId,
+        result: "denied",
+        metadata: {
+          reason,
+          errorCode,
+          argsHash,
+          sideEffect: policy.sideEffect,
+          identityMode,
+        },
       });
       metricOutcome = "error";
       return textResult(reason, true);
@@ -437,7 +641,11 @@ async function gatewayCall(
     } catch (error) {
       return await block(cleanError(error), "ARGUMENT_POLICY_DENIED");
     }
-    if (policy.idempotencyRequired && !idemKey) return await block("该工具需要 idempotency_key，已阻止无幂等保护的调用。", "IDEMPOTENCY_KEY_REQUIRED");
+    if (policy.idempotencyRequired && !idemKey)
+      return await block(
+        "该工具需要 idempotency_key，已阻止无幂等保护的调用。",
+        "IDEMPOTENCY_KEY_REQUIRED"
+      );
 
     const egress = await guardToolEgress({
       channel: "enterprise_mcp",
@@ -447,18 +655,31 @@ async function gatewayCall(
       destinationUrl: entry.connection.endpointUrl,
       destinationTrust: "platform",
     });
-    if (!egress.ok) return await block(egress.error || "工具参数未通过数据护栏。", "DATA_GUARDRAIL_DENIED");
+    if (!egress.ok)
+      return await block(
+        egress.error || "工具参数未通过数据护栏。",
+        "DATA_GUARDRAIL_DENIED"
+      );
 
     const approval = await enforceGovernanceApproval({
       decision: governance,
       principal: effectivePrincipal.principal,
       operation,
-      approvalId: controls.approvalId || String(req.headers["x-ea-approval-id"] || "").trim() || null,
+      approvalId:
+        controls.approvalId ||
+        String(req.headers["x-ea-approval-id"] || "").trim() ||
+        null,
       idempotencyKey: idemKey || null,
     });
     if (approval.effect === "REQUIRE_APPROVAL") {
       await auditCall({
-        phase: "completed", entry, context, req, requestId, policyDecisionId, result: "denied",
+        phase: "completed",
+        entry,
+        context,
+        req,
+        requestId,
+        policyDecisionId,
+        result: "denied",
         metadata: {
           errorCode: "APPROVAL_REQUIRED",
           approvalId: approval.requirement.approvalId,
@@ -475,10 +696,13 @@ async function gatewayCall(
         policyCode: governance.policyCode,
         toolName: entry.tool.name,
         connectorName: entry.connection.displayName,
-        demo: entry.connection.environment === "test" || entry.connection.displayName.includes("Demo"),
+        demo:
+          entry.connection.environment === "test" ||
+          entry.connection.displayName.includes("Demo"),
       });
     }
-    if (approval.effect === "DENY") return await block(approval.reason, "APPROVAL_DENIED");
+    if (approval.effect === "DENY")
+      return await block(approval.reason, "APPROVAL_DENIED");
 
     roleTaskContext = await prepareReferenceRoleTaskContext({
       roleTemplate: context.roleKey,
@@ -487,7 +711,10 @@ async function gatewayCall(
       organizationId: tenantId,
     });
     if (roleTaskContext.rejection) {
-      return await block(roleTaskContext.rejection.reason, roleTaskContext.rejection.errorCode);
+      return await block(
+        roleTaskContext.rejection.reason,
+        roleTaskContext.rejection.errorCode
+      );
     }
 
     const reservation = await reserveEnterpriseMcpCall({
@@ -506,30 +733,37 @@ async function gatewayCall(
     });
     if (!reservation.reserved) {
       metricOutcome = "error";
-      return textResult(`重复请求已阻止（${reservation.receipt.requestId}）。`, true);
+      return textResult(
+        `重复请求已阻止（${reservation.receipt.requestId}）。`,
+        true
+      );
     }
     receiptReserved = true;
 
     const identityStatus = await enterpriseMcpIdentityStatus();
     const issued = identityStatus.configured
       ? await issueEnterpriseMcpAccessToken({
-        caller: {
-          userId: context.user.id,
-          organization: context.user.organization,
-          adoptId: context.adoptId,
-          agentId: context.agentId,
-          roleKey: context.roleKey,
-        },
-        identityMode,
-        resourceUri: entry.connection.resourceUri,
-        serverId: entry.connection.serverId,
-        toolName: entry.tool.name,
-        scopes: policy.requiredScopes,
-        requestId,
-      })
+          caller: {
+            userId: context.user.id,
+            organization: context.user.organization,
+            adoptId: context.adoptId,
+            agentId: context.agentId,
+            roleKey: context.roleKey,
+          },
+          identityMode,
+          resourceUri: entry.connection.resourceUri,
+          serverId: entry.connection.serverId,
+          toolName: entry.tool.name,
+          scopes: policy.requiredScopes,
+          requestId,
+        })
       : null;
     const result = stripUntrustedEaMetadata(
-      await callCustomMcpTool(await endpointConfig(entry, issued?.token || null), entry.tool.name, args),
+      await callCustomMcpTool(
+        await endpointConfig(entry, issued?.token || null),
+        entry.tool.name,
+        args
+      )
     );
     const failed = result.isError === true;
     const resultHash = stableHash(result);
@@ -543,7 +777,13 @@ async function gatewayCall(
       errorCode: failed ? "REMOTE_TOOL_ERROR" : null,
     });
     await auditCall({
-      phase: "completed", entry, context, req, requestId, policyDecisionId, result: failed ? "failed" : "success",
+      phase: "completed",
+      entry,
+      context,
+      req,
+      requestId,
+      policyDecisionId,
+      result: failed ? "failed" : "success",
       metadata: {
         resultHash,
         externalRequestId: externalId,
@@ -632,8 +872,12 @@ export async function executeEnterpriseMcpGatewayTool(input: {
   arguments: Record<string, unknown>;
   taskAuthorizationSnapshotId: string;
   approvalId?: string | null;
+  executionOrigin?: GatewayCallControls["executionOrigin"];
 }) {
-  const context = await runtimeContextForAdoptId(input.adoptId, input.sessionId);
+  const context = await runtimeContextForAdoptId(
+    input.adoptId,
+    input.sessionId
+  );
   return await gatewayCall(
     context,
     enterpriseMcpGatewayToolName(input.serverId, input.toolName),
@@ -646,35 +890,49 @@ export async function executeEnterpriseMcpGatewayTool(input: {
       // immutable binding and durable execution state. It does not depend on a
       // remote Runtime hook to establish its local PEP.
       runtimeAttested: true,
-      executionOrigin: "a2a_local_executor",
-    },
+      executionOrigin: input.executionOrigin || "a2a_local_executor",
+    }
   );
 }
 
 async function handleMessage(req: Request, message: unknown) {
-  if (!message || typeof message !== "object" || Array.isArray(message)) return null;
+  if (!message || typeof message !== "object" || Array.isArray(message))
+    return null;
   const rpc = message as JsonRpcMessage;
   const id = rpc.id;
   if (rpc.method === "notifications/initialized") return null;
   if (rpc.method === "initialize") {
-    return hasRequestId(id) ? ok(id, {
-      protocolVersion: "2025-11-25",
-      capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: SERVICE_NAME, version: SERVICE_VERSION },
-      instructions: "Organization-managed MCP tools governed by role, identity, policy, guardrails and durable audit receipts.",
-    }) : null;
+    return hasRequestId(id)
+      ? ok(id, {
+          protocolVersion: "2025-11-25",
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: SERVICE_NAME, version: SERVICE_VERSION },
+          instructions:
+            "Organization-managed MCP tools governed by role, identity, policy, guardrails and durable audit receipts.",
+        })
+      : null;
   }
   if (rpc.method === "ping") return hasRequestId(id) ? ok(id, {}) : null;
-  if (rpc.method === "resources/list") return hasRequestId(id) ? ok(id, { resources: [] }) : null;
-  if (rpc.method === "prompts/list") return hasRequestId(id) ? ok(id, { prompts: [] }) : null;
+  if (rpc.method === "resources/list")
+    return hasRequestId(id) ? ok(id, { resources: [] }) : null;
+  if (rpc.method === "prompts/list")
+    return hasRequestId(id) ? ok(id, { prompts: [] }) : null;
   if (rpc.method === "tools/list") {
     const adoptId = await trustedAdoptId(req);
-    const entries = adoptId ? await exposedTools(await runtimeContext(req)) : await catalogTools();
+    const entries = adoptId
+      ? await exposedTools(await runtimeContext(req))
+      : await catalogTools();
     const tools = entries.map(entry => ({
       name: entry.exposedName,
-      description: `[${entry.connection.displayName}] ${entry.tool.description || entry.tool.name}`.slice(0, 2_000),
+      description:
+        `[${entry.connection.displayName}] ${entry.tool.description || entry.tool.name}`.slice(
+          0,
+          2_000
+        ),
       inputSchema: entry.tool.inputSchema || { type: "object", properties: {} },
-      ...(entry.tool.outputSchema ? { outputSchema: entry.tool.outputSchema } : {}),
+      ...(entry.tool.outputSchema
+        ? { outputSchema: entry.tool.outputSchema }
+        : {}),
       annotations: {
         ...(entry.tool.annotations || {}),
         readOnlyHint: ["read", "compute"].includes(entry.policy.sideEffect),
@@ -687,19 +945,32 @@ async function handleMessage(req: Request, message: unknown) {
     if (!hasRequestId(id)) return null;
     const context = await runtimeContext(req);
     const rawArguments = rpc.params?.arguments;
-    const args = rawArguments && typeof rawArguments === "object" && !Array.isArray(rawArguments)
-      ? rawArguments as Record<string, unknown>
-      : {};
-    return ok(id, await gatewayCall(context, String(rpc.params?.name || ""), args, req));
+    const args =
+      rawArguments &&
+      typeof rawArguments === "object" &&
+      !Array.isArray(rawArguments)
+        ? (rawArguments as Record<string, unknown>)
+        : {};
+    return ok(
+      id,
+      await gatewayCall(context, String(rpc.params?.name || ""), args, req)
+    );
   }
-  return hasRequestId(id) ? err(id, -32601, `Method not found: ${String(rpc.method || "")}`) : null;
+  return hasRequestId(id)
+    ? err(id, -32601, `Method not found: ${String(rpc.method || "")}`)
+    : null;
 }
 
 export function registerEnterpriseMcpGatewayRoutes(app: Express): void {
-  const internalGatewayAudience = internalMcpAudience("/api/internal/enterprise-mcp/mcp");
+  const internalGatewayAudience = internalMcpAudience(
+    "/api/internal/enterprise-mcp/mcp"
+  );
   app.get("/api/enterprise-mcp/.well-known/jwks.json", async (_req, res) => {
     try {
-      res.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
+      res.setHeader(
+        "Cache-Control",
+        "public, max-age=300, stale-while-revalidate=60"
+      );
       res.json(await enterpriseMcpJwks());
     } catch (error) {
       res.status(503).json({ error: cleanError(error) });
@@ -707,14 +978,29 @@ export function registerEnterpriseMcpGatewayRoutes(app: Express): void {
   });
 
   app.get("/api/internal/enterprise-mcp/health", async (req, res) => {
-    if (!isAuthorizedInternalRequest(req)) return res.status(401).json({ error: "unauthorized" });
-    res.json({ status: "ok", name: SERVICE_NAME, version: SERVICE_VERSION, identity: await enterpriseMcpIdentityStatus() });
+    if (!isAuthorizedInternalRequest(req))
+      return res.status(401).json({ error: "unauthorized" });
+    res.json({
+      status: "ok",
+      name: SERVICE_NAME,
+      version: SERVICE_VERSION,
+      identity: await enterpriseMcpIdentityStatus(),
+    });
   });
 
   app.get("/api/internal/enterprise-mcp/mcp", async (req, res) => {
-    if (!await authorizeAndBindInternalRuntimeRequest(req, internalGatewayAudience)) return res.status(401).json(err(null, -32001, "unauthorized"));
+    if (
+      !(await authorizeAndBindInternalRuntimeRequest(
+        req,
+        internalGatewayAudience
+      ))
+    )
+      return res.status(401).json(err(null, -32001, "unauthorized"));
     const adoptId = await trustedAdoptId(req);
-    if (!adoptId) return res.status(400).json(err(null, -32001, "trusted Agent identity is missing"));
+    if (!adoptId)
+      return res
+        .status(400)
+        .json(err(null, -32001, "trusted Agent identity is missing"));
     res.status(200);
     res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -727,18 +1013,33 @@ export function registerEnterpriseMcpGatewayRoutes(app: Express): void {
   });
 
   app.delete("/api/internal/enterprise-mcp/mcp", async (req, res) => {
-    if (!await authorizeAndBindInternalRuntimeRequest(req, internalGatewayAudience)) return res.status(401).json(err(null, -32001, "unauthorized"));
+    if (
+      !(await authorizeAndBindInternalRuntimeRequest(
+        req,
+        internalGatewayAudience
+      ))
+    )
+      return res.status(401).json(err(null, -32001, "unauthorized"));
     res.status(204).end();
   });
 
   app.post("/api/internal/enterprise-mcp/mcp", async (req, res) => {
-    if (!await authorizeAndBindInternalRuntimeRequest(req, internalGatewayAudience)) return res.status(401).json(err(null, -32001, "unauthorized"));
+    if (
+      !(await authorizeAndBindInternalRuntimeRequest(
+        req,
+        internalGatewayAudience
+      ))
+    )
+      return res.status(401).json(err(null, -32001, "unauthorized"));
     try {
       const body = req.body || {};
       const response = Array.isArray(body)
-        ? (await Promise.all(body.map(item => handleMessage(req, item)))).filter(Boolean)
+        ? (
+            await Promise.all(body.map(item => handleMessage(req, item)))
+          ).filter(Boolean)
         : await handleMessage(req, body);
-      if (!response || (Array.isArray(response) && response.length === 0)) return res.status(202).json({});
+      if (!response || (Array.isArray(response) && response.length === 0))
+        return res.status(202).json({});
       const adoptId = await trustedAdoptId(req);
       if (adoptId) res.setHeader("Mcp-Session-Id", `enterprise-mcp-${adoptId}`);
       res.json(response);
