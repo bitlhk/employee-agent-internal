@@ -333,7 +333,10 @@ function textResult(
 export const defaultCustomerProfileSourceLoader: CustomerProfileSourceLoaderV1 =
   async input => {
     if (input.principal.roleTemplate === "wealth-manager")
-      return loadWealthCustomerProfileCompatibilitySource(input);
+      return loadWealthCustomerProfileCompatibilitySource({
+        ...input,
+        includeDemoFacts: demoFactsEnabled(),
+      });
     if (input.principal.roleTemplate === "insurance-advisor") {
       if (!input.request)
         return {
