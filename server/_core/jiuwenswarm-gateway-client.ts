@@ -42,6 +42,7 @@ import {
 import { EnterpriseMcpProvisioningCoordinator } from "./enterprise-mcp-provisioning-coordinator";
 
 const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
+const GATEWAY_PROGRESS_HEARTBEAT_MS = 10_000;
 const enterpriseMcpProvisioningCoordinator = new EnterpriseMcpProvisioningCoordinator(
   Math.max(30_000, Number(process.env.EA_ENTERPRISE_MCP_PROVISION_CACHE_TTL_MS || 600_000) || 600_000),
 );
@@ -55,6 +56,18 @@ export type JiuwenContinuationPermission = JiuwenPermissionRequest & {
 export type JiuwenPermissionAnswerResult =
   | { ok: true; text: string; permission?: JiuwenContinuationPermission }
   | { ok: false; error: string; text?: string };
+
+export function gatewayProgressStatus(elapsedMs: number): string {
+  const elapsed = Math.max(0, Number(elapsedMs) || 0);
+  if (elapsed < 20_000) return "正在准备本次任务...";
+  if (elapsed < 60_000) return "正在核验任务所需信息...";
+  if (elapsed < 120_000) return "正在汇总多项结果，复杂任务可能需要几分钟...";
+  return "正在完成结果整理...";
+}
+
+export function shouldKeepGatewayRunAfterClientClose(enterprise: boolean): boolean {
+  return enterprise;
+}
 
 export function buildGovernanceContinuationPermission(
   governance: {
@@ -562,6 +575,7 @@ export async function forwardToJiuwenGateway(
     let managedMcpProvisionReject: ((error: Error) => void) | null = null;
     let managedMcpProvisionTimer: NodeJS.Timeout | null = null;
     let connectionAckTimer: NodeJS.Timeout | null = null;
+    let progressHeartbeat: NodeJS.Timeout | null = null;
     const timeoutMs = Math.max(30_000, Number(process.env.JIUWENCLAW_GATEWAY_CHAT_TIMEOUT_MS || process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || 180_000) || 180_000);
     const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
     const sendChatRequest = () => {
@@ -650,6 +664,7 @@ export async function forwardToJiuwenGateway(
       clearTimeout(timeout);
       if (connectionAckTimer) clearTimeout(connectionAckTimer);
       if (managedMcpProvisionTimer) clearTimeout(managedMcpProvisionTimer);
+      if (progressHeartbeat) clearInterval(progressHeartbeat);
       for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
         generatedFiles.set(file.path, file);
         if (!emittedFilePaths.has(file.path) && !clientClosed) {
@@ -737,10 +752,34 @@ export async function forwardToJiuwenGateway(
       });
       settle("timeout");
     }, timeoutMs);
+    const writeProgressHeartbeat = () => {
+      if (settled || clientClosed) return;
+      writeSseData(res, {
+        __status: gatewayProgressStatus(Date.now() - startedAt),
+        kind: "heartbeat",
+        elapsedMs: Date.now() - startedAt,
+      });
+      res.flush?.();
+    };
+    writeProgressHeartbeat();
+    progressHeartbeat = setInterval(writeProgressHeartbeat, GATEWAY_PROGRESS_HEARTBEAT_MS);
     res.on("close", () => {
       if (!settled) {
         clientClosed = true;
-        try { ws.close(1000, "client closed"); } catch {}
+        if (shouldKeepGatewayRunAfterClientClose(Boolean(enterpriseRoute))) {
+          if (progressHeartbeat) clearInterval(progressHeartbeat);
+          appendLogAsync("jiuwenclaw-exec.log", {
+            ts: new Date().toISOString(),
+            event: "gateway_chat_client_detached",
+            adoptId: claw.adoptId,
+            agentId,
+            sessionId,
+            requestId,
+            clientRunId: opts.clientRunId || "",
+          });
+        } else {
+          try { ws.close(1000, "client closed"); } catch {}
+        }
       }
     });
     ws.on("open", () => {

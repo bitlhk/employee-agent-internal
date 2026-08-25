@@ -2605,7 +2605,7 @@ export default function Home() {
     setActiveToolStartMs(null);
   };
 
-  // 断连检测：任意 SSE 事件超过 25 秒未到达 → 进入"重连中"
+  // 断连检测：任意 SSE 事件超过 90 秒未到达才进入恢复状态。
   useEffect(() => {
     if (!lingxiaStreaming) return;
     const id = setInterval(() => {
@@ -3174,7 +3174,7 @@ export default function Home() {
         id: assistantMessageId,
         role: "assistant",
         text: "",
-        status: "正在连接...",
+        status: "正在准备本次任务...",
         timeLabel: assistantTimeLabel,
         model: effectiveLingxiaModelId,
         ...(opts?.selectedSkillIds?.length ? { selectedSkillIds: opts.selectedSkillIds } : {}),

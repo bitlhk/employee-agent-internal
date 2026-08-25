@@ -3,9 +3,25 @@ import {
   buildGovernanceContinuationPermission,
   canDegradeAfterEnterpriseMcpProvisioningFailure,
   enterpriseMcpProvisioningFrameResult,
+  gatewayProgressStatus,
   gatewayPermissionAnswerMethod,
   gatewayPermissionEventMatchesRequest,
+  shouldKeepGatewayRunAfterClientClose,
 } from "./jiuwenswarm-gateway-client";
+
+describe("gateway progress continuity", () => {
+  it("uses task language for long-running enterprise work", () => {
+    expect(gatewayProgressStatus(0)).toBe("正在准备本次任务...");
+    expect(gatewayProgressStatus(30_000)).toBe("正在核验任务所需信息...");
+    expect(gatewayProgressStatus(90_000)).toContain("复杂任务可能需要几分钟");
+    expect(gatewayProgressStatus(150_000)).toBe("正在完成结果整理...");
+  });
+
+  it("keeps enterprise work attached to the gateway after the browser disconnects", () => {
+    expect(shouldKeepGatewayRunAfterClientClose(true)).toBe(true);
+    expect(shouldKeepGatewayRunAfterClientClose(false)).toBe(false);
+  });
+});
 
 describe("buildGovernanceContinuationPermission", () => {
   it("preserves the EA approval identity for the browser governance card", () => {
