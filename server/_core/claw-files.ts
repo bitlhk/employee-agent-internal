@@ -13,6 +13,7 @@ import { skillSourceDirsForRuntime, skillStoreAgentDir } from "./skills/skill-st
 import { decodeBase64Strict, scanUploadForMalware, validateUploadContent } from "./upload-security";
 import { stableToolInputHash } from "./tool-governance";
 import { authorizeClawRouteExecution } from "./governance/claw-route-execution-authority";
+import { resolveRuntimeFileWorkspace } from "./runtime-file-workspace";
 
 type LinggFileNode = {
   name: string;
@@ -306,7 +307,11 @@ export function registerFilesRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
-      const workspace = runtimeWorkspace(claw, adoptId);
+      const { workspaceDir: workspace } = await resolveRuntimeFileWorkspace({
+        adoptId,
+        dbAgentId: String((claw as any).agentId || ""),
+        relativePath: relPath,
+      });
       const abs = resolveExistingWorkspacePath(workspace, relPath, isManagedSkillsPath(relPath) ? approvedSkillRoots(adoptId) : []);
       if (!abs || !existsSync(abs)) return res.status(404).json({ error: "file not found" });
       const st = statSync(abs);
@@ -337,7 +342,11 @@ export function registerFilesRoutes(app: express.Express) {
       if (!claw) return;
       let absPath: string | null = null;
       if (adoptId.startsWith("lgh-")) return res.status(410).json({ error: "HERMES_RUNTIME_ARCHIVED" });
-      const workspace = runtimeWorkspace(claw, adoptId);
+      const { workspaceDir: workspace } = await resolveRuntimeFileWorkspace({
+        adoptId,
+        dbAgentId: String((claw as any).agentId || ""),
+        relativePath: relPath,
+      });
       absPath = resolveExistingWorkspacePath(workspace, relPath, isManagedSkillsPath(relPath) ? approvedSkillRoots(adoptId) : []);
       if (absPath && (!existsSync(absPath) || !statSync(absPath).isFile())) absPath = null;
       if (!absPath) return res.status(404).json({ error: "file not found" });

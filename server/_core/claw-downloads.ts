@@ -13,6 +13,7 @@ import {
   sanitizeRelPath,
 } from "./helpers";
 import { resolveExistingRegularFile, resolveExistingWorkspacePath } from "./file-path-security";
+import { resolveRuntimeFileWorkspace } from "./runtime-file-workspace";
 
 const HTML_PREVIEW_CSP = [
   "default-src 'none'",
@@ -155,7 +156,12 @@ export function registerDownloadRoutes(app: express.Express) {
       const claw = await requireClawOwner(req, res, adoptId);
       if (!claw) return;
 
-      const filePath = resolveExistingWorkspacePath(resolveRuntimeWorkspace(claw, adoptId), relPath);
+      const { workspaceDir } = await resolveRuntimeFileWorkspace({
+        adoptId,
+        dbAgentId: String((claw as any).agentId || ""),
+        relativePath: relPath,
+      });
+      const filePath = resolveExistingWorkspacePath(workspaceDir, relPath);
 
       if (!filePath || !existsSync(filePath)) return res.status(404).json({ error: "file not found" });
 
@@ -187,9 +193,13 @@ export function registerDownloadRoutes(app: express.Express) {
 
       // claw.adoptId 是 DB 中的权威值（含 lgc- 前缀），用它来 resolve runtimeAgentId
       const canonicalAdoptId = String((claw as any).adoptId || adoptId);
-      const runtimeAgentId = resolveRuntimeAgentId(canonicalAdoptId, String((claw as any).agentId || ""));
       const relPath = filePath;
-      const absPath = resolveExistingWorkspacePath(resolveRuntimeWorkspaceByIds(canonicalAdoptId, runtimeAgentId), relPath);
+      const { runtimeAgentId, workspaceDir } = await resolveRuntimeFileWorkspace({
+        adoptId: canonicalAdoptId,
+        dbAgentId: String((claw as any).agentId || ""),
+        relativePath: relPath,
+      });
+      const absPath = resolveExistingWorkspacePath(workspaceDir, relPath);
 
       if (!absPath || !existsSync(absPath)) return res.status(404).json({ error: "file not found" });
 
