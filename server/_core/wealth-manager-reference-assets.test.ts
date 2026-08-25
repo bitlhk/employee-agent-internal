@@ -36,7 +36,7 @@ describe("wealth manager reference role pack", () => {
     const skillDir = path.join(root, "skills", "wealth-manager-assistant");
     const parsed = parseSkillSourceDirectory(skillDir, "wealth-manager-assistant");
     expect(parsed.skillId).toBe("wealth-manager-assistant");
-    expect(parsed.manifest?.version).toBe("1.4.0");
+    expect(parsed.manifest?.version).toBe("2.0.0");
     expect(parsed.warnings).toEqual([]);
     const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("正式候选产品、推荐理由或推荐话术");
@@ -47,6 +47,19 @@ describe("wealth manager reference role pack", () => {
     expect(skillMarkdown).toContain("稳定客户标识");
     expect(skillMarkdown).toContain("get_governed_customer_profile");
     expect(skillMarkdown).toContain("确认前不得声称任务已创建");
+    expect(skillMarkdown).toContain("references/kyc-profiling/SKILL.md");
+    expect(skillMarkdown).toContain("references/product-analysis/SKILL.md");
+    expect(skillMarkdown).toContain("references/product-comparison/SKILL.md");
+    expect(skillMarkdown).toContain("references/product-matching/SKILL.md");
+
+    const references = readdirSync(path.join(skillDir, "references"), { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith("SKILL.md"));
+    expect(references).toHaveLength(9);
+    for (const reference of references) {
+      const content = readFileSync(path.join(skillDir, "references", reference), "utf8");
+      expect(content).not.toContain("RenderEchart");
+    }
   });
 
   it("defines normal, deny and degraded benchmark paths without static business data", () => {

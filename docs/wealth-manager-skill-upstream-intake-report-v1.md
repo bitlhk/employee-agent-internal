@@ -1,10 +1,13 @@
 # Wealth Manager Skill Upstream Intake Report V1
 
-> Status: intake evaluated; adaptation required before publication  
+> Status: governed adaptation candidate implemented; publication pending
 > Date: 2026-08-25  
 > Source path: `/home/ubuntu/skills/skills-master-skill/skill`  
 > Current EA baseline: `wealth-manager-assistant@1.4.0`  
 > Current approved artifact SHA-256: `2a755d2bc89c015999634fb05b98184e6c60b01a8e3e997b7648d750593c03f2`
+> Candidate: `wealth-manager-assistant@2.0.0`
+> Candidate source-tree SHA-256: `4f87dfd688213f0835ada0d4b1ea710858e37199a90453ee9667846c4baac6a5`
+> Deterministic security-package SHA-256: `fcbd418fc5b43394d32ea8ccf2671e45e01dde4795000632f21f8b114f38440f`
 
 ## 1. Intake Decision
 
@@ -188,6 +191,24 @@ Rules for adaptation:
 The nine scenario Skills may be evaluated later as optional independent market
 items. They should not be published in parallel with a broad default router
 until trigger overlap, orchestration, and role-install behavior are proven.
+
+### Implemented candidate
+
+The `2.0.0` candidate now follows the shape above. It keeps the existing
+`wealth-manager-assistant` identity, adds the four missing governed references,
+and preserves the five existing governed references. The marketplace artifact
+contains 12 files and nine scenario references; it excludes the upstream MCP
+deployment archive, presentation files, remote test scripts, hard-coded
+endpoints, credentials, and unsupported chart-rendering calls.
+
+The candidate passed local source parsing, Skill package envelope tests,
+TypeScript checks, the frozen 16-case Context Quality Baseline, all 24 Wealth
+Role Pack contract cases, all 14 controlled Wealth scenarios, and 35 Knowledge
+Service tests. Tencent AI-Infra-Guard scanner `0.2.1` completed against the
+deterministic package above with zero findings at every severity. These results
+establish an engineering candidate; independent market review, one-Agent
+canary, and runtime Provided evidence are still required before role-default
+promotion.
 
 ## 7. Evaluation and Release Gate
 

@@ -3,7 +3,7 @@ name: wealth-manager-assistant
 description: >-
   客户经理财富助手主技能，面向银行客户经理的客户经营、资产配置、产品匹配、推荐理由、推荐话术和合规问答场景。
   当用户要求分析客户、查询客户列表、筛选产品、生成资产配置报告、准备产品推荐理由或营销话术时使用。
-version: 1.4.0
+version: 2.0.0
 author: 李文华
 category: 财富管理
 tags: [wealth-manager, banking, customer-management, product-recommendation, compliance]
@@ -19,6 +19,8 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 - 客户经营总结
 - 客户画像和持仓理解
+- 单产品深度分析
+- 多产品客观对比
 - 产品搜索与产品信息查询
 - 资产配置诊断
 - 产品推荐理由生成
@@ -60,7 +62,22 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 ## 场景路由
 
-### 1. 客户经营日报/周报
+### 1. 客户 KYC 画像
+
+触发语：客户画像、KYC、分析客户情况、梳理客户经营重点。
+
+流程：
+
+1. 调 `wealth_assistant_context_probe` 确认当前身份和数据范围
+2. 必要时调 `wealth_assistant_customer_list` 选择客户，并使用返回的稳定客户标识
+3. 调 `get_governed_customer_profile` 获取当前财富用途允许的客户画像
+4. 需要资产、持仓或到期事实时，另调 `wealth_assistant_customer_detail`
+5. 只基于实际返回字段形成画像、信息缺口和经营建议；不得用年龄、资产规模等静态经验表替代企业规则
+6. 客户画像不等于产品推荐；需要形成产品候选时必须另走 `prepare_wealth_allocation_context`
+
+参考：`references/kyc-profiling/SKILL.md`
+
+### 2. 客户经营日报/周报
 
 触发语：今天客户跟进总结、明天拜访计划、客户经理日报、本周客户经营总结。
 
@@ -74,7 +91,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 参考：`references/daily-client-work-summary/SKILL.md`
 
-### 2. 资产配置报告
+### 3. 资产配置报告
 
 触发语：生成资产配置报告、给客户做配置方案、组合配置建议、资产配置诊断。
 
@@ -88,7 +105,35 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 参考：`references/asset-allocation-report/SKILL.md`
 
-### 3. 产品搜索和匹配
+### 4. 单产品深度分析
+
+触发语：分析这个产品、这只基金怎么样、产品详细解读、查看产品风险收益特征。
+
+流程：
+
+1. 使用产品代码或明确名称调用相应只读产品工具；目标不明确时先搜索并让用户确认
+2. 只分析工具实际返回的产品事实；同类排名、综合评分、预期收益等没有数据依据时必须标注缺失，不得自行计算或补造
+3. 按基本信息、投资方向、历史表现、风险、流动性、费率和数据缺口输出结构化报告
+4. 单产品资料分析不产生针对具体客户的正式推荐结论
+5. 涉及具体客户适配时，转入 `prepare_wealth_allocation_context`
+
+参考：`references/product-analysis/SKILL.md`
+
+### 5. 多产品客观对比
+
+触发语：对比两款产品、A 和 B 有什么区别、比较这些产品。
+
+流程：
+
+1. 要求用户明确 2-4 个产品，使用产品代码优先定位
+2. 调用只读产品工具逐一取得同一时间口径的数据
+3. 仅比较各产品均有依据的风险、期限、流动性、费率、历史表现和产品特征；缺失项不得用模型估算补齐
+4. 对比保持中立，不以固定权重打分替代正式适当性判断
+5. 用户要求为具体客户选择产品时，必须另走 `prepare_wealth_allocation_context`，并只使用 `eligibleProducts`
+
+参考：`references/product-comparison/SKILL.md`
+
+### 6. 产品搜索和匹配
 
 触发语：给某客户推荐产品、找稳健产品、找 R2 产品、筛选适合客户的产品。
 
@@ -101,7 +146,9 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 5. 只使用 `eligibleProducts` 输出候选，不强行给唯一结论
 6. 使用 `excludedProducts` 解释排除原因，但不得推荐
 
-### 4. 推荐理由生成
+参考：`references/product-matching/SKILL.md`
+
+### 7. 推荐理由生成
 
 触发语：为什么推荐这个产品、推荐依据是什么、给我几个推荐理由。
 
@@ -114,7 +161,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 参考：`references/product-recommendation-reason/SKILL.md`
 
-### 5. 推荐话术生成
+### 8. 推荐话术生成
 
 触发语：怎么跟客户说、帮我写微信/电话/面谈话术、推荐话术。
 
@@ -127,7 +174,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 参考：`references/product-recommendation-script/SKILL.md`
 
-### 6. 合规风控问答
+### 9. 合规风控问答
 
 触发语：这样说合规吗、能不能承诺收益、风险提示怎么写、能不能代客操作、适当性怎么看。
 
@@ -141,7 +188,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 治理拒绝时只向业务用户展示工具返回的 `title`、`reason` 和 `nextStep`。Policy Code、Decision ID 和规则版本属于执行证据，不得堆入主回答。
 
-### 7. 产品到期客户经营
+### 10. 产品到期客户经营
 
 触发语：未来 30 天到期客户、产品到期名单、到期客户跟进、续作客户梳理。
 
@@ -153,7 +200,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 4. 用户明确要求创建跟进任务时，使用当前环境已授权的 `create_followup`；Reference Demo 使用 `demo_create_followup_task`
 5. 写入必须提供稳定幂等键并等待操作确认；确认前不得声称任务已创建
 
-### 8. 创建方案草稿或跟进任务
+### 11. 创建方案草稿或跟进任务
 
 触发语：创建方案草稿、保存到 CRM、建立跟进任务、安排回访。
 
