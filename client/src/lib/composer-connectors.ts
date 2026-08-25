@@ -84,3 +84,7 @@ export function roleHomeEnterpriseConnectors(connectors: ComposerConnector[]): C
     && !connector.serverId.endsWith("_gateway")
   ));
 }
+
+export function composerMenuConnectors(connectors: ComposerConnector[]): ComposerConnector[] {
+  return connectors.filter((connector) => connector.configured);
+}

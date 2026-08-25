@@ -186,7 +186,7 @@ function normalizeJiuwenHistoryTimestamp(value: unknown): number {
   return raw < 10_000_000_000 ? raw * 1000 : raw;
 }
 
-function jiuwenConversationIdFromSessionId(sessionId: string, adoptId: string): string {
+export function jiuwenConversationIdFromSessionId(sessionId: string, adoptId: string): string {
   const prefix = `sess_${adoptId}_web_`;
   const value = String(sessionId || "").trim();
   if (!value.startsWith(prefix)) return recoveredConversationId(value || "jiuwen");
@@ -201,12 +201,30 @@ function safeJiuwenSessionId(value: unknown): string {
   return /^[a-zA-Z0-9._-]{8,160}$/.test(sessionId) ? sessionId : "";
 }
 
-function isListableJiuwenWebSession(sessionId: string, adoptId: string): boolean {
+export function isListableJiuwenWebSession(sessionId: string, adoptId: string): boolean {
   const value = String(sessionId || "").trim();
   if (!value.startsWith(`sess_${adoptId}_web_`)) return false;
   if (value.includes("_conv_linggan_channel_")) return false;
   if (/\.bak(?:-|$)/i.test(value)) return false;
   return !/(?:^|[_-])(smoke|debug|test|bench|bash_approval)(?:[_-]|$)/i.test(value);
+}
+
+export function enterpriseSessionIdsForConversation(args: {
+  sessions: EnterpriseRuntimeHistorySession[];
+  adoptId: string;
+  sessionId: string;
+}): string[] {
+  const targetSessionId = safeJiuwenSessionId(args.sessionId);
+  if (!targetSessionId || !isListableJiuwenWebSession(targetSessionId, args.adoptId)) return [];
+  const conversationId = jiuwenConversationIdFromSessionId(targetSessionId, args.adoptId);
+  return Array.from(new Set(args.sessions
+    .map((session) => safeJiuwenSessionId(session?.session_id))
+    .filter((sessionId) => (
+      Boolean(sessionId)
+      && isListableJiuwenWebSession(sessionId, args.adoptId)
+      && jiuwenConversationIdFromSessionId(sessionId, args.adoptId) === conversationId
+    ))))
+    .sort();
 }
 
 export function normalizeEnterpriseHistorySessions(args: {

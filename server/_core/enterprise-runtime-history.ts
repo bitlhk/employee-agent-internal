@@ -58,7 +58,7 @@ function framePayload(frame: any): Record<string, any> {
 
 async function gatewayRequest(args: {
   route: EnterpriseRuntimeRoute;
-  method: "session.list" | "history.get";
+  method: "session.list" | "session.delete" | "history.get";
   params: Record<string, unknown>;
 }): Promise<{ payload: Record<string, any>; messages: any[] }> {
   const requestId = `ea-history-${randomUUID()}`;
@@ -93,6 +93,10 @@ async function gatewayRequest(args: {
         return;
       }
       if (args.method === "session.list" && isResponse && Array.isArray(payload.sessions)) {
+        finish(undefined, payload);
+        return;
+      }
+      if (args.method === "session.delete" && isResponse) {
         finish(undefined, payload);
         return;
       }
@@ -166,4 +170,37 @@ export async function readEnterpriseRuntimeHistoryRecords(args: {
     if (!Number.isFinite(totalPages) || pageIdx >= totalPages) break;
   }
   return records.reverse();
+}
+
+export async function deleteEnterpriseRuntimeHistorySession(
+  args: {
+    adoptId: string;
+    agentId: string;
+    sessionId: string;
+  },
+  dependencies: {
+    resolveRoute?: typeof enterpriseRoute;
+    request?: typeof gatewayRequest;
+  } = {},
+): Promise<boolean | null> {
+  const route = await (dependencies.resolveRoute || enterpriseRoute)(args.adoptId);
+  if (!route) return null;
+  try {
+    await (dependencies.request || gatewayRequest)({
+      route,
+      method: "session.delete",
+      params: buildEnterpriseHistoryParams({
+        route,
+        adoptId: args.adoptId,
+        agentId: args.agentId,
+        sessionId: args.sessionId,
+      }),
+    });
+    return true;
+  } catch (error) {
+    if (/session not found|not_found|not found/iu.test(error instanceof Error ? error.message : String(error))) {
+      return false;
+    }
+    throw error;
+  }
 }

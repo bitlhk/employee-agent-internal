@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { flattenComposerConnectors, roleHomeEnterpriseConnectors } from "./composer-connectors";
+import {
+  composerMenuConnectors,
+  flattenComposerConnectors,
+  roleHomeEnterpriseConnectors,
+} from "./composer-connectors";
 
 describe("flattenComposerConnectors", () => {
   it("uses the curated Chinese group name for built-in MCP connections", () => {
@@ -74,5 +78,32 @@ describe("flattenComposerConnectors", () => {
     ]);
 
     expect(visible.map((connector) => connector.serverId)).toEqual(["wealth_customer"]);
+  });
+
+  it("keeps authorized but unconfigured placeholders out of the chat connector menu", () => {
+    const connectors = flattenComposerConnectors({
+      items: [{
+        id: "wind",
+        name: "Wind 数据",
+        category: "金融数据",
+        children: [
+          {
+            serverId: "wind_stock_data",
+            configured: true,
+            status: "available",
+            enabledForAgent: true,
+          },
+          {
+            serverId: "wind_analytics_data",
+            configured: false,
+            status: "missing",
+            enabledForAgent: true,
+          },
+        ],
+      }],
+    });
+
+    expect(composerMenuConnectors(connectors).map((connector) => connector.serverId))
+      .toEqual(["wind_stock_data"]);
   });
 });

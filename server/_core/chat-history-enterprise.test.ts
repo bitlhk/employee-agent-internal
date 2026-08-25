@@ -1,9 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  enterpriseSessionIdsForConversation,
   extractJiuwenChatMessagesFromRecords,
   normalizeEnterpriseHistorySessions,
 } from "./chat-history";
-import { resolveEnterpriseHistoryMaxPages } from "./enterprise-runtime-history";
+import {
+  deleteEnterpriseRuntimeHistorySession,
+  resolveEnterpriseHistoryMaxPages,
+} from "./enterprise-runtime-history";
+import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 
 describe("enterprise runtime chat history", () => {
   it("allows bounded compatibility paging for pre-compaction transcripts", () => {
@@ -53,6 +58,61 @@ describe("enterprise runtime chat history", () => {
       updatedAt: 130_000,
       runtime: "jiuwenswarm-enterprise",
     });
+  });
+
+  it("selects every enterprise epoch belonging to the deleted conversation", () => {
+    expect(enterpriseSessionIdsForConversation({
+      adoptId: "lgj-user",
+      sessionId: "sess_lgj-user_web_conv_alpha_e2",
+      sessions: [
+        { session_id: "sess_lgj-user_web_conv_alpha_e1" },
+        { session_id: "sess_lgj-user_web_conv_alpha_e2" },
+        { session_id: "sess_lgj-user_web_conv_beta_e1" },
+        { session_id: "sess_other_web_conv_alpha_e1" },
+      ],
+    })).toEqual([
+      "sess_lgj-user_web_conv_alpha_e1",
+      "sess_lgj-user_web_conv_alpha_e2",
+    ]);
+  });
+
+  it("dispatches enterprise session.delete with the bound runtime identity", async () => {
+    const request = vi.fn(async () => ({ payload: { session_id: "session-1" }, messages: [] }));
+    const route = {
+      profile: "enterprise",
+      gatewayTarget: "enterprise",
+      wsUrl: "ws://127.0.0.1:9999/ws",
+      binding: {
+        runtimeGroupId: "group-1",
+        runtimeBotId: "bot-1",
+        runtimeUserId: "user-1",
+        bindingId: "binding-1",
+        adoptionId: "lgj-user",
+        runtimeAgentId: "jiuwen_lgj-user",
+        assetSetFingerprint: "fingerprint-1",
+        workspaceKey: "workspace-1",
+      },
+    } as unknown as EnterpriseRuntimeRoute;
+
+    await expect(deleteEnterpriseRuntimeHistorySession({
+      adoptId: "lgj-user",
+      agentId: "jiuwen_lgj-user",
+      sessionId: "sess_lgj-user_web_conv_alpha_e1",
+    }, {
+      resolveRoute: async () => route,
+      request,
+    })).resolves.toBe(true);
+
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({
+      route,
+      method: "session.delete",
+      params: expect.objectContaining({
+        group_id: "group-1",
+        bot_id: "bot-1",
+        user_id: "user-1",
+        session_id: "sess_lgj-user_web_conv_alpha_e1",
+      }),
+    }));
   });
 
   it("normalizes remotely returned history records without exposing EA runtime context", () => {

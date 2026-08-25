@@ -64,6 +64,7 @@ import {
 import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
 import { roleDisplayName, skillTrialPrompt } from "@/lib/role-experience";
 import {
+  composerMenuConnectors,
   flattenComposerConnectors,
   roleHomeEnterpriseConnectors,
   type ComposerConnector,
@@ -2352,16 +2353,23 @@ export default function Home() {
       else localStorage.removeItem(EXPERT_HANDOFF_KEY);
     } catch {}
   }, [EXPERT_HANDOFF_KEY, detachedExpertId]);
+  const visibleComposerConnectors = useMemo(
+    () => composerMenuConnectors(composerConnectors),
+    [composerConnectors],
+  );
   const filteredComposerConnectors = useMemo(() => {
     const query = composerConnectorSearch.trim().toLocaleLowerCase();
-    if (!query) return composerConnectors;
-    return composerConnectors.filter((connector) => (
+    if (!query) return visibleComposerConnectors;
+    return visibleComposerConnectors.filter((connector) => (
       `${connector.name} ${connector.serverId} ${connector.description} ${connector.category}`
         .toLocaleLowerCase()
         .includes(query)
     ));
-  }, [composerConnectorSearch, composerConnectors]);
-  const activeComposerConnectorCount = useMemo(() => composerConnectors.filter((connector) => connector.enabledForAgent).length, [composerConnectors]);
+  }, [composerConnectorSearch, visibleComposerConnectors]);
+  const activeComposerConnectorCount = useMemo(
+    () => visibleComposerConnectors.filter((connector) => connector.enabledForAgent).length,
+    [visibleComposerConnectors],
+  );
   const roleHomeEnterpriseTools = useMemo(() => roleHomeEnterpriseConnectors(composerConnectors), [composerConnectors]);
   const filteredComposerExperts = useMemo(() => {
     const query = composerExpertSearch.trim().toLocaleLowerCase();
@@ -5045,9 +5053,9 @@ export default function Home() {
                     >
                       <Link2 aria-hidden="true" />
                       <span>连接工具</span>
-                      {composerConnectors.length > 0 ? (
+                      {visibleComposerConnectors.length > 0 ? (
                         <span className="lingxia-composer-add-item__meta">
-                          {activeComposerConnectorCount}/{composerConnectors.length}
+                          {activeComposerConnectorCount}/{visibleComposerConnectors.length}
                         </span>
                       ) : null}
                       <ChevronRight className="lingxia-composer-add-item__chevron" aria-hidden="true" />

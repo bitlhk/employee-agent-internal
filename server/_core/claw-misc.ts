@@ -42,13 +42,20 @@ import {
   bindHistoryAttachmentOwner,
   dedupeHistoryMessages,
   deleteJiuwenHistorySession,
+  enterpriseSessionIdsForConversation,
   invalidateChatHistorySessionList,
+  isListableJiuwenWebSession,
+  jiuwenConversationIdFromSessionId,
   listClawChatHistorySessionRecords,
   logIosLoadDebug,
   readModernChatHistorySessionMessages,
   resolveJiuwenHistorySession,
   type UsageBucket,
 } from "./chat-history";
+import {
+  deleteEnterpriseRuntimeHistorySession,
+  listEnterpriseRuntimeHistorySessions,
+} from "./enterprise-runtime-history";
 import {
   beginChatSessionDeletion,
   endChatSessionDeletion,
@@ -331,32 +338,58 @@ export function registerMiscRoutes(app: express.Express) {
       const dbAgentId = String((claw as any).agentId || "").trim();
       if (isJiuwenClawAdoptId(adoptId)) {
         const resolved = resolveJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
-        if (!resolved) {
+        if (!isListableJiuwenWebSession(sessionKey, adoptId)) {
           res.status(404).json({ error: "session_missing" });
           return;
         }
+        const conversationId = resolved?.conversationId
+          || jiuwenConversationIdFromSessionId(sessionKey, adoptId);
         const prepared = await prepareConversationDeletion({
           adoptId,
-          conversationId: resolved.conversationId,
+          conversationId,
         });
         if (!prepared.ok) {
           res.status(prepared.status).json({ error: prepared.error, message: prepared.message });
           return;
         }
         try {
+          let enterpriseDeleted = 0;
+          const enterpriseSessions = await listEnterpriseRuntimeHistorySessions({
+            adoptId,
+            agentId: dbAgentId,
+            limit: 100,
+          });
+          if (enterpriseSessions) {
+            const matchingSessionIds = enterpriseSessionIdsForConversation({
+              sessions: enterpriseSessions,
+              adoptId,
+              sessionId: sessionKey,
+            });
+            const sessionIds = matchingSessionIds.length > 0 ? matchingSessionIds : [sessionKey];
+            for (const sessionId of sessionIds) {
+              const deleted = await deleteEnterpriseRuntimeHistorySession({
+                adoptId,
+                agentId: dbAgentId,
+                sessionId,
+              });
+              if (deleted) enterpriseDeleted += 1;
+            }
+          }
+
           const result = deleteJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
-          if (!result) {
+          if (!result && enterpriseDeleted === 0) {
             res.status(404).json({ error: "session_missing" });
             return;
           }
-          const expertDeleted = await deleteAgentTasksByConversation(adoptId, result.conversationId);
+          const expertDeleted = await deleteAgentTasksByConversation(adoptId, conversationId);
           invalidateChatHistorySessionList(adoptId);
           res.json({
             ok: true,
             runtime: "jiuwenswarm",
-            conversationId: result.conversationId,
-            sessionId: result.sessionId,
-            deleted: result.deleted + expertDeleted,
+            conversationId,
+            sessionId: result?.sessionId || sessionKey,
+            deleted: Number(result?.deleted || 0) + enterpriseDeleted + expertDeleted,
+            enterpriseDeleted,
             expertDeleted,
           });
           return;
