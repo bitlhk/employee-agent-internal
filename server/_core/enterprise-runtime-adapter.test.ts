@@ -167,6 +167,7 @@ describe("enterprise runtime adapter", () => {
       agentId: "agent-insurance",
       runtimeMode: "agent.fast",
       modelName: "deepseek-v4-flash",
+      resumeGovernanceApprovalId: "apr_00000000-0000-4000-8000-000000000001",
       selectedSkills: [{
         id: "insurance-customer-visit",
         name: "保险客户访前准备",
@@ -190,6 +191,7 @@ describe("enterprise runtime adapter", () => {
         ea_managed_runtime: true,
         ea_binding_id: "rtb_test",
         ea_source_agent_id: "agent-insurance",
+        ea_resume_governance_approval_id: "apr_00000000-0000-4000-8000-000000000001",
         ea_asset_bundle: {
           binding_id: "rtb_test",
           fingerprint: "a".repeat(64),

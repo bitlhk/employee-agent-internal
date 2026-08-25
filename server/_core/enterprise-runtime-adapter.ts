@@ -250,6 +250,7 @@ export function buildEnterpriseChatParams(args: {
   modelName?: string;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
   runtimeAttachments?: EnterpriseRuntimeAttachmentRef[];
+  resumeGovernanceApprovalId?: string;
 }): Record<string, unknown> {
   const { binding } = args.route;
   const selectedSkills = (args.selectedSkills || []).slice(0, 8).map((skill) => ({
@@ -269,6 +270,9 @@ export function buildEnterpriseChatParams(args: {
     ...(String(args.modelName || "").trim() ? { model_name: String(args.modelName).trim() } : {}),
     request_metadata: {
       ...enterpriseRuntimeAssetMetadata(args),
+      ...(args.resumeGovernanceApprovalId
+        ? { ea_resume_governance_approval_id: args.resumeGovernanceApprovalId }
+        : {}),
       ...(selectedSkills.length ? { selected_skills: selectedSkills } : {}),
     },
   };

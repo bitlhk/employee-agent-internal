@@ -90,6 +90,7 @@ export type JiuwenForwardOptions = {
   clientRunId?: string | null;
   runtimeMode?: unknown;
   cancelPendingPermission?: unknown;
+  resumeGovernanceApprovalId?: string;
   selectedSkills?: JiuwenSelectedSkillMetadata[];
   uploadedAttachments?: UploadedAttachmentContextFile[];
   enterpriseRoute?: EnterpriseRuntimeRoute | null;

@@ -355,6 +355,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         selectedSkillIds,
         knowledgeBaseIds,
         cancelPendingPermission,
+        resumeGovernanceApprovalId,
         experienceMode,
       } = req.body || {};
       const clientRunId = normalizeClientRunId(req.body?.clientRunId);
@@ -373,6 +374,27 @@ export function registerChatStreamRoutes(app: express.Express) {
       if (!isActiveJiuwenAdoptId(adoptId)) {
         res.status(410).json({ error: "RUNTIME_RETIRED", message: retiredRuntimeMessage() });
         return;
+      }
+      let validatedResumeGovernanceApprovalId = "";
+      if (resumeGovernanceApprovalId !== undefined) {
+        const approvalId = String(resumeGovernanceApprovalId || "").trim();
+        if (!/^apr_[A-Za-z0-9-]{16,60}$/u.test(approvalId)) {
+          res.status(400).json({ error: "确认编号格式不正确" });
+          return;
+        }
+        const { getGovernanceApproval } = await import("../db");
+        const approval = await getGovernanceApproval(approvalId);
+        if (
+          !approval
+          || approval.userId !== Number(adoption.userId)
+          || approval.adoptId !== String(adoption.adoptId)
+          || approval.status !== "approved"
+          || approval.expiresAt.getTime() <= Date.now()
+        ) {
+          res.status(409).json({ error: "确认请求不存在、尚未批准或已过期" });
+          return;
+        }
+        validatedResumeGovernanceApprovalId = approvalId;
       }
       invalidateChatHistorySessionList(String(adoptId));
 
@@ -824,6 +846,7 @@ export function registerChatStreamRoutes(app: express.Express) {
           clientRunId,
           runtimeMode: normalizedRuntimeMode,
           cancelPendingPermission,
+          resumeGovernanceApprovalId: validatedResumeGovernanceApprovalId || undefined,
           selectedSkills: selectedSkills?.ok ? selectedSkills.metadata : [],
           uploadedAttachments: parsedUserMessage.attachments,
           enterpriseRoute,

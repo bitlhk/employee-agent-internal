@@ -493,6 +493,7 @@ export async function forwardToJiuwenGateway(
         modelName: opts.modelName,
         selectedSkills: opts.selectedSkills,
         runtimeAttachments,
+        resumeGovernanceApprovalId: opts.resumeGovernanceApprovalId,
       })
     : buildGatewayChatParams({
         serviceId,

@@ -3557,6 +3557,9 @@ export default function Home() {
           conversationId: webConversationId,
           runtimeMode: chatRuntimeMode,
           ...(shouldCancelPendingJiuwenPermission ? { cancelPendingPermission: true } : {}),
+          ...(opts?.resumeGovernanceApprovalId
+            ? { resumeGovernanceApprovalId: opts.resumeGovernanceApprovalId }
+            : {}),
           ...(opts?.selectedSkillIds?.length ? { selectedSkillIds: opts.selectedSkillIds } : {}),
           ...(selectedComposerKnowledgeIds.length ? { knowledgeBaseIds: selectedComposerKnowledgeIds.slice(0, 8) } : {}),
         }),
