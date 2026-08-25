@@ -108,6 +108,7 @@ vi.mock("./governance/approval-service", () => ({
 }));
 vi.mock("./runtime-governance-attestation", () => ({
   runtimeGovernanceIsAttested: vi.fn(() => mocks.runtimeAttested),
+  runtimeGovernanceRequestId: vi.fn(() => "jiuwenswarm-local"),
 }));
 vi.mock("./security", () => ({ strictLimiter: (_req: unknown, _res: unknown, next: () => void) => next() }));
 vi.mock("./jiuwenswarm-runtime-refresh", () => ({ refreshJiuwenRuntimeCapabilities: vi.fn() }));

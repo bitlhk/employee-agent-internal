@@ -14,6 +14,14 @@ type RuntimeGovernanceAttestation = {
 
 const attestations = new Map<string, RuntimeGovernanceAttestation>();
 
+export function runtimeGovernanceRequestId(req: Request): string {
+  return String(
+    req.headers["x-linggan-runtime-id"]
+      || req.headers["x-ea-runtime-id"]
+      || "jiuwenswarm-local",
+  ).trim().slice(0, 128) || "jiuwenswarm-local";
+}
+
 export function recordRuntimeGovernanceInvocation(input: {
   runtimeId?: unknown;
   hookVersion?: unknown;

@@ -25,7 +25,7 @@ import { buildCapabilitySnapshot, buildTaskContextPack, buildTaskExecutionEnvelo
 import { evaluateWealthTaskReadiness, readinessCheck } from "./governance/wealth-task-readiness";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
-import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
+import { runtimeGovernanceIsAttested, runtimeGovernanceRequestId } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
 import { applyWealthDemoProductScenario, wealthDemoScenarioEnabled } from "./wealth-demo-scenario";
@@ -359,7 +359,7 @@ async function callTool(
     knownTool: TOOL_NAMES.has(name),
     profile,
     principal: effectivePrincipal,
-    runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+    runtimeAttested: runtimeGovernanceIsAttested(runtimeGovernanceRequestId(req)),
   })], {
     effect: "DENY",
     policyCode: "EA_PLATFORM_MCP_POLICY_UNAVAILABLE",

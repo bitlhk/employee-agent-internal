@@ -7,6 +7,8 @@ const ISSUER = "employee-agent-internal-runtime";
 const MAX_CONSUMED_JTIS = 100_000;
 const consumedJtis = new Map<string, number>();
 
+export const INTERNAL_RUNTIME_GOVERNANCE_AUDIENCE = "urn:ea:runtime-governance";
+
 export type InternalRuntimeIdentity = {
   runtimeId: string;
   agentId: string;

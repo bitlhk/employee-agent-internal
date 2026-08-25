@@ -1,14 +1,22 @@
+import express from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ recordAuditBestEffort: vi.fn().mockResolvedValue(null) }));
+const mocks = vi.hoisted(() => ({
+  recordAuditBestEffort: vi.fn().mockResolvedValue(null),
+  authorizeRuntime: vi.fn().mockResolvedValue(true),
+}));
 vi.mock("./audit-events", () => ({
   recordAuditBestEffort: mocks.recordAuditBestEffort,
+}));
+vi.mock("./internal-runtime-request", () => ({
+  authorizeAndBindInternalRuntimeRequest: mocks.authorizeRuntime,
 }));
 
 import {
   evaluateJiuwenPreToolUse,
   isLikelyOutboundToolCall,
   policyUnavailableDecision,
+  registerToolEgressRoutes,
 } from "./tool-egress-routes";
 
 describe("Jiuwen PreToolUse egress evaluation", () => {
@@ -56,6 +64,41 @@ describe("Jiuwen PreToolUse egress evaluation", () => {
       tool_input: { customerId: "c1", phone: "13800138000" },
       session_id: "lgj-test",
     })).resolves.toEqual({ decision: "allow" });
+    await expect(evaluateJiuwenPreToolUse({
+      event: "PreToolUse",
+      tool_name: "enterprise_ab12_update_customer",
+      tool_input: { customerId: "c1", status: "reviewed" },
+      session_id: "lgj-test",
+    })).resolves.toEqual({ decision: "allow" });
+  });
+
+  it("accepts a signed enterprise runtime identity for the pre-tool route", async () => {
+    const app = express();
+    app.use(express.json());
+    registerToolEgressRoutes(app);
+    const server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("test server did not bind a TCP port");
+      const response = await fetch(`http://127.0.0.1:${address.port}/api/internal/security/pre-tool`, {
+        method: "POST",
+        headers: { authorization: "Bearer signed-runtime-token", "content-type": "application/json" },
+        body: JSON.stringify({
+          event: "PreToolUse",
+          tool_name: "enterprise_ab12_update_customer",
+          tool_input: { customerId: "c1" },
+        }),
+      });
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ decision: "allow" });
+      expect(mocks.authorizeRuntime).toHaveBeenCalledWith(
+        expect.anything(),
+        "urn:ea:runtime-governance",
+      );
+    } finally {
+      server.close();
+    }
   });
 
   it("blocks a credential in MCP arguments", async () => {

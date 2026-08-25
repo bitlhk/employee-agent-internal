@@ -112,7 +112,10 @@ vi.mock("./governance/approval-service", () => ({
     _meta: { eaGovernance: { code: "EA_APPROVAL_REQUIRED", approvalId: input.approvalId } },
   }),
 }));
-vi.mock("./runtime-governance-attestation", () => ({ runtimeGovernanceIsAttested: vi.fn(() => true) }));
+vi.mock("./runtime-governance-attestation", () => ({
+  runtimeGovernanceIsAttested: vi.fn(() => true),
+  runtimeGovernanceRequestId: vi.fn(() => "jiuwenswarm-local"),
+}));
 
 import { enterpriseMcpGatewayToolName, registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
 

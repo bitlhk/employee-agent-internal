@@ -53,7 +53,7 @@ import {
   requiresExecutionAuthority,
 } from "./governance/execution-authority";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
-import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
+import { runtimeGovernanceIsAttested, runtimeGovernanceRequestId } from "./runtime-governance-attestation";
 import { attachReferenceRoleTaskReceipt } from "./reference-role-task-evidence";
 import {
   observeReferenceRoleTaskContextShadow,
@@ -562,7 +562,7 @@ async function gatewayCall(
           principal: effectivePrincipal,
           runtimeAttested:
             controls.runtimeAttested ??
-            runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+            runtimeGovernanceIsAttested(runtimeGovernanceRequestId(req)),
         }),
       ],
       {

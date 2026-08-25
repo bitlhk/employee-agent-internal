@@ -53,7 +53,7 @@ import { authorizeExecutionAuthority, requiresExecutionAuthority } from "./gover
 import { stableToolInputHash } from "./tool-governance";
 import { guardToolEgress } from "./tool-egress-policy";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
-import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
+import { runtimeGovernanceIsAttested, runtimeGovernanceRequestId } from "./runtime-governance-attestation";
 
 const SERVICE_NAME = "custom-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -432,7 +432,7 @@ async function gatewayCall(
         }, [customMcpPolicyAdapter({
           profile,
           principal: effectivePrincipal,
-          runtimeAttested: runtimeGovernanceIsAttested(req.headers["x-ea-runtime-id"]),
+          runtimeAttested: runtimeGovernanceIsAttested(runtimeGovernanceRequestId(req)),
         })], {
           effect: "DENY",
           policyCode: "EA_CUSTOM_MCP_POLICY_UNAVAILABLE",

@@ -3,6 +3,7 @@ import {
   recordRuntimeGovernanceInvocation,
   resetRuntimeGovernanceAttestationsForTest,
   runtimeGovernanceAttestationStatus,
+  runtimeGovernanceRequestId,
 } from "./runtime-governance-attestation";
 
 describe("runtime governance attestation", () => {
@@ -19,5 +20,17 @@ describe("runtime governance attestation", () => {
       hookVersion: "ea-governance-v1",
       invocationCount: 1,
     });
+  });
+
+  it("uses the verified Linggan runtime identity before the legacy header", () => {
+    expect(runtimeGovernanceRequestId({
+      headers: {
+        "x-linggan-runtime-id": "shanghai-enterprise-poc",
+        "x-ea-runtime-id": "legacy-runtime",
+      },
+    } as any)).toBe("shanghai-enterprise-poc");
+    expect(runtimeGovernanceRequestId({
+      headers: { "x-ea-runtime-id": "legacy-runtime" },
+    } as any)).toBe("legacy-runtime");
   });
 });

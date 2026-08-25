@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { Express, Request } from "express";
 import { recordAuditBestEffort } from "./audit-events";
 import { isAuthorizedInternalRequest } from "./helpers";
+import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
+import { INTERNAL_RUNTIME_GOVERNANCE_AUDIENCE } from "./internal-runtime-token";
 import {
   guardToolEgress,
   type ToolEgressDecision,
@@ -21,6 +23,26 @@ type JiuwenPreToolInput = {
   tool_input?: unknown;
   session_id?: unknown;
 };
+
+function normalizedManagedGatewayToolName(value: unknown): string {
+  const name = String(value || "").trim();
+  const lower = name.toLowerCase();
+  if (lower.startsWith("enterprise_")) return `mcp_enterprise_mcp_gateway_${name}`;
+  if (lower.startsWith("custom_")) return `mcp_custom_mcp_gateway_${name}`;
+  if (lower.startsWith("role_")) return `mcp_role_mcp_gateway_${name}`;
+  return name;
+}
+
+async function authorizePreToolRequest(req: Request): Promise<boolean> {
+  const hasRuntimeToken = Boolean(
+    String(req.headers.authorization || "").trim()
+      || String(req.headers["x-ea-runtime-token"] || "").trim(),
+  );
+  if (hasRuntimeToken) {
+    return authorizeAndBindInternalRuntimeRequest(req, INTERNAL_RUNTIME_GOVERNANCE_AUDIENCE);
+  }
+  return isAuthorizedInternalRequest(req);
+}
 
 const OUTBOUND_TOOL_NAME_RE =
   /(?:^|[_-])(?:mcp|a2a|browser|fetch|http|web|search|request|notify|webhook|email|mail|feishu|ding|wechat)(?:$|[_-])/i;
@@ -148,7 +170,8 @@ export async function evaluateJiuwenPreToolUse(
   | { decision: "allow" }
   | { decision: "block"; reason: string; policyCode: string }
 > {
-  const toolName = String(body.tool_name || "").trim();
+  const toolName = normalizedManagedGatewayToolName(body.tool_name);
+  body = { ...body, tool_name: toolName };
   const profile = resolveToolGovernance(toolName);
   const policyDecisionId = `pdec_${randomUUID()}`;
   if (isLikelyOutboundToolCall(toolName, body.tool_input)) {
@@ -183,7 +206,7 @@ export async function evaluateJiuwenPreToolUse(
 
 export function registerToolEgressRoutes(app: Express): void {
   app.post("/api/internal/security/pre-tool", async (req: Request, res) => {
-    if (!isAuthorizedInternalRequest(req)) {
+    if (!await authorizePreToolRequest(req)) {
       res.status(401).json({ decision: "block", reason: "unauthorized" });
       return;
     }

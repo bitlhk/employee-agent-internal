@@ -79,6 +79,7 @@ vi.mock("./observability/metrics", () => ({
 vi.mock("./fetch-timeout", () => ({ fetchWithTimeout: mocks.internalFetch }));
 vi.mock("./runtime-governance-attestation", () => ({
   runtimeGovernanceIsAttested: vi.fn(() => mocks.runtimeAttested),
+  runtimeGovernanceRequestId: vi.fn(() => "jiuwenswarm-local"),
 }));
 vi.mock("./governance/execution-authority", () => ({
   requiresExecutionAuthority: vi.fn((sideEffect: string) => !["read", "compute"].includes(sideEffect)),
