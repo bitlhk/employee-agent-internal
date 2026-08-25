@@ -315,7 +315,12 @@ export function registerChatStreamRoutes(app: express.Express) {
         reasonText: permissionRisk.reasonText,
       },
     });
-    res.json({ ok: true, text: result.text || "", selectedOption: answerLabel });
+    res.json({
+      ok: true,
+      text: result.text || "",
+      selectedOption: answerLabel,
+      ...(result.permission ? { permission: result.permission } : {}),
+    });
   });
 
   app.post(

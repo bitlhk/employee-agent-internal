@@ -13,6 +13,7 @@ import {
   type JiuwenClawRuntimeClaw,
   type JiuwenForwardOptions,
   type JiuwenInteractionAnswer,
+  type JiuwenPermissionRequest,
   type JiuwenSelectedSkillMetadata,
   normalizeJiuwenFileEvent,
   normalizeJiuwenPermissionRequest,
@@ -44,6 +45,49 @@ const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:19000/ws";
 const enterpriseMcpProvisioningCoordinator = new EnterpriseMcpProvisioningCoordinator(
   Math.max(30_000, Number(process.env.EA_ENTERPRISE_MCP_PROVISION_CACHE_TTL_MS || 600_000) || 600_000),
 );
+
+export type JiuwenContinuationPermission = JiuwenPermissionRequest & {
+  connectorName?: string;
+  demo?: boolean;
+  expiresAt?: string;
+};
+
+export type JiuwenPermissionAnswerResult =
+  | { ok: true; text: string; permission?: JiuwenContinuationPermission }
+  | { ok: false; error: string; text?: string };
+
+export function buildGovernanceContinuationPermission(
+  governance: {
+    approvalId: string;
+    expiresAt?: string;
+    reason: string;
+    policyCode?: string;
+    toolName?: string;
+    connectorName?: string;
+    demo?: boolean;
+  },
+  fallbackToolName: string,
+): JiuwenContinuationPermission {
+  return {
+    requestId: governance.approvalId,
+    source: "governance_approval",
+    kind: "permission",
+    title: "操作确认",
+    question: governance.reason,
+    toolName: governance.toolName || fallbackToolName,
+    options: [
+      { label: "本次允许", value: "本次允许", description: "仅本次允许执行" },
+      { label: "拒绝", value: "拒绝", description: "拒绝本次执行" },
+    ],
+    riskLevel: "high",
+    reasonCode: governance.policyCode || "EA_APPROVAL_REQUIRED",
+    reasonText: governance.reason,
+    allowAlways: false,
+    ...(governance.connectorName ? { connectorName: governance.connectorName } : {}),
+    ...(governance.demo !== undefined ? { demo: governance.demo } : {}),
+    ...(governance.expiresAt ? { expiresAt: governance.expiresAt } : {}),
+  };
+}
 
 function gatewayWsUrl(route?: EnterpriseRuntimeRoute): string {
   return route?.wsUrl || String(process.env.JIUWENCLAW_GATEWAY_WS_URL || DEFAULT_GATEWAY_WS_URL);
@@ -264,6 +308,7 @@ async function handleGatewayEvent(args: {
   collectText?: (text: string) => void;
   collectFiles?: (files: JiuwenSessionArtifactFile[]) => void;
   collectUsage?: (usage: Record<string, number>) => void;
+  collectPermission?: (permission: JiuwenContinuationPermission) => void;
   knowledgeCitationIndexes?: number[];
   remoteFileWsUrl?: string;
 }): Promise<"permission" | "done" | "continue"> {
@@ -298,8 +343,9 @@ async function handleGatewayEvent(args: {
   }
 
   const permissionRequest = normalizeJiuwenPermissionRequest(eventType, payload, args.requestId);
-  if (permissionRequest && args.res) {
-    appendLogAsync("jiuwenclaw-exec.log", {
+  if (permissionRequest) {
+    args.collectPermission?.(permissionRequest);
+    if (args.res) appendLogAsync("jiuwenclaw-exec.log", {
       ts: new Date().toISOString(),
       event: "gateway_human_approval_required",
       adoptId: args.claw.adoptId,
@@ -311,14 +357,16 @@ async function handleGatewayEvent(args: {
       source: permissionRequest.source,
       toolName: permissionRequest.toolName || "",
     });
-    writeSseEvent(args.res, "jiuwen_permission_request", {
-      ...permissionRequest,
-      adoptId: args.claw.adoptId,
-      agentId: args.agentId,
-      sessionId: args.sessionId,
-      channelId: args.channelId,
-    });
-    writeSseData(args.res, { choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
+    if (args.res) {
+      writeSseEvent(args.res, "jiuwen_permission_request", {
+        ...permissionRequest,
+        adoptId: args.claw.adoptId,
+        agentId: args.agentId,
+        sessionId: args.sessionId,
+        channelId: args.channelId,
+      });
+      writeSseData(args.res, { choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
+    }
     return "permission";
   }
 
@@ -357,21 +405,15 @@ async function handleGatewayEvent(args: {
     const governanceApproval = tool.isResult
       ? normalizeGovernanceApprovalToolEvent(payload, tool.resultPayload)
       : null;
-    if (governanceApproval && args.res) {
+    const governancePermission: JiuwenContinuationPermission | null = governanceApproval
+      ? buildGovernanceContinuationPermission(governanceApproval, tool.toolName)
+      : null;
+    if (governancePermission) {
+      args.collectPermission?.(governancePermission);
+    }
+    if (governancePermission && args.res) {
       writeSseEvent(args.res, "governance_approval_required", {
-        requestId: governanceApproval.approvalId,
-        source: "governance_approval",
-        kind: "permission",
-        title: "操作确认",
-        question: governanceApproval.reason,
-        toolName: governanceApproval.toolName || tool.toolName,
-        connectorName: governanceApproval.connectorName,
-        demo: governanceApproval.demo,
-        riskLevel: "high",
-        reasonCode: governanceApproval.policyCode || "EA_APPROVAL_REQUIRED",
-        reasonText: governanceApproval.reason,
-        allowAlways: false,
-        expiresAt: governanceApproval.expiresAt,
+        ...governancePermission,
         adoptId: args.claw.adoptId,
       });
     }
@@ -398,6 +440,7 @@ async function handleGatewayEvent(args: {
         });
       }
     }
+    if (governancePermission) return "permission";
   }
 
   return shouldFinishGatewayStream(eventType, payload) ? "done" : "continue";
@@ -838,7 +881,7 @@ export async function answerJiuwenGatewayPermission(
     runtimeMode?: unknown;
   },
   enterpriseRoute?: EnterpriseRuntimeRoute,
-): Promise<{ ok: true; text: string } | { ok: false; error: string; text?: string }> {
+): Promise<JiuwenPermissionAnswerResult> {
   const permissionRequestId = String(args.permissionRequestId || "").trim();
   if (!permissionRequestId) return { ok: false, error: "permissionRequestId required" };
 
@@ -897,6 +940,7 @@ export async function answerJiuwenGatewayPermission(
     let connectionAckTimer: NodeJS.Timeout | null = null;
     let text = "";
     let sawDone = false;
+    let continuationPermission: JiuwenContinuationPermission | undefined;
     const defaultTimeoutMs = enterpriseRoute ? 300_000 : 180_000;
     const timeoutMs = Math.max(
       15_000,
@@ -983,7 +1027,14 @@ export async function answerJiuwenGatewayPermission(
         collectText: (chunk) => {
           text += chunk;
         },
+        collectPermission: (permission) => {
+          continuationPermission = permission;
+        },
       });
+      if (action === "permission") {
+        settle({ ok: true, text, ...(continuationPermission ? { permission: continuationPermission } : {}) });
+        return;
+      }
       if (action === "done") {
         sawDone = true;
         settle({ ok: true, text });

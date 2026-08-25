@@ -1,10 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildGovernanceContinuationPermission,
   canDegradeAfterEnterpriseMcpProvisioningFailure,
   enterpriseMcpProvisioningFrameResult,
   gatewayPermissionAnswerMethod,
   gatewayPermissionEventMatchesRequest,
 } from "./jiuwenswarm-gateway-client";
+
+describe("buildGovernanceContinuationPermission", () => {
+  it("preserves the EA approval identity for the browser governance card", () => {
+    expect(buildGovernanceContinuationPermission({
+      approvalId: "apr_00000000-0000-4000-8000-000000000001",
+      reason: "该操作会修改演示业务数据，需要你按次确认。",
+      policyCode: "demo.write.confirmation_required",
+      connectorName: "Demo 跟进任务",
+      demo: true,
+      expiresAt: "2026-08-25T14:00:00.000Z",
+    }, "enterprise_demo_create_followup_task")).toMatchObject({
+      requestId: "apr_00000000-0000-4000-8000-000000000001",
+      source: "governance_approval",
+      kind: "permission",
+      toolName: "enterprise_demo_create_followup_task",
+      riskLevel: "high",
+      reasonCode: "demo.write.confirmation_required",
+      connectorName: "Demo 跟进任务",
+      demo: true,
+      allowAlways: false,
+    });
+  });
+});
 
 describe("enterpriseMcpProvisioningFrameResult", () => {
   const requestId = "request-1:managed-mcp";

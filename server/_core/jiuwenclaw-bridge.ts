@@ -53,6 +53,7 @@ import {
 } from "./jiuwen-permission-events";
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
 import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
+import type { JiuwenPermissionAnswerResult } from "./jiuwenswarm-gateway-client";
 export { bumpSessionEpoch } from "./helpers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
 export {
@@ -1468,7 +1469,7 @@ export async function answerJiuwenPermission(
     epochLabel?: unknown;
     runtimeMode?: unknown;
   },
-): Promise<{ ok: true; text: string } | { ok: false; error: string; text?: string }> {
+): Promise<JiuwenPermissionAnswerResult> {
   if (!runtimeEnabled()) {
     return { ok: false, error: "jiuwenclaw runtime is disabled" };
   }

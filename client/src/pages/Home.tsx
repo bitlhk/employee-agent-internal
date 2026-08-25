@@ -2782,9 +2782,12 @@ export default function Home() {
         throw new Error(payload?.error || `回答提交失败 (${response.status})`);
       }
       const continuedText = String(payload?.text || "").trim();
+      const continuationPermission = payload?.permission && typeof payload.permission === "object"
+        ? { ...payload.permission, state: "pending" as const } as JiuwenPermissionRequestCard
+        : null;
       setLingxiaMsgs((prev) => prev.map((message) => {
         if (message.id !== messageId) return message;
-        const nextRequest = { ...request, state: "answered" as const };
+        const nextRequest = continuationPermission || { ...request, state: "answered" as const };
         const visible = extractJiuwenPermissionMarker(message.text || "").text;
         const mergedText = continuedText ? [visible, continuedText].filter(Boolean).join("\n\n") : visible;
         return {
