@@ -225,6 +225,13 @@
       "when": 1788249600000,
       "tag": "0031_skill_market_versioning_v1",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788336000000,
+      "tag": "0032_governance_approval_expiry",
+      "breakpoints": true
     }
   ]
 }

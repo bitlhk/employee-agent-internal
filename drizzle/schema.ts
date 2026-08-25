@@ -1879,7 +1879,10 @@ export const governanceApprovals = mysqlTable("governance_approvals", {
   idempotencyKey: varchar("idempotency_key", { length: 191 }),
   reason: text("reason").notNull(),
   decisionReason: text("decision_reason"),
-  expiresAt: timestamp("expires_at").notNull(),
+  // The explicit default prevents legacy MySQL from treating the first
+  // TIMESTAMP column as ON UPDATE CURRENT_TIMESTAMP. Callers still provide
+  // the real expiry; an omitted value fails closed by expiring immediately.
+  expiresAt: timestamp("expires_at").defaultNow().notNull(),
   decidedBy: int("decided_by"),
   approvedAt: timestamp("approved_at"),
   rejectedAt: timestamp("rejected_at"),
