@@ -2,7 +2,7 @@
   "name": "wealth-manager-assistant",
   "displayName": "客户经理财富助手",
   "description": "组合受治理客户画像、产品数据、当前有效岗位知识和确定性适当性 Policy，完成财富客户经营、KYC、产品分析、资产配置和产品适配任务。",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "source": {
     "maintainer": "李文华",
     "repository": "https://gitcode.com/customer_manager_assistant/skills/tree/master/skill",

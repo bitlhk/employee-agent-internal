@@ -36,7 +36,7 @@ describe("wealth manager reference role pack", () => {
     const skillDir = path.join(root, "skills", "wealth-manager-assistant");
     const parsed = parseSkillSourceDirectory(skillDir, "wealth-manager-assistant");
     expect(parsed.skillId).toBe("wealth-manager-assistant");
-    expect(parsed.manifest?.version).toBe("2.0.0");
+    expect(parsed.manifest?.version).toBe("2.0.1");
     expect(parsed.warnings).toEqual([]);
     const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("正式候选产品、推荐理由或推荐话术");

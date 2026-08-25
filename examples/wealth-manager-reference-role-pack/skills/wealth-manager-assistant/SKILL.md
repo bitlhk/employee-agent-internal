@@ -3,7 +3,7 @@ name: wealth-manager-assistant
 description: >-
   客户经理财富助手主技能，面向银行客户经理的客户经营、资产配置、产品匹配、推荐理由、推荐话术和合规问答场景。
   当用户要求分析客户、查询客户列表、筛选产品、生成资产配置报告、准备产品推荐理由或营销话术时使用。
-version: 2.0.0
+version: 2.0.1
 author: 李文华
 category: 财富管理
 tags: [wealth-manager, banking, customer-management, product-recommendation, compliance]

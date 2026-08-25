@@ -384,7 +384,7 @@ evals/
 ## 12. 下一步执行清单
 
 1. 已获取 `wealth-manager-assistant` 上游交付包并形成当前 `1.4.0` 与候选版本的差异报告。
-2. 已生成受治理的 `wealth-manager-assistant@2.0.0` 候选；已固化本地接收快照与候选源码 SHA-256，上游精确 Git revision 和许可证仍待维护人确认。
+2. 已生成受治理的 `wealth-manager-assistant@2.0.1` 候选；已固化本地接收快照与候选源码 SHA-256，上游精确 Git revision 和许可证仍待维护人确认。
 3. 由对应开发者通过现有 Skill Identity 提交新版本，由另一位管理员审核。
 4. 从财富经理 Benchmark Matrix 中选取正常、合规阻断和依赖异常案例。
 5. 将事实、日期、工具调用、合规阻断和依赖异常写成确定性断言。

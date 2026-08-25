@@ -5,8 +5,8 @@
 > Source path: `/home/ubuntu/skills/skills-master-skill/skill`  
 > Current EA baseline: `wealth-manager-assistant@1.4.0`  
 > Current approved artifact SHA-256: `2a755d2bc89c015999634fb05b98184e6c60b01a8e3e997b7648d750593c03f2`
-> Candidate: `wealth-manager-assistant@2.0.0`
-> Candidate source-tree SHA-256: `4f87dfd688213f0835ada0d4b1ea710858e37199a90453ee9667846c4baac6a5`
+> Candidate: `wealth-manager-assistant@2.0.1`
+> Candidate source-tree SHA-256: `88f47211ef32735324688988d5557b69b5fa77c09aedf6812ee38308989fa09f`
 > Deterministic security-package SHA-256: `fcbd418fc5b43394d32ea8ccf2671e45e01dde4795000632f21f8b114f38440f`
 
 ## 1. Intake Decision
@@ -194,7 +194,7 @@ until trigger overlap, orchestration, and role-install behavior are proven.
 
 ### Implemented candidate
 
-The `2.0.0` candidate now follows the shape above. It keeps the existing
+The `2.0.1` candidate now follows the shape above. It keeps the existing
 `wealth-manager-assistant` identity, adds the four missing governed references,
 and preserves the five existing governed references. The marketplace artifact
 contains 12 files and nine scenario references; it excludes the upstream MCP
