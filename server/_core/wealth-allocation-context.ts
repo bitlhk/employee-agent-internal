@@ -104,6 +104,12 @@ function customerRiskLevel(value: unknown): string {
   return /^[1-5]$/.test(riskLevel) ? `C${riskLevel}` : riskLevel;
 }
 
+function productRiskLevel(value: unknown): string {
+  const riskLevel = String(value ?? "").trim().toUpperCase();
+  const match = riskLevel.match(/^R?([1-5])/);
+  return match ? `R${match[1]}` : riskLevel;
+}
+
 export function normalizeWealthCustomer(payload: JsonObject, expectedCustomerId: string) {
   const customer = dataObject(payload);
   const assessment = object(customer.riskAssessment || customer.risk_assessment || customer.assessment);
@@ -156,7 +162,13 @@ export function normalizeWealthProducts(payload: JsonObject): WealthProductSuita
   return productRows(payload).map((product) => ({
     productId: firstString(product.productId, product.product_id, product.productCode, product.product_code, product.code, product.id),
     name: firstString(product.name, product.productName, product.product_name),
-    riskLevel: firstString(product.riskLevel, product.risk_level, product.riskRating, product.risk_rating, product.risk_label),
+    riskLevel: productRiskLevel(firstString(
+      product.riskLevel,
+      product.risk_level,
+      product.riskRating,
+      product.risk_rating,
+      product.risk_label,
+    )),
     status: firstString(product.status, product.saleStatus, product.sale_status, product.salesStatus, product.sales_status),
     channels: stringArray(product.channels, product.saleChannels, product.sale_channels, product.channel),
     minAmount: finiteNumber(product.minAmount, product.min_amount, product.minimumAmount, product.minimum_amount, product.min_purchase_amount),

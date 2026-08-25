@@ -84,11 +84,25 @@ describe("wealth allocation context", () => {
       },
     })).toEqual([expect.objectContaining({
       productId: "P004",
-      riskLevel: "4",
+      riskLevel: "R4",
       status: "on_sale",
       minAmount: 50_000,
       dataAsOf: "2026-08-25T09:50:12.200Z",
     })]);
+  });
+
+  it("normalizes numeric and labeled product risk ratings to governed R-levels", () => {
+    const normalized = normalizeWealthProducts({
+      updatedAt: "2026-08-25T09:50:12.200Z",
+      data: {
+        products: [
+          { code: "P002", risk_rating: "3", risk_label: "R3中风险", status: "on_sale" },
+          { code: "P004", risk_rating: 4, risk_label: "R4较高风险", status: "on_sale" },
+        ],
+      },
+    });
+
+    expect(normalized.map(product => product.riskLevel)).toEqual(["R3", "R4"]);
   });
 
   it("normalizes the governed enterprise wealth customer fields", () => {
