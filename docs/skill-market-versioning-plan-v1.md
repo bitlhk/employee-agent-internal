@@ -255,6 +255,16 @@ Rules:
 - Only the assigned user maintainer may publish another version for a `user`
   Skill. Administrators review, revoke, or reassign through audited governance;
   they do not silently publish as the user.
+- `maintainer_user_id` is an environment-local foreign key. Deployment, data
+  migration, and artifact synchronization must never copy the numeric user ID
+  from another environment as maintainer identity.
+- Cross-environment maintainer reconciliation resolves a stable identity-source
+  subject to the local user row. A verified email may be used only as a
+  controlled migration fallback, not as the long-term authorization key.
+- Skill identity, version, artifact digest, upstream revision, and attribution
+  may remain identical across environments while the local maintainer user IDs
+  differ. A local verification actor does not change Shanghai production
+  maintenance ownership.
 - `skill_id` cannot be renamed after the first approved release.
 - Archiving a Skill hides it from new discovery but does not delete artifacts
   required by existing installations.
