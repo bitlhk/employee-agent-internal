@@ -67,6 +67,30 @@ describe("wealth allocation context", () => {
     expect(normalizeWealthProducts(products)).toHaveLength(3);
   });
 
+  it("normalizes the current Wealth product MCP field names", () => {
+    expect(normalizeWealthProducts({
+      updatedAt: "2026-08-25T09:50:12.200Z",
+      data: {
+        products: [{
+          id: 4,
+          code: "P004",
+          name: "灵活配置理财",
+          risk_rating: "4",
+          risk_label: "R4较高风险",
+          status: "on_sale",
+          min_purchase_amount: 50_000,
+          channels: ["branch"],
+        }],
+      },
+    })).toEqual([expect.objectContaining({
+      productId: "P004",
+      riskLevel: "4",
+      status: "on_sale",
+      minAmount: 50_000,
+      dataAsOf: "2026-08-25T09:50:12.200Z",
+    })]);
+  });
+
   it("normalizes the governed enterprise wealth customer fields", () => {
     expect(normalizeWealthCustomer({
       ok: true,

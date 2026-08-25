@@ -6,6 +6,7 @@ import {
   type NormalizedCustomerProfileSourceV1,
 } from "./customer-profile-source-adapters";
 import {
+  applyDemoWealthCustomerScenario,
   buildDemoWealthCustomerFacts,
   loadDemoInsuranceCustomerFacts,
 } from "./customer-profile-demo-facts";
@@ -109,7 +110,7 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
       sessionId: input.principal.sessionId,
     })
   );
-  const source = normalizeCustomerProfileSource({
+  let source = normalizeCustomerProfileSource({
     sourceContractId: "wealth-assistant-customer-v2.1",
     payload,
     authorization: {
@@ -120,6 +121,7 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
   });
   source.assuranceLevel = "demo";
   source.resultFingerprint = customerProfileSourceFingerprint(source);
+  if (input.includeDemoFacts) source = applyDemoWealthCustomerScenario(source);
   return {
     sources: [
       source,

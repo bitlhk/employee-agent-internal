@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyDemoWealthCustomerScenario,
   buildDemoWealthCustomerFacts,
   loadDemoInsuranceCustomerFacts,
 } from "./customer-profile-demo-facts";
@@ -61,5 +62,25 @@ describe("Customer Profile Demo facts", () => {
       "subject.customerStatus",
     ]);
     expect(source.resultFingerprint).toBe(customerProfileSourceFingerprint(source));
+  });
+
+  it("changes only the C005 risk-validity field for the positive Wealth demo path", () => {
+    const base = buildDemoWealthCustomerFacts({ subjectId: "C005" });
+    base.fields.push({
+      path: "risk.investmentRiskValidUntil",
+      value: "2025-12-31T00:00:00.000Z",
+      provenance: base.fields[0].provenance,
+    });
+    base.resultFingerprint = customerProfileSourceFingerprint(base);
+
+    const updated = applyDemoWealthCustomerScenario(base);
+    expect(updated.fields.find(field => field.path === "risk.investmentRiskValidUntil")).toMatchObject({
+      value: "2027-12-31T23:59:59.000Z",
+      provenance: { sourceSystem: "grace_demo_wealth_scenario" },
+    });
+    expect(updated.providerGaps.join(" ")).toContain("synthetic positive-path Demo fact");
+    expect(updated.resultFingerprint).toBe(customerProfileSourceFingerprint(updated));
+
+    expect(applyDemoWealthCustomerScenario({ ...base, subjectId: "C003" })).toEqual({ ...base, subjectId: "C003" });
   });
 });

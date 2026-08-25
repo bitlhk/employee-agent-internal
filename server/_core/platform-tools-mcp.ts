@@ -27,6 +27,7 @@ import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
+import { applyWealthDemoProductScenario, wealthDemoScenarioEnabled } from "./wealth-demo-scenario";
 import { buildWealthAllocationContextReceipt, buildWealthPolicyContextReceipt } from "./wealth-context-receipts";
 import { attachContextReceipt } from "./governance/context-receipt";
 import { handlePostLoanRiskEscalationTool, POST_LOAN_RISK_ESCALATION_TOOL } from "./post-loan-risk-tool-handler";
@@ -781,19 +782,24 @@ async function callTool(
               sessionId: principal.principal.sessionId,
             })),
           }),
-          searchProducts: async (search) => parseInternalMcpJsonResult(await callInternalMcpTool({
-            endpointUrl: productTarget.endpointUrl,
-            toolName: productTarget.toolName,
-            args: {
-              keyword: search.keyword || undefined,
-              type: search.type || undefined,
-              page: 1,
-              pageSize: search.pageSize,
-            },
-            agentId: principal.principal.agentId,
-            adoptId,
-            sessionId: principal.principal.sessionId,
-          })),
+          searchProducts: async (search) => {
+            const payload = parseInternalMcpJsonResult(await callInternalMcpTool({
+              endpointUrl: productTarget.endpointUrl,
+              toolName: productTarget.toolName,
+              args: {
+                keyword: search.keyword || undefined,
+                type: search.type || undefined,
+                page: 1,
+                pageSize: search.pageSize,
+              },
+              agentId: principal.principal.agentId,
+              adoptId,
+              sessionId: principal.principal.sessionId,
+            }));
+            return wealthDemoScenarioEnabled()
+              ? applyWealthDemoProductScenario(payload)
+              : payload;
+          },
           resolvePolicySource: async () => resolveWealthSuitabilityPolicySource({
             userId: Number(user.id),
             groupId: Number(user.groupId || 0),

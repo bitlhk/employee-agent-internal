@@ -149,6 +149,44 @@ export function buildDemoWealthCustomerFacts(input: {
   return source;
 }
 
+export function applyDemoWealthCustomerScenario(
+  source: NormalizedCustomerProfileSourceV1
+): NormalizedCustomerProfileSourceV1 {
+  if (source.subjectId !== "C005") return source;
+  const asOf = "2026-08-25T09:00:00.000Z";
+  const sourceSystem = "grace_demo_wealth_scenario";
+  const sourceRecordRef = `${sourceSystem}:subject-C005`;
+  const fields = source.fields.map(field =>
+    field.path === "risk.investmentRiskValidUntil"
+      ? {
+          ...field,
+          value: "2027-12-31T23:59:59.000Z",
+          provenance: {
+            sourceSystem,
+            sourceRecordRef,
+            asOf,
+            observedAt: field.provenance.observedAt,
+            mappingRuleVersion: "wealth-positive-demo-v1",
+          },
+        }
+      : field
+  );
+  const updated: NormalizedCustomerProfileSourceV1 = {
+    ...source,
+    asOf,
+    assuranceLevel: "demo",
+    productionReady: false,
+    providerGaps: [
+      ...source.providerGaps,
+      "C005 risk validity is a synthetic positive-path Demo fact and must never satisfy a Production assurance gate.",
+    ],
+    fields,
+    resultFingerprint: "",
+  };
+  updated.resultFingerprint = customerProfileSourceFingerprint(updated);
+  return updated;
+}
+
 export function resetDemoCustomerFactsCacheForTests(): void {
   cachedPack = null;
 }

@@ -27,6 +27,7 @@ import {
 import { appendLogAsync, JIUWENCLAW_HOME, jiuwenClawSessionsDir, resolveRuntimeWorkspace } from "./helpers";
 import { privateMessageLogFields } from "./log-privacy";
 import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
+import { materializeRemoteJiuwenFiles } from "./jiuwen-remote-artifacts";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
@@ -264,6 +265,7 @@ async function handleGatewayEvent(args: {
   collectFiles?: (files: JiuwenSessionArtifactFile[]) => void;
   collectUsage?: (usage: Record<string, number>) => void;
   knowledgeCitationIndexes?: number[];
+  remoteFileWsUrl?: string;
 }): Promise<"permission" | "done" | "continue"> {
   const { eventType, payload } = args;
   const text = gatewayEventToText(eventType, payload);
@@ -320,7 +322,19 @@ async function handleGatewayEvent(args: {
     return "permission";
   }
 
-  const files = normalizeJiuwenFileEvent(payload, args.workspaceDir);
+  let files = normalizeJiuwenFileEvent(payload, args.workspaceDir);
+  if (
+    files.length === 0
+    && args.remoteFileWsUrl
+    && (eventType === "chat.file" || eventType === "chat.media")
+  ) {
+    files = await materializeRemoteJiuwenFiles({
+      delta: payload,
+      wsUrl: args.remoteFileWsUrl,
+      workspaceDir: args.workspaceDir,
+      requestId: args.requestId,
+    });
+  }
   if (files.length > 0) args.collectFiles?.(files);
   for (const file of files) {
     if (args.res) writeSseEvent(args.res, "workspace_files", { adoptId: args.claw.adoptId, files: [file] });
@@ -780,6 +794,7 @@ export async function forwardToJiuwenGateway(
         },
         collectUsage: opts.onUsage,
         knowledgeCitationIndexes,
+        ...(enterpriseRoute ? { remoteFileWsUrl: wsUrl } : {}),
       });
       if (action === "permission") {
         settle("permission-required");
@@ -964,6 +979,7 @@ export async function answerJiuwenGatewayPermission(
         sessionId,
         channelId,
         workspaceDir,
+        ...(enterpriseRoute ? { remoteFileWsUrl: wsUrl } : {}),
         collectText: (chunk) => {
           text += chunk;
         },

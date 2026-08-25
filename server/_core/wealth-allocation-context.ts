@@ -154,12 +154,12 @@ function productRows(payload: JsonObject): JsonObject[] {
 export function normalizeWealthProducts(payload: JsonObject): WealthProductSuitabilityContext[] {
   const defaultDataAsOf = firstString(payload.updatedAt, payload.updated_at, object(payload.data).updatedAt, object(payload.data).updated_at);
   return productRows(payload).map((product) => ({
-    productId: firstString(product.productId, product.product_id, product.id, product.productCode, product.product_code),
+    productId: firstString(product.productId, product.product_id, product.productCode, product.product_code, product.code, product.id),
     name: firstString(product.name, product.productName, product.product_name),
-    riskLevel: firstString(product.riskLevel, product.risk_level, product.riskRating, product.risk_rating),
+    riskLevel: firstString(product.riskLevel, product.risk_level, product.riskRating, product.risk_rating, product.risk_label),
     status: firstString(product.status, product.saleStatus, product.sale_status, product.salesStatus, product.sales_status),
     channels: stringArray(product.channels, product.saleChannels, product.sale_channels, product.channel),
-    minAmount: finiteNumber(product.minAmount, product.min_amount, product.minimumAmount, product.minimum_amount),
+    minAmount: finiteNumber(product.minAmount, product.min_amount, product.minimumAmount, product.minimum_amount, product.min_purchase_amount),
     termMonths: finiteNumber(product.termMonths, product.term_months, product.durationMonths, product.duration_months, product.lockPeriodMonths),
     dataAsOf: firstString(product.dataAsOf, product.data_as_of, product.updatedAt, product.updated_at, defaultDataAsOf),
   })).slice(0, 50);
