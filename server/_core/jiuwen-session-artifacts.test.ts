@@ -2,7 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
-import { readJiuwenSessionArtifacts, writeJiuwenSessionArtifacts } from "./jiuwen-session-artifacts";
+import {
+  readJiuwenSessionArtifacts,
+  readJiuwenSessionArtifactsFromSessionDir,
+  writeJiuwenSessionArtifacts,
+} from "./jiuwen-session-artifacts";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));
@@ -25,6 +29,10 @@ describe("Jiuwen session artifacts", () => {
     });
 
     expect(readJiuwenSessionArtifacts(historyFile).get("request-1")).toMatchObject({
+      adoptId: "lgj-test",
+      files: [{ name: "report.html", size: 12, path: "output/report.html" }],
+    });
+    expect(readJiuwenSessionArtifactsFromSessionDir(root).get("request-1")).toMatchObject({
       adoptId: "lgj-test",
       files: [{ name: "report.html", size: 12, path: "output/report.html" }],
     });

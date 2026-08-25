@@ -15,6 +15,7 @@ import {
 import {
   isUserVisibleJiuwenArtifactPath,
   readJiuwenSessionArtifacts,
+  readJiuwenSessionArtifactsFromSessionDir,
   type JiuwenSessionArtifactFile,
 } from "./jiuwen-session-artifacts";
 import {
@@ -862,11 +863,16 @@ export async function readModernChatHistorySessionMessages(args: {
       });
       if (records) {
         const conversationId = jiuwenConversationIdFromSessionId(enterpriseSessionId, args.adoptId);
+        const artifactRuns = readJiuwenSessionArtifactsFromSessionDir(path.join(
+          jiuwenClawSessionsDir(args.adoptId, args.dbAgentId),
+          enterpriseSessionId,
+        ));
         const runtimeMessages = extractJiuwenChatMessagesFromRecords(
           records,
           maxMessages,
           args.adoptId,
           args.workspaceDir,
+          artifactRuns,
         );
         const expertTasks = await listAgentTasksByConversation(args.adoptId, conversationId, 100).catch(() => []);
         const messages = bindHistoryAttachmentOwner(dedupeHistoryMessages([

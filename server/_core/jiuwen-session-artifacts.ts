@@ -118,7 +118,11 @@ export function writeJiuwenSessionArtifacts(args: {
 }
 
 export function readJiuwenSessionArtifacts(historyFile: string): Map<string, ArtifactRun> {
-  const registryPath = path.join(path.dirname(historyFile), ARTIFACTS_FILE);
+  return readJiuwenSessionArtifactsFromSessionDir(path.dirname(historyFile));
+}
+
+export function readJiuwenSessionArtifactsFromSessionDir(sessionDir: string): Map<string, ArtifactRun> {
+  const registryPath = path.join(sessionDir, ARTIFACTS_FILE);
   const registry = readRegistry(registryPath);
   return new Map(Object.values(registry.runs).map((run) => [
     run.requestId,
