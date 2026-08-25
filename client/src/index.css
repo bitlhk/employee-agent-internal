@@ -18107,7 +18107,17 @@ body[data-admin-light="true"] .admin-collaboration-tab .divide-y > :not([hidden]
 }
 .context-receipt-bundle { display: grid; gap: 7px; margin-top: 10px; }
 .context-receipt-bundle .context-receipt { margin-top: 0; }
-.context-receipt-bundle__label { color: var(--oc-text-tertiary); font-size: 11px; }
+.context-receipt-bundle__label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px 2px;
+  color: var(--oc-text-primary);
+}
+.context-receipt-bundle__label > svg { width: 15px; height: 15px; color: #16836d; }
+.context-receipt-bundle__label > span { display: flex; align-items: baseline; gap: 8px; }
+.context-receipt-bundle__label strong { font-size: 12px; font-weight: 650; }
+.context-receipt-bundle__label small { color: var(--oc-text-tertiary); font-size: 10px; }
 
 .context-receipt__summary {
   display: grid;

@@ -23,6 +23,14 @@ type MarkerDefinition = {
 };
 
 const role = "insurance-advisor";
+const rolesAffectedByTrainingGrantCleanup = [
+  "general-assistant",
+  "wealth-manager",
+  "investment-researcher",
+  "insurance-advisor",
+  "post-loan-risk-control",
+  "credential-compliance",
+];
 const readPolicy = (toolName: string, scope: string): EnterpriseMcpToolPolicyDraft => ({
   toolName,
   enabled: true,
@@ -150,7 +158,10 @@ async function configureMarker(marker: MarkerDefinition) {
 async function main() {
   const configured = [];
   for (const marker of markers) configured.push(await configureMarker(marker));
-  const runtimeRefresh = await reconcileEnterpriseMcpRuntimeScopes({ roleKeys: [role], forceRefresh: true });
+  const runtimeRefresh = await reconcileEnterpriseMcpRuntimeScopes({
+    roleKeys: rolesAffectedByTrainingGrantCleanup,
+    forceRefresh: true,
+  });
   console.log(JSON.stringify({
     markers: configured,
     environment: "test",

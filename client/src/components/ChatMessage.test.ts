@@ -72,6 +72,42 @@ describe("ChatMessage tool timeline", () => {
     expect(html).not.toContain("适当性制度 V2.2");
   });
 
+  it("groups multiple task receipts under one evidence heading", () => {
+    const receipt = (receiptId: string, taskId: string, taskLabel: string) => ({
+      schema: "ea.context-receipt.v1",
+      receiptId,
+      taskId,
+      taskLabel,
+      principalFingerprint: "p".repeat(64),
+      provided: { knowledge: [], businessData: [], memory: [], capabilities: [] },
+      cited: { knowledgeAssetIds: [] },
+      applied: { policyDecisions: [], capabilityExecutions: [] },
+      excluded: [],
+      readiness: { status: "READY", requestedOutcome: taskId, allowedOutcomes: [], deniedOutcomes: [], reasons: [], remediation: [], presentation: { completed: [], unavailable: [], nextSteps: [] }, decisionFingerprint: "r".repeat(64) },
+      createdAt: "2026-08-25T08:00:00.000Z",
+      receiptFingerprint: "f".repeat(64),
+    });
+    const html = renderToStaticMarkup(React.createElement(ChatMessage, {
+      role: "assistant",
+      text: "已完成访前准备。",
+      isLast: true,
+      isPlaceholder: false,
+      streaming: false,
+      displayName: "财富经理助手",
+      modelId: "test-model",
+      timeLabel: "16:00",
+      toolCalls: [
+        { id: "profile", name: "get_governed_customer_profile", arguments: "{}", result: JSON.stringify({ _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt("crpt-profile", "CUSTOMER-PROFILE", "受治理客户画像") } }), status: "done", ts: Date.now() },
+        { id: "previsit", name: "prepare_wealth_previsit_context", arguments: "{}", result: JSON.stringify({ _meta: { eaMetadataIssuer: "employee-agent", eaContextReceipt: receipt("crpt-previsit", "WM-GT-01", "客户访前准备") } }), status: "done", ts: Date.now() },
+      ],
+    }));
+
+    expect((html.match(/本次依据/g) || [])).toHaveLength(1);
+    expect(html).toContain("2 个任务阶段");
+    expect(html).toContain("受治理客户画像");
+    expect(html).toContain("客户访前准备");
+  });
+
   it("distinguishes chat roles without rendering repeated avatars or labels", () => {
     const userHtml = renderToStaticMarkup(
       React.createElement(ChatMessage, {

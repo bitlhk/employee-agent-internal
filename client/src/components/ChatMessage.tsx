@@ -893,6 +893,23 @@ function ChatMessageInner({
     () => filterCitedKnowledgeSources(knowledgeSources || [], citationValidation.citedIndexes),
     [citationValidation.citedIndexes, knowledgeSources],
   );
+  const receiptCitations = useMemo(() => {
+    const knowledgeReceipts = contextReceipts.filter((receipt) => receipt.provided.knowledge.length > 0);
+    return new Map(contextReceipts.map((receipt) => {
+      const ids = new Set([
+        ...receipt.provided.knowledge.map((item) => item.assetId),
+        ...receipt.cited.knowledgeAssetIds,
+      ]);
+      const matched = citedKnowledgeSources.filter((source) => ids.has(source.documentId) || ids.has(source.parentId));
+      if (matched.length > 0) return [receipt.receiptId, matched] as const;
+      return [
+        receipt.receiptId,
+        knowledgeReceipts.length === 1 && knowledgeReceipts[0]?.receiptId === receipt.receiptId
+          ? citedKnowledgeSources
+          : [],
+      ] as const;
+    }));
+  }, [citedKnowledgeSources, contextReceipts]);
   const knowledgeSourceGroups = useMemo(() => {
     const groups = new Map<string, { source: ChatKnowledgeSource; indexes: number[]; knowledgeBaseNames: string[] }>();
     for (const source of citedKnowledgeSources) {
@@ -1098,13 +1115,19 @@ function ChatMessageInner({
         ) : null}
         {!streaming && contextReceipts.length ? (
           <div className="context-receipt-bundle" aria-label={contextReceipts.length > 1 ? `本任务包含 ${contextReceipts.length} 个依据阶段` : undefined}>
-            {contextReceipts.length > 1 ? <div className="context-receipt-bundle__label">本任务包含 {contextReceipts.length} 个依据阶段</div> : null}
+            {contextReceipts.length > 1 ? (
+              <div className="context-receipt-bundle__label">
+                <ShieldCheck aria-hidden="true" />
+                <span><strong>本次依据</strong><small>{contextReceipts.length} 个任务阶段</small></span>
+              </div>
+            ) : null}
             {contextReceipts.map((receipt) => (
               <ContextReceiptPanel
                 key={receipt.receiptId}
                 receipt={receipt}
                 interactionGrant={contextInteractionGrants.get(receipt.receiptId)}
-                citedKnowledge={citedKnowledgeSources}
+                citedKnowledge={receiptCitations.get(receipt.receiptId) || []}
+                summaryTitle={contextReceipts.length > 1 ? receipt.taskLabel : undefined}
                 onMemoryFeedback={onContextMemoryFeedback}
                 onLoadMemoryPreviews={onLoadContextMemoryPreviews}
               />

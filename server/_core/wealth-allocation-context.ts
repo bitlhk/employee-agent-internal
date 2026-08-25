@@ -12,6 +12,7 @@ import {
   type WealthProductSuitabilityContext,
   type WealthSuitabilityRequestContext,
 } from "./governance/wealth-suitability-policy";
+import { loadWealthCustomerContext } from "./wealth-customer-context";
 
 type JsonObject = Record<string, unknown>;
 
@@ -42,6 +43,10 @@ export type WealthAllocationContextResult = {
   evidence: {
     ruleVersion: string;
     customerDataAsOf: string;
+    profileDataAsOf: string;
+    portfolioDataAsOf: string;
+    profileResultFingerprint: string;
+    portfolioResultFingerprint: string;
     productDataAsOf: string[];
     policyDecisionIds: string[];
     decisions: Array<{ productId: string; effect: GovernanceDecision["effect"]; policyCode: string; policyDecisionId: string }>;
@@ -49,7 +54,9 @@ export type WealthAllocationContextResult = {
 };
 
 export type WealthAllocationDependencies = {
-  loadCustomer(customerId: string): Promise<JsonObject>;
+  loadCustomer?(customerId: string): Promise<JsonObject>;
+  loadCustomerProfile?(customerId: string): Promise<JsonObject>;
+  loadCustomerPortfolio?(customerId: string): Promise<JsonObject>;
   searchProducts(input: { keyword: string; type: string; pageSize: number }): Promise<JsonObject>;
   resolvePolicySource(): Promise<WealthPolicySource>;
 };
@@ -206,8 +213,13 @@ export async function prepareWealthAllocationContext(input: {
   dependencies: WealthAllocationDependencies;
   now?: Date;
 }): Promise<WealthAllocationContextResult> {
-  const [customerPayload, productPayload, policySource] = await Promise.all([
-    input.dependencies.loadCustomer(input.request.customerId),
+  const [customerContext, productPayload, policySource] = await Promise.all([
+    loadWealthCustomerContext({
+      customerId: input.request.customerId,
+      loadCustomer: input.dependencies.loadCustomer,
+      loadCustomerProfile: input.dependencies.loadCustomerProfile,
+      loadCustomerPortfolio: input.dependencies.loadCustomerPortfolio,
+    }),
     input.dependencies.searchProducts({
       keyword: input.request.keyword,
       type: input.request.productType,
@@ -215,7 +227,7 @@ export async function prepareWealthAllocationContext(input: {
     }),
     input.dependencies.resolvePolicySource(),
   ]);
-  const customer = normalizeWealthCustomer(customerPayload, input.request.customerId);
+  const customer = normalizeWealthCustomer({ customer: customerContext.customer }, input.request.customerId);
   if (customer.customerId !== input.request.customerId) throw new Error("客户 MCP 返回的客户标识与请求不一致");
   const products = normalizeWealthProducts(productPayload).slice(0, input.request.maxProducts);
   const evaluatedAt = (input.now || new Date()).toISOString();
@@ -246,6 +258,10 @@ export async function prepareWealthAllocationContext(input: {
     evidence: {
       ruleVersion: WEALTH_SUITABILITY_RULE_VERSION,
       customerDataAsOf: customer.dataAsOf,
+      profileDataAsOf: customerContext.evidence.profileDataAsOf,
+      portfolioDataAsOf: customerContext.evidence.portfolioDataAsOf,
+      profileResultFingerprint: customerContext.evidence.profileResultFingerprint,
+      portfolioResultFingerprint: customerContext.evidence.portfolioResultFingerprint,
       productDataAsOf: Array.from(new Set(products.map((product) => product.dataAsOf).filter(Boolean))),
       policyDecisionIds: decisions.map(({ decision }) => decision.decisionId),
       decisions: decisions.map(({ product, decision }) => ({

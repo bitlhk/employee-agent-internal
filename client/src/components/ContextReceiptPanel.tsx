@@ -44,12 +44,14 @@ export function ContextReceiptPanel({
   receipt,
   interactionGrant,
   citedKnowledge = [],
+  summaryTitle = "本次依据",
   onMemoryFeedback,
   onLoadMemoryPreviews,
 }: {
   receipt: ContextReceiptV1;
   interactionGrant?: ContextInteractionGrantV1;
   citedKnowledge?: CitedKnowledge[];
+  summaryTitle?: string;
   onMemoryFeedback?: (input: {
     memoryId: number;
     memoryVersion: number;
@@ -82,6 +84,7 @@ export function ContextReceiptPanel({
     .sort()
     .at(-1) || "", [receipt.provided.businessData]);
   const cited = citedKnowledge.length || receipt.cited.knowledgeAssetIds.length;
+  const supplementalCitations = receipt.provided.knowledge.length > 0 ? [] : citedKnowledge;
   const appliedPolicies = receipt.applied.policyDecisions.length;
   const executions = receipt.applied.capabilityExecutions;
   const disclosedExclusions = receipt.excluded.filter((item) => item.disclosure !== "hidden");
@@ -104,14 +107,14 @@ export function ContextReceiptPanel({
   }, [interactionGrant, memoryPreviewLoading, memoryPreviewRequested, onLoadMemoryPreviews, open, receipt.provided.memory, receipt.receiptId]);
 
   return (
-    <section className="context-receipt" data-status={receipt.readiness.status.toLowerCase()} aria-label="本次分析依据">
+    <section className="context-receipt" data-status={receipt.readiness.status.toLowerCase()} aria-label={summaryTitle}>
       <button
         type="button"
         className="context-receipt__summary"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="context-receipt__summary-title"><ShieldCheck />本次依据</span>
+        <span className="context-receipt__summary-title"><ShieldCheck />{summaryTitle}</span>
         <span className="context-receipt__summary-items">
           {providedCount > 0 ? <span>{providedCount} 项企业上下文</span> : null}
           {latestDataAt ? <span>数据 {formatAsOf(latestDataAt)}</span> : null}
@@ -146,7 +149,7 @@ export function ContextReceiptPanel({
             </div>
           ) : null}
 
-          {(receipt.provided.knowledge.length > 0 || citedKnowledge.length > 0) ? (
+          {(receipt.provided.knowledge.length > 0 || supplementalCitations.length > 0) ? (
             <div className="context-receipt__section">
               <h4><BookOpen />现行依据</h4>
               <ul>
@@ -156,7 +159,7 @@ export function ContextReceiptPanel({
                     <small>{item.version ? `版本 ${item.version}` : "版本已绑定"}{item.effectiveAt ? ` · ${formatAsOf(item.effectiveAt)} 生效` : ""} · 已提供</small>
                   </li>
                 ))}
-                {citedKnowledge.map((item) => (
+                {supplementalCitations.map((item) => (
                   <li key={`cited:${item.documentId}`}>
                     <span>{item.documentName}</span>
                     <small>{item.documentVersion ? `版本 ${item.documentVersion} · ` : ""}回答已引用</small>

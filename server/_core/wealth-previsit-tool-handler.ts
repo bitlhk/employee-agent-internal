@@ -95,38 +95,60 @@ export async function handleWealthPrevisitTool(input: {
       "current_previsit_sop",
     );
     const businessResolution = contextSnapshot.plans.business_data || { mode: "legacy" as const, plan: null };
-    let customerTarget = { endpointUrl: customerEndpoint, toolName: "wealth_assistant_customer_detail" };
+    let profileTarget = { endpointUrl: customerEndpoint, toolName: "wealth_assistant_customer_detail" };
+    let portfolioTarget = profileTarget;
+    let profileBindingEvidence: ReturnType<typeof contextBindingEvidence> = null;
+    let portfolioBindingEvidence: ReturnType<typeof contextBindingEvidence> = null;
     if (businessResolution.mode === "binding") {
       const profileBinding = resolvedContextBinding(businessResolution.plan, "customer_profile");
       const portfolioBinding = resolvedContextBinding(businessResolution.plan, "customer_portfolio");
       if (!profileBinding || !portfolioBinding) throw new Error("必需业务上下文来源未完成绑定");
-      const profileTarget = resolveMcpBindingTarget(profileBinding);
-      const portfolioTarget = resolveMcpBindingTarget(portfolioBinding);
-      if (profileTarget.endpointUrl !== portfolioTarget.endpointUrl || profileTarget.toolName !== portfolioTarget.toolName) {
-        throw new Error("当前访前处理器不能合并不同的客户画像与持仓来源");
-      }
-      customerTarget = profileTarget;
+      profileTarget = resolveMcpBindingTarget(profileBinding);
+      portfolioTarget = resolveMcpBindingTarget(portfolioBinding);
+      profileBindingEvidence = contextBindingEvidence(profileBinding);
+      portfolioBindingEvidence = contextBindingEvidence(portfolioBinding);
     }
     const result = await prepareWealthPrevisitContext({
       principal: principalV2.principal,
       customerId,
       dependencies: {
         probeIdentity: async () => parseInternalMcpJsonResult(await callInternalMcpTool({
-          endpointUrl: customerTarget.endpointUrl,
+          endpointUrl: portfolioTarget.endpointUrl,
           toolName: "wealth_assistant_context_probe",
           args: {},
           agentId: principalV2.principal.agentId,
           adoptId,
           sessionId: principalV2.principal.sessionId,
         })),
-        loadCustomer: async (requestedCustomerId) => parseInternalMcpJsonResult(await callInternalMcpTool({
-          endpointUrl: customerTarget.endpointUrl,
-          toolName: customerTarget.toolName,
-          args: { customerId: requestedCustomerId },
-          agentId: principalV2.principal.agentId,
-          adoptId,
-          sessionId: principalV2.principal.sessionId,
-        })),
+        ...(businessResolution.mode === "binding" ? {
+          loadCustomerProfile: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: profileTarget.endpointUrl,
+            toolName: profileTarget.toolName,
+            args: profileTarget.toolName === "get_governed_customer_profile"
+              ? { customer_id: requestedCustomerId, task_id: "WM-GT-01" }
+              : { customerId: requestedCustomerId },
+            agentId: principalV2.principal.agentId,
+            adoptId,
+            sessionId: principalV2.principal.sessionId,
+          })),
+          loadCustomerPortfolio: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: portfolioTarget.endpointUrl,
+            toolName: portfolioTarget.toolName,
+            args: { customerId: requestedCustomerId },
+            agentId: principalV2.principal.agentId,
+            adoptId,
+            sessionId: principalV2.principal.sessionId,
+          })),
+        } : {
+          loadCustomer: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
+            endpointUrl: portfolioTarget.endpointUrl,
+            toolName: portfolioTarget.toolName,
+            args: { customerId: requestedCustomerId },
+            agentId: principalV2.principal.agentId,
+            adoptId,
+            sessionId: principalV2.principal.sessionId,
+          })),
+        }),
         resolveKnowledge: async () => resolveWealthPrevisitKnowledgeBasis({
           userId: Number(user.id),
           groupId: Number(user.groupId || 0),
@@ -186,13 +208,22 @@ export async function handleWealthPrevisitTool(input: {
           eligibilityFingerprint: result.knowledgeBasis.eligibilityFingerprint,
         },
         businessData: {
-          sources: [{
-            sourceSystem: "wealth_customer_mcp",
-            entityRef: result.evidence.customerId,
-            asOf: result.evidence.customerDataAsOf,
-            resultFingerprint: result.evidence.customerResultFingerprint,
-            ...(contextBindingEvidence(resolvedContextBinding(businessResolution.plan, "customer_profile")) || {}),
-          }],
+          sources: [
+            {
+              sourceSystem: "enterprise_customer_profile_provider",
+              entityRef: result.evidence.customerId,
+              asOf: result.evidence.profileDataAsOf,
+              resultFingerprint: result.evidence.profileResultFingerprint,
+              ...(profileBindingEvidence || {}),
+            },
+            {
+              sourceSystem: "wealth_customer_portfolio",
+              entityRef: result.evidence.customerId,
+              asOf: result.evidence.portfolioDataAsOf,
+              resultFingerprint: result.evidence.portfolioResultFingerprint,
+              ...(portfolioBindingEvidence || {}),
+            },
+          ],
         },
         memory: { memoryRefs: taskMemory.selectedRefs.map((item) => String(item.memoryId)) },
         principalFingerprint: principalFingerprint(principalV2.principal),
@@ -222,7 +253,10 @@ export async function handleWealthPrevisitTool(input: {
         assetId: result.knowledgeBasis.selected.sourceAssetId,
         label: `财富客户访前准备作业依据 ${result.knowledgeBasis.selected.versionLabel}`.trim(),
       }] : [],
-      businessDataLabels: [{ sourceSystem: "wealth_customer_mcp", label: "当前客户画像与持仓" }],
+      businessDataLabels: [
+        { sourceSystem: "enterprise_customer_profile_provider", label: "当前受治理客户画像" },
+        { sourceSystem: "wealth_customer_portfolio", label: "当前财富持仓与到期信息" },
+      ],
       memoryRefs: taskMemory.selectedRefs,
       policyDecisions: [
         {
@@ -285,12 +319,16 @@ export async function handleWealthPrevisitTool(input: {
         {
           logicalAssetId: "customer_profile",
           providerType: "mcp",
-          resourceRef: mcpResourceRef("wealth-customer", customerTarget.toolName),
+          resourceRef: businessResolution.mode === "binding"
+            ? resolvedContextBinding(businessResolution.plan, "customer_profile")?.resourceRef || ""
+            : mcpResourceRef("wealth-customer", profileTarget.toolName),
         },
         {
           logicalAssetId: "customer_portfolio",
           providerType: "mcp",
-          resourceRef: mcpResourceRef("wealth-customer", customerTarget.toolName),
+          resourceRef: businessResolution.mode === "binding"
+            ? resolvedContextBinding(businessResolution.plan, "customer_portfolio")?.resourceRef || ""
+            : mcpResourceRef("wealth-customer", portfolioTarget.toolName),
         },
         ...(knowledgeSource.binding || result.knowledgeBasis.selected?.knowledgeBaseId ? [{
           logicalAssetId: "current_previsit_sop",
@@ -313,7 +351,7 @@ export async function handleWealthPrevisitTool(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || "");
     const authorizationDenied = /标识|范围|归属|授权/u.test(message);
-    const contextBindingBlocked = /上下文来源|Context binding|不能合并不同/u.test(message);
+    const contextBindingBlocked = /上下文来源|Context binding|来源未配置/u.test(message);
     const readiness = evaluateWealthTaskReadiness({
       taskId: "WM-GT-01",
       checks: {
@@ -342,7 +380,9 @@ export async function handleWealthPrevisitTool(input: {
       status: readiness.status.toLowerCase(),
       message: authorizationDenied
         ? "当前岗位无权读取该客户资料。"
-        : "客户数据服务暂时不可用，可以先生成通用访前检查清单。",
+        : contextBindingBlocked
+          ? "客户画像或持仓来源尚未完成受治理配置，可以先生成通用访前检查清单。"
+          : "客户数据服务暂时不可用，可以先生成通用访前检查清单。",
       readiness,
     })}`, authorizationDenied ? { isError: true } : {});
   }

@@ -73,7 +73,8 @@ export function buildWealthAllocationContextReceipt(input: {
       label: `财富产品适当性销售依据 ${input.result.policySource.versionLabel}`.trim(),
     }] : [],
     businessDataLabels: [
-      { sourceSystem: "wealth_customer_mcp", label: "当前客户画像与风险测评" },
+      { sourceSystem: "enterprise_customer_profile_provider", label: "当前受治理客户画像与风险测评" },
+      { sourceSystem: "wealth_customer_portfolio", label: "当前财富持仓" },
       { sourceSystem: "wealth_product_mcp", label: "当前可售产品池" },
     ],
     policyDecisions,

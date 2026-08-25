@@ -136,6 +136,42 @@ describe("wealth allocation context", () => {
     expect(result.evidence.decisions.every((item) => item.policyCode.endsWith("POLICY_SOURCE_UNAVAILABLE"))).toBe(true);
   });
 
+  it("uses the governed profile projection while keeping the portfolio source separate", async () => {
+    const result = await prepareWealthAllocationContext({
+      principal,
+      request: { customerId: "C-001", amount: 500_000, horizonMonths: 36, channel: "branch", keyword: "", productType: "", maxProducts: 10 },
+      dependencies: dependencies({
+        loadCustomer: undefined,
+        loadCustomerProfile: async () => ({
+          logicalContextId: "customer_profile",
+          projectionId: "WealthCustomerProfileV1",
+          purposeId: "wealth_advisory",
+          status: "READY",
+          sourceEvidence: [{ asOf: "2026-08-10T00:00:00.000Z" }],
+          fields: [
+            { path: "subject.subjectId", value: "C-001" },
+            { path: "subject.displayName", value: "演示客户" },
+            { path: "risk.investmentRiskLevel", value: "C3" },
+            { path: "risk.investmentRiskValidUntil", value: "2027-01-01T00:00:00.000Z" },
+          ],
+        }),
+        loadCustomerPortfolio: async () => ({
+          data: { customer: { CUST_NO: "C-001" }, heldProducts: [{ productId: "P-OLD" }] },
+          updatedAt: "2026-08-10T00:01:00.000Z",
+        }),
+      }),
+      now: new Date("2026-08-10T00:02:00.000Z"),
+    });
+
+    expect(result.customer).toMatchObject({
+      customerId: "C-001",
+      riskLevel: "C3",
+      assessmentExpiresAt: "2027-01-01T00:00:00.000Z",
+    });
+    expect(result.evidence.profileDataAsOf).toBe("2026-08-10T00:00:00.000Z");
+    expect(result.evidence.portfolioDataAsOf).toBe("2026-08-10T00:01:00.000Z");
+  });
+
   it("rejects a customer response for a different customer id", async () => {
     await expect(prepareWealthAllocationContext({
       principal,

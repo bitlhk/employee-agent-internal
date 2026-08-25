@@ -1,5 +1,6 @@
-import { governanceFingerprint, type RuntimePrincipalV2 } from "./governance/contracts";
+import type { RuntimePrincipalV2 } from "./governance/contracts";
 import type { WealthPrevisitKnowledgeBasis } from "./wealth-policy-source";
+import { loadWealthCustomerContext } from "./wealth-customer-context";
 
 type JsonObject = Record<string, unknown>;
 
@@ -12,6 +13,10 @@ export type WealthPrevisitContextResult = {
     customerId: string;
     customerDataAsOf: string;
     customerResultFingerprint: string;
+    profileDataAsOf: string;
+    portfolioDataAsOf: string;
+    profileResultFingerprint: string;
+    portfolioResultFingerprint: string;
     scopeVerified: boolean;
   };
 };
@@ -28,48 +33,34 @@ function firstString(...values: unknown[]): string {
   return "";
 }
 
-function customerObject(payload: JsonObject): JsonObject {
-  const data = object(payload.data);
-  return Object.keys(object(payload.customer)).length
-    ? object(payload.customer)
-    : Object.keys(object(data.customer)).length
-      ? object(data.customer)
-      : Object.keys(data).length ? data : payload;
-}
-
 export async function prepareWealthPrevisitContext(input: {
   principal: RuntimePrincipalV2;
   customerId: string;
   dependencies: {
     probeIdentity(): Promise<JsonObject>;
-    loadCustomer(customerId: string): Promise<JsonObject>;
+    loadCustomer?(customerId: string): Promise<JsonObject>;
+    loadCustomerProfile?(customerId: string): Promise<JsonObject>;
+    loadCustomerPortfolio?(customerId: string): Promise<JsonObject>;
     resolveKnowledge(): Promise<WealthPrevisitKnowledgeBasis>;
   };
 }): Promise<WealthPrevisitContextResult> {
-  const [probe, customerPayload, knowledgeBasis] = await Promise.all([
+  const [probe, customerContext, knowledgeBasis] = await Promise.all([
     input.dependencies.probeIdentity(),
-    input.dependencies.loadCustomer(input.customerId),
+    loadWealthCustomerContext({
+      customerId: input.customerId,
+      loadCustomer: input.dependencies.loadCustomer,
+      loadCustomerProfile: input.dependencies.loadCustomerProfile,
+      loadCustomerPortfolio: input.dependencies.loadCustomerPortfolio,
+    }),
     input.dependencies.resolveKnowledge(),
   ]);
-  const customer = customerObject(customerPayload);
-  const returnedCustomerId = firstString(
-    customer.customerId,
-    customer.customer_id,
-    customer.CUST_NO,
-    customer.id,
-  );
-  if (!returnedCustomerId || returnedCustomerId !== input.customerId) {
-    throw new Error("客户 MCP 返回的客户标识与请求不一致");
-  }
+  const customer = customerContext.customer;
   const probeData = object(probe.data);
   const probeAllowed = probe.allowed !== false && probeData.allowed !== false && !probe.error;
   if (!probeAllowed) throw new Error("客户 MCP 未确认当前岗位的数据范围");
   const customerDataAsOf = firstString(
-    customer.dataAsOf,
-    customer.data_as_of,
-    customer.updatedAt,
-    customer.updated_at,
-    customerPayload.updatedAt,
+    customerContext.evidence.portfolioDataAsOf,
+    customerContext.evidence.profileDataAsOf,
   );
   return {
     schema: "ea.wealth-previsit-context.v1",
@@ -77,9 +68,13 @@ export async function prepareWealthPrevisitContext(input: {
     customer,
     knowledgeBasis,
     evidence: {
-      customerId: returnedCustomerId,
+      customerId: customerContext.evidence.customerId,
       customerDataAsOf,
-      customerResultFingerprint: governanceFingerprint(customer),
+      customerResultFingerprint: customerContext.evidence.combinedResultFingerprint,
+      profileDataAsOf: customerContext.evidence.profileDataAsOf,
+      portfolioDataAsOf: customerContext.evidence.portfolioDataAsOf,
+      profileResultFingerprint: customerContext.evidence.profileResultFingerprint,
+      portfolioResultFingerprint: customerContext.evidence.portfolioResultFingerprint,
       scopeVerified: true,
     },
   };

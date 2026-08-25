@@ -60,4 +60,58 @@ describe("wealth previsit context", () => {
     expect(result.status).toBe("ready");
     expect(result.evidence).toMatchObject({ customerId: "C001", scopeVerified: true });
   });
+
+  it("assembles a governed shared profile with a separate wealth portfolio source", async () => {
+    const result = await prepareWealthPrevisitContext({
+      principal,
+      customerId: "C005",
+      dependencies: {
+        probeIdentity: async () => ({ allowed: true }),
+        loadCustomerProfile: async () => ({
+          logicalContextId: "customer_profile",
+          projectionId: "WealthCustomerProfileV1",
+          projectionVersion: "1.0.0",
+          purposeId: "wealth_advisory",
+          status: "READY",
+          sourceEvidence: [{ asOf: "2026-08-25T06:00:00.000Z" }],
+          fields: [
+            { path: "subject.subjectId", value: "C005" },
+            { path: "subject.displayName", value: "陈明" },
+            { path: "contact.maskedPhone", value: "138****8005" },
+            { path: "risk.investmentRiskLevel", value: "C4" },
+            { path: "risk.investmentRiskValidUntil", value: "2025-12-31T00:00:00.000Z" },
+          ],
+        }),
+        loadCustomerPortfolio: async () => ({
+          data: {
+            customer: { CUST_NO: "C005", CUST_NAME: "陈明", CUST_PHONE_NO: "13800008005" },
+            assetInfo: { total: 500_000 },
+            heldProducts: [{ productId: "P003", balance: 160_217 }],
+          },
+          updatedAt: "2026-08-25T06:01:00.000Z",
+        }),
+        resolveKnowledge: async () => ({
+          status: "ready", evaluatedAt: "2026-08-25T06:02:00.000Z",
+          selected: { sourceAssetId: "wm-previsit-sop", documentId: "doc-1", versionLabel: "V1.0", contentHash: "b".repeat(64), sourceDepartment: "财富管理部" },
+          eligibilityFingerprint: "c".repeat(64), userMessage: "已就绪",
+        }),
+      },
+    });
+
+    expect(result.status).toBe("ready");
+    expect(result.customer).toMatchObject({
+      customerId: "C005",
+      name: "陈明",
+      maskedPhone: "138****8005",
+      riskLevel: "C4",
+      portfolio: { heldProducts: [{ productId: "P003", balance: 160_217 }] },
+    });
+    expect(JSON.stringify(result.customer)).not.toContain("13800008005");
+    expect(result.evidence).toMatchObject({
+      profileDataAsOf: "2026-08-25T06:00:00.000Z",
+      portfolioDataAsOf: "2026-08-25T06:01:00.000Z",
+    });
+    expect(result.evidence.profileResultFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+    expect(result.evidence.portfolioResultFingerprint).toMatch(/^[a-f0-9]{64}$/u);
+  });
 });

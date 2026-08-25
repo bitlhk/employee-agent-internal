@@ -18,10 +18,12 @@ import { mcpResourceRef, resolveMcpBindingTarget, type McpBindingTarget } from "
 export type WealthAllocationRuntimeSources = {
   enabled: boolean;
   knowledgeSource?: WealthKnowledgeSourceResolution;
-  customerTarget: McpBindingTarget;
+  profileTarget: McpBindingTarget;
+  portfolioTarget: McpBindingTarget;
   productTarget: McpBindingTarget;
   resolutionEvidence: ReturnType<typeof contextResolutionEvidence>;
-  customerBindingEvidence: ReturnType<typeof contextBindingEvidence>;
+  profileBindingEvidence: ReturnType<typeof contextBindingEvidence>;
+  portfolioBindingEvidence: ReturnType<typeof contextBindingEvidence>;
   productBindingEvidence: ReturnType<typeof contextBindingEvidence>;
 };
 
@@ -76,10 +78,12 @@ export async function resolveWealthAllocationRuntimeSources(input: {
 }): Promise<WealthAllocationRuntimeSources> {
   const legacy = {
     enabled: false,
-    customerTarget: { endpointUrl: input.customerEndpoint, toolName: "wealth_assistant_customer_detail" },
+    profileTarget: { endpointUrl: input.customerEndpoint, toolName: "wealth_assistant_customer_detail" },
+    portfolioTarget: { endpointUrl: input.customerEndpoint, toolName: "wealth_assistant_customer_detail" },
     productTarget: { endpointUrl: input.productEndpoint, toolName: "wealth_assistant_product_search" },
     resolutionEvidence: undefined,
-    customerBindingEvidence: null,
+    profileBindingEvidence: null,
+    portfolioBindingEvidence: null,
     productBindingEvidence: null,
   };
   if (input.taskId !== "WM-GT-02") return legacy;
@@ -93,7 +97,8 @@ export async function resolveWealthAllocationRuntimeSources(input: {
     "current_wealth_policy",
   );
   const businessResolution = contextSnapshot.plans.business_data || { mode: "legacy" as const, plan: null };
-  let customerTarget = legacy.customerTarget;
+  let profileTarget = legacy.profileTarget;
+  let portfolioTarget = legacy.portfolioTarget;
   let productTarget = legacy.productTarget;
   if (businessResolution.mode === "binding") {
     const profileBinding = resolvedContextBinding(businessResolution.plan, "customer_profile");
@@ -102,20 +107,19 @@ export async function resolveWealthAllocationRuntimeSources(input: {
     if (!profileBinding || !portfolioBinding || !productsBinding) {
       throw new Error("必需业务上下文来源未完成绑定");
     }
-    customerTarget = resolveMcpBindingTarget(profileBinding);
-    const portfolioTarget = resolveMcpBindingTarget(portfolioBinding);
-    if (customerTarget.endpointUrl !== portfolioTarget.endpointUrl || customerTarget.toolName !== portfolioTarget.toolName) {
-      throw new Error("当前配置处理器不能合并不同的客户画像与持仓来源");
-    }
+    profileTarget = resolveMcpBindingTarget(profileBinding);
+    portfolioTarget = resolveMcpBindingTarget(portfolioBinding);
     productTarget = resolveMcpBindingTarget(productsBinding);
   }
   return {
     enabled: true,
     knowledgeSource,
-    customerTarget,
+    profileTarget,
+    portfolioTarget,
     productTarget,
     resolutionEvidence: contextResolutionEvidence([knowledgeSource.plan, businessResolution.plan]),
-    customerBindingEvidence: contextBindingEvidence(resolvedContextBinding(businessResolution.plan, "customer_profile")),
+    profileBindingEvidence: contextBindingEvidence(resolvedContextBinding(businessResolution.plan, "customer_profile")),
+    portfolioBindingEvidence: contextBindingEvidence(resolvedContextBinding(businessResolution.plan, "customer_portfolio")),
     productBindingEvidence: contextBindingEvidence(resolvedContextBinding(businessResolution.plan, "available_products")),
   };
 }
@@ -132,8 +136,11 @@ export async function observeWealthAllocationRuntimeSources(
     taskId: "WM-GT-02",
     principal,
     observed: [
-      { logicalAssetId: "customer_profile", providerType: "mcp", resourceRef: mcpResourceRef("wealth-customer", sources.customerTarget.toolName) },
-      { logicalAssetId: "customer_portfolio", providerType: "mcp", resourceRef: mcpResourceRef("wealth-customer", sources.customerTarget.toolName) },
+      { logicalAssetId: "customer_profile", providerType: "mcp", resourceRef: mcpResourceRef(
+        sources.profileTarget.toolName === "get_governed_customer_profile" ? "customer-profile" : "wealth-customer",
+        sources.profileTarget.toolName,
+      ) },
+      { logicalAssetId: "customer_portfolio", providerType: "mcp", resourceRef: mcpResourceRef("wealth-customer", sources.portfolioTarget.toolName) },
       { logicalAssetId: "available_products", providerType: "mcp", resourceRef: mcpResourceRef("wealth-product", sources.productTarget.toolName) },
       ...(knowledgeResourceRef ? [{
         logicalAssetId: "current_wealth_policy",
@@ -170,11 +177,18 @@ export function buildWealthAllocationTaskContextPack(input: {
     businessData: {
       sources: [
         {
-          sourceSystem: "wealth_customer_mcp",
+          sourceSystem: "enterprise_customer_profile_provider",
           entityRef: input.result.customer.customerId,
-          asOf: input.result.evidence.customerDataAsOf,
-          resultFingerprint: governanceFingerprint(input.result.customer),
-          ...(input.sources.customerBindingEvidence || {}),
+          asOf: input.result.evidence.profileDataAsOf,
+          resultFingerprint: input.result.evidence.profileResultFingerprint,
+          ...(input.sources.profileBindingEvidence || {}),
+        },
+        {
+          sourceSystem: "wealth_customer_portfolio",
+          entityRef: input.result.customer.customerId,
+          asOf: input.result.evidence.portfolioDataAsOf,
+          resultFingerprint: input.result.evidence.portfolioResultFingerprint,
+          ...(input.sources.portfolioBindingEvidence || {}),
         },
         {
           sourceSystem: "wealth_product_mcp",

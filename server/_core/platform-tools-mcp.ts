@@ -747,19 +747,40 @@ async function callTool(
         customerEndpoint,
         productEndpoint,
       });
-      const { customerTarget, productTarget, knowledgeSource } = runtimeSources;
+      const { profileTarget, portfolioTarget, productTarget, knowledgeSource } = runtimeSources;
       const result = await prepareWealthAllocationContext({
         principal: principalV2.principal,
         request: { customerId, amount, horizonMonths, channel, keyword, productType, maxProducts },
         dependencies: {
-          loadCustomer: async (requestedCustomerId) => parseInternalMcpJsonResult(await callInternalMcpTool({
-            endpointUrl: customerTarget.endpointUrl,
-            toolName: customerTarget.toolName,
-            args: { customerId: requestedCustomerId },
-            agentId: principal.principal.agentId,
-            adoptId,
-            sessionId: principal.principal.sessionId,
-          })),
+          ...(profileTarget.endpointUrl === portfolioTarget.endpointUrl && profileTarget.toolName === portfolioTarget.toolName ? {
+            loadCustomer: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
+              endpointUrl: portfolioTarget.endpointUrl,
+              toolName: portfolioTarget.toolName,
+              args: { customerId: requestedCustomerId },
+              agentId: principal.principal.agentId,
+              adoptId,
+              sessionId: principal.principal.sessionId,
+            })),
+          } : {
+            loadCustomerProfile: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
+              endpointUrl: profileTarget.endpointUrl,
+              toolName: profileTarget.toolName,
+              args: profileTarget.toolName === "get_governed_customer_profile"
+                ? { customer_id: requestedCustomerId, task_id: allocationTaskId }
+                : { customerId: requestedCustomerId },
+              agentId: principal.principal.agentId,
+              adoptId,
+              sessionId: principal.principal.sessionId,
+            })),
+            loadCustomerPortfolio: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
+              endpointUrl: portfolioTarget.endpointUrl,
+              toolName: portfolioTarget.toolName,
+              args: { customerId: requestedCustomerId },
+              agentId: principal.principal.agentId,
+              adoptId,
+              sessionId: principal.principal.sessionId,
+            })),
+          }),
           searchProducts: async (search) => parseInternalMcpJsonResult(await callInternalMcpTool({
             endpointUrl: productTarget.endpointUrl,
             toolName: productTarget.toolName,
