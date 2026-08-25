@@ -1185,7 +1185,7 @@ export default function Home() {
         .filter((item) => (
           item?.conversationId &&
           item.sessionKey &&
-          (isJiuwenRuntime || !hidden.has(item.conversationId)) &&
+          !hidden.has(item.conversationId) &&
           Number(item.messageCount || 0) > 0
         ))
         .sort((a, b) => Number(b.sortUpdatedAt || b.sourceUpdatedAt || b.updatedAt || 0) - Number(a.sortUpdatedAt || a.sourceUpdatedAt || a.updatedAt || 0))

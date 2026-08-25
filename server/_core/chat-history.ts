@@ -28,6 +28,7 @@ import {
   mergeExpertTaskHistorySessions,
 } from "./expert-task-history";
 import { createChatSessionListCache } from "./chat-session-list-cache";
+import { chatHistoryDeletionStore } from "./chat-history-deletion-store";
 import { logDebug, logWarn } from "./observability/logger";
 import {
   listEnterpriseRuntimeHistorySessions,
@@ -1121,14 +1122,19 @@ export async function listClawChatHistorySessionRecords(args: {
     const runtimeSessions = mergeRuntimeHistorySessions(enterpriseSessions, localSessions, limit);
     return mergeExpertTaskHistorySessions(runtimeSessions, expertSessions, limit);
   });
+  const visibleSessions = sessions.filter((session) => !chatHistoryDeletionStore.isDeleted(
+    adoptId,
+    String(session?.conversationId || ""),
+  ));
   logIosLoadDebug("chat_history_sessions_done_jiuwen", {
     adoptId,
     runtimeAgentId: jiuwenClawAgentId(adoptId, dbAgentId),
-    returnedCount: sessions.length,
+    returnedCount: visibleSessions.length,
+    deletedCount: sessions.length - visibleSessions.length,
     ms: Date.now() - startedAt,
   });
   return {
-    sessions,
+    sessions: visibleSessions,
     meta: {
       runtime: "jiuwenswarm",
       timings: { totalMs: Date.now() - startedAt },

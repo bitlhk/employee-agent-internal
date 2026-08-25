@@ -56,6 +56,7 @@ import {
   deleteEnterpriseRuntimeHistorySession,
   listEnterpriseRuntimeHistorySessions,
 } from "./enterprise-runtime-history";
+import { chatHistoryDeletionStore } from "./chat-history-deletion-store";
 import {
   beginChatSessionDeletion,
   endChatSessionDeletion,
@@ -235,6 +236,17 @@ export function registerMiscRoutes(app: express.Express) {
       }
 
       const dbAgentId = String((claw as any).agentId || "").trim();
+      if (
+        isJiuwenClawAdoptId(adoptId)
+        && isListableJiuwenWebSession(sessionKey, adoptId)
+        && chatHistoryDeletionStore.isDeleted(
+          adoptId,
+          jiuwenConversationIdFromSessionId(sessionKey, adoptId),
+        )
+      ) {
+        res.status(404).json({ error: "session_missing" });
+        return;
+      }
       const expertConversationId = expertConversationIdFromSessionKey(sessionKey);
       if (expertConversationId) {
         const expertTasks = await listAgentTasksByConversation(adoptId, expertConversationId, 100);
@@ -353,34 +365,59 @@ export function registerMiscRoutes(app: express.Express) {
           return;
         }
         try {
-          let enterpriseDeleted = 0;
-          const enterpriseSessions = await listEnterpriseRuntimeHistorySessions({
+          // Persist the user's deletion intent before contacting the enterprise
+          // runtime. Some enterprise JiuwenSwarm versions can list a historical
+          // session but cannot immediately route its physical deletion back to
+          // the owning workspace.
+          chatHistoryDeletionStore.markDeleted({
             adoptId,
-            agentId: dbAgentId,
-            limit: 100,
+            conversationId,
+            sessionIds: [sessionKey],
+            enterpriseCleanupPending: true,
           });
-          if (enterpriseSessions) {
-            const matchingSessionIds = enterpriseSessionIdsForConversation({
-              sessions: enterpriseSessions,
+          let enterpriseDeleted = 0;
+          let enterpriseCleanupPending = false;
+          let enterpriseSessionIds = [sessionKey];
+          try {
+            const enterpriseSessions = await listEnterpriseRuntimeHistorySessions({
               adoptId,
-              sessionId: sessionKey,
+              agentId: dbAgentId,
+              limit: 100,
             });
-            const sessionIds = matchingSessionIds.length > 0 ? matchingSessionIds : [sessionKey];
-            for (const sessionId of sessionIds) {
-              const deleted = await deleteEnterpriseRuntimeHistorySession({
+            if (enterpriseSessions) {
+              const matchingSessionIds = enterpriseSessionIdsForConversation({
+                sessions: enterpriseSessions,
                 adoptId,
-                agentId: dbAgentId,
-                sessionId,
+                sessionId: sessionKey,
               });
-              if (deleted) enterpriseDeleted += 1;
+              enterpriseSessionIds = matchingSessionIds.length > 0 ? matchingSessionIds : [sessionKey];
+              for (const sessionId of enterpriseSessionIds) {
+                try {
+                  const deleted = await deleteEnterpriseRuntimeHistorySession({
+                    adoptId,
+                    agentId: dbAgentId,
+                    sessionId,
+                  });
+                  if (deleted) enterpriseDeleted += 1;
+                  else enterpriseCleanupPending = true;
+                } catch (error) {
+                  enterpriseCleanupPending = true;
+                  logError("chat.history.enterprise_delete_pending", error, { adoptId, sessionId });
+                }
+              }
             }
+          } catch (error) {
+            enterpriseCleanupPending = true;
+            logError("chat.history.enterprise_delete_pending", error, { adoptId, sessionId: sessionKey });
           }
 
           const result = deleteJiuwenHistorySession({ adoptId, dbAgentId, sessionKey });
-          if (!result && enterpriseDeleted === 0) {
-            res.status(404).json({ error: "session_missing" });
-            return;
-          }
+          chatHistoryDeletionStore.markDeleted({
+            adoptId,
+            conversationId,
+            sessionIds: enterpriseSessionIds,
+            enterpriseCleanupPending,
+          });
           const expertDeleted = await deleteAgentTasksByConversation(adoptId, conversationId);
           invalidateChatHistorySessionList(adoptId);
           res.json({
@@ -390,6 +427,7 @@ export function registerMiscRoutes(app: express.Express) {
             sessionId: result?.sessionId || sessionKey,
             deleted: Number(result?.deleted || 0) + enterpriseDeleted + expertDeleted,
             enterpriseDeleted,
+            enterpriseCleanupPending,
             expertDeleted,
           });
           return;
