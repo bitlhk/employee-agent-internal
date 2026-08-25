@@ -142,6 +142,26 @@ export function buildDemoWealthCustomerFacts(input: {
         value: "Demo: recent follow-up status requires advisor confirmation.",
         provenance,
       },
+      ...(subjectId === "C005"
+        ? [
+            {
+              path: "preferences.investmentHorizon",
+              value: "3年以上",
+              provenance: {
+                ...provenance,
+                mappingRuleVersion: "wealth-positive-demo-v1",
+              },
+            },
+            {
+              path: "preferences.liquidityNeeds",
+              value: "保留20%高流动性资产",
+              provenance: {
+                ...provenance,
+                mappingRuleVersion: "wealth-positive-demo-v1",
+              },
+            },
+          ]
+        : []),
     ],
     resultFingerprint: "",
   };

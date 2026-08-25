@@ -83,4 +83,24 @@ describe("Customer Profile Demo facts", () => {
 
     expect(applyDemoWealthCustomerScenario({ ...base, subjectId: "C003" })).toEqual({ ...base, subjectId: "C003" });
   });
+
+  it("supplies the two expert-required WM-GT-02 preference facts only for C005", () => {
+    const positive = buildDemoWealthCustomerFacts({ subjectId: "C005" });
+    const blocked = buildDemoWealthCustomerFacts({ subjectId: "C003" });
+
+    expect(positive.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: "preferences.investmentHorizon",
+        value: "3年以上",
+        provenance: expect.objectContaining({ mappingRuleVersion: "wealth-positive-demo-v1" }),
+      }),
+      expect.objectContaining({
+        path: "preferences.liquidityNeeds",
+        value: "保留20%高流动性资产",
+        provenance: expect.objectContaining({ mappingRuleVersion: "wealth-positive-demo-v1" }),
+      }),
+    ]));
+    expect(blocked.fields.some(field => field.path.startsWith("preferences."))).toBe(false);
+    expect(positive.resultFingerprint).toBe(customerProfileSourceFingerprint(positive));
+  });
 });

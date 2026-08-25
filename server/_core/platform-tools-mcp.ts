@@ -15,6 +15,7 @@ import { skillStoreRuntimeImportedDir } from "./skills/skill-store";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
 import { forgetAgentMemory, listAgentMemoryView, rememberExplicitPreference } from "./agent-memory";
 import { beginMcpCall } from "./observability/metrics";
+import { logError } from "./observability/logger";
 import { fetchWithTimeout } from "./fetch-timeout";
 import { evaluateGovernance, governanceFingerprint, principalFingerprint } from "./governance/contracts";
 import { platformMcpPolicyAdapter } from "./governance/platform-mcp-policy";
@@ -890,6 +891,11 @@ async function callTool(
         contextReceipt,
       );
     } catch (error) {
+      logError("wealth_allocation_context.failed", error, {
+        adoptId,
+        taskId: allocationTaskId,
+        customerRef: stableToolInputHash({ customerId }),
+      });
       const message = error instanceof Error ? error.message : String(error || "");
       const policyUnavailable = /policy|制度|knowledge/i.test(message);
       const readiness = evaluateWealthTaskReadiness({
