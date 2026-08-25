@@ -23,6 +23,9 @@ function required(name: string): string {
 
 async function main() {
   const apply = process.argv.includes("--apply");
+  const operation = process.argv.includes("--rollback")
+    ? "rollback"
+    : "release";
   const allRoleInstances = process.argv.includes("--all-role-instances");
   const roleKey = required("role-key");
   const skillId = required("skill-id");
@@ -65,6 +68,7 @@ async function main() {
   const adoptIds = [...new Set(adoptions)].sort();
   const plan = {
     mode: apply ? "apply" : "dry-run",
+    operation,
     roleKey,
     skillId,
     version: version.version,
@@ -82,6 +86,7 @@ async function main() {
     return;
   }
   const result = await releaseRoleDefaultSkillVersion({
+    operation,
     roleKey,
     skillId,
     versionId: version.versionId,

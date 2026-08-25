@@ -3,6 +3,7 @@ import { assertRoleDefaultSkillReleaseEvidence } from "./role-default-skill-rele
 
 const digest = "a".repeat(64);
 const base = {
+  operation: "release" as const,
   roleKey: "wealth-manager",
   skillId: "wealth-manager-assistant",
   skillIdentityId: "skill-identity",
@@ -39,6 +40,22 @@ describe("role-default Skill release evidence", () => {
       assertRoleDefaultSkillReleaseEvidence({
         ...base,
         rolePackReleaseStatus: "candidate",
+      })
+    ).toThrow(/verified Role Pack release/);
+  });
+
+  it("allows stale historical evidence only for an explicit rollback", () => {
+    expect(() =>
+      assertRoleDefaultSkillReleaseEvidence({
+        ...base,
+        operation: "rollback",
+        rolePackReleaseStatus: "stale",
+      })
+    ).not.toThrow();
+    expect(() =>
+      assertRoleDefaultSkillReleaseEvidence({
+        ...base,
+        rolePackReleaseStatus: "stale",
       })
     ).toThrow(/verified Role Pack release/);
   });

@@ -117,6 +117,20 @@ export async function getVerifiedRolePackRelease(releaseId: string): Promise<Rol
   )[0];
 }
 
+export async function getRolePackReleaseById(
+  releaseId: string
+): Promise<RolePackRelease | undefined> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  return (
+    await database
+      .select()
+      .from(rolePackReleases)
+      .where(eq(rolePackReleases.releaseId, releaseId))
+      .limit(1)
+  )[0];
+}
+
 function releaseEvidence(
   release: RolePackRelease,
   verificationStatus: ReleaseEvidenceRef["verificationStatus"],

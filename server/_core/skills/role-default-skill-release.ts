@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import semver from "semver";
 import {
   roleSkillPreinstallV2Schema,
   SKILL_MARKET_V2_SCHEMA_VERSION,
@@ -12,7 +13,7 @@ import {
   getRoleSkillPreinstall,
   getSkillIdentityBySkillId,
   getSkillVersionById,
-  getVerifiedRolePackRelease,
+  getRolePackReleaseById,
   resolveEffectiveRoleAssets,
   upsertRoleSkillPreinstall,
   type UpsertRoleSkillPreinstallInput,
@@ -33,6 +34,7 @@ import { parseSkillSourceDirectory } from "./skill-source";
 import { skillStoreMarketplaceDir, skillStorePath } from "./skill-store";
 
 export type RoleDefaultSkillReleaseEvidence = {
+  operation: "release" | "rollback";
   roleKey: string;
   skillId: string;
   skillIdentityId: string;
@@ -60,7 +62,13 @@ export function assertRoleDefaultSkillReleaseEvidence(
       `Skill ${evidence.skillId} is not a default Skill for ${evidence.roleKey}`
     );
   }
-  if (evidence.rolePackReleaseStatus !== "verified") {
+  if (
+    evidence.rolePackReleaseStatus !== "verified" &&
+    !(
+      evidence.operation === "rollback" &&
+      evidence.rolePackReleaseStatus === "stale"
+    )
+  ) {
     throw new Error(
       "Role-default release requires a verified Role Pack release"
     );
@@ -126,6 +134,7 @@ async function reconcileRoleAdoption(input: {
 }
 
 export async function releaseRoleDefaultSkillVersion(input: {
+  operation?: "release" | "rollback";
   roleKey: string;
   skillId: string;
   versionId: string;
@@ -135,6 +144,7 @@ export async function releaseRoleDefaultSkillVersion(input: {
   actorUserId: number;
   adoptIds: string[];
 }) {
+  const operation = input.operation || "release";
   const operationId = randomUUID();
   const identity = await getSkillIdentityBySkillId(input.skillId);
   if (!identity || identity.status !== "active") {
@@ -143,9 +153,10 @@ export async function releaseRoleDefaultSkillVersion(input: {
   const version = await getSkillVersionById(input.versionId);
   if (!version)
     throw new Error(`Skill version is unavailable: ${input.versionId}`);
-  const release = await getVerifiedRolePackRelease(input.rolePackReleaseId);
+  const release = await getRolePackReleaseById(input.rolePackReleaseId);
   const effectiveAssets = await resolveEffectiveRoleAssets(input.roleKey);
   assertRoleDefaultSkillReleaseEvidence({
+    operation,
     roleKey: input.roleKey,
     skillId: input.skillId,
     skillIdentityId: identity.identityId,
@@ -160,6 +171,24 @@ export async function releaseRoleDefaultSkillVersion(input: {
     throw new Error("Golden Task run ID is required");
   if (!input.adoptIds.length)
     throw new Error("At least one target Agent adoption is required");
+
+  const previous = await getRoleSkillPreinstall(
+    input.roleKey,
+    identity.identityId
+  );
+  if (operation === "rollback") {
+    if (!previous?.enabled)
+      throw new Error("Rollback requires an active role-default release");
+    const previousVersion = await getSkillVersionById(previous.versionId);
+    if (
+      !previousVersion ||
+      !semver.lt(version.version, previousVersion.version)
+    ) {
+      throw new Error(
+        "Rollback target must be older than the active role-default version"
+      );
+    }
+  }
 
   verifyImmutableSkillArtifact({
     artifactPath: version.artifactPath,
@@ -177,10 +206,6 @@ export async function releaseRoleDefaultSkillVersion(input: {
     );
   }
 
-  const previous = await getRoleSkillPreinstall(
-    input.roleKey,
-    identity.identityId
-  );
   const targetPath = path.join(
     skillStoreMarketplaceDir("approved"),
     identity.skillId
@@ -213,6 +238,7 @@ export async function releaseRoleDefaultSkillVersion(input: {
       artifactSha256: version.artifactSha256,
       rolePackReleaseId: input.rolePackReleaseId,
       goldenTaskRunId: input.goldenTaskRunId,
+      operation,
       adoptIds: input.adoptIds,
     },
   });
@@ -286,6 +312,7 @@ export async function releaseRoleDefaultSkillVersion(input: {
         artifactSha256: version.artifactSha256,
         rolePackReleaseId: input.rolePackReleaseId,
         goldenTaskRunId: input.goldenTaskRunId,
+        operation,
         reconciled,
       },
     });
@@ -339,6 +366,7 @@ export async function releaseRoleDefaultSkillVersion(input: {
       metadata: {
         skillId: identity.skillId,
         versionId: version.versionId,
+        operation,
         rollbackAttempted: true,
         error: error instanceof Error ? error.message : String(error),
       },
