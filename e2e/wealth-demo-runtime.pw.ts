@@ -3,6 +3,9 @@ import { expect, test, type Page } from "@playwright/test";
 const sessionToken = String(process.env.EA_E2E_SESSION_TOKEN || "").trim();
 const adoptId = String(process.env.EA_E2E_ADOPT_ID || "lgj-lihongkun").trim();
 const cookieName = String(process.env.EA_E2E_SESSION_COOKIE || "app_session_id").trim();
+const cookieValue = sessionToken.startsWith(`${cookieName}=`)
+  ? sessionToken.slice(cookieName.length + 1)
+  : sessionToken;
 
 test.skip(!sessionToken, "EA_E2E_SESSION_TOKEN is required");
 test.setTimeout(8 * 60_000);
@@ -47,7 +50,7 @@ test.beforeEach(async ({ context, baseURL }) => {
   if (!baseURL) throw new Error("Playwright baseURL is required");
   await context.addCookies([{
     name: cookieName,
-    value: sessionToken,
+    value: cookieValue,
     url: baseURL,
     httpOnly: true,
     secure: true,
