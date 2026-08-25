@@ -405,7 +405,10 @@ function sourceCanUninstall(skill: RegistrySkill) {
 }
 
 function sourceCanPublish(skill: RegistrySkill) {
-  return skill.source.kind === "uploaded" || skill.source.kind === "generated" || skill.source.kind === "runtime_imported";
+  return skill.source.kind === "uploaded"
+    || skill.source.kind === "generated"
+    || skill.source.kind === "runtime_imported"
+    || (skill.source.kind === "role_default" && skill.review.state === "pending");
 }
 
 function SkillPill({ children, tone = "neutral" }: { children: ReactNode; tone?: "ok" | "warn" | "danger" | "neutral" }) {
@@ -2184,7 +2187,9 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
 
   const filtered = useMemo(() => {
     return items.filter((skill) => {
-      if (sourceFilter !== "all" && skill.source.kind !== sourceFilter) return false;
+      if (sourceFilter !== "all"
+        && skill.source.kind !== sourceFilter
+        && !(sourceFilter === "uploaded" && skill.source.kind === "role_default" && skill.review.state === "pending")) return false;
       if (stateFilter === "ready" && skill.state !== "ready") return false;
       if (stateFilter === "disabled" && skill.state !== "disabled") return false;
       if (stateFilter === "attention" && !["sync_failed", "source_missing", "review_pending", "reviewing", "review_failed"].includes(skill.state)) return false;
@@ -2351,7 +2356,9 @@ export function SkillsPage({ section = "skills", adoptId, onChanged, onAddMcp, o
       const skillId = String(uploaded.item?.id || inspect.skill.skillId || "").trim();
       const warningCount = uploaded.warnings?.length || inspect.skill.warnings?.length || 0;
       setSkillActivation({ skillId, displayName, prompt: skillTrialPrompt(displayName), warningCount });
-      if (warningCount) {
+      if (uploaded.releaseGated) {
+        toast.success("候选版本已保存；岗位预装技能需提交审核后才会更新运行版本");
+      } else if (warningCount) {
         toast.warning(`技能已就绪，有 ${warningCount} 项兼容或安全提示。`);
       } else {
         toast.success("技能已上传并同步到运行环境");

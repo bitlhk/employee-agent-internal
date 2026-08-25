@@ -564,6 +564,34 @@ export class FileSkillRegistry implements SkillRegistry {
       return err("source_missing", String(e?.message || e));
     }
     const runtimePath = await this.runtimePath(adoptId, preparedSource.skillId);
+    if (options.deferRuntimeActivation) {
+      const staged: Skill = {
+        id: preparedSource.skillId,
+        adoptId,
+        source: preparedSource,
+        state: "review_pending",
+        enabled: false,
+        review: {
+          state: "pending",
+          reason: "岗位预装技能候选版本已保存；审批发布前不会进入运行时",
+        },
+        sync: {
+          runtimePath,
+          reason: "等待提交技能市场、管理员审批和岗位发布门禁",
+        },
+        scan: existing?.scan,
+        capabilities: existing?.capabilities || [],
+        examples: existing?.examples || [],
+        createdAt: existing?.createdAt || now,
+        updatedAt: now,
+      };
+      const next = rows.filter(
+        (item) => !(item.adoptId === adoptId && item.id === preparedSource.skillId),
+      );
+      next.push(staged);
+      this.saveRegistry(next);
+      return ok(staged);
+    }
     const replacesRuntimeWithMarketplaceArtifact = Boolean(existing)
       && preparedSource.kind === "marketplace"
       && (

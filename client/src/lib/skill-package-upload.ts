@@ -11,6 +11,7 @@ export type SkillPackageUploadResponse = {
   ok: boolean;
   item?: { id?: string };
   warnings?: string[];
+  releaseGated?: boolean;
 };
 
 const SKILL_PACKAGE_REQUEST_TIMEOUT_MS = 90_000;

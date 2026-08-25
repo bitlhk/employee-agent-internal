@@ -32,6 +32,7 @@ import {
 import { skillInstaller } from "./skill-installer";
 import { parseSkillSourceDirectory } from "./skill-source";
 import { skillStoreMarketplaceDir, skillStorePath } from "./skill-store";
+import { roleSkillPreferences } from "./role-skill-preferences";
 
 export type RoleDefaultSkillReleaseEvidence = {
   operation: "release" | "rollback";
@@ -107,6 +108,8 @@ async function reconcileRoleAdoption(input: {
     agentId,
     role,
     effectiveAssets,
+    disabledDefaultSkillIds:
+      roleSkillPreferences.getDisabledDefaultSkillIds(input.adoptId),
   });
   if (!result.ok)
     throw new Error(
@@ -118,6 +121,24 @@ async function reconcileRoleAdoption(input: {
     "skills",
     input.skillId
   );
+  const disabled = roleSkillPreferences
+    .getDisabledDefaultSkillIds(input.adoptId)
+    .includes(input.skillId);
+  if (disabled) {
+    if (existsSync(runtimePath)) {
+      throw new Error(
+        `Disabled role-default Skill remained in runtime: ${input.adoptId}`
+      );
+    }
+    return {
+      adoptId: input.adoptId,
+      agentId,
+      runtimePath,
+      artifactSha256: null,
+      changed: Number(result.changed || 0),
+      disabled: true,
+    };
+  }
   const runtimeDigest = digestSkillSourceTree(runtimePath);
   if (runtimeDigest.sha256 !== input.expectedArtifactSha256) {
     throw new Error(
@@ -130,6 +151,7 @@ async function reconcileRoleAdoption(input: {
     runtimePath,
     artifactSha256: runtimeDigest.sha256,
     changed: Number(result.changed || 0),
+    disabled: false,
   };
 }
 

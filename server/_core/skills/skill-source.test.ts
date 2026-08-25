@@ -87,6 +87,36 @@ describe("parseSkillSourceFiles", () => {
     expect(literal.description).toBe("First line. Second line.");
   });
 
+  it("reads a version nested under frontmatter metadata", () => {
+    const parsed = parseSkillSourceFiles([{
+      path: "SKILL.md",
+      content: [
+        "---",
+        "name: governed-skill",
+        "metadata:",
+        "  version: \"2.2.0\"",
+        "---",
+        "# Governed Skill",
+      ].join("\n"),
+    }], "fallback");
+
+    expect(parsed.manifest.version).toBe("2.2.0");
+  });
+
+  it("warns when Markdown references are missing or escape the package", () => {
+    const parsed = parseSkillSourceFiles([
+      {
+        path: "SKILL.md",
+        content: "# Referenced Skill\n\n[local](references/guide.md) [missing](../shared/policy.md)",
+      },
+      { path: "references/guide.md", content: "# Guide\n" },
+    ], "referenced-skill");
+
+    expect(parsed.warnings).toEqual([
+      expect.stringContaining("本地引用超出技能包（../shared/policy.md）"),
+    ]);
+  });
+
   it("accepts YAML block chomping indicators in frontmatter descriptions", () => {
     const parsed = parseSkillSourceFiles([{
       path: "SKILL.md",

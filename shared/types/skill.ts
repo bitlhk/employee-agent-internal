@@ -152,6 +152,7 @@ export type SkillRegistryReconcileOptions = {
 export type SkillRegistryInstallOptions = {
   allowVersionDowngrade?: boolean;
   preserveImmutableSourcePath?: boolean;
+  deferRuntimeActivation?: boolean;
 };
 
 export interface SkillRegistry {

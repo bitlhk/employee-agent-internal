@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { Express, Request } from "express";
 import type { SkillSource } from "../../../../shared/types/skill";
-import { getClawByAdoptId } from "../../../db";
+import { getClawByAdoptId, resolveEffectiveRoleAssets } from "../../../db";
 import {
   OPENCLAW_BASE_HOME,
   clearAgentSessionsCache,
@@ -230,12 +230,17 @@ export function registerSkillPackageRoutes(app: Express): void {
         sourcePath: sourceDir,
         version: String(parsed.manifest?.version || ""),
       };
+      const roleTemplate = String(claw.roleTemplate || "general-assistant");
+      const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+      const releaseGated = effectiveAssets.skills.default.includes(parsed.skillId);
       const { installed, reconciled } = await runSkillWork("install", async () => {
         writeFileSync(temporaryZip, payload.fileBuf);
         try {
           await skillInstaller.installFromSource(temporaryZip, sourceDir);
           await appendSkillPackageIndexRow(indexRow);
-          const installedResult = await skillRegistry.install(payload.adoptId, source);
+          const installedResult = await skillRegistry.install(payload.adoptId, source, {
+            deferRuntimeActivation: releaseGated,
+          });
           if (!installedResult.ok) {
             const failure = new Error(installedResult.error.detail) as Error & { statusCode: number; code: string };
             failure.statusCode = registryErrorStatus(installedResult.error.kind);
@@ -250,7 +255,20 @@ export function registerSkillPackageRoutes(app: Express): void {
             scannedAt: new Date().toISOString(),
             externalSecurity,
           });
-          const reconciledResult = await skillRegistry.reconcile(payload.adoptId, { skillId: parsed.skillId });
+          const reconciledResult = releaseGated
+            ? {
+                ok: true as const,
+                value: {
+                  adoptId: payload.adoptId,
+                  startedAt: new Date().toISOString(),
+                  finishedAt: new Date().toISOString(),
+                  scanned: 0,
+                  changed: 0,
+                  failed: 0,
+                  items: [],
+                },
+              }
+            : await skillRegistry.reconcile(payload.adoptId, { skillId: parsed.skillId });
           if (!reconciledResult.ok) {
             const failure = new Error(reconciledResult.error.detail) as Error & { statusCode: number; code: string };
             failure.statusCode = registryErrorStatus(reconciledResult.error.kind);
@@ -276,6 +294,7 @@ export function registerSkillPackageRoutes(app: Express): void {
         securityScan: skillSecurityScannerEnabled()
           ? { status: "pending", mode: "observe", provider: "aig-skill-scan" }
           : { status: "disabled", mode: "observe", provider: "aig-skill-scan" },
+        releaseGated,
       });
       if (skillSecurityScannerEnabled()) {
         const file = Buffer.from(payload.fileBuf);

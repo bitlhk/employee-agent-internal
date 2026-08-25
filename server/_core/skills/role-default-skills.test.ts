@@ -127,6 +127,58 @@ describe("role default skill projection", () => {
     }
   });
 
+  it("projects a staged upload as review evidence without changing the active default", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-role-default-candidate-"));
+    try {
+      const workspace = path.join(root, "workspace");
+      const runtime = path.join(workspace, "skills", "default-skill");
+      const candidate = path.join(root, "uploaded", "default-skill");
+      mkdirSync(runtime, { recursive: true });
+      mkdirSync(candidate, { recursive: true });
+      writeFileSync(path.join(runtime, "SKILL.md"), "# Approved Skill\n", "utf8");
+      writeFileSync(path.join(candidate, "SKILL.md"), "# Candidate Skill\n", "utf8");
+      const timestamp = "2026-08-25T00:00:00.000Z";
+      const staged: Skill = {
+        id: "default-skill",
+        adoptId: "lgj-test",
+        source: {
+          kind: "uploaded",
+          skillId: "default-skill",
+          displayName: "Candidate Skill",
+          sourcePath: candidate,
+          version: "2.0.0",
+        },
+        state: "review_pending",
+        enabled: false,
+        review: { state: "pending", reason: "awaiting release" },
+        sync: {},
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      const [projected] = mergeRoleDefaultSkills({
+        adoptId: "lgj-test",
+        defaultSkillIds: ["default-skill"],
+        registeredSkills: [staged],
+        runtimeWorkspaceDir: workspace,
+      });
+
+      expect(projected).toMatchObject({
+        source: {
+          kind: "role_default",
+          displayName: "Approved Skill",
+          sourcePath: candidate,
+        },
+        state: "ready",
+        enabled: true,
+        review: { state: "pending" },
+        sync: { reason: "候选版本已保存并等待发布；当前运行版本保持不变" },
+      });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not advertise a default skill as enabled before runtime sync", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-role-default-missing-runtime-"));
     try {

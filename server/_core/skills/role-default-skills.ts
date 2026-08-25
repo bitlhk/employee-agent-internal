@@ -103,7 +103,11 @@ export function mergeRoleDefaultSkills(input: MergeRoleDefaultSkillsInput): Skil
         runtimePath,
         runtimeMtimeMs,
         lastSyncedAt: modifiedAt,
-        reason: disabledSet.has(skillId)
+        reason: existing?.review.state === "pending"
+          ? disabledSet.has(skillId)
+            ? "候选版本已保存并等待发布；当前岗位预置技能仍保持停用"
+            : "候选版本已保存并等待发布；当前运行版本保持不变"
+          : disabledSet.has(skillId)
           ? "岗位预置技能已由用户停用"
           : runtimeExists
             ? "岗位预置技能，可停用但不可删除"

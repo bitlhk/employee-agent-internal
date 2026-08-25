@@ -374,6 +374,37 @@ describe("FileSkillRegistry.reconcile", () => {
     }
   });
 
+  it("stages a role-default upload without replacing the current runtime", async () => {
+    const root = tempRoot();
+    try {
+      const source = path.join(root, "uploaded", "default-alpha");
+      const runtime = path.join(root, ".openclaw", "workspace-trial_lgc-test", "skills", "default-alpha");
+      mkdirSync(source, { recursive: true });
+      mkdirSync(runtime, { recursive: true });
+      writeFileSync(path.join(source, "SKILL.md"), "# Candidate v2\n", "utf-8");
+      writeFileSync(path.join(runtime, "SKILL.md"), "# Approved v1\n", "utf-8");
+
+      const installed = await registry(root).install("lgc-test", {
+        kind: "uploaded",
+        skillId: "default-alpha",
+        displayName: "Default Alpha Candidate",
+        sourcePath: source,
+        version: "2.0.0",
+      }, { deferRuntimeActivation: true });
+
+      expect(installed.ok).toBe(true);
+      if (!installed.ok) return;
+      expect(installed.value).toMatchObject({
+        state: "review_pending",
+        enabled: false,
+        review: { state: "pending" },
+      });
+      expect(readFileSync(path.join(runtime, "SKILL.md"), "utf-8")).toBe("# Approved v1\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("replaces a role-default runtime copy with the approved marketplace artifact", async () => {
     const root = tempRoot();
     try {

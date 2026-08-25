@@ -21,7 +21,7 @@ export type ParsedSkillPackage = {
   displayName: string;
   description: string;
   manifest: any;
-  mdMeta: { title: string; description: string };
+  mdMeta: { title: string; description: string; version: string };
   totalBytes: number;
   warnings: string[];
 };
@@ -35,7 +35,7 @@ export function sanitizeSkillId(raw: string): string {
     .slice(0, 48) || "generated-skill";
 }
 
-export function parseSkillMarkdown(text: string): { name: string; title: string; description: string } {
+export function parseSkillMarkdown(text: string): { name: string; title: string; description: string; version: string } {
   const lines = text.split(/\r?\n/);
   let i = 0;
   let frontmatterLines: string[] = [];
@@ -66,6 +66,23 @@ export function parseSkillMarkdown(text: string): { name: string; title: string;
     }
     return value;
   };
+  const nestedMetadataValue = (key: string): string => {
+    const metadataIndex = frontmatterLines.findIndex((line) => /^metadata:\s*$/i.test(line));
+    if (metadataIndex < 0) return "";
+    const keyPattern = new RegExp(`^\\s+${key}:\\s*(.*)$`, "i");
+    for (let j = metadataIndex + 1; j < frontmatterLines.length; j++) {
+      const line = frontmatterLines[j] || "";
+      if (line.trim() && !/^\s+/.test(line)) break;
+      const match = line.match(keyPattern);
+      if (!match) continue;
+      const value = String(match[1] || "").trim();
+      return ((value.startsWith('"') && value.endsWith('"'))
+        || (value.startsWith("'") && value.endsWith("'")))
+        ? value.slice(1, -1).trim()
+        : value;
+    }
+    return "";
+  };
   let title = "";
   let description = "";
   for (let j = i; j < lines.length; j++) {
@@ -86,6 +103,7 @@ export function parseSkillMarkdown(text: string): { name: string; title: string;
     name: frontmatterValue("name"),
     title,
     description: frontmatterValue("description") || description,
+    version: frontmatterValue("version") || nestedMetadataValue("version"),
   };
 }
 
@@ -168,7 +186,10 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
     }
   }
 
-  const mdMeta = skillMd ? parseSkillMarkdown(textContent(skillMd.content, 16000)) : { name: "", title: "", description: "" };
+  const mdMeta = skillMd
+    ? parseSkillMarkdown(textContent(skillMd.content, 16000))
+    : { name: "", title: "", description: "", version: "" };
+  if (!manifest.version && mdMeta.version) manifest = { ...manifest, version: mdMeta.version };
   const fileStem = String(fallbackName || "generated-skill").replace(/\.(zip|skill)$/i, "");
   const skillMdTopDir = skillMd?.path.includes("/") ? skillMd.path.split("/")[0] : "";
   const topDirs = skillMdTopDir ? [skillMdTopDir] : [];
@@ -216,10 +237,42 @@ export function parseSkillSourceFiles(files: SkillSourceFile[], fallbackName = "
     }
   }
 
+  const packagedPaths = new Set(normalized.map((file) => path.posix.normalize(file.path)));
+  for (const file of normalized) {
+    if (!/\.md$/i.test(file.path)) continue;
+    const content = textContent(file.content, 200000);
+    for (const match of content.matchAll(/\]\(([^)]+)\)/g)) {
+      let target = String(match[1] || "").trim();
+      target = target.replace(/\s+["'][^"']*["']\s*$/, "").trim();
+      if (!target || target.startsWith("#") || /^(?:[a-z]+:|\/\/|\/)/i.test(target)) continue;
+      target = target.split("#", 1)[0]!.split("?", 1)[0]!.trim();
+      if (!target) continue;
+      try {
+        target = decodeURIComponent(target);
+      } catch {}
+      const resolved = path.posix.normalize(
+        path.posix.join(path.posix.dirname(file.path), target),
+      );
+      if (resolved === ".." || resolved.startsWith("../")) {
+        warnings.push(`${file.path}: 本地引用超出技能包（${target}）`);
+      } else if (!packagedPaths.has(resolved)) {
+        warnings.push(`${file.path}: 本地引用缺失（${target}）`);
+      }
+    }
+  }
+
   if (!displayName || displayName.length < 2) errors.push("技能名称至少 2 个字");
   if (errors.length) throw new Error(errors.join("；"));
 
-  return { skillId, displayName, description, manifest, mdMeta, totalBytes, warnings };
+  return {
+    skillId,
+    displayName,
+    description,
+    manifest,
+    mdMeta,
+    totalBytes,
+    warnings: Array.from(new Set(warnings)),
+  };
 }
 
 export function parseSkillSourceDirectory(sourceDir: string, fallbackName = "market-skill"): ParsedSkillPackage {
