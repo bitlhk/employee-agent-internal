@@ -182,7 +182,7 @@ function bearerToken(req: Request): string {
   return match[1].trim();
 }
 
-async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdentity> {
+async function verifyIdentity(req: Request, toolName: string | null): Promise<DemoIdentity> {
   const token = bearerToken(req);
   const status = await enterpriseMcpIdentityStatus();
   if (!status.configured || !status.issuer) throw new Error("EA MCP 身份签发未配置");
@@ -200,7 +200,7 @@ async function verifyIdentity(req: Request, toolName: string): Promise<DemoIdent
   const claims = verified.payload;
   if (claims.server_id !== GOVERNANCE_DEMO_MCP_SERVER_ID) throw new Error("身份令牌资源不匹配");
   const tokenTool = String(claims.tool_name || "");
-  if (!toolName || tokenTool !== toolName) throw new Error("身份令牌工具范围不匹配");
+  if (!tokenTool || (toolName && tokenTool !== toolName)) throw new Error("身份令牌工具范围不匹配");
   const roleKey = String(claims.role || "");
   if (!["wealth-manager", "insurance-advisor", "post-loan-risk-control", "credential-compliance", "investment-researcher", "platform-admin"].includes(roleKey)) {
     throw new Error("当前岗位无权访问该 Demo MCP");
@@ -388,11 +388,11 @@ async function handleMessage(req: Request, message: JsonRpcMessage) {
   const id = message?.id;
   const method = String(message?.method || "");
   if (method === "notifications/initialized") {
-    await verifyIdentity(req, "tools/list");
+    await verifyIdentity(req, null);
     return null;
   }
   if (method === "initialize") {
-    await verifyIdentity(req, "tools/list");
+    await verifyIdentity(req, null);
     return ok(id, {
       protocolVersion: "2025-11-25",
       capabilities: { tools: { listChanged: false } },
@@ -401,7 +401,7 @@ async function handleMessage(req: Request, message: JsonRpcMessage) {
     });
   }
   if (method === "ping") {
-    await verifyIdentity(req, "tools/list");
+    await verifyIdentity(req, null);
     return ok(id, {});
   }
   if (method === "tools/list") {

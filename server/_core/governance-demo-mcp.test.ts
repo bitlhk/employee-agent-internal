@@ -123,6 +123,18 @@ describe("governance Demo MCP", () => {
     expect(JSON.stringify(wrongTool.payload)).toContain("工具范围不匹配");
   });
 
+  it("accepts a tool-scoped identity for protocol initialization without granting discovery", async () => {
+    mocks.claims.tool_name = "demo_create_followup_task";
+    mocks.claims.scp = ["demo.followup.write"];
+
+    const initialized = await rpc("initialize");
+    expect(initialized.response.status).toBe(200);
+
+    const discovery = await rpc("tools/list");
+    expect(discovery.response.status).toBe(401);
+    expect(JSON.stringify(discovery.payload)).toContain("工具范围不匹配");
+  });
+
   it("does not let a discovery token call a business tool", async () => {
     mocks.claims.tool_name = "tools/list";
     const { response, payload } = await rpc("tools/call", {
