@@ -107,6 +107,27 @@ export async function getSkillVersionById(versionId: string) {
   )[0];
 }
 
+export async function getApprovedSkillVersionByIdentityAndVersion(
+  skillIdentityId: string,
+  version: string
+) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  return (
+    await db
+      .select()
+      .from(skillVersions)
+      .where(
+        and(
+          eq(skillVersions.skillIdentityId, skillIdentityId),
+          eq(skillVersions.version, version),
+          eq(skillVersions.status, "approved")
+        )
+      )
+      .limit(1)
+  )[0];
+}
+
 export async function getSkillVersionByLegacyMarketId(legacyMarketId: number) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");

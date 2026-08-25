@@ -564,11 +564,20 @@ export class FileSkillRegistry implements SkillRegistry {
       return err("source_missing", String(e?.message || e));
     }
     const runtimePath = await this.runtimePath(adoptId, preparedSource.skillId);
-    if (
-      existing?.source.kind === "marketplace"
+    const replacesRuntimeWithMarketplaceArtifact = Boolean(existing)
       && preparedSource.kind === "marketplace"
-      && versionCompare !== 0
-      && (versionCompare > 0 || options.allowVersionDowngrade)
+      && (
+        existing?.source.kind !== "marketplace"
+        || versionCompare !== 0
+        || existing.source.sourcePath !== preparedSource.sourcePath
+      );
+    if (
+      replacesRuntimeWithMarketplaceArtifact
+      && (
+        existing?.source.kind !== "marketplace"
+        || versionCompare >= 0
+        || options.allowVersionDowngrade
+      )
     ) {
       try {
         await this.installer.installFromSource(preparedSource.sourcePath!, runtimePath);

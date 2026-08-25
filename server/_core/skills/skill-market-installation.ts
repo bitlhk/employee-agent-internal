@@ -6,12 +6,25 @@ import {
   completeAgentSkillInstallation,
   failAgentSkillInstallation,
   getAgentSkillInstallation,
+  getClawByAdoptId,
   getSkillIdentityById,
   getSkillVersionById,
+  resolveEffectiveRoleAssets,
 } from "../../db";
 import { verifyImmutableSkillArtifact } from "./skill-artifact";
 import { skillRegistry } from "./skill-registry";
 import { parseSkillSourceDirectory } from "./skill-source";
+
+export function assertMarketplaceInstallDoesNotOverrideRoleDefault(input: {
+  skillId: string;
+  roleTemplate: string;
+  defaultSkillIds: string[];
+}): void {
+  if (!input.defaultSkillIds.includes(input.skillId)) return;
+  throw new Error(
+    `Skill ${input.skillId} is managed by the ${input.roleTemplate} role default; use the governed role-default release flow instead`,
+  );
+}
 
 export async function installApprovedSkillVersion(input: {
   adoptId: string;
@@ -32,6 +45,15 @@ export async function installApprovedSkillVersion(input: {
   ) {
     throw new Error("Skill version is not visible to this organization");
   }
+  const adoption = await getClawByAdoptId(input.adoptId);
+  if (!adoption) throw new Error("Agent adoption is unavailable");
+  const roleTemplate = String(adoption.roleTemplate || "general-assistant");
+  const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+  assertMarketplaceInstallDoesNotOverrideRoleDefault({
+    skillId: identity.skillId,
+    roleTemplate,
+    defaultSkillIds: effectiveAssets.skills.default,
+  });
   verifyImmutableSkillArtifact({
     artifactPath: version.artifactPath,
     artifactSha256: version.artifactSha256,

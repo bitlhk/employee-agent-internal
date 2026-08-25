@@ -102,6 +102,21 @@ export async function latestVerifiedRolePackReleases(rolePackIds: string[]): Pro
   return Array.from(latest.values());
 }
 
+export async function getVerifiedRolePackRelease(releaseId: string): Promise<RolePackRelease | undefined> {
+  const database = await getDb();
+  if (!database) throw new Error("Database not available");
+  return (
+    await database
+      .select()
+      .from(rolePackReleases)
+      .where(and(
+        eq(rolePackReleases.releaseId, releaseId),
+        eq(rolePackReleases.status, "verified"),
+      ))
+      .limit(1)
+  )[0];
+}
+
 function releaseEvidence(
   release: RolePackRelease,
   verificationStatus: ReleaseEvidenceRef["verificationStatus"],

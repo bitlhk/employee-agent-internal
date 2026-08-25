@@ -33,3 +33,4 @@ export * from "./enterprise-assets";
 export * from "./context-source-bindings";
 export * from "./governed-work-items";
 export * from "./skill-market-v2";
+export * from "./role-skill-preinstalls";

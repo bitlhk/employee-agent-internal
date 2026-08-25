@@ -374,6 +374,48 @@ describe("FileSkillRegistry.reconcile", () => {
     }
   });
 
+  it("replaces a role-default runtime copy with the approved marketplace artifact", async () => {
+    const root = tempRoot();
+    try {
+      const roleSource = path.join(root, "role-default", "market-alpha");
+      const marketSource = path.join(root, "marketplace", "market-alpha", "2.0.0");
+      const runtime = path.join(root, ".openclaw", "workspace-trial_lgc-test", "skills", "market-alpha");
+      for (const directory of [roleSource, marketSource, runtime]) mkdirSync(directory, { recursive: true });
+      writeFileSync(path.join(roleSource, "SKILL.md"), "# Role Default v1\n", "utf-8");
+      writeFileSync(path.join(marketSource, "SKILL.md"), "# Approved Marketplace v2\n", "utf-8");
+      writeFileSync(path.join(runtime, "SKILL.md"), "# Role Default v1\n", "utf-8");
+
+      const existing = makeSkill(root, "market-alpha");
+      existing.source = {
+        kind: "role_default",
+        skillId: "market-alpha",
+        displayName: "Market Alpha",
+        sourcePath: roleSource,
+        version: "1.0.0",
+      };
+      existing.sync.runtimePath = runtime;
+      writeJson(path.join(root, "data", "skill-registry.json"), [existing]);
+
+      const installed = await registry(root).install("lgc-test", {
+        kind: "marketplace",
+        skillId: "market-alpha",
+        displayName: "Market Alpha",
+        sourcePath: marketSource,
+        marketplaceId: "2",
+        version: "2.0.0",
+      });
+
+      expect(installed.ok).toBe(true);
+      expect(readFileSync(path.join(runtime, "SKILL.md"), "utf-8")).toBe("# Approved Marketplace v2\n");
+      const rows = JSON.parse(readFileSync(path.join(root, "data", "skill-registry.json"), "utf-8"));
+      expect(rows[0].source.kind).toBe("marketplace");
+      expect(rows[0].source.version).toBe("2.0.0");
+      expect(rows[0].state).toBe("ready");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("keeps installed marketplace copy when source version is older", async () => {
     const root = tempRoot();
     try {
