@@ -198,6 +198,10 @@ const TOOLS = [
 ];
 const TOOL_NAMES = new Set(TOOLS.map(tool => tool.name));
 
+export function platformToolNames(): string[] {
+  return Array.from(TOOL_NAMES).sort();
+}
+
 function ok(id: unknown, result: unknown) {
   return { jsonrpc: "2.0", id: id ?? null, result };
 }

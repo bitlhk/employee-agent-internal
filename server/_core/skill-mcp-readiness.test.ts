@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateSkillMcpReadiness,
   includeEnterpriseRoleGateway,
+  localRuntimeMcpToolCatalog,
   resolveRoleManagedReadiness,
 } from "./skill-mcp-readiness";
 
@@ -12,6 +13,15 @@ const requirement = {
 };
 
 describe("skill MCP readiness", () => {
+  it("uses the authoritative local catalog for built-in platform tools", () => {
+    expect(localRuntimeMcpToolCatalog("platform_tools")).toEqual(expect.arrayContaining([
+      "get_wealth_policy_basis",
+      "prepare_wealth_maturity_context",
+      "prepare_wealth_allocation_context",
+    ]));
+    expect(localRuntimeMcpToolCatalog("wealth_assistant_customer")).toBeNull();
+  });
+
   it("leaves skills without declared dependencies unchanged", () => {
     const result = evaluateSkillMcpReadiness({
       skillId: "plain-skill",
