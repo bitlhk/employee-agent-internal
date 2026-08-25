@@ -36,6 +36,7 @@ import {
   readEnterpriseRuntimeHistoryRecords,
   type EnterpriseRuntimeHistorySession,
 } from "./enterprise-runtime-history";
+import { resolveEnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 
 export type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -863,15 +864,20 @@ export async function readModernChatHistorySessionMessages(args: {
       });
       if (records) {
         const conversationId = jiuwenConversationIdFromSessionId(enterpriseSessionId, args.adoptId);
+        const routeDecision = await resolveEnterpriseRuntimeRoute(args.adoptId);
+        const enterpriseAgentId = routeDecision.target === "enterprise"
+          ? routeDecision.route.binding.runtimeAgentId
+          : args.dbAgentId;
+        const enterpriseWorkspaceDir = jiuwenClawWorkspaceDir(args.adoptId, enterpriseAgentId);
         const artifactRuns = readJiuwenSessionArtifactsFromSessionDir(path.join(
-          jiuwenClawSessionsDir(args.adoptId, args.dbAgentId),
+          jiuwenClawSessionsDir(args.adoptId, enterpriseAgentId),
           enterpriseSessionId,
         ));
         const runtimeMessages = extractJiuwenChatMessagesFromRecords(
           records,
           maxMessages,
           args.adoptId,
-          args.workspaceDir,
+          enterpriseWorkspaceDir,
           artifactRuns,
         );
         const expertTasks = await listAgentTasksByConversation(args.adoptId, conversationId, 100).catch(() => []);
