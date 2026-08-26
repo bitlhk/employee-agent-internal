@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 
 export const POST_LOAN_RISK_A2A_REQUEST_SCHEMA = "ea.post-loan-risk-assessment-request.v1";
 export const POST_LOAN_RISK_SNAPSHOT_SCHEMA = "ea.post-loan-risk-snapshot.v1";
+export const POST_LOAN_RISK_SNAPSHOT_REF_SOURCE = "post_loan_risk_data";
 
 type JsonObject = Record<string, unknown>;
 
 export type PostLoanRiskA2AContractResult =
   | { ok: true; value: JsonObject; snapshotFingerprint: string; enterpriseId: string }
   | { ok: false; reasonCode: string; message: string };
+
+export type PostLoanRiskSnapshotLoader = (enterpriseId: string) => unknown;
 
 function record(value: unknown): JsonObject {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
@@ -74,4 +77,49 @@ export function validatePostLoanRiskA2APayload(raw: unknown): PostLoanRiskA2ACon
   }
 
   return { ok: true, value, snapshotFingerprint: declaredFingerprint, enterpriseId };
+}
+
+export function materializePostLoanRiskA2APayload(
+  raw: unknown,
+  loadSnapshot: PostLoanRiskSnapshotLoader,
+): PostLoanRiskA2AContractResult {
+  const value = record(raw);
+  const snapshotRef = record(value.snapshotRef);
+  if (!Object.keys(snapshotRef).length) return validatePostLoanRiskA2APayload(value);
+
+  if (snapshotRef.source !== POST_LOAN_RISK_SNAPSHOT_REF_SOURCE) {
+    return {
+      ok: false,
+      reasonCode: "INVALID_SNAPSHOT_REFERENCE",
+      message: "风险快照引用来源不受支持。",
+    };
+  }
+
+  const enterpriseId = String(value.enterpriseId || "").trim().toUpperCase();
+  const declaredFingerprint = String(value.snapshotFingerprint || "").trim().toLowerCase();
+  if (!/^[A-Z0-9]{18}$/.test(enterpriseId)) {
+    return { ok: false, reasonCode: "INVALID_ENTERPRISE_ID", message: "风险 A2A 请求缺少有效统一社会信用代码。" };
+  }
+  if (!/^[a-f0-9]{64}$/.test(declaredFingerprint)) {
+    return { ok: false, reasonCode: "INVALID_SNAPSHOT_FINGERPRINT", message: "风险 A2A 请求缺少有效快照指纹。" };
+  }
+
+  const snapshot = record(loadSnapshot(enterpriseId));
+  const hydrated = {
+    ...value,
+    snapshotRef: {
+      source: POST_LOAN_RISK_SNAPSHOT_REF_SOURCE,
+      resolvedBy: "ea_platform",
+    },
+    riskSnapshot: snapshot,
+  };
+  const validated = validatePostLoanRiskA2APayload(hydrated);
+  if (!validated.ok && validated.reasonCode === "SNAPSHOT_FINGERPRINT_MISMATCH") {
+    return {
+      ok: false,
+      reasonCode: "SNAPSHOT_REFERENCE_STALE",
+      message: "风险快照引用已变化，请重新获取快照后再提交。",
+    };
+  }
+  return validated;
 }

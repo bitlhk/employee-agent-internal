@@ -31,6 +31,8 @@ import { applyWealthDemoProductScenario, wealthDemoScenarioEnabled } from "./wea
 import { buildWealthAllocationContextReceipt, buildWealthPolicyContextReceipt } from "./wealth-context-receipts";
 import { attachContextReceipt, persistTrustedContextReceiptResult } from "./governance/context-receipt";
 import { handlePostLoanRiskEscalationTool, POST_LOAN_RISK_ESCALATION_TOOL } from "./post-loan-risk-tool-handler";
+import { materializePostLoanRiskA2APayload } from "./post-loan-risk-a2a-contract";
+import { executePostLoanRiskDataTool } from "./post-loan-risk-data-provider";
 import { GOVERNED_ROLE_POLICY_TOOLS, handleGovernedRolePolicyTool } from "./governed-role-policy-tools";
 import { summarizePlatformAgents } from "./platform-agent-summary";
 import { prepareWealthMaturityContext } from "./wealth-maturity-context";
@@ -1003,9 +1005,23 @@ async function callTool(
     if (!agentId) return textResult("Error: agent_id is required", { isError: true });
     if (!task) return textResult("Error: task is required", { isError: true });
     const suppliedSourceMessageId = String(args.source_message_id || args.sourceMessageId || "").trim();
-    const governedPayload = args.governed_payload && typeof args.governed_payload === "object" && !Array.isArray(args.governed_payload)
+    let governedPayload = args.governed_payload && typeof args.governed_payload === "object" && !Array.isArray(args.governed_payload)
       ? args.governed_payload
       : undefined;
+    if (agentId === "risk-control-a2a" && governedPayload) {
+      const materialized = materializePostLoanRiskA2APayload(
+        governedPayload,
+        (enterpriseId) => executePostLoanRiskDataTool(
+          "get_post_loan_risk_snapshot",
+          { unified_social_code: enterpriseId },
+          principal.principal.roleTemplate,
+        ).structuredContent,
+      );
+      if (!materialized.ok) {
+        return textResult(`Error: ${materialized.reasonCode}: ${materialized.message}`, { isError: true });
+      }
+      governedPayload = materialized.value;
+    }
     const sourceMessageId = suppliedSourceMessageId || `mcp:${createHash("sha256")
       .update(`${String(requestIdentity ?? "")}:${stableToolInputHash({ agentId, task, args })}`)
       .digest("hex")}`;

@@ -71,7 +71,7 @@ get_dishonest_record
 1. 调用 `get_post_loan_risk_snapshot`，确认 `status=READY`、`data.completeness.criticalComplete=true` 并保存 `snapshotFingerprint`；
 2. 快照不完整时输出已核验事实和缺口，禁止提交完整评估，也禁止用假设值补齐；
 3. 读取 `references/four-dimension-diagnostic-framework.md`，仅使用其中的证据组织方法；
-4. 调用 `submit_agent_task`，`agent_id` 必须为 `risk-control-a2a`；任务正文只描述分析目标，`governed_payload` 必须传入下述完整结构化请求；
+4. 调用 `submit_agent_task`，`agent_id` 必须为 `risk-control-a2a`；任务正文只描述分析目标，`governed_payload` 使用下述不可变快照引用，完整快照由 EA 服务端按指纹校验后注入；
 5. 异步提交成功后展示任务卡或 `task_id`，不得在任务完成前声称报告已生成；
 6. A2A 结果返回后，将快照中的逾期、分类、评级变化、重大外部事件、押品覆盖和数据完整性传给 `evaluate_post_loan_risk_escalation`；
 7. 最终报告明确区分 MCP 事实、远端分析和 EA Policy，并列出快照指纹、规则版本和人工复核要求；
@@ -85,7 +85,8 @@ get_dishonest_record
 schema: ea.post-loan-risk-assessment-request.v1
 enterpriseId: <统一社会信用代码>
 snapshotFingerprint: <64位 SHA-256>
-riskSnapshot: <get_post_loan_risk_snapshot 的完整 structuredContent>
+snapshotRef:
+  source: post_loan_risk_data
 requiredOutput:
 - 已核验事实
 - 四维诊断
@@ -98,7 +99,7 @@ forbidden:
 - 自动调整授信、账户或押品状态
 ```
 
-不得只把快照粘贴进 `task` 文本；缺少 `governed_payload` 或快照指纹不一致时，EA 必须在出网前拒绝委派。
+不得把完整快照交给模型转抄，也不得只把快照粘贴进 `task` 文本。EA 使用 `enterpriseId + snapshotFingerprint + snapshotRef` 在服务端重新取得原始快照；当前快照与已核验指纹不一致时必须在出网前拒绝委派。旧版受信调用方直接传完整 `riskSnapshot` 的契约继续兼容。
 
 远端仅返回分析结果和报告产物。任何写操作只能返回 Capability Intent，由 EA 本地确认和执行。
 

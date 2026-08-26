@@ -15,6 +15,8 @@ describe("post-loan risk control Reference Role Pack assets", () => {
     expect(parsed.warnings).toEqual([]);
     expect(markdown).toContain("references/four-dimension-diagnostic-framework.md");
     expect(markdown).toContain("get_post_loan_risk_snapshot");
+    expect(markdown).toContain("snapshotRef");
+    expect(markdown).toContain("不得把完整快照交给模型转抄");
     expect(markdown).toContain("risk-control-a2a");
     expect(markdown).toContain("evaluate_post_loan_risk_escalation");
     expect(markdown).toContain("写能力不可用时保留草稿");
