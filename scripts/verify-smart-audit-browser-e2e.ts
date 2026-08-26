@@ -91,6 +91,59 @@ async function browserEvidence(page: Page) {
   });
 }
 
+type ExecutionEvidence = {
+  confirmation?: { status?: string };
+  receipt?: {
+    status?: string;
+    toolName?: string;
+    externalRequestId?: string | null;
+    errorCode?: string | null;
+  } | null;
+  businessOutcome?: {
+    recordId?: string;
+    status?: string;
+    customerRef?: string;
+  } | null;
+};
+
+async function waitForExecutionEvidence(page: Page, approvalId: string): Promise<ExecutionEvidence> {
+  const deadline = Date.now() + timeoutMs;
+  let last: ExecutionEvidence = {};
+  while (Date.now() < deadline) {
+    const response = await page.request.get(
+      `${baseUrl}/api/claw/governance/approvals/${encodeURIComponent(approvalId)}/evidence?adoptId=${encodeURIComponent(adoptId)}`,
+    );
+    if (response.ok()) {
+      const payload = await response.json() as { item?: ExecutionEvidence };
+      const item = payload.item || {};
+      last = {
+        confirmation: item.confirmation ? { status: item.confirmation.status } : undefined,
+        receipt: item.receipt ? {
+          status: item.receipt.status,
+          toolName: item.receipt.toolName,
+          externalRequestId: item.receipt.externalRequestId,
+          errorCode: item.receipt.errorCode,
+        } : null,
+        businessOutcome: item.businessOutcome ? {
+          recordId: item.businessOutcome.recordId,
+          status: item.businessOutcome.status,
+          customerRef: item.businessOutcome.customerRef,
+        } : null,
+      };
+      if (
+        last.confirmation?.status === "consumed"
+        && last.receipt?.status === "completed"
+        && last.receipt.toolName === "demo_create_audit_review_task"
+        && last.businessOutcome?.recordId
+      ) {
+        return last;
+      }
+    }
+    await page.waitForTimeout(1_000);
+  }
+  throw new Error(`smart-audit execution evidence timed out after ${timeoutMs}ms: ${JSON.stringify(last)}`);
+}
+
 async function main() {
   required(userEmail, "SMART_AUDIT_BROWSER_USER_EMAIL");
   required(adoptId, "SMART_AUDIT_BROWSER_ADOPT_ID");
@@ -162,18 +215,36 @@ async function main() {
     return;
   }
 
-  const secondBaseline = await assistantMessages.count();
   await composer.fill(confirmationPrompt);
   await composer.press("Enter");
-  await page.getByRole("button", { name: "本次允许" }).waitFor({ state: "visible", timeout: timeoutMs });
-  await page.getByRole("button", { name: "本次允许" }).click();
-  const second = await waitForAssistantTurn(page, secondBaseline);
+  const allowButton = page.getByRole("button", { name: "本次允许" });
+  await allowButton.waitFor({ state: "visible", timeout: timeoutMs });
+  const approvalResponsePromise = page.waitForResponse(response => (
+    response.request().method() === "POST"
+    && /\/api\/claw\/governance\/approvals\/apr_[0-9a-f-]{36}\/decision$/iu.test(response.url())
+  ), { timeout: timeoutMs });
+  const resumeBaseline = await assistantMessages.count();
+  await allowButton.click();
+  const approvalResponse = await approvalResponsePromise;
+  if (!approvalResponse.ok()) {
+    throw new Error(`smart-audit approval failed with HTTP ${approvalResponse.status()}`);
+  }
+  const approvalId = approvalResponse.url().match(/\/approvals\/(apr_[0-9a-f-]{36})\/decision$/iu)?.[1];
+  if (!approvalId) throw new Error("smart-audit approval id was not captured from the browser decision request");
+  const second = await waitForAssistantTurn(page, resumeBaseline);
+  const executionEvidence = await waitForExecutionEvidence(page, approvalId);
   await page.waitForTimeout(3_000);
   const finalEvidence = await browserEvidence(page);
   const finalSerialized = JSON.stringify(finalEvidence);
   const writeChecks = {
-    reviewTaskToolCalled: /demo_create_audit_review_task/u.test(finalSerialized),
-    executionReceiptPresent: /receiptBundle|execution_receipt|Business Receipt|业务回执/u.test(finalSerialized),
+    approvalConsumed: executionEvidence.confirmation?.status === "consumed",
+    reviewTaskToolCompleted: executionEvidence.receipt?.status === "completed"
+      && executionEvidence.receipt.toolName === "demo_create_audit_review_task"
+      && !executionEvidence.receipt.errorCode,
+    businessReceiptPresent: Boolean(executionEvidence.businessOutcome?.recordId)
+      && executionEvidence.receipt?.externalRequestId === executionEvidence.businessOutcome?.recordId,
+    confirmedAssistantResponse: second.count > resumeBaseline
+      && !/需要你本人确认|本次允许/u.test(second.text),
     noRuntimeTimeout: !/runtime_timeout|响应较慢|处理超时/u.test(`${second.text}\n${finalSerialized}`),
   };
   const checks = { ...readChecks, ...Object.fromEntries(Object.entries(writeChecks).map(([key, value]) => [`write_${key}`, value])) };
@@ -187,10 +258,12 @@ async function main() {
     caseId: "CASE-AU-20260826-001",
     fixtureFiles: fixtureFiles.map((file) => path.basename(file)),
     checkedAt: new Date().toISOString(),
+    approvalId,
     checks,
     pageErrors,
     firstResponse: first.text.slice(0, 20_000),
     secondResponse: second.text.slice(0, 20_000),
+    executionEvidence,
     evidence: finalEvidence,
   };
   await mkdir(path.dirname(outputPath), { recursive: true });
