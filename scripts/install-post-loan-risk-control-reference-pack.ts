@@ -12,9 +12,11 @@ import { getRoleRuntimeAdapter } from "../server/routers/role-runtime-adapters";
 import {
   getClawByAdoptId,
   insertSkillMarketItem,
+  listRoleAssetGrants,
   listSkillMarketItems,
   replaceAdminRoleAssetGrantsForAsset,
   resolveEffectiveRoleAssets,
+  syncRoleAssetSeed,
   updateSkillMarketItem,
 } from "../server/db";
 import { closeDbConnection } from "../server/db/connection";
@@ -80,6 +82,23 @@ export function applyPostLoanRiskRolePackBaseline(baseline: Baseline): Baseline 
     ...(role.mcpServers || []).filter((serverId) => serverId !== LEGACY_DEMO_MCP_SERVER_ID),
   ]);
   return baseline;
+}
+
+export function retainedLegacyDemoMcpAdminGrants(grants: Array<{
+  roleKey: string;
+  assetType: string;
+  assetId: string;
+  grantMode: "default" | "optional";
+  source: string;
+  enabled: boolean;
+}>): Array<{ roleKey: string; grantMode: "default" | "optional" }> {
+  return grants
+    .filter((grant) => grant.assetType === "mcp_server"
+      && grant.assetId === LEGACY_DEMO_MCP_SERVER_ID
+      && grant.source === "admin"
+      && grant.enabled
+      && grant.roleKey !== ROLE_KEY)
+    .map((grant) => ({ roleKey: grant.roleKey, grantMode: grant.grantMode }));
 }
 
 function configuredBaselinePath(): string {
@@ -174,6 +193,14 @@ async function main() {
   const marketId = current
     ? (await updateSkillMarketItem(Number(current.id), marketPatch), Number(current.id))
     : await insertSkillMarketItem({ skillId: SKILL_ID, ...marketPatch });
+  const seedPlan = await syncRoleAssetSeed();
+  const retainedLegacyDemoMcpGrants = retainedLegacyDemoMcpAdminGrants(await listRoleAssetGrants());
+  await replaceAdminRoleAssetGrantsForAsset({
+    assetType: "mcp_server",
+    assetId: LEGACY_DEMO_MCP_SERVER_ID,
+    grants: retainedLegacyDemoMcpGrants,
+    actor: ACTOR,
+  });
   await replaceAdminRoleAssetGrantsForAsset({
     assetType: "skill",
     assetId: SKILL_ID,
@@ -193,9 +220,30 @@ async function main() {
     resourceType: "skill",
     resourceId: ROLE_PACK_ID,
     source: "deployment_script",
-    metadata: { marketId, baselineChanged, reconciled },
+    metadata: {
+      marketId,
+      baselineChanged,
+      seed: {
+        desired: seedPlan.desired.length,
+        upsert: seedPlan.upsert.length,
+        prune: seedPlan.prune.length,
+      },
+      retainedLegacyDemoMcpGrants,
+      reconciled,
+    },
   });
-  console.log(JSON.stringify({ ...plan, marketId, baselineChanged, reconciled }, null, 2));
+  console.log(JSON.stringify({
+    ...plan,
+    marketId,
+    baselineChanged,
+    seed: {
+      desired: seedPlan.desired.length,
+      upsert: seedPlan.upsert.length,
+      prune: seedPlan.prune.length,
+    },
+    retainedLegacyDemoMcpGrants,
+    reconciled,
+  }, null, 2));
 }
 
 const isDirectExecution = Boolean(process.argv[1]) && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;

@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyPostLoanRiskRolePackBaseline } from "../../scripts/install-post-loan-risk-control-reference-pack";
+import {
+  applyPostLoanRiskRolePackBaseline,
+  retainedLegacyDemoMcpAdminGrants,
+} from "../../scripts/install-post-loan-risk-control-reference-pack";
 import { parseSkillSourceDirectory } from "./skills/skill-source";
 
 const root = process.cwd();
@@ -88,5 +91,14 @@ describe("post-loan risk control Reference Role Pack assets", () => {
       .toEqual(expect.arrayContaining(["list_risk_enterprises", "search_risk_enterprises", "get_post_loan_risk_snapshot"]));
     expect(updated.skillRequirements?.["post-loan-risk-control-assistant"]?.servers?.platform_tools)
       .toEqual(expect.arrayContaining(["list_available_agents", "submit_agent_task", "evaluate_post_loan_risk_escalation"]));
+  });
+
+  it("retires only the risk role's legacy demo MCP administrator grant", () => {
+    expect(retainedLegacyDemoMcpAdminGrants([
+      { roleKey: "wealth-manager", assetType: "mcp_server", assetId: "wealth_governance_demo", grantMode: "default", source: "admin", enabled: true },
+      { roleKey: "post-loan-risk-control", assetType: "mcp_server", assetId: "wealth_governance_demo", grantMode: "default", source: "admin", enabled: true },
+      { roleKey: "post-loan-risk-control", assetType: "mcp_server", assetId: "wealth_governance_demo", grantMode: "default", source: "seed", enabled: true },
+      { roleKey: "insurance-advisor", assetType: "mcp_server", assetId: "wealth_governance_demo", grantMode: "optional", source: "admin", enabled: false },
+    ])).toEqual([{ roleKey: "wealth-manager", grantMode: "default" }]);
   });
 });
