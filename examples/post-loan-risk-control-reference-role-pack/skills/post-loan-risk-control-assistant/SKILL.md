@@ -1,7 +1,7 @@
 ---
 name: post-loan-risk-control-assistant
-description: 贷后风控岗位主路由，协调授权企业数据、岗位知识、确定性预警规则与现有风险预测技能完成核查、诊断、报告和跟踪任务
-version: 1.1.0
+description: 贷后风控岗位主入口，协调授权企业数据、岗位知识、确定性预警规则与异步专业分析完成核查、诊断、报告和跟踪任务
+version: 1.2.0
 risk_level: high
 ---
 
@@ -26,10 +26,10 @@ risk_level: high
 4. 未给出统一社会信用代码时，先调用 `search_risk_enterprises`；不得凭名称猜测企业身份。
 5. 单项查询直接调用 MCP；用户要求完整评估报告时先获取 `get_post_loan_risk_snapshot`，再调用 `submit_agent_task` 委派给 `risk-control-a2a`。
 6. 异步 Agent 只允许消费本轮受治理风险快照；远端自带 Mock、缓存或历史事实不得进入正式报告。
-7. `post-loan-risk-prediction` 只提供四维诊断方法。其缺失数据假设、自动五级分类或自动处置建议与本 Skill 冲突时，以本 Skill 和 EA Policy 为准。
+7. 四维诊断只使用本 Skill 的 `references/four-dimension-diagnostic-framework.md`。不得加载其他技能中的缺失数据假设、自动五级分类或自动处置规则。
 8. 综合预警必须调用 `evaluate_post_loan_risk_escalation`，不得让模型或远端 Agent 替代确定性分级。
 9. Policy 输出是内部预警，不等同监管五级分类或授信审批结论。
-10. 创建跟踪任务必须调用 `demo_create_followup_task` 或企业正式任务能力，并经过确认、幂等和业务回执。
+10. 创建跟踪任务必须调用当前环境已授权的企业任务能力，并经过确认、幂等和业务回执；该写能力不可用时只保留草稿，不阻断只读核查和报告。
 
 ## 任务路由
 
@@ -70,7 +70,7 @@ get_dishonest_record
 
 1. 调用 `get_post_loan_risk_snapshot`，确认 `status=READY`、`data.completeness.criticalComplete=true` 并保存 `snapshotFingerprint`；
 2. 快照不完整时输出已核验事实和缺口，禁止提交完整评估，也禁止用假设值补齐；
-3. 加载 `post-loan-risk-prediction` 的四维诊断方法，但不得采用其中的自动监管分类和缺失数据默认值；
+3. 读取 `references/four-dimension-diagnostic-framework.md`，仅使用其中的证据组织方法；
 4. 调用 `submit_agent_task`，`agent_id` 必须为 `risk-control-a2a`；任务正文只描述分析目标，`governed_payload` 必须传入下述完整结构化请求；
 5. 异步提交成功后展示任务卡或 `task_id`，不得在任务完成前声称报告已生成；
 6. A2A 结果返回后，将快照中的逾期、分类、评级变化、重大外部事件、押品覆盖和数据完整性传给 `evaluate_post_loan_risk_escalation`；
@@ -104,7 +104,7 @@ forbidden:
 
 ### RC-GT-06 风险复评与跟踪任务
 
-先生成草稿，展示企业 Demo 标识、目标、到期时间、优先级和材料清单。只有用户明确确认后，才调用 `demo_create_followup_task`；重复请求复用同一幂等键。
+先生成草稿，展示企业 Demo 标识、目标、到期时间、优先级和材料清单。只有用户明确确认且当前环境存在已授权企业任务能力时，才执行创建；重复请求复用同一幂等键。写能力不可用时保留草稿并说明未创建，不能影响 RC-GT-01 至 RC-GT-05。
 
 ## Readiness 与降级
 
@@ -126,3 +126,7 @@ forbidden:
 - 不自动调整风险分类、授信额度、账户状态或押品；
 - 不在 Receipt 中复制完整敏感业务数据；
 - 所有风险处置建议均标注“建议人工复核”。
+
+## 旧技能兼容边界
+
+`post-loan-risk-prediction` 是开发者历史技能，保留在技能市场用于版本追溯，但不再作为本岗位默认入口，也不应独立获得企业数据、异步委派或写能力。历史工作区由岗位同步流程移除该默认预装；已有审计记录和市场版本不删除。

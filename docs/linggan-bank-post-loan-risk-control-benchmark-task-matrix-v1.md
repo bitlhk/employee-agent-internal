@@ -49,10 +49,10 @@ Data Scope: 当前岗位及授权企业范围
 
 ### 3.2 Skill
 
-现有 `post-loan-risk-prediction` 已具备四维诊断、数据缺失检查、综合评分和报告模板。Reference Role Pack 不复制其内部子技能，而新增轻量主路由 `post-loan-risk-control-assistant`：
+现有 `post-loan-risk-prediction` 提供了早期四维诊断、数据缺失检查、综合评分和报告模板。Reference Role Pack 将其中可复用的证据组织方法收紧为内置参考，并由 `post-loan-risk-control-assistant` 作为唯一岗位默认入口：
 
 - 单项查询直接调用 MCP；
-- 完整风险评估复用 `post-loan-risk-prediction`；
+- 完整风险评估使用受治理快照、内置四维诊断参考和异步专业分析；
 - 综合预警必须调用确定性 Policy；
 - 写入跟踪任务必须走 Enterprise MCP 的确认、幂等和回执链。
 
@@ -89,8 +89,8 @@ get_macro_indicator
 | 资产 | 类型 | 状态 | 说明 |
 |---|---|---|---|
 | `post-loan-risk-control` | Role | Active | 当前岗位模板 |
-| `post-loan-risk-prediction` | Skill | Active | 现有完整风险评估技能 |
-| `post-loan-risk-control-assistant` | Skill | Reference | 本岗位包新增主路由 |
+| `post-loan-risk-prediction` | Skill | Legacy | 保留市场版本与审计，不再作为岗位默认入口 |
+| `post-loan-risk-control-assistant` | Skill | Active | 本岗位唯一默认入口与治理主路由 |
 | `post_loan_risk_data` | MCP | Demo/Shadow | 演示数据；生产需绑定行级授权与数据责任人 |
 | `POST_LOAN_RISK_ESCALATION` | Policy | Reference | 确定性预警分级，不替代人工结论 |
 | `wealth_governance_demo` | Capability | Demo | 隔离跟踪任务写入 |

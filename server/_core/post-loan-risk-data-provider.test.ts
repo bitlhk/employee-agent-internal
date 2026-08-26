@@ -39,7 +39,15 @@ describe("post-loan risk data provider", () => {
       status: "READY",
       snapshotFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
       data: {
-        completeness: { criticalComplete: true, missingCriticalDomains: [] },
+        completeness: {
+          criticalComplete: true,
+          missingCriticalDomains: [],
+          availableDomains: expect.arrayContaining(["industryContext", "macroIndicators"]),
+        },
+        domains: {
+          industryContext: expect.objectContaining({ industry_name: "房地产业" }),
+          macroIndicators: expect.objectContaining({ GDP: expect.any(Object) }),
+        },
         constraints: {
           regulatoryClassificationAllowed: false,
           automaticCreditActionAllowed: false,
@@ -48,6 +56,14 @@ describe("post-loan risk data provider", () => {
       },
     });
     expect(first.snapshotFingerprint).toBe(second.snapshotFingerprint);
+  });
+
+  it("keeps collateral coverage consistent with current value over loan balance", () => {
+    const snapshot = buildPostLoanRiskSnapshot(POST_LOAN_RISK_DEMO_ENTERPRISES[0]);
+    const domains = (snapshot.data as Record<string, any>).domains;
+    const loanBalance = Number(domains.loanAccounts[0].loan_balance);
+    const collateralValue = Number(domains.collateral[0].current_value);
+    expect(domains.collateral[0].coverage_ratio).toBeCloseTo(collateralValue / loanBalance, 8);
   });
 
   it("fails closed when an enterprise is missing instead of constructing an optimistic skeleton", () => {

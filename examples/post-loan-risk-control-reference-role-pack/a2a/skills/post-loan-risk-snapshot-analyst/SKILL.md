@@ -1,7 +1,7 @@
 ---
 name: post-loan-risk-snapshot-analyst
 description: 仅基于 EA 提供的不可变受治理快照生成贷后风险四维诊断和人工复核报告草稿
-version: 1.0.0
+version: 1.1.0
 risk_level: high
 ---
 
@@ -29,7 +29,9 @@ riskSnapshot.data.completeness.criticalComplete = true
 - 只允许使用 `riskSnapshot` 中的字段、来源、数据时间和缺失诊断。
 - 禁止调用企业数据 MCP、网络搜索或读取工作区历史文件补齐企业事实。
 - 禁止把行业基准写成企业事实。
+- 禁止使用快照外的行业常识、经验阈值或政策口径；比较基准只能来自 `riskSnapshot.data.domains.industryContext`，宏观事实只能来自 `macroIndicators`。
 - `null`、空数组和未提供表示“未知/待核验”，不表示“正常”或“未发生”。
+- 允许对快照内数字做可复核的基础算术，但必须展示口径；不得调用代码、网络、Cron 或文件工具进行分析。
 
 ## 分析方法
 

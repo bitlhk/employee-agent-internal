@@ -8,7 +8,7 @@
 - 企业、贷款、财务、还款、押品和外部风险事实必须从 `post_loan_risk_data` 动态获取。
 - 企业列表、搜索和完整风险快照由同一个受治理 MCP 提供；快照必须绑定固定数据时间和 SHA-256 指纹。
 - `POST_LOAN_RISK_ESCALATION` 只形成确定性预警和人工升级义务，不替代五级分类、授信审批或资产处置结论。
-- 完整评估复用现有 `post-loan-risk-prediction`，本包新增的主 Skill 负责岗位任务路由和边界控制。
+- 完整评估使用本包内置的受治理四维诊断框架；历史 `post-loan-risk-prediction` 保留市场版本与审计，但不再作为岗位默认入口。
 - 快速核验留在本岗位运行时；完整报告通过 `risk-control-a2a` 异步执行，远端只消费 EA 提供的受治理快照。
 - 跟踪任务写入复用隔离的 `wealth_governance_demo`，必须经过确认、幂等和业务回执。
 - 演示数据和 Demo 写入只能标记 `Demo/Shadow Ready`。

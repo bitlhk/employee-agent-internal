@@ -24,6 +24,8 @@ const ROLE_PACK_ID = "linggan-bank.post-loan-risk-control";
 const ACTOR = "post-loan-risk-control-reference-pack-installer";
 const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILL_ID = "post-loan-risk-control-assistant";
+const LEGACY_DIRECT_SKILL_ID = "post-loan-risk-prediction";
+const LEGACY_DEMO_MCP_SERVER_ID = "wealth_governance_demo";
 const SKILL_ROOT = path.join(APP_ROOT, "examples", "post-loan-risk-control-reference-role-pack", "skills", SKILL_ID);
 const RISK_DATA_TOOLS = [
   "list_risk_enterprises",
@@ -45,8 +47,8 @@ const RISK_DATA_TOOLS = [
   "get_industry_rating",
   "get_macro_indicator",
 ] as const;
-const DEFAULT_SKILLS = [SKILL_ID, "post-loan-risk-prediction"];
-const DEFAULT_MCP_SERVERS = ["post_loan_risk_data", "platform_tools", "wealth_governance_demo"];
+const DEFAULT_SKILLS = [SKILL_ID];
+const DEFAULT_MCP_SERVERS = ["post_loan_risk_data", "platform_tools"];
 
 type Baseline = {
   skillRequirements?: Record<string, { servers?: Record<string, readonly string[]> }>;
@@ -67,11 +69,16 @@ export function applyPostLoanRiskRolePackBaseline(baseline: Baseline): Baseline 
     servers: {
       post_loan_risk_data: RISK_DATA_TOOLS,
       platform_tools: ["list_available_agents", "submit_agent_task", "evaluate_post_loan_risk_escalation"],
-      wealth_governance_demo: ["demo_create_followup_task"],
     },
   };
-  role.defaultSkills = unique([...DEFAULT_SKILLS, ...(role.defaultSkills || [])]);
-  role.mcpServers = unique([...DEFAULT_MCP_SERVERS, ...(role.mcpServers || [])]);
+  role.defaultSkills = unique([
+    ...DEFAULT_SKILLS,
+    ...(role.defaultSkills || []).filter((skillId) => skillId !== LEGACY_DIRECT_SKILL_ID),
+  ]);
+  role.mcpServers = unique([
+    ...DEFAULT_MCP_SERVERS,
+    ...(role.mcpServers || []).filter((serverId) => serverId !== LEGACY_DEMO_MCP_SERVER_ID),
+  ]);
   return baseline;
 }
 

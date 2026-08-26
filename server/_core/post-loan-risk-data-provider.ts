@@ -149,6 +149,7 @@ function findEnterprise(args: JsonObject): PostLoanRiskDemoEnterprise | undefine
 
 function sourceRecordIds(enterprise: PostLoanRiskDemoEnterprise): JsonObject {
   const id = enterprise.unifiedSocialCode;
+  const industryCode = String(enterprise.profile.industry_code || "").trim();
   return {
     profile: `demo://enterprise/${id}/profile`,
     loanAccounts: `demo://enterprise/${id}/loan-accounts`,
@@ -158,6 +159,8 @@ function sourceRecordIds(enterprise: PostLoanRiskDemoEnterprise): JsonObject {
     guarantor: `demo://enterprise/${id}/guarantor`,
     creditRating: `demo://enterprise/${id}/credit-rating`,
     externalRisk: `demo://enterprise/${id}/external-risk`,
+    industry: `demo://industry/${industryCode || "unknown"}`,
+    macro: `demo://macro/${POST_LOAN_RISK_DEMO_DATA_AS_OF}`,
   };
 }
 
@@ -220,6 +223,7 @@ function enterpriseDomainResult(args: JsonObject, domain: keyof PostLoanRiskDemo
 }
 
 export function buildPostLoanRiskSnapshot(enterprise: PostLoanRiskDemoEnterprise): JsonObject {
+  const industryCode = String(enterprise.profile.industry_code || "").trim().toUpperCase();
   const domains = {
     enterpriseProfile: enterprise.profile,
     loanAccounts: enterprise.loanAccounts,
@@ -233,6 +237,8 @@ export function buildPostLoanRiskSnapshot(enterprise: PostLoanRiskDemoEnterprise
     businessAbnormal: enterprise.businessAbnormal,
     tax: enterprise.tax,
     dishonest: enterprise.dishonest,
+    industryContext: POST_LOAN_RISK_DEMO_INDUSTRY[industryCode] || null,
+    macroIndicators: POST_LOAN_RISK_DEMO_MACRO,
   };
   const criticalDomains = ["enterpriseProfile", "loanAccounts", "financial", "repayment", "creditRating"];
   const missingCriticalDomains = criticalDomains.filter((name) => {

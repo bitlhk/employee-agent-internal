@@ -1,4 +1,4 @@
-export const POST_LOAN_RISK_DEMO_DATASET_VERSION = "risk-demo-fixture-v1";
+export const POST_LOAN_RISK_DEMO_DATASET_VERSION = "risk-demo-fixture-v2";
 export const POST_LOAN_RISK_DEMO_DATA_AS_OF = "2026-08-25T08:00:00+08:00";
 
 export type PostLoanRiskDemoEnterprise = {
@@ -63,7 +63,7 @@ export const POST_LOAN_RISK_DEMO_ENTERPRISES: readonly PostLoanRiskDemoEnterpris
       records: [{ month: "2026-07", due: 500, actual: 495, overdue_days: 5 }],
     },
     collaterals: [
-      { type: "房产抵押", original_value: 20000, current_value: 18000, coverage_ratio: 0.72, loan_id: "LN20230001", valuation_date: "2026-07-31" },
+      { type: "房产抵押", original_value: 20000, current_value: 18000, coverage_ratio: 1.20, loan_id: "LN20230001", valuation_date: "2026-07-31" },
     ],
     guarantors: [
       { name: "张鸿远", type: "个人保证", amount: 20000, is_dishonest: false, relation: "实控人" },

@@ -8,16 +8,16 @@ const root = process.cwd();
 const packRoot = path.join(root, "examples", "post-loan-risk-control-reference-role-pack");
 
 describe("post-loan risk control Reference Role Pack assets", () => {
-  it("ships a safe top-level role skill that reuses the existing specialist skill", () => {
+  it("ships a safe top-level role skill with a bounded diagnostic framework", () => {
     const skillRoot = path.join(packRoot, "skills", "post-loan-risk-control-assistant");
     const parsed = parseSkillSourceDirectory(skillRoot, "post-loan-risk-control-assistant");
     const markdown = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
     expect(parsed.warnings).toEqual([]);
-    expect(markdown).toContain("post-loan-risk-prediction");
+    expect(markdown).toContain("references/four-dimension-diagnostic-framework.md");
     expect(markdown).toContain("get_post_loan_risk_snapshot");
     expect(markdown).toContain("risk-control-a2a");
     expect(markdown).toContain("evaluate_post_loan_risk_escalation");
-    expect(markdown).toContain("demo_create_followup_task");
+    expect(markdown).toContain("写能力不可用时保留草稿");
   });
 
   it("ships a snapshot-only A2A executor contract", () => {
@@ -71,8 +71,8 @@ describe("post-loan risk control Reference Role Pack assets", () => {
     };
     const updated = applyPostLoanRiskRolePackBaseline(baseline);
     const role = updated.industries!.banking.roles!["post-loan-risk-control"]!;
-    expect(role.defaultSkills).toEqual(["post-loan-risk-control-assistant", "post-loan-risk-prediction"]);
-    expect(role.mcpServers).toEqual(["post_loan_risk_data", "platform_tools", "wealth_governance_demo"]);
+    expect(role.defaultSkills).toEqual(["post-loan-risk-control-assistant"]);
+    expect(role.mcpServers).toEqual(["post_loan_risk_data", "platform_tools"]);
     expect(updated.skillRequirements?.["post-loan-risk-control-assistant"]?.servers?.post_loan_risk_data)
       .toContain("get_enterprise_profile");
     expect(updated.skillRequirements?.["post-loan-risk-control-assistant"]?.servers?.post_loan_risk_data)
