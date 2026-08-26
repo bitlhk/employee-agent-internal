@@ -194,8 +194,15 @@ describe("wealth allocation context", () => {
           ],
         }),
         loadCustomerPortfolio: async () => ({
-          data: { customer: { CUST_NO: "C-001" }, heldProducts: [{ productId: "P-OLD" }] },
-          updatedAt: "2026-08-10T00:01:00.000Z",
+          schemaVersion: "ea.customer-context.v1",
+          logicalContextId: "customer_portfolio",
+          subjectId: "C-001",
+          status: "READY",
+          summary: { totalAssets: 1_500_000 },
+          holdings: [{ productId: "P-OLD" }],
+          maturities: [],
+          sourceEvidence: [{ asOf: "2026-08-10T00:01:00.000Z" }],
+          generatedAt: "2026-08-10T00:01:01.000Z",
         }),
       }),
       now: new Date("2026-08-10T00:02:00.000Z"),
@@ -208,6 +215,7 @@ describe("wealth allocation context", () => {
     });
     expect(result.evidence.profileDataAsOf).toBe("2026-08-10T00:00:00.000Z");
     expect(result.evidence.portfolioDataAsOf).toBe("2026-08-10T00:01:00.000Z");
+    expect(result.evidence.portfolioResultFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("rejects a customer response for a different customer id", async () => {

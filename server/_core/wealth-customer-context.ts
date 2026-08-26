@@ -132,10 +132,12 @@ function portfolioData(payload: JsonObject): JsonObject {
   for (const key of [
     "activityInfo",
     "assetInfo",
+    "summary",
     "heldProducts",
     "maturedProducts",
     "expiringProducts",
     "holdings",
+    "maturities",
     "positions",
     "assets",
   ]) {
@@ -145,7 +147,13 @@ function portfolioData(payload: JsonObject): JsonObject {
 }
 
 function customerId(customer: JsonObject): string {
-  return firstString(customer.customerId, customer.customer_id, customer.CUST_NO, customer.id);
+  return firstString(
+    customer.customerId,
+    customer.customer_id,
+    customer.subjectId,
+    customer.CUST_NO,
+    customer.id,
+  );
 }
 
 export function assembleWealthCustomerContext(input: {
@@ -169,6 +177,7 @@ export function assembleWealthCustomerContext(input: {
   const portfolio = portfolioData(input.portfolioPayload);
   const profileDataAsOf = profileAsOf(input.profilePayload);
   const portfolioDataAsOf = firstString(
+    profileAsOf(input.portfolioPayload),
     input.portfolioPayload.dataAsOf,
     input.portfolioPayload.asOf,
     input.portfolioPayload.updatedAt,

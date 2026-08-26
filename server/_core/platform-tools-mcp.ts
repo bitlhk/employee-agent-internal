@@ -956,7 +956,10 @@ async function callTool(
         ? error.dependency
         : null;
       const policyUnavailable = failedDependency === "policy" || /policy|制度|knowledge/i.test(message);
-      const customerReady = readyDependencies.has("profile") && readyDependencies.has("portfolio");
+      const customerAssemblyFailed = /客户(?:画像|持仓|标识|\s*MCP)/i.test(message);
+      const customerReady = readyDependencies.has("profile")
+        && readyDependencies.has("portfolio")
+        && !customerAssemblyFailed;
       const productReady = readyDependencies.has("products");
       const readiness = evaluateWealthTaskReadiness({
         taskId: allocationTaskId,
@@ -967,7 +970,7 @@ async function callTool(
             : readinessCheck("DEGRADED", "KNOWLEDGE_NOT_ASSEMBLED", "本轮未完成制度上下文装配。", { retryable: true }),
           customerData: customerReady
             ? readinessCheck("READY", "CUSTOMER_DATA_READY", "客户画像与持仓数据已完成核验。")
-            : failedDependency === "profile" || failedDependency === "portfolio"
+            : failedDependency === "profile" || failedDependency === "portfolio" || customerAssemblyFailed
               ? readinessCheck("BLOCKED", "CUSTOMER_DATA_UNAVAILABLE", "当前客户数据不可用，不能形成正式推荐。", { retryable: true })
               : readinessCheck("DEGRADED", "CUSTOMER_DATA_NOT_EVALUATED", "本轮尚未完成客户数据核验。", { retryable: true }),
           productData: productReady
