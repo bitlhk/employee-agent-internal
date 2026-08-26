@@ -77,6 +77,15 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "user_context": True,
             "timeout_s": 125,
         },
+        {
+            "name": "customer_context",
+            "enabled": True,
+            "transport": "streamable-http",
+            "url": f"http://127.0.0.1:{port}/api/internal/customer-context/mcp",
+            "headers": {},
+            "user_context": True,
+            "timeout_s": 65,
+        },
     ]
     for desired in desired_servers:
         server = next(
