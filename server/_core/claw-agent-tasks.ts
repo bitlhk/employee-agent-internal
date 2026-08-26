@@ -342,11 +342,18 @@ function stripArtifactInventory(text: string): string {
 }
 
 export function extractA2AFinalText(text: string): string | null {
-  const finalEnvelopeRegex = /<ea_final>([\s\S]*?)<\/ea_final>/gi;
-  let finalEnvelope: RegExpExecArray | null;
+  const source = String(text || "");
+  const openingTag = "<ea_final>";
+  const closingTagRegex = /<\/ea_final>/gi;
+  let closingTag: RegExpExecArray | null;
   let finalText: string | null = null;
-  while ((finalEnvelope = finalEnvelopeRegex.exec(String(text || "")))) {
-    const candidate = String(finalEnvelope[1] || "").trim();
+  while ((closingTag = closingTagRegex.exec(source))) {
+    // Tool traces can contain an unmatched instructional opening tag before the
+    // actual response. Pair each close with its nearest opening tag so traces
+    // cannot become part of the governed final envelope.
+    const openingIndex = source.toLowerCase().lastIndexOf(openingTag, closingTag.index);
+    if (openingIndex < 0) continue;
+    const candidate = source.slice(openingIndex + openingTag.length, closingTag.index).trim();
     if (candidate) finalText = candidate;
   }
   return finalText;

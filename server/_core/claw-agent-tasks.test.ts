@@ -27,6 +27,14 @@ describe("cleanA2AText", () => {
     expect(extractA2AFinalText("trace\n<ea_final>unfinished")).toBeNull();
   });
 
+  it("pairs a close with the nearest opening tag after an instructional trace", () => {
+    expect(extractA2AFinalText([
+      "[tool_result] skill says output starts with <ea_final>",
+      "internal trace",
+      "<ea_final># 完整报告\n\n已核验。</ea_final>",
+    ].join("\n"))).toBe("# 完整报告\n\n已核验。");
+  });
+
   it("renders embedded structured tool output without business-specific interpretation", () => {
     const result = cleanA2AText(
       `trace data={'content': '{"record":"example","score":88,"status":"ready"}'} error=None`,
