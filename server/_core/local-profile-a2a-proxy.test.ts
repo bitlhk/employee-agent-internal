@@ -57,6 +57,8 @@ describe("local Hermes profile A2A proxy config", () => {
       HERMES_TCM_A2A_PORT: "8900",
       A_SHARE_COMMITTEE_A2A_PROXY_ENABLED: "true",
       A_SHARE_COMMITTEE_A2A_PORT: "18791",
+      RISK_CONTROL_A2A_PROXY_ENABLED: "true",
+      RISK_CONTROL_A2A_PORT: "19101",
     };
     expect(resolveTrustedLocalProfileA2ATarget(
       "https://work.example.com/a2a/tcm-expert",
@@ -74,6 +76,8 @@ describe("local Hermes profile A2A proxy config", () => {
       HERMES_TCM_A2A_PORT: "8900",
       A_SHARE_COMMITTEE_A2A_PROXY_ENABLED: "true",
       A_SHARE_COMMITTEE_A2A_PORT: "18791",
+      RISK_CONTROL_A2A_PROXY_ENABLED: "true",
+      RISK_CONTROL_A2A_PORT: "19101",
     });
 
     expect(specs.map(({ publicPath, port, enabled }) => ({ publicPath, port, enabled }))).toEqual([
@@ -81,6 +85,7 @@ describe("local Hermes profile A2A proxy config", () => {
       { publicPath: "/a2a/diagram-expert", port: 8899, enabled: true },
       { publicPath: "/a2a/tcm-expert", port: 8900, enabled: true },
       { publicPath: "/a2a/a-share-committee", port: 18791, enabled: true },
+      { publicPath: "/a2a/risk-control", port: 19101, enabled: true },
     ]);
     expect(specs.every((spec) => spec.label && spec.unavailableMessage && spec.timeoutMs)).toBe(true);
   });

@@ -21,6 +21,7 @@ const INTERNAL_MCP_STREAM_PATHS = new Set([
   "/api/internal/role-mcp/mcp",
   "/api/internal/customer-context/mcp",
   "/api/internal/customer-profile/mcp",
+  "/api/internal/post-loan-risk-data/mcp",
 ]);
 
 export function isLongLivedInternalMcpStreamRequest(req: Pick<Request, "method" | "originalUrl" | "path">): boolean {

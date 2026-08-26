@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
   failOwnedLeaseCalls: 0,
   task: { status: "running" } as Record<string, unknown>,
   reservedTask: null as Record<string, unknown> | null,
+  agentId: "expert-1",
+  endpointConfig: { maxConcurrent: 1 } as Record<string, unknown>,
 }));
 
 vi.mock("../db/agents", () => ({
@@ -32,7 +34,7 @@ vi.mock("../db/agents", () => ({
   }),
   renewAgentTaskLease: vi.fn(async () => true),
   getBusinessAgentForContext: vi.fn(async () => ({
-    id: "expert-1",
+    id: state.agentId,
     name: "测试专家",
     enabled: 1,
     providerType: "a2a",
@@ -40,7 +42,7 @@ vi.mock("../db/agents", () => ({
     apiUrl: "https://expert.example/a2a",
     apiToken: null,
     allowedProfiles: "plus,internal",
-    endpointConfigJson: JSON.stringify({ maxConcurrent: 1 }),
+    endpointConfigJson: JSON.stringify(state.endpointConfig),
     capabilitiesJson: JSON.stringify(["agent"]),
     visibility: "platform",
     maxDailyRequests: 10,
@@ -172,6 +174,8 @@ afterEach(async () => {
   state.leaseOwner = "";
   state.task = { status: "running" };
   state.reservedTask = null;
+  state.agentId = "expert-1";
+  state.endpointConfig = { maxConcurrent: 1 };
   if (server) {
     await new Promise<void>((resolve, reject) => server?.close((error) => error ? reject(error) : resolve()));
     server = undefined;
@@ -179,6 +183,29 @@ afterEach(async () => {
 });
 
 describe("agent task consistency", () => {
+  it("blocks risk-control A2A before reservation when the governed snapshot is missing", async () => {
+    state.agentId = "risk-control-a2a";
+    state.endpointConfig = {
+      maxConcurrent: 1,
+      acceptedDataSchemas: ["ea.post-loan-risk-assessment-request.v1"],
+    };
+    const base = await startServer();
+    const response = await fetch(`${base}/api/claw/agent-tasks/submit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        adoptId: "lgj-owner",
+        agentId: "risk-control-a2a",
+        task: "生成完整风险报告",
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "INVALID_REQUEST_SCHEMA" });
+    expect(state.reserveCalls).toBe(0);
+    expect(state.remoteRunCalls).toBe(0);
+  });
+
   it("never reserves or executes an A2A task when delegation governance denies it", async () => {
     state.permissionProfile = "starter";
     const base = await startServer();

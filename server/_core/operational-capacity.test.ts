@@ -35,6 +35,11 @@ describe("operational capacity", () => {
       path: "/api/internal/customer-profile/mcp",
     })).toBe(true);
     expect(isLongLivedInternalMcpStreamRequest({
+      method: "GET",
+      originalUrl: "/api/internal/post-loan-risk-data/mcp",
+      path: "/api/internal/post-loan-risk-data/mcp",
+    })).toBe(true);
+    expect(isLongLivedInternalMcpStreamRequest({
       method: "POST",
       originalUrl: "/api/internal/platform-tools/mcp",
       path: "/internal/platform-tools/mcp",

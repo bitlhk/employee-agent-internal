@@ -36,6 +36,7 @@ export type A2AEndpointConfig = {
   method?: string;
   timeoutMs?: number;
   reuseConversationContext?: boolean;
+  includeGovernedPayloadInText?: boolean;
   taskPrefix?: string;
   taskSuffix?: string;
   requestProfile?: A2ARequestProfile;
@@ -216,10 +217,14 @@ export function buildA2ATaskRequest(
   const runtimeDataPartMetadata = safeRecord(runtime.dataPartMetadata, "runtime.dataPartMetadata", createId);
   const paramsMetadata = safeRecord(profile.paramsMetadata, "requestProfile.paramsMetadata", createId);
   const protocolV1 = usesA2AProtocolV1(config);
+  const renderedTaskText = renderTaskText(input, config);
+  const requestText = config.includeGovernedPayloadInText === true && runtimeDataPart
+    ? `${renderedTaskText}\n\n<ea_governed_payload>\n${JSON.stringify(runtimeDataPart)}\n</ea_governed_payload>`
+    : renderedTaskText;
   const parts: Array<Record<string, unknown>> = [
     protocolV1
-      ? { text: renderTaskText(input, config) }
-      : { kind: "text", text: renderTaskText(input, config) },
+      ? { text: requestText }
+      : { kind: "text", text: requestText },
   ];
   if (dataPart) {
     parts.push(protocolV1

@@ -65,6 +65,7 @@ import {
   evaluateDelegationPolicy,
   type DelegationPolicyResult,
 } from "./governance/delegation-policy";
+import { validatePostLoanRiskA2APayload } from "./post-loan-risk-a2a-contract";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 type AgentTaskRuntimeContext = {
@@ -337,10 +338,26 @@ function stripArtifactInventory(text: string): string {
   return output.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+export function extractA2AFinalText(text: string): string | null {
+  const finalEnvelopeRegex = /<ea_final>([\s\S]*?)<\/ea_final>/gi;
+  let finalEnvelope: RegExpExecArray | null;
+  let finalText: string | null = null;
+  while ((finalEnvelope = finalEnvelopeRegex.exec(String(text || "")))) {
+    const candidate = String(finalEnvelope[1] || "").trim();
+    if (candidate) finalText = candidate;
+  }
+  return finalText;
+}
+
 export function cleanA2AText(text: string, options: { hasStructuredArtifacts?: boolean } = {}): string {
   const trimmed = String(text || "").trim();
   if (!trimmed) return trimmed;
   const finish = (value: string) => options.hasStructuredArtifacts ? stripArtifactInventory(value) : value;
+
+  // Dedicated A2A executors can delimit their user-facing result explicitly.
+  // Prefer the last complete envelope so streamed retries cannot expose traces.
+  const finalText = extractA2AFinalText(trimmed);
+  if (finalText) return finish(finalText);
 
   // JiuwenSwarm A2A may include tool traces inside the final response artifact.
   // Prefer the last structured tool result without interpreting business fields.
@@ -492,6 +509,9 @@ async function runAgentTaskInBackground(
     }
     if (!String(result.text || "").trim() && !result.interaction && !result.capabilityIntents?.length) {
       throw new Error("A2A Agent did not return the configured result artifact");
+    }
+    if (endpointConfig.requireFinalEnvelope === true && !extractA2AFinalText(result.text)) {
+      throw new Error("A2A Agent did not return the required EA final response envelope");
     }
     const cleanedText = cleanA2AText(result.text, { hasStructuredArtifacts: Boolean(result.artifacts?.length) });
     const capabilityIntents = result.capabilityIntents || [];
@@ -795,6 +815,13 @@ export function registerAgentTaskRoutes(app: express.Express) {
       const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
       const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
       const runtime = storedAgentTaskRuntime(task);
+      const riskPayload = String(agent.id || "") === "risk-control-a2a"
+        ? validatePostLoanRiskA2APayload(runtime.dataPart)
+        : null;
+      if (riskPayload && !riskPayload.ok) {
+        observeAgentTaskRetry("blocked");
+        return res.status(400).json({ error: riskPayload.reasonCode, reason: riskPayload.message });
+      }
       const delegation = await authorizeAgentDelegation({
         req,
         claw,
@@ -910,6 +937,32 @@ export function registerAgentTaskRoutes(app: express.Express) {
         ? String(req.body.sessionId).slice(0, 160)
         : null;
       const endpointConfig = parseJsonRecord(agent.endpointConfigJson);
+      const submittedDataPart = req.body?.dataPart && typeof req.body.dataPart === "object" && !Array.isArray(req.body.dataPart)
+        ? req.body.dataPart as Record<string, unknown>
+        : undefined;
+      if (req.body?.dataPart != null && !submittedDataPart) {
+        return res.status(400).json({ error: "governed dataPart must be an object" });
+      }
+      if (scenarioId && submittedDataPart) {
+        return res.status(400).json({ error: "scenarioId and governed dataPart cannot be combined" });
+      }
+      const acceptedDataSchemas = Array.isArray(endpointConfig.acceptedDataSchemas)
+        ? endpointConfig.acceptedDataSchemas.map((item: unknown) => String(item || "").trim()).filter(Boolean)
+        : [];
+      if (submittedDataPart) {
+        const submittedSchema = String(submittedDataPart.schema || "").trim();
+        if (!submittedSchema || !acceptedDataSchemas.includes(submittedSchema)) {
+          return res.status(400).json({ error: "GOVERNED_PAYLOAD_SCHEMA_NOT_ACCEPTED" });
+        }
+      }
+      const riskPayload = agentId === "risk-control-a2a"
+        ? validatePostLoanRiskA2APayload(submittedDataPart)
+        : null;
+      if (riskPayload && !riskPayload.ok) {
+        return res.status(400).json({ error: riskPayload.reasonCode, reason: riskPayload.message });
+      }
+      const effectiveDataPart = submittedDataPart
+        || (scenarioId ? { schema: "ea.investment-team.request.v1", scenarioId } : undefined);
       const maxConcurrent = Math.max(0, Math.min(100, Number(endpointConfig.maxConcurrent || 0)));
       const maxDailyRequests = agentDailyRequestLimit(agent);
       await ensureAgentAvailable(agent);
@@ -921,7 +974,7 @@ export function registerAgentTaskRoutes(app: express.Express) {
         agentId,
         taskInput: input,
         sessionId: sourceSessionId,
-        dataPart: scenarioId ? { schema: "ea.investment-team.request.v1", scenarioId } : undefined,
+        dataPart: effectiveDataPart,
         taskAuthorizationSnapshotId: String(req.headers["x-ea-authorization-snapshot-id"] || "").trim() || null,
       });
       if (!executionAuthority.allowed || !executionAuthority.effectivePrincipal) {
@@ -950,18 +1003,20 @@ export function registerAgentTaskRoutes(app: express.Express) {
           agentId,
           sourceConversationId || sourceSessionId,
         ),
-        ...(scenarioId && agentId === "a-share-research-committee" ? {
-          dataPart: {
-            schema: "ea.investment-team.request.v1",
-            scenarioId,
-          },
+        ...(effectiveDataPart ? {
+          dataPart: effectiveDataPart,
           dataPartMetadata: {
-            "ea.investment-team": true,
-            version: "1.0.0",
+            ...(scenarioId && agentId === "a-share-research-committee"
+              ? { "ea.investment-team": true, version: "1.0.0" }
+              : { "ea.governed-payload": true, schema: String(effectiveDataPart.schema || "") }),
+            ...(riskPayload?.ok ? {
+              snapshotFingerprint: riskPayload.snapshotFingerprint,
+              enterpriseId: riskPayload.enterpriseId,
+            } : {}),
             "ea.governance": governanceMetadata,
           },
         } : {}),
-        ...(!(scenarioId && agentId === "a-share-research-committee") ? {
+        ...(!effectiveDataPart ? {
           dataPartMetadata: { "ea.governance": governanceMetadata },
         } : {}),
       };

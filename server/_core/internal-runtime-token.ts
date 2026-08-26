@@ -63,6 +63,7 @@ export function optionalInternalMcpAudience(pathname: string): string | null {
   if (path.endsWith("/role-mcp/mcp")) return "urn:ea:internal-mcp:role-mcp";
   if (path.endsWith("/customer-context/mcp")) return "urn:ea:internal-mcp:customer-context";
   if (path.endsWith("/customer-profile/mcp")) return "urn:ea:internal-mcp:customer-profile";
+  if (path.endsWith("/post-loan-risk-data/mcp")) return "urn:ea:internal-mcp:post-loan-risk-data";
   return null;
 }
 

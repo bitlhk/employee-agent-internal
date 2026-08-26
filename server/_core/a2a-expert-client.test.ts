@@ -112,6 +112,31 @@ describe("A2A expert profiles", () => {
     ]);
   });
 
+  it("can mirror an accepted governed payload into text for legacy runtimes", () => {
+    const request = buildA2ATaskRequest("analyze the snapshot", {
+      includeGovernedPayloadInText: true,
+    }, {
+      dataPart: {
+        schema: "ea.post-loan-risk-assessment-request.v1",
+        enterpriseId: "91370000726200000X",
+      },
+    });
+
+    expect(request.body.params.message.parts).toEqual([
+      {
+        kind: "text",
+        text: expect.stringContaining("<ea_governed_payload>\n{\"schema\":\"ea.post-loan-risk-assessment-request.v1\""),
+      },
+      {
+        kind: "data",
+        data: {
+          schema: "ea.post-loan-risk-assessment-request.v1",
+          enterpriseId: "91370000726200000X",
+        },
+      },
+    ]);
+  });
+
   it("builds extended A2A data and metadata from configuration", () => {
     const config: A2AEndpointConfig = {
       method: "message/stream",

@@ -117,6 +117,10 @@ const TOOLS = [
         conversation_id: { type: "string", description: "Optional current EA conversation id" },
         session_id: { type: "string", description: "Optional current JiuwenSwarm session id" },
         source_message_id: { type: "string", description: "Optional source message id" },
+        governed_payload: {
+          type: "object",
+          description: "Optional governed structured payload. The target Agent must explicitly accept its schema.",
+        },
       },
       required: ["agent_id", "task"],
     },
@@ -999,6 +1003,9 @@ async function callTool(
     if (!agentId) return textResult("Error: agent_id is required", { isError: true });
     if (!task) return textResult("Error: task is required", { isError: true });
     const suppliedSourceMessageId = String(args.source_message_id || args.sourceMessageId || "").trim();
+    const governedPayload = args.governed_payload && typeof args.governed_payload === "object" && !Array.isArray(args.governed_payload)
+      ? args.governed_payload
+      : undefined;
     const sourceMessageId = suppliedSourceMessageId || `mcp:${createHash("sha256")
       .update(`${String(requestIdentity ?? "")}:${stableToolInputHash({ agentId, task, args })}`)
       .digest("hex")}`;
@@ -1017,6 +1024,7 @@ async function callTool(
         conversationId: args.conversation_id || args.conversationId,
         sessionId: args.session_id || args.sessionId,
         sourceMessageId,
+        ...(governedPayload ? { dataPart: governedPayload } : {}),
       }),
     });
     return textResult(`Agent task submitted. task_id=${data.taskId}. EA will track the asynchronous result and write it back when complete.`);

@@ -78,6 +78,15 @@ const PROFILE_PROXY_DEFINITIONS: readonly ProfileProxyDefinition[] = [
     label: "A-SHARE-COMMITTEE-A2A",
     unavailableMessage: "A-share research committee is unavailable",
   },
+  {
+    enabledEnv: "RISK_CONTROL_A2A_PROXY_ENABLED",
+    portEnv: "RISK_CONTROL_A2A_PORT",
+    timeoutEnv: "RISK_CONTROL_A2A_PROXY_TIMEOUT_MS",
+    defaultPort: 19101,
+    publicPath: "/a2a/risk-control",
+    label: "RISK-CONTROL-A2A",
+    unavailableMessage: "Risk-control specialist is unavailable",
+  },
 ];
 
 export function localProfileA2AProxySpecs(env: LocalProfileA2AEnvironment = process.env) {

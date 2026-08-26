@@ -45,6 +45,8 @@ const profiles: RoleTaskEvidenceProfile[] = [
     requestedOutcome: "verified_post_loan_panorama",
     fallbackOutcome: "post_loan_minimum_input_checklist",
     tools: [
+      { name: "list_risk_enterprises", label: "列出授权企业" },
+      { name: "search_risk_enterprises", label: "搜索授权企业" },
       { name: "get_enterprise_profile", label: "查询企业画像" },
       { name: "get_loan_account", label: "查询贷款账户" },
       { name: "get_credit_rating", label: "查询信用评级" },
@@ -89,6 +91,7 @@ const profiles: RoleTaskEvidenceProfile[] = [
     requestedOutcome: "verified_industry_risk_context",
     fallbackOutcome: "industry_context_gap_checklist",
     tools: [
+      { name: "get_post_loan_risk_snapshot", label: "装配完整贷后风险快照" },
       { name: "get_industry_benchmark", label: "查询行业基准" },
       { name: "get_industry_rating", label: "查询行业风险评级" },
       { name: "get_macro_indicator", label: "查询宏观指标" },

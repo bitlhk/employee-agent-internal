@@ -5,10 +5,28 @@ import {
   a2aRuntimeContextId,
   agentDailyRequestLimit,
   cleanA2AText,
+  extractA2AFinalText,
   isCancelledAgentTaskStatus,
 } from "./claw-agent-tasks";
 
 describe("cleanA2AText", () => {
+  it("returns only the last explicit EA final envelope", () => {
+    const result = cleanA2AText([
+      "internal reasoning that must not be shown",
+      "<ea_final>stale response</ea_final>",
+      "more trace",
+      "<ea_final># 风险结论\n\n需人工复核。</ea_final>",
+    ].join("\n"));
+
+    expect(result).toBe("# 风险结论\n\n需人工复核。");
+    expect(result).not.toContain("reasoning");
+    expect(result).not.toContain("stale");
+  });
+
+  it("does not accept an incomplete final envelope", () => {
+    expect(extractA2AFinalText("trace\n<ea_final>unfinished")).toBeNull();
+  });
+
   it("renders embedded structured tool output without business-specific interpretation", () => {
     const result = cleanA2AText(
       `trace data={'content': '{"record":"example","score":88,"status":"ready"}'} error=None`,

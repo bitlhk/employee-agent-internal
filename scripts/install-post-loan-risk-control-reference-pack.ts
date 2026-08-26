@@ -26,6 +26,9 @@ const APP_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const SKILL_ID = "post-loan-risk-control-assistant";
 const SKILL_ROOT = path.join(APP_ROOT, "examples", "post-loan-risk-control-reference-role-pack", "skills", SKILL_ID);
 const RISK_DATA_TOOLS = [
+  "list_risk_enterprises",
+  "search_risk_enterprises",
+  "get_post_loan_risk_snapshot",
   "get_enterprise_profile",
   "get_loan_account",
   "get_financial_statements",
@@ -63,7 +66,7 @@ export function applyPostLoanRiskRolePackBaseline(baseline: Baseline): Baseline 
   baseline.skillRequirements[SKILL_ID] = {
     servers: {
       post_loan_risk_data: RISK_DATA_TOOLS,
-      platform_tools: ["evaluate_post_loan_risk_escalation"],
+      platform_tools: ["list_available_agents", "submit_agent_task", "evaluate_post_loan_risk_escalation"],
       wealth_governance_demo: ["demo_create_followup_task"],
     },
   };

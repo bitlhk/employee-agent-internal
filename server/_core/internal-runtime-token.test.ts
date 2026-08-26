@@ -34,6 +34,11 @@ describe("internal runtime tokens", () => {
       .toBe("urn:ea:internal-mcp:customer-context");
   });
 
+  it("maps the governed post-loan risk service to its own audience", () => {
+    expect(internalMcpAudience("/api/internal/post-loan-risk-data/mcp"))
+      .toBe("urn:ea:internal-mcp:post-loan-risk-data");
+  });
+
   it("leaves standalone loopback MCP endpoints outside the EA gateway audience namespace", () => {
     expect(optionalInternalMcpAudience("/mcp")).toBeNull();
     expect(() => internalMcpAudience("/mcp")).toThrow(/Unsupported internal MCP audience path/);

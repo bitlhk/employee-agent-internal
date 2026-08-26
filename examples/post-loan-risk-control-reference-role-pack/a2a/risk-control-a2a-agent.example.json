@@ -1,0 +1,46 @@
+{
+  "id": "risk-control-a2a",
+  "name": "贷后风险分析专家",
+  "description": "基于 EA 受治理不可变快照异步生成贷后风险分析草稿，不持有企业事实或写权限。",
+  "kind": "remote",
+  "apiUrl": "https://ea.example.com/a2a/risk-control",
+  "remoteAgentId": "main",
+  "icon": "R",
+  "enabled": 1,
+  "sortOrder": 60,
+  "maxDailyRequests": 200,
+  "allowedProfiles": "plus,internal",
+  "tags": "risk-control,async,governed-snapshot",
+  "providerType": "a2a",
+  "adapterProtocol": "a2a-v1",
+  "capabilities": [
+    "agent",
+    "async-agent",
+    "post-loan-risk-report"
+  ],
+  "uiConfig": {
+    "category": "risk_control"
+  },
+  "endpointConfig": {
+    "path": "/a2a",
+    "method": "message/send",
+    "executionMode": "async",
+    "interactionMode": "single",
+    "reuseConversationContext": false,
+    "timeoutMs": 600000,
+    "supportsCancellation": false,
+    "requireFinalEnvelope": true,
+    "includeGovernedPayloadInText": true,
+    "acceptedDataSchemas": [
+      "ea.post-loan-risk-assessment-request.v1"
+    ],
+    "roleTemplates": [
+      "post-loan-risk-control"
+    ],
+    "retryProfile": {
+      "maxRetries": 1,
+      "baseDelayMs": 1000,
+      "maxDelayMs": 3000
+    }
+  }
+}

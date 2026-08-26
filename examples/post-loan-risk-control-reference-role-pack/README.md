@@ -6,8 +6,10 @@
 
 - 聚焦企业贷后监测、风险诊断、预警升级、评估报告和复评跟踪。
 - 企业、贷款、财务、还款、押品和外部风险事实必须从 `post_loan_risk_data` 动态获取。
+- 企业列表、搜索和完整风险快照由同一个受治理 MCP 提供；快照必须绑定固定数据时间和 SHA-256 指纹。
 - `POST_LOAN_RISK_ESCALATION` 只形成确定性预警和人工升级义务，不替代五级分类、授信审批或资产处置结论。
 - 完整评估复用现有 `post-loan-risk-prediction`，本包新增的主 Skill 负责岗位任务路由和边界控制。
+- 快速核验留在本岗位运行时；完整报告通过 `risk-control-a2a` 异步执行，远端只消费 EA 提供的受治理快照。
 - 跟踪任务写入复用隔离的 `wealth_governance_demo`，必须经过确认、幂等和业务回执。
 - 演示数据和 Demo 写入只能标记 `Demo/Shadow Ready`。
 - V1 确定性分级工具接收由岗位 Skill 汇总的标准化风险信号。进入生产前，必须由 EA 服务端 Context Assembly 将信号绑定到客户范围、MCP 数据时间和上游结果指纹，不能依赖模型自行声明“数据已核验”。
@@ -17,6 +19,7 @@
 
 - `knowledge/manifest.json`：九份岗位 Knowledge 及版本治理元数据；
 - `skills/post-loan-risk-control-assistant`：六项标杆任务的主路由；
+- `a2a/`：独立风控异步执行器的最小 Skill、运行边界和 EA 注册模板；
 - `eval/rc-gt-01..06-cases.json`：正常、拒绝、降级、来源和确认路径；
 - `scripts/install-post-loan-risk-control-reference-pack.ts`：发布 Skill、更新岗位资产基线并刷新实例；
 - `scripts/import-demo-knowledge.ts --pack=post-loan-risk-control`：导入、索引和替换旧知识库。

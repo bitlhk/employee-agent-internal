@@ -311,6 +311,7 @@ describe("enterprise runtime adapter", () => {
       "enterprise_mcp_gateway",
       "role_mcp_gateway",
       "customer_context",
+      "post_loan_risk_data",
     ]);
     expect(root.mcpServers.enterprise_mcp_gateway).toMatchObject({
       url: "https://ea.example.test/api/internal/enterprise-mcp/mcp",
@@ -321,7 +322,7 @@ describe("enterprise runtime adapter", () => {
       },
     });
     const serverIds = Object.values(root.mcpServers).map((server: any) => server.server_id);
-    expect(new Set(serverIds).size).toBe(5);
+    expect(new Set(serverIds).size).toBe(6);
     expect(serverIds.every((serverId: string) => /^[a-z_]+_[a-f0-9]{12}$/.test(serverId))).toBe(true);
     expect(root.mcpServers.role_mcp_gateway).toMatchObject({
       name: "role_mcp_gateway",
@@ -339,6 +340,14 @@ describe("enterprise runtime adapter", () => {
         "x-ea-runtime-token-audience": "urn:ea:internal-mcp:customer-context",
         "x-linggan-agent-id": "agent-insurance",
         "x-jiuwen-channel-id": "lgj-test",
+      },
+    });
+    expect(root.mcpServers.post_loan_risk_data).toMatchObject({
+      name: "post_loan_risk_data",
+      url: "https://ea.example.test/api/internal/post-loan-risk-data/mcp",
+      auth_headers: {
+        "x-ea-runtime-token-audience": "urn:ea:internal-mcp:post-loan-risk-data",
+        "x-linggan-agent-id": "agent-insurance",
       },
     });
     expect(JSON.stringify(root)).not.toContain("INTERNAL_API_KEY");

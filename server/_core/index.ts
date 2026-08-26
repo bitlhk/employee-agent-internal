@@ -70,6 +70,7 @@ import { registerCustomMcpRoutes } from "./custom-mcp";
 import { registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
 import { registerRoleMcpGatewayRoutes } from "./role-mcp-gateway";
 import { registerCustomerProfileMcpRoutes } from "./customer-profile-mcp";
+import { registerPostLoanRiskDataMcpRoutes } from "./post-loan-risk-data-mcp";
 import {
   registerEnterpriseRuntimeAssetRoutes,
   startEnterpriseRuntimeAssetSelfHeal,
@@ -481,6 +482,7 @@ async function startServer() {
   registerEnterpriseMcpGatewayRoutes(app);
   registerRoleMcpGatewayRoutes(app);
   registerCustomerProfileMcpRoutes(app);
+  registerPostLoanRiskDataMcpRoutes(app);
   registerEnterpriseRuntimeAssetRoutes(app);
   registerSkillConfigRoutes(app);
   registerToolsPolicyRoutes(app);

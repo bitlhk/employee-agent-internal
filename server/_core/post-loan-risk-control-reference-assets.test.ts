@@ -14,8 +14,33 @@ describe("post-loan risk control Reference Role Pack assets", () => {
     const markdown = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
     expect(parsed.warnings).toEqual([]);
     expect(markdown).toContain("post-loan-risk-prediction");
+    expect(markdown).toContain("get_post_loan_risk_snapshot");
+    expect(markdown).toContain("risk-control-a2a");
     expect(markdown).toContain("evaluate_post_loan_risk_escalation");
     expect(markdown).toContain("demo_create_followup_task");
+  });
+
+  it("ships a snapshot-only A2A executor contract", () => {
+    const skillRoot = path.join(packRoot, "a2a", "skills", "post-loan-risk-snapshot-analyst");
+    const parsed = parseSkillSourceDirectory(skillRoot, "post-loan-risk-snapshot-analyst");
+    const markdown = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
+    const agent = JSON.parse(readFileSync(
+      path.join(packRoot, "a2a", "risk-control-a2a-agent.example.json"),
+      "utf8",
+    )) as { endpointConfig?: Record<string, unknown> };
+
+    expect(parsed.warnings).toEqual([]);
+    expect(markdown).toContain("ea.post-loan-risk-assessment-request.v1");
+    expect(markdown).toContain("ea.post-loan-risk-snapshot.v1");
+    expect(markdown).toContain("<ea_final>");
+    expect(markdown).toContain("禁止调用企业数据 MCP");
+    expect(agent.endpointConfig).toMatchObject({
+      reuseConversationContext: false,
+      requireFinalEnvelope: true,
+      includeGovernedPayloadInText: true,
+      acceptedDataSchemas: ["ea.post-loan-risk-assessment-request.v1"],
+      roleTemplates: ["post-loan-risk-control"],
+    });
   });
 
   it("maps all six benchmark tasks to governed knowledge assets", () => {
@@ -50,5 +75,9 @@ describe("post-loan risk control Reference Role Pack assets", () => {
     expect(role.mcpServers).toEqual(["post_loan_risk_data", "platform_tools", "wealth_governance_demo"]);
     expect(updated.skillRequirements?.["post-loan-risk-control-assistant"]?.servers?.post_loan_risk_data)
       .toContain("get_enterprise_profile");
+    expect(updated.skillRequirements?.["post-loan-risk-control-assistant"]?.servers?.post_loan_risk_data)
+      .toEqual(expect.arrayContaining(["list_risk_enterprises", "search_risk_enterprises", "get_post_loan_risk_snapshot"]));
+    expect(updated.skillRequirements?.["post-loan-risk-control-assistant"]?.servers?.platform_tools)
+      .toEqual(expect.arrayContaining(["list_available_agents", "submit_agent_task", "evaluate_post_loan_risk_escalation"]));
   });
 });
