@@ -10,6 +10,10 @@ export type PostLoanRiskA2AContractResult =
   | { ok: true; value: JsonObject; snapshotFingerprint: string; enterpriseId: string }
   | { ok: false; reasonCode: string; message: string };
 
+export type PostLoanRiskA2AReportResult =
+  | { ok: true }
+  | { ok: false; reasonCode: string; message: string };
+
 export type PostLoanRiskSnapshotLoader = (enterpriseId: string) => unknown;
 
 function record(value: unknown): JsonObject {
@@ -122,4 +126,88 @@ export function materializePostLoanRiskA2APayload(
     };
   }
   return validated;
+}
+
+const REQUIRED_REPORT_HEADINGS = [
+  "# 贷后风险分析草稿",
+  "## 评估对象与快照",
+  "## 已核验事实",
+  "## 四维诊断",
+  "## 红旗指标",
+  "## 待核验事项",
+  "## 建议人工复核动作",
+] as const;
+
+export function validatePostLoanRiskA2AReport(
+  report: unknown,
+  contract: Extract<PostLoanRiskA2AContractResult, { ok: true }>,
+): PostLoanRiskA2AReportResult {
+  const text = String(report || "").trim();
+  const bytes = Buffer.byteLength(text, "utf8");
+  if (bytes < 600 || bytes > 30_000) {
+    return {
+      ok: false,
+      reasonCode: "RISK_REPORT_LENGTH_INVALID",
+      message: "远端风险报告长度异常，可能未完成或超出受控输出预算。",
+    };
+  }
+
+  const payload = contract.value;
+  const snapshot = record(payload.riskSnapshot);
+  const data = record(snapshot.data);
+  const enterprise = record(data.enterprise);
+  const enterpriseName = String(
+    payload.enterpriseName || enterprise.enterpriseName || enterprise.enterprise_name || "",
+  ).trim();
+
+  if (!text.includes(contract.enterpriseId) || !text.includes(contract.snapshotFingerprint)) {
+    return {
+      ok: false,
+      reasonCode: "RISK_REPORT_SNAPSHOT_EVIDENCE_MISSING",
+      message: "远端风险报告未包含受治理企业身份或快照指纹。",
+    };
+  }
+  if (enterpriseName && !text.includes(enterpriseName)) {
+    return {
+      ok: false,
+      reasonCode: "RISK_REPORT_ENTERPRISE_MISMATCH",
+      message: "远端风险报告未包含受治理企业名称。",
+    };
+  }
+
+  let previousIndex = -1;
+  for (const heading of REQUIRED_REPORT_HEADINGS) {
+    const index = text.indexOf(heading);
+    if (index < 0 || index <= previousIndex) {
+      return {
+        ok: false,
+        reasonCode: "RISK_REPORT_STRUCTURE_INVALID",
+        message: `远端风险报告缺少或错序：${heading}`,
+      };
+    }
+    previousIndex = index;
+  }
+
+  if (
+    text.includes("最终只输出以下结构")
+    || text.includes("## 唯一事实源")
+    || text.includes("## 输出格式")
+    || /(?:企业|快照指纹)[：:]\s*\.{3}/.test(text)
+  ) {
+    return {
+      ok: false,
+      reasonCode: "RISK_REPORT_TEMPLATE_ECHOED",
+      message: "远端风险报告回显了技能说明或未填充模板。",
+    };
+  }
+
+  if (!text.includes("不是监管五级分类、授信审批或自动处置结论")) {
+    return {
+      ok: false,
+      reasonCode: "RISK_REPORT_DISCLAIMER_MISSING",
+      message: "远端风险报告缺少人工复核与非自动处置声明。",
+    };
+  }
+
+  return { ok: true };
 }

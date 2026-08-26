@@ -65,7 +65,10 @@ import {
   evaluateDelegationPolicy,
   type DelegationPolicyResult,
 } from "./governance/delegation-policy";
-import { validatePostLoanRiskA2APayload } from "./post-loan-risk-a2a-contract";
+import {
+  validatePostLoanRiskA2APayload,
+  validatePostLoanRiskA2AReport,
+} from "./post-loan-risk-a2a-contract";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 type AgentTaskRuntimeContext = {
@@ -471,6 +474,12 @@ async function runAgentTaskInBackground(
       throw new Error(`${adapterProtocol || "missing adapter"} is not supported by agent task runner`);
     }
     const endpointConfig = parseJsonRecord(agent.endpointConfigJson) as A2AEndpointConfig;
+    const riskPayload = String(agent.id || "") === "risk-control-a2a"
+      ? validatePostLoanRiskA2APayload(runtime.dataPart)
+      : null;
+    if (riskPayload && !riskPayload.ok) {
+      throw new Error(`${riskPayload.reasonCode}: ${riskPayload.message}`);
+    }
     const connection = {
       apiUrl: String(agent.apiUrl || ""),
       apiToken: agent.apiToken,
@@ -510,10 +519,17 @@ async function runAgentTaskInBackground(
     if (!String(result.text || "").trim() && !result.interaction && !result.capabilityIntents?.length) {
       throw new Error("A2A Agent did not return the configured result artifact");
     }
-    if (endpointConfig.requireFinalEnvelope === true && !extractA2AFinalText(result.text)) {
+    const finalEnvelope = extractA2AFinalText(result.text);
+    if (endpointConfig.requireFinalEnvelope === true && !finalEnvelope) {
       throw new Error("A2A Agent did not return the required EA final response envelope");
     }
     const cleanedText = cleanA2AText(result.text, { hasStructuredArtifacts: Boolean(result.artifacts?.length) });
+    if (riskPayload?.ok) {
+      const reportValidation = validatePostLoanRiskA2AReport(cleanedText, riskPayload);
+      if (!reportValidation.ok) {
+        throw new Error(`${reportValidation.reasonCode}: ${reportValidation.message}`);
+      }
+    }
     const capabilityIntents = result.capabilityIntents || [];
     const intentNotice = capabilityIntentResultNotice(capabilityIntents);
     const governedResultText = [cleanedText, intentNotice].filter(Boolean).join("\n\n");
