@@ -72,7 +72,7 @@ function wealthTaskStatus(input: {
   knowledgeReady: boolean;
   skillReady: boolean;
 }): RoleHomeTaskStatus {
-  const customer = connectorStatus(input.connectors, ["wealth_assistant_customer"]);
+  const customer = connectorStatus(input.connectors, ["customer_context"]);
   const product = connectorStatus(input.connectors, ["wealth_assistant_product"]);
   const followup = connectorStatus(input.connectors, ["wealth_governance_demo"]);
   const ready = readinessCheck("READY", "ROLE_HOME_RUNTIME_READY", "当前岗位运行能力已就绪。");
@@ -114,8 +114,8 @@ function wealthTaskStatus(input: {
 
 const CONNECTOR_TASK_REQUIREMENTS: Record<string, Record<string, string[]>> = {
   "insurance-advisor": {
-    "IA-GT-01": ["insurance_customer_profile"],
-    "IA-GT-02": ["insurance_customer_profile", "insurance_product_exam_points"],
+    "IA-GT-01": ["customer_context"],
+    "IA-GT-02": ["customer_context", "insurance_product_exam_points"],
     "IA-GT-03": ["insurance_product_exam_points"],
     "IA-GT-05": ["insurance_product_exam_points"],
   },
@@ -127,8 +127,10 @@ const CONNECTOR_TASK_REQUIREMENTS: Record<string, Record<string, string[]>> = {
   },
   "credential-compliance": {
     "AU-GT-02": ["credential_image_workspace"],
-    "AU-GT-05": ["credential_image_workspace"],
-    "AU-GT-06": ["wealth_governance_demo"],
+    "AU-GT-03": ["platform_tools"],
+    "AU-GT-04": ["platform_tools"],
+    "AU-GT-05": ["credential_image_workspace", "platform_tools"],
+    "AU-GT-06": ["platform_tools", "wealth_governance_demo"],
   },
   "investment-researcher": {
     "IR-GT-01": ["wind_stock_data"],

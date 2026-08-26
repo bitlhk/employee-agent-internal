@@ -22,7 +22,7 @@ describe("role home runtime projection", () => {
     const status = buildRoleHomeRuntimeStatus({
       roleTemplate: "wealth-manager",
       connectors: [
-        { serverId: "wealth_assistant_customer", status: "READY" },
+        { serverId: "customer_context", status: "READY" },
         { serverId: "wealth_assistant_product", status: "READY" },
         { serverId: "wealth_governance_demo", status: "READY" },
       ],
@@ -47,7 +47,7 @@ describe("role home runtime projection", () => {
     const status = buildRoleHomeRuntimeStatus({
       roleTemplate: "wealth-manager",
       connectors: [
-        { serverId: "wealth_assistant_customer", status: "READY" },
+        { serverId: "customer_context", status: "READY" },
         { serverId: "wealth_assistant_product", status: "READY" },
       ],
       knowledgeReady: true,
@@ -66,7 +66,7 @@ describe("role home runtime projection", () => {
     const status = buildRoleHomeRuntimeStatus({
       roleTemplate: "wealth-manager",
       connectors: [
-        { serverId: "wealth_assistant_customer", status: "READY" },
+        { serverId: "customer_context", status: "READY" },
         { serverId: "wealth_assistant_product", status: "READY" },
       ],
       knowledgeReady: false,
@@ -85,7 +85,7 @@ describe("role home runtime projection", () => {
     const status = buildRoleHomeRuntimeStatus({
       roleTemplate: "insurance-advisor",
       connectors: [
-        { serverId: "insurance_customer_profile", status: "READY" },
+        { serverId: "customer_context", status: "READY" },
         { serverId: "insurance_product_exam_points", status: "DEGRADED" },
       ],
       knowledgeReady: true,
@@ -102,6 +102,7 @@ describe("role home runtime projection", () => {
       roleTemplate: "credential-compliance",
       connectors: [
         { serverId: "credential_image_workspace", status: "READY" },
+        { serverId: "platform_tools", status: "READY" },
         { serverId: "wealth_governance_demo", status: "READY" },
       ],
       knowledgeReady: true,
@@ -113,6 +114,21 @@ describe("role home runtime projection", () => {
       "AU-GT-01", "AU-GT-02", "AU-GT-03", "AU-GT-06",
     ]);
     expect(status.capabilities.find((item) => item.id === "human-review")?.status).toBe("READY");
+  });
+
+  it("does not report smart-audit policy tasks ready without platform policy tools", () => {
+    const status = buildRoleHomeRuntimeStatus({
+      roleTemplate: "credential-compliance",
+      connectors: [
+        { serverId: "credential_image_workspace", status: "READY" },
+        { serverId: "wealth_governance_demo", status: "READY" },
+      ],
+      knowledgeReady: true,
+      skills: [readySkill("smart-audit-assistant")],
+    });
+    expect(status.tasks.find((task) => task.taskId === "AU-GT-02")?.status).toBe("READY");
+    expect(status.tasks.find((task) => task.taskId === "AU-GT-03")?.status).toBe("DEGRADED");
+    expect(status.tasks.find((task) => task.taskId === "AU-GT-06")?.status).toBe("DEGRADED");
   });
 
   it("projects investment research tasks from Wind and governed write readiness", () => {

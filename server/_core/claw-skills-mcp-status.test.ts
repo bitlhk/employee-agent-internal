@@ -1,7 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { listMcpToolGroups, roleHomeConnectorStates } from "./claw-skills";
+import {
+  internalManagedMcpServers,
+  listMcpToolGroups,
+  roleHomeConnectorStates,
+} from "./claw-skills";
 
 describe("managed enterprise MCP status", () => {
+  it("projects same-process platform and risk services as live managed MCPs", () => {
+    const managed = internalManagedMcpServers({
+      allowedServerIds: new Set(["platform_tools", "post_loan_risk_data"]),
+      roleTemplate: "post-loan-risk-control",
+      checkedAt: "2026-08-26T02:00:00.000Z",
+    });
+    expect(managed).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        serverId: "platform_tools",
+        ready: true,
+        tools: expect.arrayContaining([
+          expect.objectContaining({ name: "evaluate_audit_rule_eligibility" }),
+        ]),
+      }),
+      expect.objectContaining({
+        serverId: "post_loan_risk_data",
+        ready: true,
+        tools: expect.arrayContaining([
+          expect.objectContaining({ name: "list_risk_enterprises" }),
+          expect.objectContaining({ name: "search_risk_enterprises" }),
+        ]),
+      }),
+    ]));
+  });
+
   it("presents the unified customer service as Customer Insight", () => {
     const payload = listMcpToolGroups({
       allowedServerIds: new Set(["customer_context"]),

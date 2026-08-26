@@ -73,7 +73,7 @@ async function loadWealthAllocationDependency<T>(
   }
 }
 
-const TOOLS = [
+export const PLATFORM_TOOLS = [
   {
     name: "create_scheduled_task",
     description: "Create either a one-time or recurring scheduled task for reminders, periodic checks, or automated reports. Use run_at for one-time tasks and cron_expr for recurring tasks. Results should be tracked in the EA schedule task record unless the user explicitly asks for another delivery channel.",
@@ -228,7 +228,7 @@ const TOOLS = [
   POST_LOAN_RISK_ESCALATION_TOOL,
   ...GOVERNED_ROLE_POLICY_TOOLS,
 ];
-const TOOL_NAMES = new Set(TOOLS.map(tool => tool.name));
+const TOOL_NAMES = new Set(PLATFORM_TOOLS.map(tool => tool.name));
 
 export function platformToolNames(): string[] {
   return Array.from(TOOL_NAMES).sort();
@@ -1120,7 +1120,7 @@ async function handleMessage(req: Request, msg: any) {
     if (msg.method === "ping") return hasRequestId(id) ? ok(id, {}) : null;
     if (msg.method === "resources/list") return hasRequestId(id) ? ok(id, { resources: [] }) : null;
     if (msg.method === "prompts/list") return hasRequestId(id) ? ok(id, { prompts: [] }) : null;
-    if (msg.method === "tools/list") return hasRequestId(id) ? ok(id, { tools: TOOLS }) : null;
+    if (msg.method === "tools/list") return hasRequestId(id) ? ok(id, { tools: PLATFORM_TOOLS }) : null;
     if (msg.method === "tools/call") {
       if (!hasRequestId(id)) return null;
       const finishMetric = beginMcpCall("platform");

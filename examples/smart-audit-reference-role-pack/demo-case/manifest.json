@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "ea.smart-audit-demo-case.v1",
+  "caseId": "CASE-AU-20260826-001",
+  "caseName": "灵感科技设备采购贷款材料审核（演示）",
+  "roleTemplate": "credential-compliance",
+  "classification": "sensitive_demo",
+  "files": [
+    {
+      "materialId": "MAT-AU-001",
+      "materialType": "贷款申请表",
+      "file": "01-贷款申请表.md"
+    },
+    {
+      "materialId": "MAT-AU-002",
+      "materialType": "主体身份证明",
+      "file": "02-主体身份证明.md"
+    },
+    {
+      "materialId": "MAT-AU-003",
+      "materialType": "银行流水",
+      "file": "03-银行流水摘要.md"
+    },
+    {
+      "materialId": "MAT-AU-004",
+      "materialType": "财务报表",
+      "file": "04-财务报表摘要.md"
+    },
+    {
+      "materialId": "MAT-AU-005",
+      "materialType": "贷款用途合同",
+      "file": "05-设备采购合同.md"
+    }
+  ],
+  "expected": {
+    "requiredMaterialTypes": [
+      "贷款申请表",
+      "主体身份证明",
+      "银行流水",
+      "财务报表",
+      "贷款用途合同"
+    ],
+    "currentPolicyAssetId": "au-audit-rule-policy-v2.0",
+    "currentPolicyVersion": "V2.0",
+    "forbiddenPolicyAssetIds": [
+      "au-audit-rule-policy-v1.0"
+    ],
+    "criticalConflicts": [
+      "银行流水账户主体与申请主体不一致",
+      "申请金额与设备采购合同金额不一致"
+    ],
+    "expectedHumanReviewLevel": "L4",
+    "automaticFinalApprovalAllowed": false
+  }
+}

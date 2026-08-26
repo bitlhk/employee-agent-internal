@@ -24,6 +24,7 @@ export type ReferenceRolePackDefinition = {
   skillManifests: string[];
   contextNeedManifest?: string;
   contextGoldenSet?: string;
+  demoFixtureManifest?: string;
   capabilityProofs: Record<string, CapabilityProof>;
 };
 
@@ -154,6 +155,7 @@ const definitions = [
       externalProcessingAllowed: true,
     },
     skillManifests: ["skills/smart-audit-assistant/manifest.json"],
+    demoFixtureManifest: "demo-case/manifest.json",
     capabilityProofs: {
       credential_image_extract_from_workspace: {
         owner: "enterprise-mcp",

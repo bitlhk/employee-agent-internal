@@ -123,6 +123,10 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
   const contextGoldenSetPath = config.contextGoldenSet
     ? path.join(packRoot, config.contextGoldenSet)
     : null;
+  const demoFixtureManifestPath = config.demoFixtureManifest
+    ? path.join(packRoot, config.demoFixtureManifest)
+    : null;
+  const demoFixturePaths: string[] = [];
   if (contextGoldenSetPath && !existsSync(contextGoldenSetPath)) {
     errors.push(`Context Golden Set is missing: ${config.contextGoldenSet}`);
   }
@@ -162,6 +166,32 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
       }
     }
   }
+  if (demoFixtureManifestPath) {
+    if (!existsSync(demoFixtureManifestPath)) {
+      errors.push(`Demo fixture manifest is missing: ${config.demoFixtureManifest}`);
+    } else {
+      const manifest = readJson<{
+        schemaVersion: string;
+        roleTemplate: string;
+        caseId: string;
+        files: Array<{ file: string; materialId: string; materialType: string }>;
+      }>(demoFixtureManifestPath);
+      if (manifest.schemaVersion !== "ea.smart-audit-demo-case.v1") errors.push("Demo fixture manifest schema is unsupported");
+      if (manifest.roleTemplate !== config.roleTemplate) errors.push(`Demo fixture roleTemplate must be ${config.roleTemplate}`);
+      if (!manifest.caseId?.trim()) errors.push("Demo fixture caseId is required");
+      if (!manifest.files?.length) errors.push("Demo fixture must contain files");
+      const fixtureRoot = path.dirname(demoFixtureManifestPath);
+      for (const fixture of manifest.files || []) {
+        if (!fixture.file?.trim() || !fixture.materialId?.trim() || !fixture.materialType?.trim()) {
+          errors.push("Demo fixture file, materialId and materialType are required");
+          continue;
+        }
+        const fixturePath = path.join(fixtureRoot, fixture.file);
+        demoFixturePaths.push(fixturePath);
+        if (!existsSync(fixturePath)) errors.push(`Demo fixture file is missing: ${fixture.file}`);
+      }
+    }
+  }
 
   const fingerprintInputs = [
     ...tasks.map((task) => path.join(evalRoot, task.file)),
@@ -169,6 +199,7 @@ export function runReferenceRolePackContractChecks(root: string, config: Referen
     ...config.skillManifests.map((file) => path.join(packRoot, file)),
     ...(contextNeedManifestPath ? [contextNeedManifestPath, path.join(root, LOGICAL_CONTEXT_CATALOG_PATH)] : []),
     ...(contextGoldenSetPath ? [contextGoldenSetPath] : []),
+    ...(demoFixtureManifestPath ? [demoFixtureManifestPath, ...demoFixturePaths] : []),
     ...Array.from(new Set(capabilityEvidence.flatMap((item) => [
       item.implementation,
       item.test,

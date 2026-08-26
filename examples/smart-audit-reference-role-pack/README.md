@@ -19,10 +19,27 @@
 
 - `knowledge/manifest.json`：十份岗位 Knowledge 及版本治理元数据；
 - `knowledge/documents`：员工风格操作指导书、检查表、规则和异常处理指引；
-- `skills/smart-audit-assistant`：只硬依赖工作区材料适配器的受控最小主路由；
-- `scripts/install-smart-audit-reference-pack.ts`：以只增加、不删除方式发布 Skill 并更新岗位基线；
+- `skills/smart-audit-assistant`：依赖工作区材料适配器、平台确定性审核 Policy 和隔离演示复核写入的受控主路由；
+- `scripts/install-smart-audit-reference-pack.ts`：发布主 Skill，并将旧凭证提示词和团险审核能力调整为按需安装；
 - `eval`：六项 Golden Task 的正常、拒绝、降级、来源与确认用例；
+- `demo-case`：固定演示案件材料、预期冲突、现行规则和人工复核等级；
 - `smart-audit-policy.ts`：材料完整性、现行规则资格和人工复核门禁；
 - `demo_create_audit_review_task`：确认后写入隔离演示表的人工复核任务。
 
 企业部署时使用银行自己的制度、材料清单、字段口径和案件系统替换 Reference Asset，不要求重写原文，只需补充岗位、版本、权限和生命周期元数据。
+
+## 固定演示链路
+
+1. 上传 `demo-case` 中五份材料，运行材料分类与完整性检查；
+2. 核验 V2.0 现行规则，并明确排除 V1.0 历史规则；
+3. 识别账户主体和申请金额冲突，执行 `evaluate_audit_human_review`，结果应为 L4；
+4. 只生成复核任务草稿，用户确认后调用 `demo_create_audit_review_task`；
+5. 回答必须展示材料引用、规则版本、人工门禁和执行回执，不得形成自动审批结论。
+
+浏览器验收使用：
+
+```bash
+SMART_AUDIT_BROWSER_USER_EMAIL=<user> \
+SMART_AUDIT_BROWSER_ADOPT_ID=<adopt-id> \
+pnpm rolepack:audit:browser-e2e
+```

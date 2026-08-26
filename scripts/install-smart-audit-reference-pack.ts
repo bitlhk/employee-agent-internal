@@ -11,13 +11,24 @@ import { ensureSkillStoreDirs, skillStoreMarketplaceDir } from "../server/_core/
 import { getRoleRuntimeAdapter } from "../server/routers/role-runtime-adapters";
 import {
   getClawByAdoptId,
+  getApprovedSkillVersionByIdentityAndVersion,
+  getSkillIdentityBySkillId,
+  getUserByEmail,
   insertSkillMarketItem,
   listSkillMarketItems,
   replaceAdminRoleAssetGrantsForAsset,
+  reviewSkillVersionByLegacyMarketId,
   resolveEffectiveRoleAssets,
+  syncRoleAssetSeed,
   updateSkillMarketItem,
 } from "../server/db";
 import { closeDbConnection } from "../server/db/connection";
+import { digestSkillSourceTree } from "../server/_core/skills/skill-artifact";
+import { publishSkillVersionFromSource } from "../server/_core/skills/skill-market-v2-service";
+import { releaseRoleDefaultSkillVersion } from "../server/_core/skills/role-default-skill-release";
+import { runSmartAuditRolePackControlledScenarios } from "../server/_core/smart-audit-role-pack-scenarios";
+import { runSmartAuditRolePackContractChecks } from "../server/_core/reference-role-pack-contracts";
+import { persistReferenceRolePackScenarioReport } from "../server/_core/reference-role-pack-release";
 
 const ROLE_KEY = "credential-compliance";
 const ROLE_PACK_ID = "linggan-bank.smart-audit";
@@ -28,12 +39,25 @@ const PRIMARY_SKILL = {
   defaultName: "智能审核岗位助手",
   requiredMcpServers: {
     credential_image_workspace: ["credential_image_extract_from_workspace"],
+    platform_tools: [
+      "evaluate_audit_required_materials",
+      "evaluate_audit_rule_eligibility",
+      "evaluate_audit_human_review",
+    ],
+    wealth_governance_demo: ["demo_create_audit_review_task"],
   },
 } as const;
 const SKILL_ROOT = path.join(APP_ROOT, "examples", "smart-audit-reference-role-pack", "skills", PRIMARY_SKILL.id);
 const DEFAULT_MCP_SERVERS = ["credential_image_workspace", "platform_tools", "wealth_governance_demo"];
+const OPTIONAL_SKILLS = ["credential-prompt-generator", "group-insurance-audit"];
+const RETIRED_DEFAULT_MCP_SERVERS = new Set(["credential_skills", "group_insurance_audit"]);
 
-type InstallOptions = { apply: boolean; adoptIds: string[] };
+type InstallOptions = {
+  apply: boolean;
+  adoptIds: string[];
+  releaseDefault: boolean;
+  actorEmail: string;
+};
 type Baseline = {
   skillRequirements?: Record<string, { servers?: Record<string, readonly string[]> }>;
   industries?: Record<string, { roles?: Record<string, {
@@ -53,7 +77,86 @@ function parseOptions(argv: string[]): InstallOptions {
     .flatMap((arg) => arg.slice("--adopt-id=".length).split(","))
     .map((value) => value.trim())
     .filter(Boolean);
-  return { apply: argv.includes("--apply"), adoptIds: Array.from(new Set(adoptIds)) };
+  const actorEmail = String(argv.find((arg) => arg.startsWith("--actor-email=")) || "")
+    .slice("--actor-email=".length)
+    .trim()
+    .toLowerCase();
+  return {
+    apply: argv.includes("--apply"),
+    adoptIds: Array.from(new Set(adoptIds)),
+    releaseDefault: argv.includes("--release-default"),
+    actorEmail,
+  };
+}
+
+async function releaseDefaultSkill(input: {
+  actorEmail: string;
+  adoptIds: string[];
+}) {
+  if (!input.actorEmail) throw new Error("--actor-email=<admin email> is required with --release-default");
+  if (input.adoptIds.length === 0) throw new Error("At least one --adopt-id is required with --release-default");
+  const actor = await getUserByEmail(input.actorEmail);
+  if (!actor || actor.role !== "admin") throw new Error(`Role-default release actor must be an administrator: ${input.actorEmail}`);
+  const parsed = parseSkillSourceDirectory(SKILL_ROOT, PRIMARY_SKILL.id);
+  const versionName = String(parsed.manifest?.version || "1.0.0");
+  const sourceDigest = digestSkillSourceTree(SKILL_ROOT);
+  let identity = await getSkillIdentityBySkillId(PRIMARY_SKILL.id);
+  let version = identity
+    ? await getApprovedSkillVersionByIdentityAndVersion(identity.identityId, versionName)
+    : undefined;
+  if (!identity) {
+    const publication = await publishSkillVersionFromSource({
+      action: "create_new_skill",
+      sourcePath: SKILL_ROOT,
+      actorUserId: Number(actor.id),
+      isPlatformAdmin: true,
+      maintainerType: "system",
+      organizationId: null,
+      visibility: "platform",
+      requestedVersion: versionName,
+      changelog: "智能审核 Reference Role Pack V1 正式岗位预装基线。",
+      authorLabel: "GRACE 平台管理员",
+      sourceOrigin: "finance",
+      category: "finance",
+      license: "Internal Reference",
+    });
+    await reviewSkillVersionByLegacyMarketId({
+      legacyMarketId: publication.legacyMarketId,
+      status: "approved",
+      reviewedBy: Number(actor.id),
+      reviewNote: "受控 Role Pack 合同与 Golden Task 场景通过。",
+    });
+    identity = await getSkillIdentityBySkillId(PRIMARY_SKILL.id);
+    version = identity
+      ? await getApprovedSkillVersionByIdentityAndVersion(identity.identityId, versionName)
+      : undefined;
+  }
+  if (!identity || !version) throw new Error(`Approved Skill version is unavailable: ${PRIMARY_SKILL.id}@${versionName}`);
+  if (version.artifactSha256 !== sourceDigest.sha256) {
+    throw new Error(`Approved Skill artifact differs from source; publish a new semantic version before release: ${PRIMARY_SKILL.id}@${versionName}`);
+  }
+  const contract = runSmartAuditRolePackContractChecks();
+  const scenario = await runSmartAuditRolePackControlledScenarios();
+  if (contract.status !== "PASS" || scenario.status !== "PASS") throw new Error("Smart Audit Role Pack validation failed");
+  await persistReferenceRolePackScenarioReport(scenario, contract);
+  const released = await releaseRoleDefaultSkillVersion({
+    roleKey: ROLE_KEY,
+    skillId: PRIMARY_SKILL.id,
+    versionId: version.versionId,
+    rolePackReleaseId: scenario.releaseCandidateId,
+    goldenTaskRunId: `controlled:${scenario.releaseCandidateId}`,
+    providedArtifactSha256: version.artifactSha256,
+    actorUserId: Number(actor.id),
+    adoptIds: input.adoptIds,
+  });
+  return {
+    rolePackReleaseId: scenario.releaseCandidateId,
+    skillIdentityId: identity.identityId,
+    skillVersionId: version.versionId,
+    artifactSha256: version.artifactSha256,
+    operationId: released.operationId,
+    reconciled: released.reconciled,
+  };
 }
 
 function configuredBaselinePath(): string {
@@ -71,8 +174,16 @@ export function applySmartAuditRolePackBaseline(baseline: Baseline): Baseline {
   baseline.skillRequirements[PRIMARY_SKILL.id] = {
     servers: PRIMARY_SKILL.requiredMcpServers,
   };
-  role.defaultSkills = unique([PRIMARY_SKILL.id, ...(role.defaultSkills || [])]);
-  role.mcpServers = unique([...(role.mcpServers || []), ...DEFAULT_MCP_SERVERS]);
+  role.optionalSkills = unique([
+    ...(role.optionalSkills || []),
+    ...(role.defaultSkills || []).filter((skillId) => skillId !== PRIMARY_SKILL.id),
+    ...OPTIONAL_SKILLS,
+  ]);
+  role.defaultSkills = [PRIMARY_SKILL.id];
+  role.mcpServers = unique([
+    ...(role.mcpServers || []).filter((serverId) => !RETIRED_DEFAULT_MCP_SERVERS.has(serverId)),
+    ...DEFAULT_MCP_SERVERS,
+  ]);
   return baseline;
 }
 
@@ -134,13 +245,15 @@ async function main(): Promise<void> {
       requiredMcpServers: PRIMARY_SKILL.requiredMcpServers,
     },
     baselineFile,
-    additiveOnly: true,
+    defaultSkillPolicy: "smart-audit-only",
     defaultMcpServers: DEFAULT_MCP_SERVERS,
     reconcileAdoptIds: options.adoptIds,
+    releaseDefault: options.releaseDefault,
+    actorEmail: options.actorEmail || null,
   };
   if (!options.apply) {
     console.log(JSON.stringify(plan, null, 2));
-    console.log("Dry-run only. Add --apply and optional --adopt-id=<lgj-id> to publish and refresh an instance.");
+    console.log("Dry-run only. Add --apply and optional --release-default --actor-email=<admin> --adopt-id=<lgj-id>.");
     return;
   }
 
@@ -148,6 +261,7 @@ async function main(): Promise<void> {
   mkdirSync(targetDir, { recursive: true });
   cpSync(SKILL_ROOT, targetDir, { recursive: true, force: true, dereference: false });
   const baselineChanged = updateBaseline(baselineFile);
+  const seedPlan = await syncRoleAssetSeed();
 
   const rows = await listSkillMarketItems("all");
   const current = rows
@@ -180,6 +294,9 @@ async function main(): Promise<void> {
 
   const reconciled = [];
   for (const adoptId of options.adoptIds) reconciled.push(await reconcileAdoption(adoptId));
+  const formalRelease = options.releaseDefault
+    ? await releaseDefaultSkill({ actorEmail: options.actorEmail, adoptIds: options.adoptIds })
+    : null;
   await recordAuditBestEffort({
     action: "role_pack.reference_asset.installed",
     result: "success",
@@ -191,9 +308,25 @@ async function main(): Promise<void> {
     resourceType: "skill",
     resourceId: ROLE_PACK_ID,
     source: "deployment_script",
-    metadata: { marketId, baselineChanged, additiveOnly: true, reconciled },
+    metadata: {
+      marketId,
+      baselineChanged,
+      defaultSkillPolicy: "smart-audit-only",
+      seedDesired: seedPlan.desired.length,
+      seedPruned: seedPlan.prune.length,
+      reconciled,
+      formalRelease,
+    },
   });
-  console.log(JSON.stringify({ ...plan, marketId, baselineChanged, reconciled }, null, 2));
+  console.log(JSON.stringify({
+    ...plan,
+    marketId,
+    baselineChanged,
+    seedDesired: seedPlan.desired.length,
+    seedPruned: seedPlan.prune.length,
+    reconciled,
+    formalRelease,
+  }, null, 2));
 }
 
 const isDirectExecution = Boolean(process.argv[1]) && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;

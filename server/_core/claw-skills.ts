@@ -82,6 +82,8 @@ import {
   CUSTOMER_CONTEXT_SERVER_ID,
   customerContextCanonicalToolNames,
 } from "../../shared/customer-context-contract";
+import { PLATFORM_TOOLS } from "./platform-tools-mcp";
+import { POST_LOAN_RISK_DATA_TOOLS } from "./post-loan-risk-data-provider";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -122,6 +124,64 @@ export type ManagedMcpServerStatus = {
   checkedAt: string | null;
   error: string | null;
 };
+
+export function internalManagedMcpServers(input: {
+  allowedServerIds: Set<string>;
+  roleTemplate: string;
+  customerContextMode?: string;
+  checkedAt?: string;
+}): ManagedMcpServerStatus[] {
+  const checkedAt = input.checkedAt || new Date().toISOString();
+  const rows: ManagedMcpServerStatus[] = [];
+  if (input.allowedServerIds.has("platform_tools")) {
+    rows.push({
+      serverId: "platform_tools",
+      displayName: "平台协作工具",
+      description: "执行平台内的规则计算、确认写入和跨智能体协作。",
+      category: "平台能力",
+      enabled: true,
+      ready: true,
+      tools: PLATFORM_TOOLS.map((tool) => ({ name: tool.name, description: tool.description })),
+      checkedAt,
+      error: null,
+    });
+  }
+  if (input.allowedServerIds.has("post_loan_risk_data")) {
+    rows.push({
+      serverId: "post_loan_risk_data",
+      displayName: "贷后风险数据",
+      description: "查询当前风控岗位获授权的企业、贷款、财务、还款和风险事实。",
+      category: "内部业务 MCP",
+      enabled: input.roleTemplate === "post-loan-risk-control",
+      ready: input.roleTemplate === "post-loan-risk-control",
+      tools: POST_LOAN_RISK_DATA_TOOLS.map((tool) => ({ name: tool.name, description: tool.description })),
+      checkedAt,
+      error: input.roleTemplate === "post-loan-risk-control" ? null : "当前岗位未获授权",
+    });
+  }
+  if (input.allowedServerIds.has(CUSTOMER_CONTEXT_SERVER_ID)) {
+    const mode = String(input.customerContextMode || "disabled").trim().toLowerCase();
+    rows.push({
+      serverId: CUSTOMER_CONTEXT_SERVER_ID,
+      displayName: CUSTOMER_CONTEXT_DISPLAY_NAME,
+      description: CUSTOMER_CONTEXT_DESCRIPTION,
+      category: "内部业务 MCP",
+      enabled: mode !== "disabled",
+      ready: mode === "production" || mode === "shadow",
+      tools: customerContextCanonicalToolNames(input.roleTemplate).map((name) => ({
+        name,
+        description: name === "search_customers"
+          ? "查询当前岗位获授权的客户"
+          : name === "get_customer_profile"
+            ? "读取按岗位与用途裁剪的客户信息"
+            : "读取财富岗位获授权的资产与持仓摘要",
+      })),
+      checkedAt,
+      error: mode === "disabled" ? "客户洞察服务未启用" : null,
+    });
+  }
+  return rows;
+}
 
 export function roleHomeConnectorStates(payload: Record<string, unknown>): RoleHomeConnectorState[] {
   const groups = Array.isArray(payload.items) ? payload.items : [];
@@ -664,28 +724,14 @@ export function registerSkillRoutes(app: express.Express) {
               error: ready ? null : connection.lastError || connection.identityVerificationError || "企业 MCP 尚未就绪",
             };
           }));
-        if (allowedServerIds.has(CUSTOMER_CONTEXT_SERVER_ID)) {
-          const mode = String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "disabled")
-            .trim()
-            .toLowerCase();
-          managedServers.push({
-            serverId: CUSTOMER_CONTEXT_SERVER_ID,
-            displayName: CUSTOMER_CONTEXT_DISPLAY_NAME,
-            description: CUSTOMER_CONTEXT_DESCRIPTION,
-            category: "内部业务 MCP",
-            enabled: mode !== "disabled",
-            ready: mode === "production" || mode === "shadow",
-            tools: customerContextCanonicalToolNames(roleTemplate).map((name) => ({
-              name,
-              description: name === "search_customers"
-                ? "查询当前岗位获授权的客户"
-                : name === "get_customer_profile"
-                  ? "读取按岗位与用途裁剪的客户信息"
-                  : "读取财富岗位获授权的资产与持仓摘要",
-            })),
-            checkedAt: new Date().toISOString(),
-            error: mode === "disabled" ? "客户洞察服务未启用" : null,
-          });
+        for (const internal of internalManagedMcpServers({
+          allowedServerIds,
+          roleTemplate,
+          customerContextMode: process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE,
+        })) {
+          const existingIndex = managedServers.findIndex((server) => server.serverId === internal.serverId);
+          if (existingIndex >= 0) managedServers[existingIndex] = internal;
+          else managedServers.push(internal);
         }
         const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses, managedServers });
         const statusPayload = buildMcpStatusResponse({

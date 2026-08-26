@@ -26,7 +26,7 @@ describe("smart audit Reference Role Pack assets", () => {
     expect(markdown).not.toMatch(/张先生|李女士|CUST[-_]/u);
   });
 
-  it("updates the role baseline additively and idempotently", () => {
+  it("keeps only the bounded main skill as default and makes extensions optional", () => {
     const baseline = {
       industries: {
         banking: {
@@ -48,21 +48,25 @@ describe("smart audit Reference Role Pack assets", () => {
 
     const updated = applySmartAuditRolePackBaseline(baseline);
     const role = updated.industries!.banking.roles!["credential-compliance"]!;
-    expect(role.defaultSkills).toEqual([
-      "smart-audit-assistant",
+    expect(role.defaultSkills).toEqual(["smart-audit-assistant"]);
+    expect(role.optionalSkills).toEqual([
+      "kyc-doc-parse",
       "credential-prompt-generator",
       "group-insurance-audit",
     ]);
-    expect(role.optionalSkills).toEqual(["kyc-doc-parse"]);
     expect(role.mcpServers).toEqual([
-      "credential_skills",
       "credential_image_workspace",
-      "group_insurance_audit",
       "platform_tools",
       "wealth_governance_demo",
     ]);
     expect(updated.skillRequirements?.["smart-audit-assistant"]?.servers).toEqual({
       credential_image_workspace: ["credential_image_extract_from_workspace"],
+      platform_tools: [
+        "evaluate_audit_required_materials",
+        "evaluate_audit_rule_eligibility",
+        "evaluate_audit_human_review",
+      ],
+      wealth_governance_demo: ["demo_create_audit_review_task"],
     });
 
     const once = JSON.stringify(updated);
@@ -72,7 +76,7 @@ describe("smart audit Reference Role Pack assets", () => {
   it("documents the validated reference boundary without claiming production readiness", () => {
     const readme = readFileSync(path.join(packRoot, "README.md"), "utf8");
     expect(readme).toContain("`Reference Ready`");
-    expect(readme).toContain("只增加、不删除");
+    expect(readme).toContain("按需安装");
     expect(readme).toContain("不能描述为银行生产就绪");
   });
 });

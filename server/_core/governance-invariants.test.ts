@@ -110,6 +110,17 @@ describe("governance invariants", () => {
       policyRequired: false,
       registered: true,
     });
+    for (const tool of [
+      "mcp_platform_tools_evaluate_audit_required_materials",
+      "mcp_platform_tools_evaluate_audit_rule_eligibility",
+      "mcp_platform_tools_evaluate_audit_human_review",
+    ]) {
+      expect(resolveToolGovernance(tool), tool).toMatchObject({
+        sideEffect: "compute",
+        policyRequired: false,
+        registered: true,
+      });
+    }
     expect(resolveToolGovernance("mcp_platform_tools_create_scheduled_task")).toMatchObject({ sideEffect: "write", idempotencyRequired: true });
     expect(resolveToolGovernance("mcp_platform_tools_submit_agent_task")).toMatchObject({ sideEffect: "external_send", idempotencyRequired: true });
     expect(resolveToolGovernance("audio_question_answering")).toMatchObject({ sideEffect: "compute", registered: true });
