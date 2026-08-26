@@ -137,6 +137,31 @@ async function main() {
     l4Review: /L4/u.test(`${first.text}\n${firstSerialized}`),
   };
 
+  if (!Object.values(readChecks).every(Boolean)) {
+    const report = {
+      schema: "ea.smart-audit-browser-e2e.v1",
+      status: "FAIL",
+      baseUrl,
+      adoptId,
+      userEmail,
+      caseId: "CASE-AU-20260826-001",
+      fixtureFiles: fixtureFiles.map((file) => path.basename(file)),
+      checkedAt: new Date().toISOString(),
+      checks: readChecks,
+      pageErrors,
+      firstResponse: first.text.slice(0, 20_000),
+      secondResponse: "",
+      evidence: firstEvidence,
+      writeSkipped: "read_gate_failed",
+    };
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+    console.log(JSON.stringify(report, null, 2));
+    await browser.close();
+    process.exitCode = 1;
+    return;
+  }
+
   const secondBaseline = await assistantMessages.count();
   await composer.fill(confirmationPrompt);
   await composer.press("Enter");

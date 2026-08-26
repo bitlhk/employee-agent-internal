@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGovernanceContinuationPermission,
-  canDegradeAfterEnterpriseMcpProvisioningFailure,
+  enterpriseMcpProvisioningAcceptanceDelayMs,
   enterpriseMcpProvisioningFrameResult,
   gatewayProgressStatus,
   gatewayPermissionAnswerMethod,
@@ -81,16 +81,11 @@ describe("enterpriseMcpProvisioningFrameResult", () => {
     }, requestId)).toBeNull();
   });
 
-  it("degrades only when the provisioning confirmation times out", () => {
-    expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
-      new Error("enterprise MCP provisioning timed out"),
-    )).toBe(true);
-    expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
-      new Error("enterprise MCP provisioning failed"),
-    )).toBe(false);
-    expect(canDegradeAfterEnterpriseMcpProvisioningFailure(
-      new Error("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED: digest mismatch"),
-    )).toBe(false);
+  it("uses a bounded acceptance delay for background tools.add RPCs", () => {
+    expect(enterpriseMcpProvisioningAcceptanceDelayMs(undefined)).toBe(8_000);
+    expect(enterpriseMcpProvisioningAcceptanceDelayMs("250")).toBe(500);
+    expect(enterpriseMcpProvisioningAcceptanceDelayMs("12000")).toBe(12_000);
+    expect(enterpriseMcpProvisioningAcceptanceDelayMs("60000")).toBe(30_000);
   });
 });
 

@@ -149,9 +149,9 @@ export function enterpriseMcpProvisioningFrameResult(
   return null;
 }
 
-export function canDegradeAfterEnterpriseMcpProvisioningFailure(error: unknown): boolean {
-  return String(error instanceof Error ? error.message : error).trim()
-    === "enterprise MCP provisioning timed out";
+export function enterpriseMcpProvisioningAcceptanceDelayMs(value: unknown): number {
+  const parsed = Number(value);
+  return Math.min(30_000, Math.max(500, Number.isFinite(parsed) ? parsed : 8_000));
 }
 
 export function gatewayPermissionAnswerMethod(
@@ -599,16 +599,24 @@ export async function forwardToJiuwenGateway(
           managedMcpRequestSent = true;
           managedMcpProvisionResolve = resolveProvision;
           managedMcpProvisionReject = rejectProvision;
-          const provisioningTimeoutMs = Math.max(
-            5_000,
-            Number(process.env.EA_ENTERPRISE_MCP_PROVISION_TIMEOUT_MS || 20_000) || 20_000,
+          const acceptanceDelayMs = enterpriseMcpProvisioningAcceptanceDelayMs(
+            process.env.EA_ENTERPRISE_MCP_PROVISION_ACCEPTANCE_DELAY_MS,
           );
           managedMcpProvisionTimer = setTimeout(() => {
             managedMcpProvisionTimer = null;
+            const acceptProvision = managedMcpProvisionResolve;
             managedMcpProvisionReject = null;
             managedMcpProvisionResolve = null;
-            rejectProvision(new Error("enterprise MCP provisioning timed out"));
-          }, provisioningTimeoutMs);
+            appendLogAsync("jiuwenclaw-exec.log", {
+              ts: new Date().toISOString(),
+              event: "enterprise_mcp_provision_accepted",
+              adoptId: claw.adoptId,
+              bindingId: enterpriseRoute?.binding.bindingId || "",
+              acceptanceDelayMs,
+              protocolMode: "background_rpc_without_ack",
+            });
+            acceptProvision?.();
+          }, acceptanceDelayMs);
           sendGatewayRequest(ws, "tools.add", managedMcpRequestId, managedMcpProvisioning.params);
         }),
       ).then(() => {
@@ -616,17 +624,6 @@ export async function forwardToJiuwenGateway(
       }).catch((error) => {
         if (settled) return;
         const errorMessage = String(error instanceof Error ? error.message : error);
-        if (canDegradeAfterEnterpriseMcpProvisioningFailure(error)) {
-          appendLogAsync("jiuwenclaw-exec.log", {
-            ts: new Date().toISOString(),
-            event: "enterprise_mcp_provision_degraded",
-            adoptId: claw.adoptId,
-            bindingId: enterpriseRoute?.binding.bindingId || "",
-            error: errorMessage,
-          });
-          sendChatRequest();
-          return;
-        }
         appendLogAsync("jiuwenclaw-exec.log", {
           ts: new Date().toISOString(),
           event: "enterprise_mcp_provision_failed",
