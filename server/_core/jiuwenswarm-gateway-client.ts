@@ -163,7 +163,6 @@ function provisionEnterpriseManagedMcp(args: {
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     let settled = false;
-    let resolved = false;
     let requestSent = false;
     let connectionAckTimer: NodeJS.Timeout | null = null;
     let acceptanceTimer: NodeJS.Timeout | null = null;
@@ -173,8 +172,8 @@ function provisionEnterpriseManagedMcp(args: {
       settled = true;
       if (connectionAckTimer) clearTimeout(connectionAckTimer);
       if (acceptanceTimer) clearTimeout(acceptanceTimer);
+      try { ws.close(error ? 1011 : 1000, error ? "tools.add failed" : "tools.add accepted"); } catch {}
       if (error) {
-        try { ws.close(1011, "tools.add failed"); } catch {}
         reject(error);
         return;
       }
@@ -189,14 +188,7 @@ function provisionEnterpriseManagedMcp(args: {
         protocolMode,
         connectionMode: "dedicated",
       });
-      const resolveAfterClose = () => {
-        if (resolved) return;
-        resolved = true;
-        resolve();
-      };
-      ws.once("close", resolveAfterClose);
-      try { ws.close(1000, "tools.add accepted"); } catch {}
-      setTimeout(resolveAfterClose, 500);
+      resolve();
     };
     const sendProvisionRequest = () => {
       if (requestSent || settled || ws.readyState !== WebSocket.OPEN) return;
@@ -638,38 +630,6 @@ export async function forwardToJiuwenGateway(
     ...privateMessageLogFields(message),
   });
 
-  if (managedMcpProvisioning) {
-    try {
-      await enterpriseMcpProvisioningCoordinator.ensure(
-        managedMcpProvisioning.fingerprint,
-        () => provisionEnterpriseManagedMcp({
-          wsUrl,
-          requestId: managedMcpRequestId,
-          params: managedMcpProvisioning.params,
-          adoptId: claw.adoptId,
-          bindingId: enterpriseRoute?.binding.bindingId || "",
-        }),
-      );
-    } catch (error) {
-      const errorMessage = String(error instanceof Error ? error.message : error);
-      appendLogAsync("jiuwenclaw-exec.log", {
-        ts: new Date().toISOString(),
-        event: "enterprise_mcp_provision_failed",
-        adoptId: claw.adoptId,
-        bindingId: enterpriseRoute?.binding.bindingId || "",
-        error: errorMessage,
-      });
-      writeSseData(res, {
-        __stream_error: true,
-        error: "企业能力初始化失败，请稍后重试。",
-        reasonCode: "enterprise_mcp_provision_failed",
-      });
-      opts.onRuntimeOutcome?.("error");
-      emitSseDone(res, 0);
-      return;
-    }
-  }
-
   let enterpriseBootstrapFallback = false;
   await new Promise<void>((resolve) => {
     const startedAt = Date.now();
@@ -690,6 +650,40 @@ export async function forwardToJiuwenGateway(
       if (requestSent || settled || ws.readyState !== WebSocket.OPEN) return;
       requestSent = true;
       sendGatewayRequest(ws, "chat.send", requestId, params);
+    };
+    const provisionManagedMcpOrSendChat = () => {
+      if (!managedMcpProvisioning) {
+        sendChatRequest();
+        return;
+      }
+      void enterpriseMcpProvisioningCoordinator.ensure(
+        managedMcpProvisioning.fingerprint,
+        () => provisionEnterpriseManagedMcp({
+          wsUrl,
+          requestId: managedMcpRequestId,
+          params: managedMcpProvisioning.params,
+          adoptId: claw.adoptId,
+          bindingId: enterpriseRoute?.binding.bindingId || "",
+        }),
+      ).then(() => {
+        sendChatRequest();
+      }).catch((error) => {
+        if (settled) return;
+        const errorMessage = String(error instanceof Error ? error.message : error);
+        appendLogAsync("jiuwenclaw-exec.log", {
+          ts: new Date().toISOString(),
+          event: "enterprise_mcp_provision_failed",
+          adoptId: claw.adoptId,
+          bindingId: enterpriseRoute?.binding.bindingId || "",
+          error: errorMessage,
+        });
+        writeSseData(res, {
+          __stream_error: true,
+          error: "企业能力初始化失败，请稍后重试。",
+          reasonCode: "enterprise_mcp_provision_failed",
+        });
+        settle("managed-mcp-error");
+      });
     };
     const settle = (reason: string) => {
       if (settled) return;
@@ -830,7 +824,7 @@ export async function forwardToJiuwenGateway(
       if (enterpriseRoute) {
         connectionAckTimer = setTimeout(() => {
           if (requestSent || ws.readyState !== WebSocket.OPEN) return;
-          sendChatRequest();
+          provisionManagedMcpOrSendChat();
         }, 2_000);
         return;
       }
@@ -841,7 +835,7 @@ export async function forwardToJiuwenGateway(
       if (!frame || settled) return;
       if (enterpriseRoute && frame.type === "event" && frame.event === "connection.ack") {
         if (connectionAckTimer) clearTimeout(connectionAckTimer);
-        sendChatRequest();
+        provisionManagedMcpOrSendChat();
         return;
       }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {
