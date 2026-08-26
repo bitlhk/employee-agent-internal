@@ -1,7 +1,7 @@
 ---
 name: post-loan-risk-snapshot-analyst
 description: 仅基于 EA 提供的不可变受治理快照生成贷后风险四维诊断和人工复核报告草稿
-version: 1.2.0
+version: 1.2.1
 risk_level: high
 ---
 
@@ -49,6 +49,7 @@ riskSnapshot.data.completeness.criticalComplete = true
 报告正文不得超过 4500 个中文字符，优先覆盖影响人工复核的关键证据，不逐字段复述完整快照：
 
 - `评估对象与快照` 最多 6 行。
+- `评估对象与快照` 必须逐字输出完整 18 位企业标识和完整 64 位 `snapshotFingerprint`；禁止省略、截断或使用省略号。
 - `已核验事实` 最多 8 条，每条同时给出字段口径和来源记录标识。
 - `四维诊断` 每个维度最多 3 条判断；只能与快照内行业基准比较，不得引入经验阈值或“临界值”。
 - `红旗指标` 最多 8 条。

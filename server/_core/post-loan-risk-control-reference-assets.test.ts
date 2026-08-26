@@ -35,8 +35,9 @@ describe("post-loan risk control Reference Role Pack assets", () => {
 
     expect(parsed.warnings).toEqual([]);
     expect(markdown).toContain("ea.post-loan-risk-assessment-request.v1");
-    expect(markdown).toContain("version: 1.2.0");
+    expect(markdown).toContain("version: 1.2.1");
     expect(markdown).toContain("不得超过 4500 个中文字符");
+    expect(markdown).toContain("完整 64 位 `snapshotFingerprint`");
     expect(markdown.match(/<ea_final>/g)).toHaveLength(1);
     expect(markdown).not.toContain("</ea_final>");
     expect(markdown).toContain("ea.post-loan-risk-snapshot.v1");
