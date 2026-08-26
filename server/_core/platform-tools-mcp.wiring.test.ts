@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   runtimeAttested: false,
   internalFetch: vi.fn(),
+  callInternalMcpTool: vi.fn(),
+  parseInternalMcpJsonResult: vi.fn((value: unknown) => value),
   prepareWealthAllocationContext: vi.fn(),
   prepareWealthMaturityContext: vi.fn(),
   prepareWealthPrevisitContext: vi.fn(),
@@ -119,8 +121,8 @@ vi.mock("./skills/skill-installer", () => ({ skillInstaller: {} }));
 vi.mock("./skills/skill-registry", () => ({ skillRegistry: {} }));
 vi.mock("./skills/skill-store", () => ({ skillStoreRuntimeImportedDir: vi.fn() }));
 vi.mock("./internal-mcp-client", () => ({
-  callInternalMcpTool: vi.fn(),
-  parseInternalMcpJsonResult: vi.fn(),
+  callInternalMcpTool: mocks.callInternalMcpTool,
+  parseInternalMcpJsonResult: mocks.parseInternalMcpJsonResult,
 }));
 vi.mock("./wealth-allocation-context", () => ({
   prepareWealthAllocationContext: mocks.prepareWealthAllocationContext,
@@ -416,7 +418,29 @@ describe("platform MCP PEP wiring", () => {
   });
 
   it("returns blocked formal recommendation with safe fallbacks instead of an MCP protocol error", async () => {
-    mocks.prepareWealthAllocationContext.mockRejectedValueOnce(new Error("product upstream unavailable"));
+    mocks.callInternalMcpTool.mockImplementation(async (input: { toolName: string }) => {
+      if (input.toolName === "wealth_assistant_product_search") {
+        throw new Error("product upstream unavailable");
+      }
+      return { dataAsOf: "2026-08-10T00:00:00.000Z" };
+    });
+    mocks.prepareWealthAllocationContext.mockImplementationOnce(async (input: {
+      dependencies: {
+        loadCustomer?: (customerId: string) => Promise<unknown>;
+        loadCustomerProfile: (customerId: string) => Promise<unknown>;
+        loadCustomerPortfolio: (customerId: string) => Promise<unknown>;
+        searchProducts: (search: { pageSize: number }) => Promise<unknown>;
+      };
+    }) => {
+      if (input.dependencies.loadCustomer) {
+        await input.dependencies.loadCustomer("C-001");
+      } else {
+        await input.dependencies.loadCustomerProfile("C-001");
+        await input.dependencies.loadCustomerPortfolio("C-001");
+      }
+      await input.dependencies.searchProducts({ pageSize: 10 });
+      throw new Error("expected product dependency failure");
+    });
     const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
@@ -429,6 +453,11 @@ describe("platform MCP PEP wiring", () => {
     expect(body.result?.isError).not.toBe(true);
     expect(body.result?.content?.[0]?.text).toContain('"status":"blocked"');
     expect(body.result?.content?.[0]?.text).toContain("verified_customer_analysis");
+    expect(body.result?.content?.[0]?.text).toContain('"code":"CUSTOMER_DATA_READY"');
+    expect(body.result?.content?.[0]?.text).toContain('"code":"PRODUCT_DATA_UNAVAILABLE"');
+    expect(body.result?.content?.[0]?.text).toContain('"code":"WEALTH_ALLOCATION_SKILL_READY"');
+    expect(body.result?.content?.[0]?.text).not.toContain('"code":"CUSTOMER_DATA_UNAVAILABLE"');
+    expect(body.result?.content?.[0]?.text).not.toContain('"code":"READINESS_CHECK_MISSING"');
   });
 
   it("routes bounded maturity operations through the authorized context assembler", async () => {

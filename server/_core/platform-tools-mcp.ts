@@ -45,6 +45,32 @@ import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
 
+type WealthAllocationDependency = "profile" | "portfolio" | "products" | "policy";
+
+class WealthAllocationDependencyError extends Error {
+  constructor(
+    readonly dependency: WealthAllocationDependency,
+    cause: unknown,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause || `${dependency} unavailable`));
+    this.name = "WealthAllocationDependencyError";
+  }
+}
+
+async function loadWealthAllocationDependency<T>(
+  dependency: WealthAllocationDependency,
+  ready: Set<WealthAllocationDependency>,
+  loader: () => Promise<T>,
+): Promise<T> {
+  try {
+    const result = await loader();
+    ready.add(dependency);
+    return result;
+  } catch (error) {
+    throw new WealthAllocationDependencyError(dependency, error);
+  }
+}
+
 const TOOLS = [
   {
     name: "create_scheduled_task",
@@ -725,6 +751,7 @@ async function callTool(
     const maxProducts = Math.min(20, Math.max(1, Math.floor(Number(args.max_products || args.maxProducts || 10)) || 10));
     const customerEndpoint = String(process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp").trim();
     const productEndpoint = String(process.env.WEALTH_PRODUCT_MCP_URL || "http://127.0.0.1:18007/mcp").trim();
+    const readyDependencies = new Set<WealthAllocationDependency>();
     try {
       const user = await getUserById(Number(claw.userId));
       if (!user) throw new Error("当前用户身份不可用");
@@ -759,59 +786,83 @@ async function callTool(
         request: { customerId, amount, horizonMonths, channel, keyword, productType, maxProducts },
         dependencies: {
           ...(profileTarget.endpointUrl === portfolioTarget.endpointUrl && profileTarget.toolName === portfolioTarget.toolName ? {
-            loadCustomer: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
-              endpointUrl: portfolioTarget.endpointUrl,
-              toolName: portfolioTarget.toolName,
-              args: { customerId: requestedCustomerId },
-              agentId: principal.principal.agentId,
-              adoptId,
-              sessionId: principal.principal.sessionId,
-            })),
+            loadCustomer: async (requestedCustomerId: string) => {
+              const result = await loadWealthAllocationDependency("profile", readyDependencies, async () =>
+                parseInternalMcpJsonResult(await callInternalMcpTool({
+                  endpointUrl: portfolioTarget.endpointUrl,
+                  toolName: portfolioTarget.toolName,
+                  args: { customerId: requestedCustomerId },
+                  agentId: principal.principal.agentId,
+                  adoptId,
+                  sessionId: principal.principal.sessionId,
+                })),
+              );
+              readyDependencies.add("portfolio");
+              return result;
+            },
           } : {
-            loadCustomerProfile: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
-              endpointUrl: profileTarget.endpointUrl,
-              toolName: profileTarget.toolName,
-              args: profileTarget.toolName === "get_governed_customer_profile"
-                ? { customer_id: requestedCustomerId, task_id: allocationTaskId }
-                : { customerId: requestedCustomerId },
-              agentId: principal.principal.agentId,
-              adoptId,
-              sessionId: principal.principal.sessionId,
-            })),
-            loadCustomerPortfolio: async (requestedCustomerId: string) => parseInternalMcpJsonResult(await callInternalMcpTool({
-              endpointUrl: portfolioTarget.endpointUrl,
-              toolName: portfolioTarget.toolName,
-              args: { customerId: requestedCustomerId },
-              agentId: principal.principal.agentId,
-              adoptId,
-              sessionId: principal.principal.sessionId,
-            })),
+            loadCustomerProfile: async (requestedCustomerId: string) => loadWealthAllocationDependency(
+              "profile",
+              readyDependencies,
+              async () => parseInternalMcpJsonResult(await callInternalMcpTool({
+                endpointUrl: profileTarget.endpointUrl,
+                toolName: profileTarget.toolName,
+                args: profileTarget.toolName === "get_governed_customer_profile"
+                  ? { customer_id: requestedCustomerId, task_id: allocationTaskId }
+                  : { customerId: requestedCustomerId },
+                agentId: principal.principal.agentId,
+                adoptId,
+                sessionId: principal.principal.sessionId,
+              })),
+            ),
+            loadCustomerPortfolio: async (requestedCustomerId: string) => loadWealthAllocationDependency(
+              "portfolio",
+              readyDependencies,
+              async () => parseInternalMcpJsonResult(await callInternalMcpTool({
+                endpointUrl: portfolioTarget.endpointUrl,
+                toolName: portfolioTarget.toolName,
+                args: portfolioTarget.toolName === "get_customer_portfolio"
+                  ? { customer_id: requestedCustomerId, task_id: allocationTaskId }
+                  : { customerId: requestedCustomerId },
+                agentId: principal.principal.agentId,
+                adoptId,
+                sessionId: principal.principal.sessionId,
+              })),
+            ),
           }),
-          searchProducts: async (search) => {
-            const payload = parseInternalMcpJsonResult(await callInternalMcpTool({
-              endpointUrl: productTarget.endpointUrl,
-              toolName: productTarget.toolName,
-              args: {
-                keyword: search.keyword || undefined,
-                type: search.type || undefined,
-                page: 1,
-                pageSize: search.pageSize,
-              },
-              agentId: principal.principal.agentId,
-              adoptId,
-              sessionId: principal.principal.sessionId,
-            }));
-            return wealthDemoScenarioEnabled()
-              ? applyWealthDemoProductScenario(payload)
-              : payload;
-          },
-          resolvePolicySource: async () => resolveWealthSuitabilityPolicySource({
-            userId: Number(user.id),
-            groupId: Number(user.groupId || 0),
-            actorRole: String(user.role || "user"),
-            roleTemplate: principal.principal.roleTemplate,
-            knowledgeSource,
-          }),
+          searchProducts: async (search) => loadWealthAllocationDependency(
+            "products",
+            readyDependencies,
+            async () => {
+              const payload = parseInternalMcpJsonResult(await callInternalMcpTool({
+                endpointUrl: productTarget.endpointUrl,
+                toolName: productTarget.toolName,
+                args: {
+                  keyword: search.keyword || undefined,
+                  type: search.type || undefined,
+                  page: 1,
+                  pageSize: search.pageSize,
+                },
+                agentId: principal.principal.agentId,
+                adoptId,
+                sessionId: principal.principal.sessionId,
+              }));
+              return wealthDemoScenarioEnabled()
+                ? applyWealthDemoProductScenario(payload)
+                : payload;
+            },
+          ),
+          resolvePolicySource: async () => loadWealthAllocationDependency(
+            "policy",
+            readyDependencies,
+            async () => resolveWealthSuitabilityPolicySource({
+              userId: Number(user.id),
+              groupId: Number(user.groupId || 0),
+              actorRole: String(user.role || "user"),
+              roleTemplate: principal.principal.roleTemplate,
+              knowledgeSource,
+            }),
+          ),
         },
       });
       const policyReady = result.policySource.ready && result.eligibleProducts.length > 0;
@@ -901,7 +952,12 @@ async function callTool(
         customerRef: stableToolInputHash({ customerId }),
       });
       const message = error instanceof Error ? error.message : String(error || "");
-      const policyUnavailable = /policy|制度|knowledge/i.test(message);
+      const failedDependency = error instanceof WealthAllocationDependencyError
+        ? error.dependency
+        : null;
+      const policyUnavailable = failedDependency === "policy" || /policy|制度|knowledge/i.test(message);
+      const customerReady = readyDependencies.has("profile") && readyDependencies.has("portfolio");
+      const productReady = readyDependencies.has("products");
       const readiness = evaluateWealthTaskReadiness({
         taskId: allocationTaskId,
         checks: {
@@ -909,9 +965,18 @@ async function callTool(
           knowledge: policyUnavailable
             ? readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", "当前有效适当性制度不可用。", { retryable: true })
             : readinessCheck("DEGRADED", "KNOWLEDGE_NOT_ASSEMBLED", "本轮未完成制度上下文装配。", { retryable: true }),
-          customerData: readinessCheck("BLOCKED", "CUSTOMER_DATA_UNAVAILABLE", "当前客户数据不可用，不能形成正式推荐。", { retryable: true }),
-          productData: readinessCheck("BLOCKED", "PRODUCT_DATA_UNAVAILABLE", "当前产品数据不可用，不能形成正式推荐。", { retryable: true }),
+          customerData: customerReady
+            ? readinessCheck("READY", "CUSTOMER_DATA_READY", "客户画像与持仓数据已完成核验。")
+            : failedDependency === "profile" || failedDependency === "portfolio"
+              ? readinessCheck("BLOCKED", "CUSTOMER_DATA_UNAVAILABLE", "当前客户数据不可用，不能形成正式推荐。", { retryable: true })
+              : readinessCheck("DEGRADED", "CUSTOMER_DATA_NOT_EVALUATED", "本轮尚未完成客户数据核验。", { retryable: true }),
+          productData: productReady
+            ? readinessCheck("READY", "PRODUCT_DATA_READY", "当前产品数据已完成核验。")
+            : failedDependency === "products"
+              ? readinessCheck("BLOCKED", "PRODUCT_DATA_UNAVAILABLE", "当前产品数据不可用，不能形成正式推荐。", { retryable: true })
+              : readinessCheck("DEGRADED", "PRODUCT_DATA_NOT_EVALUATED", "本轮尚未完成产品数据核验。", { retryable: true }),
           policy: readinessCheck("BLOCKED", "SUITABILITY_POLICY_NOT_EVALUATED", "适当性判断尚未完成。", { retryable: true }),
+          skill: readinessCheck("READY", "WEALTH_ALLOCATION_SKILL_READY", "财富资产配置流程已就绪。"),
           capability: readinessCheck("DEGRADED", "WEALTH_CONTEXT_DEPENDENCY_FAILED", "财富配置上下文依赖暂时不可用。", { retryable: true }),
           evidence: readinessCheck("DEGRADED", "POLICY_EVIDENCE_PARTIAL", "本轮仅保留依赖失败证据。", { retryable: true }),
         },

@@ -35,8 +35,8 @@ function bindingId(input: { organizationId: string; logicalAssetId: string; stag
 function seeds(knowledgeBaseId: string): BindingSeed[] {
   const kbRef = `kb://${knowledgeBaseId}`;
   return [
-    { logicalAssetId: "customer_profile", contextType: "business_data", providerType: "mcp", resourceRef: "mcp://wealth-customer/wealth_assistant_customer_detail", capabilities: ["point_read"] },
-    { logicalAssetId: "customer_portfolio", contextType: "business_data", providerType: "mcp", resourceRef: "mcp://wealth-customer/wealth_assistant_customer_detail", capabilities: ["point_read"] },
+    { logicalAssetId: "customer_profile", contextType: "business_data", providerType: "mcp", resourceRef: "mcp://customer-profile/get_customer_profile", capabilities: ["point_read"] },
+    { logicalAssetId: "customer_portfolio", contextType: "business_data", providerType: "mcp", resourceRef: "mcp://customer-profile/get_customer_portfolio", capabilities: ["point_read"] },
     { logicalAssetId: "available_products", contextType: "business_data", providerType: "mcp", resourceRef: "mcp://wealth-product/wealth_assistant_product_search", capabilities: ["search"] },
     { logicalAssetId: "customer_relationship_memory", contextType: "memory", providerType: "api", resourceRef: "api://employee-agent/agent-memory/relevant", capabilities: ["relevant_retrieval"] },
     { logicalAssetId: "governed_followup_payload", contextType: "business_data", providerType: "api", resourceRef: "api://employee-agent/enterprise-mcp/governed-followup-intent", capabilities: ["task_state_read"] },

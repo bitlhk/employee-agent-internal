@@ -40,6 +40,10 @@ describe("MCP Context binding adapter", () => {
       endpointUrl: "http://127.0.0.1:5180/api/internal/customer-profile/mcp",
       toolName: "get_governed_customer_profile",
     });
+    expect(resolveMcpBindingTarget(binding("mcp://customer-profile/get_customer_portfolio"))).toEqual({
+      endpointUrl: "http://127.0.0.1:5180/api/internal/customer-profile/mcp",
+      toolName: "get_customer_portfolio",
+    });
   });
 
   it("rejects unknown services and non-MCP bindings", () => {

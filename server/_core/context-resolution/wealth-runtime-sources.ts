@@ -27,6 +27,19 @@ export type WealthAllocationRuntimeSources = {
   productBindingEvidence: ReturnType<typeof contextBindingEvidence>;
 };
 
+const GOVERNED_CUSTOMER_TOOLS = new Set([
+  "get_governed_customer_profile",
+  "get_customer_profile",
+  "get_customer_portfolio",
+]);
+
+function observedMcpResourceRef(target: McpBindingTarget, legacyService: string): string {
+  return mcpResourceRef(
+    GOVERNED_CUSTOMER_TOOLS.has(target.toolName) ? "customer-profile" : legacyService,
+    target.toolName,
+  );
+}
+
 export function finalizeWealthPolicyResolutionEvidence(input: {
   evidence: ReturnType<typeof contextResolutionEvidence>;
   ready: boolean;
@@ -136,11 +149,8 @@ export async function observeWealthAllocationRuntimeSources(
     taskId: "WM-GT-02",
     principal,
     observed: [
-      { logicalAssetId: "customer_profile", providerType: "mcp", resourceRef: mcpResourceRef(
-        sources.profileTarget.toolName === "get_governed_customer_profile" ? "customer-profile" : "wealth-customer",
-        sources.profileTarget.toolName,
-      ) },
-      { logicalAssetId: "customer_portfolio", providerType: "mcp", resourceRef: mcpResourceRef("wealth-customer", sources.portfolioTarget.toolName) },
+      { logicalAssetId: "customer_profile", providerType: "mcp", resourceRef: observedMcpResourceRef(sources.profileTarget, "wealth-customer") },
+      { logicalAssetId: "customer_portfolio", providerType: "mcp", resourceRef: observedMcpResourceRef(sources.portfolioTarget, "wealth-customer") },
       { logicalAssetId: "available_products", providerType: "mcp", resourceRef: mcpResourceRef("wealth-product", sources.productTarget.toolName) },
       ...(knowledgeResourceRef ? [{
         logicalAssetId: "current_wealth_policy",

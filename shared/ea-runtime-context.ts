@@ -1,4 +1,5 @@
 const KNOWLEDGE_CONTEXT_RE = /<ea_knowledge_context>[\s\S]*?<\/ea_knowledge_context>\s*/gi;
+const RELEVANT_MEMORY_CONTEXT_RE = /<ea_relevant_memory>[\s\S]*?<\/ea_relevant_memory>\s*/gi;
 const SECURITY_POLICY_RE = /<ea_security_policy>[\s\S]*?<\/ea_security_policy>\s*/gi;
 const USER_REQUEST_RE = /<user_request>\s*([\s\S]*?)\s*<\/user_request>/gi;
 const SELECTED_SKILL_HEADINGS = [
@@ -19,6 +20,19 @@ export function stripEaKnowledgeRuntimeContext(value: unknown): string {
   return text.replace(KNOWLEDGE_CONTEXT_RE, "").trim();
 }
 
+export function stripEaMemoryRuntimeContext(value: unknown): string {
+  const text = String(value || "").trim();
+  if (
+    !text.toLowerCase().includes("<ea_relevant_memory>") &&
+    !text.toLowerCase().includes("<user_request>")
+  ) return text;
+
+  const requests = Array.from(text.matchAll(USER_REQUEST_RE));
+  const latestRequest = requests.at(-1)?.[1];
+  if (latestRequest != null) return latestRequest.trim();
+  return text.replace(RELEVANT_MEMORY_CONTEXT_RE, "").trim();
+}
+
 export function stripEaSelectedSkillRuntimeContext(value: unknown): string {
   const text = String(value || "").trim();
   if (!SELECTED_SKILL_HEADINGS.some((heading) => text.startsWith(heading))) return text;
@@ -33,6 +47,8 @@ export function stripEaSecurityRuntimeContext(value: unknown): string {
 
 export function stripEaInternalRuntimeContext(value: unknown): string {
   return stripEaSelectedSkillRuntimeContext(
-    stripEaKnowledgeRuntimeContext(stripEaSecurityRuntimeContext(value)),
+    stripEaKnowledgeRuntimeContext(
+      stripEaMemoryRuntimeContext(stripEaSecurityRuntimeContext(value)),
+    ),
   );
 }

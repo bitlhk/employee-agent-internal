@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   stripEaInternalRuntimeContext,
   stripEaKnowledgeRuntimeContext,
+  stripEaMemoryRuntimeContext,
   stripEaSecurityRuntimeContext,
   stripEaSelectedSkillRuntimeContext,
 } from "@shared/ea-runtime-context";
@@ -38,6 +39,37 @@ describe("EA runtime context display cleanup", () => {
       "</user_request>",
     ].join("\n");
     expect(stripEaInternalRuntimeContext(runtime)).toBe("比较这两只基金");
+  });
+
+  it("extracts the visible request from relevant memory context", () => {
+    const runtime = [
+      "<ea_relevant_memory>",
+      "- [流程] 正式推荐前先核验适当性。",
+      "</ea_relevant_memory>",
+      "",
+      "<user_request>",
+      "给陈明推荐一款产品呢",
+      "</user_request>",
+    ].join("\n");
+
+    expect(stripEaMemoryRuntimeContext(runtime)).toBe("给陈明推荐一款产品呢");
+    expect(stripEaInternalRuntimeContext(runtime)).toBe("给陈明推荐一款产品呢");
+  });
+
+  it("removes memory and selected-skill context without exposing either wrapper", () => {
+    const runtime = [
+      "<ea_relevant_memory>",
+      "- [流程] 先核验客户事实。",
+      "</ea_relevant_memory>",
+      "<user_request>",
+      "【本轮已由平台根据用户请求匹配技能】",
+      "selectedSkillId: wealth-manager-assistant",
+      "",
+      "用户问题：给陈明推荐一款产品呢",
+      "</user_request>",
+    ].join("\n");
+
+    expect(stripEaInternalRuntimeContext(runtime)).toBe("给陈明推荐一款产品呢");
   });
 
   it("removes an automatically matched selected-skill manifest from history", () => {

@@ -67,6 +67,7 @@
     "rolepack:wealth:scenarios": "tsx scripts/run-wealth-role-pack-scenarios.ts",
     "rolepack:wealth:model-scenarios": "tsx scripts/run-wealth-role-pack-model-scenarios.ts",
     "context:wealth:bindings": "tsx scripts/configure-wealth-context-bindings.ts",
+    "context:wealth:portfolio-binding": "tsx scripts/migrate-wealth-customer-portfolio-binding.ts",
     "context:wealth:verify": "tsx scripts/verify-wealth-context-resolution.ts",
     "context:assets:classify": "tsx scripts/classify-approved-runtime-assets.ts",
     "work:continuity:verify": "vitest run server/_core/governed-work-context-contract.test.ts server/_core/governed-work-continuity.test.ts server/_core/platform-tools-mcp.wiring.test.ts server/routers/work-continuity.test.ts",
