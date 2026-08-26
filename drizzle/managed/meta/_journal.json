@@ -232,6 +232,13 @@
       "when": 1788336000000,
       "tag": "0032_governance_approval_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788422400000,
+      "tag": "0033_runtime_context_receipts",
+      "breakpoints": true
     }
   ]
 }

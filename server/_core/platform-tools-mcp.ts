@@ -29,7 +29,7 @@ import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
 import { applyWealthDemoProductScenario, wealthDemoScenarioEnabled } from "./wealth-demo-scenario";
 import { buildWealthAllocationContextReceipt, buildWealthPolicyContextReceipt } from "./wealth-context-receipts";
-import { attachContextReceipt } from "./governance/context-receipt";
+import { attachContextReceipt, persistTrustedContextReceiptResult } from "./governance/context-receipt";
 import { handlePostLoanRiskEscalationTool, POST_LOAN_RISK_ESCALATION_TOOL } from "./post-loan-risk-tool-handler";
 import { GOVERNED_ROLE_POLICY_TOOLS, handleGovernedRolePolicyTool } from "./governed-role-policy-tools";
 import { summarizePlatformAgents } from "./platform-agent-summary";
@@ -1079,7 +1079,6 @@ async function callTool(
 
   return textResult(`Unknown tool: ${name}`, { isError: true });
 }
-
 async function handleMessage(req: Request, msg: any) {
   if (!msg || typeof msg !== "object") return null;
   const id = msg.id;
@@ -1108,6 +1107,7 @@ async function handleMessage(req: Request, msg: any) {
           msg.params?.arguments || {},
           id,
         );
+        await persistTrustedContextReceiptResult({ result, sessionId: pickHeader(req, ["x-linggan-session-id", "x-jiuwen-session-id"]), adoptionId: pickHeader(req, ["x-agent-adopt-id", "x-workforce-agent-adopt-id", "x-jiuwen-channel-id", "x-openclaw-channel-id"]), runtimeAgentId: pickHeader(req, ["x-linggan-agent-id"]), toolName: String(msg.params?.name || "") }).catch(() => false);
         finishMetric(result.isError === true ? "error" : "success");
         return ok(id, result);
       } catch (error) {

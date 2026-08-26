@@ -32,6 +32,7 @@ import { materializeRemoteJiuwenFiles } from "./jiuwen-remote-artifacts";
 import { buildJiuwenFinalSnapshot, buildJiuwenTextDelta } from "./jiuwenswarm-stream-contract";
 import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
 import { createResponseEvidenceCollector } from "./governance/response-evidence";
+import { restoreTrustedContextReceiptInToolResult } from "./governance/context-receipt-store";
 import {
   buildEnterpriseChatParams,
   buildEnterpriseManagedMcpProvisioning,
@@ -831,9 +832,17 @@ export async function forwardToJiuwenGateway(
       }
       if (frame.type !== "event") return;
       const eventType = String(frame.event || "");
-      const payload = eventPayload(frame);
+      let payload = eventPayload(frame);
       const sid = payloadSessionId(payload);
       if (sid && sid !== sessionId) return;
+      if (eventType === "chat.tool_result") {
+        payload = await restoreTrustedContextReceiptInToolResult({
+          payload,
+          sessionId,
+          adoptionId: claw.adoptId,
+          eventTime: Date.now(),
+        }).catch(() => payload);
+      }
       if (eventType === "chat.error") {
         const message = String(payload.error || payload.message || "JiuwenSwarm gateway 返回错误");
         if (enterpriseRoute && message.includes("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED")) {

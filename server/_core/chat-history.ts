@@ -37,6 +37,7 @@ import {
   type EnterpriseRuntimeHistorySession,
 } from "./enterprise-runtime-history";
 import { resolveEnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
+import { restoreTrustedContextReceiptsInHistory } from "./governance/context-receipt-store";
 
 export type UsageBucket = { total: number; days: Record<string, number>; lastTs: string; userId: number };
 type ChatHistoryToolCall = {
@@ -873,8 +874,13 @@ export async function readModernChatHistorySessionMessages(args: {
           jiuwenClawSessionsDir(args.adoptId, enterpriseAgentId),
           enterpriseSessionId,
         ));
-        const runtimeMessages = extractJiuwenChatMessagesFromRecords(
+        const trustedRecords = await restoreTrustedContextReceiptsInHistory(
           records,
+          enterpriseSessionId,
+          args.adoptId,
+        );
+        const runtimeMessages = extractJiuwenChatMessagesFromRecords(
+          trustedRecords,
           maxMessages,
           args.adoptId,
           enterpriseWorkspaceDir,

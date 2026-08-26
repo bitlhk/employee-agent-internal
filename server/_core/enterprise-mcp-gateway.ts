@@ -55,6 +55,7 @@ import {
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { runtimeGovernanceIsAttested, runtimeGovernanceRequestId } from "./runtime-governance-attestation";
 import { attachReferenceRoleTaskReceipt } from "./reference-role-task-evidence";
+import { persistTrustedContextReceiptResult } from "./governance/context-receipt-store";
 import {
   observeReferenceRoleTaskContextShadow,
   prepareReferenceRoleTaskContext,
@@ -817,7 +818,7 @@ async function gatewayCall(
       adoptionId: context.adoptId,
       agentId: context.agentId,
     });
-    return attachReferenceRoleTaskReceipt({
+    const governedResult = attachReferenceRoleTaskReceipt({
       result,
       roleTemplate: context.roleKey,
       serverId: entry.connection.serverId,
@@ -841,6 +842,8 @@ async function gatewayCall(
       sourceBinding: roleTaskContext.sourceBinding,
       contextResolution: roleTaskContext.contextResolution,
     });
+    await persistTrustedContextReceiptResult({ result: governedResult, sessionId: context.principal.principal.sessionId, adoptionId: context.adoptId, runtimeAgentId: context.agentId, toolName: exposedName }).catch(() => false);
+    return governedResult;
   } catch (error) {
     metricOutcome = "error";
     if (requestId && receiptReserved) {

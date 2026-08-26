@@ -1049,6 +1049,38 @@ export const auditEvents = mysqlTable("audit_events", {
   policyCodeIdx: index("idx_audit_events_policy_code").on(table.policyCode),
 }));
 
+// EA-owned durable transport for trusted Context Receipt metadata. Enterprise
+// runtimes may retain the model-visible tool result while dropping MCP `_meta`;
+// this table lets the EA bridge restore that metadata without trusting text
+// returned by the remote runtime.
+export const runtimeContextReceipts = mysqlTable("runtime_context_receipts", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  receiptId: varchar("receipt_id", { length: 64 }).notNull(),
+  sessionId: varchar("session_id", { length: 128 }).notNull(),
+  adoptionId: varchar("adoption_id", { length: 64 }),
+  runtimeAgentId: varchar("runtime_agent_id", { length: 128 }),
+  toolName: varchar("tool_name", { length: 128 }).notNull(),
+  resultFingerprint: varchar("result_fingerprint", { length: 64 }).notNull(),
+  receiptFingerprint: varchar("receipt_fingerprint", { length: 64 }).notNull(),
+  trustedMetadataJson: json("trusted_metadata_json").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => ({
+  receiptIdUnique: uniqueIndex("uk_runtime_context_receipts_receipt_id").on(table.receiptId),
+  sessionResultIdx: index("idx_runtime_context_receipts_session_result").on(
+    table.sessionId,
+    table.resultFingerprint,
+    table.createdAt,
+  ),
+  adoptionSessionIdx: index("idx_runtime_context_receipts_adoption_session").on(
+    table.adoptionId,
+    table.sessionId,
+    table.createdAt,
+  ),
+}));
+
+export type RuntimeContextReceipt = typeof runtimeContextReceipts.$inferSelect;
+export type InsertRuntimeContextReceipt = typeof runtimeContextReceipts.$inferInsert;
+
 export const auditToolEvents = mysqlTable("audit_tool_events", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
   eventId: varchar("event_id", { length: 64 }).notNull().unique(),

@@ -11,6 +11,7 @@ import { governanceFingerprint } from "./contracts";
 import type { TaskExecutionEnvelope, TaskReadinessDecision } from "./task-execution-envelope";
 import { effectiveContextSnapshot } from "./task-execution-envelope";
 import { createContextReceiptMemoryFeedbackToken } from "./context-receipt-feedback-token";
+export { persistTrustedContextReceiptResult } from "./context-receipt-store";
 
 type ReceiptKnowledgeLabel = { assetId: string; label: string };
 type ReceiptBusinessDataLabel = { sourceSystem: string; label: string };

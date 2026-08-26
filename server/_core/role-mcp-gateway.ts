@@ -19,6 +19,7 @@ import {
   discoverTrustedRuntimeMcpTools,
   type TrustedRuntimeMcpConfig,
 } from "./trusted-runtime-mcp-client";
+import { persistTrustedContextReceiptResult } from "./governance/context-receipt-store";
 
 const SERVICE_NAME = "role-mcp-gateway";
 const SERVICE_VERSION = "1.0.0";
@@ -42,6 +43,7 @@ type JsonRpcMessage = {
 type RuntimeContext = {
   adoptId: string;
   agentId: string;
+  sessionId: string;
   roleKey: string;
   userId: number;
   enabledServerIds: Set<string>;
@@ -106,6 +108,7 @@ async function runtimeContext(req: Request): Promise<RuntimeContext> {
   return {
     adoptId,
     agentId: String(adoption.agentId || adoptId),
+    sessionId: String(req.headers["x-linggan-session-id"] || "").trim().slice(0, 128),
     roleKey,
     userId: Number(adoption.userId || 0),
     enabledServerIds: new Set(selection.enabledServerIds),
@@ -280,6 +283,7 @@ async function callTool(context: RuntimeContext, exposedName: string, args: Reco
       entry.tool.name,
       args,
     );
+    await persistTrustedContextReceiptResult({ result, sessionId: context.sessionId, adoptionId: context.adoptId, runtimeAgentId: context.agentId, toolName: exposedName }).catch(() => false);
     const failed = Boolean(result.isError);
     outcome = failed ? "error" : "success";
     await recordAuditBestEffort({

@@ -15,10 +15,7 @@ import {
   governanceFingerprint,
   principalFingerprint,
 } from "./governance/contracts";
-import {
-  attachContextReceipt,
-  buildContextReceipt,
-} from "./governance/context-receipt";
+import { attachContextReceipt, buildContextReceipt, persistTrustedContextReceiptResult } from "./governance/context-receipt";
 import { resolveRuntimePrincipalV2 } from "./governance/principal";
 import { isAuthorizedInternalRequest } from "./helpers";
 import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
@@ -1120,6 +1117,7 @@ async function handleMessage(
       ),
     },
   });
+  await persistTrustedContextReceiptResult({ result, sessionId: principal.sessionId, adoptionId: principal.adoptionId, runtimeAgentId: principal.agentId, toolName }).catch(() => false);
   return ok(id, result);
 }
 
