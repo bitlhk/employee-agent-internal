@@ -40,13 +40,14 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
     if not isinstance(servers, list):
         servers = []
         mcp["servers"] = servers
+    internal_headers = {"x-internal-key": "${INTERNAL_API_KEY}"}
     desired_servers = [
         {
             "name": "platform_tools",
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/platform-tools/mcp",
-            "headers": {},
+            "headers": internal_headers.copy(),
             "user_context": True,
             "timeout_s": 30,
         },
@@ -55,7 +56,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/custom-mcp/mcp",
-            "headers": {},
+            "headers": internal_headers.copy(),
             "user_context": True,
             "timeout_s": 65,
         },
@@ -64,7 +65,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/enterprise-mcp/mcp",
-            "headers": {},
+            "headers": internal_headers.copy(),
             "user_context": True,
             "timeout_s": 125,
         },
@@ -73,7 +74,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/role-mcp/mcp",
-            "headers": {},
+            "headers": internal_headers.copy(),
             "user_context": True,
             "timeout_s": 125,
         },
@@ -82,7 +83,7 @@ def upsert_managed_mcp_servers(config: dict, port: int) -> None:
             "enabled": True,
             "transport": "streamable-http",
             "url": f"http://127.0.0.1:{port}/api/internal/customer-context/mcp",
-            "headers": {},
+            "headers": internal_headers.copy(),
             "user_context": True,
             "timeout_s": 65,
         },
