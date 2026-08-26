@@ -10,6 +10,7 @@ import {
 } from "./role-mcp-gateway";
 import { resolveEnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 import { platformToolNames } from "./platform-tools-mcp";
+import { POST_LOAN_RISK_DATA_TOOLS } from "./post-loan-risk-data-provider";
 import { CUSTOMER_CONTEXT_ALL_TOOL_NAMES } from "../../shared/customer-context-contract";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
@@ -186,6 +187,9 @@ async function listRuntimeMcpServers(force = false): Promise<RuntimeMcpServer[]>
 export function localRuntimeMcpToolCatalog(serverId: string): string[] | null {
   if (serverId === "platform_tools") return platformToolNames();
   if (serverId === "customer_context") return CUSTOMER_CONTEXT_ALL_TOOL_NAMES;
+  if (serverId === "post_loan_risk_data") {
+    return POST_LOAN_RISK_DATA_TOOLS.map((tool) => tool.name);
+  }
   return null;
 }
 

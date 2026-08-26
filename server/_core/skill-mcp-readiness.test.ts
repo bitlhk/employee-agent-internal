@@ -23,6 +23,16 @@ describe("skill MCP readiness", () => {
     expect(localRuntimeMcpToolCatalog("wealth_assistant_customer")).toBeNull();
   });
 
+  it("uses the authoritative local catalog for governed post-loan risk data", () => {
+    expect(localRuntimeMcpToolCatalog("post_loan_risk_data")).toEqual(expect.arrayContaining([
+      "list_risk_enterprises",
+      "search_risk_enterprises",
+      "get_post_loan_risk_snapshot",
+      "get_enterprise_profile",
+      "get_credit_rating",
+    ]));
+  });
+
   it("leaves skills without declared dependencies unchanged", () => {
     const result = evaluateSkillMcpReadiness({
       skillId: "plain-skill",
