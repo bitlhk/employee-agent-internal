@@ -154,6 +154,77 @@ export function enterpriseMcpProvisioningAcceptanceDelayMs(value: unknown): numb
   return Math.min(30_000, Math.max(500, Number.isFinite(parsed) ? parsed : 8_000));
 }
 
+function provisionEnterpriseManagedMcp(args: {
+  wsUrl: string;
+  requestId: string;
+  params: Record<string, unknown>;
+  adoptId: string;
+  bindingId: string;
+}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let requestSent = false;
+    let connectionAckTimer: NodeJS.Timeout | null = null;
+    let acceptanceTimer: NodeJS.Timeout | null = null;
+    const ws = new WebSocket(args.wsUrl, { headers: { Origin: wsOrigin(args.wsUrl) } });
+    const settle = (error?: Error, protocolMode = "background_rpc_without_ack") => {
+      if (settled) return;
+      settled = true;
+      if (connectionAckTimer) clearTimeout(connectionAckTimer);
+      if (acceptanceTimer) clearTimeout(acceptanceTimer);
+      try { ws.close(error ? 1011 : 1000, error ? "tools.add failed" : "tools.add accepted"); } catch {}
+      if (error) {
+        reject(error);
+        return;
+      }
+      appendLogAsync("jiuwenclaw-exec.log", {
+        ts: new Date().toISOString(),
+        event: "enterprise_mcp_provision_accepted",
+        adoptId: args.adoptId,
+        bindingId: args.bindingId,
+        acceptanceDelayMs: enterpriseMcpProvisioningAcceptanceDelayMs(
+          process.env.EA_ENTERPRISE_MCP_PROVISION_ACCEPTANCE_DELAY_MS,
+        ),
+        protocolMode,
+        connectionMode: "dedicated",
+      });
+      resolve();
+    };
+    const sendProvisionRequest = () => {
+      if (requestSent || settled || ws.readyState !== WebSocket.OPEN) return;
+      requestSent = true;
+      const acceptanceDelayMs = enterpriseMcpProvisioningAcceptanceDelayMs(
+        process.env.EA_ENTERPRISE_MCP_PROVISION_ACCEPTANCE_DELAY_MS,
+      );
+      acceptanceTimer = setTimeout(() => settle(), acceptanceDelayMs);
+      sendGatewayRequest(ws, "tools.add", args.requestId, args.params);
+    };
+    ws.on("open", () => {
+      connectionAckTimer = setTimeout(sendProvisionRequest, 2_000);
+    });
+    ws.on("message", (raw) => {
+      const frame = parseJsonFrame(raw);
+      if (!frame || settled) return;
+      if (frame.type === "event" && frame.event === "connection.ack") {
+        if (connectionAckTimer) clearTimeout(connectionAckTimer);
+        sendProvisionRequest();
+        return;
+      }
+      const result = enterpriseMcpProvisioningFrameResult(frame, args.requestId);
+      if (!result) return;
+      if (result.status === "error") {
+        settle(new Error(result.error || "enterprise MCP provisioning failed"));
+        return;
+      }
+      settle(undefined, "explicit_ack");
+    });
+    ws.on("error", (error) => settle(error instanceof Error ? error : new Error(String(error))));
+    ws.on("close", () => {
+      if (!settled) settle(new Error("enterprise MCP provisioning connection closed"));
+    });
+  });
+}
+
 export function gatewayPermissionAnswerMethod(
   enterprise: boolean,
   source: unknown,
@@ -571,16 +642,12 @@ export async function forwardToJiuwenGateway(
     let settled = false;
     let clientClosed = false;
     let requestSent = false;
-    let managedMcpRequestSent = false;
-    let managedMcpProvisionResolve: (() => void) | null = null;
-    let managedMcpProvisionReject: ((error: Error) => void) | null = null;
-    let managedMcpProvisionTimer: NodeJS.Timeout | null = null;
     let connectionAckTimer: NodeJS.Timeout | null = null;
     let progressHeartbeat: NodeJS.Timeout | null = null;
     const timeoutMs = Math.max(30_000, Number(process.env.JIUWENCLAW_GATEWAY_CHAT_TIMEOUT_MS || process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || 180_000) || 180_000);
     const ws = new WebSocket(wsUrl, enterpriseRoute ? { headers: { Origin: wsOrigin(wsUrl) } } : undefined);
     const sendChatRequest = () => {
-      if (requestSent || ws.readyState !== WebSocket.OPEN) return;
+      if (requestSent || settled || ws.readyState !== WebSocket.OPEN) return;
       requestSent = true;
       sendGatewayRequest(ws, "chat.send", requestId, params);
     };
@@ -591,33 +658,12 @@ export async function forwardToJiuwenGateway(
       }
       void enterpriseMcpProvisioningCoordinator.ensure(
         managedMcpProvisioning.fingerprint,
-        () => new Promise<void>((resolveProvision, rejectProvision) => {
-          if (managedMcpRequestSent || ws.readyState !== WebSocket.OPEN) {
-            rejectProvision(new Error("enterprise MCP provisioning socket unavailable"));
-            return;
-          }
-          managedMcpRequestSent = true;
-          managedMcpProvisionResolve = resolveProvision;
-          managedMcpProvisionReject = rejectProvision;
-          const acceptanceDelayMs = enterpriseMcpProvisioningAcceptanceDelayMs(
-            process.env.EA_ENTERPRISE_MCP_PROVISION_ACCEPTANCE_DELAY_MS,
-          );
-          managedMcpProvisionTimer = setTimeout(() => {
-            managedMcpProvisionTimer = null;
-            const acceptProvision = managedMcpProvisionResolve;
-            managedMcpProvisionReject = null;
-            managedMcpProvisionResolve = null;
-            appendLogAsync("jiuwenclaw-exec.log", {
-              ts: new Date().toISOString(),
-              event: "enterprise_mcp_provision_accepted",
-              adoptId: claw.adoptId,
-              bindingId: enterpriseRoute?.binding.bindingId || "",
-              acceptanceDelayMs,
-              protocolMode: "background_rpc_without_ack",
-            });
-            acceptProvision?.();
-          }, acceptanceDelayMs);
-          sendGatewayRequest(ws, "tools.add", managedMcpRequestId, managedMcpProvisioning.params);
+        () => provisionEnterpriseManagedMcp({
+          wsUrl,
+          requestId: managedMcpRequestId,
+          params: managedMcpProvisioning.params,
+          adoptId: claw.adoptId,
+          bindingId: enterpriseRoute?.binding.bindingId || "",
         }),
       ).then(() => {
         sendChatRequest();
@@ -642,12 +688,6 @@ export async function forwardToJiuwenGateway(
     const settle = (reason: string) => {
       if (settled) return;
       settled = true;
-      const rejectPendingProvision = managedMcpProvisionReject;
-      managedMcpProvisionResolve = null;
-      managedMcpProvisionReject = null;
-      if (rejectPendingProvision) {
-        rejectPendingProvision(new Error(`enterprise MCP provisioning interrupted: ${reason}`));
-      }
       if (reason !== "enterprise-bootstrap-fallback") {
         opts.onRuntimeOutcome?.(
           reason === "done" || reason === "permission-required"
@@ -661,7 +701,6 @@ export async function forwardToJiuwenGateway(
       }
       clearTimeout(timeout);
       if (connectionAckTimer) clearTimeout(connectionAckTimer);
-      if (managedMcpProvisionTimer) clearTimeout(managedMcpProvisionTimer);
       if (progressHeartbeat) clearInterval(progressHeartbeat);
       for (const file of collectRecentWorkspaceFiles(workspaceDir, startedAt).slice(0, 20)) {
         generatedFiles.set(file.path, file);
@@ -797,23 +836,6 @@ export async function forwardToJiuwenGateway(
       if (enterpriseRoute && frame.type === "event" && frame.event === "connection.ack") {
         if (connectionAckTimer) clearTimeout(connectionAckTimer);
         provisionManagedMcpOrSendChat();
-        return;
-      }
-      const managedMcpResult = enterpriseMcpProvisioningFrameResult(frame, managedMcpRequestId);
-      if (managedMcpResult) {
-        if (managedMcpProvisionTimer) clearTimeout(managedMcpProvisionTimer);
-        managedMcpProvisionTimer = null;
-        if (managedMcpResult.status === "error") {
-          const rejectProvision = managedMcpProvisionReject;
-          managedMcpProvisionResolve = null;
-          managedMcpProvisionReject = null;
-          rejectProvision?.(new Error(managedMcpResult.error || "enterprise MCP provisioning failed"));
-          return;
-        }
-        const resolveProvision = managedMcpProvisionResolve;
-        managedMcpProvisionResolve = null;
-        managedMcpProvisionReject = null;
-        resolveProvision?.();
         return;
       }
       if (frame.type === "res" && frame.id === requestId && frame.ok === false) {
