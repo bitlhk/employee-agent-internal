@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateSkillMcpReadiness,
+  includeEnterpriseCustomerContext,
   includeEnterpriseRoleGateway,
   localRuntimeMcpToolCatalog,
   resolveRoleManagedReadiness,
@@ -127,6 +128,20 @@ describe("skill MCP readiness", () => {
       { name: "role_mcp_gateway", enabled: true },
     ]);
     expect(includeEnterpriseRoleGateway([], false)).toEqual([]);
+  });
+
+  it("recognizes the enabled EA-managed customer context before enterprise tools.add runs", () => {
+    expect(includeEnterpriseCustomerContext(
+      [{ name: "platform_tools", enabled: true }],
+      true,
+      ["customer_context"],
+      "production",
+    )).toEqual([
+      { name: "platform_tools", enabled: true },
+      { name: "customer_context", enabled: true },
+    ]);
+    expect(includeEnterpriseCustomerContext([], false, ["customer_context"], "production")).toEqual([]);
+    expect(includeEnterpriseCustomerContext([], true, ["customer_context"], "disabled")).toEqual([]);
   });
 
   it("keeps a configured role MCP usable when live discovery is temporarily unchecked", async () => {

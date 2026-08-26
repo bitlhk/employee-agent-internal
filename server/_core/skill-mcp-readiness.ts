@@ -33,6 +33,24 @@ export function includeEnterpriseRoleGateway(
   return [...servers, { name: ROLE_MCP_GATEWAY_ID, enabled: true }];
 }
 
+export function includeEnterpriseCustomerContext(
+  servers: RuntimeMcpServer[],
+  enterpriseBound: boolean,
+  requiredServerIds: string[],
+  providerMode = String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "disabled"),
+): RuntimeMcpServer[] {
+  if (
+    !enterpriseBound
+    || !requiredServerIds.includes("customer_context")
+    || servers.some((server) => server.name === "customer_context")
+  ) {
+    return servers;
+  }
+  const mode = providerMode.trim().toLowerCase();
+  if (mode !== "production" && mode !== "shadow") return servers;
+  return [...servers, { name: "customer_context", enabled: true }];
+}
+
 export type SkillMcpServerReadiness = {
   serverId: string;
   requiredTools: string[];
@@ -408,6 +426,11 @@ export async function probeJiuwenSkillMcpReadiness(args: {
       .catch(() => false)
     : false;
   configuredServers = includeEnterpriseRoleGateway(configuredServers, enterpriseBound);
+  configuredServers = includeEnterpriseCustomerContext(
+    configuredServers,
+    enterpriseBound,
+    requiredServerIds,
+  );
 
   const enterpriseManaged = await resolveEnterpriseManagedReadiness({
     requiredServerIds: requiredServerIds.filter(
