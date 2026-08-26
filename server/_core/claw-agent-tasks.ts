@@ -69,6 +69,12 @@ import {
   validatePostLoanRiskA2APayload,
   validatePostLoanRiskA2AReport,
 } from "./post-loan-risk-a2a-contract";
+import {
+  postLoanRiskPolicyAppendix,
+  postLoanRiskPolicyInputFromSnapshot,
+} from "./post-loan-risk-policy";
+import { evaluatePostLoanRiskEscalationWithReceipt } from "./post-loan-risk-tool-handler";
+import { persistTrustedContextReceiptResult } from "./governance/context-receipt";
 
 type AgentTaskStatus = "pending" | "running" | "succeeded" | "failed" | "cancelled";
 type AgentTaskRuntimeContext = {
@@ -117,6 +123,12 @@ function parseJsonRecord(raw: unknown): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }
 
 function publicAgentTask(task: unknown): Record<string, unknown> {
@@ -537,9 +549,37 @@ async function runAgentTaskInBackground(
         throw new Error(`${reportValidation.reasonCode}: ${reportValidation.message}`);
       }
     }
+    let riskPolicyAppendixText = "";
+    if (riskPayload?.ok) {
+      const effectivePrincipal = executionAuthority.effectivePrincipal;
+      if (!effectivePrincipal) throw new Error("风险任务缺少有效执行身份，无法完成确定性分级。");
+      const snapshot = objectRecord(riskPayload.value.riskSnapshot);
+      const evidence = objectRecord(snapshot.evidence);
+      const evaluated = await evaluatePostLoanRiskEscalationWithReceipt({
+        args: postLoanRiskPolicyInputFromSnapshot(snapshot, effectivePrincipal.roleTemplate),
+        adoptId: effectivePrincipal.adoptionId,
+        principal: effectivePrincipal,
+        correlationId: taskId,
+        businessEvidence: {
+          sourceSystem: String(evidence.sourceSystem || "post_loan_risk_data"),
+          label: "受治理贷后风险快照",
+          entityRef: createHash("sha256").update(riskPayload.enterpriseId).digest("hex"),
+          asOf: String(evidence.dataAsOf || new Date().toISOString()),
+          resultFingerprint: riskPayload.snapshotFingerprint,
+        },
+      });
+      riskPolicyAppendixText = postLoanRiskPolicyAppendix(evaluated.decision);
+      await persistTrustedContextReceiptResult({
+        result: evaluated.result,
+        sessionId: effectivePrincipal.sessionId,
+        adoptionId: effectivePrincipal.adoptionId,
+        runtimeAgentId: effectivePrincipal.agentId,
+        toolName: "evaluate_post_loan_risk_escalation",
+      }).catch(() => false);
+    }
     const capabilityIntents = result.capabilityIntents || [];
     const intentNotice = capabilityIntentResultNotice(capabilityIntents);
-    const governedResultText = [cleanedText, intentNotice].filter(Boolean).join("\n\n");
+    const governedResultText = [cleanedText, riskPolicyAppendixText, intentNotice].filter(Boolean).join("\n\n");
     const runtimeAgentId = String((agent as any).__runtimeAgentId || "").trim();
     const artifacts = runtimeAgentId && result.artifacts?.length
       ? await materializeA2AArtifacts({

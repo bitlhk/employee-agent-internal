@@ -6,7 +6,10 @@ import {
   principalFingerprint,
   type RuntimePrincipal,
 } from "./governance/contracts";
-import { evaluatePostLoanRiskEscalation } from "./post-loan-risk-policy";
+import {
+  evaluatePostLoanRiskEscalation,
+  type PostLoanRiskPolicyDecision,
+} from "./post-loan-risk-policy";
 
 export const POST_LOAN_RISK_ESCALATION_TOOL = {
   name: "evaluate_post_loan_risk_escalation",
@@ -41,7 +44,8 @@ function optionalNumber(value: unknown): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
-function requestId(req: Request): string {
+function requestId(req?: Request): string {
+  if (!req) return "";
   for (const name of ["x-request-id", "x-correlation-id"]) {
     const value = req.headers[name];
     const normalized = Array.isArray(value) ? String(value[0] || "").trim() : String(value || "").trim();
@@ -50,12 +54,22 @@ function requestId(req: Request): string {
   return "";
 }
 
-export async function handlePostLoanRiskEscalationTool(input: {
-  req: Request;
+type PostLoanRiskBusinessEvidence = {
+  sourceSystem: string;
+  label: string;
+  entityRef: string;
+  asOf: string;
+  resultFingerprint: string;
+};
+
+export async function evaluatePostLoanRiskEscalationWithReceipt(input: {
+  req?: Request;
   args: Record<string, unknown>;
   adoptId: string;
   principal: RuntimePrincipal;
-}) {
+  correlationId?: string;
+  businessEvidence?: PostLoanRiskBusinessEvidence;
+}): Promise<{ decision: PostLoanRiskPolicyDecision; result: Record<string, unknown> }> {
   const { req, args, adoptId, principal } = input;
   const decision = evaluatePostLoanRiskEscalation({
     roleTemplate: principal.roleTemplate,
@@ -78,7 +92,7 @@ export async function handlePostLoanRiskEscalationTool(input: {
     principalFingerprint: principalFingerprint(principal),
     provided: {
       knowledge: [],
-      businessData: [],
+      businessData: input.businessEvidence ? [input.businessEvidence] : [],
       memory: [],
       capabilities: [{
         capabilityId: POST_LOAN_RISK_ESCALATION_TOOL.name,
@@ -98,7 +112,7 @@ export async function handlePostLoanRiskEscalationTool(input: {
       label: "确定性贷后风险预警分级",
       operation: POST_LOAN_RISK_ESCALATION_TOOL.name,
       status: ready ? "completed" : "blocked",
-      requestId: requestId(req) || decision.decisionId,
+      requestId: input.correlationId || requestId(req) || decision.decisionId,
     }],
     readiness: {
       status: ready ? "READY" : "BLOCKED",
@@ -132,7 +146,7 @@ export async function handlePostLoanRiskEscalationTool(input: {
     toolName: POST_LOAN_RISK_ESCALATION_TOOL.name,
     policyCode: decision.policyCode,
     source: "platform_tools_mcp",
-    ...auditRequest(req),
+    ...(req ? auditRequest(req) : {}),
     metadata: {
       ruleVersion: decision.ruleVersion,
       level: decision.level,
@@ -140,7 +154,7 @@ export async function handlePostLoanRiskEscalationTool(input: {
       requiresHumanEscalation: decision.requiresHumanEscalation,
     },
   });
-  return attachContextReceipt({
+  const result = attachContextReceipt({
     content: [{
       type: "text",
       text: `EA_POST_LOAN_RISK_DECISION:${JSON.stringify({
@@ -154,4 +168,14 @@ export async function handlePostLoanRiskEscalationTool(input: {
     }],
     ...(ready ? {} : { isError: true }),
   }, receipt);
+  return { decision, result };
+}
+
+export async function handlePostLoanRiskEscalationTool(input: {
+  req: Request;
+  args: Record<string, unknown>;
+  adoptId: string;
+  principal: RuntimePrincipal;
+}) {
+  return (await evaluatePostLoanRiskEscalationWithReceipt(input)).result;
 }

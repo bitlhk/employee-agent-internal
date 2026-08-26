@@ -28,6 +28,105 @@ export type PostLoanRiskPolicyDecision = {
   decisionId: string;
 };
 
+type JsonObject = Record<string, unknown>;
+
+const CREDIT_RATING_ORDER = [
+  "AAA", "AA+", "AA", "AA-", "A+", "A", "A-",
+  "BBB+", "BBB", "BBB-", "BB+", "BB", "BB-",
+  "B+", "B", "B-", "CCC", "CC", "C", "D",
+] as const;
+
+const FIVE_LEVEL_ORDER = ["正常", "关注", "次级", "可疑", "损失"] as const;
+
+function record(value: unknown): JsonObject {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : {};
+}
+
+function records(value: unknown): JsonObject[] {
+  return Array.isArray(value) ? value.map(record) : [];
+}
+
+function finiteNumbers(values: unknown[]): number[] {
+  return values.map(Number).filter(Number.isFinite);
+}
+
+function ratingDowngradeSteps(current: unknown, previous: unknown): number {
+  const currentIndex = CREDIT_RATING_ORDER.indexOf(String(current || "").trim().toUpperCase() as typeof CREDIT_RATING_ORDER[number]);
+  const previousIndex = CREDIT_RATING_ORDER.indexOf(String(previous || "").trim().toUpperCase() as typeof CREDIT_RATING_ORDER[number]);
+  return currentIndex >= 0 && previousIndex >= 0 ? Math.max(0, currentIndex - previousIndex) : 0;
+}
+
+export function postLoanRiskPolicyInputFromSnapshot(
+  rawSnapshot: unknown,
+  roleTemplate = "post-loan-risk-control",
+): PostLoanRiskPolicyInput {
+  const snapshot = record(rawSnapshot);
+  const data = record(snapshot.data);
+  const domains = record(data.domains);
+  const enterprise = record(data.enterprise);
+  const loanAccounts = records(domains.loanAccounts);
+  const repayment = record(domains.repayment);
+  const creditRating = record(domains.creditRating);
+  const externalRisk = record(domains.externalRisk);
+  const judicial = record(externalRisk.judicial ?? domains.judicial);
+  const dishonest = record(externalRisk.dishonest ?? domains.dishonest);
+  const collaterals = records(domains.collaterals ?? domains.collateral);
+  const completeness = record(data.completeness);
+
+  const overdueDays = Math.max(0, ...finiteNumbers([
+    repayment.max_overdue_days,
+    repayment.maxOverdueDays,
+    ...loanAccounts.map((item) => item.overdue_days ?? item.overdueDays),
+  ]));
+  const fiveLevelClass = loanAccounts
+    .map((item) => String(item.five_level_class ?? item.fiveLevelClass ?? ""))
+    .filter((value): value is typeof FIVE_LEVEL_ORDER[number] => FIVE_LEVEL_ORDER.includes(value as typeof FIVE_LEVEL_ORDER[number]))
+    .sort((left, right) => FIVE_LEVEL_ORDER.indexOf(right) - FIVE_LEVEL_ORDER.indexOf(left))[0] || null;
+  const coverageRatios = finiteNumbers(collaterals.map((item) => item.coverage_ratio ?? item.coverageRatio));
+  const operatingStatus = String(
+    enterprise.operatingStatus
+    ?? enterprise.operating_status
+    ?? record(domains.enterpriseProfile).operating_status
+    ?? "",
+  ).trim();
+
+  return {
+    roleTemplate,
+    overdueDays,
+    fiveLevelClass,
+    ratingDowngradeSteps: ratingDowngradeSteps(
+      creditRating.internal_rating ?? creditRating.internalRating,
+      creditRating.previous_rating ?? creditRating.previousRating,
+    ),
+    majorJudicialEvent: judicial.has_frozen_assets === true || judicial.hasFrozenAssets === true,
+    dishonestEnforcement: dishonest.is_dishonest === true || dishonest.isDishonest === true,
+    coreCollateralImpaired: collaterals.some((item) =>
+      item.core_impaired === true
+      || item.coreImpaired === true
+      || Number(item.current_value ?? item.currentValue) <= 0
+    ),
+    collateralCoverageRatio: coverageRatios.length > 0 ? Math.min(...coverageRatios) : null,
+    operationStopped: ["停业", "吊销", "注销", "已停产", "停止经营"].includes(operatingStatus),
+    criticalDataComplete: completeness.criticalComplete === true,
+  };
+}
+
+export function postLoanRiskPolicyAppendix(decision: PostLoanRiskPolicyDecision): string {
+  return [
+    "## EA 确定性预警分级",
+    "",
+    `- Policy：${decision.policyCode} / ${decision.ruleVersion}`,
+    `- 状态：${decision.status}`,
+    `- 内部预警等级：${decision.level || "未形成"}`,
+    `- 触发项：${decision.triggers.join("、") || "无"}`,
+    `- 人工升级：${decision.requiresHumanEscalation ? "是" : "否"}`,
+    `- 建议动作：${decision.requiredActions.join("；")}`,
+    `- Decision ID：${decision.decisionId}`,
+    "",
+    "该分级由 EA 确定性规则生成，不是监管五级分类、授信审批或自动处置结论；任何写操作仍须人工确认。",
+  ].join("\n");
+}
+
 function normalizedInteger(value: number | null | undefined): number {
   return Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : 0;
 }

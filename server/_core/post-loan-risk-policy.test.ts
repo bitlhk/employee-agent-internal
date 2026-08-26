@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { evaluatePostLoanRiskEscalation } from "./post-loan-risk-policy";
+import { POST_LOAN_RISK_DEMO_ENTERPRISES } from "./post-loan-risk-demo-fixtures";
+import { buildPostLoanRiskSnapshot } from "./post-loan-risk-data-provider";
+import {
+  evaluatePostLoanRiskEscalation,
+  postLoanRiskPolicyAppendix,
+  postLoanRiskPolicyInputFromSnapshot,
+} from "./post-loan-risk-policy";
 
 describe("post-loan deterministic risk escalation policy", () => {
   it("forces RED and human escalation for a 90-day overdue exposure", () => {
@@ -52,5 +58,29 @@ describe("post-loan deterministic risk escalation policy", () => {
       overdueDays: 90,
       criticalDataComplete: true,
     })).toMatchObject({ status: "blocked", level: null, triggers: ["ROLE_NOT_AUTHORIZED"] });
+  });
+
+  it("derives the EA policy input from the governed snapshot without using model judgments", () => {
+    const snapshot = buildPostLoanRiskSnapshot(POST_LOAN_RISK_DEMO_ENTERPRISES[0]);
+    const input = postLoanRiskPolicyInputFromSnapshot(snapshot);
+    expect(input).toMatchObject({
+      roleTemplate: "post-loan-risk-control",
+      overdueDays: 15,
+      fiveLevelClass: "关注",
+      ratingDowngradeSteps: 3,
+      majorJudicialEvent: false,
+      dishonestEnforcement: false,
+      collateralCoverageRatio: 1.2,
+      operationStopped: false,
+      criticalDataComplete: true,
+    });
+    const decision = evaluatePostLoanRiskEscalation(input);
+    expect(decision).toMatchObject({
+      level: "ORANGE",
+      requiresHumanEscalation: true,
+      triggers: expect.arrayContaining(["RATING_DOWNGRADE_TWO_STEPS"]),
+    });
+    expect(postLoanRiskPolicyAppendix(decision)).toContain(decision.decisionId);
+    expect(postLoanRiskPolicyAppendix(decision)).toContain("不是监管五级分类、授信审批或自动处置结论");
   });
 });

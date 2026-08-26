@@ -7,7 +7,10 @@ vi.mock("./audit-events", () => ({
   recordAuditBestEffort: mocks.recordAuditBestEffort,
 }));
 
-import { handlePostLoanRiskEscalationTool } from "./post-loan-risk-tool-handler";
+import {
+  evaluatePostLoanRiskEscalationWithReceipt,
+  handlePostLoanRiskEscalationTool,
+} from "./post-loan-risk-tool-handler";
 import type { RuntimePrincipal } from "./governance/contracts";
 
 function request(): Request {
@@ -65,5 +68,37 @@ describe("post-loan risk platform tool handler", () => {
       action: "governance.post_loan_risk.blocked",
       result: "denied",
     }));
+  });
+
+  it("binds an asynchronous policy decision to the governed snapshot evidence", async () => {
+    const evaluated = await evaluatePostLoanRiskEscalationWithReceipt({
+      args: { overdueDays: 15, fiveLevelClass: "关注", ratingDowngradeSteps: 3, criticalDataComplete: true },
+      adoptId: "lgj-risk-demo",
+      principal: principal(),
+      correlationId: "agt-risk-1",
+      businessEvidence: {
+        sourceSystem: "post_loan_risk_data",
+        label: "受治理贷后风险快照",
+        entityRef: "entity-fingerprint",
+        asOf: "2026-08-25T08:00:00+08:00",
+        resultFingerprint: "a".repeat(64),
+      },
+    });
+    expect(evaluated.decision).toMatchObject({ level: "ORANGE", requiresHumanEscalation: true });
+    const receipt = (evaluated.result._meta as {
+      eaContextReceipt: {
+        provided: { businessData: Array<Record<string, unknown>> };
+        applied: { capabilityExecutions: Array<Record<string, unknown>> };
+      };
+    }).eaContextReceipt;
+    expect(receipt.provided.businessData).toEqual([
+      expect.objectContaining({
+        sourceSystem: "post_loan_risk_data",
+        resultFingerprint: "a".repeat(64),
+      }),
+    ]);
+    expect(receipt.applied.capabilityExecutions).toEqual([
+      expect.objectContaining({ requestId: "agt-risk-1", status: "completed" }),
+    ]);
   });
 });
