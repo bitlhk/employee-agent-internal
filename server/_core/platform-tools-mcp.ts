@@ -6,8 +6,7 @@ import { isAuthorizedInternalRequest, resolveRuntimeAgentId, resolveRuntimeWorks
 import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
 import { internalMcpAudience } from "./internal-runtime-token";
 import type { SkillSource } from "../../shared/types/skill";
-import { getClawByAdoptId, getClawByAgentId, getUserById } from "../db";
-import { resolveEffectiveRoleAssets } from "../db/role-assets";
+import { getClawByAdoptId, getUserById } from "../db";
 import { parseSkillSourceDirectory, sanitizeSkillId } from "./skills/skill-source";
 import { skillInstaller } from "./skills/skill-installer";
 import { skillRegistry } from "./skills/skill-registry";
@@ -41,6 +40,7 @@ import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } 
 import { resolveWealthPolicyBasis, resolveWealthSuitabilityPolicySource } from "./wealth-policy-source";
 import { buildWealthAllocationTaskContextPack, finalizeWealthPolicyResolutionEvidence, observeWealthAllocationRuntimeSources, observeWealthPolicyRuntimeSource, resolveWealthAllocationRuntimeSources, resolveWealthPolicyRuntimeSource } from "./context-resolution/wealth-runtime-sources";
 import { GOVERNED_WORK_PLATFORM_TOOLS, handleGovernedWorkPlatformTool, isGovernedWorkPlatformTool } from "./governed-work-platform-tools";
+import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -1066,44 +1066,7 @@ export function registerPlatformToolsMcpRoutes(app: Express): void {
     res.json({ status: "ok", name: SERVICE_NAME, version: SERVICE_VERSION });
   });
 
-  app.get("/api/internal/mcp/agent-authorization", async (req, res) => {
-    if (!isAuthorized(req)) {
-      return res.status(401).json({ ok: false, error: "unauthorized" });
-    }
-
-    const agentId = String(req.query.agentId || "").trim();
-    const mcpServerId = String(req.query.mcpServerId || "").trim();
-    if (!agentId || !mcpServerId) {
-      return res.status(400).json({ ok: false, error: "agentId and mcpServerId are required" });
-    }
-
-    const claw = await getClawByAgentId(agentId);
-    if (!claw || !["active", "expiring"].includes(claw.status)) {
-      return res.status(403).json({ ok: false, authorized: false, reason: "agent_not_active" });
-    }
-
-    const roleId = String(claw.roleTemplate || "").trim();
-    if (!roleId) {
-      return res.status(403).json({ ok: false, authorized: false, reason: "principal_role_missing" });
-    }
-    const assets = await resolveEffectiveRoleAssets(roleId);
-    const allowedMcpServers = new Set([
-      ...assets.mcpServers.default,
-      ...assets.mcpServers.optional,
-    ]);
-    const authorized = allowedMcpServers.has(mcpServerId);
-
-    return res.status(authorized ? 200 : 403).json({
-      ok: authorized,
-      authorized,
-      reason: authorized ? "authorized" : "role_or_asset_not_authorized",
-      agentId: claw.agentId,
-      adoptId: claw.adoptId,
-      roleId,
-      mcpServerId,
-      userCode: claw.adoptId.replace(/^[^-]+-/, ""),
-    });
-  });
+  registerMcpAgentAuthorizationRoute(app);
 
   app.post("/api/internal/platform-tools/skills/register-runtime", async (req, res) => {
     if (!isAuthorized(req)) {

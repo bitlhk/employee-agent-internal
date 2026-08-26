@@ -14,6 +14,7 @@ import {
   callInternalMcpTool,
   parseInternalMcpJsonResult,
 } from "./internal-mcp-client";
+import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
 
 type JsonObject = Record<string, unknown>;
 
@@ -79,12 +80,16 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
   const endpointUrl = String(
     process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp"
   ).trim();
+  const delegation = issueCustomerSourceDelegation({
+    principal: input.principal,
+    sourceServerId: "wealth_assistant_customer",
+  });
   const probe = parsedMcpResult(
     await callInternalMcpTool({
       endpointUrl,
       toolName: "wealth_assistant_context_probe",
       args: {},
-      agentId: input.principal.agentId,
+      agentId: delegation.sourceAgentId,
       adoptId: input.principal.adoptionId,
       sessionId: input.principal.sessionId,
     })
@@ -105,7 +110,7 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
       endpointUrl,
       toolName: "wealth_assistant_customer_detail",
       args: { customerId: input.subjectId },
-      agentId: input.principal.agentId,
+      agentId: delegation.sourceAgentId,
       adoptId: input.principal.adoptionId,
       sessionId: input.principal.sessionId,
     })

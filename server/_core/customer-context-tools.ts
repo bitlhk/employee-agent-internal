@@ -11,6 +11,7 @@ import {
   parseInternalMcpJsonResult,
 } from "./internal-mcp-client";
 import { normalizeWealthCustomerList } from "./wealth-maturity-context";
+import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
 
 type JsonObject = Record<string, unknown>;
 
@@ -131,12 +132,16 @@ async function callWealthTool(input: {
   toolName: string;
   args: JsonObject;
 }): Promise<JsonObject> {
+  const delegation = issueCustomerSourceDelegation({
+    principal: input.principal,
+    sourceServerId: "wealth_assistant_customer",
+  });
   return parsedMcpResult(
     await callInternalMcpTool({
       endpointUrl: wealthEndpointUrl(),
       toolName: input.toolName,
       args: input.args,
-      agentId: input.principal.agentId,
+      agentId: delegation.sourceAgentId,
       adoptId: input.principal.adoptionId,
       sessionId: input.principal.sessionId,
     }),
