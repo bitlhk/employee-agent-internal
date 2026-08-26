@@ -5,7 +5,7 @@ import {
   buildTaskContextPack,
   buildTaskExecutionEnvelope,
 } from "./task-execution-envelope";
-import { evaluateWealthTaskReadiness, readinessCheck } from "./wealth-task-readiness";
+import { evaluateWealthTaskReadiness, readinessCheck, wealthPolicyKnowledgeReadiness } from "./wealth-task-readiness";
 
 const principal: RuntimePrincipalV2 = {
   tenantId: "tn_demo",
@@ -111,6 +111,27 @@ describe("task execution envelope", () => {
     expect(decision.status).toBe("DEGRADED");
     expect(decision.deniedOutcomes).toContain("customer_specific_previsit_brief");
     expect(decision.allowedOutcomes).toContain("generic_previsit_checklist");
+  });
+
+  it("does not deny wealth candidates when only optional knowledge context is missing", () => {
+    const decision = evaluateWealthTaskReadiness({
+      taskId: "WM-GT-02",
+      checks: {
+        ...readyChecks(["identity", "customerData", "productData", "policy", "skill", "evidence"]),
+        knowledge: wealthPolicyKnowledgeReadiness({ policyReady: true, resolutionStatus: "DEGRADED" }),
+      },
+    });
+    expect(decision.status).toBe("READY");
+    expect(decision.allowedOutcomes).toContain("governed_asset_allocation_candidates");
+    expect(decision.deniedOutcomes).toEqual([]);
+    expect(decision.checks.knowledge.code).toBe("CURRENT_POLICY_READY_OPTIONAL_CONTEXT_MISSING");
+  });
+
+  it("still blocks wealth candidates when a required knowledge binding is missing", () => {
+    expect(wealthPolicyKnowledgeReadiness({ policyReady: true, resolutionStatus: "BLOCKED" })).toMatchObject({
+      status: "BLOCKED",
+      code: "REQUIRED_CONTEXT_BINDING_MISSING",
+    });
   });
 
   it("defines fail-closed readiness contracts for all six wealth benchmark tasks", () => {

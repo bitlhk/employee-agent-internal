@@ -11,6 +11,26 @@ export { readinessCheck } from "./task-readiness";
 
 export type WealthGoldenTaskId = "WM-GT-01" | "WM-GT-02" | "WM-GT-03" | "WM-GT-04" | "WM-GT-05" | "WM-GT-06";
 
+export function wealthPolicyKnowledgeReadiness(input: {
+  policyReady: boolean;
+  resolutionStatus?: "READY" | "DEGRADED" | "BLOCKED";
+}): ReadinessCheck {
+  if (!input.policyReady) {
+    return readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", "当前有效适当性制度不可用。");
+  }
+  if (input.resolutionStatus === "BLOCKED") {
+    return readinessCheck("BLOCKED", "REQUIRED_CONTEXT_BINDING_MISSING", "必需知识上下文来源尚未完成受治理绑定。");
+  }
+  if (input.resolutionStatus === "DEGRADED") {
+    return readinessCheck(
+      "READY",
+      "CURRENT_POLICY_READY_OPTIONAL_CONTEXT_MISSING",
+      "当前有效制度已通过知识资格校验；缺少的可选上下文不阻断正式候选。",
+    );
+  }
+  return readinessCheck("READY", "CURRENT_POLICY_READY", "当前有效制度已通过知识资格校验。");
+}
+
 const PROFILES: Record<WealthGoldenTaskId, Omit<TaskReadinessProfile, "taskId">> = {
   "WM-GT-01": {
     requestedOutcome: "customer_specific_previsit_brief",

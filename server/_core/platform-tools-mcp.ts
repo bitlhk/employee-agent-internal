@@ -21,7 +21,7 @@ import { platformMcpPolicyAdapter } from "./governance/platform-mcp-policy";
 import { resolveRuntimePrincipal, resolveRuntimePrincipalV2 } from "./governance/principal";
 import { authorizePlatformMcpExecution } from "./governance/platform-mcp-execution-authority";
 import { buildCapabilitySnapshot, buildTaskContextPack, buildTaskExecutionEnvelope } from "./governance/task-execution-envelope";
-import { evaluateWealthTaskReadiness, readinessCheck } from "./governance/wealth-task-readiness";
+import { evaluateWealthTaskReadiness, readinessCheck, wealthPolicyKnowledgeReadiness } from "./governance/wealth-task-readiness";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested, runtimeGovernanceRequestId } from "./runtime-governance-attestation";
@@ -872,13 +872,10 @@ async function callTool(
         taskId: allocationTaskId,
         checks: {
           identity: readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份和授权快照已就绪。"),
-          knowledge: !result.policySource.ready
-            ? readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", "当前有效适当性制度不可用。")
-            : knowledgeSource?.plan?.status === "BLOCKED"
-              ? readinessCheck("BLOCKED", "REQUIRED_CONTEXT_BINDING_MISSING", "必需知识上下文来源尚未完成受治理绑定。")
-              : knowledgeSource?.plan?.status === "DEGRADED"
-                ? readinessCheck("DEGRADED", "OPTIONAL_CONTEXT_UNAVAILABLE", "可形成基础配置分析，但未结合可选的最新市场观点。")
-                : readinessCheck("READY", "CURRENT_POLICY_READY", "当前有效制度已通过知识资格校验。"),
+          knowledge: wealthPolicyKnowledgeReadiness({
+            policyReady: result.policySource.ready,
+            resolutionStatus: knowledgeSource?.plan?.status,
+          }),
           customerData: result.evidence.customerDataAsOf
             ? readinessCheck("READY", "CUSTOMER_DATA_READY", "客户数据已就绪。", { asOf: result.evidence.customerDataAsOf })
             : readinessCheck("BLOCKED", "CUSTOMER_DATA_STALE", "客户数据缺少有效时间，不能形成正式推荐。"),
