@@ -27,7 +27,12 @@ SAFE_TOOL_RE = re.compile(
     r"mcp_platform_tools_prepare_wealth_allocation_context)$",
     re.IGNORECASE,
 )
-READ_PREFIXES = ("mcp_wind_", "mcp_market_data__", "mcp_wealth_assistant_")
+READ_PREFIXES = (
+    "mcp_customer_context_",
+    "mcp_wind_",
+    "mcp_market_data__",
+    "mcp_wealth_assistant_",
+)
 
 
 def emit(decision: str, reason: str = "") -> int:

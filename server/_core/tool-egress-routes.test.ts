@@ -47,6 +47,14 @@ describe("Jiuwen PreToolUse egress evaluation", () => {
     await expect(
       evaluateJiuwenPreToolUse({
         event: "PreToolUse",
+        tool_name: "mcp_customer_context_wealth_assistant_context_probe",
+        tool_input: {},
+        session_id: "lgj-test",
+      })
+    ).resolves.toEqual({ decision: "allow" });
+    await expect(
+      evaluateJiuwenPreToolUse({
+        event: "PreToolUse",
         tool_name: "mcp_wind_stock_snapshot",
         tool_input: { symbol: "600000.SH", fields: ["close", "volume"] },
         session_id: "lgj-test",

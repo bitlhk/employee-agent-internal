@@ -50,7 +50,12 @@ const RULES: readonly GovernanceRule[] = [
       "mcp_platform_tools_prepare_wealth_maturity_context",
       "mcp_platform_tools_prepare_wealth_allocation_context",
     ],
-    prefixes: ["mcp_wind_", "mcp_market_data__", "mcp_wealth_assistant_"],
+    prefixes: [
+      "mcp_customer_context_",
+      "mcp_wind_",
+      "mcp_market_data__",
+      "mcp_wealth_assistant_",
+    ],
     sideEffect: "read",
     policyRequired: false,
     approvalMode: "never",

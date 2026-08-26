@@ -53,6 +53,7 @@ const NETWORK_COMMAND_RE =
 const URL_FIELD_RE = /(?:^|_)(?:url|uri|endpoint|webhook)(?:$|_)/i;
 const DEFAULT_TRUSTED_TOOL_PREFIXES = [
   "mcp_platform_tools_",
+  "mcp_customer_context_",
   "mcp_enterprise_mcp_gateway_",
   "mcp_role_mcp_gateway_",
   "mcp_wind_",
