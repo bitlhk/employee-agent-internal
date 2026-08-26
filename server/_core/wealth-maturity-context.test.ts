@@ -32,6 +32,16 @@ describe("wealth maturity context", () => {
     ]);
   });
 
+  it("uses the business customer number instead of a row id", () => {
+    expect(normalizeWealthCustomerList({
+      data: {
+        items: [{ id: 5, CUST_NO: "C005", name: "陈明" }],
+      },
+    })).toEqual([
+      { customerId: "C005", customerName: "陈明" },
+    ]);
+  });
+
   it("rejects detail data outside the authorized customer-list identity", () => {
     expect(() => normalizeWealthMaturityItems({
       payload: detail("C-OTHER", "越权客户", []),

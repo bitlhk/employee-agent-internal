@@ -89,7 +89,15 @@ function rowsFrom(payload: JsonObject, keys: string[]): JsonObject[] {
 export function normalizeWealthCustomerList(payload: JsonObject): Array<{ customerId: string; customerName: string }> {
   return rowsFrom(payload, ["customers", "items", "rows", "list", "records"])
     .map((customer) => ({
-      customerId: firstString(customer.customerId, customer.customer_id, customer.id, customer.customerCode, customer.customer_code),
+      customerId: firstString(
+        customer.CUST_NO,
+        customer.custNo,
+        customer.customerCode,
+        customer.customer_code,
+        customer.customerId,
+        customer.customer_id,
+        customer.id,
+      ),
       customerName: firstString(customer.name, customer.customerName, customer.customer_name),
     }))
     .filter((customer) => customer.customerId)
