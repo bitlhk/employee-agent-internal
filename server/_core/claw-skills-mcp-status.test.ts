@@ -2,6 +2,35 @@ import { describe, expect, it } from "vitest";
 import { listMcpToolGroups, roleHomeConnectorStates } from "./claw-skills";
 
 describe("managed enterprise MCP status", () => {
+  it("presents the unified customer service as Customer Insight", () => {
+    const payload = listMcpToolGroups({
+      allowedServerIds: new Set(["customer_context"]),
+      managedServers: [{
+        serverId: "customer_context",
+        displayName: "客户洞察",
+        description: "整合当前岗位获授权的客户信息，为客户分析、服务和业务决策提供依据。",
+        category: "内部业务 MCP",
+        enabled: true,
+        ready: true,
+        tools: [{ name: "search_customers", description: "查询客户" }],
+        checkedAt: "2026-08-26T02:00:00.000Z",
+        error: null,
+      }],
+    });
+
+    expect(payload.items).toEqual([
+      expect.objectContaining({
+        id: "customer_context",
+        name: "客户洞察",
+        children: [expect.objectContaining({
+          serverId: "customer_context",
+          name: "客户洞察",
+          tools: [expect.objectContaining({ name: "search_customers" })],
+        })],
+      }),
+    ]);
+  });
+
   it("uses the managed Chinese display name and health snapshot", () => {
     const payload = listMcpToolGroups({
       allowedServerIds: new Set(["insurance_customer_profile"]),

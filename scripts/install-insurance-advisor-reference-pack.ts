@@ -28,14 +28,14 @@ const PRIMARY_SKILL = {
   id: "auto-insurance-advisor",
   defaultName: "车险顾问岗位助手",
   requiredMcpServers: {
-    insurance_customer_profile: ["list_customer_profiles", "get_customer_profile_by_name"],
+    customer_context: ["list_customer_profiles", "get_customer_profile_by_name", "get_governed_customer_profile"],
     insurance_product_exam_points: ["list_products", "search_products", "get_product_detail", "get_exam_points"],
   },
 } as const;
 const DEFAULT_SKILLS = [PRIMARY_SKILL.id, "insurance-telesales-recommend", "goldencoach-stage-evaluation"];
 const OPTIONAL_SKILLS = ["insurance-advisor-pro"];
-const DEFAULT_MCP_SERVERS = ["insurance_customer_profile", "insurance_product_exam_points", "wealth_governance_demo"];
-const RETIRED_MCP_SERVERS = new Set(["insurance_telesales_recommend"]);
+const DEFAULT_MCP_SERVERS = ["customer_context", "insurance_product_exam_points", "wealth_governance_demo"];
+const RETIRED_MCP_SERVERS = new Set(["insurance_telesales_recommend", "insurance_customer_profile"]);
 
 type InstallOptions = { apply: boolean; adoptIds: string[] };
 type Baseline = {

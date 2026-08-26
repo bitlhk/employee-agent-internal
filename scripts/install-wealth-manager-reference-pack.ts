@@ -27,7 +27,7 @@ const SKILLS = [
     id: "privbank-previsit",
     defaultName: "财富客户访前准备",
     requiredMcpServers: {
-      wealth_assistant_customer: [
+      customer_context: [
         "wealth_assistant_context_probe",
         "wealth_assistant_customer_list",
         "wealth_assistant_customer_detail",
@@ -39,7 +39,7 @@ const SKILLS = [
     id: "wealth-manager-assistant",
     defaultName: "客户经理财富助手",
     requiredMcpServers: {
-      wealth_assistant_customer: [
+      customer_context: [
         "wealth_assistant_context_probe",
         "wealth_assistant_customer_list",
         "wealth_assistant_customer_detail",

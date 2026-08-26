@@ -76,6 +76,12 @@ import {
 import { createBoundedAsyncCache } from "./bounded-async-cache";
 import { recordMcpStatusCacheRequest } from "./observability/metrics";
 import { buildMcpStatusResponse } from "./mcp-status-response";
+import {
+  CUSTOMER_CONTEXT_DESCRIPTION,
+  CUSTOMER_CONTEXT_DISPLAY_NAME,
+  CUSTOMER_CONTEXT_SERVER_ID,
+  customerContextCanonicalToolNames,
+} from "../../shared/customer-context-contract";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
@@ -153,6 +159,7 @@ const MCP_TOOL_GROUP_OVERRIDES: McpToolGroupOverride[] = [
   { id: "insurance_telesales_recommend", name: "保险电销推荐", category: "内部业务 MCP", description: "结合客户需求匹配保险产品，生成电销沟通重点、推荐理由和话术建议。", serverIds: ["insurance_telesales_recommend"] },
   { id: "insurance_kb", name: "保险知识库", category: "内部业务 MCP", description: "检索保险产品、责任条款、投保规则与业务口径，回答保险专业问题。", serverIds: ["insurance_kb"] },
   { id: "post_loan_risk_data", name: "贷后风险数据", category: "内部业务 MCP", description: "查询企业贷后指标、风险事件与预警信号，支撑风险评估和持续跟踪。", serverIds: ["post_loan_risk_data"] },
+  { id: "customer_context", name: CUSTOMER_CONTEXT_DISPLAY_NAME, category: "内部业务 MCP", description: CUSTOMER_CONTEXT_DESCRIPTION, serverIds: [CUSTOMER_CONTEXT_SERVER_ID] },
   { id: "wealth_assistant_customer", name: "财富客户数据", category: "内部业务 MCP", description: "查询当前客户经理负责的客户、资产、持仓与服务信息，辅助客户洞察。", serverIds: ["wealth_assistant_customer"] },
   { id: "wealth_assistant_product", name: "财富产品数据", category: "内部业务 MCP", description: "查询财富产品详情、风险等级与适配条件，完成产品筛选和客户匹配。", serverIds: ["wealth_assistant_product"] },
   { id: "platform_tools", name: "平台协作工具", category: "平台能力", description: "管理投递通道、定时任务和跨智能体协作，让对话结果进入后续工作流程。", serverIds: ["platform_tools"] },
@@ -657,6 +664,29 @@ export function registerSkillRoutes(app: express.Express) {
               error: ready ? null : connection.lastError || connection.identityVerificationError || "企业 MCP 尚未就绪",
             };
           }));
+        if (allowedServerIds.has(CUSTOMER_CONTEXT_SERVER_ID)) {
+          const mode = String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "disabled")
+            .trim()
+            .toLowerCase();
+          managedServers.push({
+            serverId: CUSTOMER_CONTEXT_SERVER_ID,
+            displayName: CUSTOMER_CONTEXT_DISPLAY_NAME,
+            description: CUSTOMER_CONTEXT_DESCRIPTION,
+            category: "内部业务 MCP",
+            enabled: mode !== "disabled",
+            ready: mode === "production" || mode === "shadow",
+            tools: customerContextCanonicalToolNames(roleTemplate).map((name) => ({
+              name,
+              description: name === "search_customers"
+                ? "查询当前岗位获授权的客户"
+                : name === "get_customer_profile"
+                  ? "读取按岗位与用途裁剪的客户信息"
+                  : "读取财富岗位获授权的资产与持仓摘要",
+            })),
+            checkedAt: new Date().toISOString(),
+            error: mode === "disabled" ? "客户洞察服务未启用" : null,
+          });
+        }
         const rawPayload = listMcpToolGroups({ allowedServerIds, invocationCounts, liveStatuses, managedServers });
         const statusPayload = buildMcpStatusResponse({
           rawPayload,

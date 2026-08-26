@@ -19,6 +19,7 @@ const INTERNAL_MCP_STREAM_PATHS = new Set([
   "/api/internal/custom-mcp/mcp",
   "/api/internal/enterprise-mcp/mcp",
   "/api/internal/role-mcp/mcp",
+  "/api/internal/customer-context/mcp",
   "/api/internal/customer-profile/mcp",
 ]);
 

@@ -29,6 +29,7 @@ const MANAGED_SERVER_IDS = new Set([
   "custom_mcp_gateway",
   "enterprise_mcp_gateway",
   "role_mcp_gateway",
+  "customer_context",
 ]);
 const SAFE_COMPUTE_NAME_RE = /(?:^|[_:.-])(?:parse|validate|schema|analy[sz]e|calculate|classif(?:y|ication)|convert|extract(?:or)?|generate|generator|locate|summari[sz]e)(?:$|[_:.-])/i;
 

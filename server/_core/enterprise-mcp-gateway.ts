@@ -330,6 +330,22 @@ async function exposedTools(context: RuntimeContext): Promise<ExposedTool[]> {
   );
 }
 
+async function callableTools(
+  context: RuntimeContext,
+  controls: GatewayCallControls,
+): Promise<ExposedTool[]> {
+  if (controls.executionOrigin !== "customer_profile_adapter")
+    return exposedTools(context);
+  // The governed Customer Context adapter may consume the approved legacy
+  // insurance source after that raw source is removed from Agent visibility.
+  // This is deliberately narrower than the Enterprise MCP catalog and still
+  // applies role policy, identity, egress, audit and provider authorization.
+  return (await catalogTools()).filter(entry =>
+    entry.connection.serverId === "insurance_customer_profile"
+    && enterpriseMcpRoleAllowed(policyDraft(entry.policy), context.roleKey),
+  );
+}
+
 function idempotencyKey(args: Record<string, unknown>): string {
   return String(args.idempotency_key || args.idempotencyKey || "")
     .trim()
@@ -464,7 +480,7 @@ async function gatewayCall(
     sideEffect: EnterpriseMcpToolPolicyDraft["sideEffect"];
   } | null = null;
   try {
-    const entry = (await exposedTools(context)).find(
+    const entry = (await callableTools(context, controls)).find(
       item => item.exposedName === exposedName
     );
     if (!entry)

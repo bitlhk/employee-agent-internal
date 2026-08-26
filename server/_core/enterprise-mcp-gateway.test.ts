@@ -1,5 +1,5 @@
 import type { AddressInfo } from "node:net";
-import express from "express";
+import express, { type Request } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   displayName: "客户画像",
   roleKey: "insurance-advisor",
   authorizationStatus: "active" as "active" | "revoked",
+  enabledServerIds: ["insurance_customer_profile"] as string[],
   policy: {
     toolName: "list_customer_profiles",
     enabled: 1,
@@ -44,7 +45,7 @@ vi.mock("../db", () => ({
   }]),
   listEnterpriseMcpToolPolicies: vi.fn(async () => [{ ...mocks.policy }]),
   resolveEffectiveRoleAssets: vi.fn(async () => ({})),
-  resolvePersistedAgentMcpSelection: vi.fn(async () => ({ enabledServerIds: [mocks.serverId] })),
+  resolvePersistedAgentMcpSelection: vi.fn(async () => ({ enabledServerIds: [...mocks.enabledServerIds] })),
   reserveEnterpriseMcpCall: mocks.reserve,
   revealEnterpriseMcpCredential: vi.fn(() => null),
 }));
@@ -117,7 +118,11 @@ vi.mock("./runtime-governance-attestation", () => ({
   runtimeGovernanceRequestId: vi.fn(() => "jiuwenswarm-local"),
 }));
 
-import { enterpriseMcpGatewayToolName, registerEnterpriseMcpGatewayRoutes } from "./enterprise-mcp-gateway";
+import {
+  enterpriseMcpGatewayToolName,
+  executeEnterpriseMcpGatewayTool,
+  registerEnterpriseMcpGatewayRoutes,
+} from "./enterprise-mcp-gateway";
 
 type GatewayResponse = {
   result?: { content?: Array<{ type: string; text: string }>; isError?: boolean; tools?: Array<{ name: string; description: string }> };
@@ -148,6 +153,7 @@ beforeEach(async () => {
   mocks.serverId = "insurance_customer_profile";
   mocks.displayName = "客户画像";
   mocks.roleKey = "insurance-advisor";
+  mocks.enabledServerIds = [mocks.serverId];
   process.env.ENTERPRISE_MCP_ALLOW_UNAUTHENTICATED_SHADOW = "true";
   Object.assign(mocks.policy, {
     toolName: "list_customer_profiles",
@@ -237,6 +243,26 @@ describe("enterprise MCP gateway", () => {
     expect(mocks.remoteCall).not.toHaveBeenCalled();
   });
 
+  it("keeps an ungranted raw customer source hidden from the Agent while allowing the governed adapter", async () => {
+    mocks.enabledServerIds = [];
+    const direct = await callGateway();
+    expect(direct.result?.isError).toBe(true);
+    expect(mocks.remoteCall).not.toHaveBeenCalled();
+
+    const internal = await executeEnterpriseMcpGatewayTool({
+      req: { headers: {} } as unknown as Request,
+      adoptId: "lgj-insurance",
+      sessionId: "session-insurance",
+      serverId: mocks.serverId,
+      toolName: mocks.policy.toolName,
+      arguments: {},
+      taskAuthorizationSnapshotId: "auth-current",
+      executionOrigin: "customer_profile_adapter",
+    });
+    expect(internal.isError).not.toBe(true);
+    expect(mocks.remoteCall).toHaveBeenCalledOnce();
+  });
+
   it("blocks arguments rejected by the tool policy", async () => {
     mocks.policy.argumentPolicyJson = { blockedFields: ["password"] };
     const response = await callGateway({ password: "must-not-leave" });
@@ -307,6 +333,7 @@ describe("enterprise MCP gateway", () => {
 
   it("returns a WM-GT-05 Context Receipt after confirmed idempotent follow-up execution", async () => {
     mocks.serverId = "wealth_governance_demo";
+    mocks.enabledServerIds = [mocks.serverId];
     mocks.displayName = "财富业务治理 Demo";
     mocks.roleKey = "wealth-manager";
     Object.assign(mocks.policy, {
@@ -335,6 +362,7 @@ describe("enterprise MCP gateway", () => {
 
   it("reuses the same confirmed follow-up route for the insurance Reference Role Pack", async () => {
     mocks.serverId = "wealth_governance_demo";
+    mocks.enabledServerIds = [mocks.serverId];
     mocks.displayName = "岗位业务治理 Demo";
     mocks.roleKey = "insurance-advisor";
     Object.assign(mocks.policy, {

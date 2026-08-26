@@ -10,6 +10,7 @@ import {
 } from "./role-mcp-gateway";
 import { resolveEnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 import { platformToolNames } from "./platform-tools-mcp";
+import { CUSTOMER_CONTEXT_ALL_TOOL_NAMES } from "../../shared/customer-context-contract";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:18092";
 const SERVER_CACHE_TTL_MS = 30_000;
@@ -165,7 +166,9 @@ async function listRuntimeMcpServers(force = false): Promise<RuntimeMcpServer[]>
 }
 
 export function localRuntimeMcpToolCatalog(serverId: string): string[] | null {
-  return serverId === "platform_tools" ? platformToolNames() : null;
+  if (serverId === "platform_tools") return platformToolNames();
+  if (serverId === "customer_context") return CUSTOMER_CONTEXT_ALL_TOOL_NAMES;
+  return null;
 }
 
 async function listRuntimeMcpTools(serverId: string, force = false): Promise<string[]> {

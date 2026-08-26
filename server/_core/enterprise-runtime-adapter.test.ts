@@ -310,7 +310,7 @@ describe("enterprise runtime adapter", () => {
       "custom_mcp_gateway",
       "enterprise_mcp_gateway",
       "role_mcp_gateway",
-      "customer_profile",
+      "customer_context",
     ]);
     expect(root.mcpServers.enterprise_mcp_gateway).toMatchObject({
       url: "https://ea.example.test/api/internal/enterprise-mcp/mcp",
@@ -332,11 +332,11 @@ describe("enterprise runtime adapter", () => {
         "x-jiuwen-channel-id": "lgj-test",
       },
     });
-    expect(root.mcpServers.customer_profile).toMatchObject({
-      name: "customer_profile",
-      url: "https://ea.example.test/api/internal/customer-profile/mcp",
+    expect(root.mcpServers.customer_context).toMatchObject({
+      name: "customer_context",
+      url: "https://ea.example.test/api/internal/customer-context/mcp",
       auth_headers: {
-        "x-ea-runtime-token-audience": "urn:ea:internal-mcp:customer-profile",
+        "x-ea-runtime-token-audience": "urn:ea:internal-mcp:customer-context",
         "x-linggan-agent-id": "agent-insurance",
         "x-jiuwen-channel-id": "lgj-test",
       },

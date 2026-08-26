@@ -32,9 +32,11 @@ describe("insurance advisor role pack baseline", () => {
     expect(baseline.skillRequirements["insurance-telesales-recommend"]).toBeUndefined();
     expect(role.mcpServers).toEqual(expect.arrayContaining([
       "insurance_kb",
-      "insurance_customer_profile",
+      "customer_context",
       "insurance_product_exam_points",
       "wealth_governance_demo",
     ]));
+    expect(role.mcpServers).not.toContain("insurance_customer_profile");
+    expect(baseline.skillRequirements["auto-insurance-advisor"].servers).toHaveProperty("customer_context");
   });
 });
