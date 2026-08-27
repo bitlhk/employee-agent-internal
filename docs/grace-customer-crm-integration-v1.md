@@ -9,10 +9,10 @@ Twenty, to source-specific MCP tools, or to raw CRM objects.
 
 ```text
 Wealth Customer Source ─┐
-                        ├─ Customer Source Adapter ─ Twenty CRM
-Insurance Customer Source ┘             │
-                                        ↓
-                              customer_context
+                        ├─ Governed Import ─ Twenty CRM
+Insurance Customer Source ┘                  │
+                                             ↓ REST
+                                    customer_context
                                         ↓
                     Purpose Projection / Eligibility
                          ┌──────────────┴──────────────┐
@@ -36,6 +36,11 @@ Insurance Customer Source ┘             │
    enter Agent Runtime.
 7. Same CRM and same Binding do not imply same visibility. Runtime purpose,
    principal and Eligibility still select the wealth or insurance projection.
+8. `CUST` means `Customer` and is only a stable enterprise identity namespace.
+   It never encodes role, domain, phone number, ownership or organization.
+9. Demo visibility and customer ownership remain distinct. `demo_public`
+   provides a shared exercise pool; `customerAssignment` is the authoritative
+   fact for dedicated ownership and CRM write preference.
 
 ## CRM Objects
 
@@ -81,9 +86,10 @@ As of 2026-08-27, the isolated Twenty environment is deployed and verified
 with 20 insurance Demo customers plus 8 wealth customers obtained through the
 governed Shanghai MCP path. All 28 customers use the same customer, source-link
 and versioned domain-profile model. The 121-row wealth workbook remains a
-field-definition input rather than a flat set of populated CRM columns. The
-Twenty source adapter is Shadow-only, and the existing wealth and insurance
-customer providers remain the Production path. See
+field-definition input rather than a flat set of populated CRM columns. EA now
+uses `customer_context` to read Twenty directly with row authorization and
+role/purpose profile filters. Legacy wealth and insurance customer providers
+remain hidden rollback dependencies for one release. See
 `grace-customer-crm-environment-acceptance-v1.md` for evidence and known gaps.
 
 Twenty manual creation uses a database-assigned Global Customer ID. The field

@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { normalizeWealthCustomerPortfolio } from "./customer-context-tools";
+import {
+  customerDirectoryRequest,
+  normalizeWealthCustomerPortfolio,
+} from "./customer-context-tools";
+
+describe("Customer Context directory request", () => {
+  it("supports explicit dedicated and shared-demo scopes", () => {
+    expect(customerDirectoryRequest({ scope: "assigned" })).toMatchObject({
+      scope: "assigned",
+      offset: 0,
+      limit: 20,
+    });
+    expect(customerDirectoryRequest({ scope: "demo_public" })).toMatchObject({
+      scope: "demo_public",
+    });
+    expect(customerDirectoryRequest({ scope: "unsupported" })).toMatchObject({
+      scope: "all",
+    });
+  });
+});
 
 describe("Customer Context portfolio projection", () => {
   it("keeps portfolio facts while excluding raw biography and upstream recommendations", () => {
@@ -20,19 +39,23 @@ describe("Customer Context portfolio projection", () => {
             checking: 100000,
             investments: 700000,
           },
-          heldProducts: [{
-            productCode: "P001",
-            productName: "稳健产品",
-            balance: 500000,
-            status: "active",
-            internalRemark: "must-not-pass",
-          }],
-          maturedProducts: [{
-            productCode: "P002",
-            productName: "到期产品",
-            maturityDate: "2026-09-01",
-            amount: 300000,
-          }],
+          heldProducts: [
+            {
+              productCode: "P001",
+              productName: "稳健产品",
+              balance: 500000,
+              status: "active",
+              internalRemark: "must-not-pass",
+            },
+          ],
+          maturedProducts: [
+            {
+              productCode: "P002",
+              productName: "到期产品",
+              maturityDate: "2026-09-01",
+              amount: 300000,
+            },
+          ],
           recommendations: ["must-not-pass"],
         },
       },
@@ -43,8 +66,14 @@ describe("Customer Context portfolio projection", () => {
       logicalContextId: "customer_portfolio",
       subjectId: "C005",
       status: "READY",
-      summary: { totalAssets: 800000, availableCash: 100000, investedAssets: 700000 },
-      holdings: [{ productRef: "P001", productName: "稳健产品", balance: 500000 }],
+      summary: {
+        totalAssets: 800000,
+        availableCash: 100000,
+        investedAssets: 700000,
+      },
+      holdings: [
+        { productRef: "P001", productName: "稳健产品", balance: 500000 },
+      ],
       maturities: [{ productRef: "P002", amount: 300000 }],
     });
     const serialized = JSON.stringify(result);
@@ -55,9 +84,11 @@ describe("Customer Context portfolio projection", () => {
   });
 
   it("fails closed when the upstream subject does not match the requested customer", () => {
-    expect(() => normalizeWealthCustomerPortfolio({
-      expectedSubjectId: "C005",
-      payload: { data: { customer: { CUST_NO: "C006" } } },
-    })).toThrow("CUSTOMER_PORTFOLIO_SOURCE_SUBJECT_MISMATCH");
+    expect(() =>
+      normalizeWealthCustomerPortfolio({
+        expectedSubjectId: "C005",
+        payload: { data: { customer: { CUST_NO: "C006" } } },
+      })
+    ).toThrow("CUSTOMER_PORTFOLIO_SOURCE_SUBJECT_MISMATCH");
   });
 });

@@ -182,7 +182,7 @@ describe("Twenty customer access", () => {
     expect(decision.allowedProfileTypes).toEqual([]);
   });
 
-  it("lists public and assigned customers once, without leaking other restricted rows", async () => {
+  it("lists dedicated customers before the shared demo pool without leaking restricted rows", async () => {
     const publicCustomer = customer("CUST-000010", "demo_public");
     const assignedCustomer = customer("CUST-000011", "restricted");
     const hiddenCustomer = customer("CUST-000012", "restricted");
@@ -193,9 +193,19 @@ describe("Twenty customer access", () => {
       }),
       principal,
     });
-    expect(rows.map(row => row.globalCustomerId)).toEqual([
-      "CUST-000010",
-      "CUST-000011",
+    expect(rows).toMatchObject([
+      {
+        globalCustomerId: "CUST-000011",
+        accessScope: "assigned",
+        relationshipRole: "primary",
+        preferredForWrite: true,
+      },
+      {
+        globalCustomerId: "CUST-000010",
+        accessScope: "demo_public",
+        relationshipRole: "demo_shared",
+        preferredForWrite: false,
+      },
     ]);
   });
 });

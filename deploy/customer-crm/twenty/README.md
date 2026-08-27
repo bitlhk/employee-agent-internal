@@ -51,12 +51,30 @@ names are not shown as the business creator or updater.
 The deployed Twenty metadata uses the neutral API field `globalCustomerId` and
 the user-facing label `全局客户编号`. The customer object is
 `enterpriseCustomer`; product or architecture names do not enter business
-object names.
+object names. `CUST` is the stable `Customer` namespace prefix. It carries no
+role, product, phone or organization semantics and therefore remains stable
+when the same person is served by multiple business roles.
 
 Current Demo customers use `demo_public`. New manually-created customers
 default to `restricted` and require an active `customerAssignment` before a
 user can discover or retrieve them. Role and purpose projections are applied
 by `customer_context` after row-scope authorization.
+
+The governed directory distinguishes the shared Demo pool from dedicated
+customer ownership without duplicating customer rows:
+
+- `scope=all` returns dedicated customers first, followed by the shared Demo
+  pool;
+- `scope=assigned` returns only customers with an active assignment for the
+  current Runtime Principal;
+- `scope=demo_public` returns only the shared Demo pool.
+
+Every directory item exposes `accessScope`, `relationshipRole`,
+`businessDomain` and `preferredForWrite`. Shared Demo customers remain useful
+for read-only scenarios and principal-scoped activity records, but they are
+not presented as exclusive ownership. Dedicated customers are the preferred
+target for confirmed CRM work. Customer master-profile mutation remains a
+separate governed capability and is not enabled by directory access.
 
 `customer_context` pushes the authorized `globalCustomerId` and role-specific
 profile types into the Twenty REST filter. Returned records are checked again

@@ -119,6 +119,8 @@ const DIRECTORY_TOOL = {
   name: "search_customers",
   description: [
     "Search customers within the current signed Runtime Principal's authorized directory.",
+    "Dedicated customers are returned before shared demo customers.",
+    "Use scope=assigned when the user asks for customers they personally own or when selecting a preferred CRM write target.",
     "The role, organization and service scope are derived from trusted runtime identity.",
     "Use the returned stable customer_id in subsequent customer tools.",
   ].join(" "),
@@ -128,6 +130,13 @@ const DIRECTORY_TOOL = {
       query: {
         type: "string",
         description: "Optional customer id or display-name query.",
+      },
+      scope: {
+        type: "string",
+        enum: ["all", "assigned", "demo_public"],
+        default: "all",
+        description:
+          "all returns dedicated and shared demo customers; assigned returns only dedicated customers; demo_public returns the shared demo pool.",
       },
       limit: { type: "integer", minimum: 1, maximum: 100, default: 20 },
       offset: { type: "integer", minimum: 0, maximum: 10000, default: 0 },
@@ -807,6 +816,10 @@ function legacyDirectoryResult(
     customer_id: item.customerId,
     name: item.displayName,
     customerName: item.displayName,
+    accessScope: item.accessScope,
+    businessDomain: item.businessDomain,
+    relationshipRole: item.relationshipRole,
+    preferredForWrite: item.preferredForWrite,
   }));
   if (roleTemplate === "insurance-advisor")
     return {
@@ -883,6 +896,7 @@ async function executeLegacyTool(input: {
     );
     const args = {
       query: input.args.query,
+      scope: input.args.scope,
       limit: pageSize,
       offset:
         input.toolName === "wealth_assistant_customer_list"

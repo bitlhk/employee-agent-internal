@@ -3,6 +3,7 @@ import { governanceFingerprint } from "./governance/contracts";
 import {
   TwentyCustomerCrmClientV1,
   type TwentyCustomerAssignmentV1,
+  type TwentyAuthorizedCustomerV1,
   type TwentyCustomerAuthorizationDecisionV1,
   type TwentyCustomerSummaryV1,
 } from "./customer-profile-twenty-client";
@@ -247,7 +248,7 @@ export function createConfiguredTwentyCustomerProfileLoader() {
 export async function listAuthorizedTwentyCustomers(input: {
   client: TwentyCustomerCrmClientV1;
   principal: RuntimePrincipalV2;
-}): Promise<TwentyCustomerSummaryV1[]> {
+}): Promise<TwentyAuthorizedCustomerV1[]> {
   if (!allowedProfileTypes(input.principal.roleTemplate).length) return [];
   const [publicCustomers, assignments] = await Promise.all([
     input.client.listPublicCustomers(),
@@ -261,7 +262,10 @@ export async function listAuthorizedTwentyCustomers(input: {
       input.client.loadCustomerSummary(item.globalCustomerId)
     )
   );
-  const unique = new Map<string, TwentyCustomerSummaryV1>();
+  const assignmentsByCustomer = new Map(
+    activeAssignments.map(item => [item.globalCustomerId, item])
+  );
+  const unique = new Map<string, TwentyAuthorizedCustomerV1>();
   for (const customer of [...publicCustomers, ...assignedCustomers]) {
     if (
       !customer ||
@@ -269,9 +273,21 @@ export async function listAuthorizedTwentyCustomers(input: {
       !customerBelongsToConfiguredScope(customer, input.principal)
     )
       continue;
-    unique.set(customer.globalCustomerId, customer);
+    const assignment = assignmentsByCustomer.get(customer.globalCustomerId);
+    unique.set(customer.globalCustomerId, {
+      ...customer,
+      accessScope: assignment ? "assigned" : "demo_public",
+      businessDomain:
+        assignment?.businessDomain ||
+        roleBusinessDomain(input.principal.roleTemplate),
+      relationshipRole: assignment?.relationshipRole || "demo_shared",
+      preferredForWrite: Boolean(assignment),
+      ...(assignment ? { assignmentKey: assignment.assignmentKey } : {}),
+    });
   }
-  return Array.from(unique.values()).sort((left, right) =>
-    left.globalCustomerId.localeCompare(right.globalCustomerId)
-  );
+  return Array.from(unique.values()).sort((left, right) => {
+    if (left.preferredForWrite !== right.preferredForWrite)
+      return left.preferredForWrite ? -1 : 1;
+    return left.globalCustomerId.localeCompare(right.globalCustomerId);
+  });
 }

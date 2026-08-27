@@ -115,24 +115,39 @@ const sourceLoader = vi.fn<CustomerProfileSourceLoaderV1>(async () => ({
   notes: [],
 }));
 
-const directoryLoader = vi.fn(async (input: { query: string; offset: number; limit: number }) => ({
-  schemaVersion: "ea.customer-directory-result.v1" as const,
-  contract: "ea.customer-context.v1" as const,
-  logicalContextId: "customer_directory" as const,
-  status: "READY" as const,
-  query: input.query,
-  offset: input.offset,
-  limit: input.limit,
-  total: 1,
-  items: [{ customerId: "CUST-001", displayName: "陈明" }],
-  sourceEvidence: [{
-    sourceSystem: "wealth_assistant_customer",
-    sourceRecordRef: "authorized-directory",
-    asOf: NOW,
-    resultFingerprint: "d".repeat(64),
-  }],
-  generatedAt: NOW,
-}));
+const directoryLoader = vi.fn(
+  async (input: { query: string; offset: number; limit: number }) => ({
+    schemaVersion: "ea.customer-directory-result.v1" as const,
+    contract: "ea.customer-context.v1" as const,
+    logicalContextId: "customer_directory" as const,
+    status: "READY" as const,
+    query: input.query,
+    scope: "all" as const,
+    scopeCounts: { assigned: 1, demoPublic: 0 },
+    offset: input.offset,
+    limit: input.limit,
+    total: 1,
+    items: [
+      {
+        customerId: "CUST-001",
+        displayName: "陈明",
+        accessScope: "assigned" as const,
+        businessDomain: "wealth",
+        relationshipRole: "primary",
+        preferredForWrite: true,
+      },
+    ],
+    sourceEvidence: [
+      {
+        sourceSystem: "wealth_assistant_customer",
+        sourceRecordRef: "authorized-directory",
+        asOf: NOW,
+        resultFingerprint: "d".repeat(64),
+      },
+    ],
+    generatedAt: NOW,
+  })
+);
 
 const portfolioLoader = vi.fn(async () => ({
   schemaVersion: "ea.customer-portfolio-result.v1" as const,
@@ -143,12 +158,14 @@ const portfolioLoader = vi.fn(async () => ({
   summary: { totalAssets: 800000 },
   holdings: [{ productRef: "P001", productName: "稳健产品", balance: 500000 }],
   maturities: [],
-  sourceEvidence: [{
-    sourceSystem: "wealth_assistant_customer",
-    sourceRecordRef: "customer:CUST-001:portfolio",
-    asOf: NOW,
-    resultFingerprint: "e".repeat(64),
-  }],
+  sourceEvidence: [
+    {
+      sourceSystem: "wealth_assistant_customer",
+      sourceRecordRef: "customer:CUST-001:portfolio",
+      asOf: NOW,
+      resultFingerprint: "e".repeat(64),
+    },
+  ],
   generatedAt: NOW,
 }));
 
@@ -228,7 +245,8 @@ describe("Customer Profile MCP tool", () => {
           expect.objectContaining({
             bindingId: shadowBinding.bindingId,
             logicalAssetId: "customer_profile",
-            candidateBindingFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
+            candidateBindingFingerprint:
+              expect.stringMatching(/^[a-f0-9]{64}$/u),
             resourceRefFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/u),
           }),
         ],
@@ -286,7 +304,10 @@ describe("Customer Profile MCP route", () => {
     );
   });
 
-  async function rpc(body: Record<string, unknown>, path = "/api/internal/customer-context/mcp") {
+  async function rpc(
+    body: Record<string, unknown>,
+    path = "/api/internal/customer-context/mcp"
+  ) {
     return fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
@@ -353,13 +374,15 @@ describe("Customer Profile MCP route", () => {
     const response = await rpc({ jsonrpc: "2.0", id: 4, method: "tools/list" });
     const body = await response.json();
     const names = body.result.tools.map((tool: { name: string }) => tool.name);
-    expect(names).toEqual(expect.arrayContaining([
-      "search_customers",
-      "get_customer_profile",
-      "get_customer_portfolio",
-      "wealth_assistant_customer_list",
-      "wealth_assistant_customer_detail",
-    ]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "search_customers",
+        "get_customer_profile",
+        "get_customer_portfolio",
+        "wealth_assistant_customer_list",
+        "wealth_assistant_customer_detail",
+      ])
+    );
     expect(names).not.toContain("list_customer_profiles");
   });
 
@@ -368,16 +391,31 @@ describe("Customer Profile MCP route", () => {
       jsonrpc: "2.0",
       id: 5,
       method: "tools/call",
-      params: { name: "search_customers", arguments: { query: "陈明", limit: 10 } },
+      params: {
+        name: "search_customers",
+        arguments: { query: "陈明", limit: 10 },
+      },
     });
     const body = await response.json();
     expect(projectionFrom(body.result)).toMatchObject({
       contract: "ea.customer-context.v1",
       logicalContextId: "customer_directory",
-      items: [{ customerId: "CUST-001", displayName: "陈明" }],
+      scopeCounts: { assigned: 1, demoPublic: 0 },
+      items: [
+        {
+          customerId: "CUST-001",
+          displayName: "陈明",
+          accessScope: "assigned",
+          preferredForWrite: true,
+        },
+      ],
     });
     expect(body.result._meta.eaContextReceipt).toMatchObject({
-      provided: { businessData: [expect.objectContaining({ logicalAssetId: "customer_directory" })] },
+      provided: {
+        businessData: [
+          expect.objectContaining({ logicalAssetId: "customer_directory" }),
+        ],
+      },
     });
   });
 
@@ -386,7 +424,10 @@ describe("Customer Profile MCP route", () => {
       jsonrpc: "2.0",
       id: 6,
       method: "tools/call",
-      params: { name: "wealth_assistant_customer_detail", arguments: { customerId: "CUST-001" } },
+      params: {
+        name: "wealth_assistant_customer_detail",
+        arguments: { customerId: "CUST-001" },
+      },
     });
     const body = await response.json();
     const compatibility = projectionFrom(body.result);
@@ -402,10 +443,12 @@ describe("Customer Profile MCP route", () => {
   it("keeps the legacy customer-profile route as a compatibility alias", async () => {
     const response = await rpc(
       { jsonrpc: "2.0", id: 7, method: "tools/list" },
-      "/api/internal/customer-profile/mcp",
+      "/api/internal/customer-profile/mcp"
     );
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.result.tools.map((tool: { name: string }) => tool.name)).toContain("get_customer_profile");
+    expect(
+      body.result.tools.map((tool: { name: string }) => tool.name)
+    ).toContain("get_customer_profile");
   });
 });

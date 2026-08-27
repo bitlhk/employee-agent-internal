@@ -21,9 +21,15 @@ import {
 
 type JsonObject = Record<string, unknown>;
 
+export type CustomerDirectoryScopeV1 = "all" | "assigned" | "demo_public";
+
 export type CustomerDirectoryItemV1 = {
   customerId: string;
   displayName: string;
+  accessScope?: "assigned" | "demo_public" | "authorized";
+  businessDomain?: string;
+  relationshipRole?: string;
+  preferredForWrite?: boolean;
 };
 
 export type CustomerDirectoryResultV1 = {
@@ -32,6 +38,11 @@ export type CustomerDirectoryResultV1 = {
   logicalContextId: "customer_directory";
   status: "READY" | "DEGRADED";
   query: string;
+  scope: CustomerDirectoryScopeV1;
+  scopeCounts: {
+    assigned: number;
+    demoPublic: number;
+  };
   offset: number;
   limit: number;
   total: number;
@@ -63,6 +74,7 @@ export type CustomerContextSourceEvidenceV1 = {
 export type CustomerDirectoryLoaderV1 = (input: {
   principal: RuntimePrincipalV2;
   query: string;
+  scope?: CustomerDirectoryScopeV1;
   offset: number;
   limit: number;
   request?: Request;
@@ -223,28 +235,55 @@ function filterDirectory(
   );
 }
 
+function filterDirectoryScope(
+  items: CustomerDirectoryItemV1[],
+  scope: CustomerDirectoryScopeV1
+): CustomerDirectoryItemV1[] {
+  if (scope === "assigned")
+    return items.filter(item => item.accessScope === "assigned");
+  if (scope === "demo_public")
+    return items.filter(item => item.accessScope === "demo_public");
+  return items;
+}
+
+function directoryScopeCounts(items: CustomerDirectoryItemV1[]) {
+  return {
+    assigned: items.filter(item => item.accessScope === "assigned").length,
+    demoPublic: items.filter(item => item.accessScope === "demo_public").length,
+  };
+}
+
 export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
   async input => {
     const role = input.principal.roleTemplate as CustomerContextRoleV1;
+    const requestedScope = input.scope || "all";
     const generatedAt = new Date().toISOString();
     if (twentyCustomerContextEnabled()) {
       const customers = await listAuthorizedTwentyCustomers({
         client: createConfiguredTwentyCustomerClient(),
         principal: input.principal,
       });
-      const all = filterDirectory(
+      const accessible = filterDirectory(
         customers.map(customer => ({
           customerId: customer.globalCustomerId,
           displayName: customer.displayName,
+          accessScope: customer.accessScope,
+          businessDomain: customer.businessDomain,
+          relationshipRole: customer.relationshipRole,
+          preferredForWrite: customer.preferredForWrite,
         })),
         input.query
       );
+      const scopeCounts = directoryScopeCounts(accessible);
+      const all = filterDirectoryScope(accessible, requestedScope);
       return {
         schemaVersion: "ea.customer-directory-result.v1",
         contract: CUSTOMER_CONTEXT_CONTRACT,
         logicalContextId: "customer_directory",
         status: "READY",
         query: input.query,
+        scope: requestedScope,
+        scopeCounts,
         offset: input.offset,
         limit: input.limit,
         total: all.length,
@@ -274,6 +313,10 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
         normalizeWealthCustomerList(payload).map(item => ({
           customerId: item.customerId,
           displayName: item.customerName,
+          accessScope: "authorized" as const,
+          businessDomain: "wealth",
+          relationshipRole: "legacy_authorized",
+          preferredForWrite: false,
         })),
         input.query
       );
@@ -290,6 +333,8 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
         logicalContextId: "customer_directory",
         status: "READY",
         query: input.query,
+        scope: requestedScope,
+        scopeCounts: { assigned: 0, demoPublic: 0 },
         offset: input.offset,
         limit: input.limit,
         total: all.length,
@@ -319,7 +364,13 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
         },
       });
       const all = filterDirectory(
-        insuranceDirectoryItems(payload),
+        insuranceDirectoryItems(payload).map(item => ({
+          ...item,
+          accessScope: "authorized" as const,
+          businessDomain: "insurance",
+          relationshipRole: "legacy_authorized",
+          preferredForWrite: false,
+        })),
         input.query
       );
       const asOf = firstString(payload.asOf, payload.updatedAt, generatedAt);
@@ -329,6 +380,8 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
         logicalContextId: "customer_directory",
         status: "READY",
         query: input.query,
+        scope: requestedScope,
+        scopeCounts: { assigned: 0, demoPublic: 0 },
         offset: input.offset,
         limit: input.limit,
         total:
@@ -616,8 +669,15 @@ export const defaultCustomerPortfolioLoader: CustomerPortfolioLoaderV1 =
   };
 
 export function customerDirectoryRequest(args: JsonObject) {
+  const requestedScope = firstString(args.scope);
+  const scope: CustomerDirectoryScopeV1 = ["assigned", "demo_public"].includes(
+    requestedScope
+  )
+    ? (requestedScope as CustomerDirectoryScopeV1)
+    : "all";
   return {
     query: firstString(args.query, args.keyword, args.name).slice(0, 200),
+    scope,
     offset: boundedInteger(args.offset, 0, 10_000),
     limit: Math.max(
       1,

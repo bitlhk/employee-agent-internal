@@ -41,6 +41,14 @@ export type TwentyCustomerSummaryV1 = {
   maskedPhone?: string;
 };
 
+export type TwentyAuthorizedCustomerV1 = TwentyCustomerSummaryV1 & {
+  accessScope: "assigned" | "demo_public";
+  businessDomain: string;
+  relationshipRole: string;
+  preferredForWrite: boolean;
+  assignmentKey?: string;
+};
+
 export type TwentyCustomerAssignmentV1 = {
   assignmentKey: string;
   globalCustomerId: string;
