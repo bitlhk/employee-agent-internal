@@ -6,6 +6,7 @@ import {
   gatewayProgressStatus,
   gatewayPermissionAnswerMethod,
   gatewayPermissionEventMatchesRequest,
+  resolveGatewayArtifactWorkspace,
   shouldKeepGatewayRunAfterClientClose,
 } from "./jiuwenswarm-gateway-client";
 
@@ -20,6 +21,21 @@ describe("gateway progress continuity", () => {
   it("keeps enterprise work attached to the gateway after the browser disconnects", () => {
     expect(shouldKeepGatewayRunAfterClientClose(true)).toBe(true);
     expect(shouldKeepGatewayRunAfterClientClose(false)).toBe(false);
+  });
+
+  it("stores enterprise artifacts in the bound enterprise runtime workspace", () => {
+    const resolveByIds = (adoptId: string, runtimeAgentId: string) => `/runtime/${adoptId}/${runtimeAgentId}`;
+    expect(resolveGatewayArtifactWorkspace({
+      adoptId: "lgj-demo",
+      defaultWorkspaceDir: "/runtime/lgj-demo/jiuwen_lgj-demo",
+      enterpriseRuntimeAgentId: "ea_user_demo",
+      resolveByIds,
+    })).toBe("/runtime/lgj-demo/ea_user_demo");
+    expect(resolveGatewayArtifactWorkspace({
+      adoptId: "lgj-demo",
+      defaultWorkspaceDir: "/runtime/lgj-demo/jiuwen_lgj-demo",
+      resolveByIds,
+    })).toBe("/runtime/lgj-demo/jiuwen_lgj-demo");
   });
 });
 

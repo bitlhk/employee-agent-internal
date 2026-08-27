@@ -25,7 +25,13 @@ import {
   recordJiuwenToolAudit,
   collectRecentWorkspaceFiles,
 } from "./jiuwenclaw-bridge";
-import { appendLogAsync, JIUWENCLAW_HOME, jiuwenClawSessionsDir, resolveRuntimeWorkspace } from "./helpers";
+import {
+  appendLogAsync,
+  JIUWENCLAW_HOME,
+  jiuwenClawSessionsDir,
+  resolveRuntimeWorkspace,
+  resolveRuntimeWorkspaceByIds,
+} from "./helpers";
 import { privateMessageLogFields } from "./log-privacy";
 import { writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile } from "./jiuwen-session-artifacts";
 import { materializeRemoteJiuwenFiles } from "./jiuwen-remote-artifacts";
@@ -68,6 +74,17 @@ export function gatewayProgressStatus(elapsedMs: number): string {
 
 export function shouldKeepGatewayRunAfterClientClose(enterprise: boolean): boolean {
   return enterprise;
+}
+
+export function resolveGatewayArtifactWorkspace(args: {
+  adoptId: string;
+  defaultWorkspaceDir: string;
+  enterpriseRuntimeAgentId?: string;
+  resolveByIds?: typeof resolveRuntimeWorkspaceByIds;
+}): string {
+  const enterpriseRuntimeAgentId = String(args.enterpriseRuntimeAgentId || "").trim();
+  if (!enterpriseRuntimeAgentId) return args.defaultWorkspaceDir;
+  return (args.resolveByIds || resolveRuntimeWorkspaceByIds)(args.adoptId, enterpriseRuntimeAgentId);
 }
 
 export function buildGovernanceContinuationPermission(
@@ -319,6 +336,7 @@ async function handleGatewayEvent(args: {
   sessionId: string;
   channelId: string;
   workspaceDir: string;
+  artifactWorkspaceDir?: string;
   collectText?: (text: string) => void;
   collectFiles?: (files: JiuwenSessionArtifactFile[]) => void;
   collectUsage?: (usage: Record<string, number>) => void;
@@ -384,7 +402,8 @@ async function handleGatewayEvent(args: {
     return "permission";
   }
 
-  let files = normalizeJiuwenFileEvent(payload, args.workspaceDir);
+  const artifactWorkspaceDir = args.artifactWorkspaceDir || args.workspaceDir;
+  let files = normalizeJiuwenFileEvent(payload, artifactWorkspaceDir);
   if (
     args.remoteFileWsUrl
     && (eventType === "chat.file" || eventType === "chat.media")
@@ -392,7 +411,7 @@ async function handleGatewayEvent(args: {
     const remoteFiles = await materializeRemoteJiuwenFiles({
       delta: payload,
       wsUrl: args.remoteFileWsUrl,
-      workspaceDir: args.workspaceDir,
+      workspaceDir: artifactWorkspaceDir,
       requestId: args.requestId,
     });
     if (remoteFiles.length > 0) files = remoteFiles;
@@ -492,6 +511,11 @@ export async function forwardToJiuwenGateway(
   const sessionId = buildJiuwenSessionId(claw, agentId, opts);
   const channelId = claw.adoptId;
   const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
+  const artifactWorkspaceDir = resolveGatewayArtifactWorkspace({
+    adoptId: claw.adoptId,
+    defaultWorkspaceDir: workspaceDir,
+    enterpriseRuntimeAgentId: enterpriseRoute?.binding.runtimeAgentId,
+  });
   const runtimeAttachments = enterpriseRoute
     ? buildEnterpriseRuntimeAttachmentRefs(opts.uploadedAttachments || [], workspaceDir)
     : [];
@@ -871,6 +895,7 @@ export async function forwardToJiuwenGateway(
         sessionId,
         channelId,
         workspaceDir,
+        artifactWorkspaceDir,
         collectText: (text) => {
           if (text) opts.onFirstToken?.();
           memoryAssistantText += text;
@@ -937,6 +962,11 @@ export async function answerJiuwenGatewayPermission(
   const sessionId = buildJiuwenSessionId(claw, agentId, args);
   const channelId = claw.adoptId;
   const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
+  const artifactWorkspaceDir = resolveGatewayArtifactWorkspace({
+    adoptId: claw.adoptId,
+    defaultWorkspaceDir: workspaceDir,
+    enterpriseRuntimeAgentId: enterpriseRoute?.binding.runtimeAgentId,
+  });
   const requestId = `linggan-gateway-answer-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   const params = enterpriseRoute
     ? buildEnterprisePermissionAnswerParams({
@@ -1069,6 +1099,7 @@ export async function answerJiuwenGatewayPermission(
         sessionId,
         channelId,
         workspaceDir,
+        artifactWorkspaceDir,
         ...(enterpriseRoute ? { remoteFileWsUrl: wsUrl } : {}),
         collectText: (chunk) => {
           text += chunk;
