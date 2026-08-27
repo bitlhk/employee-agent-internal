@@ -10,6 +10,7 @@ type FieldSpec = {
   type: string;
   isUnique?: boolean;
   isNullable?: boolean;
+  isUIEditable?: boolean;
 };
 
 type ObjectSpec = {
@@ -37,6 +38,7 @@ type MetadataObject = {
     type: string;
     isUnique: boolean;
     isNullable: boolean;
+    isUIEditable: boolean;
   }>;
 };
 
@@ -184,14 +186,17 @@ async function authenticateOrCreateWorkspace(): Promise<string> {
 
 const OBJECTS = `query Objects {
   objects(paging:{first:1000}) { edges { node {
-    id nameSingular namePlural fieldsList { id name type isUnique isNullable }
+    id nameSingular namePlural fieldsList { id name type isUnique isNullable isUIEditable }
   } } }
 }`;
 const CREATE_OBJECT = `mutation CreateObject($input:CreateOneObjectInput!){
-  createOneObject(input:$input){id nameSingular namePlural fieldsList{id name type isUnique isNullable}}
+  createOneObject(input:$input){id nameSingular namePlural fieldsList{id name type isUnique isNullable isUIEditable}}
 }`;
 const CREATE_FIELD = `mutation CreateField($input:CreateOneFieldMetadataInput!){
-  createOneField(input:$input){id name type isUnique isNullable object{id}}
+  createOneField(input:$input){id name type isUnique isNullable isUIEditable object{id}}
+}`;
+const UPDATE_FIELD = `mutation UpdateField($input:UpdateOneFieldMetadataInput!){
+  updateOneField(input:$input){id name type isUnique isNullable isUIEditable}
 }`;
 
 async function listObjects(token: string): Promise<MetadataObject[]> {
@@ -231,12 +236,34 @@ async function ensureModel(token: string, model: ModelSpec) {
       if (existing) {
         if (
           existing.type !== field.type ||
-          existing.isUnique !== (field.isUnique === true) ||
-          existing.isNullable !== (field.isNullable !== false)
+          existing.isUnique !== (field.isUnique === true)
         )
           throw new Error(
             `Twenty field contract mismatch: ${spec.nameSingular}.${field.name}`
           );
+        const expectedNullable = field.isNullable !== false;
+        const expectedUIEditable = field.isUIEditable !== false;
+        if (
+          existing.isNullable !== expectedNullable ||
+          existing.isUIEditable !== expectedUIEditable
+        ) {
+          const data = await graphql<{
+            updateOneField: MetadataObject["fieldsList"][number];
+          }>(
+            UPDATE_FIELD,
+            {
+              input: {
+                id: existing.id,
+                update: {
+                  isNullable: expectedNullable,
+                  isUIEditable: expectedUIEditable,
+                },
+              },
+            },
+            token
+          );
+          Object.assign(existing, data.updateOneField);
+        }
         continue;
       }
       const data = await graphql<{
@@ -252,6 +279,7 @@ async function ensureModel(token: string, model: ModelSpec) {
               label: field.label,
               isUnique: field.isUnique === true,
               isNullable: field.isNullable !== false,
+              isUIEditable: field.isUIEditable !== false,
               isActive: true,
             },
           },

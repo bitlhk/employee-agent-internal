@@ -51,6 +51,31 @@ The deployed Twenty metadata keeps the internal API field name
 are the neutral `全局客户编号` and `CUST-xxxxxx`; Skills and users do not consume
 the internal field name.
 
+## Manual Customer Creation
+
+Twenty creates records before users fill the remaining fields. Therefore the
+Global Customer ID is nullable only at the API boundary and read-only in the
+UI. A database trigger assigns it atomically before persistence; persisted
+customer records still require a unique Global Customer ID.
+
+Install the allocator before making the customer object available to users:
+
+```bash
+docker compose exec -T db sh -lc \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < deploy/customer-crm/twenty/customer-id-allocation.sql
+
+set -a
+. /secure/path/linggan-customer-integration.env
+set +a
+pnpm customer-crm:manual-create:configure
+```
+
+Manual IDs use the reserved `CUST-900001` and above range. The same trigger
+sets new UI-created customers to `draft`, assigns the canonical tenant and
+records the creation time. A draft customer does not enter Runtime until a
+governed source mapping and eligible domain profile are added.
+
 The server port may be exposed for initial Demo setup. Production-like access
 must use a dedicated HTTPS hostname and a reverse proxy before any non-Demo
 data is imported.

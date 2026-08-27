@@ -86,6 +86,12 @@ Twenty source adapter is Shadow-only, and the existing wealth and insurance
 customer providers remain the Production path. See
 `grace-customer-crm-environment-acceptance-v1.md` for evidence and known gaps.
 
+Twenty manual creation uses a database-assigned Global Customer ID. The field
+is optional only in the incoming create request and read-only to users; the
+database assigns a unique `CUST-9xxxxx` value before the record is persisted.
+New records start as `draft` and are not Runtime-eligible without governed
+source and domain-profile records.
+
 ## V1 Exit Criteria
 
 - Twenty is pinned to an immutable release and runs on an isolated host.

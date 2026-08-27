@@ -96,6 +96,7 @@
     "customer-crm:contracts:verify": "tsx scripts/verify-customer-crm-contracts.ts && vitest run server/_core/customer-crm-contracts.test.ts server/_core/customer-crm-import.test.ts server/_core/customer-profile-twenty-adapter.test.ts server/_core/customer-profile-twenty-client.test.ts server/_core/customer-crm-writeback.test.ts",
     "customer-crm:prepare-demo": "tsx scripts/prepare-customer-crm-import.ts",
     "customer-crm:bootstrap-twenty": "tsx scripts/bootstrap-twenty-customer-crm.ts",
+    "customer-crm:manual-create:configure": "tsx scripts/configure-twenty-customer-manual-create.ts",
     "customer-crm:environment:verify": "tsx scripts/verify-twenty-customer-crm-environment.ts",
     "context:provider:llamaindex:certify": "tsx scripts/certify-llamaindex-provider.ts",
     "context:provider:llamaindex:baseline:verify": "tsx scripts/verify-llamaindex-provider-certification-baseline.ts",

@@ -14,7 +14,8 @@
           "label": "全局客户编号",
           "type": "TEXT",
           "isUnique": true,
-          "isNullable": false
+          "isNullable": true,
+          "isUIEditable": false
         },
         { "name": "customerStatus", "label": "客户状态", "type": "TEXT" },
         { "name": "tenantId", "label": "租户编号", "type": "TEXT" },

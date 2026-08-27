@@ -13,18 +13,19 @@ Acceptance date: `2026-08-27` (Asia/Shanghai)
 
 ## Immutable Inputs
 
-| Item                           | Value                                                              |
-| ------------------------------ | ------------------------------------------------------------------ |
-| CRM release                    | `twentycrm/twenty:v2.35.0`                                         |
-| CRM host                       | `116.204.36.83`                                                    |
-| CRM private endpoint           | `192.168.0.102:3000`                                               |
-| HTTPS administrator endpoint   | `https://crm.demo.linggan.top`                                     |
-| Shared ingress                 | `116.204.37.89` / `192.168.0.210`                                  |
-| Import bundle fingerprint      | `787af97ec05b3404ea594c0e7e1f57c90f36e6e62e2ea0c14bc71fa0e9fdf517` |
-| Wealth MCP export fingerprint  | `dfaa828cd05f5a38f836fc07bf6b3c4e8860c87d4649ac6562c21a09cd80a878` |
-| Identity Crosswalk fingerprint | `43288a2cc01348a0695c5b0557c85e54a2592337b71606b27f32ac715c02ff43` |
-| Customer model fingerprint     | `da09eb5e35af1fdd57689b1fca17903323484c006611e79f8206cb794e478424` |
-| Customer contract fingerprint  | `b9fffc9d3017390301d049befbf43639e4d55e606e03fdc5eff227bacc525521` |
+| Item                            | Value                                                              |
+| ------------------------------- | ------------------------------------------------------------------ |
+| CRM release                     | `twentycrm/twenty:v2.35.0`                                         |
+| CRM host                        | `116.204.36.83`                                                    |
+| CRM private endpoint            | `192.168.0.102:3000`                                               |
+| HTTPS administrator endpoint    | `https://crm.demo.linggan.top`                                     |
+| Shared ingress                  | `116.204.37.89` / `192.168.0.210`                                  |
+| Import bundle fingerprint       | `787af97ec05b3404ea594c0e7e1f57c90f36e6e62e2ea0c14bc71fa0e9fdf517` |
+| Wealth MCP export fingerprint   | `dfaa828cd05f5a38f836fc07bf6b3c4e8860c87d4649ac6562c21a09cd80a878` |
+| Identity Crosswalk fingerprint  | `43288a2cc01348a0695c5b0557c85e54a2592337b71606b27f32ac715c02ff43` |
+| Customer model fingerprint      | `ad1084ff7c797b2bd628a4fdcd4f3f22dc39a7c73b92a50ae43b1cbbc3491295` |
+| Manual ID allocator fingerprint | `af2aa387842918c72f9bd0bd5e9e8a61fae2faf1f50622e1f1ea7ed7271398b3` |
+| Customer contract fingerprint   | `b9fffc9d3017390301d049befbf43639e4d55e606e03fdc5eff227bacc525521` |
 
 Credentials are stored only on the CRM host with mode `0600`. They are not in
 Git, Asset metadata, Binding metadata or Receipts.
@@ -93,6 +94,22 @@ adapter.
 | Missing authorization vs missing subject | Explicitly distinguished |
 
 `productionActivated=false` remains a hard assertion in the verifier.
+
+## Manual Create Acceptance
+
+The customer object's native New button is supported. `graceCustomerId` is
+read-only in the UI and nullable only at the Twenty API boundary. The database
+assigns a reserved `CUST-9xxxxx` identifier atomically before persistence and
+defaults the new record to `draft`. Draft records remain outside Runtime until
+their source mapping and domain profile pass governance.
+
+Environment verification created `CUST-900001` without supplying an ID,
+confirmed `draft` plus the canonical tenant, and then hard-deleted the fixture.
+Five concurrent creates then received unique IDs `CUST-900002` through
+`CUST-900006`; all five fixtures were hard-deleted.
+The post-test customer count remained `28` with zero missing Global Customer
+IDs. The pre-change database snapshot is
+`/root/backups/linggan-customer-crm/manual-create-20260827T121503Z`.
 
 ## Boundaries And Remaining Work
 
