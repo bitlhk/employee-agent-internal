@@ -157,6 +157,35 @@ describe("Twenty Customer CRM client", () => {
     ).resolves.toBe("CUST-000005");
   });
 
+  it("pushes role profile and runtime status filters down before listing customer IDs", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        data: {
+          customerDomainProfiles: [
+            { globalCustomerId: "CUST-000101" },
+            { globalCustomerId: "CUST-000102" },
+            { globalCustomerId: "CUST-000101" },
+          ],
+        },
+      })
+    );
+    const client = new TwentyCustomerCrmClientV1({
+      baseUrl: "http://127.0.0.1:19030",
+      apiKey: "test-key",
+      request,
+    });
+    await expect(
+      client.listCustomerIdsByProfileScope({
+        profileTypes: ["auto_insurance", "life_insurance"],
+        runtimeStatuses: ["active"],
+      })
+    ).resolves.toEqual(["CUST-000101", "CUST-000102"]);
+    const url = String(request.mock.calls[0]?.[0]);
+    expect(url).toContain("profileType%5Beq%5D%3A%22auto_insurance%22");
+    expect(url).toContain("profileType%5Beq%5D%3A%22life_insurance%22");
+    expect(url).toContain("runtimeStatus%5Beq%5D%3A%22active%22");
+  });
+
   it("does not provide candidate profiles through the production default", async () => {
     const request = vi
       .fn<typeof fetch>()

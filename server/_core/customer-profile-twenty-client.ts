@@ -81,6 +81,19 @@ function jsonObject(value: unknown): JsonObject {
   }
 }
 
+function equalAnyFilter(field: string, values: string[]): string {
+  const normalized = Array.from(
+    new Set(values.map(value => value.trim()).filter(Boolean))
+  );
+  if (!normalized.length)
+    throw new Error("TWENTY_CUSTOMER_CRM_FILTER_SCOPE_REQUIRED");
+  if (normalized.length === 1)
+    return `${field}[eq]:${JSON.stringify(normalized[0])}`;
+  return `or(${normalized
+    .map(value => `${field}[eq]:${JSON.stringify(value)}`)
+    .join(",")})`;
+}
+
 function allowedBaseUrl(rawUrl: string): string {
   const url = new URL(rawUrl);
   const loopback = ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
@@ -234,6 +247,26 @@ export class TwentyCustomerCrmClientV1 {
     }));
   }
 
+  async listCustomerIdsByProfileScope(input: {
+    profileTypes: string[];
+    runtimeStatuses?: Array<"candidate" | "active">;
+    limit?: number;
+  }): Promise<string[]> {
+    const profileTypeFilter = equalAnyFilter("profileType", input.profileTypes);
+    const runtimeStatusFilter = equalAnyFilter(
+      "runtimeStatus",
+      input.runtimeStatuses?.length ? input.runtimeStatuses : ["active"]
+    );
+    const rows = await this.findMany(
+      "customerDomainProfiles",
+      `and(${profileTypeFilter},${runtimeStatusFilter})`,
+      Math.min(5_000, Math.max(1, input.limit || 2_000))
+    );
+    return Array.from(
+      new Set(rows.map(row => string(row.globalCustomerId)).filter(Boolean))
+    );
+  }
+
   private async batchUpsert(
     objectNamePlural: "customerInteractions" | "customerFollowupTasks",
     records: JsonObject[]
@@ -268,28 +301,27 @@ export class TwentyCustomerCrmClientV1 {
     if (!allowedTypes.length)
       throw new Error("TWENTY_CUSTOMER_CRM_PROFILE_SCOPE_REQUIRED");
     const quotedId = JSON.stringify(id);
-    const profileTypeFilter =
-      allowedTypes.length === 1
-        ? `profileType[eq]:${JSON.stringify(allowedTypes[0])}`
-        : `or(${allowedTypes
-            .map(type => `profileType[eq]:${JSON.stringify(type)}`)
-            .join(",")})`;
+    const allowedRuntimeStatuses = new Set(
+      input.allowedRuntimeStatuses?.length
+        ? input.allowedRuntimeStatuses
+        : ["active"]
+    );
+    const profileTypeFilter = equalAnyFilter("profileType", allowedTypes);
+    const runtimeStatusFilter = equalAnyFilter(
+      "runtimeStatus",
+      Array.from(allowedRuntimeStatuses)
+    );
     const [customers, profiles] = await Promise.all([
       this.findMany("enterpriseCustomers", `globalCustomerId[eq]:${quotedId}`),
       this.findMany(
         "customerDomainProfiles",
-        `and(globalCustomerId[eq]:${quotedId},${profileTypeFilter})`,
+        `and(globalCustomerId[eq]:${quotedId},${profileTypeFilter},${runtimeStatusFilter})`,
         20
       ),
     ]);
     if (!customers.length) return null;
     if (customers.length !== 1)
       throw new Error("TWENTY_CUSTOMER_CRM_GLOBAL_ID_AMBIGUOUS");
-    const allowedRuntimeStatuses = new Set(
-      input.allowedRuntimeStatuses?.length
-        ? input.allowedRuntimeStatuses
-        : ["active"]
-    );
     const eligibleProfiles = profiles.filter(
       profile =>
         allowedTypes.includes(string(profile.profileType)) &&

@@ -41,6 +41,11 @@ Insurance Customer Source ┘                  │
 9. Demo visibility and customer ownership remain distinct. `demo_public`
    provides a shared exercise pool; `customerAssignment` is the authoritative
    fact for dedicated ownership and CRM write preference.
+10. `demo_public` does not mean visible to every role. The customer directory
+    intersects public/assigned row access with an active role-eligible
+    `Customer Domain Profile` before returning any customer to the Agent.
+    Wealth uses `wealth`; insurance uses `auto_insurance` and
+    `life_insurance`. UI filtering is not an authorization boundary.
 
 ## CRM Objects
 
@@ -88,7 +93,10 @@ governed Shanghai MCP path. All 28 customers use the same customer, source-link
 and versioned domain-profile model. The 121-row wealth workbook remains a
 field-definition input rather than a flat set of populated CRM columns. EA now
 uses `customer_context` to read Twenty directly with row authorization and
-role/purpose profile filters. Legacy wealth and insurance customer providers
+role/purpose profile filters. Customer directory listing now applies the same
+profile eligibility before Context assembly, so a wealth manager receives the
+wealth Demo pool plus explicitly assigned wealth customers rather than every
+public CRM row. Legacy wealth and insurance customer providers
 remain hidden rollback dependencies for one release. See
 `grace-customer-crm-environment-acceptance-v1.md` for evidence and known gaps.
 

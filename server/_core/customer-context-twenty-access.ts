@@ -249,11 +249,20 @@ export async function listAuthorizedTwentyCustomers(input: {
   client: TwentyCustomerCrmClientV1;
   principal: RuntimePrincipalV2;
 }): Promise<TwentyAuthorizedCustomerV1[]> {
-  if (!allowedProfileTypes(input.principal.roleTemplate).length) return [];
-  const [publicCustomers, assignments] = await Promise.all([
-    input.client.listPublicCustomers(),
-    assignmentsForPrincipal(input.client, input.principal),
-  ]);
+  const profileTypes = allowedProfileTypes(input.principal.roleTemplate);
+  if (!profileTypes.length) return [];
+  const [publicCustomers, assignments, roleEligibleCustomerIds] =
+    await Promise.all([
+      input.client.listPublicCustomers(),
+      assignmentsForPrincipal(input.client, input.principal),
+      input.client.listCustomerIdsByProfileScope({
+        profileTypes,
+        runtimeStatuses: twentyCustomerContextProductionReady()
+          ? ["active"]
+          : ["candidate", "active"],
+      }),
+    ]);
+  const roleEligibleCustomers = new Set(roleEligibleCustomerIds);
   const activeAssignments = assignments.filter(item =>
     activeAssignment(item, input.principal)
   );
@@ -270,6 +279,7 @@ export async function listAuthorizedTwentyCustomers(input: {
     if (
       !customer ||
       customer.customerStatus !== "active" ||
+      !roleEligibleCustomers.has(customer.globalCustomerId) ||
       !customerBelongsToConfiguredScope(customer, input.principal)
     )
       continue;

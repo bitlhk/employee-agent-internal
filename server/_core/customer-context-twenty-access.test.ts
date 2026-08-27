@@ -67,6 +67,7 @@ function adoptionAssignment(
 function client(input: {
   customers: TwentyCustomerSummaryV1[];
   assignments?: TwentyCustomerAssignmentV1[];
+  roleEligibleCustomerIds?: string[];
 }) {
   return {
     loadCustomerSummary: vi.fn(
@@ -77,6 +78,11 @@ function client(input: {
       input.customers.filter(item => item.visibilityScope === "demo_public")
     ),
     listAssignmentsForPrincipal: vi.fn(async () => input.assignments || []),
+    listCustomerIdsByProfileScope: vi.fn(
+      async () =>
+        input.roleEligibleCustomerIds ||
+        input.customers.map(item => item.globalCustomerId)
+    ),
   } as unknown as TwentyCustomerCrmClientV1;
 }
 
@@ -206,6 +212,27 @@ describe("Twenty customer access", () => {
         relationshipRole: "demo_shared",
         preferredForWrite: false,
       },
+    ]);
+  });
+
+  it("filters the customer directory by the active profile types allowed for the role", async () => {
+    const wealthCustomer = customer("CUST-000001", "demo_public");
+    const insuranceCustomer = customer("CUST-000101", "demo_public");
+    const assignedWealthCustomer = customer("CUST-000201", "restricted");
+    const rows = await listAuthorizedTwentyCustomers({
+      client: client({
+        customers: [wealthCustomer, insuranceCustomer, assignedWealthCustomer],
+        assignments: [assignment(assignedWealthCustomer.globalCustomerId)],
+        roleEligibleCustomerIds: [
+          wealthCustomer.globalCustomerId,
+          assignedWealthCustomer.globalCustomerId,
+        ],
+      }),
+      principal,
+    });
+    expect(rows.map(row => row.globalCustomerId)).toEqual([
+      "CUST-000201",
+      "CUST-000001",
     ]);
   });
 });
