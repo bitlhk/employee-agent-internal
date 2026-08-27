@@ -45,7 +45,7 @@ export type TwentyCustomerAssignmentV1 = {
   assignmentKey: string;
   globalCustomerId: string;
   organizationId: string;
-  principalType: "user" | "team";
+  principalType: "user" | "team" | "role_adoption";
   principalRef: string;
   businessDomain: string;
   relationshipRole: string;
@@ -210,7 +210,12 @@ export class TwentyCustomerCrmClientV1 {
       assignmentKey: string(row.assignmentKey),
       globalCustomerId: string(row.globalCustomerId),
       organizationId: string(row.organizationId),
-      principalType: string(row.principalType) === "team" ? "team" : "user",
+      principalType:
+        string(row.principalType) === "team"
+          ? "team"
+          : string(row.principalType) === "role_adoption"
+            ? "role_adoption"
+            : "user",
       principalRef: string(row.principalRef),
       businessDomain: string(row.businessDomain),
       relationshipRole: string(row.relationshipRole),

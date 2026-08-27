@@ -50,8 +50,40 @@ function configuredOrganizations(): Set<string> {
   return new Set(configured);
 }
 
-function principalRef(principal: RuntimePrincipalV2): string {
-  return String(principal.userId);
+function principalAssignmentRefs(principal: RuntimePrincipalV2): Array<{
+  principalType: TwentyCustomerAssignmentV1["principalType"];
+  principalRef: string;
+}> {
+  return [
+    { principalType: "user", principalRef: String(principal.userId) },
+    { principalType: "role_adoption", principalRef: principal.adoptionId },
+  ];
+}
+
+async function assignmentsForPrincipal(
+  client: TwentyCustomerCrmClientV1,
+  principal: RuntimePrincipalV2
+): Promise<TwentyCustomerAssignmentV1[]> {
+  const batches = await Promise.all(
+    principalAssignmentRefs(principal).map(item =>
+      client.listAssignmentsForPrincipal(item.principalRef)
+    )
+  );
+  const unique = new Map<string, TwentyCustomerAssignmentV1>();
+  for (const assignment of batches.flat())
+    unique.set(assignment.assignmentKey, assignment);
+  return Array.from(unique.values());
+}
+
+function assignmentMatchesPrincipal(
+  assignment: TwentyCustomerAssignmentV1,
+  principal: RuntimePrincipalV2
+): boolean {
+  return principalAssignmentRefs(principal).some(
+    candidate =>
+      candidate.principalType === assignment.principalType &&
+      candidate.principalRef === assignment.principalRef
+  );
 }
 
 function roleBusinessDomain(roleTemplate: string): string {
@@ -66,8 +98,7 @@ function activeAssignment(
   now = new Date()
 ): boolean {
   if (
-    assignment.principalType !== "user" ||
-    assignment.principalRef !== principalRef(principal) ||
+    !assignmentMatchesPrincipal(assignment, principal) ||
     assignment.organizationId !== principal.organizationId ||
     assignment.assignmentStatus !== "active"
   )
@@ -130,9 +161,10 @@ export async function evaluateTwentyCustomerAccess(input: {
   const customer = await input.client.loadCustomerSummary(
     input.globalCustomerId
   );
-  const assignments = await input.client.listAssignmentsForPrincipal(
-    principalRef(input.principal)
-  );
+  const assignments =
+    customer?.visibilityScope === "restricted"
+      ? await assignmentsForPrincipal(input.client, input.principal)
+      : [];
   const assignment = assignments.find(
     item =>
       item.globalCustomerId === input.globalCustomerId &&
@@ -149,7 +181,7 @@ export async function evaluateTwentyCustomerAccess(input: {
     contract: "ea.twenty-customer-access.v1",
     globalCustomerId: input.globalCustomerId,
     organizationId: input.principal.organizationId,
-    principalRef: principalRef(input.principal),
+    principalRefs: principalAssignmentRefs(input.principal),
     roleTemplate: input.principal.roleTemplate,
     visibilityScope: customer?.visibilityScope || "not_found",
     assignmentKey: assignment?.assignmentKey || null,
@@ -219,7 +251,7 @@ export async function listAuthorizedTwentyCustomers(input: {
   if (!allowedProfileTypes(input.principal.roleTemplate).length) return [];
   const [publicCustomers, assignments] = await Promise.all([
     input.client.listPublicCustomers(),
-    input.client.listAssignmentsForPrincipal(principalRef(input.principal)),
+    assignmentsForPrincipal(input.client, input.principal),
   ]);
   const activeAssignments = assignments.filter(item =>
     activeAssignment(item, input.principal)

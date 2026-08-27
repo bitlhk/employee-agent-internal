@@ -53,6 +53,17 @@ function assignment(globalCustomerId: string): TwentyCustomerAssignmentV1 {
   };
 }
 
+function adoptionAssignment(
+  globalCustomerId: string
+): TwentyCustomerAssignmentV1 {
+  return {
+    ...assignment(globalCustomerId),
+    assignmentKey: `role-adoption:wealth-adoption:${globalCustomerId}`,
+    principalType: "role_adoption",
+    principalRef: "wealth-adoption",
+  };
+}
+
 function client(input: {
   customers: TwentyCustomerSummaryV1[];
   assignments?: TwentyCustomerAssignmentV1[];
@@ -124,6 +135,28 @@ describe("Twenty customer access", () => {
       globalCustomerId: restricted.globalCustomerId,
     });
     expect(allowed.subjectInScope).toBe(true);
+  });
+
+  it("supports a stable role-adoption assignment without trusting another environment user id", async () => {
+    const restricted = customer("CUST-000021", "restricted");
+    const allowed = await evaluateTwentyCustomerAccess({
+      client: client({
+        customers: [restricted],
+        assignments: [adoptionAssignment(restricted.globalCustomerId)],
+      }),
+      principal: { ...principal, userId: 2 },
+      globalCustomerId: restricted.globalCustomerId,
+    });
+    const denied = await evaluateTwentyCustomerAccess({
+      client: client({
+        customers: [restricted],
+        assignments: [adoptionAssignment(restricted.globalCustomerId)],
+      }),
+      principal: { ...principal, adoptionId: "other-adoption" },
+      globalCustomerId: restricted.globalCustomerId,
+    });
+    expect(allowed.subjectInScope).toBe(true);
+    expect(denied.subjectInScope).toBe(false);
   });
 
   it("does not apply a wealth-only customer assignment in an insurance purpose", async () => {

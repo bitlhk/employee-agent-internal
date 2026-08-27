@@ -74,7 +74,7 @@ export type CustomerCrmImportBundleV1 = {
     assignmentKey: string;
     globalCustomerId: string;
     organizationId: string;
-    principalType: "user" | "team";
+    principalType: "user" | "team" | "role_adoption";
     principalRef: string;
     businessDomain?: string;
     relationshipRole?: "primary" | "support";

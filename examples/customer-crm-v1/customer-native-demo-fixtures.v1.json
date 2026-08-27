@@ -95,11 +95,11 @@
   ],
   "assignments": [
     {
-      "assignmentKey": "org_linggan_finance:user:59:CUST-000201",
+      "assignmentKey": "org_linggan_finance:role_adoption:lgj-lihongkun:CUST-000201",
       "globalCustomerId": "CUST-000201",
       "organizationId": "org_linggan_finance",
-      "principalType": "user",
-      "principalRef": "59",
+      "principalType": "role_adoption",
+      "principalRef": "lgj-lihongkun",
       "businessDomain": "shared",
       "relationshipRole": "primary",
       "assignmentStatus": "active",

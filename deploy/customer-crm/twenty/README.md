@@ -58,6 +58,11 @@ default to `restricted` and require an active `customerAssignment` before a
 user can discover or retrieve them. Role and purpose projections are applied
 by `customer_context` after row-scope authorization.
 
+Customer assignments support `user`, `team`, and `role_adoption` principals.
+The last form is reserved for stable Demo role instances such as
+`lgj-lihongkun`; production employee ownership should use the enterprise
+identity-backed `user` or `team` principal.
+
 After profile Promotion, configure EA with `TWENTY_BASE_URL`, the server-side
 `TWENTY_API_KEY` secret, the canonical CRM tenant, and an explicit Runtime
 organization allowlist. Verify the real deployment identities before exposing
