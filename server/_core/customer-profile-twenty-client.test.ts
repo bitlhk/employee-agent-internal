@@ -97,9 +97,11 @@ describe("Twenty Customer CRM client", () => {
       "life_insurance",
     ]);
     expect(request).toHaveBeenCalledTimes(2);
-    expect(
-      request.mock.calls.map(call => String(call[0])).join(" ")
-    ).not.toContain("customerSuggestions");
+    const requests = request.mock.calls.map(call => String(call[0])).join(" ");
+    expect(requests).not.toContain("customerSuggestions");
+    expect(requests).toContain("profileType%5Beq%5D%3A%22auto_insurance%22");
+    expect(requests).toContain("profileType%5Beq%5D%3A%22life_insurance%22");
+    expect(requests).not.toContain("profileType%5Beq%5D%3A%22wealth%22");
   });
 
   it("authorizes before retrieving customer records", async () => {

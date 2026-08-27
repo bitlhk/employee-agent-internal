@@ -58,6 +58,10 @@ default to `restricted` and require an active `customerAssignment` before a
 user can discover or retrieve them. Role and purpose projections are applied
 by `customer_context` after row-scope authorization.
 
+`customer_context` pushes the authorized `globalCustomerId` and role-specific
+profile types into the Twenty REST filter. Returned records are checked again
+inside EA before they can become Runtime Context.
+
 Customer assignments support `user`, `team`, and `role_adoption` principals.
 The last form is reserved for stable Demo role instances such as
 `lgj-lihongkun`; production employee ownership should use the enterprise

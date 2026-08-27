@@ -260,11 +260,17 @@ export class TwentyCustomerCrmClientV1 {
     if (!allowedTypes.length)
       throw new Error("TWENTY_CUSTOMER_CRM_PROFILE_SCOPE_REQUIRED");
     const quotedId = JSON.stringify(id);
+    const profileTypeFilter =
+      allowedTypes.length === 1
+        ? `profileType[eq]:${JSON.stringify(allowedTypes[0])}`
+        : `or(${allowedTypes
+            .map(type => `profileType[eq]:${JSON.stringify(type)}`)
+            .join(",")})`;
     const [customers, profiles] = await Promise.all([
       this.findMany("enterpriseCustomers", `globalCustomerId[eq]:${quotedId}`),
       this.findMany(
         "customerDomainProfiles",
-        `globalCustomerId[eq]:${quotedId}`,
+        `and(globalCustomerId[eq]:${quotedId},${profileTypeFilter})`,
         20
       ),
     ]);
