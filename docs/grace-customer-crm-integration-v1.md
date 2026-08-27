@@ -78,10 +78,12 @@ or any suggestion is presented as an enterprise fact.
 ## Current Verification State
 
 As of 2026-08-27, the isolated Twenty environment is deployed and verified
-with 20 insurance Demo customers. The Twenty source adapter is Shadow-only;
-the existing wealth and insurance customer providers remain the Production
-path. See `grace-customer-crm-environment-acceptance-v1.md` for evidence and
-known gaps.
+with 20 insurance Demo customers and is available to administrators at
+`https://crm.demo.linggan.top`. No wealth customer record or 121-column flat
+profile was imported; the wealth workbook is a field-definition input. The
+Twenty source adapter is Shadow-only, and the existing wealth and insurance
+customer providers remain the Production path. See
+`grace-customer-crm-environment-acceptance-v1.md` for evidence and known gaps.
 
 ## V1 Exit Criteria
 

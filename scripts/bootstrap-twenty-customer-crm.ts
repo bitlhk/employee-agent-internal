@@ -54,8 +54,10 @@ function argument(name: string, fallback = ""): string {
 const baseUrl = requiredEnv("TWENTY_BASE_URL").replace(/\/$/u, "");
 const adminEmail = requiredEnv("TWENTY_ADMIN_EMAIL");
 const adminPassword = requiredEnv("TWENTY_ADMIN_PASSWORD");
-const workspaceName = process.env.TWENTY_WORKSPACE_NAME || "GRACE 客户运营";
-const workspaceSubdomain = process.env.TWENTY_WORKSPACE_SUBDOMAIN || "grace";
+const workspaceName =
+  process.env.TWENTY_WORKSPACE_NAME || "Linggan Customer Operations";
+const workspaceSubdomain =
+  process.env.TWENTY_WORKSPACE_SUBDOMAIN || "linggan-customer-operations";
 const origin = process.env.TWENTY_ORIGIN || baseUrl;
 const modelPath = path.resolve(
   argument("--model", "deploy/customer-crm/twenty/customer-model.v1.json")
@@ -285,7 +287,7 @@ async function createApiKey(token: string): Promise<string> {
     CREATE_API_KEY,
     {
       input: {
-        name: "GRACE Customer Context Adapter",
+        name: "Linggan Customer Context Adapter",
         expiresAt,
         roleId: admin.id,
       },

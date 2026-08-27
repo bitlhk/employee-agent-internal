@@ -17,6 +17,9 @@ Acceptance date: `2026-08-27` (Asia/Shanghai)
 | ----------------------------- | ------------------------------------------------------------------ |
 | CRM release                   | `twentycrm/twenty:v2.35.0`                                         |
 | CRM host                      | `116.204.36.83`                                                    |
+| CRM private endpoint          | `192.168.0.102:3000`                                               |
+| HTTPS administrator endpoint  | `https://crm.demo.linggan.top`                                     |
+| Shared ingress                | `116.204.37.89` / `192.168.0.210`                                  |
 | Import bundle fingerprint     | `d1474cdfb3ad63c2fe7e0fbc102c5e97444b19fb5276a82b6d253fa8c5311b38` |
 | Customer model fingerprint    | `ee11d9f5f529876390fcc42a8e6a57823fbacc1346ebe74d6015ada74dd92d80` |
 | Customer contract fingerprint | `89a2fab735aa97398ff1c635cebac0b0a5723f7d2f7f17ce126a9e5b7a78ef22` |
@@ -29,6 +32,8 @@ Git, Asset metadata, Binding metadata or Receipts.
 - PostgreSQL, Redis, Twenty Server and Twenty Worker recovered after a full
   container restart.
 - `/healthz` returned `status=ok` after restart.
+- The shared ingress reached Twenty directly over the private VPC endpoint.
+- The public HTTPS endpoint returned `200`; TLS is managed by Let's Encrypt.
 - The idempotent bootstrap completed twice without duplicate records.
 - REST counts after restart:
 
@@ -43,8 +48,9 @@ Git, Asset metadata, Binding metadata or Receipts.
 
 ## Browser Evidence
 
-The administrator signed in through an isolated SSH tunnel. The Twenty
-navigation exposed these six governed objects:
+The administrator signed in through `https://crm.demo.linggan.top`. The
+workspace is named `Linggan Customer Operations`, and the Twenty navigation
+exposed these six governed objects:
 
 - `客户`
 - `客户来源映射`
@@ -54,9 +60,9 @@ navigation exposed these six governed objects:
 - `客户跟进任务`
 
 The customer list rendered `20` rows and exposed the Global Customer ID,
-source tenant, owner ID and business-data timestamp. Public port access remains
-closed; a dedicated HTTPS hostname is required before external administrator
-use.
+source tenant, owner ID and business-data timestamp. Public access to port
+`3000` remains closed; administrator access terminates TLS on the shared Nginx
+ingress and reaches CRM only through the private VPC.
 
 ## Runtime Shadow Evidence
 
@@ -88,8 +94,8 @@ record through the Twenty REST client and the EA normalization adapter.
 4. Customer interaction and follow-up task objects and confirmation-gated
    write-back contracts are present, but no EA Runtime tool is enabled to write
    them in this Shadow phase.
-5. Promotion requires HTTPS, a persistent secret reference, wealth and
-   insurance Shadow Diff, purpose/field isolation tests and a separate review.
+5. Promotion requires a persistent secret reference, wealth and insurance
+   Shadow Diff, purpose/field isolation tests and a separate review.
 6. The isolated bootstrap currently uses a Twenty administrator API key. A
    dedicated least-privilege integration role/key is required before Runtime
    activation.

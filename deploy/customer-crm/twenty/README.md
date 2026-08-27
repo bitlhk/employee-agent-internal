@@ -11,7 +11,7 @@ CRM records directly to Skills.
    secrets on the host; never commit them.
 3. Preload the pinned images when the host cannot reach Docker Hub.
 4. Run `docker compose config`, then `docker compose up -d`.
-5. Verify `curl --fail http://127.0.0.1:3000/healthz`.
+5. Verify `curl --fail http://192.168.0.102:3000/healthz` on the CRM host.
 
 ## Initialize the Customer Model
 
@@ -21,7 +21,7 @@ verified against the frozen model and records use unique-key upsert.
 
 ```bash
 TWENTY_BASE_URL=http://crm-host:3000 \
-TWENTY_ADMIN_EMAIL=grace-admin@example.internal \
+TWENTY_ADMIN_EMAIL=linggan-admin@linggan.demo \
 TWENTY_ADMIN_PASSWORD='...' \
 pnpm customer-crm:bootstrap-twenty -- \
   --bundle /secure/path/customer-crm-import-bundle.v1.json \
@@ -34,6 +34,12 @@ put the API key in Asset metadata, Binding metadata, Receipts or Git.
 The server port may be exposed for initial Demo setup. Production-like access
 must use a dedicated HTTPS hostname and a reverse proxy before any non-Demo
 data is imported.
+
+The accepted administrator hostname is `crm.demo.linggan.top`. Its DNS A
+record points to the shared ingress host. The ingress Nginx connects to Twenty
+at `192.168.0.102:3000` over the private VPC. The CRM security group accepts
+that port only from the ingress private address `192.168.0.210/32`; port `3000`
+is never exposed as a public CRM entry point.
 
 ## Backup
 
