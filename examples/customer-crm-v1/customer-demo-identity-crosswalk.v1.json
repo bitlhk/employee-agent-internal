@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "ea.customer-crm-identity-crosswalk.v1",
+  "crosswalkVersion": "1.0.0",
+  "mappings": [
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C001",
+      "globalCustomerId": "CUST-000001"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C002",
+      "globalCustomerId": "CUST-000002"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C003",
+      "globalCustomerId": "CUST-000003"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C004",
+      "globalCustomerId": "CUST-000004"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C005",
+      "globalCustomerId": "CUST-000005"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C006",
+      "globalCustomerId": "CUST-000006"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C007",
+      "globalCustomerId": "CUST-000007"
+    },
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceTenantId": "tn_linggan_finance",
+      "sourceCustomerId": "C008",
+      "globalCustomerId": "CUST-000008"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "1",
+      "globalCustomerId": "CUST-000101"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "2",
+      "globalCustomerId": "CUST-000102"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "3",
+      "globalCustomerId": "CUST-000103"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "4",
+      "globalCustomerId": "CUST-000104"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "5",
+      "globalCustomerId": "CUST-000105"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "6",
+      "globalCustomerId": "CUST-000106"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "7",
+      "globalCustomerId": "CUST-000107"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "8",
+      "globalCustomerId": "CUST-000108"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "9",
+      "globalCustomerId": "CUST-000109"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "10",
+      "globalCustomerId": "CUST-000110"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "11",
+      "globalCustomerId": "CUST-000111"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "12",
+      "globalCustomerId": "CUST-000112"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "13",
+      "globalCustomerId": "CUST-000113"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "14",
+      "globalCustomerId": "CUST-000114"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "15",
+      "globalCustomerId": "CUST-000115"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "16",
+      "globalCustomerId": "CUST-000116"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "17",
+      "globalCustomerId": "CUST-000117"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "18",
+      "globalCustomerId": "CUST-000118"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "19",
+      "globalCustomerId": "CUST-000119"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceTenantId": "tn_demo",
+      "sourceCustomerId": "20",
+      "globalCustomerId": "CUST-000120"
+    }
+  ]
+}

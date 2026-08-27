@@ -22,7 +22,7 @@ const principal: RuntimePrincipalV2 = {
 };
 
 const record: TwentyCustomerProfileRecordV1 = {
-  graceCustomerId: "DEMO-INS-TN_DEMO-1",
+  graceCustomerId: "CUST-000101",
   displayName: "测试客户",
   customerStatus: "续保客户",
   tenantId: "tn_demo",
@@ -118,7 +118,7 @@ describe("Twenty Customer Profile adapter", () => {
     await expect(
       loadTwentyCustomerProfileCompatibilitySource({
         principal,
-        subjectId: "DEMO-INS-TN_DEMO-2",
+        subjectId: "CUST-000102",
         recordLoader: async () => ({
           record,
           principalAuthorized: true,
@@ -127,6 +127,47 @@ describe("Twenty Customer Profile adapter", () => {
         }),
       })
     ).rejects.toThrow("CUSTOMER_CRM_SOURCE_SUBJECT_MISMATCH");
+  });
+
+  it("normalizes wealth CRM profiles without exposing exact balances", () => {
+    const source = normalizeTwentyCustomerProfileSource({
+      record: {
+        ...record,
+        graceCustomerId: "CUST-000005",
+        displayName: "陈明",
+        profileType: "wealth",
+        detailSchemaVersion: "wealth.v1",
+        maskedPhone: "138****8005",
+        demographics: { ageBand: "45_59", occupationCategory: "1" },
+        preferences: { riskPreference: "2" },
+        insuranceFacts: {},
+        detail: {
+          customerTier: "2",
+          riskAssessment: {
+            riskLevel: "C4",
+            validUntil: "2027-12-31T23:59:59.000Z",
+          },
+          assetAllocationSummary: {
+            aumBand: "500k_1m",
+            totalAssets: 750810,
+          },
+        },
+        fieldProvenance: {},
+      },
+      principal: { ...principal, roleTemplate: "wealth-manager" },
+      subjectInScope: true,
+      observedAt: "2026-08-27T08:00:00.000Z",
+    });
+    const values = new Map(
+      source.fields.map(field => [field.path, field.value])
+    );
+    expect(values.get("contact.maskedPhone")).toBe("138****8005");
+    expect(values.get("risk.investmentRiskLevel")).toBe("C4");
+    expect(values.get("wealth.aumBand")).toBe("500k_1m");
+    expect(values.get("wealth.assetAllocationSummary")).toBe(
+      "资产规模区间：500k_1m"
+    );
+    expect(JSON.stringify(source.fields)).not.toContain("750810");
   });
 
   it("preserves authorization and subject-scope denials without returning data", async () => {

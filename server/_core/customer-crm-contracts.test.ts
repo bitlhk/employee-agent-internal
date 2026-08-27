@@ -23,7 +23,23 @@ describe("Customer CRM Contract V1", () => {
   });
 
   it("keeps suggestions and product data out of authoritative customer facts", () => {
-    const { authority } = loadCustomerCrmContracts();
+    const { authority, identity } = loadCustomerCrmContracts();
+    expect(identity.globalCustomerId.namespace).toBe("enterprise_customer");
+    expect(
+      identity.sources.find(
+        source => source.sourceSystem === "wealth_assistant_customer"
+      )
+    ).toMatchObject({
+      sourceCustomerIdPath: "detail.customer.customerId",
+      sourceTenantIdPath: "sourceTenantId",
+    });
+    expect(
+      identity.sources
+        .filter(source => source.sourceSystem !== "twenty_crm")
+        .every(
+          source => source.globalCustomerIdStrategy === "crosswalk_required"
+        )
+    ).toBe(true);
     expect(
       authority.rules.find(rule => rule.fieldPattern === "suggestion.*")
     ).toMatchObject({

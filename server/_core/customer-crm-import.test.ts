@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  mergeCustomerCrmImportBundles,
   prepareInsuranceCustomerCrmImport,
+  prepareWealthCustomerCrmImport,
   recordsToCsv,
+  type CustomerCrmIdentityCrosswalkV1,
   type InsuranceCustomerImportSourceV1,
+  type WealthCustomerMcpExportV1,
 } from "./customer-crm-import";
 
 const autoCustomer: InsuranceCustomerImportSourceV1 = {
@@ -22,13 +26,64 @@ const autoCustomer: InsuranceCustomerImportSourceV1 = {
   contact_strategy: "建议电话沟通",
 };
 
+const crosswalk: CustomerCrmIdentityCrosswalkV1 = {
+  schemaVersion: "ea.customer-crm-identity-crosswalk.v1",
+  crosswalkVersion: "test",
+  mappings: [
+    {
+      sourceSystem: "insurance_customer_profile",
+      sourceTenantId: "tn_demo",
+      sourceCustomerId: "1",
+      globalCustomerId: "CUST-000101",
+    },
+    {
+      sourceSystem: "wealth_assistant_customer",
+      sourceTenantId: "tn_linggan_finance",
+      sourceCustomerId: "C005",
+      globalCustomerId: "CUST-000005",
+    },
+  ],
+};
+
+const wealthExport: WealthCustomerMcpExportV1 = {
+  schemaVersion: "ea.wealth-customer-mcp-export.v1",
+  exportedAt: "2026-08-27T08:00:00.000Z",
+  source: "customer_context/wealth_assistant_customer_detail",
+  records: [
+    {
+      directory: { customerId: "C005", customerName: "陈明" },
+      detail: {
+        customer: {
+          customerId: "C005",
+          name: "陈明",
+          customerStatus: "active_demo",
+          ageBand: "45_59",
+          occupationCategory: "1",
+          maskedPhone: "138****8005",
+          customerTier: "2",
+          riskPreference: "2",
+          riskLevel: "C4",
+          assessmentExpiresAt: "2027-12-31T23:59:59.000Z",
+          aumBand: "500k_1m",
+          dataAsOf: "2026-08-25T09:00:00.000Z",
+        },
+        assetInfo: { totalAssets: 750810 },
+      },
+    },
+  ],
+};
+
 describe("Customer CRM import preparation", () => {
   it("creates stable source links and keeps suggestions out of facts", () => {
     const bundle = prepareInsuranceCustomerCrmImport({
       records: [autoCustomer],
+      crosswalk,
+      canonicalTenantId: "tn_linggan_finance",
       now: new Date("2026-08-27T08:00:00Z"),
     });
-    expect(bundle.customers[0]?.graceCustomerId).toBe("DEMO-INS-TN_DEMO-1");
+    expect(bundle.customers[0]?.graceCustomerId).toBe("CUST-000101");
+    expect(bundle.customers[0]?.customerStatus).toBe("active");
+    expect(bundle.customers[0]?.tenantId).toBe("tn_linggan_finance");
     expect(bundle.sourceLinks[0]).toMatchObject({
       sourceSystem: "insurance_customer_profile",
       sourceCustomerId: "1",
@@ -48,13 +103,60 @@ describe("Customer CRM import preparation", () => {
     expect(() =>
       prepareInsuranceCustomerCrmImport({
         records: [{ ...autoCustomer, profile_type: "pet_insurance" }],
+        crosswalk,
       })
     ).toThrow("CUSTOMER_CRM_PROFILE_SCHEMA_REVIEW_REQUIRED");
     expect(() =>
       prepareInsuranceCustomerCrmImport({
         records: [{ ...autoCustomer, detail: { vehicleSummary: {} } }],
+        crosswalk,
       })
     ).toThrow("CUSTOMER_CRM_PROFILE_FIELDS_MISSING");
+  });
+
+  it("imports wealth MCP facts into the same customer and profile model", () => {
+    const bundle = prepareWealthCustomerCrmImport({
+      export: wealthExport,
+      crosswalk,
+      sourceTenantId: "tn_linggan_finance",
+      canonicalTenantId: "tn_linggan_finance",
+      ownerUserId: "2",
+    });
+    expect(bundle.customers[0]).toMatchObject({
+      graceCustomerId: "CUST-000005",
+      displayName: "陈明",
+      customerStatus: "active",
+      maskedPhone: "138****8005",
+    });
+    expect(bundle.domainProfiles[0]).toMatchObject({
+      graceCustomerId: "CUST-000005",
+      profileType: "wealth",
+      detailSchemaVersion: "wealth.v1",
+      detail: {
+        customerTier: "2",
+        riskAssessment: { riskLevel: "C4" },
+        assetAllocationSummary: { aumBand: "500k_1m" },
+      },
+    });
+  });
+
+  it("merges source bundles without merging identities heuristically", () => {
+    const insurance = prepareInsuranceCustomerCrmImport({
+      records: [autoCustomer],
+      crosswalk,
+    });
+    const wealth = prepareWealthCustomerCrmImport({
+      export: wealthExport,
+      crosswalk,
+      sourceTenantId: "tn_linggan_finance",
+      canonicalTenantId: "tn_linggan_finance",
+      ownerUserId: "2",
+    });
+    const merged = mergeCustomerCrmImportBundles([insurance, wealth]);
+    expect(merged.sourceSystem).toBe("customer_source_composition");
+    expect(merged.customers).toHaveLength(2);
+    expect(merged.sourceLinks).toHaveLength(2);
+    expect(merged.domainProfiles).toHaveLength(2);
   });
 
   it("emits quoted CSV with JSON fields", () => {

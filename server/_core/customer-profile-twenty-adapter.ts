@@ -16,6 +16,7 @@ export type TwentyCustomerProfileRecordV1 = {
   tenantId: string;
   ownerUserId: string;
   businessAsOf: string;
+  maskedPhone?: string;
   profileType: string;
   detailSchemaVersion: string;
   demographics: JsonObject;
@@ -155,9 +156,16 @@ export function normalizeTwentyCustomerProfileSource(input: {
   add("serviceScope.ownerOrganizationRef", input.principal.organizationId);
   add("serviceScope.ownerPrincipalRef", principalFingerprint(input.principal));
   add("demographics.age", demographics.age);
-  add("demographics.ageBand", ageBand(demographics.age));
-  add("demographics.occupationCategory", demographics.occupation);
+  add(
+    "demographics.ageBand",
+    firstString(demographics.ageBand, ageBand(demographics.age))
+  );
+  add(
+    "demographics.occupationCategory",
+    firstString(demographics.occupationCategory, demographics.occupation)
+  );
   add("demographics.city", demographics.city);
+  add("contact.maskedPhone", input.record.maskedPhone, "maskedPhone");
   add(
     "relationship.recentContactSummary",
     facts.recentContactSummary,
@@ -177,6 +185,32 @@ export function normalizeTwentyCustomerProfileSource(input: {
     "preferences.communicationPreference",
     preferences.communicationPreference,
     "communicationPreference"
+  );
+  add("relationship.customerTier", detail.customerTier, "detail.customerTier");
+  const riskAssessment = object(detail.riskAssessment);
+  add(
+    "risk.investmentRiskLevel",
+    riskAssessment.riskLevel,
+    "detail.riskAssessment"
+  );
+  add(
+    "risk.investmentRiskValidUntil",
+    asIso(riskAssessment.validUntil),
+    "detail.riskAssessment"
+  );
+  const assetAllocation = object(detail.assetAllocationSummary);
+  add(
+    "wealth.aumBand",
+    assetAllocation.aumBand,
+    "detail.assetAllocationSummary"
+  );
+  const wealthSummary = firstString(assetAllocation.aumBand)
+    ? `资产规模区间：${firstString(assetAllocation.aumBand)}`
+    : undefined;
+  add(
+    "wealth.assetAllocationSummary",
+    wealthSummary,
+    "detail.assetAllocationSummary"
   );
   const vehicles = maskedVehicles(detail.vehicleSummary);
   if (vehicles)

@@ -1,11 +1,11 @@
 {
   "schemaVersion": "ea.customer-crm-identity-policy.v1",
-  "policyVersion": "1.0.0",
+  "policyVersion": "1.1.0",
   "status": "engineering_verified",
   "globalCustomerId": {
     "required": true,
     "immutable": true,
-    "namespace": "grace_customer"
+    "namespace": "enterprise_customer"
   },
   "mergePolicy": {
     "automaticMergeAllowed": false,
@@ -17,7 +17,8 @@
   "sources": [
     {
       "sourceSystem": "wealth_assistant_customer",
-      "sourceCustomerIdPath": "data.customer.CUST_NO",
+      "sourceCustomerIdPath": "detail.customer.customerId",
+      "sourceTenantIdPath": "sourceTenantId",
       "globalCustomerIdStrategy": "crosswalk_required",
       "sourceScopedPrefix": "WEALTH"
     },
@@ -25,7 +26,7 @@
       "sourceSystem": "insurance_customer_profile",
       "sourceCustomerIdPath": "id",
       "sourceTenantIdPath": "tenant_id",
-      "globalCustomerIdStrategy": "source_scoped_seed",
+      "globalCustomerIdStrategy": "crosswalk_required",
       "sourceScopedPrefix": "INS"
     },
     {

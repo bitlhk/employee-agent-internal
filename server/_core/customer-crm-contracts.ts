@@ -87,6 +87,10 @@ export function runCustomerCrmContractChecks(root = process.cwd()) {
   ) {
     errors.push("CRM requires an immutable Global Customer ID");
   }
+  if (identity.globalCustomerId.namespace.toLowerCase().includes("grace"))
+    errors.push(
+      "CRM business identity namespace must not expose GRACE internals"
+    );
   if (
     identity.mergePolicy.automaticMergeAllowed !== false ||
     identity.mergePolicy.displayNameMayMatch !== false ||
@@ -112,6 +116,16 @@ export function runCustomerCrmContractChecks(root = process.cwd()) {
   ]) {
     if (!sourceSystems.has(source))
       errors.push(`Required CRM identity source is missing: ${source}`);
+  }
+  for (const sourceSystem of [
+    "wealth_assistant_customer",
+    "insurance_customer_profile",
+  ]) {
+    const source = identity.sources.find(
+      item => item.sourceSystem === sourceSystem
+    );
+    if (source?.globalCustomerIdStrategy !== "crosswalk_required")
+      errors.push(`${sourceSystem}: explicit customer Crosswalk is required`);
   }
 
   if (

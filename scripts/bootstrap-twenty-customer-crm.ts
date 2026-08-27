@@ -58,6 +58,7 @@ const workspaceName =
   process.env.TWENTY_WORKSPACE_NAME || "Linggan Customer Operations";
 const workspaceSubdomain =
   process.env.TWENTY_WORKSPACE_SUBDOMAIN || "linggan-customer-operations";
+const apiKeyName = process.env.TWENTY_API_KEY_NAME || "灵感数据管理员";
 const origin = process.env.TWENTY_ORIGIN || baseUrl;
 const modelPath = path.resolve(
   argument("--model", "deploy/customer-crm/twenty/customer-model.v1.json")
@@ -287,7 +288,7 @@ async function createApiKey(token: string): Promise<string> {
     CREATE_API_KEY,
     {
       input: {
-        name: "Linggan Customer Context Adapter",
+        name: apiKeyName,
         expiresAt,
         roleId: admin.id,
       },

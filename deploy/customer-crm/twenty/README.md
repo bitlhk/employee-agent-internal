@@ -19,6 +19,19 @@ Generate the governed import bundle first, then initialize the CRM through the
 Twenty metadata and REST APIs. The command is idempotent: custom fields are
 verified against the frozen model and records use unique-key upsert.
 
+The Demo bundle may compose insurance source records and a governed wealth MCP
+export. Both enter the same customer and domain-profile model. Missing source
+facts remain missing; the importer never fills a role's field set with inferred
+or fabricated values.
+
+```bash
+pnpm customer-crm:prepare-demo -- \
+  --insurance-input /secure/path/insurance-customers.json \
+  --wealth-input /secure/path/wealth-customer-mcp-export.v1.json \
+  --tenant-id tn_linggan_finance \
+  --output-dir /secure/path/customer-crm-import
+```
+
 ```bash
 TWENTY_BASE_URL=http://crm-host:3000 \
 TWENTY_ADMIN_EMAIL=linggan-admin@linggan.demo \
@@ -30,6 +43,13 @@ pnpm customer-crm:bootstrap-twenty -- \
 
 The output credential file must remain server-side with mode `0600`. Do not
 put the API key in Asset metadata, Binding metadata, Receipts or Git.
+The accepted import actor name is `灵感数据管理员`; technical architecture
+names are not shown as the business creator or updater.
+
+The deployed Twenty metadata keeps the internal API field name
+`graceCustomerId` for migration compatibility. Its user-facing label and value
+are the neutral `全局客户编号` and `CUST-xxxxxx`; Skills and users do not consume
+the internal field name.
 
 The server port may be exposed for initial Demo setup. Production-like access
 must use a dedicated HTTPS hostname and a reverse proxy before any non-Demo

@@ -78,9 +78,10 @@ or any suggestion is presented as an enterprise fact.
 ## Current Verification State
 
 As of 2026-08-27, the isolated Twenty environment is deployed and verified
-with 20 insurance Demo customers and is available to administrators at
-`https://crm.demo.linggan.top`. No wealth customer record or 121-column flat
-profile was imported; the wealth workbook is a field-definition input. The
+with 20 insurance Demo customers plus 8 wealth customers obtained through the
+governed Shanghai MCP path. All 28 customers use the same customer, source-link
+and versioned domain-profile model. The 121-row wealth workbook remains a
+field-definition input rather than a flat set of populated CRM columns. The
 Twenty source adapter is Shadow-only, and the existing wealth and insurance
 customer providers remain the Production path. See
 `grace-customer-crm-environment-acceptance-v1.md` for evidence and known gaps.

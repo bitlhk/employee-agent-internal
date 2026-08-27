@@ -24,13 +24,19 @@ const client = new TwentyCustomerCrmClientV1({
   apiKey: String(process.env.TWENTY_API_KEY || ""),
 });
 
-const selected = [
-  bundle.domainProfiles.find(item => item.profileType === "auto_insurance"),
-  bundle.domainProfiles.find(item => item.profileType === "life_insurance"),
-].filter((item): item is CustomerCrmImportBundleV1["domainProfiles"][number] =>
-  Boolean(item)
-);
-if (selected.length !== 2)
+const selectedProfileTypes = [
+  "wealth",
+  "auto_insurance",
+  "life_insurance",
+] as const;
+const selected = selectedProfileTypes
+  .map(profileType =>
+    bundle.domainProfiles.find(item => item.profileType === profileType)
+  )
+  .filter((item): item is CustomerCrmImportBundleV1["domainProfiles"][number] =>
+    Boolean(item)
+  );
+if (selected.length !== selectedProfileTypes.length)
   throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_FIXTURES_MISSING");
 
 const observations = [];
@@ -40,16 +46,20 @@ for (const expected of selected) {
   );
   if (!customer)
     throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_CUSTOMER_MISSING");
+  const roleTemplate =
+    expected.profileType === "wealth"
+      ? ("wealth-manager" as const)
+      : ("insurance-advisor" as const);
   const principal: RuntimePrincipalV2 = {
     userId: Number(customer.ownerUserId) || 1,
-    adoptionId: "insurance-advisor-shadow",
-    agentId: "insurance-advisor-shadow",
-    roleTemplate: "insurance-advisor",
+    adoptionId: `${roleTemplate}-shadow`,
+    agentId: `${roleTemplate}-shadow`,
+    roleTemplate,
     workspaceId: "customer-crm-shadow",
-    permissionProfile: "insurance-advisor",
+    permissionProfile: roleTemplate,
     sessionId: "customer-crm-environment-verification",
     tenantId: customer.tenantId,
-    organizationId: customer.tenantId,
+    organizationId: "org_linggan_finance",
     authorizationSnapshotId: "customer-crm-shadow-v1",
     authorizationFingerprint: createHash("sha256")
       .update(`${customer.tenantId}:${expected.profileType}:shadow-v1`)
@@ -59,7 +69,9 @@ for (const expected of selected) {
   const recordLoader = createTwentyCustomerProfileRecordLoaderV1({
     client,
     authorize: request => ({
-      allowed: request.principal.organizationId === customer.tenantId,
+      allowed:
+        request.principal.tenantId === customer.tenantId &&
+        request.principal.organizationId === "org_linggan_finance",
       subjectInScope: request.graceCustomerId === expected.graceCustomerId,
       authorizationEvidenceId: `customer-crm-shadow:${expected.profileType}`,
       allowedProfileTypes: [expected.profileType],
@@ -84,14 +96,14 @@ for (const expected of selected) {
   const serializedSource = JSON.stringify(source);
   if (
     serializedSource.includes("purchasePrice") ||
+    serializedSource.includes("totalAssets") ||
     serializedSource.includes("contact_strategy") ||
     serializedSource.includes("protection_gap")
   )
     throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_FIELD_LEAKAGE");
-  const otherProfileType =
-    expected.profileType === "auto_insurance"
-      ? "life_insurance"
-      : "auto_insurance";
+  const otherProfileType = selectedProfileTypes.find(
+    profileType => profileType !== expected.profileType
+  )!;
   await client
     .loadCustomerProfile({
       graceCustomerId: expected.graceCustomerId,
@@ -112,6 +124,7 @@ for (const expected of selected) {
       .update(actual.graceCustomerId)
       .digest("hex"),
     profileType: actual.profileType,
+    roleTemplate,
     detailSchemaVersion: actual.detailSchemaVersion,
     provenanceFieldCount: Object.keys(actual.fieldProvenance).length,
     providedFieldCount: source.fields.length,
@@ -127,7 +140,7 @@ console.log(
       schemaVersion: "ea.twenty-customer-crm-environment-verification.v1",
       status: "PASS",
       productionActivated: false,
-      runtimeProjection: "insurance-advisor-shadow",
+      runtimeProjections: ["wealth-manager-shadow", "insurance-advisor-shadow"],
       observations,
     },
     null,

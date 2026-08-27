@@ -33,10 +33,33 @@ export type InsuranceCustomerImportSourceV1 = {
   owner_user_id?: string | number;
 };
 
+export type WealthCustomerMcpExportV1 = {
+  schemaVersion: "ea.wealth-customer-mcp-export.v1";
+  exportedAt: string;
+  source: string;
+  records: Array<{
+    directory: JsonObject;
+    detail: JsonObject;
+  }>;
+};
+
+export type CustomerCrmIdentityCrosswalkEntryV1 = {
+  sourceSystem: string;
+  sourceTenantId: string;
+  sourceCustomerId: string;
+  globalCustomerId: string;
+};
+
+export type CustomerCrmIdentityCrosswalkV1 = {
+  schemaVersion: "ea.customer-crm-identity-crosswalk.v1";
+  crosswalkVersion: string;
+  mappings: CustomerCrmIdentityCrosswalkEntryV1[];
+};
+
 export type CustomerCrmImportBundleV1 = {
   schemaVersion: "ea.customer-crm-import-bundle.v1";
   generatedAt: string;
-  sourceSystem: "insurance_customer_profile";
+  sourceSystem: string;
   customers: Array<{
     graceCustomerId: string;
     displayName: string;
@@ -44,6 +67,7 @@ export type CustomerCrmImportBundleV1 = {
     tenantId: string;
     ownerUserId: string;
     businessAsOf: string;
+    maskedPhone?: string;
   }>;
   sourceLinks: Array<{
     graceCustomerId: string;
@@ -79,16 +103,6 @@ export type CustomerCrmImportBundleV1 = {
   }>;
 };
 
-function cleanSegment(value: unknown, fallback: string): string {
-  const cleaned = String(value ?? "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9_-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 32);
-  return cleaned || fallback;
-}
-
 function stableSourceId(value: string | number): string {
   const result = String(value).trim();
   if (!result || result.length > 128)
@@ -96,10 +110,26 @@ function stableSourceId(value: string | number): string {
   return result;
 }
 
-function globalCustomerId(source: InsuranceCustomerImportSourceV1): string {
-  const tenant = cleanSegment(source.tenant_id, "DEFAULT");
-  const sourceId = cleanSegment(stableSourceId(source.id), "UNKNOWN");
-  return `DEMO-INS-${tenant}-${sourceId}`;
+function crosswalkCustomerId(input: {
+  crosswalk: CustomerCrmIdentityCrosswalkV1;
+  sourceSystem: string;
+  sourceTenantId: string;
+  sourceCustomerId: string;
+}): string {
+  const matches = input.crosswalk.mappings.filter(
+    item =>
+      item.sourceSystem === input.sourceSystem &&
+      item.sourceTenantId === input.sourceTenantId &&
+      item.sourceCustomerId === input.sourceCustomerId
+  );
+  if (matches.length !== 1)
+    throw new Error(
+      `CUSTOMER_CRM_IDENTITY_CROSSWALK_${matches.length ? "AMBIGUOUS" : "REQUIRED"}:${input.sourceSystem}:${input.sourceTenantId}:${input.sourceCustomerId}`
+    );
+  const globalCustomerId = matches[0]!.globalCustomerId.trim();
+  if (!/^CUST-[0-9]{6}$/u.test(globalCustomerId))
+    throw new Error("CUSTOMER_CRM_GLOBAL_ID_INVALID");
+  return globalCustomerId;
 }
 
 function isoDate(value: unknown, code: string): string {
@@ -141,19 +171,21 @@ function schemaFor(
   return schema;
 }
 
-function validateDetail(input: {
-  source: InsuranceCustomerImportSourceV1;
+function validateProfileDetail(input: {
+  profileType: string;
+  detail: JsonObject;
+  sourceId: string;
   schemas: CustomerCrmDomainProfileSchemaSetV1;
 }) {
-  const schema = schemaFor(input.schemas, input.source.profile_type);
-  const root = { detail: object(input.source.detail) };
+  const schema = schemaFor(input.schemas, input.profileType);
+  const root = { detail: input.detail };
   const missing = schema.fields
     .filter(field => field.runtimeApproved)
     .filter(field => absent(valueAtPath(root, field.path)))
     .map(field => field.path);
   if (missing.length) {
     throw new Error(
-      `CUSTOMER_CRM_PROFILE_FIELDS_MISSING:${input.source.id}:${missing.join(",")}`
+      `CUSTOMER_CRM_PROFILE_FIELDS_MISSING:${input.sourceId}:${missing.join(",")}`
     );
   }
   return schema;
@@ -174,12 +206,14 @@ function provenanceFor(
   };
 }
 
-function sourceFingerprint(source: InsuranceCustomerImportSourceV1): string {
+function sourceFingerprint(source: unknown): string {
   return createHash("sha256").update(JSON.stringify(source)).digest("hex");
 }
 
 export function prepareInsuranceCustomerCrmImport(input: {
   records: InsuranceCustomerImportSourceV1[];
+  crosswalk: CustomerCrmIdentityCrosswalkV1;
+  canonicalTenantId?: string;
   now?: Date;
   root?: string;
 }): CustomerCrmImportBundleV1 {
@@ -204,7 +238,13 @@ export function prepareInsuranceCustomerCrmImport(input: {
     if (seenSourceIds.has(sourceCustomerId))
       throw new Error(`CUSTOMER_CRM_SOURCE_ID_DUPLICATE:${sourceCustomerId}`);
     seenSourceIds.add(sourceCustomerId);
-    const graceCustomerId = globalCustomerId(source);
+    const sourceTenantId = String(source.tenant_id || "default").slice(0, 128);
+    const graceCustomerId = crosswalkCustomerId({
+      crosswalk: input.crosswalk,
+      sourceSystem: "insurance_customer_profile",
+      sourceTenantId,
+      sourceCustomerId,
+    });
     if (seenGlobalIds.has(graceCustomerId))
       throw new Error(`CUSTOMER_CRM_GLOBAL_ID_DUPLICATE:${graceCustomerId}`);
     seenGlobalIds.add(graceCustomerId);
@@ -215,7 +255,13 @@ export function prepareInsuranceCustomerCrmImport(input: {
       source.businessAsOf,
       `CUSTOMER_CRM_BUSINESS_AS_OF_INVALID:${sourceCustomerId}`
     );
-    const schema = validateDetail({ source, schemas: domainSchemas });
+    const detail = object(source.detail);
+    const schema = validateProfileDetail({
+      profileType: source.profile_type,
+      detail,
+      sourceId: sourceCustomerId,
+      schemas: domainSchemas,
+    });
     const fieldProvenance = Object.fromEntries(
       [
         "currentCoverageSummary",
@@ -232,8 +278,8 @@ export function prepareInsuranceCustomerCrmImport(input: {
     bundle.customers.push({
       graceCustomerId,
       displayName,
-      customerStatus: String(source.customer_status || "unknown").slice(0, 500),
-      tenantId: String(source.tenant_id || "default").slice(0, 128),
+      customerStatus: "active",
+      tenantId: String(input.canonicalTenantId || sourceTenantId).slice(0, 128),
       ownerUserId: String(source.owner_user_id || "unassigned").slice(0, 128),
       businessAsOf,
     });
@@ -241,7 +287,7 @@ export function prepareInsuranceCustomerCrmImport(input: {
       graceCustomerId,
       sourceSystem: "insurance_customer_profile",
       sourceCustomerId,
-      sourceTenantId: String(source.tenant_id || "default").slice(0, 128),
+      sourceTenantId,
       sourceRecordFingerprint: sourceFingerprint(source),
     });
     bundle.domainProfiles.push({
@@ -268,7 +314,7 @@ export function prepareInsuranceCustomerCrmImport(input: {
         recentContactSummary: source.recentContactSummary,
         confirmedNeeds: source.confirmedNeeds,
       },
-      detail: object(source.detail),
+      detail,
       fieldProvenance,
       runtimeStatus: "candidate",
     });
@@ -290,6 +336,205 @@ export function prepareInsuranceCustomerCrmImport(input: {
   }
 
   return bundle;
+}
+
+function wealthCustomerRecord(
+  record: WealthCustomerMcpExportV1["records"][number]
+) {
+  const directory = object(record.directory);
+  const detail = object(record.detail);
+  const customer = object(detail.customer);
+  const assetInfo = object(detail.assetInfo);
+  const sourceCustomerId = stableSourceId(
+    String(
+      customer.customerId ||
+        customer.id ||
+        directory.customerId ||
+        directory.id ||
+        ""
+    )
+  );
+  const displayName = String(
+    customer.name || directory.customerName || directory.name || ""
+  ).trim();
+  if (!displayName) throw new Error("CUSTOMER_CRM_DISPLAY_NAME_REQUIRED");
+  return { detail, customer, assetInfo, sourceCustomerId, displayName };
+}
+
+export function prepareWealthCustomerCrmImport(input: {
+  export: WealthCustomerMcpExportV1;
+  crosswalk: CustomerCrmIdentityCrosswalkV1;
+  sourceTenantId: string;
+  canonicalTenantId: string;
+  ownerUserId: string;
+  now?: Date;
+  root?: string;
+}): CustomerCrmImportBundleV1 {
+  if (input.export.schemaVersion !== "ea.wealth-customer-mcp-export.v1")
+    throw new Error("CUSTOMER_CRM_WEALTH_EXPORT_UNSUPPORTED");
+  const generatedAt = (input.now || new Date()).toISOString();
+  const { domainSchemas } = loadCustomerCrmContracts(
+    input.root || process.cwd()
+  );
+  const bundle: CustomerCrmImportBundleV1 = {
+    schemaVersion: "ea.customer-crm-import-bundle.v1",
+    generatedAt,
+    sourceSystem: "wealth_assistant_customer",
+    customers: [],
+    sourceLinks: [],
+    domainProfiles: [],
+    suggestions: [],
+  };
+  const seen = new Set<string>();
+  for (const rawRecord of input.export.records) {
+    const record = wealthCustomerRecord(rawRecord);
+    if (seen.has(record.sourceCustomerId))
+      throw new Error(
+        `CUSTOMER_CRM_SOURCE_ID_DUPLICATE:${record.sourceCustomerId}`
+      );
+    seen.add(record.sourceCustomerId);
+    const graceCustomerId = crosswalkCustomerId({
+      crosswalk: input.crosswalk,
+      sourceSystem: "wealth_assistant_customer",
+      sourceTenantId: input.sourceTenantId,
+      sourceCustomerId: record.sourceCustomerId,
+    });
+    const businessAsOf = isoDate(
+      record.customer.dataAsOf || input.export.exportedAt,
+      `CUSTOMER_CRM_BUSINESS_AS_OF_INVALID:${record.sourceCustomerId}`
+    );
+    const profileDetail = {
+      customerTier: record.customer.customerTier,
+      riskAssessment: {
+        riskLevel: record.customer.riskLevel,
+        riskPreference: record.customer.riskPreference,
+        validUntil: record.customer.assessmentExpiresAt,
+      },
+      assetAllocationSummary: {
+        aumBand: record.customer.aumBand,
+        totalAssets: record.assetInfo.totalAssets,
+      },
+    };
+    const schema = validateProfileDetail({
+      profileType: "wealth",
+      detail: profileDetail,
+      sourceId: record.sourceCustomerId,
+      schemas: domainSchemas,
+    });
+    const provenanceFields = [
+      "maskedPhone",
+      "demographics.ageBand",
+      "demographics.occupationCategory",
+      "preferences.riskPreference",
+      ...schema.fields.map(field => field.path),
+    ];
+    const fieldProvenance = Object.fromEntries(
+      provenanceFields.map(field => [
+        field,
+        {
+          sourceSystem: "wealth_assistant_customer",
+          asOf: businessAsOf,
+          sourceField: field,
+        },
+      ])
+    );
+    bundle.customers.push({
+      graceCustomerId,
+      displayName: record.displayName,
+      customerStatus:
+        String(record.customer.customerStatus || "active") === "inactive"
+          ? "inactive"
+          : "active",
+      tenantId: input.canonicalTenantId,
+      ownerUserId: input.ownerUserId,
+      businessAsOf,
+      maskedPhone:
+        String(record.customer.maskedPhone || "").trim() || undefined,
+    });
+    bundle.sourceLinks.push({
+      graceCustomerId,
+      sourceSystem: "wealth_assistant_customer",
+      sourceCustomerId: record.sourceCustomerId,
+      sourceTenantId: input.sourceTenantId,
+      sourceRecordFingerprint: sourceFingerprint(rawRecord),
+    });
+    bundle.domainProfiles.push({
+      graceCustomerId,
+      profileType: "wealth",
+      detailSchemaVersion: schema.detailSchemaVersion,
+      demographics: {
+        ageBand: record.customer.ageBand,
+        occupationCategory: record.customer.occupationCategory,
+      },
+      preferences: {
+        riskPreference: record.customer.riskPreference,
+      },
+      insuranceFacts: {},
+      detail: profileDetail,
+      fieldProvenance,
+      runtimeStatus: "candidate",
+    });
+  }
+  return bundle;
+}
+
+export function mergeCustomerCrmImportBundles(
+  bundles: CustomerCrmImportBundleV1[],
+  now = new Date()
+): CustomerCrmImportBundleV1 {
+  const merged: CustomerCrmImportBundleV1 = {
+    schemaVersion: "ea.customer-crm-import-bundle.v1",
+    generatedAt: now.toISOString(),
+    sourceSystem: "customer_source_composition",
+    customers: [],
+    sourceLinks: [],
+    domainProfiles: [],
+    suggestions: [],
+  };
+  const customers = new Map<
+    string,
+    CustomerCrmImportBundleV1["customers"][number]
+  >();
+  const sourceLinks = new Set<string>();
+  const profiles = new Set<string>();
+  const suggestions = new Set<string>();
+  for (const bundle of bundles) {
+    for (const customer of bundle.customers) {
+      const existing = customers.get(customer.graceCustomerId);
+      if (
+        existing &&
+        (existing.displayName !== customer.displayName ||
+          existing.tenantId !== customer.tenantId)
+      )
+        throw new Error(
+          `CUSTOMER_CRM_IDENTITY_CONFLICT:${customer.graceCustomerId}`
+        );
+      if (!existing) customers.set(customer.graceCustomerId, customer);
+    }
+    for (const link of bundle.sourceLinks) {
+      const key = `${link.sourceSystem}:${link.sourceTenantId}:${link.sourceCustomerId}`;
+      if (sourceLinks.has(key))
+        throw new Error(`CUSTOMER_CRM_SOURCE_LINK_DUPLICATE:${key}`);
+      sourceLinks.add(key);
+      merged.sourceLinks.push(link);
+    }
+    for (const profile of bundle.domainProfiles) {
+      const key = `${profile.graceCustomerId}:${profile.profileType}`;
+      if (profiles.has(key))
+        throw new Error(`CUSTOMER_CRM_PROFILE_DUPLICATE:${key}`);
+      profiles.add(key);
+      merged.domainProfiles.push(profile);
+    }
+    for (const suggestion of bundle.suggestions) {
+      const key = `${suggestion.graceCustomerId}:${suggestion.suggestionType}`;
+      if (suggestions.has(key))
+        throw new Error(`CUSTOMER_CRM_SUGGESTION_DUPLICATE:${key}`);
+      suggestions.add(key);
+      merged.suggestions.push(suggestion);
+    }
+  }
+  merged.customers = Array.from(customers.values());
+  return merged;
 }
 
 function csvCell(value: unknown): string {

@@ -6,7 +6,7 @@
       "namePlural": "graceCustomers",
       "labelSingular": "客户",
       "labelPlural": "客户",
-      "description": "GRACE 全局客户身份和治理状态",
+      "description": "企业统一客户身份和治理状态",
       "icon": "IconUser",
       "fields": [
         {
@@ -17,9 +17,14 @@
           "isNullable": false
         },
         { "name": "customerStatus", "label": "客户状态", "type": "TEXT" },
-        { "name": "tenantId", "label": "来源租户", "type": "TEXT" },
+        { "name": "tenantId", "label": "租户编号", "type": "TEXT" },
         { "name": "ownerUserId", "label": "负责人编号", "type": "TEXT" },
-        { "name": "businessAsOf", "label": "业务数据时间", "type": "DATE_TIME" }
+        {
+          "name": "businessAsOf",
+          "label": "业务数据时间",
+          "type": "DATE_TIME"
+        },
+        { "name": "maskedPhone", "label": "脱敏手机号", "type": "TEXT" }
       ]
     },
     {
@@ -27,7 +32,7 @@
       "namePlural": "customerSourceLinks",
       "labelSingular": "客户来源映射",
       "labelPlural": "客户来源映射",
-      "description": "外部客户身份与 GRACE 全局客户编号的显式映射",
+      "description": "外部客户身份与企业统一客户编号的显式映射",
       "icon": "IconLink",
       "fields": [
         {
@@ -217,7 +222,7 @@
       "namePlural": "customerFollowupTasks",
       "labelSingular": "客户跟进任务",
       "labelPlural": "客户跟进任务",
-      "description": "EA Governed Work State 在 CRM 中的运营镜像",
+      "description": "经确认的客户跟进任务及执行状态",
       "icon": "IconChecklist",
       "fields": [
         {

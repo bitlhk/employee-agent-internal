@@ -164,6 +164,7 @@ export class TwentyCustomerCrmClientV1 {
       tenantId: string(customer.tenantId),
       ownerUserId: string(customer.ownerUserId),
       businessAsOf: string(customer.businessAsOf),
+      maskedPhone: string(customer.maskedPhone),
       profileType: string(profile.profileType),
       detailSchemaVersion: string(profile.detailSchemaVersion),
       demographics: jsonObject(profile.demographics),
