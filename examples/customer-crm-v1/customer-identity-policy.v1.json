@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "ea.customer-crm-identity-policy.v1",
+  "policyVersion": "1.0.0",
+  "status": "engineering_verified",
+  "globalCustomerId": {
+    "required": true,
+    "immutable": true,
+    "namespace": "grace_customer"
+  },
+  "mergePolicy": {
+    "automaticMergeAllowed": false,
+    "displayNameMayMatch": false,
+    "phoneMayMatch": false,
+    "modelMayMatch": false,
+    "unresolvedStatus": "identity_review_required"
+  },
+  "sources": [
+    {
+      "sourceSystem": "wealth_assistant_customer",
+      "sourceCustomerIdPath": "data.customer.CUST_NO",
+      "globalCustomerIdStrategy": "crosswalk_required",
+      "sourceScopedPrefix": "WEALTH"
+    },
+    {
+      "sourceSystem": "insurance_customer_profile",
+      "sourceCustomerIdPath": "id",
+      "sourceTenantIdPath": "tenant_id",
+      "globalCustomerIdStrategy": "source_scoped_seed",
+      "sourceScopedPrefix": "INS"
+    },
+    {
+      "sourceSystem": "twenty_crm",
+      "sourceCustomerIdPath": "graceCustomerId",
+      "globalCustomerIdStrategy": "crosswalk_required",
+      "sourceScopedPrefix": "CRM"
+    }
+  ]
+}

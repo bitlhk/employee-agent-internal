@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "ea.customer-crm-field-authority-matrix.v1",
+  "matrixVersion": "1.0.0",
+  "status": "engineering_verified",
+  "canonicalLogicalContextId": "customer_profile",
+  "provenanceRequired": true,
+  "rules": [
+    {
+      "fieldPattern": "subject.*",
+      "authority": ["customer_master", "twenty_crm"],
+      "crmWriteMode": "authoritative",
+      "confirmationRequired": true,
+      "runtimeUse": "allowed",
+      "conflictPolicy": "block",
+      "notes": "客户身份必须通过 Global Customer ID Crosswalk 解析，不以姓名或手机号自动合并。"
+    },
+    {
+      "fieldPattern": "contact.*",
+      "authority": ["twenty_crm", "customer_master"],
+      "crmWriteMode": "authoritative",
+      "confirmationRequired": true,
+      "runtimeUse": "conditional",
+      "conflictPolicy": "source_priority",
+      "notes": "Agent 只消费岗位投影允许的脱敏联系方式。"
+    },
+    {
+      "fieldPattern": "relationship.*",
+      "authority": ["twenty_crm"],
+      "crmWriteMode": "authoritative",
+      "confirmationRequired": true,
+      "runtimeUse": "allowed",
+      "conflictPolicy": "human_confirmed",
+      "notes": "拜访、跟进和客户经理确认的关系事实由 CRM 管理。"
+    },
+    {
+      "fieldPattern": "risk.*",
+      "authority": ["wealth_risk_assessment"],
+      "crmWriteMode": "replicated",
+      "confirmationRequired": false,
+      "runtimeUse": "conditional",
+      "conflictPolicy": "source_priority",
+      "notes": "风险等级与有效期以风险测评系统为准，CRM 只保存同步副本。"
+    },
+    {
+      "fieldPattern": "wealth.*",
+      "authority": ["wealth_core", "wealth_portfolio"],
+      "crmWriteMode": "reference_only",
+      "confirmationRequired": false,
+      "runtimeUse": "conditional",
+      "conflictPolicy": "source_priority",
+      "notes": "持仓、余额、到期资产和适当性结果不由 CRM 反向覆盖。"
+    },
+    {
+      "fieldPattern": "insurance.coverage.*",
+      "authority": ["insurance_policy_system"],
+      "crmWriteMode": "replicated",
+      "confirmationRequired": false,
+      "runtimeUse": "conditional",
+      "conflictPolicy": "source_priority",
+      "notes": "现有保障与续保事实以保单系统为准。"
+    },
+    {
+      "fieldPattern": "insurance.claims.*",
+      "authority": ["insurance_claims_system"],
+      "crmWriteMode": "replicated",
+      "confirmationRequired": false,
+      "runtimeUse": "conditional",
+      "conflictPolicy": "source_priority",
+      "notes": "理赔历史和风险摘要属于敏感事实，必须经过保险用途投影。"
+    },
+    {
+      "fieldPattern": "insurance.detail.*",
+      "authority": ["insurance_customer_profile", "twenty_crm"],
+      "crmWriteMode": "replicated",
+      "confirmationRequired": false,
+      "runtimeUse": "conditional",
+      "conflictPolicy": "block",
+      "notes": "仅已注册 profileType/detailSchemaVersion 的字段可进入 Runtime。"
+    },
+    {
+      "fieldPattern": "suggestion.*",
+      "authority": ["agent_model"],
+      "crmWriteMode": "derived",
+      "confirmationRequired": true,
+      "runtimeUse": "denied",
+      "conflictPolicy": "human_confirmed",
+      "notes": "bio、protection_gap、contact_strategy 等模型或人工总结在确认前不是企业事实。"
+    },
+    {
+      "fieldPattern": "product.*",
+      "authority": ["product_catalog"],
+      "crmWriteMode": "reference_only",
+      "confirmationRequired": false,
+      "runtimeUse": "denied",
+      "conflictPolicy": "source_priority",
+      "notes": "产品主数据、可售状态和适当性继续由产品域提供，不能混入 Customer Profile。"
+    }
+  ]
+}

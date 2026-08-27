@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "ea.customer-crm-domain-profile-schemas.v1",
+  "schemaSetVersion": "1.0.0",
+  "status": "engineering_verified",
+  "unknownProfilePolicy": {
+    "storageAllowed": true,
+    "runtimeAllowed": false,
+    "reviewStatus": "schema_review_required"
+  },
+  "schemas": [
+    {
+      "profileType": "wealth",
+      "detailSchemaVersion": "wealth.v1",
+      "status": "active",
+      "fields": [
+        {
+          "path": "detail.customerTier",
+          "dataType": "string",
+          "sensitivity": "internal",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.riskAssessment",
+          "dataType": "object",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.assetAllocationSummary",
+          "dataType": "object",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        }
+      ]
+    },
+    {
+      "profileType": "auto_insurance",
+      "detailSchemaVersion": "auto-insurance.v1",
+      "status": "active",
+      "fields": [
+        {
+          "path": "detail.vehicleSummary",
+          "dataType": "object",
+          "sensitivity": "sensitive",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.annualMileage",
+          "dataType": "string",
+          "sensitivity": "sensitive",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.drivingRecord",
+          "dataType": "string",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        }
+      ]
+    },
+    {
+      "profileType": "life_insurance",
+      "detailSchemaVersion": "life-insurance.v1",
+      "status": "active",
+      "fields": [
+        {
+          "path": "detail.investableAssets",
+          "dataType": "string",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.familyStructure",
+          "dataType": "string",
+          "sensitivity": "sensitive",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.healthStatus",
+          "dataType": "string",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.dependents",
+          "dataType": "string",
+          "sensitivity": "sensitive",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.existingCoverage",
+          "dataType": "string",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.financialGoals",
+          "dataType": "string",
+          "sensitivity": "sensitive",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        }
+      ]
+    }
+  ]
+}

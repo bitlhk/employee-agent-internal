@@ -1,0 +1,275 @@
+{
+  "schemaVersion": "ea.twenty-customer-model.v1",
+  "objects": [
+    {
+      "nameSingular": "graceCustomer",
+      "namePlural": "graceCustomers",
+      "labelSingular": "客户",
+      "labelPlural": "客户",
+      "description": "GRACE 全局客户身份和治理状态",
+      "icon": "IconUser",
+      "fields": [
+        {
+          "name": "graceCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        { "name": "customerStatus", "label": "客户状态", "type": "TEXT" },
+        { "name": "tenantId", "label": "来源租户", "type": "TEXT" },
+        { "name": "ownerUserId", "label": "负责人编号", "type": "TEXT" },
+        { "name": "businessAsOf", "label": "业务数据时间", "type": "DATE_TIME" }
+      ]
+    },
+    {
+      "nameSingular": "customerSourceLink",
+      "namePlural": "customerSourceLinks",
+      "labelSingular": "客户来源映射",
+      "labelPlural": "客户来源映射",
+      "description": "外部客户身份与 GRACE 全局客户编号的显式映射",
+      "icon": "IconLink",
+      "fields": [
+        {
+          "name": "sourceLinkKey",
+          "label": "来源映射键",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        {
+          "name": "graceCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "sourceSystem",
+          "label": "来源系统",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "sourceCustomerId",
+          "label": "来源客户编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        { "name": "sourceTenantId", "label": "来源租户", "type": "TEXT" },
+        {
+          "name": "sourceRecordFingerprint",
+          "label": "来源记录指纹",
+          "type": "TEXT",
+          "isNullable": false
+        }
+      ]
+    },
+    {
+      "nameSingular": "customerDomainProfile",
+      "namePlural": "customerDomainProfiles",
+      "labelSingular": "客户领域画像",
+      "labelPlural": "客户领域画像",
+      "description": "按版本化领域契约保存财富、车险和寿险画像",
+      "icon": "IconUserSearch",
+      "fields": [
+        {
+          "name": "profileKey",
+          "label": "画像键",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        {
+          "name": "graceCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "profileType",
+          "label": "画像类型",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "detailSchemaVersion",
+          "label": "明细契约版本",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        { "name": "demographics", "label": "人口属性", "type": "RAW_JSON" },
+        { "name": "preferences", "label": "客户偏好", "type": "RAW_JSON" },
+        { "name": "insuranceFacts", "label": "保险事实", "type": "RAW_JSON" },
+        { "name": "detail", "label": "领域明细", "type": "RAW_JSON" },
+        { "name": "fieldProvenance", "label": "字段来源", "type": "RAW_JSON" },
+        {
+          "name": "runtimeStatus",
+          "label": "运行状态",
+          "type": "TEXT",
+          "isNullable": false
+        }
+      ]
+    },
+    {
+      "nameSingular": "customerSuggestion",
+      "namePlural": "customerSuggestions",
+      "labelSingular": "客户洞察建议",
+      "labelPlural": "客户洞察建议",
+      "description": "等待人工确认的派生洞察，不作为运行时企业事实",
+      "icon": "IconBulb",
+      "fields": [
+        {
+          "name": "suggestionKey",
+          "label": "建议键",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        {
+          "name": "graceCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "suggestionType",
+          "label": "建议类型",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "content",
+          "label": "建议内容",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "status",
+          "label": "确认状态",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "runtimeFact",
+          "label": "运行时事实",
+          "type": "BOOLEAN",
+          "isNullable": false
+        }
+      ]
+    },
+    {
+      "nameSingular": "customerInteraction",
+      "namePlural": "customerInteractions",
+      "labelSingular": "客户互动",
+      "labelPlural": "客户互动",
+      "description": "经用户确认并带执行证据的客户互动记录",
+      "icon": "IconMessageCircleCheck",
+      "fields": [
+        {
+          "name": "interactionKey",
+          "label": "互动幂等键",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        {
+          "name": "graceCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "interactionType",
+          "label": "互动类型",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "happenedAt",
+          "label": "发生时间",
+          "type": "DATE_TIME",
+          "isNullable": false
+        },
+        {
+          "name": "summary",
+          "label": "确认摘要",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        { "name": "purposeId", "label": "业务目的", "type": "TEXT" },
+        { "name": "organizationId", "label": "组织编号", "type": "TEXT" },
+        { "name": "confirmedBy", "label": "确认人", "type": "TEXT" },
+        {
+          "name": "confirmedAt",
+          "label": "确认时间",
+          "type": "DATE_TIME"
+        },
+        {
+          "name": "executionReceiptId",
+          "label": "执行回执编号",
+          "type": "TEXT"
+        },
+        { "name": "provenance", "label": "来源证据", "type": "RAW_JSON" }
+      ]
+    },
+    {
+      "nameSingular": "customerFollowupTask",
+      "namePlural": "customerFollowupTasks",
+      "labelSingular": "客户跟进任务",
+      "labelPlural": "客户跟进任务",
+      "description": "EA Governed Work State 在 CRM 中的运营镜像",
+      "icon": "IconChecklist",
+      "fields": [
+        {
+          "name": "taskKey",
+          "label": "任务镜像键",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        {
+          "name": "graceCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "workItemId",
+          "label": "工作事项编号",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        { "name": "description", "label": "任务说明", "type": "TEXT" },
+        {
+          "name": "taskStatus",
+          "label": "任务状态",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        { "name": "dueAt", "label": "截止时间", "type": "DATE_TIME" },
+        { "name": "ownerPrincipalId", "label": "负责人编号", "type": "TEXT" },
+        { "name": "ownerDisplayName", "label": "负责人", "type": "TEXT" },
+        { "name": "purposeId", "label": "业务目的", "type": "TEXT" },
+        { "name": "organizationId", "label": "组织编号", "type": "TEXT" },
+        { "name": "confirmedBy", "label": "确认人", "type": "TEXT" },
+        {
+          "name": "confirmedAt",
+          "label": "确认时间",
+          "type": "DATE_TIME"
+        },
+        {
+          "name": "executionReceiptId",
+          "label": "最近执行回执编号",
+          "type": "TEXT"
+        },
+        { "name": "lastIdempotencyKey", "label": "最近幂等键", "type": "TEXT" },
+        {
+          "name": "workStateUpdatedAt",
+          "label": "工作状态更新时间",
+          "type": "DATE_TIME"
+        }
+      ]
+    }
+  ]
+}
