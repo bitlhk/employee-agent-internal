@@ -40,8 +40,37 @@ function formatAsOf(value: string): string {
   });
 }
 
+const RECEIPT_BUSINESS_TEXT: Record<string, string> = {
+  CUSTOMER_PROFILE_OPTIONAL_FIELD_MISSING: "部分非必需客户字段暂缺，不影响当前任务",
+  CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING: "当前任务必需的客户字段不完整",
+  CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY: "客户数据源尚未达到正式运行条件",
+  CUSTOMER_PROFILE_PROVIDER_NOT_DEMO_READY: "客户数据源尚未获准用于当前演示环境",
+  CUSTOMER_PROFILE_SOURCE_MISSING: "暂未获得可用的客户数据源",
+  CUSTOMER_PROFILE_SUBJECT_UNRESOLVED: "尚未定位到目标客户",
+  CUSTOMER_PROFILE_SUBJECT_MISMATCH: "客户身份与当前请求不一致",
+  CUSTOMER_CONTEXT_BLOCKED: "客户信息未通过当前岗位和业务用途校验",
+  SUBJECT_OUT_OF_SCOPE: "该客户不在当前岗位授权范围内",
+  PRINCIPAL_NOT_AUTHORIZED: "当前岗位尚未获得客户信息访问授权",
+  governed_customer_profile: "岗位授权范围内的客户画像",
+  customer_directory: "授权客户范围",
+  customer_profile: "客户画像",
+  customer_portfolio: "客户持仓",
+  "Complete source authorization, authoritative asOf and purpose-aware field projection before promotion.": "完成数据源授权、权威数据时间和岗位用途字段裁剪后再启用。",
+  "Provide a source explicitly approved for the isolated Demo assurance level.": "请提供已获准用于隔离演示环境的数据源。",
+  "Provide the task-required governed customer fields with field-level provenance.": "请补齐当前任务必需的客户字段及字段来源。",
+  "Select a customer in the current principal and purpose service scope.": "请选择当前岗位和业务用途授权范围内的客户。",
+  "Complete the role and customer-source authorization review.": "请先完成当前岗位的客户数据源授权审核。",
+  "Resolve the recorded Customer Profile governance reason before retrying.": "请处理客户画像治理问题后重试。",
+  "Confirm the current role, purpose and customer scope.": "请确认当前岗位、业务用途和客户授权范围。",
+};
+
+function receiptBusinessText(value: string): string {
+  return RECEIPT_BUSINESS_TEXT[value] || value;
+}
+
 export function ContextReceiptPanel({
   receipt,
+  sourceReceipts = [receipt],
   interactionGrant,
   citedKnowledge = [],
   summaryTitle = "本次依据",
@@ -49,6 +78,7 @@ export function ContextReceiptPanel({
   onLoadMemoryPreviews,
 }: {
   receipt: ContextReceiptV1;
+  sourceReceipts?: ContextReceiptV1[];
   interactionGrant?: ContextInteractionGrantV1;
   citedKnowledge?: CitedKnowledge[];
   summaryTitle?: string;
@@ -268,7 +298,7 @@ export function ContextReceiptPanel({
             <span>
               <strong>{statusLabel(receipt.readiness.status)}</strong>
               {receipt.readiness.reasons.length > 0
-                ? <small>{receipt.readiness.reasons.join("；")}</small>
+                ? <small>{receipt.readiness.reasons.map(receiptBusinessText).join("；")}</small>
                 : <small>当前任务所需身份、依据和能力已完成核验。</small>}
             </span>
           </div>
@@ -278,13 +308,13 @@ export function ContextReceiptPanel({
             || receipt.readiness.presentation.nextSteps.length) ? (
             <div className="context-receipt__section context-receipt__readiness-outcomes">
               {receipt.readiness.presentation.completed.length ? (
-                <div><strong>已完成或当前可完成</strong><ul>{receipt.readiness.presentation.completed.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div><strong>已完成或当前可完成</strong><ul>{receipt.readiness.presentation.completed.map((item) => <li key={item}>{receiptBusinessText(item)}</li>)}</ul></div>
               ) : null}
               {receipt.readiness.presentation.unavailable.length ? (
-                <div><strong>暂不能完成</strong><ul>{receipt.readiness.presentation.unavailable.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div><strong>暂不能完成</strong><ul>{receipt.readiness.presentation.unavailable.map((item) => <li key={item}>{receiptBusinessText(item)}</li>)}</ul></div>
               ) : null}
               {receipt.readiness.presentation.nextSteps.length ? (
-                <div><strong>下一步</strong><ul>{receipt.readiness.presentation.nextSteps.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                <div><strong>下一步</strong><ul>{receipt.readiness.presentation.nextSteps.map((item) => <li key={item}>{receiptBusinessText(item)}</li>)}</ul></div>
               ) : null}
             </div>
           ) : null}
@@ -292,8 +322,19 @@ export function ContextReceiptPanel({
           <details className="context-receipt__technical">
             <summary>技术凭据</summary>
             <dl>
-              <div><dt>收据</dt><dd>{receipt.receiptId}</dd></div>
-              <div><dt>上下文指纹</dt><dd>{receipt.receiptFingerprint}</dd></div>
+              {sourceReceipts.length > 1 ? (
+                <>
+                  <div><dt>原始收据</dt><dd>{sourceReceipts.length} 项</dd></div>
+                  {sourceReceipts.map((source, index) => (
+                    <div key={source.receiptId}><dt>收据 {index + 1}</dt><dd>{source.receiptId} · {source.receiptFingerprint}</dd></div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <div><dt>收据</dt><dd>{receipt.receiptId}</dd></div>
+                  <div><dt>上下文指纹</dt><dd>{receipt.receiptFingerprint}</dd></div>
+                </>
+              )}
               <div><dt>身份指纹</dt><dd>{receipt.principalFingerprint}</dd></div>
               <div><dt>能力数</dt><dd>{receipt.provided.capabilities.length}</dd></div>
             </dl>

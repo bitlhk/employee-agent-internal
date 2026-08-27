@@ -6,7 +6,6 @@ import {
   CUSTOMER_CONTEXT_CANONICAL_TOOLS,
   CUSTOMER_CONTEXT_CONTRACT,
   CUSTOMER_CONTEXT_DESCRIPTION,
-  CUSTOMER_CONTEXT_DISPLAY_NAME,
   CUSTOMER_CONTEXT_SERVICE_NAME,
   customerContextToolNames,
 } from "../../shared/customer-context-contract";
@@ -286,31 +285,41 @@ function sourceAsOf(sources: Array<{ asOf: string }>): string {
   );
 }
 
+function customerProfileBusinessLabel(purposeId: string): string {
+  if (purposeId === "wealth_advisory") return "财富服务客户画像";
+  if (purposeId === "insurance_advisory") return "保险服务客户画像";
+  return "岗位所需客户画像";
+}
+
+function customerContextBusinessLabel(logicalContextId: "customer_directory" | "customer_portfolio"): string {
+  return logicalContextId === "customer_directory" ? "授权客户范围" : "客户持仓";
+}
+
 function remediationFor(reasonCodes: string[]): string[] {
   const remediation: string[] = [];
   if (reasonCodes.includes("CUSTOMER_PROFILE_PROVIDER_NOT_PRODUCTION_READY"))
     remediation.push(
-      "Complete source authorization, authoritative asOf and purpose-aware field projection before promotion."
+      "完成数据源授权、权威数据时间和岗位用途字段裁剪后再启用。"
     );
   if (reasonCodes.includes("CUSTOMER_PROFILE_PROVIDER_NOT_DEMO_READY"))
     remediation.push(
-      "Provide a source explicitly approved for the isolated Demo assurance level."
+      "请提供已获准用于隔离演示环境的数据源。"
     );
   if (reasonCodes.includes("CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"))
     remediation.push(
-      "Provide the task-required governed customer fields with field-level provenance."
+      "请补齐当前任务必需的客户字段及字段来源。"
     );
   if (reasonCodes.includes("SUBJECT_OUT_OF_SCOPE"))
     remediation.push(
-      "Select a customer in the current principal and purpose service scope."
+      "请选择当前岗位和业务用途授权范围内的客户。"
     );
   if (reasonCodes.includes("PRINCIPAL_NOT_AUTHORIZED"))
     remediation.push(
-      "Complete the role and customer-source authorization review."
+      "请先完成当前岗位的客户数据源授权审核。"
     );
   if (!remediation.length)
     remediation.push(
-      "Resolve the recorded Customer Profile governance reason before retrying."
+      "请处理客户画像治理问题后重试。"
     );
   return remediation;
 }
@@ -329,7 +338,7 @@ function providerReceipt(input: {
       : [
           {
             sourceSystem: "enterprise_customer_profile_provider",
-            label: `${projection.purposeId} governed customer profile`,
+            label: customerProfileBusinessLabel(projection.purposeId),
             entityRef: customerEntityRef(projection.subjectId),
             asOf: sourceAsOf(projection.sourceEvidence),
             resultFingerprint: governanceFingerprint(projection),
@@ -350,7 +359,7 @@ function providerReceipt(input: {
   const allowed = projection.status !== "BLOCKED";
   return buildContextReceipt({
     taskId: projection.taskId || "CUSTOMER-PROFILE-SHADOW",
-    taskLabel: "Governed Customer Profile Projection",
+    taskLabel: "客户信息核验",
     principalFingerprint: principalFingerprint(principal),
     provided: {
       knowledge: [],
@@ -359,7 +368,7 @@ function providerReceipt(input: {
       capabilities: [
         {
           capabilityId: toolName,
-          label: "Governed Customer Profile read",
+          label: "客户画像读取",
           version: SERVICE_VERSION,
           sideEffect: "read",
         },
@@ -387,7 +396,7 @@ function providerReceipt(input: {
             reasonCode: projection.reasonCodes[0] || "CUSTOMER_PROFILE_BLOCKED",
             count: Math.max(1, projection.sourceEvidence.length),
             message:
-              "Customer fields were not provided because the governed projection gate did not pass.",
+              "客户画像未通过岗位用途与授权校验，本轮未提供相关字段。",
             disclosure: "aggregate_only",
           },
         ],
@@ -562,14 +571,14 @@ function governedBusinessDataReceipt(input: {
   const allowed = input.status !== "BLOCKED";
   return buildContextReceipt({
     taskId: input.taskId || `CUSTOMER-CONTEXT-${input.logicalContextId}`,
-    taskLabel: CUSTOMER_CONTEXT_ADMIN_NAME,
+    taskLabel: "客户信息核验",
     principalFingerprint: principalFingerprint(input.principal),
     provided: {
       knowledge: [],
       businessData: allowed
         ? [{
             sourceSystem: "enterprise_customer_context",
-            label: CUSTOMER_CONTEXT_DISPLAY_NAME,
+            label: customerContextBusinessLabel(input.logicalContextId),
             entityRef: input.logicalContextId,
             asOf: sourceAsOf(input.sourceEvidence),
             resultFingerprint: governanceFingerprint(input.result),
@@ -601,7 +610,7 @@ function governedBusinessDataReceipt(input: {
       allowedOutcomes: allowed ? [input.logicalContextId] : [],
       deniedOutcomes: allowed ? [] : [input.logicalContextId],
       reasons: allowed ? [] : ["CUSTOMER_CONTEXT_BLOCKED"],
-      remediation: allowed ? [] : ["Confirm the current role, purpose and customer scope."],
+      remediation: allowed ? [] : ["请确认当前岗位、业务用途和客户授权范围。"],
       decisionFingerprint: governanceFingerprint({
         logicalContextId: input.logicalContextId,
         status: input.status,

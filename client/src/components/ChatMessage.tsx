@@ -17,6 +17,7 @@ import {
 } from "@shared/knowledge-citations";
 import { streamingMarkdownRenderDelay } from "@/lib/streaming-markdown";
 import { extractContextInteractionGrants, extractContextReceipts } from "@/lib/context-receipt";
+import { contextReceiptDisplayEntries } from "@/lib/context-receipt-display";
 import type { TaskReceiptBundleV1 } from "@shared/context-evidence";
 import {
   MESSAGE_FEEDBACK_REASON_CODES,
@@ -823,6 +824,7 @@ function ChatMessageInner({
       .map((stage) => byId.get(stage.receiptId))
       .filter((receipt): receipt is NonNullable<typeof receipt> => Boolean(receipt));
   }, [effectiveToolCalls, receiptBundle]);
+  const contextReceiptEntries = useMemo(() => contextReceiptDisplayEntries(contextReceipts), [contextReceipts]);
   const contextInteractionGrants = useMemo(
     () => extractContextInteractionGrants(effectiveToolCalls.map((tool) => ({ name: tool.name, result: tool.result }))),
     [effectiveToolCalls],
@@ -1113,21 +1115,22 @@ function ChatMessageInner({
             ))}
           </div>
         ) : null}
-        {!streaming && contextReceipts.length ? (
-          <div className="context-receipt-bundle" aria-label={contextReceipts.length > 1 ? `本任务包含 ${contextReceipts.length} 个依据阶段` : undefined}>
-            {contextReceipts.length > 1 ? (
+        {!streaming && contextReceiptEntries.length ? (
+          <div className="context-receipt-bundle" aria-label={contextReceiptEntries.length > 1 ? `本任务包含 ${contextReceiptEntries.length} 组业务依据` : undefined}>
+            {contextReceiptEntries.length > 1 ? (
               <div className="context-receipt-bundle__label">
                 <ShieldCheck aria-hidden="true" />
-                <span><strong>本次依据</strong><small>{contextReceipts.length} 个任务阶段</small></span>
+                <span><strong>本次依据</strong><small>{contextReceiptEntries.length} 组业务依据</small></span>
               </div>
             ) : null}
-            {contextReceipts.map((receipt) => (
+            {contextReceiptEntries.map(({ key, receipt, sourceReceipts }) => (
               <ContextReceiptPanel
-                key={receipt.receiptId}
+                key={key}
                 receipt={receipt}
-                interactionGrant={contextInteractionGrants.get(receipt.receiptId)}
-                citedKnowledge={receiptCitations.get(receipt.receiptId) || []}
-                summaryTitle={contextReceipts.length > 1 ? receipt.taskLabel : undefined}
+                sourceReceipts={sourceReceipts}
+                interactionGrant={sourceReceipts.length === 1 ? contextInteractionGrants.get(receipt.receiptId) : undefined}
+                citedKnowledge={sourceReceipts.flatMap((source) => receiptCitations.get(source.receiptId) || [])}
+                summaryTitle={contextReceiptEntries.length > 1 ? receipt.taskLabel : undefined}
                 onMemoryFeedback={onContextMemoryFeedback}
                 onLoadMemoryPreviews={onLoadContextMemoryPreviews}
               />

@@ -103,7 +103,7 @@ describe("ChatMessage tool timeline", () => {
     }));
 
     expect((html.match(/本次依据/g) || [])).toHaveLength(1);
-    expect(html).toContain("2 个任务阶段");
+    expect(html).toContain("2 组业务依据");
     expect(html).toContain("受治理客户画像");
     expect(html).toContain("客户访前准备");
   });

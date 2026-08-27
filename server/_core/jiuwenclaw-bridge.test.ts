@@ -12,6 +12,7 @@ import {
   formatJiuwenTextSectionDelta,
   inferSkillIdFromJiuwenPayload,
   normalizeJiuwenPermissionRequest,
+  normalizeJiuwenFileEvent,
   pickJiuwenText,
 } from "./jiuwenclaw-bridge";
 
@@ -214,6 +215,38 @@ describe("jiuwenclaw bridge audit helpers", () => {
       utimesSync(report, new Date(cutoff + 1000), new Date(cutoff + 1000));
 
       expect(collectRecentWorkspaceFiles(root, cutoff).map((file) => file.path)).toEqual(["risk-report.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not publish a remote Jiuwen path as a local attachment before materialization", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-workspace-remote-file-"));
+    try {
+      expect(normalizeJiuwenFileEvent({
+        files: [{
+          path: "访前简报_陈明.md",
+          name: "访前简报_陈明.md",
+          size: 5400,
+          download_url: "/file-api/download?token=remote-file",
+        }],
+      }, root)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("publishes a generated file only after it exists in the EA workspace", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-workspace-local-file-"));
+    try {
+      writeFileSync(path.join(root, "访前简报_陈明.md"), "brief", "utf8");
+      expect(normalizeJiuwenFileEvent({
+        files: [{ path: "访前简报_陈明.md", size: 1 }],
+      }, root)).toEqual([{
+        name: "访前简报_陈明.md",
+        size: 5,
+        path: "访前简报_陈明.md",
+      }]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

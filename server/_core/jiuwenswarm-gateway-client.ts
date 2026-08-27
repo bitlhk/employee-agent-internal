@@ -386,16 +386,16 @@ async function handleGatewayEvent(args: {
 
   let files = normalizeJiuwenFileEvent(payload, args.workspaceDir);
   if (
-    files.length === 0
-    && args.remoteFileWsUrl
+    args.remoteFileWsUrl
     && (eventType === "chat.file" || eventType === "chat.media")
   ) {
-    files = await materializeRemoteJiuwenFiles({
+    const remoteFiles = await materializeRemoteJiuwenFiles({
       delta: payload,
       wsUrl: args.remoteFileWsUrl,
       workspaceDir: args.workspaceDir,
       requestId: args.requestId,
     });
+    if (remoteFiles.length > 0) files = remoteFiles;
   }
   if (files.length > 0) args.collectFiles?.(files);
   for (const file of files) {

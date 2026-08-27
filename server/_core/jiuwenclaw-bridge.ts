@@ -573,7 +573,11 @@ function normalizeWorkspaceFilePayload(file: unknown, workspaceDir: string): { n
     const st = statSync(absFile);
     if (!st.isFile()) return null;
     size = st.size;
-  } catch {}
+  } catch {
+    // Enterprise Jiuwen events may describe a remote file path. Do not publish
+    // it as a local attachment until the gateway client has materialized it.
+    return null;
+  }
 
   const name = String(payload.name || path.basename(relPath)).trim() || path.basename(relPath);
   return { name, size, path: relPath };
