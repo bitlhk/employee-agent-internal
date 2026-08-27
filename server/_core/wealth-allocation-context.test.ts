@@ -91,6 +91,59 @@ describe("wealth allocation context", () => {
     })]);
   });
 
+  it("normalizes the v2.2 governed product master envelope", () => {
+    expect(normalizeWealthProducts({
+      asOf: "2026-08-20",
+      updatedAt: "2026-08-27T15:05:35.487Z",
+      data: {
+        items: [{
+          productId: "P001",
+          name: "稳盈1号理财",
+          dataSourceType: "demo",
+          riskLevel: "R2",
+          minPurchaseAmount: 5_000,
+          salesStatus: "on_sale",
+        }],
+      },
+    })).toEqual([expect.objectContaining({
+      productId: "P001",
+      dataSourceType: "demo",
+      riskLevel: "R2",
+      status: "on_sale",
+      minAmount: 5_000,
+      dataAsOf: "2026-08-20",
+    })]);
+  });
+
+  it("normalizes nested product facts and sales eligibility", () => {
+    expect(normalizeWealthProducts({
+      data: {
+        products: [{
+          productId: "P001",
+          dataSourceType: "demo",
+          productFacts: {
+            name: "稳盈1号理财",
+            riskLevel: "R2",
+            minPurchaseAmount: 5_000,
+            termDays: 323,
+          },
+          salesEligibility: {
+            salesStatus: "on_sale",
+            channels: ["网点", "手机银行"],
+            asOf: "2026-08-20",
+          },
+        }],
+      },
+    })).toEqual([expect.objectContaining({
+      productId: "P001",
+      name: "稳盈1号理财",
+      channels: ["网点", "手机银行"],
+      minAmount: 5_000,
+      termMonths: 11,
+      dataAsOf: "2026-08-20",
+    })]);
+  });
+
   it("normalizes numeric and labeled product risk ratings to governed R-levels", () => {
     const normalized = normalizeWealthProducts({
       updatedAt: "2026-08-25T09:50:12.200Z",

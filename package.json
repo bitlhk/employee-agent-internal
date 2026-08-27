@@ -60,6 +60,7 @@
     "db:backup-users": "tsx scripts/backup-user-data.ts",
     "mcp:identity:init": "node scripts/generate-enterprise-mcp-keypair.mjs",
     "mcp:markers:configure": "tsx scripts/configure-insurance-marker-mcps.ts",
+    "mcp:wealth-product:configure": "tsx scripts/configure-wealth-product-mcp.ts",
     "mcp:demo:configure": "tsx scripts/configure-governance-demo-mcp.ts",
     "models:catalog:volc": "tsx scripts/configure-volc-model-catalog.ts",
     "rolepack:wealth:install": "tsx scripts/install-wealth-manager-reference-pack.ts",

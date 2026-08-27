@@ -36,6 +36,7 @@ export type WealthCustomerSuitabilityContext = {
 export type WealthProductSuitabilityContext = {
   productId: string;
   name: string;
+  dataSourceType?: string;
   riskLevel: string;
   status: string;
   channels: string[];

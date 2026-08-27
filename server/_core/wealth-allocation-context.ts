@@ -158,23 +158,50 @@ function productRows(payload: JsonObject): JsonObject[] {
 }
 
 export function normalizeWealthProducts(payload: JsonObject): WealthProductSuitabilityContext[] {
-  const defaultDataAsOf = firstString(payload.updatedAt, payload.updated_at, object(payload.data).updatedAt, object(payload.data).updated_at);
-  return productRows(payload).map((product) => ({
-    productId: firstString(product.productId, product.product_id, product.productCode, product.product_code, product.code, product.id),
-    name: firstString(product.name, product.productName, product.product_name),
-    riskLevel: productRiskLevel(firstString(
-      product.riskLevel,
-      product.risk_level,
-      product.riskRating,
-      product.risk_rating,
-      product.risk_label,
-    )),
-    status: firstString(product.status, product.saleStatus, product.sale_status, product.salesStatus, product.sales_status),
-    channels: stringArray(product.channels, product.saleChannels, product.sale_channels, product.channel),
-    minAmount: finiteNumber(product.minAmount, product.min_amount, product.minimumAmount, product.minimum_amount, product.min_purchase_amount),
-    termMonths: finiteNumber(product.termMonths, product.term_months, product.durationMonths, product.duration_months, product.lockPeriodMonths),
-    dataAsOf: firstString(product.dataAsOf, product.data_as_of, product.updatedAt, product.updated_at, defaultDataAsOf),
-  })).slice(0, 50);
+  const data = object(payload.data);
+  const defaultDataAsOf = firstString(payload.asOf, payload.as_of, data.asOf, data.as_of, payload.updatedAt, payload.updated_at, data.updatedAt, data.updated_at);
+  return productRows(payload).map((product) => {
+    const facts = object(product.productFacts || product.product_facts);
+    const salesEligibility = object(product.salesEligibility || product.sales_eligibility);
+    const termDays = finiteNumber(product.termDays, product.term_days, facts.termDays, facts.term_days);
+    return {
+      productId: firstString(product.productId, product.product_id, product.productCode, product.product_code, product.code, product.id),
+      name: firstString(product.name, product.productName, product.product_name, facts.name),
+      dataSourceType: firstString(product.dataSourceType, product.data_source_type),
+      riskLevel: productRiskLevel(firstString(
+        product.riskLevel,
+        product.risk_level,
+        product.riskRating,
+        product.risk_rating,
+        product.risk_label,
+        facts.riskLevel,
+        facts.risk_level,
+        facts.riskLevelCode,
+      )),
+      status: firstString(product.status, product.saleStatus, product.sale_status, product.salesStatus, product.sales_status, salesEligibility.salesStatus, salesEligibility.sales_status),
+      channels: stringArray(product.channels, product.saleChannels, product.sale_channels, product.channel, salesEligibility.channels),
+      minAmount: finiteNumber(
+        product.minAmount,
+        product.min_amount,
+        product.minimumAmount,
+        product.minimum_amount,
+        product.minPurchaseAmount,
+        product.min_purchase_amount,
+        facts.minPurchaseAmount,
+        facts.min_purchase_amount,
+      ),
+      termMonths: finiteNumber(
+        product.termMonths,
+        product.term_months,
+        product.durationMonths,
+        product.duration_months,
+        product.lockPeriodMonths,
+        facts.termMonths,
+        facts.term_months,
+      ) ?? (termDays === null ? null : Math.ceil(termDays / 30)),
+      dataAsOf: firstString(product.dataAsOf, product.data_as_of, salesEligibility.asOf, salesEligibility.as_of, product.updatedAt, product.updated_at, defaultDataAsOf),
+    };
+  }).slice(0, 50);
 }
 
 function policyContext(input: {
