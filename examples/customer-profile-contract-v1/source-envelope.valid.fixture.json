@@ -2,7 +2,7 @@
   "schemaVersion": "ea.customer-profile-source-envelope.v1",
   "sourceContractId": "enterprise-customer-profile-source-v1",
   "sourceContractVersion": "1.0.0",
-  "sourceContractFingerprint": "1d7d415e5baf950c81f45334aadb93e37caf37a3ee6693fac76c20d8302323f0",
+  "sourceContractFingerprint": "9497787088c90c632a4d74a52445d1264e25997294a0b95066b5ebd0638be9be",
   "sourceSystem": "enterprise_customer_profile_fixture",
   "subjectId": "DEMO-CUSTOMER-001",
   "sourceRecordRef": "enterprise-customer:demo-record-001",
@@ -205,5 +205,5 @@
       "reasonCode": "FIELD_NOT_IN_CANONICAL_CONTRACT"
     }
   ],
-  "sourceResultFingerprint": "9a67a284ee47eaf7526a902ddccb1d2fa6ebd31a7ce309d912f421f5cd26e2cc"
+  "sourceResultFingerprint": "54874f85e6f333753a6a13d6b77213ecc2c90c2428502bd8fe8e48609f6318b2"
 }

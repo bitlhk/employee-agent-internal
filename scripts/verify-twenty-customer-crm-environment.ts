@@ -16,6 +16,9 @@ function argument(name: string): string {
 
 const bundlePath = argument("--bundle");
 if (!bundlePath) throw new Error("Usage requires --bundle <path>");
+const expectedRuntimeStatus = argument("--runtime-status") || "candidate";
+if (!["candidate", "active"].includes(expectedRuntimeStatus))
+  throw new Error("--runtime-status must be candidate or active");
 const bundle = JSON.parse(
   readFileSync(path.resolve(bundlePath), "utf8")
 ) as CustomerCrmImportBundleV1;
@@ -42,7 +45,7 @@ if (selected.length !== selectedProfileTypes.length)
 const observations = [];
 for (const expected of selected) {
   const customer = bundle.customers.find(
-    item => item.graceCustomerId === expected.graceCustomerId
+    item => item.globalCustomerId === expected.globalCustomerId
   );
   if (!customer)
     throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_CUSTOMER_MISSING");
@@ -68,31 +71,44 @@ for (const expected of selected) {
   };
   const recordLoader = createTwentyCustomerProfileRecordLoaderV1({
     client,
+    allowedRuntimeStatuses: [expectedRuntimeStatus as "candidate" | "active"],
     authorize: request => ({
       allowed:
         request.principal.tenantId === customer.tenantId &&
         request.principal.organizationId === "org_linggan_finance",
-      subjectInScope: request.graceCustomerId === expected.graceCustomerId,
+      subjectInScope: request.globalCustomerId === expected.globalCustomerId,
       authorizationEvidenceId: `customer-crm-shadow:${expected.profileType}`,
       allowedProfileTypes: [expected.profileType],
     }),
   });
   const loaded = await loadTwentyCustomerProfileCompatibilitySource({
     principal,
-    subjectId: expected.graceCustomerId,
+    subjectId: expected.globalCustomerId,
     recordLoader,
+    productionReady: expectedRuntimeStatus === "active",
   });
   const source = loaded.sources[0];
   if (!source)
     throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_PROFILE_MISMATCH");
   const actual = await client.loadCustomerProfile({
-    graceCustomerId: expected.graceCustomerId,
+    globalCustomerId: expected.globalCustomerId,
     allowedProfileTypes: [expected.profileType],
+    allowedRuntimeStatuses: [expectedRuntimeStatus as "candidate" | "active"],
   });
-  if (!actual || actual.detailSchemaVersion !== expected.detailSchemaVersion)
+  const actualProfile = actual?.profiles.find(
+    profile => profile.profileType === expected.profileType
+  );
+  if (
+    !actualProfile ||
+    actualProfile.detailSchemaVersion !== expected.detailSchemaVersion
+  )
     throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_SCHEMA_MISMATCH");
-  if (source.productionReady || source.assuranceLevel !== "candidate")
-    throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_SHADOW_BOUNDARY_BROKEN");
+  if (
+    source.productionReady !== (expectedRuntimeStatus === "active") ||
+    source.assuranceLevel !==
+      (expectedRuntimeStatus === "active" ? "production" : "candidate")
+  )
+    throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_ASSURANCE_MISMATCH");
   const serializedSource = JSON.stringify(source);
   if (
     serializedSource.includes("purchasePrice") ||
@@ -106,8 +122,9 @@ for (const expected of selected) {
   )!;
   await client
     .loadCustomerProfile({
-      graceCustomerId: expected.graceCustomerId,
+      globalCustomerId: expected.globalCustomerId,
       allowedProfileTypes: [otherProfileType],
+      allowedRuntimeStatuses: [expectedRuntimeStatus as "candidate" | "active"],
     })
     .then(() => {
       throw new Error("TWENTY_CUSTOMER_CRM_ENVIRONMENT_CROSS_PROFILE_LEAKAGE");
@@ -121,12 +138,13 @@ for (const expected of selected) {
     });
   observations.push({
     subjectFingerprint: createHash("sha256")
-      .update(actual.graceCustomerId)
+      .update(actual.globalCustomerId)
       .digest("hex"),
-    profileType: actual.profileType,
+    profileType: actualProfile.profileType,
     roleTemplate,
-    detailSchemaVersion: actual.detailSchemaVersion,
-    provenanceFieldCount: Object.keys(actual.fieldProvenance).length,
+    detailSchemaVersion: actualProfile.detailSchemaVersion,
+    runtimeStatus: actualProfile.runtimeStatus,
+    provenanceFieldCount: Object.keys(actualProfile.fieldProvenance).length,
     providedFieldCount: source.fields.length,
     sourceFingerprint: source.resultFingerprint,
     crossProfileLeakage: 0,
@@ -139,8 +157,11 @@ console.log(
     {
       schemaVersion: "ea.twenty-customer-crm-environment-verification.v1",
       status: "PASS",
-      productionActivated: false,
-      runtimeProjections: ["wealth-manager-shadow", "insurance-advisor-shadow"],
+      productionActivated: expectedRuntimeStatus === "active",
+      runtimeProjections:
+        expectedRuntimeStatus === "active"
+          ? ["wealth-manager-production", "insurance-advisor-production"]
+          : ["wealth-manager-shadow", "insurance-advisor-shadow"],
       observations,
     },
     null,

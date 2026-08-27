@@ -6,6 +6,36 @@ import {
   type TwentyCustomerProfileRecordV1,
 } from "./customer-profile-twenty-adapter";
 
+function aggregate(source: TwentyCustomerProfileRecordV1) {
+  const {
+    profileType,
+    detailSchemaVersion,
+    runtimeStatus,
+    demographics,
+    preferences,
+    insuranceFacts,
+    detail,
+    fieldProvenance,
+    ...customer
+  } = source;
+  return {
+    ...customer,
+    visibilityScope: "demo_public" as const,
+    profiles: [
+      {
+        profileType,
+        detailSchemaVersion,
+        runtimeStatus,
+        demographics,
+        preferences,
+        insuranceFacts,
+        detail,
+        fieldProvenance,
+      },
+    ],
+  };
+}
+
 const principal: RuntimePrincipalV2 = {
   userId: 101,
   tenantId: "tn_demo",
@@ -22,7 +52,7 @@ const principal: RuntimePrincipalV2 = {
 };
 
 const record: TwentyCustomerProfileRecordV1 = {
-  graceCustomerId: "CUST-000101",
+  globalCustomerId: "CUST-000101",
   displayName: "测试客户",
   customerStatus: "续保客户",
   tenantId: "tn_demo",
@@ -30,6 +60,7 @@ const record: TwentyCustomerProfileRecordV1 = {
   businessAsOf: "2026-08-20",
   profileType: "auto_insurance",
   detailSchemaVersion: "auto-insurance.v1",
+  runtimeStatus: "active",
   demographics: { age: 48, occupation: "制造业老板", city: "苏州" },
   preferences: {
     riskPreference: "稳健",
@@ -104,9 +135,9 @@ describe("Twenty Customer Profile adapter", () => {
   it("requires the requested Global Customer ID and organization scope", async () => {
     const loaded = await loadTwentyCustomerProfileCompatibilitySource({
       principal,
-      subjectId: record.graceCustomerId,
+      subjectId: record.globalCustomerId,
       recordLoader: async () => ({
-        record,
+        record: aggregate(record),
         principalAuthorized: true,
         subjectInScope: true,
         authorizationEvidenceId: "crm-auth-1",
@@ -120,7 +151,7 @@ describe("Twenty Customer Profile adapter", () => {
         principal,
         subjectId: "CUST-000102",
         recordLoader: async () => ({
-          record,
+          record: aggregate(record),
           principalAuthorized: true,
           subjectInScope: true,
           authorizationEvidenceId: "crm-auth-1",
@@ -133,7 +164,7 @@ describe("Twenty Customer Profile adapter", () => {
     const source = normalizeTwentyCustomerProfileSource({
       record: {
         ...record,
-        graceCustomerId: "CUST-000005",
+        globalCustomerId: "CUST-000005",
         displayName: "陈明",
         profileType: "wealth",
         detailSchemaVersion: "wealth.v1",
@@ -173,7 +204,7 @@ describe("Twenty Customer Profile adapter", () => {
   it("preserves authorization and subject-scope denials without returning data", async () => {
     const denied = await loadTwentyCustomerProfileCompatibilitySource({
       principal,
-      subjectId: record.graceCustomerId,
+      subjectId: record.globalCustomerId,
       recordLoader: async () => ({
         record: null,
         principalAuthorized: false,

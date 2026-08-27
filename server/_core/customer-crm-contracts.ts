@@ -127,6 +127,11 @@ export function runCustomerCrmContractChecks(root = process.cwd()) {
     if (source?.globalCustomerIdStrategy !== "crosswalk_required")
       errors.push(`${sourceSystem}: explicit customer Crosswalk is required`);
   }
+  const twentySource = identity.sources.find(
+    item => item.sourceSystem === "twenty_crm"
+  );
+  if (twentySource?.globalCustomerIdStrategy !== "canonical_native")
+    errors.push("twenty_crm: Global Customer ID must remain canonical");
 
   if (
     authority.canonicalLogicalContextId !== "customer_profile" ||

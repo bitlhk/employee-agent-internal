@@ -22,6 +22,7 @@ export type CustomerProfileCompatibilityLoadResultV1 = {
   sources: NormalizedCustomerProfileSourceV1[];
   principalAuthorized: boolean;
   subjectInScope: boolean;
+  resolvedSubjectId?: string;
   notes: string[];
 };
 
@@ -137,7 +138,9 @@ export async function loadWealthCustomerProfileCompatibilitySource(input: {
     principalAuthorized: true,
     subjectInScope: inScope,
     notes: input.includeDemoFacts
-      ? ["missing Wealth governance facts were supplied by a synthetic GRACE Demo contributor"]
+      ? [
+          "missing Wealth governance facts were supplied by a synthetic GRACE Demo contributor",
+        ]
       : [],
   };
 }

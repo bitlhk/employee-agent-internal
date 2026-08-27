@@ -6,7 +6,7 @@
   "canonicalLogicalContextId": "customer_profile",
   "baseline": {
     "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
-    "sourceRemediationPlanFingerprint": "261d8ae911f28187a10bd23465270b8843685de144836da20b4b5d6d31f937cb"
+    "sourceRemediationPlanFingerprint": "f13b15e45b7e14f89f69bfcb61d65ce54f7790a579c3a8f58640988567cf4eb9"
   },
   "invocation": {
     "toolName": "get_governed_customer_profile",

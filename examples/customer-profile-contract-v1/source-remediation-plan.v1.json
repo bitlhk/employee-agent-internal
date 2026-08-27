@@ -4,7 +4,7 @@
   "status": "domain_confirmed",
   "baseline": {
     "businessContractFingerprint": "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0",
-    "sourceMappingFingerprint": "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd",
+    "sourceMappingFingerprint": "3faf56067e713516d35e3ae637a02205c6bec6525aa8ce74b740c86d37151d0f",
     "environmentEvidence": "examples/customer-profile-contract-v1/source-readiness-local.v1.json"
   },
   "activationPolicy": {

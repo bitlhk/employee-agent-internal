@@ -12,8 +12,8 @@ describe("Customer Profile Contract V1", () => {
     expect(report.canonicalLogicalContextId).toBe("customer_profile");
     expect(report.canonicalFieldCount).toBe(35);
     expect(report.projectionCount).toBe(5);
-    expect(report.sourceContractCount).toBe(2);
-    expect(report.productionReadySourceCount).toBe(0);
+    expect(report.sourceContractCount).toBe(3);
+    expect(report.productionReadySourceCount).toBe(1);
     expect(report.businessContractFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(report.sourceMappingFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(report.evidenceFingerprint).toMatch(/^[a-f0-9]{64}$/u);
@@ -30,10 +30,10 @@ describe("Customer Profile Contract V1", () => {
       "fcc21f0aca43858cecb8b141982d82880511fa32092ab4e4973c141286774fd0"
     );
     expect(report.sourceMappingFingerprint).toBe(
-      "849a01d97e9eb08735beb97a21036768e350ad99e095fbf6535718aaff0241cd"
+      "3faf56067e713516d35e3ae637a02205c6bec6525aa8ce74b740c86d37151d0f"
     );
     expect(report.evidenceFingerprint).toBe(
-      "994b1701d61e8ba93f255d69176a3479794b61756c81a1ed7c78fdcf961af8ff"
+      "130575569279f19318fde2cac561c12590a53bbc29a05e14d053007e858d28b4"
     );
   });
 

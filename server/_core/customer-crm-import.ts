@@ -61,23 +61,36 @@ export type CustomerCrmImportBundleV1 = {
   generatedAt: string;
   sourceSystem: string;
   customers: Array<{
-    graceCustomerId: string;
+    globalCustomerId: string;
     displayName: string;
     customerStatus: string;
+    visibilityScope: "demo_public" | "restricted";
     tenantId: string;
     ownerUserId: string;
     businessAsOf: string;
     maskedPhone?: string;
   }>;
+  assignments: Array<{
+    assignmentKey: string;
+    globalCustomerId: string;
+    organizationId: string;
+    principalType: "user" | "team";
+    principalRef: string;
+    businessDomain?: string;
+    relationshipRole?: "primary" | "support";
+    assignmentStatus: "active" | "inactive";
+    validFrom?: string;
+    validTo?: string;
+  }>;
   sourceLinks: Array<{
-    graceCustomerId: string;
+    globalCustomerId: string;
     sourceSystem: string;
     sourceCustomerId: string;
     sourceTenantId: string;
     sourceRecordFingerprint: string;
   }>;
   domainProfiles: Array<{
-    graceCustomerId: string;
+    globalCustomerId: string;
     profileType: string;
     detailSchemaVersion: string;
     demographics: JsonObject;
@@ -95,12 +108,34 @@ export type CustomerCrmImportBundleV1 = {
     runtimeStatus: "candidate";
   }>;
   suggestions: Array<{
-    graceCustomerId: string;
+    globalCustomerId: string;
     suggestionType: "bio" | "protection_gap" | "contact_strategy";
     content: string;
     status: "awaiting_confirmation";
     runtimeFact: false;
   }>;
+};
+
+export type NativeCustomerCrmFixtureSetV1 = {
+  schemaVersion: "ea.native-customer-crm-fixtures.v1";
+  customers: Array<{
+    globalCustomerId: string;
+    displayName: string;
+    customerStatus: "active" | "inactive";
+    visibilityScope: "demo_public" | "restricted";
+    tenantId: string;
+    ownerUserId: string;
+    businessAsOf: string;
+    maskedPhone?: string;
+    profiles: Array<{
+      profileType: string;
+      demographics: JsonObject;
+      preferences: JsonObject;
+      insuranceFacts: JsonObject;
+      detail: JsonObject;
+    }>;
+  }>;
+  assignments: CustomerCrmImportBundleV1["assignments"];
 };
 
 function stableSourceId(value: string | number): string {
@@ -228,6 +263,7 @@ export function prepareInsuranceCustomerCrmImport(input: {
     generatedAt,
     sourceSystem: "insurance_customer_profile",
     customers: [],
+    assignments: [],
     sourceLinks: [],
     domainProfiles: [],
     suggestions: [],
@@ -239,15 +275,15 @@ export function prepareInsuranceCustomerCrmImport(input: {
       throw new Error(`CUSTOMER_CRM_SOURCE_ID_DUPLICATE:${sourceCustomerId}`);
     seenSourceIds.add(sourceCustomerId);
     const sourceTenantId = String(source.tenant_id || "default").slice(0, 128);
-    const graceCustomerId = crosswalkCustomerId({
+    const globalCustomerId = crosswalkCustomerId({
       crosswalk: input.crosswalk,
       sourceSystem: "insurance_customer_profile",
       sourceTenantId,
       sourceCustomerId,
     });
-    if (seenGlobalIds.has(graceCustomerId))
-      throw new Error(`CUSTOMER_CRM_GLOBAL_ID_DUPLICATE:${graceCustomerId}`);
-    seenGlobalIds.add(graceCustomerId);
+    if (seenGlobalIds.has(globalCustomerId))
+      throw new Error(`CUSTOMER_CRM_GLOBAL_ID_DUPLICATE:${globalCustomerId}`);
+    seenGlobalIds.add(globalCustomerId);
 
     const displayName = String(source.name || "").trim();
     if (!displayName) throw new Error("CUSTOMER_CRM_DISPLAY_NAME_REQUIRED");
@@ -276,22 +312,23 @@ export function prepareInsuranceCustomerCrmImport(input: {
     );
 
     bundle.customers.push({
-      graceCustomerId,
+      globalCustomerId,
       displayName,
       customerStatus: "active",
+      visibilityScope: "demo_public",
       tenantId: String(input.canonicalTenantId || sourceTenantId).slice(0, 128),
       ownerUserId: String(source.owner_user_id || "unassigned").slice(0, 128),
       businessAsOf,
     });
     bundle.sourceLinks.push({
-      graceCustomerId,
+      globalCustomerId,
       sourceSystem: "insurance_customer_profile",
       sourceCustomerId,
       sourceTenantId,
       sourceRecordFingerprint: sourceFingerprint(source),
     });
     bundle.domainProfiles.push({
-      graceCustomerId,
+      globalCustomerId,
       profileType: source.profile_type,
       detailSchemaVersion: schema.detailSchemaVersion,
       demographics: {
@@ -326,7 +363,7 @@ export function prepareInsuranceCustomerCrmImport(input: {
       const content = String(suggestion[1] || "").trim();
       if (!content) continue;
       bundle.suggestions.push({
-        graceCustomerId,
+        globalCustomerId,
         suggestionType: suggestion[0],
         content,
         status: "awaiting_confirmation",
@@ -381,6 +418,7 @@ export function prepareWealthCustomerCrmImport(input: {
     generatedAt,
     sourceSystem: "wealth_assistant_customer",
     customers: [],
+    assignments: [],
     sourceLinks: [],
     domainProfiles: [],
     suggestions: [],
@@ -393,7 +431,7 @@ export function prepareWealthCustomerCrmImport(input: {
         `CUSTOMER_CRM_SOURCE_ID_DUPLICATE:${record.sourceCustomerId}`
       );
     seen.add(record.sourceCustomerId);
-    const graceCustomerId = crosswalkCustomerId({
+    const globalCustomerId = crosswalkCustomerId({
       crosswalk: input.crosswalk,
       sourceSystem: "wealth_assistant_customer",
       sourceTenantId: input.sourceTenantId,
@@ -414,6 +452,13 @@ export function prepareWealthCustomerCrmImport(input: {
         aumBand: record.customer.aumBand,
         totalAssets: record.assetInfo.totalAssets,
       },
+      portfolioSummary: record.assetInfo,
+      holdings: Array.isArray(record.detail.heldProducts)
+        ? record.detail.heldProducts
+        : [],
+      maturities: Array.isArray(record.detail.maturedProducts)
+        ? record.detail.maturedProducts
+        : [],
     };
     const schema = validateProfileDetail({
       profileType: "wealth",
@@ -439,12 +484,13 @@ export function prepareWealthCustomerCrmImport(input: {
       ])
     );
     bundle.customers.push({
-      graceCustomerId,
+      globalCustomerId,
       displayName: record.displayName,
       customerStatus:
         String(record.customer.customerStatus || "active") === "inactive"
           ? "inactive"
           : "active",
+      visibilityScope: "demo_public",
       tenantId: input.canonicalTenantId,
       ownerUserId: input.ownerUserId,
       businessAsOf,
@@ -452,14 +498,14 @@ export function prepareWealthCustomerCrmImport(input: {
         String(record.customer.maskedPhone || "").trim() || undefined,
     });
     bundle.sourceLinks.push({
-      graceCustomerId,
+      globalCustomerId,
       sourceSystem: "wealth_assistant_customer",
       sourceCustomerId: record.sourceCustomerId,
       sourceTenantId: input.sourceTenantId,
       sourceRecordFingerprint: sourceFingerprint(rawRecord),
     });
     bundle.domainProfiles.push({
-      graceCustomerId,
+      globalCustomerId,
       profileType: "wealth",
       detailSchemaVersion: schema.detailSchemaVersion,
       demographics: {
@@ -478,6 +524,103 @@ export function prepareWealthCustomerCrmImport(input: {
   return bundle;
 }
 
+export function prepareNativeCustomerCrmFixtures(input: {
+  fixtures: NativeCustomerCrmFixtureSetV1;
+  now?: Date;
+  root?: string;
+}): CustomerCrmImportBundleV1 {
+  if (input.fixtures.schemaVersion !== "ea.native-customer-crm-fixtures.v1")
+    throw new Error("CUSTOMER_CRM_NATIVE_FIXTURE_SCHEMA_UNSUPPORTED");
+  const generatedAt = (input.now || new Date()).toISOString();
+  const { domainSchemas } = loadCustomerCrmContracts(
+    input.root || process.cwd()
+  );
+  const bundle: CustomerCrmImportBundleV1 = {
+    schemaVersion: "ea.customer-crm-import-bundle.v1",
+    generatedAt,
+    sourceSystem: "twenty_crm",
+    customers: [],
+    assignments: [],
+    sourceLinks: [],
+    domainProfiles: [],
+    suggestions: [],
+  };
+  const customerIds = new Set<string>();
+  const profileKeys = new Set<string>();
+  for (const customer of input.fixtures.customers) {
+    const globalCustomerId = customer.globalCustomerId.trim();
+    if (!/^CUST-[0-9]{6}$/u.test(globalCustomerId))
+      throw new Error("CUSTOMER_CRM_GLOBAL_ID_INVALID");
+    if (customerIds.has(globalCustomerId))
+      throw new Error(`CUSTOMER_CRM_GLOBAL_ID_DUPLICATE:${globalCustomerId}`);
+    customerIds.add(globalCustomerId);
+    const businessAsOf = isoDate(
+      customer.businessAsOf,
+      `CUSTOMER_CRM_BUSINESS_AS_OF_INVALID:${globalCustomerId}`
+    );
+    bundle.customers.push({
+      globalCustomerId,
+      displayName: customer.displayName.trim(),
+      customerStatus: customer.customerStatus,
+      visibilityScope: customer.visibilityScope,
+      tenantId: customer.tenantId.trim(),
+      ownerUserId: customer.ownerUserId.trim(),
+      businessAsOf,
+      maskedPhone: customer.maskedPhone?.trim() || undefined,
+    });
+    for (const profile of customer.profiles) {
+      const key = `${globalCustomerId}:${profile.profileType}`;
+      if (profileKeys.has(key))
+        throw new Error(`CUSTOMER_CRM_PROFILE_DUPLICATE:${key}`);
+      profileKeys.add(key);
+      const schema = validateProfileDetail({
+        profileType: profile.profileType,
+        detail: profile.detail,
+        sourceId: globalCustomerId,
+        schemas: domainSchemas,
+      });
+      const provenanceFields = [
+        ...Object.keys(profile.demographics).map(
+          field => `demographics.${field}`
+        ),
+        ...Object.keys(profile.preferences).map(
+          field => `preferences.${field}`
+        ),
+        ...Object.keys(profile.insuranceFacts),
+        ...schema.fields.map(field => field.path),
+      ];
+      bundle.domainProfiles.push({
+        globalCustomerId,
+        profileType: profile.profileType,
+        detailSchemaVersion: schema.detailSchemaVersion,
+        demographics: profile.demographics,
+        preferences: profile.preferences,
+        insuranceFacts: profile.insuranceFacts,
+        detail: profile.detail,
+        fieldProvenance: Object.fromEntries(
+          provenanceFields.map(field => [
+            field,
+            {
+              sourceSystem: "twenty_crm",
+              asOf: businessAsOf,
+              sourceField: field,
+            },
+          ])
+        ),
+        runtimeStatus: "candidate",
+      });
+    }
+  }
+  for (const assignment of input.fixtures.assignments) {
+    if (!customerIds.has(assignment.globalCustomerId))
+      throw new Error(
+        `CUSTOMER_CRM_ASSIGNMENT_CUSTOMER_NOT_FOUND:${assignment.assignmentKey}`
+      );
+    bundle.assignments.push(assignment);
+  }
+  return bundle;
+}
+
 export function mergeCustomerCrmImportBundles(
   bundles: CustomerCrmImportBundleV1[],
   now = new Date()
@@ -487,6 +630,7 @@ export function mergeCustomerCrmImportBundles(
     generatedAt: now.toISOString(),
     sourceSystem: "customer_source_composition",
     customers: [],
+    assignments: [],
     sourceLinks: [],
     domainProfiles: [],
     suggestions: [],
@@ -496,20 +640,29 @@ export function mergeCustomerCrmImportBundles(
     CustomerCrmImportBundleV1["customers"][number]
   >();
   const sourceLinks = new Set<string>();
+  const assignments = new Set<string>();
   const profiles = new Set<string>();
   const suggestions = new Set<string>();
   for (const bundle of bundles) {
     for (const customer of bundle.customers) {
-      const existing = customers.get(customer.graceCustomerId);
+      const existing = customers.get(customer.globalCustomerId);
       if (
         existing &&
         (existing.displayName !== customer.displayName ||
           existing.tenantId !== customer.tenantId)
       )
         throw new Error(
-          `CUSTOMER_CRM_IDENTITY_CONFLICT:${customer.graceCustomerId}`
+          `CUSTOMER_CRM_IDENTITY_CONFLICT:${customer.globalCustomerId}`
         );
-      if (!existing) customers.set(customer.graceCustomerId, customer);
+      if (!existing) customers.set(customer.globalCustomerId, customer);
+    }
+    for (const assignment of bundle.assignments) {
+      if (assignments.has(assignment.assignmentKey))
+        throw new Error(
+          `CUSTOMER_CRM_ASSIGNMENT_DUPLICATE:${assignment.assignmentKey}`
+        );
+      assignments.add(assignment.assignmentKey);
+      merged.assignments.push(assignment);
     }
     for (const link of bundle.sourceLinks) {
       const key = `${link.sourceSystem}:${link.sourceTenantId}:${link.sourceCustomerId}`;
@@ -519,14 +672,14 @@ export function mergeCustomerCrmImportBundles(
       merged.sourceLinks.push(link);
     }
     for (const profile of bundle.domainProfiles) {
-      const key = `${profile.graceCustomerId}:${profile.profileType}`;
+      const key = `${profile.globalCustomerId}:${profile.profileType}`;
       if (profiles.has(key))
         throw new Error(`CUSTOMER_CRM_PROFILE_DUPLICATE:${key}`);
       profiles.add(key);
       merged.domainProfiles.push(profile);
     }
     for (const suggestion of bundle.suggestions) {
-      const key = `${suggestion.graceCustomerId}:${suggestion.suggestionType}`;
+      const key = `${suggestion.globalCustomerId}:${suggestion.suggestionType}`;
       if (suggestions.has(key))
         throw new Error(`CUSTOMER_CRM_SUGGESTION_DUPLICATE:${key}`);
       suggestions.add(key);

@@ -12,7 +12,7 @@ describe("Customer CRM Contract V1", () => {
     expect(report.sourceCount).toBe(3);
     expect(report.authorityRuleCount).toBe(10);
     expect(report.profileSchemaCount).toBe(3);
-    expect(report.runtimeApprovedFieldCount).toBe(12);
+    expect(report.runtimeApprovedFieldCount).toBe(15);
     expect(report.contractFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(report.boundaries).toEqual({
       heuristicIdentityMergeAllowed: false,

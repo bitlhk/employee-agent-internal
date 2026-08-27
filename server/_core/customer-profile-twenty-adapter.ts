@@ -10,7 +10,7 @@ import type { CustomerProfileCompatibilityLoadResultV1 } from "./customer-profil
 type JsonObject = Record<string, unknown>;
 
 export type TwentyCustomerProfileRecordV1 = {
-  graceCustomerId: string;
+  globalCustomerId: string;
   displayName: string;
   customerStatus: string;
   tenantId: string;
@@ -19,6 +19,7 @@ export type TwentyCustomerProfileRecordV1 = {
   maskedPhone?: string;
   profileType: string;
   detailSchemaVersion: string;
+  runtimeStatus: "candidate" | "active" | "retired";
   demographics: JsonObject;
   preferences: JsonObject;
   insuranceFacts: JsonObject;
@@ -29,11 +30,39 @@ export type TwentyCustomerProfileRecordV1 = {
   >;
 };
 
+export type TwentyCustomerProfileAggregateV1 = Omit<
+  TwentyCustomerProfileRecordV1,
+  | "profileType"
+  | "detailSchemaVersion"
+  | "runtimeStatus"
+  | "demographics"
+  | "preferences"
+  | "insuranceFacts"
+  | "detail"
+  | "fieldProvenance"
+> & {
+  visibilityScope: "demo_public" | "restricted";
+  profiles: Array<
+    Pick<
+      TwentyCustomerProfileRecordV1,
+      | "profileType"
+      | "detailSchemaVersion"
+      | "runtimeStatus"
+      | "demographics"
+      | "preferences"
+      | "insuranceFacts"
+      | "detail"
+      | "fieldProvenance"
+    >
+  >;
+};
+
 export type TwentyCustomerProfileRecordLoaderV1 = (input: {
-  graceCustomerId: string;
+  globalCustomerId: string;
   principal: RuntimePrincipalV2;
 }) => Promise<{
-  record: TwentyCustomerProfileRecordV1 | null;
+  record: TwentyCustomerProfileAggregateV1 | null;
+  resolvedGlobalCustomerId?: string;
   principalAuthorized: boolean;
   subjectInScope: boolean;
   authorizationEvidenceId: string;
@@ -126,7 +155,7 @@ export function normalizeTwentyCustomerProfileSource(input: {
 }): NormalizedCustomerProfileSourceV1 {
   const observedAt = input.observedAt || new Date().toISOString();
   const asOf = asIso(input.record.businessAsOf) || observedAt;
-  const sourceRecordRef = `twenty_crm:${input.record.graceCustomerId}`;
+  const sourceRecordRef = `twenty_crm:${input.record.globalCustomerId}:${input.record.profileType}`;
   const fields: NormalizedCustomerProfileFieldV1[] = [];
   const add = (path: string, value: unknown, sourceField = path) => {
     if (value === undefined || value === null || value === "") return;
@@ -148,7 +177,7 @@ export function normalizeTwentyCustomerProfileSource(input: {
   const preferences = object(input.record.preferences);
   const facts = object(input.record.insuranceFacts);
   const detail = object(input.record.detail);
-  add("subject.subjectId", input.record.graceCustomerId);
+  add("subject.subjectId", input.record.globalCustomerId);
   add("subject.subjectType", "individual_customer");
   add("subject.displayName", input.record.displayName);
   add("subject.customerStatus", input.record.customerStatus);
@@ -244,7 +273,7 @@ export function normalizeTwentyCustomerProfileSource(input: {
   const source: NormalizedCustomerProfileSourceV1 = {
     sourceContractId: "twenty-crm-customer-v1",
     sourceSystem: "twenty_crm",
-    subjectId: input.record.graceCustomerId,
+    subjectId: input.record.globalCustomerId,
     sourceRecordRef,
     asOf,
     observedAt,
@@ -267,7 +296,7 @@ export async function loadTwentyCustomerProfileCompatibilitySource(input: {
   productionReady?: boolean;
 }): Promise<CustomerProfileCompatibilityLoadResultV1> {
   const loaded = await input.recordLoader({
-    graceCustomerId: input.subjectId,
+    globalCustomerId: input.subjectId,
     principal: input.principal,
   });
   if (!loaded) {
@@ -291,22 +320,30 @@ export async function loadTwentyCustomerProfileCompatibilitySource(input: {
       ],
     };
   }
-  if (loaded.record.graceCustomerId !== input.subjectId)
+  const resolvedSubjectId = loaded.resolvedGlobalCustomerId || input.subjectId;
+  if (loaded.record.globalCustomerId !== resolvedSubjectId)
     throw new Error("CUSTOMER_CRM_SOURCE_SUBJECT_MISMATCH");
+  const record = loaded.record;
+  const sources = record.profiles.map(profile =>
+    normalizeTwentyCustomerProfileSource({
+      record: {
+        ...record,
+        ...profile,
+      },
+      principal: input.principal,
+      subjectInScope: loaded.subjectInScope,
+      productionReady: input.productionReady,
+    })
+  );
   return {
-    sources: [
-      normalizeTwentyCustomerProfileSource({
-        record: loaded.record,
-        principal: input.principal,
-        subjectInScope: loaded.subjectInScope,
-        productionReady: input.productionReady,
-      }),
-    ],
+    sources,
     principalAuthorized: loaded.principalAuthorized,
     subjectInScope: loaded.subjectInScope,
+    resolvedSubjectId,
     notes: [
       `Twenty CRM access evaluated for principal ${principalFingerprint(input.principal)}`,
       `Row authorization evidence: ${loaded.authorizationEvidenceId.slice(0, 128)}`,
+      `Twenty CRM returned ${sources.length} purpose-eligible domain profile(s).`,
       "Runtime purpose projection remains owned by the EA Customer Profile Provider.",
     ],
   };

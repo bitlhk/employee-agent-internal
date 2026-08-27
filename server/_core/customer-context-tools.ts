@@ -12,6 +12,12 @@ import {
 } from "./internal-mcp-client";
 import { normalizeWealthCustomerList } from "./wealth-maturity-context";
 import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
+import {
+  createConfiguredTwentyCustomerClient,
+  createConfiguredTwentyCustomerProfileLoader,
+  listAuthorizedTwentyCustomers,
+  twentyCustomerContextEnabled,
+} from "./customer-context-twenty-access";
 
 type JsonObject = Record<string, unknown>;
 
@@ -116,14 +122,14 @@ function resultError(result: JsonObject): string {
 function parsedMcpResult(result: JsonObject): JsonObject {
   if (result.isError === true)
     throw new Error(
-      `CUSTOMER_CONTEXT_UPSTREAM_DENIED:${resultError(result) || "remote MCP denied the call"}`,
+      `CUSTOMER_CONTEXT_UPSTREAM_DENIED:${resultError(result) || "remote MCP denied the call"}`
     );
   return parseInternalMcpJsonResult(result);
 }
 
 function wealthEndpointUrl(): string {
   return String(
-    process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp",
+    process.env.WEALTH_CUSTOMER_MCP_URL || "http://127.0.0.1:18008/mcp"
   ).trim();
 }
 
@@ -144,7 +150,7 @@ async function callWealthTool(input: {
       agentId: delegation.sourceAgentId,
       adoptId: input.principal.adoptionId,
       sessionId: input.principal.sessionId,
-    }),
+    })
   );
 }
 
@@ -164,10 +170,9 @@ async function callInsuranceTool(input: {
       serverId: "insurance_customer_profile",
       toolName: input.toolName,
       arguments: input.args,
-      taskAuthorizationSnapshotId:
-        input.principal.authorizationSnapshotId,
+      taskAuthorizationSnapshotId: input.principal.authorizationSnapshotId,
       executionOrigin: "customer_profile_adapter",
-    }),
+    })
   );
 }
 
@@ -185,30 +190,36 @@ function sourceEvidence(input: {
   };
 }
 
-function insuranceDirectoryItems(payload: JsonObject): CustomerDirectoryItemV1[] {
+function insuranceDirectoryItems(
+  payload: JsonObject
+): CustomerDirectoryItemV1[] {
   return array(payload.items)
     .map(item => ({
       customerId: firstString(item.id, item.customerId, item.customer_id),
-      displayName: firstString(item.name, item.customerName, item.customer_name),
+      displayName: firstString(
+        item.name,
+        item.customerName,
+        item.customer_name
+      ),
     }))
     .filter(item => item.customerId);
 }
 
 function filterDirectory(
   items: CustomerDirectoryItemV1[],
-  query: string,
+  query: string
 ): CustomerDirectoryItemV1[] {
   const normalized = query.trim().toLocaleLowerCase();
   const unique = items.filter(
     (item, index, rows) =>
-      rows.findIndex(candidate => candidate.customerId === item.customerId)
-      === index,
+      rows.findIndex(candidate => candidate.customerId === item.customerId) ===
+      index
   );
   if (!normalized) return unique;
   return unique.filter(item =>
     `${item.customerId}\n${item.displayName}`
       .toLocaleLowerCase()
-      .includes(normalized),
+      .includes(normalized)
   );
 }
 
@@ -216,8 +227,44 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
   async input => {
     const role = input.principal.roleTemplate as CustomerContextRoleV1;
     const generatedAt = new Date().toISOString();
+    if (twentyCustomerContextEnabled()) {
+      const customers = await listAuthorizedTwentyCustomers({
+        client: createConfiguredTwentyCustomerClient(),
+        principal: input.principal,
+      });
+      const all = filterDirectory(
+        customers.map(customer => ({
+          customerId: customer.globalCustomerId,
+          displayName: customer.displayName,
+        })),
+        input.query
+      );
+      return {
+        schemaVersion: "ea.customer-directory-result.v1",
+        contract: CUSTOMER_CONTEXT_CONTRACT,
+        logicalContextId: "customer_directory",
+        status: "READY",
+        query: input.query,
+        offset: input.offset,
+        limit: input.limit,
+        total: all.length,
+        items: all.slice(input.offset, input.offset + input.limit),
+        sourceEvidence: [
+          sourceEvidence({
+            sourceSystem: "twenty_crm",
+            sourceRecordRef: `authorized-customer-directory:${input.principal.organizationId}`,
+            asOf: generatedAt,
+            value: all,
+          }),
+        ],
+        generatedAt,
+      };
+    }
     if (role === "wealth-manager") {
-      const requested = Math.min(500, Math.max(100, input.offset + input.limit));
+      const requested = Math.min(
+        500,
+        Math.max(100, input.offset + input.limit)
+      );
       const payload = await callWealthTool({
         principal: input.principal,
         toolName: "wealth_assistant_customer_list",
@@ -228,14 +275,14 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
           customerId: item.customerId,
           displayName: item.customerName,
         })),
-        input.query,
+        input.query
       );
       const asOf = firstString(
         payload.asOf,
         payload.updatedAt,
         object(payload.data).asOf,
         object(payload.data).updatedAt,
-        generatedAt,
+        generatedAt
       );
       return {
         schemaVersion: "ea.customer-directory-result.v1",
@@ -264,11 +311,17 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
         request: input.request,
         toolName: "list_customer_profiles",
         args: {
-          limit: Math.min(100, Math.max(input.limit, input.offset + input.limit)),
+          limit: Math.min(
+            100,
+            Math.max(input.limit, input.offset + input.limit)
+          ),
           offset: 0,
         },
       });
-      const all = filterDirectory(insuranceDirectoryItems(payload), input.query);
+      const all = filterDirectory(
+        insuranceDirectoryItems(payload),
+        input.query
+      );
       const asOf = firstString(payload.asOf, payload.updatedAt, generatedAt);
       return {
         schemaVersion: "ea.customer-directory-result.v1",
@@ -278,9 +331,10 @@ export const defaultCustomerDirectoryLoader: CustomerDirectoryLoaderV1 =
         query: input.query,
         offset: input.offset,
         limit: input.limit,
-        total: Number.isFinite(Number(payload.total)) && !input.query
-          ? Number(payload.total)
-          : all.length,
+        total:
+          Number.isFinite(Number(payload.total)) && !input.query
+            ? Number(payload.total)
+            : all.length,
         items: all.slice(input.offset, input.offset + input.limit),
         sourceEvidence: [
           sourceEvidence({
@@ -327,7 +381,7 @@ function pickNumber(row: JsonObject, keys: string[]): number | null {
 
 function compactRecord(
   row: JsonObject,
-  fields: Record<string, { strings?: string[]; numbers?: string[] }>,
+  fields: Record<string, { strings?: string[]; numbers?: string[] }>
 ): Record<string, number | string> {
   const result: Record<string, number | string> = {};
   for (const [target, source] of Object.entries(fields)) {
@@ -351,7 +405,7 @@ export function normalizeWealthCustomerPortfolio(input: {
     customer.customerId,
     customer.customer_id,
     customer.CUST_NO,
-    customer.id,
+    customer.id
   );
   if (!returnedId || returnedId !== input.expectedSubjectId)
     throw new Error("CUSTOMER_PORTFOLIO_SOURCE_SUBJECT_MISMATCH");
@@ -366,7 +420,9 @@ export function normalizeWealthCustomerPortfolio(input: {
     investedAssets: {
       numbers: ["investments", "investedAssets", "invested_assets"],
     },
-    dataAsOf: { strings: ["dataAsOf", "data_as_of", "updatedAt", "updated_at"] },
+    dataAsOf: {
+      strings: ["dataAsOf", "data_as_of", "updatedAt", "updated_at"],
+    },
   });
   const holdingRows = rows(source, [
     "heldProducts",
@@ -382,22 +438,84 @@ export function normalizeWealthCustomerPortfolio(input: {
     "upcomingMaturities",
     "upcoming_maturities",
   ]);
-  const holdings = holdingRows.map(row => compactRecord(row, {
-    productRef: { strings: ["productId", "product_id", "productCode", "product_code", "id"] },
-    productName: { strings: ["productName", "product_name", "name"] },
-    category: { strings: ["category", "productCategory", "product_category", "type"] },
-    balance: { numbers: ["balance", "amount", "principal", "marketValue", "market_value"] },
-    status: { strings: ["status", "productStatus", "product_status"] },
-    holdingSince: { strings: ["holdingSince", "holding_since", "startDate", "start_date"] },
-    maturityDate: { strings: ["maturityDate", "maturity_date", "expiryDate", "expiry_date", "endDate", "end_date"] },
-  })).filter(row => Object.keys(row).length > 0);
-  const maturities = maturityRows.map(row => compactRecord(row, {
-    productRef: { strings: ["productId", "product_id", "productCode", "product_code", "id"] },
-    productName: { strings: ["productName", "product_name", "name"] },
-    amount: { numbers: ["amount", "maturityAmount", "maturity_amount", "principal", "balance"] },
-    maturityDate: { strings: ["maturityDate", "maturity_date", "expiryDate", "expiry_date", "endDate", "end_date"] },
-    status: { strings: ["status", "productStatus", "product_status"] },
-  })).filter(row => Object.keys(row).length > 0);
+  const holdings = holdingRows
+    .map(row =>
+      compactRecord(row, {
+        productRef: {
+          strings: [
+            "productId",
+            "product_id",
+            "productCode",
+            "product_code",
+            "id",
+          ],
+        },
+        productName: { strings: ["productName", "product_name", "name"] },
+        category: {
+          strings: ["category", "productCategory", "product_category", "type"],
+        },
+        balance: {
+          numbers: [
+            "balance",
+            "amount",
+            "principal",
+            "marketValue",
+            "market_value",
+          ],
+        },
+        status: { strings: ["status", "productStatus", "product_status"] },
+        holdingSince: {
+          strings: ["holdingSince", "holding_since", "startDate", "start_date"],
+        },
+        maturityDate: {
+          strings: [
+            "maturityDate",
+            "maturity_date",
+            "expiryDate",
+            "expiry_date",
+            "endDate",
+            "end_date",
+          ],
+        },
+      })
+    )
+    .filter(row => Object.keys(row).length > 0);
+  const maturities = maturityRows
+    .map(row =>
+      compactRecord(row, {
+        productRef: {
+          strings: [
+            "productId",
+            "product_id",
+            "productCode",
+            "product_code",
+            "id",
+          ],
+        },
+        productName: { strings: ["productName", "product_name", "name"] },
+        amount: {
+          numbers: [
+            "amount",
+            "maturityAmount",
+            "maturity_amount",
+            "principal",
+            "balance",
+          ],
+        },
+        maturityDate: {
+          strings: [
+            "maturityDate",
+            "maturity_date",
+            "expiryDate",
+            "expiry_date",
+            "endDate",
+            "end_date",
+          ],
+        },
+        status: { strings: ["status", "productStatus", "product_status"] },
+      })
+    )
+    .filter(row => Object.keys(row).length > 0);
   const asOf = firstString(
     input.payload.asOf,
     input.payload.updatedAt,
@@ -408,7 +526,7 @@ export function normalizeWealthCustomerPortfolio(input: {
     customer.updatedAt,
     customer.updated_at,
     summary.dataAsOf,
-    generatedAt,
+    generatedAt
   );
   const minimized = { subjectId: returnedId, summary, holdings, maturities };
   return {
@@ -416,9 +534,10 @@ export function normalizeWealthCustomerPortfolio(input: {
     contract: CUSTOMER_CONTEXT_CONTRACT,
     logicalContextId: "customer_portfolio",
     subjectId: returnedId,
-    status: holdings.length || maturities.length || Object.keys(summary).length
-      ? "READY"
-      : "DEGRADED",
+    status:
+      holdings.length || maturities.length || Object.keys(summary).length
+        ? "READY"
+        : "DEGRADED",
     summary,
     holdings,
     maturities,
@@ -438,6 +557,53 @@ export const defaultCustomerPortfolioLoader: CustomerPortfolioLoaderV1 =
   async input => {
     if (input.principal.roleTemplate !== "wealth-manager")
       throw new Error("CUSTOMER_PORTFOLIO_ROLE_NOT_AUTHORIZED");
+    if (twentyCustomerContextEnabled()) {
+      const loaded = await createConfiguredTwentyCustomerProfileLoader()({
+        globalCustomerId: input.subjectId,
+        principal: input.principal,
+      });
+      if (
+        !loaded?.record ||
+        !loaded.principalAuthorized ||
+        !loaded.subjectInScope
+      )
+        throw new Error("CUSTOMER_PORTFOLIO_SUBJECT_NOT_AUTHORIZED");
+      const wealth = loaded.record.profiles.find(
+        profile => profile.profileType === "wealth"
+      );
+      if (!wealth) throw new Error("CUSTOMER_PORTFOLIO_PROFILE_NOT_AVAILABLE");
+      const detail = object(wealth.detail);
+      const result = normalizeWealthCustomerPortfolio({
+        payload: {
+          customer: {
+            customerId: loaded.record.globalCustomerId,
+            dataAsOf: loaded.record.businessAsOf,
+          },
+          assetInfo: object(
+            detail.portfolioSummary || detail.assetAllocationSummary
+          ),
+          heldProducts: Array.isArray(detail.holdings) ? detail.holdings : [],
+          maturedProducts: Array.isArray(detail.maturities)
+            ? detail.maturities
+            : [],
+        },
+        expectedSubjectId: loaded.record.globalCustomerId,
+      });
+      result.sourceEvidence = [
+        sourceEvidence({
+          sourceSystem: "twenty_crm",
+          sourceRecordRef: `customer:${loaded.record.globalCustomerId}:portfolio`,
+          asOf: loaded.record.businessAsOf,
+          value: {
+            subjectId: result.subjectId,
+            summary: result.summary,
+            holdings: result.holdings,
+            maturities: result.maturities,
+          },
+        }),
+      ];
+      return result;
+    }
     const payload = await callWealthTool({
       principal: input.principal,
       toolName: "wealth_assistant_customer_detail",
@@ -455,7 +621,7 @@ export function customerDirectoryRequest(args: JsonObject) {
     offset: boundedInteger(args.offset, 0, 10_000),
     limit: Math.max(
       1,
-      boundedInteger(args.limit ?? args.page_size ?? args.pageSize, 20, 100),
+      boundedInteger(args.limit ?? args.page_size ?? args.pageSize, 20, 100)
     ),
   };
 }

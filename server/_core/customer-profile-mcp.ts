@@ -14,7 +14,11 @@ import {
   governanceFingerprint,
   principalFingerprint,
 } from "./governance/contracts";
-import { attachContextReceipt, buildContextReceipt, persistTrustedContextReceiptResult } from "./governance/context-receipt";
+import {
+  attachContextReceipt,
+  buildContextReceipt,
+  persistTrustedContextReceiptResult,
+} from "./governance/context-receipt";
 import { resolveRuntimePrincipalV2 } from "./governance/principal";
 import { isAuthorizedInternalRequest } from "./helpers";
 import { authorizeAndBindInternalRuntimeRequest } from "./internal-runtime-request";
@@ -24,6 +28,12 @@ import {
   loadWealthCustomerProfileCompatibilitySource,
   type CustomerProfileCompatibilityLoadResultV1,
 } from "./customer-profile-compatibility-adapter";
+import { loadTwentyCustomerProfileCompatibilitySource } from "./customer-profile-twenty-adapter";
+import {
+  createConfiguredTwentyCustomerProfileLoader,
+  twentyCustomerContextEnabled,
+  twentyCustomerContextProductionReady,
+} from "./customer-context-twenty-access";
 import { executeEnterpriseMcpGatewayTool } from "./enterprise-mcp-gateway";
 import { getClawByAdoptId, getUserById } from "../db";
 import {
@@ -115,7 +125,10 @@ const DIRECTORY_TOOL = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", description: "Optional customer id or display-name query." },
+      query: {
+        type: "string",
+        description: "Optional customer id or display-name query.",
+      },
       limit: { type: "integer", minimum: 1, maximum: 100, default: 20 },
       offset: { type: "integer", minimum: 0, maximum: 10000, default: 0 },
     },
@@ -147,17 +160,24 @@ const LEGACY_TOOLS = {
   [LEGACY_PROFILE_TOOL_NAME]: {
     ...PROFILE_TOOL,
     name: LEGACY_PROFILE_TOOL_NAME,
-    description: "Compatibility alias for get_customer_profile. New Skills must use get_customer_profile.",
+    description:
+      "Compatibility alias for get_customer_profile. New Skills must use get_customer_profile.",
   },
   wealth_assistant_context_probe: {
     name: "wealth_assistant_context_probe",
-    description: "Compatibility readiness probe. New Skills should use the canonical customer tools directly.",
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    description:
+      "Compatibility readiness probe. New Skills should use the canonical customer tools directly.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   wealth_assistant_customer_list: {
     name: "wealth_assistant_customer_list",
-    description: "Compatibility alias for search_customers. New Skills must use search_customers.",
+    description:
+      "Compatibility alias for search_customers. New Skills must use search_customers.",
     inputSchema: {
       type: "object",
       properties: {
@@ -171,17 +191,22 @@ const LEGACY_TOOLS = {
   },
   wealth_assistant_customer_detail: {
     name: "wealth_assistant_customer_detail",
-    description: "Compatibility projection combining governed profile and portfolio. New Skills must use get_customer_profile and get_customer_portfolio.",
+    description:
+      "Compatibility projection combining governed profile and portfolio. New Skills must use get_customer_profile and get_customer_portfolio.",
     inputSchema: {
       type: "object",
-      properties: { customerId: { type: "string" }, customer_id: { type: "string" } },
+      properties: {
+        customerId: { type: "string" },
+        customer_id: { type: "string" },
+      },
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false },
   },
   list_customer_profiles: {
     name: "list_customer_profiles",
-    description: "Compatibility alias for search_customers. New Skills must use search_customers.",
+    description:
+      "Compatibility alias for search_customers. New Skills must use search_customers.",
     inputSchema: {
       type: "object",
       properties: {
@@ -194,7 +219,8 @@ const LEGACY_TOOLS = {
   },
   get_customer_profile_by_name: {
     name: "get_customer_profile_by_name",
-    description: "Compatibility lookup that resolves a stable customer id before get_customer_profile. New Skills must use stable ids.",
+    description:
+      "Compatibility lookup that resolves a stable customer id before get_customer_profile. New Skills must use stable ids.",
     inputSchema: {
       type: "object",
       properties: { name: { type: "string" } },
@@ -214,14 +240,22 @@ const TOOL_BY_NAME = new Map<string, Record<string, unknown>>([
 type CustomerProfileProviderModeV1 = "disabled" | "shadow" | "production";
 
 function enabled(name: string): boolean {
-  return String(process.env[name] || "").trim().toLowerCase() === "true";
+  return (
+    String(process.env[name] || "")
+      .trim()
+      .toLowerCase() === "true"
+  );
 }
 
 export function customerProfileProviderMode(): CustomerProfileProviderModeV1 {
   const explicit = String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "")
     .trim()
     .toLowerCase();
-  if (explicit === "disabled" || explicit === "shadow" || explicit === "production")
+  if (
+    explicit === "disabled" ||
+    explicit === "shadow" ||
+    explicit === "production"
+  )
     return explicit;
   return enabled("EA_CUSTOMER_PROFILE_PROVIDER_SHADOW_ENABLED")
     ? "shadow"
@@ -229,14 +263,19 @@ export function customerProfileProviderMode(): CustomerProfileProviderModeV1 {
 }
 
 function bindingRequired(): boolean {
-  return Boolean(String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "").trim());
+  return Boolean(
+    String(process.env.EA_CUSTOMER_PROFILE_PROVIDER_MODE || "").trim()
+  );
 }
 
 function demoFactsEnabled(): boolean {
   if (!enabled("EA_CUSTOMER_PROFILE_DEMO_FACTS_ENABLED")) return false;
   const mode = customerProfileProviderMode();
-  return mode === "shadow"
-    || (mode === "production" && enabled("EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED"));
+  return (
+    mode === "shadow" ||
+    (mode === "production" &&
+      enabled("EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED"))
+  );
 }
 
 function firstString(...values: unknown[]): string {
@@ -291,8 +330,12 @@ function customerProfileBusinessLabel(purposeId: string): string {
   return "岗位所需客户画像";
 }
 
-function customerContextBusinessLabel(logicalContextId: "customer_directory" | "customer_portfolio"): string {
-  return logicalContextId === "customer_directory" ? "授权客户范围" : "客户持仓";
+function customerContextBusinessLabel(
+  logicalContextId: "customer_directory" | "customer_portfolio"
+): string {
+  return logicalContextId === "customer_directory"
+    ? "授权客户范围"
+    : "客户持仓";
 }
 
 function remediationFor(reasonCodes: string[]): string[] {
@@ -302,25 +345,14 @@ function remediationFor(reasonCodes: string[]): string[] {
       "完成数据源授权、权威数据时间和岗位用途字段裁剪后再启用。"
     );
   if (reasonCodes.includes("CUSTOMER_PROFILE_PROVIDER_NOT_DEMO_READY"))
-    remediation.push(
-      "请提供已获准用于隔离演示环境的数据源。"
-    );
+    remediation.push("请提供已获准用于隔离演示环境的数据源。");
   if (reasonCodes.includes("CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"))
-    remediation.push(
-      "请补齐当前任务必需的客户字段及字段来源。"
-    );
+    remediation.push("请补齐当前任务必需的客户字段及字段来源。");
   if (reasonCodes.includes("SUBJECT_OUT_OF_SCOPE"))
-    remediation.push(
-      "请选择当前岗位和业务用途授权范围内的客户。"
-    );
+    remediation.push("请选择当前岗位和业务用途授权范围内的客户。");
   if (reasonCodes.includes("PRINCIPAL_NOT_AUTHORIZED"))
-    remediation.push(
-      "请先完成当前岗位的客户数据源授权审核。"
-    );
-  if (!remediation.length)
-    remediation.push(
-      "请处理客户画像治理问题后重试。"
-    );
+    remediation.push("请先完成当前岗位的客户数据源授权审核。");
+  if (!remediation.length) remediation.push("请处理客户画像治理问题后重试。");
   return remediation;
 }
 
@@ -347,7 +379,9 @@ function providerReceipt(input: {
             ...(binding
               ? {
                   bindingId: binding.bindingId,
-                  resourceRefFingerprint: governanceFingerprint(binding.resourceRef),
+                  resourceRefFingerprint: governanceFingerprint(
+                    binding.resourceRef
+                  ),
                   candidateBindingFingerprint:
                     binding.stage === "shadow"
                       ? sharedBindingCandidateFingerprint(binding)
@@ -395,8 +429,7 @@ function providerReceipt(input: {
             category: "business_data",
             reasonCode: projection.reasonCodes[0] || "CUSTOMER_PROFILE_BLOCKED",
             count: Math.max(1, projection.sourceEvidence.length),
-            message:
-              "客户画像未通过岗位用途与授权校验，本轮未提供相关字段。",
+            message: "客户画像未通过岗位用途与授权校验，本轮未提供相关字段。",
             disclosure: "aggregate_only",
           },
         ],
@@ -424,7 +457,7 @@ function textResult(
   principal: RuntimePrincipalV2,
   loaded: CustomerProfileCompatibilityLoadResultV1,
   binding?: ContextSourceBindingV1,
-  toolName?: string,
+  toolName?: string
 ): CustomerProfileProviderToolResultV1 {
   const receipt = providerReceipt({ projection, principal, binding, toolName });
   return attachContextReceipt(
@@ -462,6 +495,13 @@ function textResult(
 
 export const defaultCustomerProfileSourceLoader: CustomerProfileSourceLoaderV1 =
   async input => {
+    if (twentyCustomerContextEnabled())
+      return loadTwentyCustomerProfileCompatibilitySource({
+        principal: input.principal,
+        subjectId: input.subjectId,
+        recordLoader: createConfiguredTwentyCustomerProfileLoader(),
+        productionReady: twentyCustomerContextProductionReady(),
+      });
     if (input.principal.roleTemplate === "wealth-manager")
       return loadWealthCustomerProfileCompatibilitySource({
         ...input,
@@ -535,7 +575,7 @@ export async function executeCustomerProfileProviderTool(input: {
   const projectionInput: CustomerProfileProviderInputV1 = {
     roleTemplate: input.principal.roleTemplate,
     ...(taskId ? { taskId } : {}),
-    requestedSubjectId: subjectId,
+    requestedSubjectId: loaded.resolvedSubjectId || subjectId,
     principalFingerprint: principalFingerprint(input.principal),
     principalAuthorized: loaded.principalAuthorized,
     subjectInScope: loaded.subjectInScope,
@@ -547,11 +587,13 @@ export async function executeCustomerProfileProviderTool(input: {
     input.principal,
     loaded,
     input.binding,
-    input.toolName,
+    input.toolName
   );
 }
 
-function parseToolPayload(result: CustomerProfileProviderToolResultV1): JsonObject {
+function parseToolPayload(
+  result: CustomerProfileProviderToolResultV1
+): JsonObject {
   try {
     return object(JSON.parse(result.content[0]?.text || "{}"));
   } catch {
@@ -576,34 +618,42 @@ function governedBusinessDataReceipt(input: {
     provided: {
       knowledge: [],
       businessData: allowed
-        ? [{
-            sourceSystem: "enterprise_customer_context",
-            label: customerContextBusinessLabel(input.logicalContextId),
-            entityRef: input.logicalContextId,
-            asOf: sourceAsOf(input.sourceEvidence),
-            resultFingerprint: governanceFingerprint(input.result),
-            logicalAssetId: input.logicalContextId,
-            providerType: "mcp",
-          }]
+        ? [
+            {
+              sourceSystem: "enterprise_customer_context",
+              label: customerContextBusinessLabel(input.logicalContextId),
+              entityRef: input.logicalContextId,
+              asOf: sourceAsOf(input.sourceEvidence),
+              resultFingerprint: governanceFingerprint(input.result),
+              logicalAssetId: input.logicalContextId,
+              providerType: "mcp",
+            },
+          ]
         : [],
       memory: [],
-      capabilities: [{
-        capabilityId: input.toolName,
-        label: input.toolName,
-        version: SERVICE_VERSION,
-        sideEffect: "read",
-      }],
+      capabilities: [
+        {
+          capabilityId: input.toolName,
+          label: input.toolName,
+          version: SERVICE_VERSION,
+          sideEffect: "read",
+        },
+      ],
     },
-    policyDecisions: [{
-      policyCode: "EA_CUSTOMER_CONTEXT_PRINCIPAL_SCOPE_V1",
-      ruleVersion: CUSTOMER_CONTEXT_CONTRACT,
-      effect: allowed ? "ALLOW" : "DENY",
-    }],
-    capabilityExecutions: [{
-      capabilityId: input.toolName,
-      operation: input.toolName,
-      status: allowed ? "completed" : "blocked",
-    }],
+    policyDecisions: [
+      {
+        policyCode: "EA_CUSTOMER_CONTEXT_PRINCIPAL_SCOPE_V1",
+        ruleVersion: CUSTOMER_CONTEXT_CONTRACT,
+        effect: allowed ? "ALLOW" : "DENY",
+      },
+    ],
+    capabilityExecutions: [
+      {
+        capabilityId: input.toolName,
+        operation: input.toolName,
+        status: allowed ? "completed" : "blocked",
+      },
+    ],
     readiness: {
       status: input.status,
       requestedOutcome: input.logicalContextId,
@@ -638,12 +688,14 @@ function attachBusinessResult(input: {
           schemaVersion: CUSTOMER_CONTEXT_CONTRACT,
           toolName: input.toolName,
           logicalContextId: input.logicalContextId,
-          sourceSystems: input.sourceEvidence.map(source => source.sourceSystem),
+          sourceSystems: input.sourceEvidence.map(
+            source => source.sourceSystem
+          ),
           containsRawUpstreamPayload: false,
         },
       },
     },
-    governedBusinessDataReceipt(input),
+    governedBusinessDataReceipt(input)
   );
 }
 
@@ -677,7 +729,10 @@ async function executePortfolioTool(input: {
   loader?: CustomerPortfolioLoaderV1;
   toolName: string;
 }): Promise<CustomerProfileProviderToolResultV1> {
-  const subjectId = firstString(input.args.customer_id, input.args.customerId).slice(0, 128);
+  const subjectId = firstString(
+    input.args.customer_id,
+    input.args.customerId
+  ).slice(0, 128);
   if (!subjectId) throw new Error("customer_id is required");
   const result = await (input.loader || defaultCustomerPortfolioLoader)({
     principal: input.principal,
@@ -696,7 +751,9 @@ async function executePortfolioTool(input: {
 }
 
 function projectionFieldValue(projection: JsonObject, path: string): unknown {
-  const fields = Array.isArray(projection.fields) ? projection.fields.map(object) : [];
+  const fields = Array.isArray(projection.fields)
+    ? projection.fields.map(object)
+    : [];
   return fields.find(field => field.path === path)?.value;
 }
 
@@ -705,26 +762,44 @@ function legacyProfileCustomer(projection: JsonObject): JsonObject {
     customerId: firstString(projection.subjectId),
     id: firstString(projection.subjectId),
     name: firstString(projectionFieldValue(projection, "subject.displayName")),
-    customerStatus: firstString(projectionFieldValue(projection, "subject.customerStatus")),
-    ageBand: firstString(projectionFieldValue(projection, "demographics.ageBand")),
-    occupationCategory: firstString(projectionFieldValue(projection, "demographics.occupationCategory")),
-    maskedPhone: firstString(projectionFieldValue(projection, "contact.maskedPhone")),
-    customerTier: firstString(projectionFieldValue(projection, "relationship.customerTier")),
-    riskPreference: firstString(projectionFieldValue(projection, "preferences.riskPreference")),
-    riskLevel: firstString(projectionFieldValue(projection, "risk.investmentRiskLevel")),
-    assessmentExpiresAt: firstString(projectionFieldValue(projection, "risk.investmentRiskValidUntil")),
+    customerStatus: firstString(
+      projectionFieldValue(projection, "subject.customerStatus")
+    ),
+    ageBand: firstString(
+      projectionFieldValue(projection, "demographics.ageBand")
+    ),
+    occupationCategory: firstString(
+      projectionFieldValue(projection, "demographics.occupationCategory")
+    ),
+    maskedPhone: firstString(
+      projectionFieldValue(projection, "contact.maskedPhone")
+    ),
+    customerTier: firstString(
+      projectionFieldValue(projection, "relationship.customerTier")
+    ),
+    riskPreference: firstString(
+      projectionFieldValue(projection, "preferences.riskPreference")
+    ),
+    riskLevel: firstString(
+      projectionFieldValue(projection, "risk.investmentRiskLevel")
+    ),
+    assessmentExpiresAt: firstString(
+      projectionFieldValue(projection, "risk.investmentRiskValidUntil")
+    ),
     aumBand: firstString(projectionFieldValue(projection, "wealth.aumBand")),
     dataAsOf: sourceAsOf(
       Array.isArray(projection.sourceEvidence)
-        ? projection.sourceEvidence.map(item => ({ asOf: firstString(object(item).asOf) }))
-        : [],
+        ? projection.sourceEvidence.map(item => ({
+            asOf: firstString(object(item).asOf),
+          }))
+        : []
     ),
   };
 }
 
 function legacyDirectoryResult(
   result: CustomerDirectoryResultV1,
-  roleTemplate: string,
+  roleTemplate: string
 ): JsonObject {
   const items = result.items.map(item => ({
     id: item.customerId,
@@ -734,7 +809,12 @@ function legacyDirectoryResult(
     customerName: item.displayName,
   }));
   if (roleTemplate === "insurance-advisor")
-    return { items, total: result.total, offset: result.offset, limit: result.limit };
+    return {
+      items,
+      total: result.total,
+      offset: result.offset,
+      limit: result.limit,
+    };
   return {
     customers: items,
     items,
@@ -791,15 +871,23 @@ async function executeLegacyTool(input: {
       sourceEvidence: [],
     });
   }
-  if (["wealth_assistant_customer_list", "list_customer_profiles"].includes(input.toolName)) {
+  if (
+    ["wealth_assistant_customer_list", "list_customer_profiles"].includes(
+      input.toolName
+    )
+  ) {
     const page = Math.max(1, Number(input.args.page || 1));
-    const pageSize = Math.max(1, Math.min(100, Number(input.args.pageSize || input.args.limit || 20)));
+    const pageSize = Math.max(
+      1,
+      Math.min(100, Number(input.args.pageSize || input.args.limit || 20))
+    );
     const args = {
       query: input.args.query,
       limit: pageSize,
-      offset: input.toolName === "wealth_assistant_customer_list"
-        ? (page - 1) * pageSize
-        : input.args.offset,
+      offset:
+        input.toolName === "wealth_assistant_customer_list"
+          ? (page - 1) * pageSize
+          : input.args.offset,
     };
     const canonical = await executeDirectoryTool({
       principal: input.principal,
@@ -811,10 +899,14 @@ async function executeLegacyTool(input: {
     const parsed = parseToolPayload(canonical) as CustomerDirectoryResultV1;
     return {
       ...canonical,
-      content: [{
-        type: "text",
-        text: JSON.stringify(legacyDirectoryResult(parsed, input.principal.roleTemplate)),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(
+            legacyDirectoryResult(parsed, input.principal.roleTemplate)
+          ),
+        },
+      ],
     };
   }
   if (input.toolName === "get_customer_profile_by_name") {
@@ -827,10 +919,14 @@ async function executeLegacyTool(input: {
       loader: input.directoryLoader,
       toolName: input.toolName,
     });
-    const items = (parseToolPayload(directory) as unknown as CustomerDirectoryResultV1).items || [];
+    const items =
+      (parseToolPayload(directory) as unknown as CustomerDirectoryResultV1)
+        .items || [];
     const exact = items.filter(item => item.displayName === name);
     if (exact.length !== 1)
-      throw new Error(exact.length ? "CUSTOMER_IDENTITY_AMBIGUOUS" : "CUSTOMER_NOT_FOUND");
+      throw new Error(
+        exact.length ? "CUSTOMER_IDENTITY_AMBIGUOUS" : "CUSTOMER_NOT_FOUND"
+      );
     const binding = bindingRequired()
       ? await (input.bindingResolver || defaultCustomerProfileBindingResolver)({
           principal: input.principal,
@@ -848,17 +944,22 @@ async function executeLegacyTool(input: {
     const projection = parseToolPayload(profile);
     return {
       ...profile,
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          ...legacyProfileCustomer(projection),
-          governedProfile: projection,
-        }),
-      }],
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            ...legacyProfileCustomer(projection),
+            governedProfile: projection,
+          }),
+        },
+      ],
     };
   }
   if (input.toolName === "wealth_assistant_customer_detail") {
-    const customerId = firstString(input.args.customer_id, input.args.customerId).slice(0, 128);
+    const customerId = firstString(
+      input.args.customer_id,
+      input.args.customerId
+    ).slice(0, 128);
     if (!customerId) throw new Error("customerId is required");
     const binding = bindingRequired()
       ? await (input.bindingResolver || defaultCustomerProfileBindingResolver)({
@@ -884,7 +985,9 @@ async function executeLegacyTool(input: {
       }),
     ]);
     const profile = parseToolPayload(profileResult);
-    const portfolio = parseToolPayload(portfolioResult) as unknown as CustomerPortfolioResultV1;
+    const portfolio = parseToolPayload(
+      portfolioResult
+    ) as unknown as CustomerPortfolioResultV1;
     const customer = legacyProfileCustomer(profile);
     const compatibility = {
       schemaVersion: "ea.customer-context-legacy-wealth-detail.v1",
@@ -957,9 +1060,9 @@ export const defaultCustomerProfileBindingResolver: CustomerProfileBindingResolv
       );
     }
     if (
-      resolution.binding.providerType !== "mcp"
-      || resolution.binding.resourceRef
-        !== "mcp://customer-profile/get_governed_customer_profile"
+      resolution.binding.providerType !== "mcp" ||
+      resolution.binding.resourceRef !==
+        "mcp://customer-profile/get_governed_customer_profile"
     ) {
       throw new Error("CUSTOMER_PROFILE_BINDING_TARGET_MISMATCH");
     }
@@ -999,7 +1102,7 @@ async function runtimePrincipal(req: Request) {
 async function handleMessage(
   req: Request,
   message: JsonObject,
-  options: RegisterCustomerProfileMcpOptionsV1,
+  options: RegisterCustomerProfileMcpOptionsV1
 ) {
   const id = message.id;
   const method = String(message.method || "");
@@ -1051,7 +1154,9 @@ async function handleMessage(
     });
   } else if (toolName === PROFILE_TOOL_NAME) {
     const binding = bindingRequired()
-      ? await (options.bindingResolver || defaultCustomerProfileBindingResolver)({
+      ? await (
+          options.bindingResolver || defaultCustomerProfileBindingResolver
+        )({
           principal,
           stage: mode === "production" ? "production" : "shadow",
         })
@@ -1101,11 +1206,12 @@ async function handleMessage(
     actorUserId: principal.userId,
     actorRole: principal.roleTemplate,
     targetType: "logical_context",
-    targetId: toolName === PORTFOLIO_TOOL.name
-      ? "customer_portfolio"
-      : toolName === DIRECTORY_TOOL.name
-        ? "customer_directory"
-        : "customer_profile",
+    targetId:
+      toolName === PORTFOLIO_TOOL.name
+        ? "customer_portfolio"
+        : toolName === DIRECTORY_TOOL.name
+          ? "customer_directory"
+          : "customer_profile",
     workspaceId: principal.workspaceId,
     agentInstanceId: principal.adoptionId,
     runtimeAgentId: principal.agentId,
@@ -1122,11 +1228,17 @@ async function handleMessage(
       bindingId: firstString(businessData[0]?.bindingId) || null,
       contract: CUSTOMER_CONTEXT_CONTRACT,
       compatibilityAlias: !CUSTOMER_CONTEXT_CANONICAL_TOOLS.includes(
-        toolName as (typeof CUSTOMER_CONTEXT_CANONICAL_TOOLS)[number],
+        toolName as (typeof CUSTOMER_CONTEXT_CANONICAL_TOOLS)[number]
       ),
     },
   });
-  await persistTrustedContextReceiptResult({ result, sessionId: principal.sessionId, adoptionId: principal.adoptionId, runtimeAgentId: principal.agentId, toolName }).catch(() => false);
+  await persistTrustedContextReceiptResult({
+    result,
+    sessionId: principal.sessionId,
+    adoptionId: principal.adoptionId,
+    runtimeAgentId: principal.agentId,
+    toolName,
+  }).catch(() => false);
   return ok(id, result);
 }
 
@@ -1158,8 +1270,8 @@ export function registerCustomerProfileMcpRoutes(
       mode: customerProfileProviderMode(),
       assuranceMode: demoFactsEnabled() ? "demo" : "production",
       demoRuntimeAllowed:
-        customerProfileProviderMode() === "production"
-        && enabled("EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED"),
+        customerProfileProviderMode() === "production" &&
+        enabled("EA_CUSTOMER_PROFILE_DEMO_RUNTIME_ENABLED"),
     });
   };
   for (const route of routes) {
@@ -1172,7 +1284,10 @@ export function registerCustomerProfileMcpRoutes(
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache, no-transform");
       res.setHeader("Connection", "keep-alive");
-      res.setHeader("Mcp-Session-Id", `${route.sessionPrefix}-${trustedAdoptId(req)}`);
+      res.setHeader(
+        "Mcp-Session-Id",
+        `${route.sessionPrefix}-${trustedAdoptId(req)}`
+      );
       res.flushHeaders?.();
       res.write(": customer context stream ready\n\n");
       const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 25_000);
@@ -1189,17 +1304,29 @@ export function registerCustomerProfileMcpRoutes(
       try {
         const body = req.body || {};
         const response = Array.isArray(body)
-          ? (await Promise.all(body.map(item => handleMessage(req, object(item), options))))
-            .filter(Boolean)
+          ? (
+              await Promise.all(
+                body.map(item => handleMessage(req, object(item), options))
+              )
+            ).filter(Boolean)
           : await handleMessage(req, object(body), options);
-        res.setHeader("Mcp-Session-Id", `${route.sessionPrefix}-${trustedAdoptId(req)}`);
+        res.setHeader(
+          "Mcp-Session-Id",
+          `${route.sessionPrefix}-${trustedAdoptId(req)}`
+        );
         return res.json(response);
       } catch (error) {
-        return res.status(200).json(err(
-          object(req.body).id,
-          -32000,
-          error instanceof Error ? error.message : "Customer Context call failed",
-        ));
+        return res
+          .status(200)
+          .json(
+            err(
+              object(req.body).id,
+              -32000,
+              error instanceof Error
+                ? error.message
+                : "Customer Context call failed"
+            )
+          );
       }
     });
   }

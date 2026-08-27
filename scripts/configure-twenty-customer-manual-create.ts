@@ -74,9 +74,9 @@ async function verifyGlobalIdField() {
   }>(OBJECTS, {});
   const customer = data.objects.edges
     .map(edge => edge.node)
-    .find(item => item.nameSingular === "graceCustomer");
+    .find(item => item.nameSingular === "enterpriseCustomer");
   const field = customer?.fieldsList.find(
-    item => item.name === "graceCustomerId"
+    item => item.name === "globalCustomerId"
   );
   if (!field) throw new Error("TWENTY_CUSTOMER_GLOBAL_ID_FIELD_NOT_FOUND");
   if (!field.isNullable || field.isUIEditable)
@@ -87,9 +87,9 @@ async function verifyGlobalIdField() {
 async function findByName(name: string) {
   const filter = encodeURIComponent(`name[eq]:${JSON.stringify(name)}`);
   const response = await request({
-    path: `/rest/graceCustomers?filter=${filter}&limit=2`,
+    path: `/rest/enterpriseCustomers?filter=${filter}&limit=2`,
   });
-  const rows = object(response.data).graceCustomers;
+  const rows = object(response.data).enterpriseCustomers;
   return Array.isArray(rows) ? rows.map(object) : [];
 }
 
@@ -98,7 +98,7 @@ async function verifyManualCreate() {
   let recordId = "";
   try {
     await request({
-      path: "/rest/graceCustomers",
+      path: "/rest/enterpriseCustomers",
       method: "POST",
       body: { name },
     });
@@ -107,18 +107,20 @@ async function verifyManualCreate() {
       throw new Error("TWENTY_CUSTOMER_MANUAL_CREATE_RESULT_AMBIGUOUS");
     const record = rows[0]!;
     recordId = String(record.id || "").trim();
-    const graceCustomerId = String(record.graceCustomerId || "").trim();
-    if (!/^CUST-9[0-9]{5}$/u.test(graceCustomerId))
+    const globalCustomerId = String(record.globalCustomerId || "").trim();
+    if (!/^CUST-9[0-9]{5}$/u.test(globalCustomerId))
       throw new Error("TWENTY_CUSTOMER_MANUAL_ID_NOT_ASSIGNED");
     if (String(record.customerStatus || "") !== "draft")
       throw new Error("TWENTY_CUSTOMER_MANUAL_STATUS_NOT_DRAFT");
+    if (String(record.visibilityScope || "") !== "restricted")
+      throw new Error("TWENTY_CUSTOMER_MANUAL_VISIBILITY_NOT_RESTRICTED");
     if (String(record.tenantId || "") !== "tn_linggan_finance")
       throw new Error("TWENTY_CUSTOMER_MANUAL_TENANT_NOT_ASSIGNED");
-    return { graceCustomerId, status: "PASS" as const };
+    return { globalCustomerId, status: "PASS" as const };
   } finally {
     if (recordId) {
       await request({
-        path: `/rest/graceCustomers/${encodeURIComponent(recordId)}?soft_delete=false`,
+        path: `/rest/enterpriseCustomers/${encodeURIComponent(recordId)}?soft_delete=false`,
         method: "DELETE",
       });
     }

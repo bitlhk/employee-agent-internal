@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.customer-profile-source-mappings.v1",
-  "mappingSetVersion": "1.0.0",
-  "status": "engineering_proposed",
+  "mappingSetVersion": "1.1.0",
+  "status": "engineering_verified",
   "canonicalLogicalContextId": "customer_profile",
   "sources": [
     {
@@ -205,6 +205,182 @@
         "Vehicle identity is an unstructured string rather than a governed masked record.",
         "Field-level denial evidence and filtered-field count are absent."
       ]
+    },
+    {
+      "sourceContractId": "twenty-crm-customer-v1",
+      "sourceSystem": "twenty_crm",
+      "sourceKind": "rest",
+      "environment": "production",
+      "productionReady": true,
+      "stableSubjectPaths": [
+        "enterpriseCustomer.globalCustomerId",
+        "customerSourceLink.sourceCustomerId"
+      ],
+      "mappings": [
+        {
+          "sourcePath": "enterpriseCustomer.globalCustomerId",
+          "targetPath": "subject.subjectId",
+          "transform": "canonical_customer_id"
+        },
+        {
+          "sourcePath": "$constant.individual_customer",
+          "targetPath": "subject.subjectType",
+          "transform": "constant"
+        },
+        {
+          "sourcePath": "enterpriseCustomer.name",
+          "targetPath": "subject.displayName",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "enterpriseCustomer.customerStatus",
+          "targetPath": "subject.customerStatus",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "$authorization.inScope",
+          "targetPath": "serviceScope.inScope",
+          "transform": "boolean"
+        },
+        {
+          "sourcePath": "$authorization.organizationRef",
+          "targetPath": "serviceScope.ownerOrganizationRef",
+          "transform": "opaque_ref"
+        },
+        {
+          "sourcePath": "$authorization.principalRef",
+          "targetPath": "serviceScope.ownerPrincipalRef",
+          "transform": "opaque_ref"
+        },
+        {
+          "sourcePath": "customerDomainProfile.demographics.age",
+          "targetPath": "demographics.age",
+          "transform": "integer"
+        },
+        {
+          "sourcePath": "customerDomainProfile.demographics.ageBand",
+          "targetPath": "demographics.ageBand",
+          "transform": "age_band"
+        },
+        {
+          "sourcePath": "customerDomainProfile.demographics.occupationCategory",
+          "targetPath": "demographics.occupationCategory",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "customerDomainProfile.demographics.city",
+          "targetPath": "demographics.city",
+          "transform": "city_only"
+        },
+        {
+          "sourcePath": "enterpriseCustomer.maskedPhone",
+          "targetPath": "contact.maskedPhone",
+          "transform": "already_masked"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.customerTier",
+          "targetPath": "relationship.customerTier",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.recentContactSummary",
+          "targetPath": "relationship.recentContactSummary",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.confirmedNeeds",
+          "targetPath": "relationship.confirmedNeeds",
+          "transform": "text_to_string_array"
+        },
+        {
+          "sourcePath": "customerDomainProfile.preferences.riskPreference",
+          "targetPath": "preferences.riskPreference",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "customerDomainProfile.preferences.budgetConcern",
+          "targetPath": "preferences.budgetConcern",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.preferences.servicePreference",
+          "targetPath": "preferences.servicePreference",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.preferences.communicationPreference",
+          "targetPath": "preferences.communicationPreference",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.riskAssessment.riskLevel",
+          "targetPath": "risk.investmentRiskLevel",
+          "transform": "code_to_risk_level"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.riskAssessment.validUntil",
+          "targetPath": "risk.investmentRiskValidUntil",
+          "transform": "date"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.assetAllocationSummary.aumBand",
+          "targetPath": "wealth.aumBand",
+          "transform": "aum_band"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.assetAllocationSummary",
+          "targetPath": "wealth.assetAllocationSummary",
+          "transform": "minimized_summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.vehicleSummary",
+          "targetPath": "insurance.vehicleSummary",
+          "transform": "masked_vehicle_summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.annualMileage",
+          "targetPath": "insurance.annualMileageBand",
+          "transform": "mileage_to_band"
+        },
+        {
+          "sourcePath": "customerDomainProfile.detail.drivingRecord",
+          "targetPath": "insurance.drivingRiskSummary",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.renewalAt",
+          "targetPath": "insurance.renewalAt",
+          "transform": "date"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.renewalStatus",
+          "targetPath": "insurance.renewalStatus",
+          "transform": "string"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.currentCoverageSummary",
+          "targetPath": "insurance.currentCoverageSummary",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.claimsRiskSummary",
+          "targetPath": "insurance.claimsRiskSummary",
+          "transform": "summary"
+        },
+        {
+          "sourcePath": "customerDomainProfile.insuranceFacts.protectionGaps",
+          "targetPath": "insurance.protectionGaps",
+          "transform": "string_array"
+        }
+      ],
+      "excludedSourceRoots": [
+        "enterpriseCustomer.rawPhone",
+        "enterpriseCustomer.address",
+        "customerDomainProfile.detail.portfolioSummary.exactBalances",
+        "customerSuggestion",
+        "customerInteraction.provenance.raw"
+      ],
+      "providerGaps": []
     }
   ]
 }

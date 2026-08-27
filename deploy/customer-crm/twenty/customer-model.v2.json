@@ -1,16 +1,16 @@
 {
-  "schemaVersion": "ea.twenty-customer-model.v1",
+  "schemaVersion": "ea.twenty-customer-model.v2",
   "objects": [
     {
-      "nameSingular": "graceCustomer",
-      "namePlural": "graceCustomers",
+      "nameSingular": "enterpriseCustomer",
+      "namePlural": "enterpriseCustomers",
       "labelSingular": "客户",
       "labelPlural": "客户",
       "description": "企业统一客户身份和治理状态",
       "icon": "IconUser",
       "fields": [
         {
-          "name": "graceCustomerId",
+          "name": "globalCustomerId",
           "label": "全局客户编号",
           "type": "TEXT",
           "isUnique": true,
@@ -18,6 +18,11 @@
           "isUIEditable": false
         },
         { "name": "customerStatus", "label": "客户状态", "type": "TEXT" },
+        {
+          "name": "visibilityScope",
+          "label": "可见范围",
+          "type": "TEXT"
+        },
         { "name": "tenantId", "label": "租户编号", "type": "TEXT" },
         { "name": "ownerUserId", "label": "负责人编号", "type": "TEXT" },
         {
@@ -26,6 +31,60 @@
           "type": "DATE_TIME"
         },
         { "name": "maskedPhone", "label": "脱敏手机号", "type": "TEXT" }
+      ]
+    },
+    {
+      "nameSingular": "customerAssignment",
+      "namePlural": "customerAssignments",
+      "labelSingular": "客户服务关系",
+      "labelPlural": "客户服务关系",
+      "description": "客户与用户或团队之间的受治理服务关系",
+      "icon": "IconUsersGroup",
+      "fields": [
+        {
+          "name": "assignmentKey",
+          "label": "服务关系键",
+          "type": "TEXT",
+          "isUnique": true,
+          "isNullable": false
+        },
+        {
+          "name": "globalCustomerId",
+          "label": "全局客户编号",
+          "type": "TEXT"
+        },
+        {
+          "name": "organizationId",
+          "label": "组织编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "principalType",
+          "label": "服务主体类型",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        {
+          "name": "principalRef",
+          "label": "服务主体编号",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        { "name": "businessDomain", "label": "业务领域", "type": "TEXT" },
+        {
+          "name": "relationshipRole",
+          "label": "服务关系角色",
+          "type": "TEXT"
+        },
+        {
+          "name": "assignmentStatus",
+          "label": "服务关系状态",
+          "type": "TEXT",
+          "isNullable": false
+        },
+        { "name": "validFrom", "label": "有效起始时间", "type": "DATE_TIME" },
+        { "name": "validTo", "label": "有效结束时间", "type": "DATE_TIME" }
       ]
     },
     {
@@ -44,10 +103,9 @@
           "isNullable": false
         },
         {
-          "name": "graceCustomerId",
+          "name": "globalCustomerId",
           "label": "全局客户编号",
-          "type": "TEXT",
-          "isNullable": false
+          "type": "TEXT"
         },
         {
           "name": "sourceSystem",
@@ -86,10 +144,9 @@
           "isNullable": false
         },
         {
-          "name": "graceCustomerId",
+          "name": "globalCustomerId",
           "label": "全局客户编号",
-          "type": "TEXT",
-          "isNullable": false
+          "type": "TEXT"
         },
         {
           "name": "profileType",
@@ -132,10 +189,9 @@
           "isNullable": false
         },
         {
-          "name": "graceCustomerId",
+          "name": "globalCustomerId",
           "label": "全局客户编号",
-          "type": "TEXT",
-          "isNullable": false
+          "type": "TEXT"
         },
         {
           "name": "suggestionType",
@@ -179,10 +235,9 @@
           "isNullable": false
         },
         {
-          "name": "graceCustomerId",
+          "name": "globalCustomerId",
           "label": "全局客户编号",
-          "type": "TEXT",
-          "isNullable": false
+          "type": "TEXT"
         },
         {
           "name": "interactionType",
@@ -234,10 +289,9 @@
           "isNullable": false
         },
         {
-          "name": "graceCustomerId",
+          "name": "globalCustomerId",
           "label": "全局客户编号",
-          "type": "TEXT",
-          "isNullable": false
+          "type": "TEXT"
         },
         {
           "name": "workItemId",

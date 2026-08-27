@@ -4,8 +4,9 @@
 
 ```text
 Twenty CRM Environment: Deployed / Verified
-Customer Source Adapter: Shadow Verified
-EA Runtime Activation: Not Promoted
+Customer Source Adapter: Environment Verified / Production Ready
+Customer Domain Profiles: 30 Active
+EA Runtime Activation: Cutover Pending
 CRM Write-back: Engineering Verified / Runtime Disabled
 ```
 
@@ -20,12 +21,13 @@ Acceptance date: `2026-08-27` (Asia/Shanghai)
 | CRM private endpoint            | `192.168.0.102:3000`                                               |
 | HTTPS administrator endpoint    | `https://crm.demo.linggan.top`                                     |
 | Shared ingress                  | `116.204.37.89` / `192.168.0.210`                                  |
-| Import bundle fingerprint       | `787af97ec05b3404ea594c0e7e1f57c90f36e6e62e2ea0c14bc71fa0e9fdf517` |
+| Import bundle fingerprint       | `65f5611dc19a88224442ba82cb23ecba1c67776a8d129564eef1b4a0c1a587fa` |
 | Wealth MCP export fingerprint   | `dfaa828cd05f5a38f836fc07bf6b3c4e8860c87d4649ac6562c21a09cd80a878` |
 | Identity Crosswalk fingerprint  | `43288a2cc01348a0695c5b0557c85e54a2592337b71606b27f32ac715c02ff43` |
-| Customer model fingerprint      | `ad1084ff7c797b2bd628a4fdcd4f3f22dc39a7c73b92a50ae43b1cbbc3491295` |
-| Manual ID allocator fingerprint | `af2aa387842918c72f9bd0bd5e9e8a61fae2faf1f50622e1f1ea7ed7271398b3` |
-| Customer contract fingerprint   | `b9fffc9d3017390301d049befbf43639e4d55e606e03fdc5eff227bacc525521` |
+| Customer model V2 fingerprint   | `af37e5045d7bf37e7fd7e732800797afa6c98bb58ad3390735f85dd91775dfee` |
+| Manual ID allocator fingerprint | `a22ef37b5eb28f31eaaf5273eebdd79d0f9ea7d574e7cfa11ba5ec925a247983` |
+| Customer contract fingerprint   | `c951d077d54c43985678fe34efc8b17b2ef292ef674d0571e00e7a9f6ec219d1` |
+| Source mapping fingerprint      | `3faf56067e713516d35e3ae637a02205c6bec6525aa8ce74b740c86d37151d0f` |
 
 Credentials are stored only on the CRM host with mode `0600`. They are not in
 Git, Asset metadata, Binding metadata or Receipts.
@@ -46,9 +48,10 @@ Git, Asset metadata, Binding metadata or Receipts.
 
 | Object                  | Count |
 | ----------------------- | ----: |
-| Customer                |    28 |
+| Customer                |    29 |
+| Customer Assignment     |     1 |
 | Customer Source Link    |    28 |
-| Customer Domain Profile |    28 |
+| Customer Domain Profile |    30 |
 | Customer Suggestion     |    60 |
 | Customer Interaction    |     0 |
 | Customer Follow-up Task |     0 |
@@ -57,17 +60,20 @@ Git, Asset metadata, Binding metadata or Receipts.
 
 The administrator signed in through `https://crm.demo.linggan.top`. The
 workspace is named `Linggan Customer Operations`, and the Twenty navigation
-exposed these six governed objects:
+exposed these seven governed objects:
 
 - `客户`
+- `客户分配`
 - `客户来源映射`
 - `客户领域画像`
 - `客户洞察建议`
 - `客户互动`
 - `客户跟进任务`
 
-The customer list rendered `28` rows: `8` wealth customers, `10` auto-insurance
-customers and `10` life-insurance customers. Global IDs use `CUST-xxxxxx`, and
+The customer list rendered `29` rows. The profile layer contains `9` wealth,
+`10` auto-insurance and `11` life-insurance profiles, including one restricted
+customer with both wealth and life-insurance profiles. Global IDs use
+`CUST-xxxxxx`, and
 Created by / Updated by resolve to `灵感数据管理员`; no `DEMO-INS` identifier is
 shown. Public access to port `3000` remains closed; administrator access
 terminates TLS on the shared Nginx ingress and reaches CRM only through the
@@ -93,11 +99,32 @@ adapter.
 | Broad vehicle purchase-price leakage     | 0                        |
 | Missing authorization vs missing subject | Explicitly distinguished |
 
-`productionActivated=false` remains a hard assertion in the verifier.
+The 30 domain profiles were promoted through the explicit profile Promotion
+command. A repeated idempotent Bootstrap preserved all unchanged `active`
+profiles; changed profile content is forced back to `candidate` instead of
+silently changing a Runtime fact.
+
+## Direct Customer Context Evidence
+
+The direct Twenty path was exercised with real locally resolved wealth and
+insurance Runtime Principals. No legacy customer MCP was called.
+
+| Check             | Wealth manager | Insurance advisor       |
+| ----------------- | -------------- | ----------------------- |
+| Legacy source ID  | `C005`         | `1`                     |
+| Canonical subject | `CUST-000005`  | `CUST-000101`           |
+| Directory source  | `twenty_crm`   | `twenty_crm`            |
+| Profile source    | `twenty_crm`   | `twenty_crm`            |
+| Assurance         | `production`   | `production`            |
+| Portfolio source  | `twenty_crm`   | Not exposed by contract |
+
+The application cutover remains a separate deployment action controlled by
+`EA_CUSTOMER_CONTEXT_TWENTY_ENABLED` and
+`EA_CUSTOMER_CONTEXT_TWENTY_PRODUCTION_READY`.
 
 ## Manual Create Acceptance
 
-The customer object's native New button is supported. `graceCustomerId` is
+The customer object's native New button is supported. `globalCustomerId` is
 read-only in the UI and nullable only at the Twenty API boundary. The database
 assigns a reserved `CUST-9xxxxx` identifier atomically before persistence and
 defaults the new record to `draft`. Draft records remain outside Runtime until
@@ -113,17 +140,19 @@ IDs. The pre-change database snapshot is
 
 ## Boundaries And Remaining Work
 
-1. Twenty contains 20 insurance Demo records and 8 wealth records read through
-   the governed Shanghai `customer_context` MCP path. The explicit Crosswalk
+1. Twenty contains the canonical Demo customer source. The explicit Crosswalk
    creates stable global IDs; no name, phone or model-based merge is allowed.
-2. The current EA Production runtime has not been switched to Twenty.
+2. The checked-in acceptance state is Runtime-ready but not proof of an EA
+   deployment. Local and Shanghai must each run the Runtime verification after
+   their feature flags and organization allowlist are configured.
 3. The 121-row wealth workbook defines fields, not customer records. It is an
    input to schema and authority design, not 121 populated CRM columns.
 4. Customer interaction and follow-up task objects and confirmation-gated
    write-back contracts are present, but no EA Runtime tool is enabled to write
    them in this Shadow phase.
-5. Promotion requires a persistent secret reference, wealth and insurance
-   Shadow Diff, purpose/field isolation tests and a separate review.
-6. The bootstrap currently uses a Twenty administrator API key. A
-   dedicated least-privilege integration role/key is required before Runtime
-   activation.
+5. Old wealth and insurance customer MCPs remain rollback providers for one
+   release, but must not be exposed to Agent Skills after cutover.
+6. The current Demo Runtime uses a separately stored Twenty integration secret.
+   A least-privilege Twenty object role remains required before a customer
+   production deployment; the Demo environment does not weaken EA row and
+   projection authorization to compensate for this gap.

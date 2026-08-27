@@ -2,11 +2,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   mergeCustomerCrmImportBundles,
+  prepareNativeCustomerCrmFixtures,
   prepareInsuranceCustomerCrmImport,
   prepareWealthCustomerCrmImport,
   recordsToCsv,
   type CustomerCrmIdentityCrosswalkV1,
   type InsuranceCustomerImportSourceV1,
+  type NativeCustomerCrmFixtureSetV1,
   type WealthCustomerMcpExportV1,
 } from "../server/_core/customer-crm-import";
 
@@ -17,13 +19,17 @@ function argument(name: string): string {
 
 const insuranceInputPath = argument("--insurance-input") || argument("--input");
 const wealthInputPath = argument("--wealth-input");
+const nativeInputPath = argument("--native-input");
 const crosswalkPath =
   argument("--crosswalk") ||
   "examples/customer-crm-v1/customer-demo-identity-crosswalk.v1.json";
 const outputDir = argument("--output-dir");
-if ((!insuranceInputPath && !wealthInputPath) || !outputDir) {
+if (
+  (!insuranceInputPath && !wealthInputPath && !nativeInputPath) ||
+  !outputDir
+) {
   throw new Error(
-    "Usage: pnpm customer-crm:prepare-demo [--insurance-input <data.json>] [--wealth-input <wealth-export.json>] --output-dir <dir>"
+    "Usage: pnpm customer-crm:prepare-demo [--insurance-input <data.json>] [--wealth-input <wealth-export.json>] [--native-input <fixtures.json>] --output-dir <dir>"
   );
 }
 
@@ -63,12 +69,19 @@ if (wealthInputPath) {
     })
   );
 }
+if (nativeInputPath) {
+  const fixtures = JSON.parse(
+    readFileSync(path.resolve(nativeInputPath), "utf8")
+  ) as NativeCustomerCrmFixtureSetV1;
+  bundles.push(prepareNativeCustomerCrmFixtures({ fixtures }));
+}
 
 const bundle = mergeCustomerCrmImportBundles(bundles);
 mkdirSync(path.resolve(outputDir), { recursive: true });
 const outputs: Array<[string, unknown]> = [
   ["customer-crm-import-bundle.v1.json", bundle],
   ["customers.csv", recordsToCsv(bundle.customers)],
+  ["customer-assignments.csv", recordsToCsv(bundle.assignments)],
   ["customer-source-links.csv", recordsToCsv(bundle.sourceLinks)],
   ["customer-domain-profiles.csv", recordsToCsv(bundle.domainProfiles)],
   ["customer-suggestions.csv", recordsToCsv(bundle.suggestions)],
@@ -90,6 +103,7 @@ console.log(
     {
       schema: bundle.schemaVersion,
       customers: bundle.customers.length,
+      assignments: bundle.assignments.length,
       sourceLinks: bundle.sourceLinks.length,
       domainProfiles: bundle.domainProfiles.length,
       suggestions: bundle.suggestions.length,

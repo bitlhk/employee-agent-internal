@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeCustomerCrmImportBundles,
   prepareInsuranceCustomerCrmImport,
+  prepareNativeCustomerCrmFixtures,
   prepareWealthCustomerCrmImport,
   recordsToCsv,
   type CustomerCrmIdentityCrosswalkV1,
@@ -81,7 +82,7 @@ describe("Customer CRM import preparation", () => {
       canonicalTenantId: "tn_linggan_finance",
       now: new Date("2026-08-27T08:00:00Z"),
     });
-    expect(bundle.customers[0]?.graceCustomerId).toBe("CUST-000101");
+    expect(bundle.customers[0]?.globalCustomerId).toBe("CUST-000101");
     expect(bundle.customers[0]?.customerStatus).toBe("active");
     expect(bundle.customers[0]?.tenantId).toBe("tn_linggan_finance");
     expect(bundle.sourceLinks[0]).toMatchObject({
@@ -123,19 +124,22 @@ describe("Customer CRM import preparation", () => {
       ownerUserId: "2",
     });
     expect(bundle.customers[0]).toMatchObject({
-      graceCustomerId: "CUST-000005",
+      globalCustomerId: "CUST-000005",
       displayName: "陈明",
       customerStatus: "active",
       maskedPhone: "138****8005",
     });
     expect(bundle.domainProfiles[0]).toMatchObject({
-      graceCustomerId: "CUST-000005",
+      globalCustomerId: "CUST-000005",
       profileType: "wealth",
-      detailSchemaVersion: "wealth.v1",
+      detailSchemaVersion: "wealth.v2",
       detail: {
         customerTier: "2",
         riskAssessment: { riskLevel: "C4" },
         assetAllocationSummary: { aumBand: "500k_1m" },
+        portfolioSummary: { totalAssets: 750810 },
+        holdings: [],
+        maturities: [],
       },
     });
   });
@@ -159,11 +163,78 @@ describe("Customer CRM import preparation", () => {
     expect(merged.domainProfiles).toHaveLength(2);
   });
 
+  it("keeps multiple governed domain profiles on one native customer", () => {
+    const bundle = prepareNativeCustomerCrmFixtures({
+      fixtures: {
+        schemaVersion: "ea.native-customer-crm-fixtures.v1",
+        customers: [
+          {
+            globalCustomerId: "CUST-000201",
+            displayName: "跨域客户",
+            customerStatus: "active",
+            visibilityScope: "restricted",
+            tenantId: "tn_demo",
+            ownerUserId: "59",
+            businessAsOf: "2026-08-27T08:00:00.000Z",
+            profiles: [
+              {
+                profileType: "wealth",
+                demographics: {},
+                preferences: {},
+                insuranceFacts: {},
+                detail: {
+                  customerTier: "private_banking",
+                  riskAssessment: {},
+                  assetAllocationSummary: {},
+                  portfolioSummary: {},
+                  holdings: [],
+                  maturities: [],
+                },
+              },
+              {
+                profileType: "life_insurance",
+                demographics: {},
+                preferences: {},
+                insuranceFacts: {},
+                detail: {
+                  investableAssets: "100万",
+                  familyStructure: "已婚",
+                  healthStatus: "已告知",
+                  dependents: "一名子女",
+                  existingCoverage: "基础保障",
+                  financialGoals: "退休准备",
+                },
+              },
+            ],
+          },
+        ],
+        assignments: [
+          {
+            assignmentKey: "org-demo:user:59:CUST-000201",
+            globalCustomerId: "CUST-000201",
+            organizationId: "org-demo",
+            principalType: "user",
+            principalRef: "59",
+            businessDomain: "shared",
+            relationshipRole: "primary",
+            assignmentStatus: "active",
+          },
+        ],
+      },
+    });
+    expect(bundle.customers).toHaveLength(1);
+    expect(bundle.domainProfiles.map(item => item.profileType)).toEqual([
+      "wealth",
+      "life_insurance",
+    ]);
+    expect(bundle.assignments).toHaveLength(1);
+  });
+
   it("emits quoted CSV with JSON fields", () => {
     const csv = recordsToCsv([
-      { graceCustomerId: "C-1", detail: { note: '含"引号"' } },
+      { globalCustomerId: "C-1", detail: { note: '含"引号"' } },
     ]);
-    expect(csv).toContain('"graceCustomerId","detail"');
+    expect(csv).toContain('"globalCustomerId","detail"');
     expect(csv).toContain('""note""');
     expect(csv).toContain("含");
     expect(csv).toContain("引号");

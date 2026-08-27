@@ -7,7 +7,10 @@ export type CustomerCrmIdentitySourceV1 = {
   sourceSystem: string;
   sourceCustomerIdPath: string;
   sourceTenantIdPath?: string;
-  globalCustomerIdStrategy: "crosswalk_required" | "source_scoped_seed";
+  globalCustomerIdStrategy:
+    | "crosswalk_required"
+    | "source_scoped_seed"
+    | "canonical_native";
   sourceScopedPrefix: string;
 };
 

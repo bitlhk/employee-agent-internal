@@ -1,6 +1,6 @@
 {
   "schemaVersion": "ea.customer-crm-domain-profile-schemas.v1",
-  "schemaSetVersion": "1.0.0",
+  "schemaSetVersion": "1.1.0",
   "status": "engineering_verified",
   "unknownProfilePolicy": {
     "storageAllowed": true,
@@ -10,7 +10,7 @@
   "schemas": [
     {
       "profileType": "wealth",
-      "detailSchemaVersion": "wealth.v1",
+      "detailSchemaVersion": "wealth.v2",
       "status": "active",
       "fields": [
         {
@@ -30,6 +30,27 @@
         {
           "path": "detail.assetAllocationSummary",
           "dataType": "object",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.portfolioSummary",
+          "dataType": "object",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.holdings",
+          "dataType": "object_array",
+          "sensitivity": "restricted",
+          "runtimeApproved": true,
+          "provenanceRequired": true
+        },
+        {
+          "path": "detail.maturities",
+          "dataType": "object_array",
           "sensitivity": "restricted",
           "runtimeApproved": true,
           "provenanceRequired": true

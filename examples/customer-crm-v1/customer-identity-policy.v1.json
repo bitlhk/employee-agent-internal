@@ -31,8 +31,8 @@
     },
     {
       "sourceSystem": "twenty_crm",
-      "sourceCustomerIdPath": "graceCustomerId",
-      "globalCustomerIdStrategy": "crosswalk_required",
+      "sourceCustomerIdPath": "globalCustomerId",
+      "globalCustomerIdStrategy": "canonical_native",
       "sourceScopedPrefix": "CRM"
     }
   ]

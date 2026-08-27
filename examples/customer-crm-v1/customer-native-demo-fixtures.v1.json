@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "ea.native-customer-crm-fixtures.v1",
+  "customers": [
+    {
+      "globalCustomerId": "CUST-000201",
+      "displayName": "周明远",
+      "customerStatus": "active",
+      "visibilityScope": "restricted",
+      "tenantId": "tn_linggan_finance",
+      "ownerUserId": "59",
+      "businessAsOf": "2026-08-27T12:00:00.000Z",
+      "maskedPhone": "139****8201",
+      "profiles": [
+        {
+          "profileType": "wealth",
+          "demographics": {
+            "ageBand": "45_59",
+            "occupationCategory": "enterprise_manager",
+            "city": "上海"
+          },
+          "preferences": {
+            "riskPreference": "balanced",
+            "communicationPreference": "面谈"
+          },
+          "insuranceFacts": {},
+          "detail": {
+            "customerTier": "private_banking",
+            "riskAssessment": {
+              "riskLevel": "C3",
+              "riskPreference": "balanced",
+              "validUntil": "2027-08-27T23:59:59.000Z"
+            },
+            "assetAllocationSummary": {
+              "aumBand": "1m_3m",
+              "totalAssets": 1800000
+            },
+            "portfolioSummary": {
+              "totalAssets": 1800000,
+              "availableCash": 360000,
+              "investedAssets": 1440000,
+              "dataAsOf": "2026-08-27T12:00:00.000Z"
+            },
+            "holdings": [
+              {
+                "productId": "WM-DEMO-201-A",
+                "productName": "稳健配置组合（演示）",
+                "category": "理财",
+                "balance": 900000,
+                "status": "active",
+                "maturityDate": "2027-03-15"
+              }
+            ],
+            "maturities": [
+              {
+                "productId": "WM-DEMO-201-B",
+                "productName": "到期现金管理计划（演示）",
+                "amount": 300000,
+                "maturityDate": "2026-09-18",
+                "status": "upcoming"
+              }
+            ]
+          }
+        },
+        {
+          "profileType": "life_insurance",
+          "demographics": {
+            "age": 52,
+            "occupation": "企业管理人员",
+            "city": "上海"
+          },
+          "preferences": {
+            "riskPreference": "稳健",
+            "budgetConcern": "年度保费预算需控制",
+            "servicePreference": "专人服务",
+            "communicationPreference": "面谈"
+          },
+          "insuranceFacts": {
+            "currentCoverageSummary": "已配置基础医疗与意外保障",
+            "claimsRiskSummary": "近三年无重大理赔",
+            "recentContactSummary": "已确认家庭保障复盘需求",
+            "confirmedNeeds": "家庭责任,医疗保障,退休规划",
+            "protectionGaps": ["家庭主要收入来源的长期保障不足"]
+          },
+          "detail": {
+            "investableAssets": "100万至300万元",
+            "familyStructure": "已婚，有一名子女",
+            "healthStatus": "已完成基础健康告知",
+            "dependents": "配偶与一名子女",
+            "existingCoverage": "基础医疗险与意外险",
+            "financialGoals": "家庭保障与退休准备"
+          }
+        }
+      ]
+    }
+  ],
+  "assignments": [
+    {
+      "assignmentKey": "org_linggan_finance:user:59:CUST-000201",
+      "globalCustomerId": "CUST-000201",
+      "organizationId": "org_linggan_finance",
+      "principalType": "user",
+      "principalRef": "59",
+      "businessDomain": "shared",
+      "relationshipRole": "primary",
+      "assignmentStatus": "active",
+      "validFrom": "2026-08-27T00:00:00.000Z"
+    }
+  ]
+}

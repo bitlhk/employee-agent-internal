@@ -72,7 +72,7 @@ describe("Customer CRM write-back contract", () => {
       prepareCustomerFollowupTaskMirrorV1({ item, executionReceipt: receipt })
     ).toMatchObject({
       taskKey: "governed-work:org-1:wi-1",
-      graceCustomerId: "DEMO-INS-TN_DEMO-1",
+      globalCustomerId: "DEMO-INS-TN_DEMO-1",
       taskStatus: "open",
       executionReceiptId: "wex-1",
     });
@@ -94,7 +94,7 @@ describe("Customer CRM write-back contract", () => {
     expect(
       prepareConfirmedCustomerInteractionV1({
         interactionKey: "visit-1",
-        graceCustomerId: "DEMO-INS-TN_DEMO-1",
+        globalCustomerId: "DEMO-INS-TN_DEMO-1",
         interactionType: "visit",
         happenedAt: "2026-08-27T10:00:00.000Z",
         summary: "客户确认续保需求",
@@ -111,7 +111,7 @@ describe("Customer CRM write-back contract", () => {
     expect(() =>
       prepareConfirmedCustomerInteractionV1({
         interactionKey: "visit-2",
-        graceCustomerId: "DEMO-INS-TN_DEMO-1",
+        globalCustomerId: "DEMO-INS-TN_DEMO-1",
         interactionType: "visit",
         happenedAt: "2026-08-27T10:00:00.000Z",
         summary: "客户确认续保需求",

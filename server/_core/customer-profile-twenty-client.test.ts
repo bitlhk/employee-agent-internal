@@ -34,10 +34,10 @@ describe("Twenty Customer CRM client", () => {
       .mockResolvedValueOnce(
         response({
           data: {
-            graceCustomers: [
+            enterpriseCustomers: [
               {
                 name: "测试客户",
-                graceCustomerId: "DEMO-INS-TN_DEMO-1",
+                globalCustomerId: "DEMO-INS-TN_DEMO-1",
                 customerStatus: "active",
                 tenantId: "tn_demo",
                 ownerUserId: "101",
@@ -52,9 +52,10 @@ describe("Twenty Customer CRM client", () => {
           data: {
             customerDomainProfiles: [
               {
-                graceCustomerId: "DEMO-INS-TN_DEMO-1",
+                globalCustomerId: "DEMO-INS-TN_DEMO-1",
                 profileType: "auto_insurance",
                 detailSchemaVersion: "auto-insurance.v1",
+                runtimeStatus: "active",
                 demographics: { age: 40 },
                 preferences: {},
                 insuranceFacts: {},
@@ -62,9 +63,21 @@ describe("Twenty Customer CRM client", () => {
                 fieldProvenance: {},
               },
               {
-                graceCustomerId: "DEMO-INS-TN_DEMO-1",
+                globalCustomerId: "DEMO-INS-TN_DEMO-1",
                 profileType: "wealth",
                 detailSchemaVersion: "wealth.v1",
+                runtimeStatus: "active",
+              },
+              {
+                globalCustomerId: "DEMO-INS-TN_DEMO-1",
+                profileType: "life_insurance",
+                detailSchemaVersion: "life-insurance.v1",
+                runtimeStatus: "active",
+                demographics: { age: 40 },
+                preferences: {},
+                insuranceFacts: {},
+                detail: { familyStructure: "已婚" },
+                fieldProvenance: {},
               },
             ],
           },
@@ -76,10 +89,13 @@ describe("Twenty Customer CRM client", () => {
       request,
     });
     const record = await client.loadCustomerProfile({
-      graceCustomerId: "DEMO-INS-TN_DEMO-1",
+      globalCustomerId: "DEMO-INS-TN_DEMO-1",
       allowedProfileTypes: ["auto_insurance", "life_insurance"],
     });
-    expect(record?.profileType).toBe("auto_insurance");
+    expect(record?.profiles.map(profile => profile.profileType)).toEqual([
+      "auto_insurance",
+      "life_insurance",
+    ]);
     expect(request).toHaveBeenCalledTimes(2);
     expect(
       request.mock.calls.map(call => String(call[0])).join(" ")
@@ -102,7 +118,7 @@ describe("Twenty Customer CRM client", () => {
       }),
     });
     await expect(
-      loader({ graceCustomerId: "DEMO-INS-TN_DEMO-1", principal })
+      loader({ globalCustomerId: "DEMO-INS-TN_DEMO-1", principal })
     ).resolves.toMatchObject({
       record: null,
       principalAuthorized: false,
@@ -110,6 +126,80 @@ describe("Twenty Customer CRM client", () => {
       authorizationEvidenceId: "deny-evidence",
     });
     expect(request).not.toHaveBeenCalled();
+  });
+
+  it("resolves legacy source IDs without exposing source-specific tools", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        data: {
+          customerSourceLinks: [
+            {
+              sourceSystem: "wealth_assistant_customer",
+              sourceCustomerId: "C005",
+              globalCustomerId: "CUST-000005",
+            },
+          ],
+        },
+      })
+    );
+    const client = new TwentyCustomerCrmClientV1({
+      baseUrl: "http://127.0.0.1:19030",
+      apiKey: "test-key",
+      request,
+    });
+    await expect(
+      client.resolveGlobalCustomerId({
+        customerId: "C005",
+        allowedSourceSystems: ["wealth_assistant_customer"],
+      })
+    ).resolves.toBe("CUST-000005");
+  });
+
+  it("does not provide candidate profiles through the production default", async () => {
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        response({
+          data: {
+            enterpriseCustomers: [
+              {
+                name: "测试客户",
+                globalCustomerId: "CUST-000101",
+                customerStatus: "active",
+                visibilityScope: "demo_public",
+                tenantId: "tn_demo",
+                ownerUserId: "101",
+                businessAsOf: "2026-08-27T00:00:00.000Z",
+              },
+            ],
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        response({
+          data: {
+            customerDomainProfiles: [
+              {
+                globalCustomerId: "CUST-000101",
+                profileType: "auto_insurance",
+                detailSchemaVersion: "auto-insurance.v1",
+                runtimeStatus: "candidate",
+              },
+            ],
+          },
+        })
+      );
+    const client = new TwentyCustomerCrmClientV1({
+      baseUrl: "http://127.0.0.1:19030",
+      apiKey: "test-key",
+      request,
+    });
+    await expect(
+      client.loadCustomerProfile({
+        globalCustomerId: "CUST-000101",
+        allowedProfileTypes: ["auto_insurance"],
+      })
+    ).rejects.toThrow("TWENTY_CUSTOMER_CRM_PROFILE_NOT_ELIGIBLE");
   });
 
   it("rejects insecure non-loopback endpoints", () => {
@@ -133,7 +223,7 @@ describe("Twenty Customer CRM client", () => {
     });
     await client.writeConfirmedInteraction({
       interactionKey: "visit-1",
-      graceCustomerId: "DEMO-INS-TN_DEMO-1",
+      globalCustomerId: "DEMO-INS-TN_DEMO-1",
       interactionType: "visit",
       happenedAt: "2026-08-27T10:00:00.000Z",
       summary: "客户确认续保需求",
@@ -146,7 +236,7 @@ describe("Twenty Customer CRM client", () => {
     });
     await client.writeFollowupTask({
       taskKey: "governed-work:org-1:wi-1",
-      graceCustomerId: "DEMO-INS-TN_DEMO-1",
+      globalCustomerId: "DEMO-INS-TN_DEMO-1",
       workItemId: "wi-1",
       subject: "准备续保方案",
       description: null,

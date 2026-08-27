@@ -1,8 +1,8 @@
 # Twenty CRM Deployment
 
-This deployment pins Twenty to `v2.35.0`. It is the human-maintained Demo CRM
-for GRACE customer data; it does not replace `customer_context` or expose raw
-CRM records directly to Skills.
+This deployment pins Twenty to `v2.35.0`. It is the human-maintained customer
+system of record behind the EA `customer_context` service. Skills never access
+Twenty or raw CRM records directly.
 
 ## Deploy
 
@@ -17,7 +17,9 @@ CRM records directly to Skills.
 
 Generate the governed import bundle first, then initialize the CRM through the
 Twenty metadata and REST APIs. The command is idempotent: custom fields are
-verified against the frozen model and records use unique-key upsert.
+verified against the frozen model and records use unique-key upsert. Reimporting
+unchanged profile content preserves its Runtime status; changed content is
+written as `candidate` and must pass the explicit Promotion gate again.
 
 The Demo bundle may compose insurance source records and a governed wealth MCP
 export. Both enter the same customer and domain-profile model. Missing source
@@ -38,7 +40,7 @@ TWENTY_ADMIN_EMAIL=linggan-admin@linggan.demo \
 TWENTY_ADMIN_PASSWORD='...' \
 pnpm customer-crm:bootstrap-twenty -- \
   --bundle /secure/path/customer-crm-import-bundle.v1.json \
-  --api-key-output /secure/path/grace-integration.env
+  --api-key-output /secure/path/linggan-customer-integration.env
 ```
 
 The output credential file must remain server-side with mode `0600`. Do not
@@ -46,10 +48,30 @@ put the API key in Asset metadata, Binding metadata, Receipts or Git.
 The accepted import actor name is `灵感数据管理员`; technical architecture
 names are not shown as the business creator or updater.
 
-The deployed Twenty metadata keeps the internal API field name
-`graceCustomerId` for migration compatibility. Its user-facing label and value
-are the neutral `全局客户编号` and `CUST-xxxxxx`; Skills and users do not consume
-the internal field name.
+The deployed Twenty metadata uses the neutral API field `globalCustomerId` and
+the user-facing label `全局客户编号`. The customer object is
+`enterpriseCustomer`; product or architecture names do not enter business
+object names.
+
+Current Demo customers use `demo_public`. New manually-created customers
+default to `restricted` and require an active `customerAssignment` before a
+user can discover or retrieve them. Role and purpose projections are applied
+by `customer_context` after row-scope authorization.
+
+After profile Promotion, configure EA with `TWENTY_BASE_URL`, the server-side
+`TWENTY_API_KEY` secret, the canonical CRM tenant, and an explicit Runtime
+organization allowlist. Verify the real deployment identities before exposing
+the path to users:
+
+```bash
+EA_CUSTOMER_CONTEXT_TWENTY_ENABLED=true \
+EA_CUSTOMER_CONTEXT_TWENTY_PRODUCTION_READY=true \
+pnpm customer-context:twenty:runtime:verify
+```
+
+The old wealth and insurance customer MCPs may remain available for one
+rollback release, but Skills and Agent tool catalogs must expose only the
+governed `customer_context` entry.
 
 ## Manual Customer Creation
 

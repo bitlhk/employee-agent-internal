@@ -5,7 +5,7 @@ import type {
 
 export type ConfirmedCustomerInteractionV1 = {
   interactionKey: string;
-  graceCustomerId: string;
+  globalCustomerId: string;
   interactionType: "visit" | "call" | "meeting" | "service_note";
   happenedAt: string;
   summary: string;
@@ -19,7 +19,7 @@ export type ConfirmedCustomerInteractionV1 = {
 
 export type CustomerFollowupTaskMirrorV1 = {
   taskKey: string;
-  graceCustomerId: string;
+  globalCustomerId: string;
   workItemId: string;
   subject: string;
   description: string | null;
@@ -50,7 +50,7 @@ function iso(value: unknown, code: string): string {
 
 export function prepareConfirmedCustomerInteractionV1(input: {
   interactionKey: string;
-  graceCustomerId: string;
+  globalCustomerId: string;
   interactionType: ConfirmedCustomerInteractionV1["interactionType"];
   happenedAt: string;
   summary: string;
@@ -67,8 +67,8 @@ export function prepareConfirmedCustomerInteractionV1(input: {
       "CUSTOMER_CRM_INTERACTION_IDEMPOTENCY_REQUIRED",
       191
     ),
-    graceCustomerId: required(
-      input.graceCustomerId,
+    globalCustomerId: required(
+      input.globalCustomerId,
       "CUSTOMER_CRM_GLOBAL_ID_REQUIRED",
       128
     ),
@@ -123,7 +123,7 @@ export function prepareCustomerFollowupTaskMirrorV1(input: {
     throw new Error("CUSTOMER_CRM_WORK_ITEM_RECEIPT_INVALID");
   return {
     taskKey: `governed-work:${item.organizationId}:${item.workItemId}`,
-    graceCustomerId: item.subjectId,
+    globalCustomerId: item.subjectId,
     workItemId: item.workItemId,
     subject: required(
       item.subject,

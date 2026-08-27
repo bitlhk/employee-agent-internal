@@ -118,7 +118,7 @@ export type CustomerProfileSourceMappingV1 = {
 export type CustomerProfileSourceContractV1 = {
   sourceContractId: string;
   sourceSystem: string;
-  sourceKind: "mcp";
+  sourceKind: "mcp" | "rest";
   environment: "local_demo" | "remote_demo" | "production";
   productionReady: boolean;
   stableSubjectPaths: string[];

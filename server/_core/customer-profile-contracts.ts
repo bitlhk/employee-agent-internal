@@ -404,7 +404,7 @@ export function runCustomerProfileContractChecks(
         );
       mappedTargets.add(mapping.targetPath);
     }
-    if (!source.providerGaps?.length)
+    if (!Array.isArray(source.providerGaps))
       errors.push(`${source.sourceContractId}: provider gaps must be explicit`);
     if (source.productionReady) {
       productionReadySources += 1;

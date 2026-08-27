@@ -24,7 +24,7 @@ type ObjectSpec = {
 };
 
 type ModelSpec = {
-  schemaVersion: "ea.twenty-customer-model.v1";
+  schemaVersion: "ea.twenty-customer-model.v2";
   objects: ObjectSpec[];
 };
 
@@ -54,8 +54,9 @@ function argument(name: string, fallback = ""): string {
 }
 
 const baseUrl = requiredEnv("TWENTY_BASE_URL").replace(/\/$/u, "");
-const adminEmail = requiredEnv("TWENTY_ADMIN_EMAIL");
-const adminPassword = requiredEnv("TWENTY_ADMIN_PASSWORD");
+const existingApiKey = String(process.env.TWENTY_API_KEY || "").trim();
+const adminEmail = String(process.env.TWENTY_ADMIN_EMAIL || "").trim();
+const adminPassword = String(process.env.TWENTY_ADMIN_PASSWORD || "").trim();
 const workspaceName =
   process.env.TWENTY_WORKSPACE_NAME || "Linggan Customer Operations";
 const workspaceSubdomain =
@@ -63,7 +64,7 @@ const workspaceSubdomain =
 const apiKeyName = process.env.TWENTY_API_KEY_NAME || "灵感数据管理员";
 const origin = process.env.TWENTY_ORIGIN || baseUrl;
 const modelPath = path.resolve(
-  argument("--model", "deploy/customer-crm/twenty/customer-model.v1.json")
+  argument("--model", "deploy/customer-crm/twenty/customer-model.v2.json")
 );
 const bundlePath = path.resolve(argument("--bundle"));
 const apiKeyOutput = argument("--api-key-output");
@@ -100,6 +101,38 @@ async function requestJson(input: {
       `Twenty request failed (${response.status}) on ${input.endpoint}: ${JSON.stringify(json).slice(0, 800)}`
     );
   return json;
+}
+
+async function requestRows(input: {
+  objectNamePlural: string;
+  token: string;
+  limit?: number;
+}): Promise<JsonObject[]> {
+  const url = new URL(`/rest/${input.objectNamePlural}`, `${baseUrl}/`);
+  url.searchParams.set("limit", String(input.limit ?? 1_000));
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${input.token}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const text = await response.text();
+  let json: JsonObject;
+  try {
+    json = text ? (JSON.parse(text) as JsonObject) : {};
+  } catch {
+    throw new Error(
+      `Twenty returned non-JSON (${response.status}) on ${url.pathname}: ${text.slice(0, 300)}`
+    );
+  }
+  if (!response.ok)
+    throw new Error(
+      `Twenty request failed (${response.status}) on ${url.pathname}: ${JSON.stringify(json).slice(0, 800)}`
+    );
+  const rows = (json.data as JsonObject | undefined)?.[input.objectNamePlural];
+  if (!Array.isArray(rows))
+    throw new Error(
+      `Twenty response shape invalid on ${input.objectNamePlural}`
+    );
+  return rows.map(row => (row && typeof row === "object" ? row : {}));
 }
 
 async function graphql<T>(
@@ -149,6 +182,10 @@ async function exchangeLoginToken(loginToken: string) {
 }
 
 async function authenticateOrCreateWorkspace(): Promise<string> {
+  if (!adminEmail || !adminPassword)
+    throw new Error(
+      "TWENTY_ADMIN_EMAIL and TWENTY_ADMIN_PASSWORD are required when TWENTY_API_KEY is unavailable"
+    );
   try {
     const data = await graphql<{
       getLoginTokenFromCredentials: { loginToken: { token: string } };
@@ -198,6 +235,22 @@ const CREATE_FIELD = `mutation CreateField($input:CreateOneFieldMetadataInput!){
 const UPDATE_FIELD = `mutation UpdateField($input:UpdateOneFieldMetadataInput!){
   updateOneField(input:$input){id name type isUnique isNullable isUIEditable}
 }`;
+const UPDATE_OBJECT = `mutation UpdateObject($input:UpdateOneObjectInput!){
+  updateOneObject(input:$input){id nameSingular namePlural fieldsList{id name type isUnique isNullable isUIEditable}}
+}`;
+
+const LEGACY_OBJECT_NAMES: Record<string, string> = {
+  enterpriseCustomer: "graceCustomer",
+};
+
+const LEGACY_FIELD_NAMES: Record<string, string> = {
+  "enterpriseCustomer.globalCustomerId": "graceCustomerId",
+  "customerSourceLink.globalCustomerId": "graceCustomerId",
+  "customerDomainProfile.globalCustomerId": "graceCustomerId",
+  "customerSuggestion.globalCustomerId": "graceCustomerId",
+  "customerInteraction.globalCustomerId": "graceCustomerId",
+  "customerFollowupTask.globalCustomerId": "graceCustomerId",
+};
 
 async function listObjects(token: string): Promise<MetadataObject[]> {
   const data = await graphql<{
@@ -210,6 +263,32 @@ async function ensureModel(token: string, model: ModelSpec) {
   const objects = await listObjects(token);
   for (const spec of model.objects) {
     let object = objects.find(item => item.nameSingular === spec.nameSingular);
+    const legacyName = LEGACY_OBJECT_NAMES[spec.nameSingular];
+    const legacyObject = legacyName
+      ? objects.find(item => item.nameSingular === legacyName)
+      : undefined;
+    if (!object && legacyObject) {
+      const data = await graphql<{ updateOneObject: MetadataObject }>(
+        UPDATE_OBJECT,
+        {
+          input: {
+            id: legacyObject.id,
+            update: {
+              nameSingular: spec.nameSingular,
+              namePlural: spec.namePlural,
+              labelSingular: spec.labelSingular,
+              labelPlural: spec.labelPlural,
+              description: spec.description,
+              icon: spec.icon,
+              isLabelSyncedWithName: false,
+            },
+          },
+        },
+        token
+      );
+      object = data.updateOneObject;
+      Object.assign(legacyObject, object);
+    }
     if (!object) {
       const data = await graphql<{ createOneObject: MetadataObject }>(
         CREATE_OBJECT,
@@ -232,7 +311,36 @@ async function ensureModel(token: string, model: ModelSpec) {
       objects.push(object);
     }
     for (const field of spec.fields) {
-      const existing = object.fieldsList.find(item => item.name === field.name);
+      let existing = object.fieldsList.find(item => item.name === field.name);
+      const legacyFieldName =
+        LEGACY_FIELD_NAMES[`${spec.nameSingular}.${field.name}`];
+      if (!existing && legacyFieldName) {
+        const legacyField = object.fieldsList.find(
+          item => item.name === legacyFieldName
+        );
+        if (legacyField) {
+          const data = await graphql<{
+            updateOneField: MetadataObject["fieldsList"][number];
+          }>(
+            UPDATE_FIELD,
+            {
+              input: {
+                id: legacyField.id,
+                update: {
+                  name: field.name,
+                  label: field.label,
+                  isLabelSyncedWithName: false,
+                  isNullable: field.isNullable !== false,
+                  isUIEditable: field.isUIEditable !== false,
+                },
+              },
+            },
+            token
+          );
+          Object.assign(legacyField, data.updateOneField);
+          existing = legacyField;
+        }
+      }
       if (existing) {
         if (
           existing.type !== field.type ||
@@ -346,25 +454,71 @@ async function restBatchUpsert(
   }
 }
 
-function toTwentyRecords(bundle: CustomerCrmImportBundleV1) {
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as JsonObject)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function profileContent(record: JsonObject): JsonObject {
+  const rawJson = (value: unknown) => value ?? {};
   return {
-    graceCustomers: bundle.customers.map(record => {
+    globalCustomerId: record.globalCustomerId,
+    profileType: record.profileType,
+    detailSchemaVersion: record.detailSchemaVersion,
+    demographics: rawJson(record.demographics),
+    preferences: rawJson(record.preferences),
+    insuranceFacts: rawJson(record.insuranceFacts),
+    detail: rawJson(record.detail),
+    fieldProvenance: rawJson(record.fieldProvenance),
+  };
+}
+
+function toTwentyRecords(
+  bundle: CustomerCrmImportBundleV1,
+  existingProfiles: JsonObject[]
+) {
+  const profilesByKey = new Map(
+    existingProfiles.map(record => [String(record.profileKey || ""), record])
+  );
+  return {
+    enterpriseCustomers: bundle.customers.map(record => {
       const { displayName, ...fields } = record;
       return { name: displayName, ...fields };
     }),
+    customerAssignments: (bundle.assignments || []).map(record => ({
+      name: `${record.principalType}:${record.principalRef}:${record.globalCustomerId}`,
+      ...record,
+    })),
     customerSourceLinks: bundle.sourceLinks.map(record => ({
       name: `${record.sourceSystem}:${record.sourceCustomerId}`,
       sourceLinkKey: `${record.sourceSystem}:${record.sourceTenantId}:${record.sourceCustomerId}`,
       ...record,
     })),
-    customerDomainProfiles: bundle.domainProfiles.map(record => ({
-      name: `${record.graceCustomerId}:${record.profileType}`,
-      profileKey: `${record.graceCustomerId}:${record.profileType}`,
-      ...record,
-    })),
+    customerDomainProfiles: bundle.domainProfiles.map(record => {
+      const profileKey = `${record.globalCustomerId}:${record.profileType}`;
+      const existing = profilesByKey.get(profileKey);
+      const unchanged =
+        existing &&
+        canonicalJson(profileContent(existing)) ===
+          canonicalJson(profileContent(record));
+      return {
+        name: profileKey,
+        profileKey,
+        ...record,
+        runtimeStatus: unchanged
+          ? String(existing.runtimeStatus || "candidate")
+          : "candidate",
+      };
+    }),
     customerSuggestions: bundle.suggestions.map(record => ({
-      name: `${record.graceCustomerId}:${record.suggestionType}`,
-      suggestionKey: `${record.graceCustomerId}:${record.suggestionType}`,
+      name: `${record.globalCustomerId}:${record.suggestionType}`,
+      suggestionKey: `${record.globalCustomerId}:${record.suggestionType}`,
       ...record,
     })),
   };
@@ -374,21 +528,24 @@ const model = JSON.parse(readFileSync(modelPath, "utf8")) as ModelSpec;
 const bundle = JSON.parse(
   readFileSync(bundlePath, "utf8")
 ) as CustomerCrmImportBundleV1;
-if (model.schemaVersion !== "ea.twenty-customer-model.v1")
+if (model.schemaVersion !== "ea.twenty-customer-model.v2")
   throw new Error("Unsupported Twenty customer model schema");
 if (bundle.schemaVersion !== "ea.customer-crm-import-bundle.v1")
   throw new Error("Unsupported customer CRM import bundle schema");
 
-const workspaceToken = await authenticateOrCreateWorkspace();
-const activation = await graphql<{
-  activateWorkspace: { id: string; activationStatus: string };
-}>(ACTIVATE_WORKSPACE, { input: {} }, workspaceToken);
-if (activation.activateWorkspace.activationStatus !== "ACTIVE")
-  throw new Error(
-    `Twenty workspace activation incomplete: ${activation.activateWorkspace.activationStatus}`
-  );
+const workspaceToken =
+  existingApiKey || (await authenticateOrCreateWorkspace());
+if (!existingApiKey) {
+  const activation = await graphql<{
+    activateWorkspace: { id: string; activationStatus: string };
+  }>(ACTIVATE_WORKSPACE, { input: {} }, workspaceToken);
+  if (activation.activateWorkspace.activationStatus !== "ACTIVE")
+    throw new Error(
+      `Twenty workspace activation incomplete: ${activation.activateWorkspace.activationStatus}`
+    );
+}
 await ensureModel(workspaceToken, model);
-let apiKey = "";
+let apiKey = existingApiKey;
 if (apiKeyOutput && existsSync(apiKeyOutput)) {
   const line = readFileSync(apiKeyOutput, "utf8")
     .split(/\r?\n/u)
@@ -407,7 +564,11 @@ if (!apiKey) {
   }
 }
 
-const records = toTwentyRecords(bundle);
+const existingProfiles = await requestRows({
+  objectNamePlural: "customerDomainProfiles",
+  token: apiKey,
+});
+const records = toTwentyRecords(bundle, existingProfiles);
 for (const [objectName, rows] of Object.entries(records))
   await restBatchUpsert(objectName, rows, apiKey);
 
