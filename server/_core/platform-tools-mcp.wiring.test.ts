@@ -460,6 +460,50 @@ describe("platform MCP PEP wiring", () => {
     expect(body.result?.content?.[0]?.text).not.toContain('"code":"READINESS_CHECK_MISSING"');
   });
 
+  it("reports missing recommendation fields instead of calling the customer provider unavailable", async () => {
+    const providerError = Object.assign(new Error("Internal MCP call failed"), {
+      payload: {
+        status: "BLOCKED",
+        reasonCodes: ["CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"],
+        missingRequiredFields: ["preferences.investmentHorizon", "preferences.liquidityNeeds"],
+      },
+    });
+    mocks.callInternalMcpTool.mockResolvedValue({ kind: "missing-profile-fields" });
+    mocks.parseInternalMcpJsonResult.mockImplementationOnce((value: unknown) => {
+      if ((value as { kind?: string })?.kind === "missing-profile-fields") throw providerError;
+      return value;
+    });
+    mocks.prepareWealthAllocationContext.mockImplementationOnce(async (input: {
+      dependencies: {
+        loadCustomer?: (customerId: string) => Promise<unknown>;
+        loadCustomerProfile?: (customerId: string) => Promise<unknown>;
+      };
+    }) => {
+      if (input.dependencies.loadCustomer) await input.dependencies.loadCustomer("C003");
+      else if (input.dependencies.loadCustomerProfile) await input.dependencies.loadCustomerProfile("C003");
+      else throw new Error("customer profile loader missing");
+      throw new Error("unreachable");
+    });
+
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "wealth-allocation-missing-fields", method: "tools/call",
+        params: { name: "prepare_wealth_allocation_context", arguments: { customer_id: "C003" } },
+      }),
+    });
+    const body = await response.json() as { result?: { content?: Array<{ text: string }> } };
+    const text = body.result?.content?.[0]?.text || "";
+    expect(text).toContain('"errorCode":"CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"');
+    expect(text).toContain('"missingFields":["投资期限","流动性需求"]');
+    expect(text).toContain("请先向客户核实并补充");
+    expect(text).toContain('"code":"CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"');
+    expect(text).toContain('"code":"WEALTH_CONTEXT_INPUT_INCOMPLETE"');
+    expect(text).not.toContain("客户或产品数据服务暂时不可用");
+    expect(text).not.toContain('"code":"CUSTOMER_DATA_UNAVAILABLE"');
+  });
+
   it("routes bounded maturity operations through the authorized context assembler", async () => {
     const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
       method: "POST",

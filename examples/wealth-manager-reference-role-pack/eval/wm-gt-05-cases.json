@@ -22,9 +22,12 @@
     {
       "caseId": "WM-GT-05-CONFIRM-FOLLOWUP",
       "path": "CONFIRM",
-      "prompt": "为这位演示客户创建一条到期沟通跟进任务。",
+      "prompt": "为这位演示客户把需求补充、方案准备和拜访回访三项行动合并创建为一个跟进任务。",
       "assertions": [
         "followup_business_fields_are_visible_before_confirmation",
+        "one_business_request_creates_one_native_approval_card",
+        "multiple_actions_are_submitted_as_one_checklist_write",
+        "no_conversational_confirmation_before_or_after_native_approval",
         "single_confirmation_creates_at_most_one_record",
         "receipt_contains_record_id_and_demo_boundary"
       ]

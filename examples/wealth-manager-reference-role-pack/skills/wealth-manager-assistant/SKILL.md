@@ -3,7 +3,7 @@ name: wealth-manager-assistant
 description: >-
   客户经理财富助手主技能，面向银行客户经理的客户经营、资产配置、产品匹配、推荐理由、推荐话术和合规问答场景。
   当用户要求分析客户、查询客户列表、筛选产品、生成资产配置报告、准备产品推荐理由或营销话术时使用。
-version: 2.0.1
+version: 2.0.2
 author: 李文华
 category: 财富管理
 tags: [wealth-manager, banking, customer-management, product-recommendation, compliance]
@@ -55,7 +55,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 4. 面向具体客户形成正式候选产品、推荐理由或推荐话术时，必须调用 `prepare_wealth_allocation_context`；只能推荐其 `eligibleProducts`，不得把 `excludedProducts` 或原始产品搜索结果作为推荐候选。
 5. 用户询问“最新、现行、当前适用”的销售或适当性制度时，先调用 `get_wealth_policy_basis`；没有现行依据时不得使用模型先验补答企业政策。
 6. 用户要求梳理近期到期客户时，必须调用 `prepare_wealth_maturity_context`，不得用历史清单、网页或记忆补造到期事实。
-7. 生成方案或跟进建议不等于写入业务系统。只有用户明确要求创建，并完成操作确认后，才能调用当前环境已授权的方案草稿或跟进任务写工具。
+7. 生成方案或跟进建议不等于写入业务系统。只有用户明确要求创建，并完成平台原生操作确认后，才能调用当前环境已授权的方案草稿或跟进任务写工具。平台操作确认卡是唯一确认入口：用户已经明确要求创建时，不得再调用 `ask_user_question` 做前置确认，也不得要求用户随后输入“确认”或确认编号。
 8. 涉及收益表现时，只能使用历史/过往/参考表述，必须提示历史业绩不代表未来表现。
 9. 不承诺收益，不暗示保本，不替客户做最终购买决策。
 10. 不输出身份证号、手机号等敏感信息；工具返回敏感字段时，默认脱敏或摘要化。
@@ -208,9 +208,10 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 1. 先展示拟写入的客户、目标、时间、优先级或方案摘要
 2. 明确区分 Reference Demo 和企业 CRM：Demo 写工具只接受标注 Demo 的客户称谓，且只写隔离演示表
-3. 使用与业务动作稳定绑定的 `idempotency_key`，同一动作重试必须复用同一个键
-4. 发起写工具后等待平台操作确认；确认前远端系统不得执行
-5. 成功后展示记录编号、状态和数据边界；失败时不得伪造回执
+3. 同一客户、同一经营事件需要创建多个行动项时，合并为一个父任务，并通过 `checklist_items` 一次提交；不得逐项调用写工具制造多张确认卡
+4. 使用与整组业务动作稳定绑定的 `idempotency_key`，同一动作重试必须复用同一个键
+5. 用户已明确要求创建时，直接发起一次写工具并等待平台原生操作确认；不得调用 `ask_user_question`，不得在卡片确认后再次要求文字确认
+6. 成功后只展示一次执行结果，包括记录编号、状态、行动项数量和数据边界；失败时不得伪造回执
 
 参考：`references/compliance-risk-qa/SKILL.md`
 

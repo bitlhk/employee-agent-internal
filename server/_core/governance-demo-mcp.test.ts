@@ -236,6 +236,48 @@ describe("governance Demo MCP", () => {
     expect(JSON.stringify(payload)).toContain("客户跟进任务已创建");
   });
 
+  it("creates one parent follow-up with multiple checklist actions in one governed call", async () => {
+    mocks.claims.tool_name = "demo_create_followup_task";
+    mocks.createRecord.mockResolvedValue({
+      created: true,
+      record: { recordId: "DEMO-FOLLOWUP-BATCH-1", customerRef: "陈明（Demo）", status: "demo_followup" },
+    });
+    const { response, payload } = await rpc("tools/call", {
+      name: "demo_create_followup_task",
+      arguments: {
+        customer_ref: "陈明（Demo）",
+        objective: "完成陈明访前准备与拜访跟进",
+        due_at: "2026-08-28T18:00:00+08:00",
+        priority: "high",
+        checklist_items: [
+          { objective: "补充确认客户投资期限与流动性需求", due_at: "2026-08-28T10:00:00+08:00", priority: "high" },
+          { objective: "准备资产配置沟通方案", due_at: "2026-08-28T12:00:00+08:00", priority: "high" },
+          { objective: "完成拜访并记录客户反馈", due_at: "2026-08-28T18:00:00+08:00", priority: "medium" },
+        ],
+        idempotency_key: "demo-followup-batch-001",
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.createRecord).toHaveBeenCalledTimes(1);
+    expect(mocks.createRecord).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "demo_create_followup_task",
+      idempotencyKey: "demo-followup-batch-001",
+      payloadJson: expect.objectContaining({
+        objective: "完成陈明访前准备与拜访跟进",
+        checklistItems: [
+          expect.objectContaining({ objective: "补充确认客户投资期限与流动性需求", priority: "high" }),
+          expect.objectContaining({ objective: "准备资产配置沟通方案", priority: "high" }),
+          expect.objectContaining({ objective: "完成拜访并记录客户反馈", priority: "medium" }),
+        ],
+      }),
+    }));
+    expect(payload.result._meta).toEqual(expect.objectContaining({
+      externalRequestId: "DEMO-FOLLOWUP-BATCH-1",
+      checklistItemCount: 3,
+    }));
+    expect(JSON.stringify(payload)).toContain("行动项：3 项");
+  });
+
   it("lets the insurance advisor use only the shared governed follow-up path", async () => {
     mocks.claims.role = "insurance-advisor";
     mocks.claims.tool_name = "demo_create_followup_task";

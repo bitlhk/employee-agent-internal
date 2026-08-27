@@ -36,7 +36,7 @@ describe("wealth manager reference role pack", () => {
     const skillDir = path.join(root, "skills", "wealth-manager-assistant");
     const parsed = parseSkillSourceDirectory(skillDir, "wealth-manager-assistant");
     expect(parsed.skillId).toBe("wealth-manager-assistant");
-    expect(parsed.manifest?.version).toBe("2.0.1");
+    expect(parsed.manifest?.version).toBe("2.0.2");
     expect(parsed.warnings).toEqual([]);
     const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(skillMarkdown).toContain("正式候选产品、推荐理由或推荐话术");
@@ -47,6 +47,9 @@ describe("wealth manager reference role pack", () => {
     expect(skillMarkdown).toContain("稳定客户标识");
     expect(skillMarkdown).toContain("get_governed_customer_profile");
     expect(skillMarkdown).toContain("确认前不得声称任务已创建");
+    expect(skillMarkdown).toContain("平台操作确认卡是唯一确认入口");
+    expect(skillMarkdown).toContain("`checklist_items` 一次提交");
+    expect(skillMarkdown).toContain("不得调用 `ask_user_question`");
     expect(skillMarkdown).toContain("references/kyc-profiling/SKILL.md");
     expect(skillMarkdown).toContain("references/product-analysis/SKILL.md");
     expect(skillMarkdown).toContain("references/product-comparison/SKILL.md");
@@ -138,6 +141,8 @@ describe("wealth manager reference role pack", () => {
       "remote_executor_is_not_called_before_confirmation",
       "missing_idempotency_key_is_blocked_at_pep",
       "demo_tool_rejects_real_looking_customer_reference",
+      "one_business_request_creates_one_native_approval_card",
+      "multiple_actions_are_submitted_as_one_checklist_write",
     ]));
 
     const maturityText = readFileSync(path.join(root, "eval", "wm-gt-06-cases.json"), "utf8");

@@ -4,6 +4,13 @@ import { issueInternalRuntimeToken, optionalInternalMcpAudience } from "./intern
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
 
+export class InternalMcpResultError extends Error {
+  constructor(message: string, readonly payload: Record<string, unknown>) {
+    super(message);
+    this.name = "InternalMcpResultError";
+  }
+}
+
 function internalMcpUrl(raw: unknown): URL {
   const url = new URL(String(raw || ""));
   if (url.protocol !== "http:" || !LOOPBACK_HOSTS.has(url.hostname)) {
@@ -78,7 +85,10 @@ export function parseInternalMcpJsonResult(result: Record<string, unknown>): Rec
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Internal MCP returned invalid JSON result");
   const payload = parsed as Record<string, unknown>;
   if (payload.ok === false || result.isError === true) {
-    throw new Error(String(payload.message || payload.error || payload.errorCode || "Internal MCP call failed"));
+    throw new InternalMcpResultError(
+      String(payload.message || payload.error || payload.errorCode || "Internal MCP call failed"),
+      payload,
+    );
   }
   return payload;
 }

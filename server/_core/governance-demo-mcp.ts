@@ -82,15 +82,30 @@ export function governanceDemoMcpTools() {
     },
     {
       name: "demo_create_followup_task",
-      description: "【Demo】创建客户跟进任务，仅写入隔离演示表，不连接真实 CRM。需要用户确认且必须提供幂等键。",
+      description: "【Demo】创建客户跟进任务，仅写入隔离演示表，不连接真实 CRM。需要平台操作确认且必须提供幂等键；同一客户、同一经营事件的多个行动项应合并到 checklist_items，一次提交形成一张确认卡。",
       inputSchema: {
         type: "object",
         properties: {
           customer_ref: { type: "string", description: "明确标注 Demo 的客户称谓，例如：张先生（Demo）" },
-          objective: { type: "string", minLength: 5, maxLength: 500, description: "跟进目标" },
-          due_at: { type: "string", description: "计划跟进时间，ISO 8601 格式" },
+          objective: { type: "string", minLength: 5, maxLength: 500, description: "跟进任务的总目标" },
+          due_at: { type: "string", description: "任务整体截止时间，ISO 8601 格式" },
           priority: { type: "string", enum: ["high", "medium", "low"], description: "跟进优先级" },
           source_event_ref: { type: "string", maxLength: 128, description: "可选的到期事项或业务事件脱敏标识" },
+          checklist_items: {
+            type: "array",
+            minItems: 1,
+            maxItems: 10,
+            description: "同一客户、同一经营事件下需要一次确认创建的行动清单。",
+            items: {
+              type: "object",
+              properties: {
+                objective: { type: "string", minLength: 5, maxLength: 500, description: "行动项" },
+                due_at: { type: "string", description: "行动项截止时间，ISO 8601 格式" },
+                priority: { type: "string", enum: ["high", "medium", "low"], description: "行动项优先级" },
+              },
+              required: ["objective", "due_at"],
+            },
+          },
           idempotency_key: { type: "string", minLength: 8, maxLength: 191 },
         },
         required: ["customer_ref", "objective", "due_at", "priority", "idempotency_key"],
@@ -173,6 +188,24 @@ function isoDateArg(args: Record<string, unknown>, name: string): string {
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) throw new Error(`${name} 参数无效`);
   return new Date(timestamp).toISOString();
+}
+
+function followupChecklistItems(args: Record<string, unknown>) {
+  if (args.checklist_items === undefined || args.checklist_items === null) return [];
+  if (!Array.isArray(args.checklist_items) || args.checklist_items.length < 1 || args.checklist_items.length > 10) {
+    throw new Error("checklist_items 参数无效");
+  }
+  return args.checklist_items.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`checklist_items[${index}] 参数无效`);
+    const row = item as Record<string, unknown>;
+    const priority = String(row.priority || args.priority || "medium").trim();
+    if (!["high", "medium", "low"].includes(priority)) throw new Error(`checklist_items[${index}].priority 参数无效`);
+    return {
+      objective: stringArg(row, "objective", 500),
+      dueAt: isoDateArg(row, "due_at"),
+      priority,
+    };
+  });
 }
 
 function bearerToken(req: Request): string {
@@ -301,6 +334,7 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
             return value;
           })(),
           sourceEventRef: String(args.source_event_ref || "").trim().slice(0, 128) || null,
+          checklistItems: followupChecklistItems(args),
         }
       : name === "demo_create_audit_review_task"
         ? {
@@ -369,10 +403,14 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
       : name === "demo_create_research_watch_task"
         ? "研究跟踪任务已创建"
       : "演示客户标签已更新";
+  const checklistItemCount = name === "demo_create_followup_task"
+    ? Number((payload as { checklistItems?: unknown[] }).checklistItems?.length || 0)
+    : 0;
   return textResult([
     `【Demo】${action}`,
     `记录编号：${result.record.recordId}`,
     `${name === "demo_create_audit_review_task" ? "案件" : name === "demo_create_research_watch_task" ? "标的" : "客户"}：${result.record.customerRef}`,
+    ...(checklistItemCount ? [`行动项：${checklistItemCount} 项`] : []),
     `状态：${result.record.status}`,
     `数据边界：仅写入隔离演示表，未连接${name === "demo_create_research_watch_task" ? "交易或真实研究系统" : "真实 CRM"}`,
   ].join("\n"), {
@@ -381,6 +419,7 @@ async function callDemoTool(name: string, args: Record<string, unknown>, identit
     externalRequestId: result.record.recordId,
     requestId: identity.requestId,
     created: result.created,
+    ...(checklistItemCount ? { checklistItemCount } : {}),
   });
 }
 

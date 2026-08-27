@@ -52,11 +52,41 @@ type WealthAllocationDependency = "profile" | "portfolio" | "products" | "policy
 class WealthAllocationDependencyError extends Error {
   constructor(
     readonly dependency: WealthAllocationDependency,
-    cause: unknown,
+    readonly dependencyError: unknown,
   ) {
-    super(cause instanceof Error ? cause.message : String(cause || `${dependency} unavailable`));
+    super(dependencyError instanceof Error ? dependencyError.message : String(dependencyError || `${dependency} unavailable`));
     this.name = "WealthAllocationDependencyError";
   }
+}
+
+const CUSTOMER_REQUIRED_FIELD_LABELS: Record<string, string> = {
+  "subject.displayName": "客户姓名",
+  "subject.customerStatus": "客户状态",
+  "risk.investmentRiskLevel": "风险等级",
+  "risk.investmentRiskValidUntil": "风险测评有效期",
+  "preferences.investmentHorizon": "投资期限",
+  "preferences.liquidityNeeds": "流动性需求",
+};
+
+function customerRequiredFieldIssue(error: unknown): { paths: string[]; labels: string[] } | null {
+  const dependencyError = error instanceof WealthAllocationDependencyError
+    ? error.dependencyError
+    : error;
+  if (!dependencyError || typeof dependencyError !== "object") return null;
+  const payload = (dependencyError as { payload?: unknown }).payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  const reasonCodes = Array.isArray(record.reasonCodes) ? record.reasonCodes.map(String) : [];
+  if (!reasonCodes.includes("CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING")) return null;
+  const paths = Array.isArray(record.missingRequiredFields)
+    ? Array.from(new Set(record.missingRequiredFields.map((value) => String(value || "").trim()).filter(Boolean)))
+    : [];
+  return { paths, labels: paths.map((path) => CUSTOMER_REQUIRED_FIELD_LABELS[path] || path) };
+}
+
+function requiredCustomerFieldsMessage(labels: string[]): string {
+  const fields = labels.length ? labels.join("、") : "当前任务必需的客户信息";
+  return `当前客户缺少正式推荐必需信息：${fields}。请先向客户核实并补充，再进行产品适当性判断。`;
 }
 
 async function loadWealthAllocationDependency<T>(
@@ -958,6 +988,10 @@ async function callTool(
       const failedDependency = error instanceof WealthAllocationDependencyError
         ? error.dependency
         : null;
+      const requiredFieldIssue = customerRequiredFieldIssue(error);
+      const requiredFieldMessage = requiredFieldIssue
+        ? requiredCustomerFieldsMessage(requiredFieldIssue.labels)
+        : "";
       const policyUnavailable = failedDependency === "policy" || /policy|制度|knowledge/i.test(message);
       const customerAssemblyFailed = /客户(?:画像|持仓|标识|\s*MCP)/i.test(message);
       const customerReady = readyDependencies.has("profile")
@@ -971,7 +1005,9 @@ async function callTool(
           knowledge: policyUnavailable
             ? readinessCheck("BLOCKED", "CURRENT_POLICY_UNAVAILABLE", "当前有效适当性制度不可用。", { retryable: true })
             : readinessCheck("DEGRADED", "KNOWLEDGE_NOT_ASSEMBLED", "本轮未完成制度上下文装配。", { retryable: true }),
-          customerData: customerReady
+          customerData: requiredFieldIssue
+            ? readinessCheck("BLOCKED", "CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING", requiredFieldMessage)
+            : customerReady
             ? readinessCheck("READY", "CUSTOMER_DATA_READY", "客户画像与持仓数据已完成核验。")
             : failedDependency === "profile" || failedDependency === "portfolio" || customerAssemblyFailed
               ? readinessCheck("BLOCKED", "CUSTOMER_DATA_UNAVAILABLE", "当前客户数据不可用，不能形成正式推荐。", { retryable: true })
@@ -983,17 +1019,29 @@ async function callTool(
               : readinessCheck("DEGRADED", "PRODUCT_DATA_NOT_EVALUATED", "本轮尚未完成产品数据核验。", { retryable: true }),
           policy: readinessCheck("BLOCKED", "SUITABILITY_POLICY_NOT_EVALUATED", "适当性判断尚未完成。", { retryable: true }),
           skill: readinessCheck("READY", "WEALTH_ALLOCATION_SKILL_READY", "财富资产配置流程已就绪。"),
-          capability: readinessCheck("DEGRADED", "WEALTH_CONTEXT_DEPENDENCY_FAILED", "财富配置上下文依赖暂时不可用。", { retryable: true }),
+          capability: requiredFieldIssue
+            ? readinessCheck("BLOCKED", "WEALTH_CONTEXT_INPUT_INCOMPLETE", "正式推荐所需客户信息尚未补齐。")
+            : readinessCheck("DEGRADED", "WEALTH_CONTEXT_DEPENDENCY_FAILED", "财富配置上下文依赖暂时不可用。", { retryable: true }),
           evidence: readinessCheck("DEGRADED", "POLICY_EVIDENCE_PARTIAL", "本轮仅保留依赖失败证据。", { retryable: true }),
         },
       });
       return textResult(`EA_WEALTH_ALLOCATION_CONTEXT:${JSON.stringify({
         schema: "ea.wealth-allocation-context.v1",
         status: "blocked",
-        errorCode: policyUnavailable ? "POLICY_CONTEXT_UNAVAILABLE" : "BUSINESS_CONTEXT_UNAVAILABLE",
-        message: policyUnavailable
+        errorCode: requiredFieldIssue
+          ? "CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"
+          : policyUnavailable
+            ? "POLICY_CONTEXT_UNAVAILABLE"
+            : "BUSINESS_CONTEXT_UNAVAILABLE",
+        message: requiredFieldIssue
+          ? requiredFieldMessage
+          : policyUnavailable
           ? "当前有效适当性制度不可用，暂不能形成正式产品推荐。"
           : "客户或产品数据服务暂时不可用，可以先完成不依赖当前产品的资产结构分析。",
+        ...(requiredFieldIssue ? {
+          missingFields: requiredFieldIssue.labels,
+          remediation: "补齐上述客户信息后重新发起正式产品推荐。",
+        } : {}),
         readiness,
       })}`);
     }
