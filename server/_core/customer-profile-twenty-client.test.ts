@@ -291,5 +291,13 @@ describe("Twenty Customer CRM client", () => {
       "/rest/batch/customerFollowupTasks?upsert=true"
     );
     expect(request.mock.calls[0]?.[1]).toMatchObject({ method: "POST" });
+    const taskBody = JSON.parse(String(request.mock.calls[1]?.[1]?.body));
+    expect(taskBody).toMatchObject([
+      expect.objectContaining({
+        name: "准备续保方案",
+        taskKey: "governed-work:org-1:wi-1",
+      }),
+    ]);
+    expect(taskBody[0]).not.toHaveProperty("subject");
   });
 });

@@ -43,6 +43,7 @@ import { resolveWealthRolePackReleaseEvidence, wealthRolePackReleaseReadiness } 
 import { resolveWealthPolicyBasis, resolveWealthSuitabilityPolicySource } from "./wealth-policy-source";
 import { buildWealthAllocationTaskContextPack, finalizeWealthPolicyResolutionEvidence, observeWealthAllocationRuntimeSources, observeWealthPolicyRuntimeSource, resolveWealthAllocationRuntimeSources, resolveWealthPolicyRuntimeSource } from "./context-resolution/wealth-runtime-sources";
 import { GOVERNED_WORK_PLATFORM_TOOLS, handleGovernedWorkPlatformTool, isGovernedWorkPlatformTool } from "./governed-work-platform-tools";
+import { CUSTOMER_CRM_PLATFORM_TOOLS, handleCustomerCrmPlatformTool, isCustomerCrmPlatformTool } from "./customer-crm-platform-tools";
 import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
 
 const SERVICE_NAME = "platform-tools";
@@ -193,6 +194,7 @@ export const PLATFORM_TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
   ...GOVERNED_WORK_PLATFORM_TOOLS,
+  ...CUSTOMER_CRM_PLATFORM_TOOLS,
   {
     name: "get_wealth_policy_basis",
     description: [
@@ -543,6 +545,7 @@ async function callTool(
   }
 
   if (isGovernedWorkPlatformTool(name)) return handleGovernedWorkPlatformTool({ req, name, args, adoption: claw, adoptId, sessionId: principal.principal.sessionId });
+  if (isCustomerCrmPlatformTool(name)) return handleCustomerCrmPlatformTool({ req, name, args, adoption: claw, adoptId, sessionId: principal.principal.sessionId });
 
   if (name === "get_user_channels") {
     const channels = ["conversation"];

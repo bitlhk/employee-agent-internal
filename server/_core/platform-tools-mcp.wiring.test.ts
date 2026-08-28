@@ -275,6 +275,20 @@ afterEach(async () => {
 });
 
 describe("platform MCP PEP wiring", () => {
+  it("publishes the confirmation-gated CRM follow-up tool", async () => {
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: "tools", method: "tools/list", params: {} }),
+    });
+    const body = await response.json() as any;
+    const tool = body.result?.tools?.find((item: any) => item.name === "create_customer_followup_task");
+    expect(tool).toMatchObject({
+      name: "create_customer_followup_task",
+      inputSchema: { required: ["customer_id", "objective", "due_at", "idempotency_key"] },
+    });
+  });
+
   it("provides confirmed work state as governed Context instead of conversation inference", async () => {
     const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
       method: "POST",

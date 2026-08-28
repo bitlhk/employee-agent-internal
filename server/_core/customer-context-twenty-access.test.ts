@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RuntimePrincipalV2 } from "./governance/contracts";
 import {
   evaluateTwentyCustomerAccess,
+  evaluateTwentyCustomerWriteAccess,
   listAuthorizedTwentyCustomers,
 } from "./customer-context-twenty-access";
 import type {
@@ -70,6 +71,11 @@ function client(input: {
   roleEligibleCustomerIds?: string[];
 }) {
   return {
+    resolveGlobalCustomerId: vi.fn(async ({ customerId }: { customerId: string }) =>
+      input.customers.some(item => item.globalCustomerId === customerId)
+        ? customerId
+        : null
+    ),
     loadCustomerSummary: vi.fn(
       async (id: string) =>
         input.customers.find(item => item.globalCustomerId === id) || null
@@ -103,6 +109,35 @@ describe("Twenty customer access", () => {
       allowed: true,
       subjectInScope: true,
       allowedProfileTypes: ["wealth"],
+    });
+  });
+
+  it("keeps public Demo customers read-only without an explicit assignment", async () => {
+    const publicCustomer = customer("CUST-000030", "demo_public");
+    const denied = await evaluateTwentyCustomerWriteAccess({
+      client: client({ customers: [publicCustomer] }),
+      principal,
+      customerId: publicCustomer.globalCustomerId,
+    });
+    const allowed = await evaluateTwentyCustomerWriteAccess({
+      client: client({
+        customers: [publicCustomer],
+        assignments: [assignment(publicCustomer.globalCustomerId)],
+      }),
+      principal,
+      customerId: publicCustomer.globalCustomerId,
+    });
+    expect(denied).toMatchObject({
+      allowed: false,
+      reasonCode: "CUSTOMER_NOT_ASSIGNED",
+      assignmentKey: null,
+    });
+    expect(allowed).toMatchObject({
+      allowed: true,
+      reasonCode: "ALLOW",
+      assignmentKey: `user:59:${publicCustomer.globalCustomerId}`,
+      assignmentPrincipalType: "user",
+      assignmentPrincipalRef: "59",
     });
   });
 

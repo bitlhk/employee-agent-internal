@@ -153,6 +153,98 @@ export function createConfiguredTwentyCustomerClient(): TwentyCustomerCrmClientV
   return createClient();
 }
 
+export type TwentyCustomerWriteAuthorizationV1 = {
+  allowed: boolean;
+  reasonCode:
+    | "ALLOW"
+    | "ROLE_NOT_SUPPORTED"
+    | "CUSTOMER_NOT_FOUND"
+    | "CUSTOMER_NOT_ACTIVE"
+    | "CUSTOMER_OUT_OF_SCOPE"
+    | "PROFILE_NOT_ELIGIBLE"
+    | "CUSTOMER_NOT_ASSIGNED";
+  globalCustomerId: string | null;
+  assignmentKey: string | null;
+  assignmentPrincipalType: TwentyCustomerAssignmentV1["principalType"] | null;
+  assignmentPrincipalRef: string | null;
+  authorizationEvidenceId: string;
+};
+
+export async function evaluateTwentyCustomerWriteAccess(input: {
+  client: TwentyCustomerCrmClientV1;
+  principal: RuntimePrincipalV2;
+  customerId: string;
+}): Promise<TwentyCustomerWriteAuthorizationV1> {
+  const profileTypes = allowedProfileTypes(input.principal.roleTemplate);
+  const globalCustomerId = await input.client.resolveGlobalCustomerId({
+    customerId: input.customerId,
+    allowedSourceSystems: allowedSourceSystems(input.principal.roleTemplate),
+  });
+  const customer = globalCustomerId
+    ? await input.client.loadCustomerSummary(globalCustomerId)
+    : null;
+  const [assignments, roleEligibleCustomerIds] = globalCustomerId && profileTypes.length
+    ? await Promise.all([
+        assignmentsForPrincipal(input.client, input.principal),
+        input.client.listCustomerIdsByProfileScope({
+          profileTypes,
+          runtimeStatuses: twentyCustomerContextProductionReady()
+            ? ["active"]
+            : ["candidate", "active"],
+        }),
+      ])
+    : [[], []];
+  const assignment = assignments.find(
+    item =>
+      item.globalCustomerId === globalCustomerId &&
+      activeAssignment(item, input.principal)
+  );
+  const customerInDeploymentScope = Boolean(
+    customer && customerBelongsToConfiguredScope(customer, input.principal)
+  );
+  const profileEligible = Boolean(
+    globalCustomerId && roleEligibleCustomerIds.includes(globalCustomerId)
+  );
+  const reasonCode: TwentyCustomerWriteAuthorizationV1["reasonCode"] =
+    !profileTypes.length
+      ? "ROLE_NOT_SUPPORTED"
+      : !globalCustomerId || !customer
+        ? "CUSTOMER_NOT_FOUND"
+        : customer.customerStatus !== "active"
+          ? "CUSTOMER_NOT_ACTIVE"
+          : !customerInDeploymentScope
+            ? "CUSTOMER_OUT_OF_SCOPE"
+            : !profileEligible
+              ? "PROFILE_NOT_ELIGIBLE"
+              : !assignment
+                ? "CUSTOMER_NOT_ASSIGNED"
+                : "ALLOW";
+  const evidence = {
+    contract: "ea.twenty-customer-write-access.v1",
+    globalCustomerId,
+    organizationId: input.principal.organizationId,
+    principalRefs: principalAssignmentRefs(input.principal),
+    roleTemplate: input.principal.roleTemplate,
+    assignmentKey: assignment?.assignmentKey || null,
+    assignmentPrincipalType: assignment?.principalType || null,
+    assignmentPrincipalRef: assignment?.principalRef || null,
+    customerStatus: customer?.customerStatus || null,
+    sourceTenant: customer?.tenantId || null,
+    profileTypes,
+    profileEligible,
+    reasonCode,
+  };
+  return {
+    allowed: reasonCode === "ALLOW",
+    reasonCode,
+    globalCustomerId,
+    assignmentKey: assignment?.assignmentKey || null,
+    assignmentPrincipalType: assignment?.principalType || null,
+    assignmentPrincipalRef: assignment?.principalRef || null,
+    authorizationEvidenceId: governanceFingerprint(evidence),
+  };
+}
+
 export async function evaluateTwentyCustomerAccess(input: {
   client: TwentyCustomerCrmClientV1;
   principal: RuntimePrincipalV2;

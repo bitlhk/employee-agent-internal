@@ -376,10 +376,11 @@ export class TwentyCustomerCrmClientV1 {
   }
 
   async writeFollowupTask(record: CustomerFollowupTaskMirrorV1): Promise<void> {
+    const { subject, ...fields } = record;
     await this.batchUpsert("customerFollowupTasks", [
       {
-        name: record.subject,
-        ...record,
+        name: subject,
+        ...fields,
       },
     ]);
   }
