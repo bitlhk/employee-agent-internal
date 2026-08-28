@@ -6,11 +6,12 @@
 Twenty CRM Environment: Deployed / Verified
 Customer Source Adapter: Environment Verified / Production Ready
 Customer Domain Profiles: 30 Active
-EA Runtime Activation: Cutover Pending
-CRM Write-back: Engineering Verified / Runtime Disabled
+Local EA Runtime: Customer Context Active
+CRM Follow-up Write-back: Local Agent E2E Verified
+Shanghai EA Runtime: Deployment Pending
 ```
 
-Acceptance date: `2026-08-27` (Asia/Shanghai)
+Acceptance date: `2026-08-28` (Asia/Shanghai)
 
 ## Immutable Inputs
 
@@ -122,6 +123,46 @@ The application cutover remains a separate deployment action controlled by
 `EA_CUSTOMER_CONTEXT_TWENTY_ENABLED` and
 `EA_CUSTOMER_CONTEXT_TWENTY_PRODUCTION_READY`.
 
+The local EA Runtime has completed this cutover. Both flags are enabled in the
+local immutable release; Shanghai remains a separate deployment and acceptance
+action.
+
+## Agent Follow-up Write-back Evidence
+
+The local EA release `20260828T025001Z-55cc897b6fe2` enabled only the governed
+follow-up task operation. Customer interaction write-back remains outside this
+V1 Runtime scope.
+
+The browser-equivalent Agent flow used the wealth-manager adoption
+`lgj-mjrsrqkp` and the explicitly assigned customer `CUST-000005`:
+
+```text
+Agent customer lookup
+  -> assignment and purpose authorization
+  -> create_customer_followup_task
+  -> one platform governance confirmation
+  -> confirmed retry with identical arguments and idempotency key
+  -> one Twenty follow-up task
+  -> Execution Receipt
+```
+
+| Check                                        | Result                         |
+| -------------------------------------------- | ------------------------------ |
+| Official confirmation cards                  | `1`                            |
+| Generic `ask_user` confirmations             | `0`                            |
+| Approval final state                         | `consumed`                     |
+| CRM rows for the idempotency key             | `1`                            |
+| Execution Receipt                            | PASS                           |
+| Assigned customer write                      | PASS                           |
+| Unassigned customer rejected before approval | PASS (`CUSTOMER_NOT_ASSIGNED`) |
+| Unassigned customer CRM rows                 | `0`                            |
+
+The accepted task was `访后需求确认`, due at
+`2026-09-03T09:00:00+08:00`. Its CRM record retains the stable customer ID,
+role-adoption owner, purpose, confirmation actor, idempotency key and execution
+receipt ID. The acceptance record deliberately excludes session credentials and
+the Twenty integration secret.
+
 ## Manual Create Acceptance
 
 The customer object's native New button is supported. `globalCustomerId` is
@@ -147,9 +188,10 @@ IDs. The pre-change database snapshot is
    their feature flags and organization allowlist are configured.
 3. The 121-row wealth workbook defines fields, not customer records. It is an
    input to schema and authority design, not 121 populated CRM columns.
-4. Customer interaction and follow-up task objects and confirmation-gated
-   write-back contracts are present, but no EA Runtime tool is enabled to write
-   them in this Shadow phase.
+4. Follow-up task creation is enabled only in the verified local EA Runtime and
+   requires assignment, purpose authorization, one platform confirmation,
+   idempotency and an Execution Receipt. Customer interaction write-back remains
+   disabled, and Shanghai activation is still pending.
 5. Old wealth and insurance customer MCPs remain rollback providers for one
    release, but must not be exposed to Agent Skills after cutover.
 6. The current Demo Runtime uses a separately stored Twenty integration secret.

@@ -50,8 +50,9 @@ Insurance Customer Source ┘                  │
 ## CRM Objects
 
 V1 uses a small normalized model instead of one 121-column customer record.
-The deployed Shadow environment contains all six objects. Interaction and task
-write-back contracts are implemented, but runtime mirroring remains disabled.
+The deployed environment contains all six objects. The local EA Runtime enables
+the confirmation-gated follow-up task operation; interaction write-back remains
+disabled and Shanghai activation is a separate release action.
 
 | Object                  | Responsibility                                                     |
 | ----------------------- | ------------------------------------------------------------------ |
@@ -99,6 +100,15 @@ wealth Demo pool plus explicitly assigned wealth customers rather than every
 public CRM row. Legacy wealth and insurance customer providers
 remain hidden rollback dependencies for one release. See
 `grace-customer-crm-environment-acceptance-v1.md` for evidence and known gaps.
+
+As of 2026-08-28, the local Agent-to-CRM write path is also verified. An Agent
+can create a follow-up only for a customer explicitly assigned to its current
+user or role adoption. Public Demo visibility does not grant write authority.
+The operation uses the platform's single governance confirmation, rechecks
+assignment after confirmation, writes exactly one row for an idempotency key and
+returns an `ea.customer-crm-execution-receipt.v1` receipt. Unassigned customers
+are rejected before an approval is created. Shanghai deployment is not implied
+by this local acceptance.
 
 Twenty manual creation uses a database-assigned Global Customer ID. The field
 is optional only in the incoming create request and read-only to users; the
