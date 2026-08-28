@@ -13,4 +13,15 @@ describe("platform content compliance policy", () => {
     expect(body.messages[0].content).toContain(PLATFORM_CONTENT_COMPLIANCE_POLICY);
     expect(body.messages[0].content).toContain("客观、中性、建设性");
   });
+
+  it("reserves ask_user for clarification instead of business write authorization", () => {
+    const body = buildChatRequestBody({
+      message: "请为客户创建一条跟进任务",
+      permissionProfile: "plus",
+    });
+
+    expect(body.messages[0].content).toContain("Never use ask_user or a text question to authorize a business write");
+    expect(body.messages[0].content).toContain("single official governance confirmation card");
+    expect(body.messages[0].content).toContain("unchanged business parameters and idempotency key");
+  });
 });
