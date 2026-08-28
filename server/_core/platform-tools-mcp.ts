@@ -26,6 +26,7 @@ import { capabilitySetFingerprint } from "./governance/capability-registry";
 import { resolveToolGovernance, stableToolInputHash } from "./tool-governance";
 import { runtimeGovernanceIsAttested, runtimeGovernanceRequestId } from "./runtime-governance-attestation";
 import { callInternalMcpTool, parseInternalMcpJsonResult } from "./internal-mcp-client";
+import { callWealthProductSourceTool } from "./wealth-product-source-client";
 import { prepareWealthAllocationContext } from "./wealth-allocation-context";
 import { applyWealthDemoProductScenario, wealthDemoScenarioEnabled } from "./wealth-demo-scenario";
 import { buildWealthAllocationContextReceipt, buildWealthPolicyContextReceipt } from "./wealth-context-receipts";
@@ -870,7 +871,7 @@ async function callTool(
             "products",
             readyDependencies,
             async () => {
-              const payload = parseInternalMcpJsonResult(await callInternalMcpTool({
+              const payload = parseInternalMcpJsonResult(await callWealthProductSourceTool({
                 endpointUrl: productTarget.endpointUrl,
                 toolName: productTarget.toolName,
                 args: {
