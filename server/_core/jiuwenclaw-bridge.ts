@@ -1353,7 +1353,11 @@ export async function forwardToJiuwenClaw(
               const toolCallId = tool.callId || `jiuwen-${sha256(`${requestId}|${tool.toolName}`).slice(0, 16)}`;
               if (tool.isResult) {
                 responseEvidence.capture(tool.toolName, tool.resultPayload);
-                const governanceApproval = normalizeGovernanceApprovalToolEvent(body?.delta, tool.resultPayload);
+                const governanceApproval = normalizeGovernanceApprovalToolEvent(
+                  body?.delta,
+                  tool.resultPayload,
+                  tool.isError,
+                );
                 if (governanceApproval) {
                   writeEvent("governance_approval_required", {
                     requestId: governanceApproval.approvalId,

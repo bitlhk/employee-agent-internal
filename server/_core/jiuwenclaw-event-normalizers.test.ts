@@ -52,7 +52,7 @@ describe("governance approval tool event normalization", () => {
           demo: true,
         },
       },
-    });
+    }, true);
     expect(event).toEqual({
       approvalId: "apr_00000000-0000-4000-8000-000000000001",
       expiresAt: "2026-08-09T10:00:00.000Z",
@@ -67,9 +67,27 @@ describe("governance approval tool event normalization", () => {
   it("falls back to the confirmation id in text but ignores unrelated tool failures", () => {
     expect(normalizeGovernanceApprovalToolEvent({}, {
       content: [{ type: "text", text: "确认编号：apr_00000000-0000-4000-8000-000000000001" }],
-    })?.approvalId).toBe("apr_00000000-0000-4000-8000-000000000001");
+    }, true)?.approvalId).toBe("apr_00000000-0000-4000-8000-000000000001");
     expect(normalizeGovernanceApprovalToolEvent({}, {
       content: [{ type: "text", text: "普通工具执行失败" }],
-    })).toBeNull();
+    }, true)).toBeNull();
+  });
+
+  it("does not recreate a confirmation from metadata retained on a successful retry", () => {
+    expect(normalizeGovernanceApprovalToolEvent({
+      tool_result: {
+        _meta: {
+          eaGovernance: {
+            code: "EA_APPROVAL_REQUIRED",
+            approvalId: "apr_00000000-0000-4000-8000-000000000001",
+          },
+        },
+      },
+    }, {
+      executionReceipt: {
+        schema: "ea.customer-crm-execution-receipt.v1",
+        status: "completed",
+      },
+    }, false)).toBeNull();
   });
 });

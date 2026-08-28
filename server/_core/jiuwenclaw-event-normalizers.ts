@@ -193,7 +193,12 @@ function governanceMetadata(value: unknown, depth = 0): Record<string, unknown> 
 export function normalizeGovernanceApprovalToolEvent(
   delta: unknown,
   resultPayload: unknown,
+  isError: boolean,
 ): GovernanceApprovalToolEvent | null {
+  // Approval requests are emitted as failed tool results. Jiuwen may retain
+  // metadata from the first attempt when streaming a successful retry, so a
+  // successful result must never recreate the confirmation card.
+  if (!isError) return null;
   const metadata = governanceMetadata(delta) || governanceMetadata(resultPayload);
   const text = stringifyJiuwenToolPayload(resultPayload);
   const approvalId = String(metadata?.approvalId || text.match(/apr_[0-9a-f-]{36}/i)?.[0] || "").trim();
