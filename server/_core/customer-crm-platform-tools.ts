@@ -9,51 +9,31 @@ import {
   evaluateTwentyCustomerWriteAccess,
   twentyCustomerContextProductionReady,
 } from "./customer-context-twenty-access";
-import {
-  approvalRequiredToolResult,
-  enforceGovernanceApproval,
-} from "./governance/approval-service";
-import {
-  finalizeGovernanceDecision,
-  governanceFingerprint,
-} from "./governance/contracts";
+import { approvalRequiredToolResult, enforceGovernanceApproval } from "./governance/approval-service";
+import { finalizeGovernanceDecision, governanceFingerprint } from "./governance/contracts";
 import { resolveRuntimePrincipalV2 } from "./governance/principal";
 
 const TOOL_NAME = "create_customer_followup_task";
 
-export const CUSTOMER_CRM_PLATFORM_TOOLS = [
-  {
-    name: TOOL_NAME,
-    description: [
-      "Create a governed CRM follow-up task for a customer explicitly assigned to the current employee.",
-      "This is the only tool for saving a customer follow-up to CRM; never substitute demo_create_followup_task, which writes only an isolated Demo record.",
-      "When the user has asked to create the task, call this tool immediately; do not ask for confirmation in chat first.",
-      "The first call creates the platform's single official confirmation request, and the confirmed retry performs the write.",
-      "Public Demo customers without an active assignment are read-only. Always provide a stable idempotency_key.",
-    ].join(" "),
-    inputSchema: {
-      type: "object",
-      properties: {
-        customer_id: {
-          type: "string",
-          description:
-            "Canonical or governed source customer id returned by customer_directory.",
-        },
-        objective: {
-          type: "string",
-          description: "Concrete follow-up task objective.",
-        },
-        due_at: { type: "string", description: "ISO 8601 due date and time." },
-        idempotency_key: {
-          type: "string",
-          description:
-            "Stable key of at least 8 characters. Reuse unchanged after confirmation.",
-        },
-      },
-      required: ["customer_id", "objective", "due_at", "idempotency_key"],
+export const CUSTOMER_CRM_PLATFORM_TOOLS = [{
+  name: TOOL_NAME,
+  description: [
+    "Create a governed CRM follow-up task for a customer explicitly assigned to the current employee.",
+    "When the user has asked to create the task, call this tool immediately; do not ask for confirmation in chat first.",
+    "The first call creates the platform's single official confirmation request, and the confirmed retry performs the write.",
+    "Public Demo customers without an active assignment are read-only. Always provide a stable idempotency_key.",
+  ].join(" "),
+  inputSchema: {
+    type: "object",
+    properties: {
+      customer_id: { type: "string", description: "Canonical or governed source customer id returned by customer_directory." },
+      objective: { type: "string", description: "Concrete follow-up task objective." },
+      due_at: { type: "string", description: "ISO 8601 due date and time." },
+      idempotency_key: { type: "string", description: "Stable key of at least 8 characters. Reuse unchanged after confirmation." },
     },
+    required: ["customer_id", "objective", "due_at", "idempotency_key"],
   },
-] as const;
+}] as const;
 
 type ToolResult = {
   content: Array<{ type: string; text: string }>;
@@ -61,19 +41,12 @@ type ToolResult = {
   [key: string]: unknown;
 };
 
-function textResult(
-  text: string,
-  extra: Record<string, unknown> = {}
-): ToolResult {
+function textResult(text: string, extra: Record<string, unknown> = {}): ToolResult {
   return { content: [{ type: "text", text }], ...extra };
 }
 
 function enabled(value: unknown): boolean {
-  return ["1", "true", "yes", "on"].includes(
-    String(value ?? "")
-      .trim()
-      .toLowerCase()
-  );
+  return ["1", "true", "yes", "on"].includes(String(value ?? "").trim().toLowerCase());
 }
 
 export function customerCrmWritebackEnabled(): boolean {
@@ -84,15 +57,8 @@ export function isCustomerCrmPlatformTool(name: string): boolean {
   return name === TOOL_NAME;
 }
 
-function textArg(
-  args: Record<string, unknown>,
-  snake: string,
-  camel: string,
-  max: number
-): string {
-  return String(args[snake] ?? args[camel] ?? "")
-    .trim()
-    .slice(0, max);
+function textArg(args: Record<string, unknown>, snake: string, camel: string, max: number): string {
+  return String(args[snake] ?? args[camel] ?? "").trim().slice(0, max);
 }
 
 function header(req: Request, name: string): string {
@@ -105,12 +71,9 @@ function stableId(prefix: string, value: unknown): string {
 }
 
 function writeDeniedMessage(reasonCode: string): string {
-  if (reasonCode === "CUSTOMER_NOT_ASSIGNED")
-    return "该客户未明确分配给当前员工，只可查看，不能写入 CRM。";
-  if (reasonCode === "PROFILE_NOT_ELIGIBLE")
-    return "该客户没有当前岗位可使用的有效业务画像，不能写入 CRM。";
-  if (reasonCode === "ROLE_NOT_SUPPORTED")
-    return "当前岗位尚未启用客户跟进写入能力。";
+  if (reasonCode === "CUSTOMER_NOT_ASSIGNED") return "该客户未明确分配给当前员工，只可查看，不能写入 CRM。";
+  if (reasonCode === "PROFILE_NOT_ELIGIBLE") return "该客户没有当前岗位可使用的有效业务画像，不能写入 CRM。";
+  if (reasonCode === "ROLE_NOT_SUPPORTED") return "当前岗位尚未启用客户跟进写入能力。";
   return "该客户不在当前员工可写范围内，不能写入 CRM。";
 }
 
@@ -122,61 +85,34 @@ export async function handleCustomerCrmPlatformTool(input: {
   adoptId: string;
   sessionId: string;
 }): Promise<ToolResult> {
-  if (input.name !== TOOL_NAME)
-    return textResult("未知客户跟进工具。", { isError: true });
-  if (
-    !customerCrmWritebackEnabled() ||
-    !twentyCustomerContextProductionReady()
-  ) {
+  if (input.name !== TOOL_NAME) return textResult("未知客户跟进工具。", { isError: true });
+  if (!customerCrmWritebackEnabled() || !twentyCustomerContextProductionReady()) {
     return textResult("客户跟进写入尚未在当前环境启用。", { isError: true });
   }
   const customerId = textArg(input.args, "customer_id", "customerId", 128);
   const objective = textArg(input.args, "objective", "subject", 500);
   const rawDueAt = textArg(input.args, "due_at", "dueAt", 64);
   const dueTimestamp = Date.parse(rawDueAt);
-  const idempotencyKey = textArg(
-    input.args,
-    "idempotency_key",
-    "idempotencyKey",
-    191
-  );
+  const idempotencyKey = textArg(input.args, "idempotency_key", "idempotencyKey", 191);
   if (!customerId) return textResult("客户编号不能为空。", { isError: true });
-  if (objective.length < 2)
-    return textResult("跟进目标至少需要 2 个字符。", { isError: true });
-  if (!Number.isFinite(dueTimestamp))
-    return textResult("跟进截止时间必须是有效的 ISO 8601 时间。", {
-      isError: true,
-    });
-  if (idempotencyKey.length < 8)
-    return textResult("idempotency_key 至少需要 8 个字符。", { isError: true });
+  if (objective.length < 2) return textResult("跟进目标至少需要 2 个字符。", { isError: true });
+  if (!Number.isFinite(dueTimestamp)) return textResult("跟进截止时间必须是有效的 ISO 8601 时间。", { isError: true });
+  if (idempotencyKey.length < 8) return textResult("idempotency_key 至少需要 8 个字符。", { isError: true });
 
   const user = await getUserById(Number(input.adoption.userId));
-  if (!user)
-    return textResult("当前用户身份不可用，请重新登录后重试。", {
-      isError: true,
-    });
+  if (!user) return textResult("当前用户身份不可用，请重新登录后重试。", { isError: true });
   const principalResolution = await resolveRuntimePrincipalV2({
     adoption: input.adoption,
     user,
     sessionId: input.sessionId,
   });
   if (!principalResolution.complete) {
-    return textResult("当前岗位身份无法形成可验证授权快照。", {
-      isError: true,
-    });
+    return textResult("当前岗位身份无法形成可验证授权快照。", { isError: true });
   }
   const principal = principalResolution.principal;
   const client = createConfiguredTwentyCustomerClient();
-  const initialAccess = await evaluateTwentyCustomerWriteAccess({
-    client,
-    principal,
-    customerId,
-  });
-  if (
-    !initialAccess.allowed ||
-    !initialAccess.globalCustomerId ||
-    !initialAccess.assignmentKey
-  ) {
+  const initialAccess = await evaluateTwentyCustomerWriteAccess({ client, principal, customerId });
+  if (!initialAccess.allowed || !initialAccess.globalCustomerId || !initialAccess.assignmentKey) {
     return textResult(writeDeniedMessage(initialAccess.reasonCode), {
       isError: true,
       reasonCode: initialAccess.reasonCode,
@@ -197,23 +133,19 @@ export async function handleCustomerCrmPlatformTool(input: {
     resource: `customer:${initialAccess.globalCustomerId}`,
     payloadHash: governanceFingerprint(canonicalPayload),
   };
-  const decision = finalizeGovernanceDecision(
-    { principal, operation },
-    {
-      effect: "REQUIRE_APPROVAL",
-      policyCode: "EA_CUSTOMER_CRM_FOLLOWUP_WRITE_V1",
-      ruleVersion: "customer-crm-followup-write-v1",
-      reason: `将为本人负责的客户创建跟进任务：${objective}`,
-      obligations: [
-        { type: "APPROVAL", mode: "always" },
-        { type: "IDEMPOTENCY_KEY" },
-        { type: "AUDIT", level: "strong" },
-      ],
-    }
-  );
-  const approvalId =
-    textArg(input.args, "approval_id", "approvalId", 64) ||
-    header(input.req, "x-ea-approval-id");
+  const decision = finalizeGovernanceDecision({ principal, operation }, {
+    effect: "REQUIRE_APPROVAL",
+    policyCode: "EA_CUSTOMER_CRM_FOLLOWUP_WRITE_V1",
+    ruleVersion: "customer-crm-followup-write-v1",
+    reason: `将为本人负责的客户创建跟进任务：${objective}`,
+    obligations: [
+      { type: "APPROVAL", mode: "always" },
+      { type: "IDEMPOTENCY_KEY" },
+      { type: "AUDIT", level: "strong" },
+    ],
+  });
+  const approvalId = textArg(input.args, "approval_id", "approvalId", 64)
+    || header(input.req, "x-ea-approval-id");
   const approval = await enforceGovernanceApproval({
     decision,
     principal,
@@ -231,14 +163,9 @@ export async function handleCustomerCrmPlatformTool(input: {
       connectorName: "客户洞察",
     });
   }
-  if (approval.effect === "DENY")
-    return textResult(approval.reason, { isError: true });
+  if (approval.effect === "DENY") return textResult(approval.reason, { isError: true });
 
-  const executionAccess = await evaluateTwentyCustomerWriteAccess({
-    client,
-    principal,
-    customerId,
-  });
+  const executionAccess = await evaluateTwentyCustomerWriteAccess({ client, principal, customerId });
   if (
     !executionAccess.allowed ||
     executionAccess.globalCustomerId !== initialAccess.globalCustomerId ||
@@ -260,14 +187,9 @@ export async function handleCustomerCrmPlatformTool(input: {
   };
   const taskKey = stableId("crm_followup", identity);
   const workItemId = stableId("crmwi", identity);
-  const executionReceiptId = stableId("crmex", {
-    ...identity,
-    operation: "create_followup",
-  });
+  const executionReceiptId = stableId("crmex", { ...identity, operation: "create_followup" });
   const confirmedAt = new Date().toISOString();
-  const actor = String(user.name || user.email || user.id)
-    .trim()
-    .slice(0, 128);
+  const actor = String(user.name || user.email || user.id).trim().slice(0, 128);
   await recordAuditRequired({
     action: "customer_crm.followup.write_authorized",
     result: "success",
@@ -345,11 +267,8 @@ export async function handleCustomerCrmPlatformTool(input: {
     ...auditRequest(input.req),
     metadata: receipt,
   });
-  return textResult(
-    `EA_CUSTOMER_CRM_EXECUTION_RECEIPT:${JSON.stringify(receipt)}`,
-    {
-      externalRequestId: taskKey,
-      executionReceipt: receipt,
-    }
-  );
+  return textResult(`EA_CUSTOMER_CRM_EXECUTION_RECEIPT:${JSON.stringify(receipt)}`, {
+    externalRequestId: taskKey,
+    executionReceipt: receipt,
+  });
 }

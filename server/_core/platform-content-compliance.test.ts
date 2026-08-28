@@ -10,9 +10,7 @@ describe("platform content compliance policy", () => {
     });
 
     expect(body.messages[0].role).toBe("system");
-    expect(body.messages[0].content).toContain(
-      PLATFORM_CONTENT_COMPLIANCE_POLICY
-    );
+    expect(body.messages[0].content).toContain(PLATFORM_CONTENT_COMPLIANCE_POLICY);
     expect(body.messages[0].content).toContain("客观、中性、建设性");
   });
 
@@ -22,29 +20,8 @@ describe("platform content compliance policy", () => {
       permissionProfile: "plus",
     });
 
-    expect(body.messages[0].content).toContain(
-      "Never use ask_user or a text question to authorize a business write"
-    );
-    expect(body.messages[0].content).toContain(
-      "single official governance confirmation card"
-    );
-    expect(body.messages[0].content).toContain(
-      "unchanged business parameters and idempotency key"
-    );
-  });
-
-  it("reserves customer CRM writes for the governed CRM tool", () => {
-    const body = buildChatRequestBody({
-      message: "请把客户跟进任务保存到 CRM",
-      permissionProfile: "plus",
-    });
-
-    expect(body.messages[0].content).toContain(
-      "create_customer_followup_task is available, it is the only tool"
-    );
-    expect(body.messages[0].content).toContain(
-      "Never use demo_create_followup_task to fulfill a CRM write request"
-    );
-    expect(body.messages[0].content).toContain("canonical customer ID");
+    expect(body.messages[0].content).toContain("Never use ask_user or a text question to authorize a business write");
+    expect(body.messages[0].content).toContain("single official governance confirmation card");
+    expect(body.messages[0].content).toContain("unchanged business parameters and idempotency key");
   });
 });
