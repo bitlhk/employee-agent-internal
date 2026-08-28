@@ -477,9 +477,23 @@ export default function ClawHome() {
       );
   }, [roleTemplates]);
 
+  const roleAssignments: any[] = Array.isArray((clawMe as any)?.roleAssignments)
+    ? (clawMe as any).roleAssignments
+    : [];
+  const authorizedRoleIds = useMemo(
+    () => new Set(roleAssignments.map(assignment => String(assignment.roleTemplate || "")).filter(Boolean)),
+    [roleAssignments],
+  );
+  const availableRoles = useMemo(
+    () => authorizedRoleIds.size > 0
+      ? selectableRoles.filter((role: any) => authorizedRoleIds.has(String(role.id)))
+      : selectableRoles,
+    [authorizedRoleIds, selectableRoles],
+  );
+
   const selectedRole = useMemo(
-    () => selectableRoles.find((role: any) => role.id === selectedRoleId) || null,
-    [selectableRoles, selectedRoleId]
+    () => availableRoles.find((role: any) => role.id === selectedRoleId) || null,
+    [availableRoles, selectedRoleId]
   );
 
   const trpcUtils = trpc.useUtils();
@@ -490,13 +504,15 @@ export default function ClawHome() {
   });
 
   const handleAdopt = async (
+    roleId = selectedRoleId,
     options: { preferRuntime?: "jiuwenswarm" } = {}
   ) => {
     if (!user) {
       setLocation("/login?redirect=/");
       return;
     }
-    if (!selectedRole) {
+    const targetRole = availableRoles.find((role: any) => role.id === roleId) || null;
+    if (!targetRole) {
       toast.info("请先选择岗位");
       setRolePickerOpen(true);
       return;
@@ -505,7 +521,7 @@ export default function ClawHome() {
       setProvisioning(true);
       setProvisionStep("正在初始化专属实例...");
       const result = await adoptMutation.mutateAsync({
-        roleTemplate: selectedRole.id,
+        roleTemplate: targetRole.id,
         preferRuntime: options.preferRuntime,
       });
       const adoptId = result?.adoption?.adoptId;
@@ -579,6 +595,7 @@ export default function ClawHome() {
     adoption => !isArchivedRuntimeAdoption(adoption)
   );
   const hasAnyClaw = visibleAdoptions.length > 0;
+  const hasRoleAccess = roleAssignments.length > 0 || hasAnyClaw;
   const activeAdoption = visibleAdoptions.find(
     adoption => adoption?.status === "active"
   );
@@ -587,9 +604,28 @@ export default function ClawHome() {
   const roleName = (roleTemplate: unknown) => {
     const id = String(roleTemplate || "");
     return (
-      selectableRoles.find((role: any) => role.id === id)?.name || "岗位智能体"
+      availableRoles.find((role: any) => role.id === id)?.name
+      || selectableRoles.find((role: any) => role.id === id)?.name
+      || "岗位智能体"
     );
   };
+
+  const homeRoleEntries = roleAssignments.length > 0
+    ? roleAssignments.flatMap(assignment => {
+        const role = availableRoles.find((candidate: any) => candidate.id === assignment.roleTemplate);
+        if (!role) return [];
+        const adoption = visibleAdoptions.find(item => item.roleTemplate === assignment.roleTemplate) || null;
+        return [{ role, adoption, isDefault: Boolean(assignment.isDefault) }];
+      })
+    : visibleAdoptions.map(adoption => ({
+        role: selectableRoles.find((candidate: any) => candidate.id === adoption.roleTemplate) || {
+          id: adoption.roleTemplate,
+          name: roleName(adoption.roleTemplate),
+        },
+        adoption,
+        isDefault: adoption === activeAdoption,
+      }));
+  const selectedRoleAdoption = visibleAdoptions.find(adoption => adoption.roleTemplate === selectedRoleId) || null;
 
   const handleBottomCta = () => {
     if (!user) {
@@ -600,7 +636,9 @@ export default function ClawHome() {
       setLocation(`/claw/${activeAdoption.adoptId}`);
       return;
     }
-    scrollToSection("agent-panel");
+    const defaultRoleId = String((clawMe as any)?.defaultRoleTemplate || availableRoles[0]?.id || "");
+    if (defaultRoleId) openRolePicker(defaultRoleId);
+    else scrollToSection("agent-panel");
   };
 
   const openRolePicker = (roleId = "") => {
@@ -712,11 +750,21 @@ export default function ClawHome() {
         <RoleAdoptionDialog
           open={rolePickerOpen}
           onOpenChange={setRolePickerOpen}
-          roles={selectableRoles}
+          roles={availableRoles}
           selectedRoleId={selectedRoleId}
           onSelectRole={setSelectedRoleId}
-          onAdopt={() => void handleAdopt()}
-          canAdopt={!hasAnyClaw}
+          onAction={() => {
+            if (selectedRoleAdoption?.status === "active") {
+              setRolePickerOpen(false);
+              setLocation(`/claw/${selectedRoleAdoption.adoptId}`);
+              return;
+            }
+            void handleAdopt(selectedRoleId);
+          }}
+          actionLabel={selectedRoleAdoption?.status === "active"
+            ? `进入 ${selectedRole?.name || "岗位"}`
+            : `激活 ${selectedRole?.name || "岗位"}`}
+          actionEnabled={!selectedRoleAdoption || selectedRoleAdoption.status === "active"}
           provisioning={provisioning}
           provisionStep={provisionStep}
         />
@@ -773,7 +821,7 @@ export default function ClawHome() {
                   </div>
                 ) : null}
 
-                {user && !isLoading && hasAnyClaw ? (
+                {user && !isLoading && hasRoleAccess ? (
                   <div className="claw-home-v2__state-card text-left">
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <span className="text-xs font-semibold text-[#787671]">
@@ -783,9 +831,9 @@ export default function ClawHome() {
                         <button
                           type="button"
                           className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#77736c] hover:text-[#1a1a1a]"
-                          onClick={() => openRolePicker(String(activeAdoption?.roleTemplate || visibleAdoptions[0]?.roleTemplate || ""))}
+                          onClick={() => openRolePicker(String((clawMe as any)?.defaultRoleTemplate || activeAdoption?.roleTemplate || availableRoles[0]?.id || ""))}
                         >
-                          <UsersRound className="h-3.5 w-3.5" /> 岗位一览
+                          <UsersRound className="h-3.5 w-3.5" /> 切换岗位
                         </button>
                         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
                           <i className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse motion-reduce:animate-none" />
@@ -794,13 +842,15 @@ export default function ClawHome() {
                       </span>
                     </div>
                     <div className="max-h-[280px] divide-y divide-[#ede9e4] overflow-y-auto">
-                      {visibleAdoptions.map((adoption: any) => {
-                        const runtime = getRuntimeCardMeta(adoption.adoptId);
-                        const adoptId = String(adoption.adoptId || "");
+                      {homeRoleEntries.map(({ role, adoption, isDefault }: any) => {
+                        const runtime = adoption
+                          ? getRuntimeCardMeta(adoption.adoptId)
+                          : { name: "待激活", badgeClass: "bg-gray-100 text-gray-600" };
+                        const adoptId = String(adoption?.adoptId || "");
                         const active = adoption?.status === "active";
                         return (
                           <div
-                            key={adoptId}
+                            key={String(role.id)}
                             className="py-3 first:pt-1 last:pb-1"
                           >
                             <div className="flex items-center gap-3">
@@ -814,8 +864,9 @@ export default function ClawHome() {
                               <span className="min-w-0 flex-1">
                                 <span className="flex min-w-0 items-center gap-2">
                                   <strong className="truncate text-sm text-[#1a1a1a]">
-                                    {roleName(adoption.roleTemplate)}
+                                    {role.name || roleName(role.id)}
                                   </strong>
+                                  {isDefault ? <small className="shrink-0 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">默认</small> : null}
                                   <small
                                     className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${runtime.badgeClass}`}
                                   >
@@ -823,15 +874,18 @@ export default function ClawHome() {
                                   </small>
                                 </span>
                                 <small className="mt-0.5 block truncate font-mono text-[11px] text-[#a4a097]">
-                                  {adoptId}
+                                  {adoptId || "首次进入时创建独立工作空间"}
                                 </small>
                               </span>
                               <Button
                                 size="sm"
-                                disabled={!active}
-                                onClick={() => setLocation(`/claw/${adoptId}`)}
+                                disabled={Boolean(adoption) && !active}
+                                onClick={() => {
+                                  if (active) setLocation(`/claw/${adoptId}`);
+                                  else void handleAdopt(String(role.id));
+                                }}
                               >
-                                {active ? "进入" : "等待"} <ArrowRight />
+                                {active ? "进入" : adoption ? "等待" : "激活"} <ArrowRight />
                               </Button>
                             </div>
                           </div>
@@ -841,7 +895,7 @@ export default function ClawHome() {
                   </div>
                 ) : null}
 
-                {user && !isLoading && !hasAnyClaw ? (
+                {user && !isLoading && !hasRoleAccess ? (
                   <div className="claw-home-v2__state-card text-left">
                     <div className="role-adoption-launch">
                       <span className="role-adoption-launch__icon">
@@ -856,7 +910,7 @@ export default function ClawHome() {
                       size="lg"
                       className="mt-4 h-11 w-full"
                       onClick={() => openRolePicker()}
-                      disabled={provisioning || selectableRoles.length === 0}
+                      disabled={provisioning || availableRoles.length === 0}
                     >
                       选择岗位智能体 <ArrowRight />
                     </Button>

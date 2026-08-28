@@ -176,8 +176,9 @@ export function RoleAdoptionDialog({
   roles,
   selectedRoleId,
   onSelectRole,
-  onAdopt,
-  canAdopt = true,
+  onAction,
+  actionLabel,
+  actionEnabled = true,
   provisioning,
   provisionStep,
 }: {
@@ -186,8 +187,9 @@ export function RoleAdoptionDialog({
   roles: RoleAdoptionOption[];
   selectedRoleId: string;
   onSelectRole: (roleId: string) => void;
-  onAdopt: () => void;
-  canAdopt?: boolean;
+  onAction: () => void;
+  actionLabel: string;
+  actionEnabled?: boolean;
   provisioning: boolean;
   provisionStep: string;
 }) {
@@ -243,9 +245,9 @@ export function RoleAdoptionDialog({
         onPointerDownOutside={(event) => { if (provisioning) event.preventDefault(); }}
       >
         <DialogHeader className="role-adoption-dialog__header">
-          <DialogTitle className="role-adoption-dialog__title">{canAdopt ? "选择岗位智能体" : "岗位智能体"}</DialogTitle>
+          <DialogTitle className="role-adoption-dialog__title">选择岗位智能体</DialogTitle>
           <DialogDescription className="sr-only">
-            {canAdopt ? "选择一位数字员工并申请岗位智能体。" : "浏览当前支持的岗位智能体。"}
+            选择一个已授权岗位，进入对应的独立智能体工作空间。
           </DialogDescription>
         </DialogHeader>
 
@@ -313,18 +315,16 @@ export function RoleAdoptionDialog({
                 </span>
                 <Loader2 className="animate-spin" />
               </div>
-            ) : canAdopt ? (
+            ) : (
               <Button
                 size="lg"
                 className="role-adoption-footer__button"
-                disabled={!selectedRole || roles.length === 0}
-                onClick={onAdopt}
+                disabled={!selectedRole || roles.length === 0 || !actionEnabled}
+                onClick={onAction}
               >
-                {selectedRole ? `申请 ${selectedRole.name}` : "请先选择岗位"}
+                {selectedRole ? actionLabel : "请先选择岗位"}
                 <ArrowRight />
               </Button>
-            ) : (
-              <span className="role-adoption-footer__mode">浏览模式</span>
             )}
           </footer>
         </div>

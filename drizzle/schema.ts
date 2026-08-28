@@ -731,6 +731,32 @@ export const clawAdoptions = mysqlTable("claw_adoptions", {
 export type ClawAdoption = typeof clawAdoptions.$inferSelect;
 export type InsertClawAdoption = typeof clawAdoptions.$inferInsert;
 
+/**
+ * User-level role authorization. Each authorized role may own an independent
+ * adoption so conversations, memory, skills, and runtime identity stay isolated.
+ */
+export const userRoleAssignments = mysqlTable("user_role_assignments", {
+  id: bigint("id", { mode: "number", unsigned: true }).autoincrement().primaryKey(),
+  assignmentId: varchar("assignment_id", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  roleTemplate: varchar("role_template", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["active", "revoked"]).default("active").notNull(),
+  isDefault: boolean("is_default").default(false).notNull(),
+  assignedBy: int("assigned_by"),
+  assignedAt: timestamp("assigned_at").defaultNow().notNull(),
+  revokedAt: timestamp("revoked_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  assignmentIdUnique: uniqueIndex("uk_user_role_assignments_public_id").on(table.assignmentId),
+  userRoleUnique: uniqueIndex("uk_user_role_assignments_user_role").on(table.userId, table.roleTemplate),
+  userStatusIdx: index("idx_user_role_assignments_user_status").on(table.userId, table.status),
+  userDefaultIdx: index("idx_user_role_assignments_user_default").on(table.userId, table.isDefault, table.status),
+}));
+
+export type UserRoleAssignment = typeof userRoleAssignments.$inferSelect;
+export type InsertUserRoleAssignment = typeof userRoleAssignments.$inferInsert;
+
 // Logical runtime placement for an adoption. Bindings never contain a worker
 // node address, so AgentServer pods can be rescheduled or scaled horizontally.
 export const runtimeAgentBindings = mysqlTable("runtime_agent_bindings", {

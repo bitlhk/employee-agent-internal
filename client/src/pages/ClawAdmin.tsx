@@ -469,6 +469,9 @@ export default function ClawAdmin() {
   const [selectedAuditEvent, setSelectedAuditEvent] = useState<any | null>(null);
   const [assetGrantTarget, setAssetGrantTarget] = useState<any | null>(null);
   const [assetGrantDraft, setAssetGrantDraft] = useState<Record<string, "default" | "optional">>({});
+  const [roleAssignmentTarget, setRoleAssignmentTarget] = useState<any | null>(null);
+  const [roleAssignmentDraft, setRoleAssignmentDraft] = useState<string[]>([]);
+  const [defaultRoleDraft, setDefaultRoleDraft] = useState("");
   const [auditPage, setAuditPage] = useState(1);
   const [auditFilters, setAuditFilters] = useState({
     q: "",
@@ -512,6 +515,18 @@ export default function ClawAdmin() {
     retry: false,
     onSuccess: () => { refetchList(); toast.success("已更新"); },
     onError: (e) => toast.error(e?.message || "更新失败"),
+  });
+
+  const roleAssignmentMutation = trpc.claw.adminSetUserRoleAssignments.useMutation({
+    retry: false,
+    onSuccess: () => {
+      setRoleAssignmentTarget(null);
+      setRoleAssignmentDraft([]);
+      setDefaultRoleDraft("");
+      refetchList();
+      toast.success("岗位授权已更新");
+    },
+    onError: (e) => toast.error(e?.message || "岗位授权更新失败"),
   });
 
   const deleteMutation = trpc.claw.adminDelete.useMutation({
@@ -863,6 +878,25 @@ export default function ClawAdmin() {
     else setSelectedIds(rows.map((r: any) => r.id));
   };
 
+  const openRoleAssignments = (row: any) => {
+    const assigned: string[] = Array.isArray(row.assignedRoleTemplates) && row.assignedRoleTemplates.length > 0
+      ? row.assignedRoleTemplates.map((role: unknown) => String(role))
+      : [String(row.roleTemplate || "general-assistant")];
+    setRoleAssignmentTarget(row);
+    setRoleAssignmentDraft([...new Set(assigned)]);
+    setDefaultRoleDraft(String(row.defaultRoleTemplate || assigned[0] || ""));
+  };
+
+  const toggleRoleAssignment = (roleTemplate: string, checked: boolean) => {
+    setRoleAssignmentDraft(previous => {
+      const next = checked
+        ? [...new Set([...previous, roleTemplate])]
+        : previous.filter(role => role !== roleTemplate);
+      if (!next.includes(defaultRoleDraft)) setDefaultRoleDraft(next[0] || "");
+      return next;
+    });
+  };
+
   const navItems = [
     { value: "instances", label: "实例管理", description: "智能体实例与权限", icon: Users },
     { value: "collaboration", label: "组织协作", description: "空间、成员与准入", icon: Building2 },
@@ -997,18 +1031,6 @@ export default function ClawAdmin() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select onValueChange={(v) => batchUpdateMutation.mutate({ ids: selectedIds, roleTemplate: v })}>
-                  <SelectTrigger className="w-40 h-8 text-xs">
-                    <SelectValue placeholder="改岗位" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {roleOptions.map((role: any) => (
-                      <SelectItem key={role.id} value={role.id}>
-                        {role.name}{role.status === "planned" ? "（规划）" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
                 <Button variant="ghost" size="sm" onClick={() => setSelectedIds([])} className="text-muted-foreground">
                   取消
                 </Button>
@@ -1034,7 +1056,7 @@ export default function ClawAdmin() {
                       <th className="p-3 text-left font-medium text-muted-foreground">Group</th>
                       <th className="p-3 text-left font-medium text-muted-foreground">状态</th>
                       <th className="p-3 text-left font-medium text-muted-foreground">权限档</th>
-                      <th className="p-3 text-left font-medium text-muted-foreground">岗位</th>
+                      <th className="p-3 text-left font-medium text-muted-foreground">岗位授权</th>
                       <th className="p-3 text-left font-medium text-muted-foreground">操作</th>
                     </tr>
                   </thead>
@@ -1078,21 +1100,21 @@ export default function ClawAdmin() {
                           </Select>
                         </td>
                         <td className="p-3">
-                          <Select
-                            value={String(row.roleTemplate || "general-assistant")}
-                            onValueChange={(v) => updateMutation.mutate({ id: row.id, roleTemplate: v })}
-                          >
-                            <SelectTrigger className="h-7 w-40 text-xs">
-                              <SelectValue placeholder={formatRole(row.roleTemplate)} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {roleOptions.map((role: any) => (
-                                <SelectItem key={role.id} value={role.id}>
-                                  {role.name}{role.status === "planned" ? "（规划）" : ""}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <div className="flex min-w-[170px] flex-col items-start gap-1.5">
+                            <span className="text-xs text-gray-700">
+                              当前实例：{formatRole(row.roleTemplate)}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => openRoleAssignments(row)}
+                            >
+                              <UserCog className="mr-1 h-3.5 w-3.5" />
+                              已授权 {Math.max(1, Number(row.assignedRoleTemplates?.length || 0))} 个岗位
+                            </Button>
+                          </div>
                         </td>
                         <td className="p-3">
                           <div className="flex items-center gap-1">
@@ -2242,6 +2264,80 @@ export default function ClawAdmin() {
               disabled={newPassword.length < 6 || setUserPasswordMutation.isPending}
             >
               保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!roleAssignmentTarget} onOpenChange={(open) => {
+        if (!open && !roleAssignmentMutation.isPending) {
+          setRoleAssignmentTarget(null);
+          setRoleAssignmentDraft([]);
+          setDefaultRoleDraft("");
+        }
+      }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>管理授权岗位</DialogTitle>
+            <DialogDescription>
+              {roleAssignmentTarget?.userName || roleAssignmentTarget?.userEmail || `用户 #${roleAssignmentTarget?.userId || ""}`}
+              只能在前台切换这里授权的岗位。每个岗位使用独立会话、记忆和运行身份。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            {roleOptions.filter((role: any) => role.status === "mvp").map((role: any) => {
+              const roleId = String(role.id);
+              const checked = roleAssignmentDraft.includes(roleId);
+              return (
+                <div key={roleId} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2.5">
+                  <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={roleAssignmentMutation.isPending}
+                      onChange={event => toggleRoleAssignment(roleId, event.target.checked)}
+                    />
+                    <span className="min-w-0">
+                      <strong className="block truncate text-sm font-medium text-gray-900">{role.name}</strong>
+                      <small className="block truncate text-xs text-gray-500">{role.description || roleId}</small>
+                    </span>
+                  </label>
+                  <label className={`flex items-center gap-1.5 text-xs ${checked ? "cursor-pointer text-gray-700" : "text-gray-300"}`}>
+                    <input
+                      type="radio"
+                      name="default-role-assignment"
+                      checked={defaultRoleDraft === roleId}
+                      disabled={!checked || roleAssignmentMutation.isPending}
+                      onChange={() => setDefaultRoleDraft(roleId)}
+                    />
+                    默认
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs leading-5 text-blue-800">
+            新授权岗位会在用户首次进入时创建独立智能体实例；取消授权后，用户不能再从前台进入该岗位。
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={roleAssignmentMutation.isPending}
+              onClick={() => setRoleAssignmentTarget(null)}
+            >
+              取消
+            </Button>
+            <Button
+              type="button"
+              disabled={roleAssignmentMutation.isPending || roleAssignmentDraft.length === 0 || !defaultRoleDraft}
+              onClick={() => roleAssignmentTarget && roleAssignmentMutation.mutate({
+                userId: Number(roleAssignmentTarget.userId),
+                roleTemplates: roleAssignmentDraft,
+                defaultRoleTemplate: defaultRoleDraft,
+              })}
+            >
+              {roleAssignmentMutation.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
+              保存授权
             </Button>
           </DialogFooter>
         </DialogContent>

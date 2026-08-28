@@ -20,7 +20,7 @@
     "lint:dependencies": "node scripts/check-dependency-policy.mjs",
     "format": "prettier --write .",
     "test": "vitest run",
-    "test:integration:db": "RUN_DB_INTEGRATION_TESTS=1 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --no-file-parallelism --maxWorkers=1 server/db/governance-runtime.integration.test.ts server/db/role-pack-releases.integration.test.ts server/db/context-source-bindings.integration.test.ts server/db/enterprise-asset-sync.integration.test.ts server/db/filesystem-source-connector.integration.test.ts server/db/object-storage-source-connector.integration.test.ts server/db/governed-work-continuity.integration.test.ts server/db/governed-memory-purpose.integration.test.ts",
+    "test:integration:db": "RUN_DB_INTEGRATION_TESTS=1 node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run --no-file-parallelism --maxWorkers=1 server/db/governance-runtime.integration.test.ts server/db/role-pack-releases.integration.test.ts server/db/context-source-bindings.integration.test.ts server/db/enterprise-asset-sync.integration.test.ts server/db/filesystem-source-connector.integration.test.ts server/db/object-storage-source-connector.integration.test.ts server/db/governed-work-continuity.integration.test.ts server/db/governed-memory-purpose.integration.test.ts server/db/user-role-assignments.integration.test.ts",
     "test:coverage": "vitest run --coverage",
     "test:coverage:critical": "node scripts/check-critical-coverage.mjs",
     "test:e2e:scroll": "playwright test --config playwright.scroll.config.ts",

@@ -41,6 +41,12 @@ import {
   getMessageFeedbackAdminSummary,
   listMessageFeedbackForConversation,
   upsertMessageFeedback,
+  ensureInitialUserRoleAssignment,
+  getUserById,
+  listUserRoleAssignments,
+  listUserRoleAssignmentsForUsers,
+  replaceUserRoleAssignments,
+  resolveUserRoleAuthorization,
 } from "../db";
 import {
   APP_ROOT,
@@ -195,6 +201,11 @@ export const clawRouter = router({
     me: protectedProcedure.query(async ({ ctx }) => {
       const userId = ctx.user!.id;
       const all = await listClawsByUserId(userId);
+      const assignments = await listUserRoleAssignments(userId);
+      const assignedRoles = new Set(assignments.map(assignment => assignment.roleTemplate));
+      const authorized = assignments.length > 0
+        ? all.filter(claw => assignedRoles.has(String(claw.roleTemplate || "general-assistant")))
+        : all;
 
       const normalizeEntry = (c: any) => ({
         ...c,
@@ -205,7 +216,17 @@ export const clawRouter = router({
         actualRuntime: resolveClawRuntime(c?.adoptId),
       });
 
-      const adoptions = all.map(normalizeEntry);
+      const normalized = authorized.map(normalizeEntry);
+      const adoptionByRole = new Map(normalized.map(adoption => [adoption.roleTemplate, adoption]));
+      const adoptions = assignments.length > 0
+        ? [
+            ...assignments.flatMap(assignment => {
+              const adoption = adoptionByRole.get(assignment.roleTemplate);
+              return adoption ? [adoption] : [];
+            }),
+            ...normalized.filter(adoption => !assignedRoles.has(adoption.roleTemplate)),
+          ]
+        : normalized;
       // 向后兼容：老前端读 adoption 取第一张（sort 保证 lgc-* 在前，行为跟 getCurrentClawByUserId 一致）
       const primary = adoptions[0] || null;
 
@@ -213,6 +234,16 @@ export const clawRouter = router({
         hasClaw: adoptions.length > 0,
         adoption: primary,  // 保留老字段供未升级前端使用
         adoptions,          // 新字段，多 runtime 场景
+        roleAssignments: assignments.map(assignment => ({
+          assignmentId: assignment.assignmentId,
+          roleTemplate: assignment.roleTemplate,
+          isDefault: assignment.isDefault,
+          assignedAt: assignment.assignedAt,
+          adoption: adoptionByRole.get(assignment.roleTemplate) || null,
+        })),
+        defaultRoleTemplate: assignments.find(assignment => assignment.isDefault)?.roleTemplate
+          || primary?.roleTemplate
+          || null,
       };
     }),
 
@@ -654,15 +685,76 @@ export const clawRouter = router({
       .input(z.object({ keyword: z.string().optional(), status: z.enum(["all", "creating", "active", "expiring", "recycled", "failed"]).optional() }).optional())
       .query(async ({ input }) => {
         const rows = await listClawAdoptionsAdmin({ keyword: input?.keyword, status: input?.status || "all", limit: 300 });
+        const assignmentsByUser = await listUserRoleAssignmentsForUsers(rows.map(row => Number(row.userId)));
+        const rowsWithAssignments = rows.map(row => {
+          const assignments = assignmentsByUser.get(Number(row.userId)) || [];
+          return {
+            ...row,
+            assignedRoleTemplates: assignments.map(assignment => assignment.roleTemplate),
+            defaultRoleTemplate: assignments.find(assignment => assignment.isDefault)?.roleTemplate || null,
+          };
+        });
         const summary = {
-          total: rows.length,
-          creating: rows.filter((r) => r.status === "creating").length,
-          active: rows.filter((r) => r.status === "active").length,
-          expiring: rows.filter((r) => r.status === "expiring").length,
-          recycled: rows.filter((r) => r.status === "recycled").length,
-          failed: rows.filter((r) => r.status === "failed").length,
+          total: rowsWithAssignments.length,
+          creating: rowsWithAssignments.filter((r) => r.status === "creating").length,
+          active: rowsWithAssignments.filter((r) => r.status === "active").length,
+          expiring: rowsWithAssignments.filter((r) => r.status === "expiring").length,
+          recycled: rowsWithAssignments.filter((r) => r.status === "recycled").length,
+          failed: rowsWithAssignments.filter((r) => r.status === "failed").length,
         };
-        return { summary, rows };
+        return { summary, rows: rowsWithAssignments };
+      }),
+
+    adminSetUserRoleAssignments: adminProcedure
+      .input(z.object({
+        userId: z.number().int().positive(),
+        roleTemplates: z.array(z.string().min(1).max(64)).min(1).max(20),
+        defaultRoleTemplate: z.string().min(1).max(64),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const user = await getUserById(input.userId);
+        if (!user) throw new TRPCError({ code: "NOT_FOUND", message: "用户不存在" });
+        const roles = [...new Set(input.roleTemplates.map(role => role.trim()).filter(Boolean))];
+        const roleCatalog = new Map(listAgentRoleTemplates().map(role => [role.id, role]));
+        for (const roleTemplate of roles) {
+          const role = roleCatalog.get(roleTemplate);
+          if (!role || role.status !== "mvp") {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `岗位暂不可授权: ${role?.name || roleTemplate}` });
+          }
+        }
+        if (!roles.includes(input.defaultRoleTemplate)) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "默认岗位必须包含在授权岗位中" });
+        }
+        const before = await listUserRoleAssignments(input.userId);
+        const assignments = await replaceUserRoleAssignments({
+          userId: input.userId,
+          roleTemplates: roles,
+          defaultRoleTemplate: input.defaultRoleTemplate,
+          assignedBy: Number(ctx.user!.id),
+        });
+        await recordAuditBestEffort({
+          action: "user.role_assignments.updated",
+          ...auditActor(ctx.user),
+          ...auditRequest(ctx.req),
+          targetType: "user",
+          targetId: String(input.userId),
+          targetName: user.name || user.email || null,
+          metadata: {
+            previousRoleTemplates: before.map(assignment => assignment.roleTemplate),
+            roleTemplates: assignments.map(assignment => assignment.roleTemplate),
+            previousDefaultRoleTemplate: before.find(assignment => assignment.isDefault)?.roleTemplate || null,
+            defaultRoleTemplate: input.defaultRoleTemplate,
+          },
+        });
+        return {
+          ok: true,
+          assignments: assignments.map(assignment => ({
+            assignmentId: assignment.assignmentId,
+            roleTemplate: assignment.roleTemplate,
+            isDefault: assignment.isDefault,
+            assignedAt: assignment.assignedAt,
+          })),
+        };
       }),
 
     adminUpdate: adminProcedure
@@ -680,6 +772,23 @@ export const clawRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "智能体不存在" });
         }
         const role = input.roleTemplate ? resolveAgentRoleTemplate(input.roleTemplate) : null;
+        const targetRoleTemplate = role?.id || String(before.roleTemplate || "general-assistant");
+        if (role || input.status === "active") {
+          const roleAuthorization = await resolveUserRoleAuthorization(Number(before.userId), targetRoleTemplate);
+          if (roleAuthorization.managed && !roleAuthorization.authorized) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: "请先在岗位授权中为该用户授权目标岗位",
+            });
+          }
+          if (!roleAuthorization.managed) {
+            await ensureInitialUserRoleAssignment({
+              userId: Number(before.userId),
+              roleTemplate: targetRoleTemplate,
+              assignedBy: Number(ctx.user!.id),
+            });
+          }
+        }
         await updateClawAdoptionAdmin(input.id, {
           permissionProfile: input.permissionProfile as any,
           roleTemplate: role?.id,
@@ -793,6 +902,24 @@ export const clawRouter = router({
           : [];
         if (role && beforeRows.length !== input.ids.length) {
           throw new TRPCError({ code: "NOT_FOUND", message: "部分智能体不存在" });
+        }
+        if (role) {
+          for (const before of beforeRows) {
+            const roleAuthorization = await resolveUserRoleAuthorization(Number(before.userId), role.id);
+            if (roleAuthorization.managed && !roleAuthorization.authorized) {
+              throw new TRPCError({
+                code: "BAD_REQUEST",
+                message: `请先为用户 #${before.userId} 授权 ${role.name}`,
+              });
+            }
+            if (!roleAuthorization.managed) {
+              await ensureInitialUserRoleAssignment({
+                userId: Number(before.userId),
+                roleTemplate: role.id,
+                assignedBy: Number(ctx.user!.id),
+              });
+            }
+          }
         }
         await batchUpdateClawAdoptionAdmin(input.ids, {
           permissionProfile: input.permissionProfile as any,
@@ -1772,6 +1899,13 @@ export const clawRouter = router({
 
         const preferRuntime = input?.preferRuntime;
         const role = resolveSelectableAdoptRoleTemplate(input?.roleTemplate);
+        const roleAuthorization = await resolveUserRoleAuthorization(userId, role.id);
+        if (roleAuthorization.managed && !roleAuthorization.authorized) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "当前账号未获该岗位授权" });
+        }
+        if (!roleAuthorization.managed) {
+          await ensureInitialUserRoleAssignment({ userId, roleTemplate: role.id, assignedBy: userId });
+        }
         const provisionPlan = resolveRoleRuntimeProvisionPlan(role, {
           jiuwenswarmProvisionEnabled: isJiuwenSwarmProvisionEnabled(),
         });
@@ -1788,8 +1922,9 @@ export const clawRouter = router({
         // 幂等：只复用目标 runtime 的现有实例，避免老 lgc-* 阻止创建当前默认的 lgj-*。
         const existing = (await listClawsByUserId(userId)).find((claw) => {
           const runtime = String((claw as any).runtime || resolveClawRuntime(claw.adoptId));
-          if (runtime === provisionPlan.runtime) return true;
-          return provisionPlan.runtime === "jiuwenswarm" && claw.adoptId.startsWith("lgj-");
+          const runtimeMatches = runtime === provisionPlan.runtime
+            || (provisionPlan.runtime === "jiuwenswarm" && claw.adoptId.startsWith("lgj-"));
+          return runtimeMatches && String(claw.roleTemplate || "general-assistant") === role.id;
         }) || null;
         if (existing) {
           const normalizedExisting = {

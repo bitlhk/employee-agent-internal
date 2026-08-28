@@ -38,6 +38,7 @@ import {
   getSystemConfigNumber,
   createIpAccessLog,
   getIpAccessCountToday,
+  resolveUserRoleAuthorization,
 } from "../db";
 import { getClientIp } from "../_core/ip-utils";
 
@@ -223,6 +224,13 @@ export async function assertClawOwnerOrThrow(ctx: { user?: { id?: number | strin
 
   if (Number((claw as any).userId || 0) !== userId) {
     throw new TRPCError({ code: "FORBIDDEN" });
+  }
+  const roleAuthorization = await resolveUserRoleAuthorization(
+    userId,
+    String((claw as any).roleTemplate || "general-assistant"),
+  );
+  if (roleAuthorization.managed && !roleAuthorization.authorized) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "当前岗位授权已被撤销" });
   }
   return claw;
 }

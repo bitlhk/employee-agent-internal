@@ -7,6 +7,7 @@ import {
 import { governanceFingerprint } from "../_core/governance/contracts";
 import { resolveRuntimeTenantBinding } from "../_core/governance/runtime-tenancy";
 import { getDb } from "./connection";
+import { resolveUserRoleAuthorization } from "./user-role-assignments";
 
 export type AuthorizationSnapshotInput = {
   userId: number;
@@ -42,6 +43,10 @@ export async function resolveOrCreateAuthorizationSnapshot(
 ): Promise<ResolvedAuthorizationSnapshot> {
   const database = await getDb();
   if (!database) throw new Error("Database not available");
+  const roleAuthorization = await resolveUserRoleAuthorization(input.userId, input.roleTemplate);
+  if (roleAuthorization.managed && !roleAuthorization.authorized) {
+    throw new Error("Runtime role assignment is revoked");
+  }
 
   const binding = resolveRuntimeTenantBinding({
     userId: input.userId,
@@ -104,6 +109,8 @@ export async function resolveOrCreateAuthorizationSnapshot(
     permissionProfile: input.permissionProfile,
     groupIds: existingMembership?.groupIds || groupIds,
     membershipVersion: existingMembership?.membershipVersion || 1,
+    roleAssignmentId: roleAuthorization.assignment?.assignmentId || "legacy_unmanaged",
+    roleAssignmentUpdatedAt: roleAuthorization.assignment?.updatedAt?.toISOString() || null,
   };
   const authorizationFingerprint = governanceFingerprint(authority);
   const authorizationSnapshotId = stableId("authz", authority, 32);

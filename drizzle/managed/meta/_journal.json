@@ -246,6 +246,13 @@
       "when": 1788508800000,
       "tag": "0034_governance_approval_operation_payload",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1788595200000,
+      "tag": "0035_user_role_assignments",
+      "breakpoints": true
     }
   ]
 }
