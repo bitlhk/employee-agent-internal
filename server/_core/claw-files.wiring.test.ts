@@ -8,7 +8,8 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 const workspace = mkdtempSync(path.join(tmpdir(), "ea-files-authority-"));
 const mocks = vi.hoisted(() => ({ authority: vi.fn() }));
 
-vi.mock("./helpers", () => ({
+vi.mock("./helpers", async importOriginal => ({
+  ...(await importOriginal<typeof import("./helpers")>()),
   isJiuwenClawAdoptId: vi.fn(() => true),
   requireClawOwner: vi.fn(async () => ({
     adoptId: "lgj-files", userId: 1, agentId: "agent-files",
