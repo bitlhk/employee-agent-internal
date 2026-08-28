@@ -122,6 +122,13 @@ describe("governance invariants", () => {
       });
     }
     expect(resolveToolGovernance("mcp_platform_tools_create_scheduled_task")).toMatchObject({ sideEffect: "write", idempotencyRequired: true });
+    expect(resolveToolGovernance("mcp_platform_tools_create_customer_followup_task")).toMatchObject({
+      source: "registry",
+      registered: true,
+      sideEffect: "write",
+      approvalMode: "always",
+      idempotencyRequired: true,
+    });
     expect(resolveToolGovernance("mcp_platform_tools_submit_agent_task")).toMatchObject({ sideEffect: "external_send", idempotencyRequired: true });
     expect(resolveToolGovernance("audio_question_answering")).toMatchObject({ sideEffect: "compute", registered: true });
     expect(resolveToolGovernance("visual_question_answering")).toMatchObject({ sideEffect: "compute", registered: true });

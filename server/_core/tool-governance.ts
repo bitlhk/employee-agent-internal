@@ -71,7 +71,10 @@ const RULES: readonly GovernanceRule[] = [
     idempotencyRequired: false,
   },
   {
-    exact: ["mcp_platform_tools_update_governed_work_item"],
+    exact: [
+      "mcp_platform_tools_update_governed_work_item",
+      "mcp_platform_tools_create_customer_followup_task",
+    ],
     sideEffect: "write",
     policyRequired: true,
     approvalMode: "always",
