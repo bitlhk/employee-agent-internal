@@ -103,46 +103,6 @@ export function RoleTaskLaunchpad({
         </div>
       </header>
 
-      <section className="role-task-launchpad__skills" aria-labelledby="role-skills-title">
-        <div className="role-task-launchpad__section-heading">
-          <div>
-            <h2 id="role-skills-title">岗位技能</h2>
-            <span>{skills.length > 0
-              ? roleConfiguredSkillCount > 0
-                ? `${roleConfiguredSkillCount} 项岗位配置 · 共启用 ${skills.length} 项`
-                : `已启用 ${skills.length} 项`
-              : "暂无已启用技能"}</span>
-          </div>
-        </div>
-        {orderedSkills.length > 0 ? (
-          <div className="role-task-launchpad__skill-list">
-            {orderedSkills.map((skill) => {
-              const selected = selectedSkillIds.includes(skill.id);
-              const roleConfigured = isRoleConfiguredSkill(skill);
-              return (
-                <button
-                  key={skill.id}
-                  type="button"
-                  className="role-task-launchpad__skill"
-                  data-skill-id={skill.id}
-                  data-role-configured={roleConfigured ? "true" : "false"}
-                  data-selected={selected ? "true" : "false"}
-                  aria-pressed={selected}
-                  title={roleConfigured ? `岗位配置技能：${skill.desc || skill.label}` : skill.desc || skill.label}
-                  onClick={() => onSelectSkill(skill)}
-                >
-                  {roleConfigured
-                    ? <Star className="role-task-launchpad__skill-star" aria-label="岗位配置技能" />
-                    : <Puzzle aria-hidden="true" />}
-                  <strong>{localizedComposerSkillLabel(skill)}</strong>
-                  {selected ? <Check className="role-task-launchpad__skill-check" aria-hidden="true" /> : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
-      </section>
-
       <section className="role-task-launchpad__work" aria-labelledby="role-task-launchpad-title">
         <h2 id="role-task-launchpad-title">今天可以开始</h2>
         <div className="role-task-launchpad__tasks">
@@ -186,6 +146,46 @@ export function RoleTaskLaunchpad({
             );
           })}
         </div>
+      </section>
+
+      <section className="role-task-launchpad__skills" aria-labelledby="role-skills-title">
+        <div className="role-task-launchpad__section-heading">
+          <div>
+            <h2 id="role-skills-title">岗位技能</h2>
+            <span>{skills.length > 0
+              ? roleConfiguredSkillCount > 0
+                ? `${roleConfiguredSkillCount} 项岗位配置 · 共启用 ${skills.length} 项`
+                : `已启用 ${skills.length} 项`
+              : "暂无已启用技能"}</span>
+          </div>
+        </div>
+        {orderedSkills.length > 0 ? (
+          <div className="role-task-launchpad__skill-list">
+            {orderedSkills.map((skill) => {
+              const selected = selectedSkillIds.includes(skill.id);
+              const roleConfigured = isRoleConfiguredSkill(skill);
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className="role-task-launchpad__skill"
+                  data-skill-id={skill.id}
+                  data-role-configured={roleConfigured ? "true" : "false"}
+                  data-selected={selected ? "true" : "false"}
+                  aria-pressed={selected}
+                  title={roleConfigured ? `岗位配置技能：${skill.desc || skill.label}` : skill.desc || skill.label}
+                  onClick={() => onSelectSkill(skill)}
+                >
+                  {roleConfigured
+                    ? <Star className="role-task-launchpad__skill-star" aria-label="岗位配置技能" />
+                    : <Puzzle aria-hidden="true" />}
+                  <strong>{localizedComposerSkillLabel(skill)}</strong>
+                  {selected ? <Check className="role-task-launchpad__skill-check" aria-hidden="true" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </section>
 
       {enterpriseTools.length > 0 ? (
