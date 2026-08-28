@@ -48,9 +48,20 @@ function responseFor(body: Record<string, unknown>) {
       status: "READY",
       summary: "已根据授权客户事实准备访前材料。",
       sections: [
-        { heading: "客户概况", items: ["陈明，风险等级 C4"] },
-        { heading: "谈话要点", items: ["核实目标", "了解期限", "确认流动性"] },
+        {
+          heading: "客户与合规",
+          items: [
+            "客户数据截至2026-08-25，风险测评有效至2027-12-31。",
+            "持仓明细与近期到期安排需要核实。",
+            "现行制度为财富政策V2.2。",
+          ],
+        },
+        {
+          heading: "谈话要点与待核实",
+          items: ["核实目标", "了解期限", "确认流动性"],
+        },
       ],
+      sourceRefs: ["C005", "wealth-policy-v2.2"],
     };
   }
   if (payload.caseId === "WM-SKILL-EVAL-002") {
@@ -66,8 +77,24 @@ function responseFor(body: Record<string, unknown>) {
     return {
       ...common,
       status: "DEGRADED",
-      summary: "客户和产品信息暂时不可用，只能提供配置框架。",
-      sections: [{ heading: "当前可做", items: ["稍后补齐信息"] }],
+      summary: "客户信息暂时不可用，不能形成个性化配置或产品建议。",
+      sections: [{ heading: "当前可做", items: ["稍后补齐客户信息"] }],
+      recoveryActions: ["稍后重试"],
+    };
+  }
+  if (payload.caseId === "WM-SKILL-EVAL-003B") {
+    return {
+      ...common,
+      status: "DEGRADED",
+      summary: "产品信息暂时不可用，先保留已核验的客户配置约束。",
+      sections: [
+        {
+          heading: "配置约束",
+          items: ["期限3年以上", "至少保留20%高流动性资产"],
+        },
+        { heading: "下一步", items: ["稍后补齐产品信息"] },
+      ],
+      sourceRefs: ["C005"],
       recoveryActions: ["稍后重试"],
     };
   }
@@ -77,6 +104,34 @@ function responseFor(body: Record<string, unknown>) {
       status: "BLOCKED",
       summary: "该客户不在当前授权范围内。",
       sections: [{ heading: "处理建议", items: ["请申请正式授权"] }],
+    };
+  }
+  if (payload.caseId === "WM-SKILL-EVAL-006") {
+    return {
+      ...common,
+      status: "READY",
+      summary: "已基于客户约束、现行制度和适当性结果形成正式候选。",
+      sections: [
+        {
+          heading: "匹配理由",
+          items: [
+            "风险等级、3年以上期限和20%流动性要求已纳入。",
+            "结合当前无在持产品的持仓情况分步配置。",
+          ],
+        },
+        {
+          heading: "风险与排除",
+          items: ["提示净值波动风险", "P004因停售排除"],
+        },
+        { heading: "沟通话术", items: ["先确认目标，再介绍候选与风险。"] },
+      ],
+      sourceRefs: [
+        "C005",
+        "wealth-policy-v2.2",
+        "wealth-product-catalog-2026-08-28",
+      ],
+      referencedProductIds: ["P001", "F000343"],
+      formalRecommendation: true,
     };
   }
   if (payload.governedContext?.executionReceipt) {
@@ -112,9 +167,9 @@ describe("Skill Quality Evaluation Phase 1", () => {
       "without_target_skill",
       "previous_version",
     ]);
-    expect(plan.cases).toBe(5);
+    expect(plan.cases).toBe(7);
     expect(plan.repeats).toBe(3);
-    expect(plan.plannedRuns).toBe(45);
+    expect(plan.plannedRuns).toBe(63);
     expect(plan.formalScoreAvailable).toBe(false);
   });
 
@@ -127,10 +182,9 @@ describe("Skill Quality Evaluation Phase 1", () => {
           unknown
         >;
         const messages = body.messages as Array<{ content: string }>;
-        const modelInput = JSON.parse(messages.at(-1)?.content || "{}") as Record<
-          string,
-          unknown
-        >;
+        const modelInput = JSON.parse(
+          messages.at(-1)?.content || "{}"
+        ) as Record<string, unknown>;
         expect(modelInput).not.toHaveProperty("executionArm");
         expect(JSON.stringify(modelInput)).not.toMatch(
           /target_skill|without_target_skill|previous_version/u
@@ -160,20 +214,18 @@ describe("Skill Quality Evaluation Phase 1", () => {
       });
       expect(result.report.status).toBe("DIAGNOSTIC_COMPLETE");
       expect(result.report.targetHardGateStatus).toBe("UNVERIFIED");
-      expect(result.report.resultSemantics).toBe(
-        "superseded_non_certifying"
-      );
+      expect(result.report.resultSemantics).toBe("superseded_non_certifying");
       expect(result.report.execution).toMatchObject({
-        plannedRuns: 45,
-        completedRuns: 45,
+        plannedRuns: 63,
+        completedRuns: 63,
         failedRuns: 0,
       });
       expect(result.report.formalScore).toBeNull();
       expect(result.report.formalGrade).toBeNull();
       expect(result.report.diagnosticFailures).toEqual([]);
-      expect(result.report.unverifiedHardGates).toHaveLength(45);
-      expect(result.report.runEvidenceFingerprints).toHaveLength(45);
-      expect(new Set(result.report.runEvidenceFingerprints).size).toBe(45);
+      expect(result.report.unverifiedHardGates).toHaveLength(63);
+      expect(result.report.runEvidenceFingerprints).toHaveLength(63);
+      expect(new Set(result.report.runEvidenceFingerprints).size).toBe(63);
       const persisted = JSON.parse(
         readFileSync(path.join(outputRoot, "report.json"), "utf8")
       ) as typeof result.report;

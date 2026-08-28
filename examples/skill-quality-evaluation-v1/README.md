@@ -52,8 +52,8 @@ Phase 1B 已增加真实 Runtime 接入基础：
 - 目标版 `2.0.1`、无目标 Skill（实际替代 Skill 为 `privbank-previsit@1.3.0`）、上一版 `1.4.0` 已分别通过只读 Runtime Smoke；
 - 每轮必须且只能出现一次 `__stream_end`、不得有流错误，且所有 Tool Call 都必须有对应 Result；
 - 三份证据可聚合校验为同一 Profile、同一 Suite、不同 Conversation、三臂原生加载身份均 `VERIFIED`；
-- 已更新非认证 Smoke 摘要：`phase1b-runtime-smoke-baseline-v1.json`，聚合指纹为 `043bee99af4fe5b08fb4f5bc538da181b7977c90c65e73097838884484d5d689`；
-- 当前只证明读操作 Smoke；完整受控 MCP Fixture、原生确认执行和 45 次 Suite 重跑仍待完成。
+- 已保留基于 Suite `1.0.1` 的非认证 Smoke 摘要：`phase1b-runtime-smoke-baseline-v1.json`，聚合指纹为 `043bee99af4fe5b08fb4f5bc538da181b7977c90c65e73097838884484d5d689`；该证据不认证当前 Suite `1.1.0`；
+- 当前只证明读操作 Smoke；完整受控 MCP Fixture、原生确认执行和 63 次 Suite 重跑仍待完成。
 
 尚未完成：
 
@@ -71,7 +71,7 @@ Phase 1B 已增加真实 Runtime 接入基础：
 
 - 目标：`wealth-manager-assistant@2.0.1`
 - 对照：无目标 Skill、`1.4.0`
-- 首批候选案例：5 条
+- 首批候选案例：7 条，覆盖访前准备、合规阻断、两类依赖降级、越权拒绝、幂等写入和正向专业推荐
 - 执行顺序：先进入离线评测 MVP
 
 ### GoldenCoach

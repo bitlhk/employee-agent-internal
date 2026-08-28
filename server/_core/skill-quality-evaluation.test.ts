@@ -197,7 +197,7 @@ describe("Skill Quality Evaluation Phase 0", () => {
         expect.objectContaining({
           skillId: "wealth-manager-assistant",
           targetVersion: "2.0.1",
-          caseCount: 5,
+          caseCount: 7,
           baselineModes: ["without_target_skill", "previous_version"],
         }),
         expect.objectContaining({
