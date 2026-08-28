@@ -51,6 +51,7 @@ import {
 } from "../db/chat-skill-session-state";
 import type { ModelRequestLease } from "./automatic-model-router";
 import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
+import { buildTrustedApprovalContinuation } from "./governance/approval-continuation";
 
 type ChatRuntimeMode = "fast" | "plan";
 
@@ -809,8 +810,10 @@ export function registerChatStreamRoutes(app: express.Express) {
       }
 
       const contextualMemory = [memoryContext, knowledgeContext].filter(Boolean).join("\n\n");
-      const userScopedRuntimeMessage = contextualMemory
-        ? `${contextualMemory}\n\n<user_request>\n${runtimeMessageBody}\n</user_request>`
+      const approvalContinuation = buildTrustedApprovalContinuation(validatedResumeGovernanceApprovalId);
+      const userRequest = `<user_request>\n${runtimeMessageBody}\n</user_request>`;
+      const userScopedRuntimeMessage = contextualMemory || approvalContinuation
+        ? [contextualMemory, approvalContinuation, userRequest].filter(Boolean).join("\n\n")
         : runtimeMessageBody;
       const runtimeMessage = [
         "<ea_security_policy>",
