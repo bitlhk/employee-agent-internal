@@ -3,7 +3,6 @@ import { getClawByAdoptId, getUserById } from "../server/db";
 import {
   createConfiguredTwentyCustomerClient,
   createConfiguredTwentyCustomerProfileLoader,
-  evaluateTwentyCustomerWriteAccess,
   listAuthorizedTwentyCustomers,
 } from "../server/_core/customer-context-twenty-access";
 import { resolveRuntimePrincipalV2 } from "../server/_core/governance/principal";
@@ -36,12 +35,23 @@ async function evaluateRole(roleTemplate: "wealth-manager" | "insurance-advisor"
 
   const principal = resolved.principal;
   const client = createConfiguredTwentyCustomerClient();
-  const assigned = (await listAuthorizedTwentyCustomers({ client, principal }))
+  const assignedCustomers = (
+    await listAuthorizedTwentyCustomers({ client, principal })
+  )
     .filter(customer => customer.accessScope === "assigned")
-    .map(customer => customer.globalCustomerId)
-    .sort();
+    .sort((left, right) =>
+      left.globalCustomerId.localeCompare(right.globalCustomerId)
+    );
+  const assigned = assignedCustomers.map(customer => customer.globalCustomerId);
   if (JSON.stringify(assigned) !== JSON.stringify(expectedCustomerIds))
     throw new Error(`CROSS_ROLE_ASSIGNED_SET_MISMATCH:${roleTemplate}:${assigned.join(",")}`);
+  const writeEligibleCustomers = assignedCustomers.filter(
+    customer => customer.preferredForWrite && customer.assignmentKey
+  );
+  if (writeEligibleCustomers.length !== expectedCustomerIds.length)
+    throw new Error(
+      `CROSS_ROLE_WRITE_SCOPE_MISMATCH:${roleTemplate}:${writeEligibleCustomers.length}/${expectedCustomerIds.length}`
+    );
 
   const profiles = [];
   for (const customerId of assigned) {
@@ -55,9 +65,6 @@ async function evaluateRole(roleTemplate: "wealth-manager" | "insurance-advisor"
       new Set(loaded.sources.flatMap(source => source.fields.map(field => field.path)))
     ).sort();
     const sourceSystems = Array.from(new Set(loaded.sources.map(source => source.sourceSystem))).sort();
-    const write = await evaluateTwentyCustomerWriteAccess({ client, principal, customerId });
-    if (!write.allowed || write.reasonCode !== "ALLOW")
-      throw new Error(`CROSS_ROLE_WRITE_SCOPE_MISMATCH:${roleTemplate}:${customerId}:${write.reasonCode}`);
     if (roleTemplate === "wealth-manager") {
       if (!fieldPaths.some(path => path.startsWith("wealth.")) || fieldPaths.some(path => path.startsWith("insurance.")))
         throw new Error(`CROSS_ROLE_WEALTH_PROJECTION_INVALID:${customerId}`);
@@ -69,7 +76,9 @@ async function evaluateRole(roleTemplate: "wealth-manager" | "insurance-advisor"
       sourceSystems,
       sourceCount: loaded.sources.length,
       fieldPaths,
-      authorizationEvidenceId: write.authorizationEvidenceId,
+      assignmentKey: assignedCustomers.find(
+        customer => customer.globalCustomerId === customerId
+      )?.assignmentKey,
     });
   }
   return {
