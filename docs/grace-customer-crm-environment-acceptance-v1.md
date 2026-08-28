@@ -5,7 +5,7 @@
 ```text
 Twenty CRM Environment: Deployed / Verified
 Customer Source Adapter: Environment Verified / Production Ready
-Customer Domain Profiles: 30 Active
+Customer Domain Profiles: 40 Active
 Local EA Runtime: Customer Context Active
 Shanghai EA Runtime: Customer Context Active
 CRM Follow-up Write-back: Local + Shanghai Agent E2E Verified
@@ -49,13 +49,13 @@ Git, Asset metadata, Binding metadata or Receipts.
 
 | Object                  | Count |
 | ----------------------- | ----: |
-| Customer                |    29 |
-| Customer Assignment     |     1 |
+| Customer                |    34 |
+| Customer Assignment     |     8 |
 | Customer Source Link    |    28 |
-| Customer Domain Profile |    30 |
+| Customer Domain Profile |    40 |
 | Customer Suggestion     |    60 |
 | Customer Interaction    |     0 |
-| Customer Follow-up Task |     0 |
+| Customer Follow-up Task |     7 |
 
 ## Browser Evidence
 
@@ -71,9 +71,9 @@ exposed these seven governed objects:
 - `客户互动`
 - `客户跟进任务`
 
-The customer list rendered `29` rows. The profile layer contains `9` wealth,
-`10` auto-insurance and `11` life-insurance profiles, including one restricted
-customer with both wealth and life-insurance profiles. Global IDs use
+The customer list renders `34` rows. The profile layer contains `14` wealth,
+`13` auto-insurance and `13` life-insurance profiles, including six restricted
+customers with both wealth and insurance profiles. Global IDs use
 `CUST-xxxxxx`, and
 Created by / Updated by resolve to `灵感数据管理员`; no `DEMO-INS` identifier is
 shown. Public access to port `3000` remains closed; administrator access
@@ -100,7 +100,7 @@ adapter.
 | Broad vehicle purchase-price leakage     | 0                        |
 | Missing authorization vs missing subject | Explicitly distinguished |
 
-The 30 domain profiles were promoted through the explicit profile Promotion
+The 40 domain profiles were promoted through the explicit profile Promotion
 command. A repeated idempotent Bootstrap preserved all unchanged `active`
 profiles; changed profile content is forced back to `candidate` instead of
 silently changing a Runtime fact.
@@ -126,6 +126,47 @@ The application cutover is controlled by
 Both the local EA Runtime and Shanghai Runtime have completed this cutover. The
 legacy customer MCPs remain rollback providers but are not Agent-facing customer
 entry points.
+
+## Cross-role Assigned Customer Evidence
+
+The role adoption `lgj-lihongkun` has six restricted customers assigned through
+the same `role_adoption` principal. Each customer has one active wealth profile
+and one active insurance profile. The EA role and purpose projection determines
+which profile is provided; changing roles does not change the assigned customer
+set.
+
+| Global customer ID | Customer | Active profiles         |
+| ------------------ | -------- | ----------------------- |
+| `CUST-000201`      | 周明远   | wealth + life insurance |
+| `CUST-000202`      | 沈嘉禾   | wealth + life insurance |
+| `CUST-000203`      | 赵婉清   | wealth + auto insurance |
+| `CUST-000204`      | 孙志诚   | wealth + life insurance |
+| `CUST-000205`      | 郑雅雯   | wealth + auto insurance |
+| `CUST-000206`      | 何文博   | wealth + auto insurance |
+
+The Shanghai acceptance command ran the same adoption through the
+`wealth-manager` and `insurance-advisor` Runtime principals without changing the
+stored production role. Both principals resolved the same six stable customer
+IDs and passed write authorization for all six assigned customers.
+
+| Check                           | Result                                                             |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Shared assigned customer set    | PASS (`6/6`)                                                       |
+| Assigned-set fingerprint        | `88296b7a1775c336e7d746a8a354731fc831e958a07456327576f325033a6d01` |
+| Wealth projection               | Wealth and investment-risk fields only                             |
+| Insurance projection            | Coverage, claims-risk and protection-gap fields only               |
+| Cross-role field leakage        | `0`                                                                |
+| Wealth write authorization      | `6/6 ALLOW`                                                        |
+| Insurance write authorization   | `6/6 ALLOW`                                                        |
+| Acceptance evidence fingerprint | `cf5a1942f98eaa36fce761315223ed47279751e4a6e85c7a166cb5d942da65e3` |
+
+The fixture bundle fingerprint is
+`6c5f67f566d7a4d7870287d8f214b12867243af9dc5fd43832c4bba9d6607668`.
+The final local and Shanghai immutable release is
+`20260828T051559Z-dc7e2269913c`; the source commit is `dc7e2269`. The validated
+Shanghai backup immediately before final acceptance is
+`/root/backups/lingxia/20260828-131232`, and the CRM pre-import backup is
+`/root/backups/linggan-customer-crm/cross-role-20260828T050255Z`.
 
 ## Agent Follow-up Write-back Evidence
 
