@@ -7,8 +7,8 @@ Twenty CRM Environment: Deployed / Verified
 Customer Source Adapter: Environment Verified / Production Ready
 Customer Domain Profiles: 30 Active
 Local EA Runtime: Customer Context Active
-CRM Follow-up Write-back: Local Agent E2E Verified
-Shanghai EA Runtime: Deployment Pending
+Shanghai EA Runtime: Customer Context Active
+CRM Follow-up Write-back: Local + Shanghai Agent E2E Verified
 ```
 
 Acceptance date: `2026-08-28` (Asia/Shanghai)
@@ -119,29 +119,30 @@ insurance Runtime Principals. No legacy customer MCP was called.
 | Assurance         | `production`   | `production`            |
 | Portfolio source  | `twenty_crm`   | Not exposed by contract |
 
-The application cutover remains a separate deployment action controlled by
+The application cutover is controlled by
 `EA_CUSTOMER_CONTEXT_TWENTY_ENABLED` and
 `EA_CUSTOMER_CONTEXT_TWENTY_PRODUCTION_READY`.
 
-The local EA Runtime has completed this cutover. Both flags are enabled in the
-local immutable release; Shanghai remains a separate deployment and acceptance
-action.
+Both the local EA Runtime and Shanghai Runtime have completed this cutover. The
+legacy customer MCPs remain rollback providers but are not Agent-facing customer
+entry points.
 
 ## Agent Follow-up Write-back Evidence
 
-The local EA release `20260828T025001Z-55cc897b6fe2` enabled only the governed
-follow-up task operation. Customer interaction write-back remains outside this
-V1 Runtime scope.
+The local and Shanghai release `20260828T035902Z-c9b74ac41fa5` enables only the
+governed follow-up task operation. Customer interaction write-back remains
+outside this V1 Runtime scope. The source commit is `c9b74ac4`; the validated
+Shanghai pre-release backup is `/root/backups/lingxia/20260828-120041`.
 
-The browser-equivalent Agent flow used the wealth-manager adoption
-`lgj-mjrsrqkp` and the explicitly assigned customer `CUST-000005`:
+The Shanghai browser-equivalent Agent flow used the wealth-manager adoption
+`lgj-lihongkun` and the explicitly assigned customer `CUST-000201`:
 
 ```text
 Agent customer lookup
   -> assignment and purpose authorization
   -> create_customer_followup_task
   -> one platform governance confirmation
-  -> confirmed retry with identical arguments and idempotency key
+  -> EA directly executes the bound formal operation after approval
   -> one Twenty follow-up task
   -> Execution Receipt
 ```
@@ -157,11 +158,13 @@ Agent customer lookup
 | Unassigned customer rejected before approval | PASS (`CUSTOMER_NOT_ASSIGNED`) |
 | Unassigned customer CRM rows                 | `0`                            |
 
-The accepted task was `访后需求确认`, due at
-`2026-09-03T09:00:00+08:00`. Its CRM record retains the stable customer ID,
+The accepted Shanghai task was `上海单次确认写入验收`, due at
+`2026-09-09T09:00:00+08:00`. Its CRM record retains the stable customer ID,
 role-adoption owner, purpose, confirmation actor, idempotency key and execution
-receipt ID. The acceptance record deliberately excludes session credentials and
-the Twenty integration secret.
+receipt ID `crmex_5fcf139df29bd0986c3eacc4b2e41e1ddd08fa98`. A separate
+attempt to write the unassigned wealth customer `CUST-000002` was rejected with
+`CUSTOMER_NOT_ASSIGNED` before any approval was created. The acceptance record
+deliberately excludes session credentials and the Twenty integration secret.
 
 ## Manual Create Acceptance
 
@@ -183,15 +186,14 @@ IDs. The pre-change database snapshot is
 
 1. Twenty contains the canonical Demo customer source. The explicit Crosswalk
    creates stable global IDs; no name, phone or model-based merge is allowed.
-2. The checked-in acceptance state is Runtime-ready but not proof of an EA
-   deployment. Local and Shanghai must each run the Runtime verification after
-   their feature flags and organization allowlist are configured.
+2. The checked-in acceptance state is backed by the local and Shanghai immutable
+   deployments and the Shanghai assigned/unassigned write verification above.
 3. The 121-row wealth workbook defines fields, not customer records. It is an
    input to schema and authority design, not 121 populated CRM columns.
-4. Follow-up task creation is enabled only in the verified local EA Runtime and
-   requires assignment, purpose authorization, one platform confirmation,
-   idempotency and an Execution Receipt. Customer interaction write-back remains
-   disabled, and Shanghai activation is still pending.
+4. Follow-up task creation is enabled in the verified local and Shanghai EA
+   Runtimes and requires assignment, purpose authorization, one platform
+   confirmation, idempotency and an Execution Receipt. Customer interaction
+   write-back remains disabled.
 5. Old wealth and insurance customer MCPs remain rollback providers for one
    release, but must not be exposed to Agent Skills after cutover.
 6. The current Demo Runtime uses a separately stored Twenty integration secret.
