@@ -10,6 +10,7 @@ import {
   enterpriseRuntimeAssetBundleExists,
   enterpriseRuntimeAssetsDirty,
 } from "./enterprise-runtime-assets";
+import { PLATFORM_TOOLS } from "./platform-tools-mcp";
 import type { JiuwenInteractionAnswer, JiuwenSelectedSkillMetadata } from "./jiuwenclaw-bridge";
 
 export type EnterpriseRuntimeRoute = {
@@ -43,9 +44,15 @@ const MANAGED_MCP_SERVERS = [
   ["post_loan_risk_data", "/api/internal/post-loan-risk-data/mcp", "urn:ea:internal-mcp:post-loan-risk-data"],
 ] as const;
 
-function managedMcpServerId(name: string, bindingId: string): string {
-  const scope = createHash("sha256").update(bindingId).digest("hex").slice(0, 12);
+export function managedMcpServerId(name: string, bindingId: string, catalogFingerprint = ""): string {
+  const identity = catalogFingerprint ? `${bindingId}\0${catalogFingerprint}` : bindingId;
+  const scope = createHash("sha256").update(identity).digest("hex").slice(0, 12);
   return `${name}_${scope}`;
+}
+
+function managedMcpCatalogFingerprint(name: string): string {
+  if (name !== "platform_tools") return "";
+  return createHash("sha256").update(JSON.stringify(PLATFORM_TOOLS)).digest("hex");
 }
 
 function enterpriseRuntimeAssetMetadata(args: {
@@ -148,7 +155,11 @@ export function buildEnterpriseManagedMcpProvisioning(args: {
     name,
     {
       name,
-      server_id: managedMcpServerId(name, args.route.binding.bindingId),
+      server_id: managedMcpServerId(
+        name,
+        args.route.binding.bindingId,
+        managedMcpCatalogFingerprint(name),
+      ),
       description: "EA governed capability gateway",
       type: "streamableHttp",
       url: new URL(pathname, `${baseUrl}/`).toString(),

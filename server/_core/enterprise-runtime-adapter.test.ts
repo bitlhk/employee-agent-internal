@@ -10,6 +10,7 @@ import {
   buildEnterprisePermissionAnswerParams,
   buildEnterpriseRuntimeAttachmentRefs,
   enterpriseRuntimeSupportsModel,
+  managedMcpServerId,
   resolveEnterpriseRuntimeRoute,
   type EnterpriseRuntimeRoute,
 } from "./enterprise-runtime-adapter";
@@ -369,5 +370,12 @@ describe("enterprise runtime adapter", () => {
         },
       },
     });
+  });
+
+  it("rotates a managed MCP server identity when its tool catalog changes", () => {
+    expect(managedMcpServerId("platform_tools", "binding-1", "catalog-a"))
+      .not.toBe(managedMcpServerId("platform_tools", "binding-1", "catalog-b"));
+    expect(managedMcpServerId("platform_tools", "binding-1", "catalog-a"))
+      .toBe(managedMcpServerId("platform_tools", "binding-1", "catalog-a"));
   });
 });
