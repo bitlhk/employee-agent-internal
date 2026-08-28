@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.skill-quality-evaluation-pilots.v1",
-  "manifestVersion": "1.0.1",
-  "manifestFingerprint": "2a7575f858b4a27a956e093b44d902b0d0aae15c6353fe7e64f2ffc1c7d18082",
+  "manifestVersion": "1.0.2",
+  "manifestFingerprint": "be178fae2acce761f76842fd7a35b98469a18b156a67111fe4c67ce4c8b6bfeb",
   "status": "phase_0_frozen",
   "scorecardProfilePath": "examples/skill-quality-evaluation-v1/profiles/governed-workflow-scorecard.v1.json",
   "judgeProfilePath": "examples/skill-quality-evaluation-v1/profiles/hermes-pairwise-judge.v1.json",

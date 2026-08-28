@@ -219,14 +219,16 @@ SkillEvalSuiteV1
 - suiteFingerprint
 - sourceReferences
 - cases
-- assertions
+- assertions/hardGateId
+- requiredHardGateIds
 - fixtures/dataSnapshotRequirements
 - expertReview
 - status
 ```
 
 - `suiteFingerprint` 对规范化后的 Suite 内容计算，报告必须保存该值。
-- `cases` 必须包含案例重要度、适用 Skill 类型、基线要求、重复运行要求和硬门禁。
+- `cases` 必须包含案例重要度、适用 Skill 类型、基线要求、重复运行要求和断言；硬门禁断言必须通过 `hardGateId` 指向 Scorecard Profile 中的具名门禁。
+- `requiredHardGateIds` 声明当前 Suite 必须覆盖的门禁。Profile 同时冻结每个门禁的 `executionSource=assertion|runner`、覆盖要求和可选 `runnerCheckId`；Suite 未声明、断言未覆盖或错误地用 assertion 代替 Runner Check 时，契约校验失败。
 - `expertReview` 记录专家、审查版本、Ground Truth 状态和适用边界，不把作者自述当作专家确认。
 - `suiteVersion` 发布后不可变；修订案例、断言或 Ground Truth 时创建新版本。
 - `suite.json`：案例、任务、前置条件、基线、模型策略和断言声明。
@@ -235,6 +237,8 @@ SkillEvalSuiteV1
 - `expected/`：必要字段、禁止行为和参考事实，不机械锁死完整自然语言。
 
 Promptfoo 配置由适配器从冻结的 Suite 生成，避免团队同时维护两份测试用例。
+
+试点基线必须满足以下身份约束：每种 `baselineMode` 在一个 Pilot 内最多出现一次；`previous_version` 的 SemVer 必须低于目标版本，且 Version ID 与 Artifact SHA256 均不得复用目标；`specified_skill` 也不得与目标使用相同 Version ID 或 Artifact。结构相同但实质仍是目标版本的对照不构成有效 A/B 基线。
 
 ### 6.3 最小案例结构
 
@@ -480,13 +484,15 @@ SkillScorecardProfileV1
 - repeatPolicy/minimumSampleSize
 - missingMetricPolicy
 - judgeDisagreementPolicy
-- hardGates
+- hardGates: id/displayName/executionSource/coverageRequirement/runnerCheckId
 - gradeThresholds
 - calibrationStatus/calibrationEvidence
 - status
 ```
 
 第一版权重为**试点权重**：
+
+硬门禁目录不是展示标签。每个门禁必须声明由案例断言还是 Runner 执行；断言型门禁由 Suite 的 `hardGateId` 建立机器关联，Runner 型门禁必须提供稳定 `runnerCheckId` 并按每次运行执行。Phase 0 只冻结执行契约，Phase 1 Runner 未实际产出证据前不得声称该门禁已通过。
 
 | 维度         | 权重 | 评价问题                                           | 代表指标                                                           |
 | ------------ | ---: | -------------------------------------------------- | ------------------------------------------------------------------ |
@@ -699,6 +705,8 @@ Promptfoo 当前尚未成为项目依赖。引入时必须满足：
 - 冻结 `SkillEvalSuiteV1`、`SkillEvaluationRunSnapshotV1`、`SkillScorecardProfileV1` 和 `JudgeProfileV1` 的字段、fingerprint 和版本规则。
 - 冻结两个试点 Skill 的版本、来源、维护人、许可证和 Artifact SHA256，不修改现有已审批包。
 - 从 Skill Market V2 生成独立只读 Approved Skill Inventory 快照，并在可访问 Artifact 时重新计算目录 SHA256 与大小，不能只让 Manifest 与 Suite 互相印证。
+- 使用 `skills:quality:phase0:verify` 做结构检查；Phase 0 冻结、CI 和发布环境必须挂载只读 Skill Store 并通过 `skills:quality:phase0:verify:strict`。缺失本地 Artifact 不能降级为正式通过。
+- 所有 Manifest、Suite 来源和发布证据路径必须在读取前通过仓库边界校验；发现绝对路径或 `..` 逃逸时立即停止加载后续资产。
 - 明确专用 Eval Adoption、Workspace、Principal、Purpose、无副作用工具策略和清理规则。
 - 复用现有岗位 Benchmark Task Matrix 和 Golden Task，导入为独立 Eval Suite 来源。
 - 冻结 Promptfoo 数据出口策略、批准 Provider 清单和 Hermes Judge 数据边界。

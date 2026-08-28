@@ -6,8 +6,8 @@
   "targetVersionId": "skillver_a905cf2ee3627ddae8d0d654b0dd4924",
   "targetVersion": "1.0.1",
   "targetArtifactSha256": "62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a",
-  "suiteVersion": "1.0.0",
-  "suiteFingerprint": "8d140b0231b9784d83870577c7ec3317cd7982517de669e91cd9f0a17a120195",
+  "suiteVersion": "1.0.1",
+  "suiteFingerprint": "02364d67b6a6a8fdb7d6baae2654db4cbcaf3c79ca027cc4fc05915c6e2d461a",
   "sourceReferences": [
     {
       "sourceType": "approved_skill_artifact",
@@ -30,18 +30,21 @@
           "assertionId": "covered_stages_match_expert_ground_truth",
           "mode": "deterministic",
           "hardGate": false,
+          "hardGateId": null,
           "metricId": "task_success"
         },
         {
           "assertionId": "evidence_quotes_exist_in_source_dialogue",
           "mode": "deterministic",
           "hardGate": true,
+          "hardGateId": "FACT_SOURCE_INTEGRITY",
           "metricId": "grounding_rate"
         },
         {
           "assertionId": "coaching_advice_is_actionable",
           "mode": "judge",
           "hardGate": false,
+          "hardGateId": null,
           "metricId": "artifact_usable_rate"
         }
       ],
@@ -50,6 +53,7 @@
       "minimumRuns": 3
     }
   ],
+  "requiredHardGateIds": ["FACT_SOURCE_INTEGRITY", "SKILL_RUNTIME_IDENTITY"],
   "dataSnapshotRequirements": ["expert_confirmed_desensitized_sales_dialogue"],
   "expertReview": {
     "status": "proposed",

@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  skillEvalAssertionV1Schema,
   skillEvalSuiteV1Schema,
   skillEvaluationRunEvidenceV1Schema,
   skillEvaluationRunSnapshotV1Schema,
@@ -18,15 +19,48 @@ import {
   type SkillEvaluationRunSnapshotV1,
   type SkillScorecardProfileV1,
 } from "../../shared/skill-quality-evaluation";
-import { runSkillQualityPhase0ContractChecks } from "./skill-quality-evaluation-contracts";
+import { governanceFingerprint } from "./governance/contracts";
+import {
+  pilotManifestSchema,
+  runSkillQualityPhase0ContractChecks,
+} from "./skill-quality-evaluation-contracts";
 import {
   evaluationConfigFingerprint,
   runEvidenceFingerprint,
+  skillEvalSuiteFingerprint,
 } from "./skill-quality-evaluation";
 
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
 const SHA_C = "c".repeat(64);
+
+function createPhase0FixtureRoot(): string {
+  const root = mkdtempSync(path.join(tmpdir(), "skill-quality-phase0-"));
+  mkdirSync(path.join(root, "examples"), { recursive: true });
+  cpSync(
+    path.join(process.cwd(), "examples/skill-quality-evaluation-v1"),
+    path.join(root, "examples/skill-quality-evaluation-v1"),
+    { recursive: true }
+  );
+  for (const relativePath of [
+    "examples/wealth-manager-reference-role-pack/eval/wm-gt-01-cases.json",
+    "examples/wealth-manager-reference-role-pack/eval/wm-gt-02-cases.json",
+    "examples/wealth-manager-reference-role-pack/eval/wm-gt-05-cases.json",
+    "docs/wealth-manager-skill-v2-release-record.md",
+  ]) {
+    const source = path.join(process.cwd(), relativePath);
+    const destination = path.join(root, relativePath);
+    mkdirSync(path.dirname(destination), { recursive: true });
+    cpSync(source, destination);
+  }
+  return root;
+}
+
+function updateManifestFingerprint(manifest: Record<string, unknown>): void {
+  const body = { ...manifest };
+  delete body.manifestFingerprint;
+  manifest.manifestFingerprint = governanceFingerprint(body);
+}
 
 function snapshot(
   overrides: {
@@ -270,6 +304,142 @@ describe("Skill Quality Evaluation Phase 0", () => {
     ).toBe(false);
   });
 
+  it("requires baseline modes to be unique and version baselines to differ from the target", () => {
+    const manifestPath = path.join(
+      process.cwd(),
+      "examples/skill-quality-evaluation-v1/pilot-baselines.v1.json"
+    );
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      pilots: Array<{
+        skillId: string;
+        target: {
+          skillVersionId: string;
+          version: string;
+          artifactSha256: string;
+        };
+        baselines: Array<{
+          mode: string;
+          skillVersionId: string | null;
+          version: string | null;
+          artifactSha256: string | null;
+        }>;
+      }>;
+    } & Record<string, unknown>;
+    const wealth = manifest.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    );
+    if (!wealth) throw new Error("wealth pilot fixture is missing");
+    const previous = wealth.baselines.find(
+      baseline => baseline.mode === "previous_version"
+    );
+    if (!previous) throw new Error("previous version fixture is missing");
+
+    const samePrevious = structuredClone(manifest);
+    const sameWealth = samePrevious.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    )!;
+    const sameBaseline = sameWealth.baselines.find(
+      baseline => baseline.mode === "previous_version"
+    )!;
+    Object.assign(sameBaseline, sameWealth.target);
+    expect(pilotManifestSchema.safeParse(samePrevious).success).toBe(false);
+
+    const reusedTargetId = structuredClone(manifest);
+    const reusedTargetIdWealth = reusedTargetId.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    )!;
+    reusedTargetIdWealth.baselines.find(
+      baseline => baseline.mode === "previous_version"
+    )!.skillVersionId = reusedTargetIdWealth.target.skillVersionId;
+    expect(pilotManifestSchema.safeParse(reusedTargetId).success).toBe(false);
+
+    const reusedTargetArtifact = structuredClone(manifest);
+    const reusedTargetArtifactWealth = reusedTargetArtifact.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    )!;
+    reusedTargetArtifactWealth.baselines.find(
+      baseline => baseline.mode === "previous_version"
+    )!.artifactSha256 = reusedTargetArtifactWealth.target.artifactSha256;
+    expect(pilotManifestSchema.safeParse(reusedTargetArtifact).success).toBe(
+      false
+    );
+
+    const laterPrevious = structuredClone(manifest);
+    const laterWealth = laterPrevious.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    )!;
+    const laterBaseline = laterWealth.baselines.find(
+      baseline => baseline.mode === "previous_version"
+    )!;
+    laterBaseline.version = "3.0.0";
+    expect(pilotManifestSchema.safeParse(laterPrevious).success).toBe(false);
+
+    const duplicateMode = structuredClone(manifest);
+    const duplicateWealth = duplicateMode.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    )!;
+    duplicateWealth.baselines.push(structuredClone(previous));
+    expect(pilotManifestSchema.safeParse(duplicateMode).success).toBe(false);
+
+    const specifiedTarget = structuredClone(manifest);
+    const specifiedWealth = specifiedTarget.pilots.find(
+      pilot => pilot.skillId === "wealth-manager-assistant"
+    )!;
+    specifiedWealth.baselines.push({
+      mode: "specified_skill",
+      ...specifiedWealth.target,
+    });
+    expect(pilotManifestSchema.safeParse(specifiedTarget).success).toBe(false);
+  });
+
+  it("binds hard-gate assertions to declared Profile gates", () => {
+    expect(
+      skillEvalAssertionV1Schema.safeParse({
+        assertionId: "unbound-hard-gate",
+        mode: "deterministic",
+        hardGate: true,
+        hardGateId: null,
+        metricId: "task_success",
+      }).success
+    ).toBe(false);
+
+    const root = createPhase0FixtureRoot();
+    try {
+      const suitePath = path.join(
+        root,
+        "examples/skill-quality-evaluation-v1/suites/wealth-manager-assistant.v1.json"
+      );
+      const suite = skillEvalSuiteV1Schema.parse(
+        JSON.parse(readFileSync(suitePath, "utf8")) as unknown
+      );
+      const withoutPromptInjectionCoverage = {
+        ...suite,
+        cases: suite.cases.map(item => ({
+          ...item,
+          assertions: item.assertions.map(assertion =>
+            assertion.hardGateId === "PROMPT_INJECTION_CONTAINMENT"
+              ? { ...assertion, hardGate: false as const, hardGateId: null }
+              : assertion
+          ),
+        })),
+      };
+      withoutPromptInjectionCoverage.suiteFingerprint =
+        skillEvalSuiteFingerprint(withoutPromptInjectionCoverage);
+      writeFileSync(
+        suitePath,
+        JSON.stringify(withoutPromptInjectionCoverage, null, 2)
+      );
+
+      const report = runSkillQualityPhase0ContractChecks(root);
+      expect(report.status).toBe("FAIL");
+      expect(report.errors.join("\n")).toMatch(
+        /PROMPT_INJECTION_CONTAINMENT does not satisfy/u
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects Scorecards whose dimension weights do not sum to 100", () => {
     const profilePath = path.join(
       process.cwd(),
@@ -337,25 +507,8 @@ describe("Skill Quality Evaluation Phase 0", () => {
   });
 
   it("rejects pilot versions that are not independently present in the inventory", () => {
-    const root = mkdtempSync(path.join(tmpdir(), "skill-quality-phase0-"));
+    const root = createPhase0FixtureRoot();
     try {
-      mkdirSync(path.join(root, "examples"), { recursive: true });
-      cpSync(
-        path.join(process.cwd(), "examples/skill-quality-evaluation-v1"),
-        path.join(root, "examples/skill-quality-evaluation-v1"),
-        { recursive: true }
-      );
-      for (const relativePath of [
-        "examples/wealth-manager-reference-role-pack/eval/wm-gt-01-cases.json",
-        "examples/wealth-manager-reference-role-pack/eval/wm-gt-02-cases.json",
-        "examples/wealth-manager-reference-role-pack/eval/wm-gt-05-cases.json",
-        "docs/wealth-manager-skill-v2-release-record.md",
-      ]) {
-        const source = path.join(process.cwd(), relativePath);
-        const destination = path.join(root, relativePath);
-        mkdirSync(path.dirname(destination), { recursive: true });
-        cpSync(source, destination);
-      }
       const manifestPath = path.join(
         root,
         "examples/skill-quality-evaluation-v1/pilot-baselines.v1.json"
@@ -365,12 +518,13 @@ describe("Skill Quality Evaluation Phase 0", () => {
           skillId: string;
           target: { skillVersionId: string };
         }>;
-      };
+      } & Record<string, unknown>;
       const wealth = manifest.pilots.find(
         pilot => pilot.skillId === "wealth-manager-assistant"
       );
       if (!wealth) throw new Error("wealth pilot fixture is missing");
       wealth.target.skillVersionId = "skill-version-not-in-inventory";
+      updateManifestFingerprint(manifest);
       writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 
       const report = runSkillQualityPhase0ContractChecks(root);
@@ -380,6 +534,54 @@ describe("Skill Quality Evaluation Phase 0", () => {
       );
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("stops before loading quality assets when a configured path escapes the repository", () => {
+    const root = createPhase0FixtureRoot();
+    try {
+      const manifestPath = path.join(
+        root,
+        "examples/skill-quality-evaluation-v1/pilot-baselines.v1.json"
+      );
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      manifest.scorecardProfilePath = "../outside-scorecard.json";
+      updateManifestFingerprint(manifest);
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+      const report = runSkillQualityPhase0ContractChecks(root);
+      expect(report.status).toBe("FAIL");
+      expect(report.pilotCount).toBe(0);
+      expect(report.errors).toContain(
+        "Skill quality asset path escapes the repository: ../outside-scorecard.json"
+      );
+      expect(report.errors.join("\n")).not.toMatch(
+        /cannot be read|is missing/u
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails the strict gate when approved artifacts are not mounted", () => {
+    const emptySkillStore = mkdtempSync(
+      path.join(tmpdir(), "skill-quality-empty-store-")
+    );
+    try {
+      const report = runSkillQualityPhase0ContractChecks(process.cwd(), {
+        requireLocalArtifacts: true,
+        skillStoreRoot: emptySkillStore,
+      });
+      expect(report.status).toBe("FAIL");
+      expect(report.locallyVerifiedArtifactCount).toBe(0);
+      expect(report.errors.join("\n")).toMatch(
+        /local approved artifact is unavailable/u
+      );
+    } finally {
+      rmSync(emptySkillStore, { recursive: true, force: true });
     }
   });
 });

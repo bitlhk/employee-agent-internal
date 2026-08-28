@@ -48,12 +48,24 @@ export const skillEvalSourceReferenceV1Schema = z.strictObject({
   contentSha256: sha256Schema,
 });
 
-export const skillEvalAssertionV1Schema = z.strictObject({
-  assertionId: nonEmptyId,
-  mode: z.enum(["deterministic", "judge"]),
-  hardGate: z.boolean(),
-  metricId: nonEmptyId.nullable().default(null),
-});
+export const skillEvalAssertionV1Schema = z
+  .strictObject({
+    assertionId: nonEmptyId,
+    mode: z.enum(["deterministic", "judge"]),
+    hardGate: z.boolean(),
+    hardGateId: nonEmptyId.nullable(),
+    metricId: nonEmptyId.nullable().default(null),
+  })
+  .superRefine((assertion, context) => {
+    if (assertion.hardGate !== Boolean(assertion.hardGateId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["hardGateId"],
+        message:
+          "hard-gate assertions require a hardGateId; diagnostic assertions must not declare one",
+      });
+    }
+  });
 
 export const skillEvalCaseV1Schema = z.strictObject({
   caseId: nonEmptyId,
@@ -114,6 +126,7 @@ export const skillEvalSuiteV1Schema = z
     suiteFingerprint: sha256Schema,
     sourceReferences: z.array(skillEvalSourceReferenceV1Schema).min(1),
     cases: z.array(skillEvalCaseV1Schema).min(1),
+    requiredHardGateIds: z.array(nonEmptyId).min(1),
     dataSnapshotRequirements: z.array(nonEmptyId).default([]),
     expertReview: skillEvalExpertReviewV1Schema,
     status: z.enum(["draft", "frozen", "retired"]),
@@ -152,6 +165,16 @@ export const skillEvalSuiteV1Schema = z
         }
         assertionIds.add(assertion.assertionId);
       }
+    }
+    if (
+      new Set(suite.requiredHardGateIds).size !==
+      suite.requiredHardGateIds.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["requiredHardGateIds"],
+        message: "required hard gates must be unique",
+      });
     }
   });
 export type SkillEvalSuiteV1 = z.infer<typeof skillEvalSuiteV1Schema>;
@@ -384,7 +407,21 @@ export const skillScorecardProfileV1Schema = z
     }),
     missingMetricPolicy: z.literal("invalidate_case"),
     judgeDisagreementPolicy: z.literal("expert_review"),
-    hardGates: z.array(nonEmptyId).min(1),
+    hardGates: z
+      .array(
+        z.strictObject({
+          hardGateId: nonEmptyId,
+          displayName: z.string().trim().min(1).max(256),
+          executionSource: z.enum(["assertion", "runner"]),
+          coverageRequirement: z.enum([
+            "at_least_one_assertion_per_declaring_suite",
+            "every_case_in_declaring_suite",
+            "every_run",
+          ]),
+          runnerCheckId: nonEmptyId.nullable(),
+        })
+      )
+      .min(1),
     gradeThresholds: z.array(
       z.strictObject({
         grade: z.enum(["A", "B", "C", "D"]),
@@ -539,12 +576,33 @@ export const skillScorecardProfileV1Schema = z
         message: "Scorecard calibration evidence must be unique",
       });
     }
-    if (new Set(profile.hardGates).size !== profile.hardGates.length) {
+    const hardGateIds = new Set(
+      profile.hardGates.map(hardGate => hardGate.hardGateId)
+    );
+    if (hardGateIds.size !== profile.hardGates.length) {
       context.addIssue({
         code: "custom",
         path: ["hardGates"],
         message: "Scorecard hard gates must be unique",
       });
+    }
+    for (const hardGate of profile.hardGates) {
+      const runnerGate = hardGate.executionSource === "runner";
+      const validRunnerGate =
+        runnerGate &&
+        hardGate.coverageRequirement === "every_run" &&
+        Boolean(hardGate.runnerCheckId);
+      const validAssertionGate =
+        !runnerGate &&
+        hardGate.coverageRequirement !== "every_run" &&
+        hardGate.runnerCheckId === null;
+      if (!validRunnerGate && !validAssertionGate) {
+        context.addIssue({
+          code: "custom",
+          path: ["hardGates"],
+          message: `${hardGate.hardGateId}: runner gates require every_run coverage and runnerCheckId; assertion gates require assertion coverage without a runnerCheckId`,
+        });
+      }
     }
     if (
       profile.formalGradesEnabled !==

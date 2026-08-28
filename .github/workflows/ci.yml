@@ -49,6 +49,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Skill quality contract structure
+        run: pnpm skills:quality:phase0:verify
+
       - name: Empty database migration and idempotency
         env:
           DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/employee_agent_ci

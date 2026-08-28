@@ -13,6 +13,8 @@
 - `SkillScorecardProfileV1`
 - `JudgeProfileV1`
 - 递归严格字段校验，未知字段不能被静默裁剪后绕过 fingerprint
+- 基线版本身份、SemVer 顺序和 baseline mode 唯一性校验
+- Profile 硬门禁目录、Suite 覆盖声明和 assertion/runner 执行来源绑定
 - 配置指纹与单次运行证据指纹的分离规则
 - 财富经理与 GoldenCoach 试点版本清单及只读 Approved Skill Inventory
 
@@ -45,10 +47,16 @@
 ## 校验
 
 ```bash
+# 结构与引用校验，允许当前机器未挂载 Skill Store
 pnpm skills:quality:phase0:verify
-pnpm skills:quality:phase0:verify -- --require-local-artifacts
+
+# Phase 0 冻结、CI 和发布环境正式门禁，要求本地 Artifact 全部可复算
+pnpm skills:quality:phase0:verify:strict
+
 pnpm exec vitest run server/_core/skill-quality-evaluation.test.ts
 ```
+
+通用 CI Runner 如果没有挂载只读 Skill Store，只能运行结构校验，不能据此宣告 Phase 0 冻结通过。正式 CI/发布环境必须提供 `SKILL_STORE` 并运行 `verify:strict`；缺少任一 Artifact 时直接失败。
 
 校验会检查：
 
@@ -58,7 +66,10 @@ pnpm exec vitest run server/_core/skill-quality-evaluation.test.ts
 - Inventory 与本机不可变 Artifact 的目录 SHA256 和大小；
 - 仓库内 Benchmark 和 Golden Task 来源文件的内容摘要；
 - Scorecard 指标引用和权重；
+- Profile 硬门禁是否由 Suite 声明，并由具名 assertion 或 Runner Check 覆盖；
+- `previous_version` 低于目标版本且身份/SHA 不同、`specified_skill` 不复用目标 Artifact、baseline mode 不重复；
 - 试点基线与案例声明的一致性；
+- 所有仓库路径均在读取前完成边界校验；
 - Judge 未配置和 Profile 未校准时禁止正式等级的语义。
 
 ## 指纹边界

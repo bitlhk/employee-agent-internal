@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import semver from "semver";
 import { z } from "zod";
 import {
   judgeProfileV1Schema,
@@ -32,7 +33,7 @@ const nullableVersionRefSchema = z.strictObject({
   artifactSha256: sha256Schema.nullable(),
 });
 
-const pilotManifestSchema = z
+export const pilotManifestSchema = z
   .strictObject({
     schemaVersion: z.literal("ea.skill-quality-evaluation-pilots.v1"),
     manifestVersion: strictSemverSchema,
@@ -79,7 +80,16 @@ const pilotManifestSchema = z
         });
       }
       skillIds.add(pilot.skillId);
+      const baselineModes = new Set<string>();
       for (const baseline of pilot.baselines) {
+        if (baselineModes.has(baseline.mode)) {
+          context.addIssue({
+            code: "custom",
+            path: ["pilots"],
+            message: `${pilot.skillId}: baseline mode ${baseline.mode} is duplicated`,
+          });
+        }
+        baselineModes.add(baseline.mode);
         const requiresVersion = baseline.mode !== "without_skill";
         const hasCompleteVersion = Boolean(
           baseline.skillVersionId && baseline.version && baseline.artifactSha256
@@ -89,6 +99,27 @@ const pilotManifestSchema = z
             code: "custom",
             path: ["pilots"],
             message: `${pilot.skillId}: ${baseline.mode} has an invalid version reference`,
+          });
+        }
+        if (!requiresVersion || !hasCompleteVersion) continue;
+        const reusesTarget =
+          baseline.skillVersionId === pilot.target.skillVersionId ||
+          baseline.artifactSha256 === pilot.target.artifactSha256;
+        if (reusesTarget) {
+          context.addIssue({
+            code: "custom",
+            path: ["pilots"],
+            message: `${pilot.skillId}: ${baseline.mode} must not reuse the target version identity or artifact`,
+          });
+        }
+        if (
+          baseline.mode === "previous_version" &&
+          !semver.lt(baseline.version!, pilot.target.version)
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["pilots"],
+            message: `${pilot.skillId}: previous_version must be lower than target ${pilot.target.version}`,
           });
         }
       }
@@ -238,6 +269,11 @@ function validateSuiteSources(input: {
   const metricIds = new Set(
     input.scorecard.metrics.map(metric => metric.metricId)
   );
+  const hardGates = new Map(
+    input.scorecard.hardGates.map(hardGate => [hardGate.hardGateId, hardGate])
+  );
+  const requiredHardGates = new Set(input.suite.requiredHardGateIds);
+  const assertionCoverage = new Map<string, Set<string>>();
   for (const source of input.suite.sourceReferences) {
     if (source.sourceType === "approved_skill_artifact") {
       const match = /^skill-store:\/\/([^/]+)\/([^/]+)\/([a-f0-9]{64})$/u.exec(
@@ -293,6 +329,51 @@ function validateSuiteSources(input: {
           `${item.caseId}: assertion references unknown Scorecard metric ${assertion.metricId}`
         );
       }
+      if (!assertion.hardGateId) continue;
+      const hardGate = hardGates.get(assertion.hardGateId);
+      if (!hardGate) {
+        input.errors.push(
+          `${item.caseId}: assertion references unknown hard gate ${assertion.hardGateId}`
+        );
+        continue;
+      }
+      if (!requiredHardGates.has(assertion.hardGateId)) {
+        input.errors.push(
+          `${item.caseId}: assertion covers undeclared suite hard gate ${assertion.hardGateId}`
+        );
+      }
+      if (hardGate.executionSource !== "assertion") {
+        input.errors.push(
+          `${item.caseId}: runner hard gate ${assertion.hardGateId} cannot be satisfied by a case assertion`
+        );
+      }
+      const coveredCases =
+        assertionCoverage.get(assertion.hardGateId) || new Set();
+      coveredCases.add(item.caseId);
+      assertionCoverage.set(assertion.hardGateId, coveredCases);
+    }
+  }
+  for (const hardGateId of input.suite.requiredHardGateIds) {
+    const hardGate = hardGates.get(hardGateId);
+    if (!hardGate) {
+      input.errors.push(
+        `${input.suite.suiteId}: required hard gate ${hardGateId} is absent from the Scorecard Profile`
+      );
+      continue;
+    }
+    if (hardGate.executionSource === "runner") continue;
+    const coveredCases = assertionCoverage.get(hardGateId) || new Set();
+    const hasRequiredCoverage =
+      hardGate.coverageRequirement ===
+      "at_least_one_assertion_per_declaring_suite"
+        ? coveredCases.size >= 1
+        : hardGate.coverageRequirement === "every_case_in_declaring_suite"
+          ? coveredCases.size === input.suite.cases.length
+          : false;
+    if (!hasRequiredCoverage) {
+      input.errors.push(
+        `${input.suite.suiteId}: hard gate ${hardGateId} does not satisfy ${hardGate.coverageRequirement}`
+      );
     }
   }
 }
@@ -440,7 +521,7 @@ export function runSkillQualityPhase0ContractChecks(
   if (manifest.manifestFingerprint !== calculatedManifestFingerprint) {
     errors.push("Skill quality pilot manifest fingerprint is inconsistent");
   }
-  for (const repositoryPath of [
+  const repositoryPaths = [
     manifest.scorecardProfilePath,
     manifest.judgeProfilePath,
     manifest.approvedSkillInventoryPath,
@@ -448,12 +529,33 @@ export function runSkillQualityPhase0ContractChecks(
       pilot.suitePath,
       ...(pilot.releaseEvidencePath ? [pilot.releaseEvidencePath] : []),
     ]),
-  ]) {
-    if (!isSafeRepositoryPath(repositoryPath)) {
-      errors.push(
-        `Skill quality asset path escapes the repository: ${repositoryPath}`
-      );
-    }
+  ];
+  const unsafePaths = repositoryPaths.filter(
+    repositoryPath => !isSafeRepositoryPath(repositoryPath)
+  );
+  if (unsafePaths.length > 0) {
+    errors.push(
+      ...unsafePaths.map(
+        repositoryPath =>
+          `Skill quality asset path escapes the repository: ${repositoryPath}`
+      )
+    );
+    return {
+      schema: "ea.skill-quality-phase-0-report.v1",
+      status: "FAIL",
+      phase: "phase_0",
+      manifestFingerprint: calculatedManifestFingerprint,
+      approvedSkillInventoryFingerprint: null,
+      inventoryRecordCount: 0,
+      locallyVerifiedArtifactCount: 0,
+      scorecardProfileFingerprint: null,
+      judgeProfileFingerprint: null,
+      judgeAvailability: "unavailable",
+      pilotCount: 0,
+      pilots: [],
+      warnings,
+      errors,
+    };
   }
   const approvedInventory = loadContract({
     root,
