@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "ea.skill-quality-evaluation-pilots.v1",
+  "manifestVersion": "1.0.0",
+  "manifestFingerprint": "5b39356a90c06a1a389d856c0ba26f7e23ea0b326c1b66ba5ed03e740c55d3d5",
+  "status": "phase_0_frozen",
+  "scorecardProfilePath": "examples/skill-quality-evaluation-v1/profiles/governed-workflow-scorecard.v1.json",
+  "judgeProfilePath": "examples/skill-quality-evaluation-v1/profiles/hermes-pairwise-judge.v1.json",
+  "runtimeIsolation": {
+    "dedicatedEvalAdoption": true,
+    "cleanSessionPerArm": true,
+    "cleanWorkspacePerArm": true,
+    "noSideEffectMode": true,
+    "productionInstallMutationAllowed": false
+  },
+  "pilots": [
+    {
+      "skillId": "wealth-manager-assistant",
+      "skillIdentityId": "skill_6b1c408e1696ce6f059ba2f2764d8763",
+      "suitePath": "examples/skill-quality-evaluation-v1/suites/wealth-manager-assistant.v1.json",
+      "target": {
+        "skillVersionId": "663b64be-6b79-4d05-928d-f438287b011b",
+        "version": "2.0.1",
+        "artifactSha256": "88f47211ef32735324688988d5557b69b5fa77c09aedf6812ee38308989fa09f"
+      },
+      "baselines": [
+        {
+          "mode": "without_skill",
+          "skillVersionId": null,
+          "version": null,
+          "artifactSha256": null
+        },
+        {
+          "mode": "previous_version",
+          "skillVersionId": "skillver_d061314ab7e60e9da1e472bf78922bdf",
+          "version": "1.4.0",
+          "artifactSha256": "2a755d2bc89c015999634fb05b98184e6c60b01a8e3e997b7648d750593c03f2"
+        }
+      ],
+      "rolePackReleaseId": "linggan-bank.wealth-manager@ba0a15a271fdaf7c:wm-golden-task-v3",
+      "goldenTaskRunId": "wm-golden-task-v3-controlled-14of14-20260825-v2.0.1-restore",
+      "releaseEvidencePath": "docs/wealth-manager-skill-v2-release-record.md",
+      "executionPlan": "full_mvp"
+    },
+    {
+      "skillId": "goldencoach-stage-evaluation",
+      "skillIdentityId": "skill_06f37734ccf9a3437d88749a95384e04",
+      "suitePath": "examples/skill-quality-evaluation-v1/suites/goldencoach-stage-evaluation.v1.json",
+      "target": {
+        "skillVersionId": "skillver_a905cf2ee3627ddae8d0d654b0dd4924",
+        "version": "1.0.1",
+        "artifactSha256": "62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a"
+      },
+      "baselines": [
+        {
+          "mode": "without_skill",
+          "skillVersionId": null,
+          "version": null,
+          "artifactSha256": null
+        }
+      ],
+      "rolePackReleaseId": null,
+      "goldenTaskRunId": null,
+      "releaseEvidencePath": null,
+      "executionPlan": "expert_ground_truth_first"
+    }
+  ]
+}

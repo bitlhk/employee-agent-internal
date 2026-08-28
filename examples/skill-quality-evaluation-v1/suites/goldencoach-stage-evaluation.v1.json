@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "ea.skill-eval-suite.v1",
+  "suiteId": "goldencoach-stage-evaluation-quality-v1",
+  "skillIdentityId": "skill_06f37734ccf9a3437d88749a95384e04",
+  "skillId": "goldencoach-stage-evaluation",
+  "targetVersionId": "skillver_a905cf2ee3627ddae8d0d654b0dd4924",
+  "targetVersion": "1.0.1",
+  "targetArtifactSha256": "62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a",
+  "suiteVersion": "1.0.0",
+  "suiteFingerprint": "8d140b0231b9784d83870577c7ec3317cd7982517de669e91cd9f0a17a120195",
+  "sourceReferences": [
+    {
+      "sourceType": "approved_skill_artifact",
+      "reference": "skill-store://goldencoach-stage-evaluation/1.0.1/62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a",
+      "contentSha256": "62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "GC-SKILL-EVAL-001",
+      "name": "销售阶段识别与原句证据",
+      "importance": "high",
+      "skillType": "governed_workflow",
+      "taskId": null,
+      "prompt": "请对这段脱敏销售对话进行阶段化点评，指出当前阶段、关键证据和下一步改进建议。",
+      "expectedOutput": "准确区分已出现与缺失阶段，引用对话原句作为证据，并给出可执行的下一轮建议。",
+      "fixtureRefs": ["pending_expert_fixture"],
+      "assertions": [
+        {
+          "assertionId": "covered_stages_match_expert_ground_truth",
+          "mode": "deterministic",
+          "hardGate": false,
+          "metricId": "task_success"
+        },
+        {
+          "assertionId": "evidence_quotes_exist_in_source_dialogue",
+          "mode": "deterministic",
+          "hardGate": true,
+          "metricId": "grounding_rate"
+        },
+        {
+          "assertionId": "coaching_advice_is_actionable",
+          "mode": "judge",
+          "hardGate": false,
+          "metricId": "artifact_usable_rate"
+        }
+      ],
+      "requiredTrace": { "skillId": "goldencoach-stage-evaluation" },
+      "baselineModes": ["without_skill"],
+      "minimumRuns": 3
+    }
+  ],
+  "dataSnapshotRequirements": ["expert_confirmed_desensitized_sales_dialogue"],
+  "expertReview": {
+    "status": "proposed",
+    "reviewerId": null,
+    "reviewerRole": null,
+    "reviewedAt": null,
+    "reviewComment": "销售专家 Ground Truth 未冻结前仅用于契约验证，不生成正式评分。",
+    "groundTruthVersion": null
+  },
+  "status": "draft"
+}

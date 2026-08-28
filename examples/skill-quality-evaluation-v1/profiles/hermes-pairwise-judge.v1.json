@@ -1,0 +1,44 @@
+{
+  "schemaVersion": "ea.skill-judge-profile.v1",
+  "judgeProfileId": "hermes-skill-pairwise",
+  "profileVersion": "1.0.0",
+  "judgeProfileFingerprint": "7b25083ea2cc940312afc9252c2de0a8d268f96626cdcd1211c980f3df2c19a6",
+  "provider": null,
+  "modelId": null,
+  "modelVersion": null,
+  "modelConfig": {},
+  "rubricVersion": "1.0.0",
+  "rubric": [
+    {
+      "criterionId": "professional_fit",
+      "description": "输出是否符合目标岗位的专业表达、业务边界和工作方式。",
+      "weight": 25
+    },
+    {
+      "criterionId": "structure_and_clarity",
+      "description": "结构是否清晰，关键结论、依据和下一步是否容易理解。",
+      "weight": 25
+    },
+    {
+      "criterionId": "business_completeness",
+      "description": "输出是否解决完整业务问题，而非只覆盖表面标题。",
+      "weight": 30
+    },
+    {
+      "criterionId": "actionability",
+      "description": "建议或产物是否能够直接支持下一步岗位行动。",
+      "weight": 20
+    }
+  ],
+  "outputSchemaVersion": "ea.skill-judge-result.v1",
+  "blindOrderSeedPolicy": "run_seed_with_reverse_order",
+  "repeatPolicy": { "minimumVotes": 2, "reverseOrder": true },
+  "disagreementThreshold": 0.25,
+  "expertCalibration": {
+    "status": "unavailable",
+    "datasetId": null,
+    "calibrationFingerprint": null
+  },
+  "approvedDataClassifications": ["public", "internal_demo", "desensitized"],
+  "status": "unavailable"
+}

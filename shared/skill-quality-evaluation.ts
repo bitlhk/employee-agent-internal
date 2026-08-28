@@ -1,0 +1,488 @@
+import { z } from "zod";
+import {
+  sha256Schema,
+  skillRuntimeIdSchema,
+  strictSemverSchema,
+} from "./skill-market-v2";
+
+export const SKILL_EVAL_SUITE_V1_SCHEMA = "ea.skill-eval-suite.v1" as const;
+export const SKILL_EVALUATION_RUN_SNAPSHOT_V1_SCHEMA =
+  "ea.skill-evaluation-run-snapshot.v1" as const;
+export const SKILL_EVALUATION_RUN_EVIDENCE_V1_SCHEMA =
+  "ea.skill-evaluation-run-evidence.v1" as const;
+export const SKILL_SCORECARD_PROFILE_V1_SCHEMA =
+  "ea.skill-scorecard-profile.v1" as const;
+export const JUDGE_PROFILE_V1_SCHEMA = "ea.skill-judge-profile.v1" as const;
+
+const nonEmptyId = z.string().trim().min(1).max(256);
+const isoTimestamp = z.string().datetime({ offset: true });
+
+export const skillEvaluationSkillTypeSchema = z.enum([
+  "governed_workflow",
+  "knowledge_retrieval",
+  "content_generation",
+  "tool_execution",
+]);
+export type SkillEvaluationSkillType = z.infer<
+  typeof skillEvaluationSkillTypeSchema
+>;
+
+export const skillEvaluationBaselineModeSchema = z.enum([
+  "without_skill",
+  "previous_version",
+  "specified_skill",
+]);
+export type SkillEvaluationBaselineMode = z.infer<
+  typeof skillEvaluationBaselineModeSchema
+>;
+
+export const skillEvalSourceReferenceV1Schema = z.object({
+  sourceType: z.enum([
+    "repository_file",
+    "benchmark",
+    "golden_task",
+    "expert_ground_truth",
+    "approved_skill_artifact",
+  ]),
+  reference: z.string().trim().min(1).max(2_048),
+  contentSha256: sha256Schema,
+});
+
+export const skillEvalAssertionV1Schema = z.object({
+  assertionId: nonEmptyId,
+  mode: z.enum(["deterministic", "judge"]),
+  hardGate: z.boolean(),
+  metricId: nonEmptyId.nullable().default(null),
+});
+
+export const skillEvalCaseV1Schema = z.object({
+  caseId: nonEmptyId,
+  name: z.string().trim().min(1).max(512),
+  importance: z.enum(["critical", "high", "normal"]),
+  skillType: skillEvaluationSkillTypeSchema,
+  taskId: nonEmptyId.nullable().default(null),
+  prompt: z.string().trim().min(1),
+  expectedOutput: z.string().trim().min(1),
+  fixtureRefs: z.array(nonEmptyId).default([]),
+  assertions: z.array(skillEvalAssertionV1Schema).min(1),
+  requiredTrace: z.record(z.string(), z.unknown()).default({}),
+  baselineModes: z.array(skillEvaluationBaselineModeSchema).min(1),
+  minimumRuns: z.number().int().positive().default(1),
+});
+
+export const skillEvalExpertReviewV1Schema = z
+  .object({
+    status: z.enum([
+      "proposed",
+      "expert_reviewing",
+      "expert_confirmed",
+      "needs_resolution",
+    ]),
+    reviewerId: nonEmptyId.nullable().default(null),
+    reviewerRole: z.string().trim().min(1).max(256).nullable().default(null),
+    reviewedAt: isoTimestamp.nullable().default(null),
+    reviewComment: z.string().trim().min(1).max(8_000).nullable().default(null),
+    groundTruthVersion: nonEmptyId.nullable().default(null),
+  })
+  .superRefine((review, context) => {
+    if (
+      review.status === "expert_confirmed" &&
+      (!review.reviewerId ||
+        !review.reviewerRole ||
+        !review.reviewedAt ||
+        !review.reviewComment ||
+        !review.groundTruthVersion)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "expert-confirmed Eval Suites require reviewer identity, role, timestamp, comment and Ground Truth version",
+      });
+    }
+  });
+
+export const skillEvalSuiteV1Schema = z
+  .object({
+    schemaVersion: z.literal(SKILL_EVAL_SUITE_V1_SCHEMA),
+    suiteId: nonEmptyId,
+    skillIdentityId: nonEmptyId,
+    skillId: skillRuntimeIdSchema,
+    targetVersionId: nonEmptyId,
+    targetVersion: strictSemverSchema,
+    targetArtifactSha256: sha256Schema,
+    suiteVersion: strictSemverSchema,
+    suiteFingerprint: sha256Schema,
+    sourceReferences: z.array(skillEvalSourceReferenceV1Schema).min(1),
+    cases: z.array(skillEvalCaseV1Schema).min(1),
+    dataSnapshotRequirements: z.array(nonEmptyId).default([]),
+    expertReview: skillEvalExpertReviewV1Schema,
+    status: z.enum(["draft", "frozen", "retired"]),
+  })
+  .superRefine((suite, context) => {
+    const caseIds = new Set<string>();
+    const sourceRefs = new Set<string>();
+    for (const source of suite.sourceReferences) {
+      const key = `${source.sourceType}:${source.reference}`;
+      if (sourceRefs.has(key)) {
+        context.addIssue({
+          code: "custom",
+          path: ["sourceReferences"],
+          message: `duplicate Eval source ${key}`,
+        });
+      }
+      sourceRefs.add(key);
+    }
+    for (const item of suite.cases) {
+      if (caseIds.has(item.caseId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["cases"],
+          message: `duplicate Eval case ${item.caseId}`,
+        });
+      }
+      caseIds.add(item.caseId);
+      const assertionIds = new Set<string>();
+      for (const assertion of item.assertions) {
+        if (assertionIds.has(assertion.assertionId)) {
+          context.addIssue({
+            code: "custom",
+            path: ["cases"],
+            message: `${item.caseId}: duplicate assertion ${assertion.assertionId}`,
+          });
+        }
+        assertionIds.add(assertion.assertionId);
+      }
+    }
+  });
+export type SkillEvalSuiteV1 = z.infer<typeof skillEvalSuiteV1Schema>;
+
+const skillVersionRefSchema = z.object({
+  skillVersionId: nonEmptyId,
+  artifactSha256: sha256Schema,
+});
+
+export const skillEvaluationRunSnapshotV1Schema = z
+  .object({
+    schemaVersion: z.literal(SKILL_EVALUATION_RUN_SNAPSHOT_V1_SCHEMA),
+    runId: nonEmptyId,
+    createdAt: isoTimestamp,
+    suiteId: nonEmptyId,
+    suiteVersion: strictSemverSchema,
+    suiteFingerprint: sha256Schema,
+    targetSkill: skillVersionRefSchema,
+    baselineMode: skillEvaluationBaselineModeSchema,
+    baselineSkill: skillVersionRefSchema.nullable(),
+    rolePackReleaseId: nonEmptyId,
+    rolePackReleaseFingerprint: sha256Schema,
+    systemPromptFingerprint: sha256Schema,
+    model: z.object({
+      provider: nonEmptyId,
+      modelId: nonEmptyId,
+      modelVersion: nonEmptyId,
+      config: z.record(z.string(), z.unknown()),
+    }),
+    contextSnapshotId: nonEmptyId,
+    contextFingerprint: sha256Schema,
+    dataSnapshotId: nonEmptyId,
+    dataFingerprint: sha256Schema,
+    principal: z.object({
+      principalId: nonEmptyId,
+      purpose: nonEmptyId,
+      permissionSnapshotId: nonEmptyId,
+      permissionFingerprint: sha256Schema,
+    }),
+    toolPolicyFingerprint: sha256Schema,
+    toolVersions: z.record(z.string(), nonEmptyId),
+    runtime: z.object({
+      evalAdoptionId: nonEmptyId,
+      sessionId: nonEmptyId,
+      workspaceId: nonEmptyId,
+      cleanSession: z.literal(true),
+      cleanWorkspace: z.literal(true),
+      noSideEffectMode: z.literal(true),
+    }),
+    scorecardProfileFingerprint: sha256Schema,
+    judgeStatus: z.enum(["NOT_CONFIGURED", "CONFIGURED"]),
+    judgeProfileFingerprint: sha256Schema.nullable(),
+    runnerVersion: nonEmptyId,
+    providerVersion: nonEmptyId,
+    evaluationConfigFingerprint: sha256Schema,
+  })
+  .superRefine((snapshot, context) => {
+    const needsBaselineSkill =
+      snapshot.baselineMode === "previous_version" ||
+      snapshot.baselineMode === "specified_skill";
+    if (needsBaselineSkill !== Boolean(snapshot.baselineSkill)) {
+      context.addIssue({
+        code: "custom",
+        path: ["baselineSkill"],
+        message:
+          "version or specified Skill baselines require a baseline Skill; without-Skill baselines must not provide one",
+      });
+    }
+    if (
+      snapshot.judgeStatus === "NOT_CONFIGURED" &&
+      snapshot.judgeProfileFingerprint !== null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["judgeProfileFingerprint"],
+        message: "an unconfigured Judge must not carry a Profile fingerprint",
+      });
+    }
+    if (
+      snapshot.judgeStatus !== "NOT_CONFIGURED" &&
+      snapshot.judgeProfileFingerprint === null
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["judgeProfileFingerprint"],
+        message: "a configured Judge requires a Profile fingerprint",
+      });
+    }
+  });
+export type SkillEvaluationRunSnapshotV1 = z.infer<
+  typeof skillEvaluationRunSnapshotV1Schema
+>;
+
+export const skillEvaluationRunEvidenceV1Schema = z.object({
+  schemaVersion: z.literal(SKILL_EVALUATION_RUN_EVIDENCE_V1_SCHEMA),
+  runId: nonEmptyId,
+  evaluationConfigFingerprint: sha256Schema,
+  traceId: nonEmptyId,
+  outputSha256: sha256Schema,
+  artifactSha256s: z.array(sha256Schema),
+  actualSkillVersions: z.array(skillVersionRefSchema),
+  toolCallFingerprint: sha256Schema,
+  completedAt: isoTimestamp,
+  runEvidenceFingerprint: sha256Schema,
+});
+export type SkillEvaluationRunEvidenceV1 = z.infer<
+  typeof skillEvaluationRunEvidenceV1Schema
+>;
+
+export const scorecardMetricDefinitionV1Schema = z
+  .object({
+    metricId: nonEmptyId,
+    displayName: z.string().trim().min(1).max(256),
+    normalization: z.enum(["ratio", "pairwise", "bounded_high", "bounded_low"]),
+    floor: z.number().finite().nullable().default(null),
+    cap: z.number().finite().nullable().default(null),
+  })
+  .superRefine((metric, context) => {
+    const bounded = metric.normalization.startsWith("bounded_");
+    if (
+      bounded &&
+      (metric.floor === null ||
+        metric.cap === null ||
+        metric.floor >= metric.cap)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "bounded metrics require floor < cap",
+      });
+    }
+  });
+
+export const skillScorecardProfileV1Schema = z
+  .object({
+    schemaVersion: z.literal(SKILL_SCORECARD_PROFILE_V1_SCHEMA),
+    profileId: nonEmptyId,
+    profileVersion: strictSemverSchema,
+    profileFingerprint: sha256Schema,
+    applicableSkillTypes: z.array(skillEvaluationSkillTypeSchema).min(1),
+    dimensions: z
+      .array(
+        z.object({
+          dimensionId: nonEmptyId,
+          displayName: z.string().trim().min(1).max(256),
+          weight: z.number().positive().max(100),
+          metricIds: z.array(nonEmptyId).min(1),
+        })
+      )
+      .min(1),
+    metrics: z.array(scorecardMetricDefinitionV1Schema).min(1),
+    requiredMetrics: z.array(nonEmptyId).min(1),
+    optionalMetrics: z.array(nonEmptyId).default([]),
+    caseImportanceWeights: z.object({
+      critical: z.number().positive(),
+      high: z.number().positive(),
+      normal: z.number().positive(),
+    }),
+    repeatPolicy: z.object({
+      minimumRuns: z.number().int().positive(),
+      reportMean: z.boolean(),
+      reportStandardDeviation: z.boolean(),
+      reportMinimum: z.boolean(),
+      reportFailureCount: z.boolean(),
+    }),
+    missingMetricPolicy: z.literal("invalidate_case"),
+    judgeDisagreementPolicy: z.literal("expert_review"),
+    hardGates: z.array(nonEmptyId).min(1),
+    gradeThresholds: z.array(
+      z.object({
+        grade: z.enum(["A", "B", "C", "D"]),
+        minimum: z.number().min(0).max(100),
+        maximum: z.number().min(0).max(100),
+      })
+    ),
+    calibrationStatus: z.enum(["pilot", "calibrated"]),
+    calibrationEvidence: z.array(nonEmptyId).default([]),
+    formalGradesEnabled: z.boolean(),
+    status: z.enum(["active", "retired"]),
+  })
+  .superRefine((profile, context) => {
+    const dimensionWeight = profile.dimensions.reduce(
+      (total, dimension) => total + dimension.weight,
+      0
+    );
+    if (Math.abs(dimensionWeight - 100) > 0.000001) {
+      context.addIssue({
+        code: "custom",
+        path: ["dimensions"],
+        message: "Scorecard dimension weights must sum to 100",
+      });
+    }
+    const metricIds = new Set(profile.metrics.map(metric => metric.metricId));
+    if (metricIds.size !== profile.metrics.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["metrics"],
+        message: "Scorecard metric IDs must be unique",
+      });
+    }
+    const dimensionIds = new Set(
+      profile.dimensions.map(dimension => dimension.dimensionId)
+    );
+    if (dimensionIds.size !== profile.dimensions.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["dimensions"],
+        message: "Scorecard dimension IDs must be unique",
+      });
+    }
+    const referenced = [
+      ...profile.requiredMetrics,
+      ...profile.optionalMetrics,
+      ...profile.dimensions.flatMap(dimension => dimension.metricIds),
+    ];
+    for (const metricId of referenced) {
+      if (!metricIds.has(metricId)) {
+        context.addIssue({
+          code: "custom",
+          message: `Scorecard references unknown metric ${metricId}`,
+        });
+      }
+    }
+    const optional = new Set(profile.optionalMetrics);
+    for (const metricId of profile.requiredMetrics) {
+      if (optional.has(metricId)) {
+        context.addIssue({
+          code: "custom",
+          message: `metric ${metricId} cannot be both required and optional`,
+        });
+      }
+    }
+    if (
+      profile.formalGradesEnabled !==
+      (profile.calibrationStatus === "calibrated")
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["formalGradesEnabled"],
+        message: "formal grades are enabled only for calibrated Scorecards",
+      });
+    }
+    const gradeIds = new Set(profile.gradeThresholds.map(item => item.grade));
+    if (
+      profile.gradeThresholds.length !== 4 ||
+      gradeIds.size !== 4 ||
+      !(["A", "B", "C", "D"] as const).every(grade => gradeIds.has(grade)) ||
+      profile.gradeThresholds.some(item => item.minimum > item.maximum)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["gradeThresholds"],
+        message:
+          "Scorecard grade thresholds must define valid, unique A, B, C and D ranges",
+      });
+    }
+  });
+export type SkillScorecardProfileV1 = z.infer<
+  typeof skillScorecardProfileV1Schema
+>;
+
+export const judgeProfileV1Schema = z
+  .object({
+    schemaVersion: z.literal(JUDGE_PROFILE_V1_SCHEMA),
+    judgeProfileId: nonEmptyId,
+    profileVersion: strictSemverSchema,
+    judgeProfileFingerprint: sha256Schema,
+    provider: nonEmptyId.nullable(),
+    modelId: nonEmptyId.nullable(),
+    modelVersion: nonEmptyId.nullable(),
+    modelConfig: z.record(z.string(), z.unknown()),
+    rubricVersion: strictSemverSchema,
+    rubric: z
+      .array(
+        z.object({
+          criterionId: nonEmptyId,
+          description: z.string().trim().min(1),
+          weight: z.number().positive().max(100),
+        })
+      )
+      .min(1),
+    outputSchemaVersion: nonEmptyId,
+    blindOrderSeedPolicy: z.literal("run_seed_with_reverse_order"),
+    repeatPolicy: z.object({
+      minimumVotes: z.number().int().positive(),
+      reverseOrder: z.literal(true),
+    }),
+    disagreementThreshold: z.number().min(0).max(1),
+    expertCalibration: z.object({
+      status: z.enum(["unavailable", "pending", "calibrated"]),
+      datasetId: nonEmptyId.nullable(),
+      calibrationFingerprint: sha256Schema.nullable(),
+    }),
+    approvedDataClassifications: z.array(nonEmptyId),
+    status: z.enum(["unavailable", "draft", "calibrated", "suspended"]),
+  })
+  .superRefine((profile, context) => {
+    const rubricWeight = profile.rubric.reduce(
+      (total, criterion) => total + criterion.weight,
+      0
+    );
+    if (Math.abs(rubricWeight - 100) > 0.000001) {
+      context.addIssue({
+        code: "custom",
+        path: ["rubric"],
+        message: "Judge rubric weights must sum to 100",
+      });
+    }
+    const criterionIds = new Set(
+      profile.rubric.map(criterion => criterion.criterionId)
+    );
+    if (criterionIds.size !== profile.rubric.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["rubric"],
+        message: "Judge rubric criterion IDs must be unique",
+      });
+    }
+    if (
+      profile.status === "calibrated" &&
+      (!profile.provider ||
+        !profile.modelId ||
+        !profile.modelVersion ||
+        profile.expertCalibration.status !== "calibrated" ||
+        !profile.expertCalibration.datasetId ||
+        !profile.expertCalibration.calibrationFingerprint)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "calibrated Judge Profiles require a pinned model and expert calibration evidence",
+      });
+    }
+  });
+export type JudgeProfileV1 = z.infer<typeof judgeProfileV1Schema>;

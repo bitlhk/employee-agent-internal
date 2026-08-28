@@ -125,6 +125,7 @@
     "skills:market:v2:migrate": "tsx scripts/migrate-skill-market-v2.ts",
     "skills:market:v2:e2e": "tsx scripts/verify-skill-market-v2-e2e.ts",
     "skills:role-default:release": "tsx scripts/release-role-default-skill.ts",
+    "skills:quality:phase0:verify": "tsx scripts/verify-skill-quality-phase0.ts",
     "stats:backfill": "tsx scripts/visit-stats-backfill.ts",
     "stats:reconcile": "tsx scripts/visit-stats-reconcile.ts",
     "compress:images": "tsx scripts/compress-images.ts",
