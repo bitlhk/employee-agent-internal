@@ -2275,20 +2275,20 @@ export default function ClawAdmin() {
           setDefaultRoleDraft("");
         }
       }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
+        <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden bg-white sm:max-w-lg">
+          <DialogHeader className="min-w-0">
             <DialogTitle>管理授权岗位</DialogTitle>
-            <DialogDescription>
+            <DialogDescription className="max-w-full break-words">
               {roleAssignmentTarget?.userName || roleAssignmentTarget?.userEmail || `用户 #${roleAssignmentTarget?.userId || ""}`}
               只能在前台切换这里授权的岗位。每个岗位使用独立会话、记忆和运行身份。
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2 overflow-x-hidden overflow-y-auto pr-1">
             {roleOptions.filter((role: any) => role.status === "mvp").map((role: any) => {
               const roleId = String(role.id);
               const checked = roleAssignmentDraft.includes(roleId);
               return (
-                <div key={roleId} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2.5">
+                <div key={roleId} className="flex w-full min-w-0 items-center justify-between gap-3 overflow-hidden rounded-lg border border-gray-200 px-3 py-2.5">
                   <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-3">
                     <input
                       type="checkbox"
@@ -2296,12 +2296,12 @@ export default function ClawAdmin() {
                       disabled={roleAssignmentMutation.isPending}
                       onChange={event => toggleRoleAssignment(roleId, event.target.checked)}
                     />
-                    <span className="min-w-0">
-                      <strong className="block truncate text-sm font-medium text-gray-900">{role.name}</strong>
-                      <small className="block truncate text-xs text-gray-500">{role.description || roleId}</small>
+                    <span className="min-w-0 flex-1 overflow-hidden">
+                      <strong className="block max-w-full truncate text-sm font-medium text-gray-900">{role.name}</strong>
+                      <small className="block max-w-full truncate text-xs text-gray-500">{role.description || roleId}</small>
                     </span>
                   </label>
-                  <label className={`flex items-center gap-1.5 text-xs ${checked ? "cursor-pointer text-gray-700" : "text-gray-300"}`}>
+                  <label className={`flex shrink-0 items-center gap-1.5 text-xs ${checked ? "cursor-pointer text-gray-700" : "text-gray-300"}`}>
                     <input
                       type="radio"
                       name="default-role-assignment"
