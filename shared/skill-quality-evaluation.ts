@@ -36,6 +36,16 @@ export type SkillEvaluationBaselineMode = z.infer<
   typeof skillEvaluationBaselineModeSchema
 >;
 
+export const skillEvaluationExecutionArmSchema = z.enum([
+  "target_skill",
+  "without_skill",
+  "previous_version",
+  "specified_skill",
+]);
+export type SkillEvaluationExecutionArm = z.infer<
+  typeof skillEvaluationExecutionArmSchema
+>;
+
 export const skillEvalSourceReferenceV1Schema = z.strictObject({
   sourceType: z.enum([
     "repository_file",
@@ -81,6 +91,7 @@ export const skillEvalCaseV1Schema = z.strictObject({
   baselineModes: z.array(skillEvaluationBaselineModeSchema).min(1),
   minimumRuns: z.number().int().positive().default(1),
 });
+export type SkillEvalCaseV1 = z.infer<typeof skillEvalCaseV1Schema>;
 
 export const skillEvalExpertReviewV1Schema = z
   .strictObject({
@@ -184,6 +195,11 @@ const skillVersionRefSchema = z.strictObject({
   artifactSha256: sha256Schema,
 });
 
+const skillRuntimeExpectationSchema = skillVersionRefSchema.extend({
+  skillId: skillRuntimeIdSchema,
+  version: strictSemverSchema,
+});
+
 export const skillEvaluationRunSnapshotV1Schema = z
   .strictObject({
     schemaVersion: z.literal(SKILL_EVALUATION_RUN_SNAPSHOT_V1_SCHEMA),
@@ -192,9 +208,13 @@ export const skillEvaluationRunSnapshotV1Schema = z
     suiteId: nonEmptyId,
     suiteVersion: strictSemverSchema,
     suiteFingerprint: sha256Schema,
+    caseId: nonEmptyId,
+    repeatIndex: z.number().int().positive(),
+    executionArm: skillEvaluationExecutionArmSchema,
     targetSkill: skillVersionRefSchema,
-    baselineMode: skillEvaluationBaselineModeSchema,
+    baselineMode: skillEvaluationBaselineModeSchema.nullable(),
     baselineSkill: skillVersionRefSchema.nullable(),
+    expectedRuntimeSkills: z.array(skillRuntimeExpectationSchema).max(1),
     rolePackReleaseId: nonEmptyId,
     rolePackReleaseFingerprint: sha256Schema,
     systemPromptFingerprint: sha256Schema,
@@ -275,15 +295,44 @@ export const skillEvaluationRunSnapshotV1Schema = z
     evaluationConfigFingerprint: sha256Schema,
   })
   .superRefine((snapshot, context) => {
-    const needsBaselineSkill =
-      snapshot.baselineMode === "previous_version" ||
-      snapshot.baselineMode === "specified_skill";
-    if (needsBaselineSkill !== Boolean(snapshot.baselineSkill)) {
+    const targetArm = snapshot.executionArm === "target_skill";
+    const withoutSkillArm = snapshot.executionArm === "without_skill";
+    const versionBaselineArm =
+      snapshot.executionArm === "previous_version" ||
+      snapshot.executionArm === "specified_skill";
+    const validBaselineIdentity = targetArm
+      ? snapshot.baselineMode === null && snapshot.baselineSkill === null
+      : withoutSkillArm
+        ? snapshot.baselineMode === "without_skill" &&
+          snapshot.baselineSkill === null
+        : snapshot.baselineMode === snapshot.executionArm &&
+          snapshot.baselineSkill !== null;
+    if (!validBaselineIdentity) {
       context.addIssue({
         code: "custom",
-        path: ["baselineSkill"],
+        path: ["executionArm"],
         message:
-          "version or specified Skill baselines require a baseline Skill; without-Skill baselines must not provide one",
+          "execution arm, baseline mode and baseline Skill identity are inconsistent",
+      });
+    }
+    const expected = snapshot.expectedRuntimeSkills;
+    const expectedSkillIdentity = targetArm
+      ? expected.length === 1 &&
+        expected[0]?.skillVersionId === snapshot.targetSkill.skillVersionId &&
+        expected[0]?.artifactSha256 === snapshot.targetSkill.artifactSha256
+      : withoutSkillArm
+        ? expected.length === 0
+        : versionBaselineArm &&
+          expected.length === 1 &&
+          expected[0]?.skillVersionId ===
+            snapshot.baselineSkill?.skillVersionId &&
+          expected[0]?.artifactSha256 ===
+            snapshot.baselineSkill?.artifactSha256;
+    if (!expectedSkillIdentity) {
+      context.addIssue({
+        code: "custom",
+        path: ["expectedRuntimeSkills"],
+        message: "runtime Skill expectation does not match the execution arm",
       });
     }
     if (

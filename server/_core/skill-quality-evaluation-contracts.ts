@@ -222,7 +222,7 @@ export function approvedSkillInventoryFingerprint(
   return governanceFingerprint(body);
 }
 
-function defaultSkillStoreRoot(): string {
+export function resolveSkillStoreRoot(): string {
   const configured = process.env.SKILL_STORE?.trim();
   if (!configured) return path.join(homedir(), "skill-store");
   if (configured === "~") return homedir();
@@ -576,7 +576,7 @@ export function runSkillQualityPhase0ContractChecks(
     }
     locallyVerifiedArtifactCount = verifyLocalInventoryArtifacts({
       inventory: approvedInventory,
-      skillStoreRoot: options.skillStoreRoot || defaultSkillStoreRoot(),
+      skillStoreRoot: options.skillStoreRoot || resolveSkillStoreRoot(),
       requireLocalArtifacts: options.requireLocalArtifacts === true,
       warnings,
       errors,
@@ -712,3 +712,54 @@ export function runSkillQualityPhase0ContractChecks(
 }
 
 export type { ApprovedSkillInventory, JudgeProfileV1, PilotManifest };
+
+export function loadSkillQualityPilotContracts(input: {
+  root?: string;
+  skillId: string;
+  skillStoreRoot?: string;
+}): {
+  manifest: PilotManifest;
+  pilot: PilotManifest["pilots"][number];
+  suite: SkillEvalSuiteV1;
+  scorecard: SkillScorecardProfileV1;
+  judge: JudgeProfileV1;
+  inventory: ApprovedSkillInventory;
+  skillStoreRoot: string;
+} {
+  const root = input.root || process.cwd();
+  const skillStoreRoot = input.skillStoreRoot || resolveSkillStoreRoot();
+  const phase0 = runSkillQualityPhase0ContractChecks(root, {
+    requireLocalArtifacts: true,
+    skillStoreRoot,
+  });
+  if (phase0.status !== "PASS") {
+    throw new Error(`Phase 0 strict gate failed:\n${phase0.errors.join("\n")}`);
+  }
+  const manifest = pilotManifestSchema.parse(
+    readJson(path.join(root, SKILL_QUALITY_PILOT_MANIFEST_PATH))
+  );
+  const pilot = manifest.pilots.find(item => item.skillId === input.skillId);
+  if (!pilot)
+    throw new Error(`Skill quality pilot is not frozen: ${input.skillId}`);
+  const suite = skillEvalSuiteV1Schema.parse(
+    readJson(path.join(root, pilot.suitePath))
+  );
+  const scorecard = skillScorecardProfileV1Schema.parse(
+    readJson(path.join(root, manifest.scorecardProfilePath))
+  );
+  const judge = judgeProfileV1Schema.parse(
+    readJson(path.join(root, manifest.judgeProfilePath))
+  );
+  const inventory = approvedSkillInventorySchema.parse(
+    readJson(path.join(root, manifest.approvedSkillInventoryPath))
+  );
+  return {
+    manifest,
+    pilot,
+    suite,
+    scorecard,
+    judge,
+    inventory,
+    skillStoreRoot,
+  };
+}

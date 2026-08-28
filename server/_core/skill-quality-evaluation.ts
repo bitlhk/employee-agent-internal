@@ -44,6 +44,7 @@ export function evaluationConfigFingerprint(
     ...without(snapshot, [
       "runId",
       "createdAt",
+      "repeatIndex",
       "evaluationConfigFingerprint",
       "runtime",
     ]),

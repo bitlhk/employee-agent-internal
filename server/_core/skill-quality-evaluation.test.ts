@@ -69,6 +69,8 @@ function snapshot(
     evalAdoptionId?: string;
     sessionId?: string;
     workspaceId?: string;
+    repeatIndex?: number;
+    executionArm?: SkillEvaluationRunSnapshotV1["executionArm"];
     modelConfig?: Record<string, unknown>;
     timeoutMs?: number;
     maxTotalTokens?: number;
@@ -77,6 +79,9 @@ function snapshot(
     judgeProfileFingerprint?: string | null;
   } = {}
 ): SkillEvaluationRunSnapshotV1 {
+  const executionArm = overrides.executionArm || "previous_version";
+  const targetArm = executionArm === "target_skill";
+  const withoutSkillArm = executionArm === "without_skill";
   const value: SkillEvaluationRunSnapshotV1 = {
     schemaVersion: "ea.skill-evaluation-run-snapshot.v1",
     runId: overrides.runId || "eval-run-1",
@@ -84,15 +89,38 @@ function snapshot(
     suiteId: "wealth-manager-assistant-quality-v1",
     suiteVersion: "1.0.0",
     suiteFingerprint: SHA_A,
+    caseId: "WM-SKILL-EVAL-001",
+    repeatIndex: overrides.repeatIndex || 1,
+    executionArm,
     targetSkill: {
       skillVersionId: "skill-version-current",
       artifactSha256: SHA_B,
     },
-    baselineMode: "previous_version",
-    baselineSkill: {
-      skillVersionId: "skill-version-previous",
-      artifactSha256: SHA_C,
-    },
+    baselineMode: targetArm ? null : executionArm,
+    baselineSkill:
+      targetArm || withoutSkillArm
+        ? null
+        : {
+            skillVersionId: "skill-version-previous",
+            artifactSha256: SHA_C,
+          },
+    expectedRuntimeSkills: withoutSkillArm
+      ? []
+      : [
+          targetArm
+            ? {
+                skillId: "wealth-manager-assistant",
+                version: "2.0.0",
+                skillVersionId: "skill-version-current",
+                artifactSha256: SHA_B,
+              }
+            : {
+                skillId: "wealth-manager-assistant",
+                version: "1.0.0",
+                skillVersionId: "skill-version-previous",
+                artifactSha256: SHA_C,
+              },
+        ],
     rolePackReleaseId: "wealth-role-pack-release",
     rolePackReleaseFingerprint: SHA_A,
     systemPromptFingerprint: SHA_B,
@@ -188,6 +216,7 @@ describe("Skill Quality Evaluation Phase 0", () => {
       evalAdoptionId: "eval-adoption-2",
       sessionId: "session-2",
       workspaceId: "workspace-2",
+      repeatIndex: 2,
     });
     expect(repeated.evaluationConfigFingerprint).toBe(
       first.evaluationConfigFingerprint
@@ -195,6 +224,9 @@ describe("Skill Quality Evaluation Phase 0", () => {
     expect(
       snapshot({ modelConfig: { temperature: 0.2 } })
         .evaluationConfigFingerprint
+    ).not.toBe(first.evaluationConfigFingerprint);
+    expect(
+      snapshot({ executionArm: "target_skill" }).evaluationConfigFingerprint
     ).not.toBe(first.evaluationConfigFingerprint);
     expect(
       snapshot({ timeoutMs: 30_000 }).evaluationConfigFingerprint
