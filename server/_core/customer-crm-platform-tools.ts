@@ -19,6 +19,7 @@ export const CUSTOMER_CRM_PLATFORM_TOOLS = [{
   name: TOOL_NAME,
   description: [
     "Create a governed CRM follow-up task for a customer explicitly assigned to the current employee.",
+    "This is the only tool for saving a customer follow-up to CRM; never substitute demo_create_followup_task, which writes only an isolated Demo record.",
     "When the user has asked to create the task, call this tool immediately; do not ask for confirmation in chat first.",
     "The first call creates the platform's single official confirmation request, and the confirmed retry performs the write.",
     "Public Demo customers without an active assignment are read-only. Always provide a stable idempotency_key.",
