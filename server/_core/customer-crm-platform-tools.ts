@@ -19,8 +19,9 @@ export const CUSTOMER_CRM_PLATFORM_TOOLS = [{
   name: TOOL_NAME,
   description: [
     "Create a governed CRM follow-up task for a customer explicitly assigned to the current employee.",
-    "Use only after the user asks to create the task. Public Demo customers without an active assignment are read-only.",
-    "This write always requires one user confirmation and a stable idempotency_key.",
+    "When the user has asked to create the task, call this tool immediately; do not ask for confirmation in chat first.",
+    "The first call creates the platform's single official confirmation request, and the confirmed retry performs the write.",
+    "Public Demo customers without an active assignment are read-only. Always provide a stable idempotency_key.",
   ].join(" "),
   inputSchema: {
     type: "object",

@@ -33,7 +33,10 @@ vi.mock("./audit-events", () => ({
   recordAuditRequired: mocks.recordAudit,
 }));
 
-import { handleCustomerCrmPlatformTool } from "./customer-crm-platform-tools";
+import {
+  CUSTOMER_CRM_PLATFORM_TOOLS,
+  handleCustomerCrmPlatformTool,
+} from "./customer-crm-platform-tools";
 
 const principal = {
   tenantId: "tn_demo",
@@ -101,6 +104,12 @@ afterEach(() => {
 });
 
 describe("customer CRM platform write tool", () => {
+  it("uses the platform confirmation instead of a conversational confirmation", () => {
+    expect(CUSTOMER_CRM_PLATFORM_TOOLS[0].description).toContain("call this tool immediately");
+    expect(CUSTOMER_CRM_PLATFORM_TOOLS[0].description).toContain("do not ask for confirmation in chat first");
+    expect(CUSTOMER_CRM_PLATFORM_TOOLS[0].description).toContain("single official confirmation request");
+  });
+
   it("does not write a public customer without an explicit assignment", async () => {
     mocks.evaluateWriteAccess.mockResolvedValue({
       ...allowed,
