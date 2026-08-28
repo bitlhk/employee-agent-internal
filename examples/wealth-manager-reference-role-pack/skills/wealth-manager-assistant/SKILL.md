@@ -6,7 +6,14 @@ description: >-
 version: 2.0.2
 author: 李文华
 category: 财富管理
-tags: [wealth-manager, banking, customer-management, product-recommendation, compliance]
+tags:
+  [
+    wealth-manager,
+    banking,
+    customer-management,
+    product-recommendation,
+    compliance,
+  ]
 ---
 
 # 客户经理财富助手
@@ -31,21 +38,21 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 
 平台侧已统一托管财富助手 MCP，Skill 侧不得保存 token，不得启动本地进程。
 
-| 工具 | 用途 |
-|---|---|
-| `wealth_assistant_context_probe` | 确认当前客户经理身份、权限和数据范围 |
-| `wealth_assistant_customer_list` | 查询当前客户经理可见客户列表 |
-| `get_governed_customer_profile` | 按财富岗位、当前用途和客户范围获取字段裁剪后的统一客户画像 |
-| `wealth_assistant_customer_detail` | 查询单个客户的财富领域资产、持仓、到期产品和推荐信息 |
-| `get_wealth_policy_basis` | 获取当前岗位可用的现行适当性制度版本和安全聚合的有效期过滤证据 |
-| `prepare_wealth_maturity_context` | 在当前用户授权客户范围内生成有数量上限的到期经营清单和优先级 |
+| 工具                                | 用途                                                                   |
+| ----------------------------------- | ---------------------------------------------------------------------- |
+| `wealth_assistant_context_probe`    | 确认当前客户经理身份、权限和数据范围                                   |
+| `wealth_assistant_customer_list`    | 查询当前客户经理可见客户列表                                           |
+| `get_governed_customer_profile`     | 按财富岗位、当前用途和客户范围获取字段裁剪后的统一客户画像             |
+| `wealth_assistant_customer_detail`  | 查询单个客户的财富领域资产、持仓、到期产品和推荐信息                   |
+| `get_wealth_policy_basis`           | 获取当前岗位可用的现行适当性制度版本和安全聚合的有效期过滤证据         |
+| `prepare_wealth_maturity_context`   | 在当前用户授权客户范围内生成有数量上限的到期经营清单和优先级           |
 | `prepare_wealth_allocation_context` | 为指定客户准备经过当前制度和确定性适当性 Policy 筛选的正式候选产品集合 |
-| `wealth_assistant_product_search` | 搜索银行理财、基金等产品 |
-| `wealth_assistant_product_info` | 查询单个产品详情 |
-| `wealth_assistant_fund_info` | 按基金代码查询基金信息 |
-| `wealth_assistant_nav_history` | 查询基金净值历史 |
-| `wealth_assistant_wealth_product` | 按产品代码查询理财产品详情 |
-| `wealth_assistant_market_news` | 获取金融市场资讯 |
+| `wealth_assistant_product_search`   | 搜索银行理财、基金等产品                                               |
+| `wealth_assistant_product_info`     | 查询单个产品详情                                                       |
+| `wealth_assistant_fund_info`        | 按基金代码查询基金信息                                                 |
+| `wealth_assistant_nav_history`      | 查询基金净值历史                                                       |
+| `wealth_assistant_wealth_product`   | 按产品代码查询理财产品详情                                             |
+| `wealth_assistant_market_news`      | 获取金融市场资讯                                                       |
 
 ## 执行总原则
 
@@ -197,7 +204,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 1. 调 `prepare_wealth_maturity_context`，按用户要求设置 7/14/30/90 天窗口；默认最多扫描 20 位授权客户
 2. 只使用工具返回的 `items`，按优先级、到期时间和金额整理跟进计划
 3. 到期事实不等于产品推荐；需要提出当前替代产品时，另调 `prepare_wealth_allocation_context`
-4. 用户明确要求创建跟进任务时，使用当前环境已授权的 `create_followup`；Reference Demo 使用 `demo_create_followup_task`
+4. 用户明确要求把跟进任务保存到 CRM 时，必须使用 `create_customer_followup_task`；只有用户明确要求写入隔离 Demo 记录时才使用 `demo_create_followup_task`
 5. 写入必须提供稳定幂等键并等待操作确认；确认前不得声称任务已创建
 
 ### 11. 创建方案草稿或跟进任务
@@ -207,7 +214,7 @@ tags: [wealth-manager, banking, customer-management, product-recommendation, com
 流程：
 
 1. 先展示拟写入的客户、目标、时间、优先级或方案摘要
-2. 明确区分 Reference Demo 和企业 CRM：Demo 写工具只接受标注 Demo 的客户称谓，且只写隔离演示表
+2. 明确区分 Reference Demo 和企业 CRM：`create_customer_followup_task` 是 CRM 跟进任务的唯一正式入口；Demo 写工具只接受用户明确要求的隔离 Demo 记录，且不连接 CRM
 3. 同一客户、同一经营事件需要创建多个行动项时，合并为一个父任务，并通过 `checklist_items` 一次提交；不得逐项调用写工具制造多张确认卡
 4. 使用与整组业务动作稳定绑定的 `idempotency_key`，同一动作重试必须复用同一个键
 5. 用户已明确要求创建时，直接发起一次写工具并等待平台原生操作确认；不得调用 `ask_user_question`，不得在卡片确认后再次要求文字确认
