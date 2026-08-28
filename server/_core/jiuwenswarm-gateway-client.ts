@@ -436,7 +436,7 @@ async function handleGatewayEvent(args: {
     const resultText = stringifyJiuwenToolPayload(tool.resultPayload);
     const publicResultText = sanitizePublicRuntimePaths(resultText, args.workspaceDir);
     const governanceApproval = tool.isResult
-      ? normalizeGovernanceApprovalToolEvent(payload, tool.resultPayload, tool.isError)
+      ? normalizeGovernanceApprovalToolEvent(payload, tool.resultPayload)
       : null;
     const governancePermission: JiuwenContinuationPermission | null = governanceApproval
       ? buildGovernanceContinuationPermission(governanceApproval, tool.toolName)

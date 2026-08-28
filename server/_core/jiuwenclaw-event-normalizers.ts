@@ -193,18 +193,21 @@ function governanceMetadata(value: unknown, depth = 0): Record<string, unknown> 
 export function normalizeGovernanceApprovalToolEvent(
   delta: unknown,
   resultPayload: unknown,
-  isError: boolean,
 ): GovernanceApprovalToolEvent | null {
-  // Approval requests are emitted as failed tool results. Jiuwen may retain
-  // metadata from the first attempt when streaming a successful retry, so a
-  // successful result must never recreate the confirmation card.
-  if (!isError) return null;
-  const metadata = governanceMetadata(delta) || governanceMetadata(resultPayload);
+  const resultMetadata = governanceMetadata(resultPayload);
+  const metadata = resultMetadata || governanceMetadata(delta);
   const text = stringifyJiuwenToolPayload(resultPayload);
   const approvalId = String(metadata?.approvalId || text.match(/apr_[0-9a-f-]{36}/i)?.[0] || "").trim();
   const code = String(metadata?.code || "").trim();
   if (!/^apr_[0-9a-f-]{36}$/i.test(approvalId)) return null;
   if (code && code !== "EA_APPROVAL_REQUIRED") return null;
+  const resultRequiresApproval = /(?:需要(?:你本人)?确认|确认后.{0,80}(?:重试|继续)|approval\s+required|requires?\s+(?:your\s+)?approval)/iu.test(text);
+  const resultHasApprovalMetadata = String(resultMetadata?.code || "").trim() === "EA_APPROVAL_REQUIRED";
+  // Enterprise Jiuwen currently flattens the structured result and reports
+  // approval requests with is_error=false. Use the current result's explicit
+  // approval semantics instead. Metadata retained only on the outer delta is
+  // insufficient because it can survive into the successful retry event.
+  if (!resultRequiresApproval && !resultHasApprovalMetadata) return null;
   return {
     approvalId,
     expiresAt: String(metadata?.expiresAt || "").trim() || undefined,

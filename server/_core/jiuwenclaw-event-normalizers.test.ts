@@ -52,7 +52,7 @@ describe("governance approval tool event normalization", () => {
           demo: true,
         },
       },
-    }, true);
+    });
     expect(event).toEqual({
       approvalId: "apr_00000000-0000-4000-8000-000000000001",
       expiresAt: "2026-08-09T10:00:00.000Z",
@@ -64,13 +64,16 @@ describe("governance approval tool event normalization", () => {
     });
   });
 
-  it("falls back to the confirmation id in text but ignores unrelated tool failures", () => {
+  it("recognizes a flattened approval result but ignores unrelated ids and failures", () => {
     expect(normalizeGovernanceApprovalToolEvent({}, {
-      content: [{ type: "text", text: "确认编号：apr_00000000-0000-4000-8000-000000000001" }],
-    }, true)?.approvalId).toBe("apr_00000000-0000-4000-8000-000000000001");
+      content: [{ type: "text", text: "该操作需要你本人确认。确认编号：apr_00000000-0000-4000-8000-000000000001。确认后重试。" }],
+    })?.approvalId).toBe("apr_00000000-0000-4000-8000-000000000001");
+    expect(normalizeGovernanceApprovalToolEvent({}, {
+      content: [{ type: "text", text: "执行记录关联确认编号 apr_00000000-0000-4000-8000-000000000001。" }],
+    })).toBeNull();
     expect(normalizeGovernanceApprovalToolEvent({}, {
       content: [{ type: "text", text: "普通工具执行失败" }],
-    }, true)).toBeNull();
+    })).toBeNull();
   });
 
   it("does not recreate a confirmation from metadata retained on a successful retry", () => {
@@ -88,6 +91,6 @@ describe("governance approval tool event normalization", () => {
         schema: "ea.customer-crm-execution-receipt.v1",
         status: "completed",
       },
-    }, false)).toBeNull();
+    })).toBeNull();
   });
 });

@@ -1356,7 +1356,6 @@ export async function forwardToJiuwenClaw(
                 const governanceApproval = normalizeGovernanceApprovalToolEvent(
                   body?.delta,
                   tool.resultPayload,
-                  tool.isError,
                 );
                 if (governanceApproval) {
                   writeEvent("governance_approval_required", {
