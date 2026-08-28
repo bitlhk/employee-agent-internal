@@ -3,7 +3,7 @@ import { governanceFingerprint } from "./governance/contracts";
 
 const REQUIRED_ARMS: SkillEvaluationExecutionArm[] = [
   "target_skill",
-  "without_skill",
+  "without_target_skill",
   "previous_version",
 ];
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -46,7 +46,8 @@ export type SkillQualityRuntimeSmokeAggregate = {
   arms: Array<{
     executionArm: SkillEvaluationExecutionArm;
     adoptionId: string;
-    runtimeIdentityFingerprint: string;
+    preDispatchIdentityFingerprint: string;
+    nativeSkillEvidenceFingerprint: string;
     sourceReportFingerprint: string;
     conversationId: string;
     requestId: string;
@@ -55,6 +56,7 @@ export type SkillQualityRuntimeSmokeAggregate = {
     assistantTextSha256: string;
     rawSseSha256: string;
     eventCount: number;
+    streamEndCount: number;
   }>;
   aggregateFingerprint: string;
 };
@@ -111,6 +113,10 @@ export function aggregateSkillQualityRuntimeSmokes(
     seenArms.add(executionArm);
 
     const profile = record(report.profile, `report[${index}].profile`);
+    const { profileFingerprint: storedProfileFingerprint, ...profileBody } = profile;
+    if (governanceFingerprint(profileBody) !== storedProfileFingerprint) {
+      throw new Error(`report[${index}] Runtime Profile fingerprint is invalid`);
+    }
     const profileId = text(profile.profileId, `report[${index}].profile.profileId`);
     const profileFingerprint = sha256(
       profile.profileFingerprint,
@@ -157,7 +163,11 @@ export function aggregateSkillQualityRuntimeSmokes(
       turn.executionArm !== executionArm ||
       turn.status !== "PASS" ||
       turn.httpStatus !== 200 ||
-      turn.runtimeIdentityStatus !== "VERIFIED" ||
+      turn.preDispatchIdentityStatus !== "VERIFIED" ||
+      turn.nativeSkillIdentityStatus !== "VERIFIED" ||
+      turn.streamCompletionStatus !== "VERIFIED" ||
+      turn.streamEndCount !== 1 ||
+      array(turn.unpairedToolCallIds, `report[${index}].runtimeTurns[0].unpairedToolCallIds`).length !== 0 ||
       Number(turn.elapsedMs) <= 0 ||
       !String(turn.assistantText || "").trim()
     ) {
@@ -168,8 +178,8 @@ export function aggregateSkillQualityRuntimeSmokes(
       throw new Error(`report[${index}] Runtime turn adoption does not match its profile`);
     }
     const runtimeIdentity = record(
-      turn.runtimeIdentity,
-      `report[${index}].runtimeTurns[0].runtimeIdentity`
+      turn.preDispatchIdentity,
+      `report[${index}].runtimeTurns[0].preDispatchIdentity`
     );
     if (
       runtimeIdentity.profileFingerprint !== profileFingerprint ||
@@ -178,20 +188,20 @@ export function aggregateSkillQualityRuntimeSmokes(
     ) {
       throw new Error(`report[${index}] Runtime identity does not match its frozen profile`);
     }
-    const runtimeIdentityFingerprint = sha256(
-      turn.runtimeIdentityFingerprint,
-      `report[${index}].runtimeTurns[0].runtimeIdentityFingerprint`
+    const preDispatchIdentityFingerprint = sha256(
+      turn.preDispatchIdentityFingerprint,
+      `report[${index}].runtimeTurns[0].preDispatchIdentityFingerprint`
     );
-    if (governanceFingerprint(runtimeIdentity) !== runtimeIdentityFingerprint) {
-      throw new Error(`report[${index}] Runtime identity fingerprint is invalid`);
+    if (governanceFingerprint(runtimeIdentity) !== preDispatchIdentityFingerprint) {
+      throw new Error(`report[${index}] pre-dispatch identity fingerprint is invalid`);
     }
     const runtimeSkills = array(
-      runtimeIdentity.runtimeSkills,
-      `report[${index}].runtimeTurns[0].runtimeIdentity.runtimeSkills`
+      runtimeIdentity.injectedSkills,
+      `report[${index}].runtimeTurns[0].preDispatchIdentity.injectedSkills`
     );
     const expectedSkill = armProfile.expectedSkill;
     if (!expectedSkill && runtimeSkills.length !== 0) {
-      throw new Error("without_skill Runtime identity must not include the evaluated Skill");
+      throw new Error("without_target_skill pre-dispatch identity must not inject the evaluated Skill");
     }
     if (expectedSkill) {
       const expected = record(expectedSkill, `report[${index}].profile.expectedSkill`);
@@ -201,7 +211,28 @@ export function aggregateSkillQualityRuntimeSmokes(
           skill.version === expected.version &&
           skill.artifactSha256 === expected.artifactSha256;
       });
-      if (!matched) throw new Error(`report[${index}] did not execute the expected Skill artifact`);
+      if (!matched) throw new Error(`report[${index}] did not inject the expected Skill artifact`);
+    }
+    const nativeLoadedSkills = array(
+      turn.nativeLoadedSkills,
+      `report[${index}].runtimeTurns[0].nativeLoadedSkills`
+    ).map((value, skillIndex) =>
+      record(value, `report[${index}].runtimeTurns[0].nativeLoadedSkills[${skillIndex}]`)
+    );
+    if (expectedSkill) {
+      const expected = record(expectedSkill, `report[${index}].profile.expectedSkill`);
+      const nativeMatch = nativeLoadedSkills.some(skill =>
+        skill.skillId === expected.skillId &&
+        skill.version === expected.version &&
+        skill.entrypointSha256 === expected.entrypointSha256
+      );
+      if (!nativeMatch) {
+        throw new Error(`report[${index}] native skill_tool did not load the expected Skill entrypoint`);
+      }
+    } else if (
+      nativeLoadedSkills.some(skill => skill.skillId === profile.evaluatedSkillId)
+    ) {
+      throw new Error("without_target_skill native execution loaded the evaluated Skill");
     }
 
     const conversationId = text(
@@ -224,7 +255,8 @@ export function aggregateSkillQualityRuntimeSmokes(
     summaries.push({
       executionArm,
       adoptionId,
-      runtimeIdentityFingerprint,
+      preDispatchIdentityFingerprint,
+      nativeSkillEvidenceFingerprint: governanceFingerprint(nativeLoadedSkills),
       sourceReportFingerprint,
       conversationId,
       requestId: text(run.requestId || run.runId, `report[${index}].run.requestId`),
@@ -233,6 +265,7 @@ export function aggregateSkillQualityRuntimeSmokes(
       assistantTextSha256: sha256(turn.assistantTextSha256, `report[${index}].assistantTextSha256`),
       rawSseSha256: sha256(turn.rawSseSha256, `report[${index}].rawSseSha256`),
       eventCount: events.length,
+      streamEndCount: Number(turn.streamEndCount),
     });
   }
 

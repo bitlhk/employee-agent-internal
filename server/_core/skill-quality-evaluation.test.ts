@@ -81,7 +81,7 @@ function snapshot(
 ): SkillEvaluationRunSnapshotV1 {
   const executionArm = overrides.executionArm || "previous_version";
   const targetArm = executionArm === "target_skill";
-  const withoutSkillArm = executionArm === "without_skill";
+  const withoutTargetSkillArm = executionArm === "without_target_skill";
   const value: SkillEvaluationRunSnapshotV1 = {
     schemaVersion: "ea.skill-evaluation-run-snapshot.v1",
     runId: overrides.runId || "eval-run-1",
@@ -98,13 +98,13 @@ function snapshot(
     },
     baselineMode: targetArm ? null : executionArm,
     baselineSkill:
-      targetArm || withoutSkillArm
+      targetArm || withoutTargetSkillArm
         ? null
         : {
             skillVersionId: "skill-version-previous",
             artifactSha256: SHA_C,
           },
-    expectedRuntimeSkills: withoutSkillArm
+    expectedRuntimeSkills: withoutTargetSkillArm
       ? []
       : [
           targetArm
@@ -198,13 +198,13 @@ describe("Skill Quality Evaluation Phase 0", () => {
           skillId: "wealth-manager-assistant",
           targetVersion: "2.0.1",
           caseCount: 5,
-          baselineModes: ["without_skill", "previous_version"],
+          baselineModes: ["without_target_skill", "previous_version"],
         }),
         expect.objectContaining({
           skillId: "goldencoach-stage-evaluation",
           targetVersion: "1.0.1",
           caseCount: 1,
-          baselineModes: ["without_skill"],
+          baselineModes: ["without_target_skill"],
         }),
       ])
     );

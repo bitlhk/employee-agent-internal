@@ -1,7 +1,7 @@
 {
   "schemaVersion": "ea.skill-quality-evaluation-pilots.v1",
   "manifestVersion": "1.0.2",
-  "manifestFingerprint": "be178fae2acce761f76842fd7a35b98469a18b156a67111fe4c67ce4c8b6bfeb",
+  "manifestFingerprint": "bf1098025eb357f2ac6b378e3800bde57e7a94ca523007ef151a9a51eaf07fab",
   "status": "phase_0_frozen",
   "scorecardProfilePath": "examples/skill-quality-evaluation-v1/profiles/governed-workflow-scorecard.v1.json",
   "judgeProfilePath": "examples/skill-quality-evaluation-v1/profiles/hermes-pairwise-judge.v1.json",
@@ -25,7 +25,7 @@
       },
       "baselines": [
         {
-          "mode": "without_skill",
+          "mode": "without_target_skill",
           "skillVersionId": null,
           "version": null,
           "artifactSha256": null
@@ -53,7 +53,7 @@
       },
       "baselines": [
         {
-          "mode": "without_skill",
+          "mode": "without_target_skill",
           "skillVersionId": null,
           "version": null,
           "artifactSha256": null

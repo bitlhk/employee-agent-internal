@@ -8,7 +8,7 @@
 >
 > Phase 1A Controlled Harness Complete / Diagnostic Executed
 >
-> Phase 1B EA Runtime Profile + Three-arm Read-only Smoke Verified / Full Suite Pending / Pilot Expert Validation Pending
+> Phase 1B Native Skill + SSE Gates Hardened / Three-arm Read-only Smoke Verified / Full Suite Pending / Pilot Expert Validation Pending
 
 已冻结并可机器校验：
 
@@ -25,7 +25,7 @@
 Phase 1A 已具备：
 
 - 固定版本 Promptfoo Node Runner；
-- 目标版、上一版、无 Skill 三执行臂；
+- 目标版、上一版、无目标 Skill 三执行臂；
 - 每轮独立的 Harness Workspace，以及逻辑 Adoption/Session 标识；
 - 不可变 Artifact 装载、Harness Artifact Identity 校验和基线污染检查；
 - `Snapshot → Trace → Evidence → Report` 完整证据链；
@@ -44,14 +44,15 @@ Phase 1A 的证据边界：
 
 Phase 1B 已增加真实 Runtime 接入基础：
 
-- 三个独立 `lgj-eval-*` Adoption 分别承载目标版、无 Skill 和上一版；
-- Runtime Profile 绑定 Adoption、标准 `jiuwen_${adoptId}` Agent 身份、Role、Skill Version 与 Artifact SHA；
+- 三个独立 `lgj-eval-*` Adoption 分别承载目标版、无目标 Skill 和上一版；
+- Runtime Profile 绑定 Adoption、标准 `jiuwen_${adoptId}` Agent 身份、Role、Skill Version、Artifact SHA 与 `SKILL.md` 摘要，并在运行前及聚合时复算 Profile fingerprint；
 - 通过真实 `/api/claw/chat-stream` 执行，并采集原生 SSE Run、工具事件和响应；
 - 仅内部密钥且仅 `lgj-eval-*` 可关闭自动 Skill 匹配，普通业务请求不受影响；
-- EA 在响应头返回实际选中的 Runtime Skill 身份摘要，Runner 复算 fingerprint；
-- 目标版 `2.0.1`、无 Skill、上一版 `1.4.0` 已分别通过只读 Runtime Smoke；
-- 三份证据可聚合校验为同一 Profile、同一 Suite、不同 Conversation、三臂身份均 `VERIFIED`；
-- 已固化非认证 Smoke 摘要：`phase1b-runtime-smoke-baseline-v1.json`，聚合指纹为 `030685fd5859268a70bc9c28197d5ee51fd9e35a21c119f17f6d563f44474003`；
+- EA 响应头只记录执行前注入身份；原生 Runtime 身份由 `skill_tool` 调用与对应结果机器校验，按名称、版本和入口内容摘要绑定冻结 Artifact；
+- 目标版 `2.0.1`、无目标 Skill（实际替代 Skill 为 `privbank-previsit@1.3.0`）、上一版 `1.4.0` 已分别通过只读 Runtime Smoke；
+- 每轮必须且只能出现一次 `__stream_end`、不得有流错误，且所有 Tool Call 都必须有对应 Result；
+- 三份证据可聚合校验为同一 Profile、同一 Suite、不同 Conversation、三臂原生加载身份均 `VERIFIED`；
+- 已更新非认证 Smoke 摘要：`phase1b-runtime-smoke-baseline-v1.json`，聚合指纹为 `043bee99af4fe5b08fb4f5bc538da181b7977c90c65e73097838884484d5d689`；
 - 当前只证明读操作 Smoke；完整受控 MCP Fixture、原生确认执行和 45 次 Suite 重跑仍待完成。
 
 尚未完成：
@@ -69,14 +70,14 @@ Phase 1B 已增加真实 Runtime 接入基础：
 ### 财富经理
 
 - 目标：`wealth-manager-assistant@2.0.1`
-- 对照：无 Skill、`1.4.0`
+- 对照：无目标 Skill、`1.4.0`
 - 首批候选案例：5 条
 - 执行顺序：先进入离线评测 MVP
 
 ### GoldenCoach
 
 - 目标：`goldencoach-stage-evaluation@1.0.1`
-- 对照：无 Skill
+- 对照：无目标 Skill
 - 当前案例状态：`proposed`
 - 执行顺序：先由销售专家冻结 Ground Truth，再进入运行评测
 
@@ -124,7 +125,7 @@ pnpm skills:quality:phase1b:smoke -- --smoke-arm=target_skill
 # 三个执行臂分别完成后，将三份单臂证据聚合为机器可验证的非认证基线
 pnpm skills:quality:phase1b:aggregate -- \
   --report=<target-report.json> \
-  --report=<without-skill-report.json> \
+  --report=<without-target-skill-report.json> \
   --report=<previous-version-report.json>
 ```
 

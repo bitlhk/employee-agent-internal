@@ -28,7 +28,7 @@ export type SkillEvaluationSkillType = z.infer<
 >;
 
 export const skillEvaluationBaselineModeSchema = z.enum([
-  "without_skill",
+  "without_target_skill",
   "previous_version",
   "specified_skill",
 ]);
@@ -38,7 +38,7 @@ export type SkillEvaluationBaselineMode = z.infer<
 
 export const skillEvaluationExecutionArmSchema = z.enum([
   "target_skill",
-  "without_skill",
+  "without_target_skill",
   "previous_version",
   "specified_skill",
 ]);
@@ -298,14 +298,14 @@ export const skillEvaluationRunSnapshotV1Schema = z
   })
   .superRefine((snapshot, context) => {
     const targetArm = snapshot.executionArm === "target_skill";
-    const withoutSkillArm = snapshot.executionArm === "without_skill";
+    const withoutTargetSkillArm = snapshot.executionArm === "without_target_skill";
     const versionBaselineArm =
       snapshot.executionArm === "previous_version" ||
       snapshot.executionArm === "specified_skill";
     const validBaselineIdentity = targetArm
       ? snapshot.baselineMode === null && snapshot.baselineSkill === null
-      : withoutSkillArm
-        ? snapshot.baselineMode === "without_skill" &&
+      : withoutTargetSkillArm
+        ? snapshot.baselineMode === "without_target_skill" &&
           snapshot.baselineSkill === null
         : snapshot.baselineMode === snapshot.executionArm &&
           snapshot.baselineSkill !== null;
@@ -322,7 +322,7 @@ export const skillEvaluationRunSnapshotV1Schema = z
       ? expected.length === 1 &&
         expected[0]?.skillVersionId === snapshot.targetSkill.skillVersionId &&
         expected[0]?.artifactSha256 === snapshot.targetSkill.artifactSha256
-      : withoutSkillArm
+      : withoutTargetSkillArm
         ? expected.length === 0
         : versionBaselineArm &&
           expected.length === 1 &&

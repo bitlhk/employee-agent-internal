@@ -13,7 +13,7 @@ import type { SkillEvaluationExecutionArm } from "../shared/skill-quality-evalua
 
 const executionArms: SkillEvaluationExecutionArm[] = [
   "target_skill",
-  "without_skill",
+  "without_target_skill",
   "previous_version",
 ];
 
@@ -41,7 +41,9 @@ type RuntimeReportMarkdownInput = {
   runtimeTurns: Array<{
     executionArm: string;
     status: string;
-    runtimeIdentityStatus: string;
+    preDispatchIdentityStatus: string;
+    nativeSkillIdentityStatus: string;
+    streamCompletionStatus: string;
     httpStatus: number;
     elapsedMs: number;
   }>;
@@ -52,7 +54,7 @@ function markdown(report: RuntimeReportMarkdownInput): string {
     `| ${arm.executionArm} | ${arm.adoptionId} | ${arm.status} | ${arm.runtimeSkill?.version || "none"} | ${arm.runtimeSkill?.artifactSha256?.slice(0, 12) || "-"} |`
   );
   const smokeLines = report.runtimeTurns.map(turn =>
-    `| ${turn.executionArm} | ${turn.status} | ${turn.runtimeIdentityStatus} | ${turn.httpStatus} | ${turn.elapsedMs} |`
+    `| ${turn.executionArm} | ${turn.status} | ${turn.preDispatchIdentityStatus} | ${turn.nativeSkillIdentityStatus} | ${turn.streamCompletionStatus} | ${turn.httpStatus} | ${turn.elapsedMs} |`
   );
   return [
     "# Skill Quality Phase 1B EA Runtime Integration",
@@ -68,8 +70,8 @@ function markdown(report: RuntimeReportMarkdownInput): string {
     "",
     ...(smokeLines.length
       ? [
-          "| Arm | Runtime turn | Runtime identity | HTTP | ms |",
-          "|---|---:|---:|---:|---:|",
+          "| Arm | Runtime turn | Pre-dispatch | Native Skill | SSE complete | HTTP | ms |",
+          "|---|---:|---:|---:|---:|---:|---:|",
           ...smokeLines,
           "",
         ]

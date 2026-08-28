@@ -604,7 +604,7 @@ export function registerChatStreamRoutes(app: express.Express) {
       }
 
       if (skillEvaluationControl.value) {
-        const runtimeSkills = (selectedSkills?.ok ? selectedSkills.metadata : []).map(skill => {
+        const injectedSkills = (selectedSkills?.ok ? selectedSkills.metadata : []).map(skill => {
           const runtimePath = String(skill.runtimePath || "").trim();
           const digest = runtimePath ? digestSkillSourceTree(runtimePath) : null;
           return {
@@ -618,14 +618,14 @@ export function registerChatStreamRoutes(app: express.Express) {
           adoptId: String(adoption.adoptId),
           agentId,
           roleTemplate,
-          runtimeSkills,
+          injectedSkills,
         };
         res.setHeader(
-          "X-EA-Skill-Evaluation-Runtime-Identity",
+          "X-EA-Skill-Evaluation-Pre-Dispatch-Identity",
           Buffer.from(JSON.stringify(runtimeIdentity), "utf8").toString("base64url"),
         );
         res.setHeader(
-          "X-EA-Skill-Evaluation-Runtime-Fingerprint",
+          "X-EA-Skill-Evaluation-Pre-Dispatch-Fingerprint",
           governanceFingerprint(runtimeIdentity),
         );
       }
@@ -868,7 +868,9 @@ export function registerChatStreamRoutes(app: express.Express) {
         Number(process.env.SELECTED_SKILL_MESSAGE_MAX_CHARS || 8000) || 8000,
       );
       const runtimeMessageBody = selectedSkills?.ok
-        ? (enterpriseRoute ? selectedSkills.enterpriseMessage : selectedSkills.message)
+        ? (enterpriseRoute || skillEvaluationControl.value
+            ? selectedSkills.enterpriseMessage
+            : selectedSkills.message)
           .slice(0, selectedSkillMessageLimit)
         : userMessage;
 
@@ -886,6 +888,8 @@ export function registerChatStreamRoutes(app: express.Express) {
           model: selectedModel.runtimeModelId,
           injectionMode: enterpriseRoute
             ? (skillSelectionMode === "automatic" ? "enterprise_native_automatic" : "enterprise_native")
+            : skillEvaluationControl.value
+              ? "evaluation_native"
             : (skillSelectionMode === "automatic" ? "automatic_manifest" : "manifest"),
           ...(automaticSkillMatch ? {
             matchScore: automaticSkillMatch.score,

@@ -109,7 +109,7 @@ describe("Skill Quality Evaluation Phase 1", () => {
     expect(plan.status).toBe("READY");
     expect(plan.arms).toEqual([
       "target_skill",
-      "without_skill",
+      "without_target_skill",
       "previous_version",
     ]);
     expect(plan.cases).toBe(5);
@@ -133,7 +133,7 @@ describe("Skill Quality Evaluation Phase 1", () => {
         >;
         expect(modelInput).not.toHaveProperty("executionArm");
         expect(JSON.stringify(modelInput)).not.toMatch(
-          /target_skill|without_skill|previous_version/u
+          /target_skill|without_target_skill|previous_version/u
         );
         return new Response(
           JSON.stringify({

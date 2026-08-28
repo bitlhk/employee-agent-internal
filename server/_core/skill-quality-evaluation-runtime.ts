@@ -1,13 +1,17 @@
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { SkillEvaluationExecutionArm } from "../../shared/skill-quality-evaluation";
 import { getClawByAdoptId } from "../db/claw";
 import { governanceFingerprint } from "./governance/contracts";
-import { loadSkillQualityPilotContracts } from "./skill-quality-evaluation-contracts";
+import {
+  loadSkillQualityPilotContracts,
+  resolveSkillStoreRoot,
+} from "./skill-quality-evaluation-contracts";
 import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
+import { parseSkillMarkdown } from "./skills/skill-source";
 
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 const runtimeSkillIdentitySchema = z.strictObject({
@@ -15,10 +19,11 @@ const runtimeSkillIdentitySchema = z.strictObject({
   skillVersionId: z.string().min(1),
   version: z.string().min(1),
   artifactSha256: sha256Schema,
+  entrypointSha256: sha256Schema,
 });
 
 const runtimeArmSchema = z.strictObject({
-  executionArm: z.enum(["target_skill", "without_skill", "previous_version"]),
+  executionArm: z.enum(["target_skill", "without_target_skill", "previous_version"]),
   adoptionId: z.string().regex(/^lgj-eval-[a-z0-9-]{3,48}$/u),
   expectedAgentId: z.string().regex(/^jiuwen_lgj-eval-[a-z0-9-]{3,48}$/u),
   roleTemplate: z.literal("wealth-manager"),
@@ -29,6 +34,7 @@ export const skillEvaluationRuntimeProfileV1Schema = z
   .strictObject({
     schema: z.literal("ea.skill-quality-runtime-profile.v1"),
     profileId: z.string().min(1),
+    evaluatedSkillId: z.string().min(1),
     baseUrl: z.string().url(),
     chatEndpoint: z.literal("/api/claw/chat-stream"),
     internalAuthEnv: z.literal("INTERNAL_API_KEY"),
@@ -44,6 +50,14 @@ export const skillEvaluationRuntimeProfileV1Schema = z
     if (adoptions.size !== 3) {
       context.addIssue({ code: "custom", path: ["arms"], message: "each execution arm requires a distinct evaluation adoption" });
     }
+    const { profileFingerprint: stored, ...body } = profile;
+    if (profileFingerprint(body) !== stored) {
+      context.addIssue({
+        code: "custom",
+        path: ["profileFingerprint"],
+        message: "Runtime Profile fingerprint does not match its content",
+      });
+    }
   });
 
 export type SkillEvaluationRuntimeProfileV1 = z.infer<
@@ -51,10 +65,25 @@ export type SkillEvaluationRuntimeProfileV1 = z.infer<
 >;
 export type SkillEvaluationRuntimeArmV1 = z.infer<typeof runtimeArmSchema>;
 
-function profileFingerprint(
+export function skillEvaluationRuntimeProfileFingerprint(
   profile: Omit<SkillEvaluationRuntimeProfileV1, "profileFingerprint">
 ): string {
   return governanceFingerprint(profile);
+}
+
+function profileFingerprint(
+  profile: Omit<SkillEvaluationRuntimeProfileV1, "profileFingerprint">
+): string {
+  return skillEvaluationRuntimeProfileFingerprint(profile);
+}
+
+export function assertSkillEvaluationRuntimeProfileFingerprint(
+  profile: SkillEvaluationRuntimeProfileV1
+): void {
+  const { profileFingerprint: stored, ...body } = profile;
+  if (skillEvaluationRuntimeProfileFingerprint(body) !== stored) {
+    throw new Error("Skill evaluation Runtime Profile fingerprint is invalid");
+  }
 }
 
 function defaultAdoptionId(arm: SkillEvaluationExecutionArm): string {
@@ -106,10 +135,24 @@ export function buildSkillEvaluationRuntimeProfile(input: {
     skillVersionId: record.skillVersionId,
     version: record.version,
     artifactSha256: record.artifactSha256,
+    entrypointSha256: createHash("sha256")
+      .update(
+        readFileSync(
+          path.join(
+            input.skillStoreRoot || resolveSkillStoreRoot(),
+            record.artifactRelativePath,
+            "SKILL.md"
+          ),
+          "utf8"
+        ),
+        "utf8"
+      )
+      .digest("hex"),
   });
   const body = {
     schema: "ea.skill-quality-runtime-profile.v1" as const,
     profileId: String(env.EA_SKILL_EVAL_RUNTIME_PROFILE_ID || "wealth-manager-phase1b-local-v1"),
+    evaluatedSkillId: contracts.pilot.skillId,
     baseUrl,
     chatEndpoint: "/api/claw/chat-stream" as const,
     internalAuthEnv: "INTERNAL_API_KEY" as const,
@@ -124,10 +167,10 @@ export function buildSkillEvaluationRuntimeProfile(input: {
         expectedSkill: expected(target),
       },
       {
-        executionArm: "without_skill" as const,
-        adoptionId: String(env.EA_SKILL_EVAL_WITHOUT_ADOPTION_ID || defaultAdoptionId("without_skill")),
+        executionArm: "without_target_skill" as const,
+        adoptionId: String(env.EA_SKILL_EVAL_WITHOUT_ADOPTION_ID || defaultAdoptionId("without_target_skill")),
         expectedAgentId: skillEvaluationAgentId(
-          String(env.EA_SKILL_EVAL_WITHOUT_ADOPTION_ID || defaultAdoptionId("without_skill"))
+          String(env.EA_SKILL_EVAL_WITHOUT_ADOPTION_ID || defaultAdoptionId("without_target_skill"))
         ),
         roleTemplate: "wealth-manager" as const,
         expectedSkill: null,
@@ -169,6 +212,7 @@ export async function verifySkillEvaluationRuntimeProfile(
   profileFingerprint: string;
   arms: SkillEvaluationRuntimeProfileCheck[];
 }> {
+  assertSkillEvaluationRuntimeProfileFingerprint(profile);
   const arms: SkillEvaluationRuntimeProfileCheck[] = [];
   for (const arm of profile.arms) {
     const checks: SkillEvaluationRuntimeProfileCheck["checks"] = [];
@@ -206,7 +250,7 @@ export async function verifySkillEvaluationRuntimeProfile(
       if (!arm.expectedSkill) {
         const absent = !skill || !skill.enabled || skill.state !== "ready";
         checks.push({
-          code: "WITHOUT_SKILL_BASELINE_CLEAN",
+          code: "WITHOUT_TARGET_SKILL_BASELINE_CLEAN",
           passed: absent,
           detail: skill ? `state=${skill.state}, enabled=${skill.enabled}` : "Skill absent",
         });
@@ -259,6 +303,123 @@ export async function verifySkillEvaluationRuntimeProfile(
 }
 
 type RuntimeSseEvent = { event: string; data: Record<string, unknown> };
+
+export type NativeLoadedSkillEvidence = {
+  toolCallId: string;
+  requestedSkillId: string;
+  skillId: string;
+  version: string;
+  skillDirectory: string;
+  entrypointSha256: string;
+};
+
+function parseRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function pythonStringField(value: string, field: string): string | null {
+  const marker = `'${field}': '`;
+  const start = value.indexOf(marker);
+  if (start < 0) return null;
+  let output = "";
+  for (let index = start + marker.length; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "'") return output;
+    if (char !== "\\") {
+      output += char;
+      continue;
+    }
+    const escaped = value[index + 1];
+    if (escaped === undefined) return null;
+    index += 1;
+    if (escaped === "n") output += "\n";
+    else if (escaped === "r") output += "\r";
+    else if (escaped === "t") output += "\t";
+    else if (escaped === "b") output += "\b";
+    else if (escaped === "f") output += "\f";
+    else if (escaped === "\\" || escaped === "'" || escaped === '"') output += escaped;
+    else if (escaped === "u" && /^[a-f0-9]{4}$/iu.test(value.slice(index + 1, index + 5))) {
+      output += String.fromCodePoint(Number.parseInt(value.slice(index + 1, index + 5), 16));
+      index += 4;
+    } else if (escaped === "x" && /^[a-f0-9]{2}$/iu.test(value.slice(index + 1, index + 3))) {
+      output += String.fromCodePoint(Number.parseInt(value.slice(index + 1, index + 3), 16));
+      index += 2;
+    } else output += escaped;
+  }
+  return null;
+}
+
+function nativeLoadedSkills(events: RuntimeSseEvent[]): NativeLoadedSkillEvidence[] {
+  const calls = new Map<string, { skillId: string }>();
+  for (const event of events) {
+    if (event.event !== "tool_call" || event.data.name !== "skill_tool") continue;
+    const toolCallId = String(event.data.id || "").trim();
+    const argumentsValue = parseRecord(event.data.arguments);
+    const skillId = String(argumentsValue?.skill_name || "").trim();
+    if (toolCallId && skillId) calls.set(toolCallId, { skillId });
+  }
+  const loaded: NativeLoadedSkillEvidence[] = [];
+  for (const event of events) {
+    if (event.event !== "tool_result" || event.data.name !== "skill_tool") continue;
+    const toolCallId = String(event.data.tool_call_id || "").trim();
+    const call = calls.get(toolCallId);
+    if (!call || event.data.is_error === true) continue;
+    const structured = parseRecord(event.data.result);
+    const structuredData = parseRecord(structured?.data) || structured;
+    const rawResult = typeof event.data.result === "string" ? event.data.result : "";
+    const skillContent = String(
+      structuredData?.skill_content || pythonStringField(rawResult, "skill_content") || ""
+    );
+    if (!skillContent) continue;
+    const metadata = parseSkillMarkdown(skillContent);
+    loaded.push({
+      toolCallId,
+      requestedSkillId: call.skillId,
+      skillId: metadata.name || call.skillId,
+      version: metadata.version,
+      skillDirectory: String(
+        structuredData?.skill_directory || pythonStringField(rawResult, "skill_directory") || ""
+      ),
+      entrypointSha256: createHash("sha256").update(skillContent, "utf8").digest("hex"),
+    });
+  }
+  return loaded;
+}
+
+function streamGate(events: RuntimeSseEvent[]): {
+  completed: boolean;
+  streamEndCount: number;
+  unpairedToolCallIds: string[];
+} {
+  const streamEndCount = events.filter(event => event.data.__stream_end === true).length;
+  const toolCallIds = events
+    .filter(event => event.event === "tool_call")
+    .map(event => String(event.data.id || "").trim())
+    .filter(Boolean);
+  const toolResultIds = new Set(
+    events
+      .filter(event => event.event === "tool_result")
+      .map(event => String(event.data.tool_call_id || "").trim())
+      .filter(Boolean)
+  );
+  const unpairedToolCallIds = [...new Set(toolCallIds.filter(id => !toolResultIds.has(id)))];
+  return {
+    completed: streamEndCount === 1 && unpairedToolCallIds.length === 0,
+    streamEndCount,
+    unpairedToolCallIds,
+  };
+}
 
 function parseRuntimeSse(raw: string): {
   events: RuntimeSseEvent[];
@@ -316,9 +477,14 @@ export type SkillEvaluationRuntimeTurn = {
   assistantText: string;
   assistantTextSha256: string;
   rawSseSha256: string;
-  runtimeIdentityStatus: "VERIFIED" | "UNVERIFIED";
-  runtimeIdentity: Record<string, unknown> | null;
-  runtimeIdentityFingerprint: string | null;
+  preDispatchIdentityStatus: "VERIFIED" | "UNVERIFIED";
+  preDispatchIdentity: Record<string, unknown> | null;
+  preDispatchIdentityFingerprint: string | null;
+  nativeSkillIdentityStatus: "VERIFIED" | "UNVERIFIED";
+  nativeLoadedSkills: NativeLoadedSkillEvidence[];
+  streamCompletionStatus: "VERIFIED" | "UNVERIFIED";
+  streamEndCount: number;
+  unpairedToolCallIds: string[];
   run: Record<string, unknown> | null;
   usage: Record<string, unknown> | null;
   events: RuntimeSseEvent[];
@@ -332,6 +498,7 @@ export async function executeSkillEvaluationRuntimeTurn(input: {
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
 }): Promise<SkillEvaluationRuntimeTurn> {
+  assertSkillEvaluationRuntimeProfileFingerprint(input.profile);
   const internalKey = String(process.env[input.profile.internalAuthEnv] || "").trim();
   if (!internalKey) throw new Error(`${input.profile.internalAuthEnv} is unavailable`);
   const conversationId = `skill-eval-${randomUUID()}`;
@@ -367,10 +534,10 @@ export async function executeSkillEvaluationRuntimeTurn(input: {
     const raw = await response.text();
     const parsed = parseRuntimeSse(raw);
     const identityHeader = response.headers.get(
-      "x-ea-skill-evaluation-runtime-identity"
+      "x-ea-skill-evaluation-pre-dispatch-identity"
     );
     const identityFingerprint = response.headers.get(
-      "x-ea-skill-evaluation-runtime-fingerprint"
+      "x-ea-skill-evaluation-pre-dispatch-fingerprint"
     );
     let runtimeIdentity: Record<string, unknown> | null = null;
     try {
@@ -380,8 +547,8 @@ export async function executeSkillEvaluationRuntimeTurn(input: {
     } catch {
       runtimeIdentity = null;
     }
-    const returnedSkills = Array.isArray(runtimeIdentity?.runtimeSkills)
-      ? runtimeIdentity.runtimeSkills as Array<Record<string, unknown>>
+    const returnedSkills = Array.isArray(runtimeIdentity?.injectedSkills)
+      ? runtimeIdentity.injectedSkills as Array<Record<string, unknown>>
       : [];
     const expectedRuntimeIdentity = input.arm.expectedSkill
       ? returnedSkills.length === 1 &&
@@ -389,7 +556,7 @@ export async function executeSkillEvaluationRuntimeTurn(input: {
         returnedSkills[0]?.version === input.arm.expectedSkill.version &&
         returnedSkills[0]?.artifactSha256 === input.arm.expectedSkill.artifactSha256
       : returnedSkills.length === 0;
-    const runtimeIdentityVerified = Boolean(
+    const preDispatchIdentityVerified = Boolean(
       runtimeIdentity &&
         identityFingerprint &&
         governanceFingerprint(runtimeIdentity) === identityFingerprint &&
@@ -398,6 +565,15 @@ export async function executeSkillEvaluationRuntimeTurn(input: {
         expectedRuntimeIdentity &&
         parsed.run
     );
+    const loadedSkills = nativeLoadedSkills(parsed.events);
+    const nativeSkillIdentityVerified = input.arm.expectedSkill
+      ? loadedSkills.some(skill =>
+          skill.skillId === input.arm.expectedSkill?.skillId &&
+          skill.version === input.arm.expectedSkill.version &&
+          skill.entrypointSha256 === input.arm.expectedSkill.entrypointSha256
+        )
+      : loadedSkills.every(skill => skill.skillId !== input.profile.evaluatedSkillId);
+    const completion = streamGate(parsed.events);
     const streamError = parsed.events.find(event => event.data.__stream_error === true);
     const error = response.ok
       ? streamError
@@ -414,15 +590,27 @@ export async function executeSkillEvaluationRuntimeTurn(input: {
       executionArm: input.arm.executionArm,
       adoptionId: input.arm.adoptionId,
       conversationId,
-      status: response.ok && !error && runtimeIdentityVerified ? "PASS" : "FAIL",
+      status:
+        response.ok &&
+        !error &&
+        preDispatchIdentityVerified &&
+        nativeSkillIdentityVerified &&
+        completion.completed
+          ? "PASS"
+          : "FAIL",
       httpStatus: response.status,
       elapsedMs: Date.now() - started,
       assistantText: parsed.assistantText,
       assistantTextSha256: governanceFingerprint(parsed.assistantText),
       rawSseSha256: governanceFingerprint(raw),
-      runtimeIdentityStatus: runtimeIdentityVerified ? "VERIFIED" : "UNVERIFIED",
-      runtimeIdentity,
-      runtimeIdentityFingerprint: identityFingerprint,
+      preDispatchIdentityStatus: preDispatchIdentityVerified ? "VERIFIED" : "UNVERIFIED",
+      preDispatchIdentity: runtimeIdentity,
+      preDispatchIdentityFingerprint: identityFingerprint,
+      nativeSkillIdentityStatus: nativeSkillIdentityVerified ? "VERIFIED" : "UNVERIFIED",
+      nativeLoadedSkills: loadedSkills,
+      streamCompletionStatus: completion.completed ? "VERIFIED" : "UNVERIFIED",
+      streamEndCount: completion.streamEndCount,
+      unpairedToolCallIds: completion.unpairedToolCallIds,
       run: parsed.run,
       usage: parsed.usage,
       events: parsed.events,

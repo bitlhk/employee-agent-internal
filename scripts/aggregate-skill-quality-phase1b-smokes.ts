@@ -18,13 +18,13 @@ function markdown(report: ReturnType<typeof aggregateSkillQualityRuntimeSmokes>)
     `- Aggregate fingerprint: \`${report.aggregateFingerprint}\``,
     "- Result semantics: **Runtime integration evidence / non-certifying**",
     "",
-    "| Arm | Adoption | Runtime identity | Source report | ms | Events |",
-    "|---|---|---|---|---:|---:|",
+    "| Arm | Adoption | Pre-dispatch | Native Skill | Source report | ms | Events |",
+    "|---|---|---|---|---|---:|---:|",
     ...report.arms.map(arm =>
-      `| ${arm.executionArm} | ${arm.adoptionId} | ${arm.runtimeIdentityFingerprint.slice(0, 12)} | ${arm.sourceReportFingerprint.slice(0, 12)} | ${arm.elapsedMs} | ${arm.eventCount} |`
+      `| ${arm.executionArm} | ${arm.adoptionId} | ${arm.preDispatchIdentityFingerprint.slice(0, 12)} | ${arm.nativeSkillEvidenceFingerprint.slice(0, 12)} | ${arm.sourceReportFingerprint.slice(0, 12)} | ${arm.elapsedMs} | ${arm.eventCount} |`
     ),
     "",
-    "This aggregate proves three isolated EA Runtime turns used the frozen target, no-Skill and previous-version identities. It does not certify the Skill: the full Suite, native fixture control, runner hard gates, Judge calibration and expert validation remain pending.",
+    "This aggregate proves three isolated EA Runtime turns used the frozen target, without-target and previous-version identities, completed SSE normally, and bound native skill_tool evidence. It does not certify the Skill: the full Suite, native fixture control, runner hard gates, Judge calibration and expert validation remain pending.",
     "",
   ].join("\n");
 }

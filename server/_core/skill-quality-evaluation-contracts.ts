@@ -90,7 +90,7 @@ export const pilotManifestSchema = z
           });
         }
         baselineModes.add(baseline.mode);
-        const requiresVersion = baseline.mode !== "without_skill";
+        const requiresVersion = baseline.mode !== "without_target_skill";
         const hasCompleteVersion = Boolean(
           baseline.skillVersionId && baseline.version && baseline.artifactSha256
         );
@@ -386,7 +386,7 @@ function validatePilotInventory(input: {
   const expectedVersions = [
     input.pilot.target,
     ...input.pilot.baselines.flatMap(baseline =>
-      baseline.mode === "without_skill"
+      baseline.mode === "without_target_skill"
         ? []
         : [
             {

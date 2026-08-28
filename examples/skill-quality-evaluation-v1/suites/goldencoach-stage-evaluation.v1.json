@@ -7,7 +7,7 @@
   "targetVersion": "1.0.1",
   "targetArtifactSha256": "62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a",
   "suiteVersion": "1.0.1",
-  "suiteFingerprint": "02364d67b6a6a8fdb7d6baae2654db4cbcaf3c79ca027cc4fc05915c6e2d461a",
+  "suiteFingerprint": "f0f43437fcd4af82c1a02705a3c2a5f3733de9a16066104f01506c8e7233267c",
   "sourceReferences": [
     {
       "sourceType": "approved_skill_artifact",
@@ -49,7 +49,7 @@
         }
       ],
       "requiredTrace": { "skillId": "goldencoach-stage-evaluation" },
-      "baselineModes": ["without_skill"],
+      "baselineModes": ["without_target_skill"],
       "minimumRuns": 3
     }
   ],

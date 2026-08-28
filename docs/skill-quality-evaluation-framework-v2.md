@@ -11,7 +11,7 @@
 
 本方案采用公开评测方法、Agent 指标、软件质量模型和 AI 风险框架中的共同原则，形成可复现、可解释、可用于发布决策的内部评测体系：
 
-- 参考 Agent Skills 的测试格式和有 Skill/无 Skill 对照方法组织案例，但评测资产独立于不可变 Skill Artifact 保存和冻结。
+- 参考 Agent Skills 的测试格式和有 Skill/无目标 Skill 对照方法组织案例，但评测资产独立于不可变 Skill Artifact 保存和冻结。
 - 计划引入 Promptfoo 作为第一版评测执行器，负责测试矩阵、基线对照、断言、重复运行、报告和红队任务。
 - 通过 EA Provider 调用真实 EA Skill 运行链路，并从 EA Trace 采集工具、参数、证据、耗时、Token 和产物。
 - 每次评测先生成不可变运行快照，在隔离 Adoption、会话和 Workspace 中执行，禁止切换生产 Agent 的活跃 Skill 版本。
@@ -29,8 +29,8 @@
 
 第一批试点按顺序执行：
 
-1. `wealth-manager-assistant` 先完成完整 MVP，包括当前版/上一版和有 Skill/无 Skill 对照。
-2. `goldencoach-stage-evaluation` 第一轮只做有 Skill/无 Skill；销售专家冻结 Ground Truth 且出现下一正式版本后，才增加版本对照。
+1. `wealth-manager-assistant` 先完成完整 MVP，包括当前版/上一版和有 Skill/无目标 Skill 对照。
+2. `goldencoach-stage-evaluation` 第一轮只做有 Skill/无目标 Skill；销售专家冻结 Ground Truth 且出现下一正式版本后，才增加版本对照。
 
 第一阶段的目标不是给所有 Skill 打高分，而是找出真正可演示的价值、暴露不稳定和不安全边界，并形成两份有证据的一页式报告和客户演示故事线。
 
@@ -68,7 +68,7 @@
 | 参考体系                                                                                          | 本方案采用的内容                                                                     | 不做的事情                               |
 | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------- |
 | [Agent Skills Specification](https://agentskills.io/specification)                                | Skill 包结构、元数据、脚本、参考资料、资产和渐进式披露                               | 不把格式合规等同于业务质量               |
-| [Agent Skills Evaluation Guide](https://agentskills.io/skill-creation/evaluating-skills)          | 真实用例、边界用例、独立上下文、有/无 Skill 对照、断言、耗时和 Token、盲评与人工复核 | 不照搬示例作为 EA 业务标准               |
+| [Agent Skills Evaluation Guide](https://agentskills.io/skill-creation/evaluating-skills)          | 真实用例、边界用例、独立上下文、有/无目标 Skill 对照、断言、耗时和 Token、盲评与人工复核 | 不照搬示例作为 EA 业务标准               |
 | [Promptfoo](https://www.promptfoo.dev/docs/intro/)                                                | 多模型与多配置矩阵、Provider、断言、CI、报告和红队执行                               | 不认为 Promptfoo 天然理解 EA Skill 语义  |
 | [DeepEval Agent Metrics](https://deepeval.com/guides/guides-ai-agent-evaluation-metrics)          | 工具正确性、参数正确性、任务完成度、步骤效率和计划遵循度                             | 第一版不安装 DeepEval 服务或 Python 依赖 |
 | [Ragas Agent Metrics](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/agents/) | Tool Call Accuracy/F1、Agent Goal Accuracy 和知识类指标                              | 第一版不把 Ragas 作为通用 Skill 执行器   |
@@ -93,7 +93,7 @@
 | 组件                  | 第一版状态 | 职责                                                                  |
 | --------------------- | ---------- | --------------------------------------------------------------------- |
 | Agent Skills 测试格式 | 参考采用   | 组织案例、预期、输入文件和断言；资产与 Skill Artifact 分别冻结        |
-| Promptfoo             | 计划引入   | 调度有/无 Skill、版本、模型和重复运行，执行断言并生成结果矩阵         |
+| Promptfoo             | 计划引入   | 调度有/无目标 Skill、版本、模型和重复运行，执行断言并生成结果矩阵         |
 | EA Provider           | 计划新增   | 将 Promptfoo 测试任务转换为真实 EA 请求，绑定运行快照并返回规范化结果 |
 | EA Trace              | 复用       | 提供 Skill 加载、工具调用、参数、证据、耗时、Token、错误和产物信息    |
 | Hermes Judge          | 计划新增   | 通过冻结的 Judge Profile 进行结构化专业评分和 Pairwise 盲评           |
@@ -399,7 +399,7 @@ Scorecard 必须分别展示：
 | 档位          | 目的                   | 建议范围                                                                     |
 | ------------- | ---------------------- | ---------------------------------------------------------------------------- |
 | 快速评测      | 开发过程中发现明显回归 | 3 至 5 个关键案例，主模型，单次运行；不生成等级                              |
-| 标准评测      | 形成 Skill 质量报告    | 6 至 10 个真实和边界案例，有/无 Skill及适用的版本对照；关键案例至少重复 3 次 |
+| 标准评测      | 形成 Skill 质量报告    | 6 至 10 个真实和边界案例，有/无目标 Skill 及适用的版本对照；关键案例至少重复 3 次 |
 | 发布/演示评测 | 发布门禁和对外证据     | 全量关键案例，主模型重复运行；代表案例增加第二模型和竞品盲评                 |
 
 跨模型不应无条件做全排列。只有宣称“跨模型稳定”或目标环境确实支持多个模型时，才把第二模型设为门禁。
@@ -445,7 +445,7 @@ Hermes 只评价难以完全程序化的内容：
 
 Judge 要求：
 
-- 不向 Judge 暴露哪个结果来自自研、开源或无 Skill。
+- 不向 Judge 暴露哪个结果来自自研、开源或无目标 Skill。
 - Pairwise 顺序按运行 Seed 盲化，并进行顺序反转复核，降低位置偏差且保持可复现。
 - 输出结构化 JSON，包括分项评分、结论和逐条证据。
 - 使用专家标注集校准评分标准，并保存校准集 fingerprint。
@@ -497,7 +497,7 @@ SkillScorecardProfileV1
 | 维度         | 权重 | 评价问题                                           | 代表指标                                                           |
 | ------------ | ---: | -------------------------------------------------- | ------------------------------------------------------------------ |
 | 业务任务效果 |   30 | 是否正确、完整地完成真实岗位任务，产物能否直接使用 | Task Success、事实正确率、必要字段、产物可用率                     |
-| Skill 增益   |   20 | 相比无 Skill、上一版本或等价竞品提升多少           | 通过率 Delta、Pairwise 胜率、关键失败减少量                        |
+| Skill 增益   |   20 | 相比无目标 Skill、上一版本或等价竞品提升多少           | 通过率 Delta、Pairwise 胜率、关键失败减少量                        |
 | 专业执行过程 |   15 | 是否选择正确工具、参数、证据和业务步骤             | Tool Correctness、Argument Correctness、Grounding、Step Efficiency |
 | 稳定与泛化   |   15 | 不同问法、边界输入、重复运行和必要的跨模型是否稳定 | 重复通过率、标准差、边界通过率、跨模型一致性                       |
 | 工程与效率   |   10 | 是否具备可发布、可复现、可维护和可接受的资源成本   | 依赖就绪率、P95 时延、Token、版本与回滚完整性                      |
@@ -622,7 +622,7 @@ SkillScorecardProfileV1
 管理员选择：
 
 - 评测版本。
-- 对照方式：无 Skill、上一版本或指定对照 Skill。
+- 对照方式：无目标 Skill、上一版本或指定对照 Skill。
 - 测试集。
 - 快速、标准或发布评测档位。
 - 模型范围。
@@ -639,7 +639,7 @@ SkillScorecardProfileV1
 - 稳定性、P95 时延和 Token 增量。
 - 工具与证据链完整度。
 - 关键优势、失败模式和适用边界。
-- 各案例的有/无 Skill 或版本对比。
+- 各案例的有/无目标 Skill 或版本对比。
 
 两个试点完成校准前，市场不展示等级，只在管理端显示“试点评测/待校准”。校准完成后，市场列表可展示版本绑定的“已验证”标识；用户点击后才能查看版本、Suite、Profile、测试范围、样本量和限制，避免把徽章误解为永久认证。
 
@@ -649,7 +649,7 @@ SkillScorecardProfileV1
 
 1. 业务问题和目标岗位。
 2. 一条代表性任务。
-3. 无 Skill、旧版或对照方案与当前 Skill 的盲测结果。
+3. 无目标 Skill、旧版或对照方案与当前 Skill 的盲测结果。
 4. 关键差异高亮和 Trace 证据。
 5. 通过率、稳定性和效率数据。
 6. 当前限制和适用边界。
@@ -665,7 +665,7 @@ SkillScorecardProfileV1
 
 ### 11.2 单个 Skill 价值话术模板
 
-> `[Skill 名称]` 的价值不是让模型回答得更长，而是把 `[岗位专家方法/业务流程]` 固化成可重复执行的能力。在 `[案例数]` 个真实与边界案例中，它相对 `[无 Skill/上一版本/对照 Skill]`，将 `[关键指标]` 从 `[基线]` 提升到 `[结果]`；同时在 `[重复次数/模型范围]` 下保持 `[稳定性结果]`。关键结论能够追溯到 `[数据/工具/政策/原句证据]`，并通过了 `[权限/适当性/注入/隐私]` 等关键门禁。当前适用边界是 `[限制]`。
+> `[Skill 名称]` 的价值不是让模型回答得更长，而是把 `[岗位专家方法/业务流程]` 固化成可重复执行的能力。在 `[案例数]` 个真实与边界案例中，它相对 `[无目标 Skill/上一版本/对照 Skill]`，将 `[关键指标]` 从 `[基线]` 提升到 `[结果]`；同时在 `[重复次数/模型范围]` 下保持 `[稳定性结果]`。关键结论能够追溯到 `[数据/工具/政策/原句证据]`，并通过了 `[权限/适当性/注入/隐私]` 等关键门禁。当前适用边界是 `[限制]`。
 
 ### 11.3 禁止使用的话术
 
@@ -717,7 +717,7 @@ Promptfoo 当前尚未成为项目依赖。引入时必须满足：
 
 - 为 `wealth-manager-assistant` 建立独立 `SkillEvalSuiteV1` 和固定输入。
 - 引入固定版本 Promptfoo，开发 `EAProvider.ts` 和 Run Snapshot 生成器。
-- 打通当前版/上一版和有 Skill/无 Skill两种对照协议。
+- 打通当前版/上一版和有 Skill/无目标 Skill 两种对照协议。
 - 在隔离 Eval Adoption/Workspace 执行，增加运行时 Skill 清单与基线污染检查。
 - 从 EA Trace 返回工具、参数、耗时、Token、产物、版本、`evaluationConfigFingerprint` 和 `runEvidenceFingerprint` 证据。
 - 实现第一批确定性断言、Scorecard 计算器和机器可读/HTML/Markdown 报告。
@@ -729,7 +729,7 @@ Promptfoo 当前尚未成为项目依赖。引入时必须满足：
 
 - 由销售专家冻结阶段识别、原句证据、缺失动作和辅导建议 Ground Truth。
 - 为 `goldencoach-stage-evaluation` 建立独立 `SkillEvalSuiteV1`。
-- 第一轮只运行有 Skill/无 Skill，不伪造上一版本基线。
+- 第一轮只运行有 Skill/无目标 Skill，不伪造上一版本基线。
 - 两个 Skill 分别完成 6 至 10 个正常、边界和风险案例。
 - 复核 Judge 分歧，校准 Scorecard 权重、归一化阈值和候选等级。
 - 形成两张一页式证据卡和两条客户演示故事。
@@ -764,7 +764,7 @@ Promptfoo 当前尚未成为项目依赖。引入时必须满足：
 3. 两套独立 Eval Suite、固定输入、Ground Truth 和确定性断言。
 4. 固定版本 Promptfoo 配置生成器、EA Provider、Run Snapshot 生成器和基线污染检查器。
 5. Hermes Judge Profile、结构化评分 Schema 和专家校准样本。
-6. 财富经理当前版/上一版及有/无 Skill结果；GoldenCoach 有/无 Skill结果。
+6. 财富经理当前版/上一版及有/无目标 Skill 结果；GoldenCoach 有/无目标 Skill 结果。
 7. 两份一页式 Skill 质量与价值报告。
 8. 两条客户演示故事线和标准话术。
 9. 后续 EA 管理界面原型和 Worker 技术设计。
@@ -774,7 +774,7 @@ Promptfoo 当前尚未成为项目依赖。引入时必须满足：
 第一版视为成功，必须同时满足：
 
 - 四项核心契约已版本化、可校验，`evaluationConfigFingerprint` 与 `runEvidenceFingerprint` 职责分离并进入报告。
-- 财富经理同一案例能以有 Skill、无 Skill和上一版本方式运行；GoldenCoach 首轮只要求有/无 Skill。
+- 财富经理同一案例能以有 Skill、无目标 Skill 和上一版本方式运行；GoldenCoach 首轮只要求有/无目标 Skill。
 - 报告能证明指定 Skill 版本和 SHA256 确实进入运行时，并证明基线没有直接或间接加载目标 Skill。
 - 评测使用专用 Eval Adoption、干净 Session/Workspace，未修改生产 Agent 的活跃安装。
 - 至少覆盖正常、边界、依赖异常和权限/安全路径。
