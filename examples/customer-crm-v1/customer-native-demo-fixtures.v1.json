@@ -91,6 +91,171 @@
           }
         }
       ]
+    },
+    {
+      "globalCustomerId": "CUST-000202",
+      "displayName": "沈嘉禾",
+      "customerStatus": "active",
+      "visibilityScope": "restricted",
+      "tenantId": "tn_linggan_finance",
+      "ownerUserId": "2",
+      "businessAsOf": "2026-08-28T09:00:00.000Z",
+      "maskedPhone": "138****8202",
+      "profiles": [
+        {
+          "profileType": "wealth",
+          "demographics": { "ageBand": "45_59", "occupationCategory": "企业经营者", "city": "上海" },
+          "preferences": { "riskPreference": "balanced", "communicationPreference": "面谈" },
+          "insuranceFacts": {},
+          "detail": {
+            "customerTier": "private_banking",
+            "riskAssessment": { "riskLevel": "C3", "riskPreference": "balanced", "validUntil": "2027-06-30T23:59:59.000Z" },
+            "assetAllocationSummary": { "aumBand": "3m_5m", "totalAssets": 4200000 },
+            "portfolioSummary": { "totalAssets": 4200000, "availableCash": 900000, "investedAssets": 3300000, "dataAsOf": "2026-08-28T09:00:00.000Z" },
+            "holdings": [{ "productId": "WM-DEMO-202-A", "productName": "稳健增益组合（演示）", "category": "理财", "balance": 1600000, "status": "active", "maturityDate": "2027-05-20" }],
+            "maturities": [{ "productId": "WM-DEMO-202-B", "productName": "现金管理计划（演示）", "amount": 600000, "maturityDate": "2026-10-08", "status": "upcoming" }]
+          }
+        },
+        {
+          "profileType": "life_insurance",
+          "demographics": { "age": 49, "occupation": "企业经营者", "city": "上海" },
+          "preferences": { "riskPreference": "稳健", "budgetConcern": "年度保费预算30万元以内", "servicePreference": "专属顾问", "communicationPreference": "面谈" },
+          "insuranceFacts": { "currentCoverageSummary": "基础医疗险与定期寿险", "claimsRiskSummary": "近五年无重大理赔", "recentContactSummary": "已预约家庭保障复盘", "confirmedNeeds": "家庭责任,企业主保障,退休规划", "protectionGaps": ["企业主关键人保障不足"] },
+          "detail": { "investableAssets": "300万至500万元", "familyStructure": "已婚，有两名子女", "healthStatus": "基础健康告知已完成", "dependents": "配偶、两名子女与父母", "existingCoverage": "基础医疗险与定期寿险", "financialGoals": "家庭责任与企业主风险隔离" }
+        }
+      ]
+    },
+    {
+      "globalCustomerId": "CUST-000203",
+      "displayName": "赵婉清",
+      "customerStatus": "active",
+      "visibilityScope": "restricted",
+      "tenantId": "tn_linggan_finance",
+      "ownerUserId": "2",
+      "businessAsOf": "2026-08-28T09:10:00.000Z",
+      "maskedPhone": "139****8203",
+      "profiles": [
+        {
+          "profileType": "wealth",
+          "demographics": { "ageBand": "30_44", "occupationCategory": "专业人士", "city": "杭州" },
+          "preferences": { "riskPreference": "growth", "communicationPreference": "线上" },
+          "insuranceFacts": {},
+          "detail": {
+            "customerTier": "affluent",
+            "riskAssessment": { "riskLevel": "C4", "riskPreference": "growth", "validUntil": "2027-09-30T23:59:59.000Z" },
+            "assetAllocationSummary": { "aumBand": "1m_3m", "totalAssets": 2300000 },
+            "portfolioSummary": { "totalAssets": 2300000, "availableCash": 500000, "investedAssets": 1800000, "dataAsOf": "2026-08-28T09:10:00.000Z" },
+            "holdings": [{ "productId": "WM-DEMO-203-A", "productName": "成长配置组合（演示）", "category": "基金", "balance": 850000, "status": "active", "maturityDate": null }],
+            "maturities": []
+          }
+        },
+        {
+          "profileType": "auto_insurance",
+          "demographics": { "age": 38, "occupation": "专业人士", "city": "杭州" },
+          "preferences": { "riskPreference": "重视服务效率", "budgetConcern": "中等", "servicePreference": "线上理赔", "communicationPreference": "企业微信" },
+          "insuranceFacts": { "renewalAt": "2026-10-12T00:00:00.000Z", "renewalStatus": "pending", "currentCoverageSummary": "交强险、车损险、三者险200万", "claimsRiskSummary": "近三年一次轻微剐蹭", "recentContactSummary": "已发送续保提醒", "confirmedNeeds": "新能源专属保障,道路救援", "protectionGaps": ["司机座位险不足"] },
+          "detail": { "vehicleSummary": { "vehicleCount": 1, "vehicles": [{ "vehicleIdDesensitized": "V-203****", "brand": "蔚来", "model": "ES6", "year": 2024, "energyType": "electric", "usage": "personal" }] }, "annualMileage": "约1.8万公里", "drivingRecord": "8年驾龄，近三年一次轻微剐蹭" }
+        }
+      ]
+    },
+    {
+      "globalCustomerId": "CUST-000204",
+      "displayName": "孙志诚",
+      "customerStatus": "active",
+      "visibilityScope": "restricted",
+      "tenantId": "tn_linggan_finance",
+      "ownerUserId": "2",
+      "businessAsOf": "2026-08-28T09:20:00.000Z",
+      "maskedPhone": "136****8204",
+      "profiles": [
+        {
+          "profileType": "wealth",
+          "demographics": { "ageBand": "60_plus", "occupationCategory": "退休企业高管", "city": "南京" },
+          "preferences": { "riskPreference": "conservative", "communicationPreference": "电话" },
+          "insuranceFacts": {},
+          "detail": {
+            "customerTier": "private_banking",
+            "riskAssessment": { "riskLevel": "C2", "riskPreference": "conservative", "validUntil": "2027-04-30T23:59:59.000Z" },
+            "assetAllocationSummary": { "aumBand": "5m_plus", "totalAssets": 6800000 },
+            "portfolioSummary": { "totalAssets": 6800000, "availableCash": 1800000, "investedAssets": 5000000, "dataAsOf": "2026-08-28T09:20:00.000Z" },
+            "holdings": [{ "productId": "WM-DEMO-204-A", "productName": "固收配置组合（演示）", "category": "理财", "balance": 2800000, "status": "active", "maturityDate": "2027-01-18" }],
+            "maturities": [{ "productId": "WM-DEMO-204-B", "productName": "养老现金计划（演示）", "amount": 1000000, "maturityDate": "2026-11-20", "status": "upcoming" }]
+          }
+        },
+        {
+          "profileType": "life_insurance",
+          "demographics": { "age": 63, "occupation": "退休企业高管", "city": "南京" },
+          "preferences": { "riskPreference": "保守", "budgetConcern": "关注长期缴费压力", "servicePreference": "家庭服务", "communicationPreference": "电话" },
+          "insuranceFacts": { "currentCoverageSummary": "医疗险与终身寿险", "claimsRiskSummary": "有慢病管理记录，无重大理赔", "recentContactSummary": "关注养老与传承", "confirmedNeeds": "养老现金流,医疗保障,财富传承", "protectionGaps": ["长期护理保障不足"] },
+          "detail": { "investableAssets": "500万元以上", "familyStructure": "已婚，子女已成年", "healthStatus": "存在已披露慢病，需核保", "dependents": "配偶", "existingCoverage": "医疗险与终身寿险", "financialGoals": "养老现金流与财富传承" }
+        }
+      ]
+    },
+    {
+      "globalCustomerId": "CUST-000205",
+      "displayName": "郑雅雯",
+      "customerStatus": "active",
+      "visibilityScope": "restricted",
+      "tenantId": "tn_linggan_finance",
+      "ownerUserId": "2",
+      "businessAsOf": "2026-08-28T09:30:00.000Z",
+      "maskedPhone": "137****8205",
+      "profiles": [
+        {
+          "profileType": "wealth",
+          "demographics": { "ageBand": "30_44", "occupationCategory": "互联网管理者", "city": "深圳" },
+          "preferences": { "riskPreference": "balanced", "communicationPreference": "线上" },
+          "insuranceFacts": {},
+          "detail": {
+            "customerTier": "affluent",
+            "riskAssessment": { "riskLevel": "C3", "riskPreference": "balanced", "validUntil": "2027-11-30T23:59:59.000Z" },
+            "assetAllocationSummary": { "aumBand": "1m_3m", "totalAssets": 1500000 },
+            "portfolioSummary": { "totalAssets": 1500000, "availableCash": 420000, "investedAssets": 1080000, "dataAsOf": "2026-08-28T09:30:00.000Z" },
+            "holdings": [{ "productId": "WM-DEMO-205-A", "productName": "均衡配置组合（演示）", "category": "基金", "balance": 620000, "status": "active", "maturityDate": null }],
+            "maturities": []
+          }
+        },
+        {
+          "profileType": "auto_insurance",
+          "demographics": { "age": 36, "occupation": "互联网管理者", "city": "深圳" },
+          "preferences": { "riskPreference": "便捷优先", "budgetConcern": "价格敏感度低", "servicePreference": "代步车服务", "communicationPreference": "线上" },
+          "insuranceFacts": { "renewalAt": "2026-09-25T00:00:00.000Z", "renewalStatus": "contacted", "currentCoverageSummary": "交强险、车损险、三者险300万", "claimsRiskSummary": "近两年无出险", "recentContactSummary": "已确认续保意向", "confirmedNeeds": "代步车,快速理赔", "protectionGaps": ["车上人员责任保障偏低"] },
+          "detail": { "vehicleSummary": { "vehicleCount": 1, "vehicles": [{ "vehicleIdDesensitized": "V-205****", "brand": "宝马", "model": "iX3", "year": 2023, "energyType": "electric", "usage": "commuting" }] }, "annualMileage": "约1.2万公里", "drivingRecord": "10年驾龄，近两年无出险" }
+        }
+      ]
+    },
+    {
+      "globalCustomerId": "CUST-000206",
+      "displayName": "何文博",
+      "customerStatus": "active",
+      "visibilityScope": "restricted",
+      "tenantId": "tn_linggan_finance",
+      "ownerUserId": "2",
+      "businessAsOf": "2026-08-28T09:40:00.000Z",
+      "maskedPhone": "135****8206",
+      "profiles": [
+        {
+          "profileType": "wealth",
+          "demographics": { "ageBand": "45_59", "occupationCategory": "制造业管理者", "city": "苏州" },
+          "preferences": { "riskPreference": "growth", "communicationPreference": "面谈" },
+          "insuranceFacts": {},
+          "detail": {
+            "customerTier": "private_banking",
+            "riskAssessment": { "riskLevel": "C4", "riskPreference": "growth", "validUntil": "2027-10-31T23:59:59.000Z" },
+            "assetAllocationSummary": { "aumBand": "3m_5m", "totalAssets": 3600000 },
+            "portfolioSummary": { "totalAssets": 3600000, "availableCash": 700000, "investedAssets": 2900000, "dataAsOf": "2026-08-28T09:40:00.000Z" },
+            "holdings": [{ "productId": "WM-DEMO-206-A", "productName": "进取配置组合（演示）", "category": "基金", "balance": 1400000, "status": "active", "maturityDate": null }],
+            "maturities": [{ "productId": "WM-DEMO-206-B", "productName": "结构性配置计划（演示）", "amount": 500000, "maturityDate": "2026-12-12", "status": "upcoming" }]
+          }
+        },
+        {
+          "profileType": "auto_insurance",
+          "demographics": { "age": 51, "occupation": "制造业管理者", "city": "苏州" },
+          "preferences": { "riskPreference": "保障充分", "budgetConcern": "中等", "servicePreference": "专人理赔", "communicationPreference": "面谈" },
+          "insuranceFacts": { "renewalAt": "2026-10-30T00:00:00.000Z", "renewalStatus": "pending", "currentCoverageSummary": "两台车基础商业险", "claimsRiskSummary": "商务车年里程较高，近三年无责任事故", "recentContactSummary": "待安排车队保障复盘", "confirmedNeeds": "高额三者险,专人理赔,道路救援", "protectionGaps": ["商务车三者险保额不足"] },
+          "detail": { "vehicleSummary": { "vehicleCount": 2, "vehicles": [{ "vehicleIdDesensitized": "V-206A****", "brand": "奔驰", "model": "E级", "year": 2022, "energyType": "fuel", "usage": "business" }, { "vehicleIdDesensitized": "V-206B****", "brand": "别克", "model": "GL8", "year": 2021, "energyType": "fuel", "usage": "business" }] }, "annualMileage": "约3万公里", "drivingRecord": "15年驾龄，近三年无责任事故" }
+        }
+      ]
     }
   ],
   "assignments": [
@@ -104,6 +269,61 @@
       "relationshipRole": "primary",
       "assignmentStatus": "active",
       "validFrom": "2026-08-27T00:00:00.000Z"
+    },
+    {
+      "assignmentKey": "org_linggan_finance:role_adoption:lgj-lihongkun:CUST-000202",
+      "globalCustomerId": "CUST-000202",
+      "organizationId": "org_linggan_finance",
+      "principalType": "role_adoption",
+      "principalRef": "lgj-lihongkun",
+      "businessDomain": "shared",
+      "relationshipRole": "primary",
+      "assignmentStatus": "active",
+      "validFrom": "2026-08-28T00:00:00.000Z"
+    },
+    {
+      "assignmentKey": "org_linggan_finance:role_adoption:lgj-lihongkun:CUST-000203",
+      "globalCustomerId": "CUST-000203",
+      "organizationId": "org_linggan_finance",
+      "principalType": "role_adoption",
+      "principalRef": "lgj-lihongkun",
+      "businessDomain": "shared",
+      "relationshipRole": "primary",
+      "assignmentStatus": "active",
+      "validFrom": "2026-08-28T00:00:00.000Z"
+    },
+    {
+      "assignmentKey": "org_linggan_finance:role_adoption:lgj-lihongkun:CUST-000204",
+      "globalCustomerId": "CUST-000204",
+      "organizationId": "org_linggan_finance",
+      "principalType": "role_adoption",
+      "principalRef": "lgj-lihongkun",
+      "businessDomain": "shared",
+      "relationshipRole": "primary",
+      "assignmentStatus": "active",
+      "validFrom": "2026-08-28T00:00:00.000Z"
+    },
+    {
+      "assignmentKey": "org_linggan_finance:role_adoption:lgj-lihongkun:CUST-000205",
+      "globalCustomerId": "CUST-000205",
+      "organizationId": "org_linggan_finance",
+      "principalType": "role_adoption",
+      "principalRef": "lgj-lihongkun",
+      "businessDomain": "shared",
+      "relationshipRole": "primary",
+      "assignmentStatus": "active",
+      "validFrom": "2026-08-28T00:00:00.000Z"
+    },
+    {
+      "assignmentKey": "org_linggan_finance:role_adoption:lgj-lihongkun:CUST-000206",
+      "globalCustomerId": "CUST-000206",
+      "organizationId": "org_linggan_finance",
+      "principalType": "role_adoption",
+      "principalRef": "lgj-lihongkun",
+      "businessDomain": "shared",
+      "relationshipRole": "primary",
+      "assignmentStatus": "active",
+      "validFrom": "2026-08-28T00:00:00.000Z"
     }
   ]
 }

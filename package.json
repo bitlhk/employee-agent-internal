@@ -100,6 +100,7 @@
     "customer-crm:manual-create:configure": "tsx scripts/configure-twenty-customer-manual-create.ts",
     "customer-crm:environment:verify": "tsx scripts/verify-twenty-customer-crm-environment.ts",
     "customer-context:twenty:runtime:verify": "tsx scripts/verify-twenty-customer-context-runtime.ts",
+    "customer-context:cross-role:verify": "tsx scripts/verify-lgj-cross-role-customer-projections.ts",
     "customer-crm:profiles:promote": "tsx scripts/promote-twenty-customer-profiles.ts",
     "context:provider:llamaindex:certify": "tsx scripts/certify-llamaindex-provider.ts",
     "context:provider:llamaindex:baseline:verify": "tsx scripts/verify-llamaindex-provider-certification-baseline.ts",
