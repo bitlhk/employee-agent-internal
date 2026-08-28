@@ -1,0 +1,92 @@
+{
+  "schema": "ea.skill-quality-controlled-diagnostic-baseline.v1",
+  "baselineId": "wealth-manager-assistant-2.0.1-20260828",
+  "generatedAt": "2026-08-28T15:18:01.548Z",
+  "status": "EVALUATED_NOT_PASSED",
+  "resultSemantics": "superseded_non_certifying",
+  "executionMode": "controlled_harness",
+  "skill": {
+    "skillId": "wealth-manager-assistant",
+    "version": "2.0.1",
+    "artifactSha256": "88f47211ef32735324688988d5557b69b5fa77c09aedf6812ee38308989fa09f"
+  },
+  "groundTruth": {
+    "suiteId": "wealth-manager-assistant-quality-v1",
+    "suiteVersion": "1.1.0",
+    "suiteFingerprint": "5edfef1d7eb15026a5fbd9b4b3f6dadfe40192cad2afa5b32a8c7b6d3810dd6b",
+    "expertReviewStatus": "expert_confirmed"
+  },
+  "evidence": {
+    "evaluationId": "wealth-skill-v1-20260828T151319348Z",
+    "reportFingerprint": "ead2be6c5e3dcb78c3041f076d173143c8f9ee3f9db40a977e63043591b2e0b4",
+    "localReportPath": "reports/skill-quality-evaluation/wealth-skill-v1-20260828T151319348Z/report.json",
+    "plannedRuns": 63,
+    "completedRuns": 63,
+    "judgeStatus": "unavailable",
+    "formalScore": null,
+    "formalGrade": null,
+    "targetHardGateStatus": "FAIL"
+  },
+  "arms": [
+    {
+      "executionArm": "target_skill",
+      "passedRuns": 9,
+      "totalRuns": 21,
+      "deterministicAssertionPassRate": 0.6585365853658537,
+      "hardGateAssertionPassRate": 0.6309523809523809,
+      "p95LatencyMs": 18366,
+      "totalTokens": 105897
+    },
+    {
+      "executionArm": "without_target_skill",
+      "passedRuns": 14,
+      "totalRuns": 21,
+      "deterministicAssertionPassRate": 0.7560975609756098,
+      "hardGateAssertionPassRate": 0.7023809523809523,
+      "p95LatencyMs": 13354,
+      "totalTokens": 23078
+    },
+    {
+      "executionArm": "previous_version",
+      "passedRuns": 9,
+      "totalRuns": 21,
+      "deterministicAssertionPassRate": 0.6666666666666666,
+      "hardGateAssertionPassRate": 0.6309523809523809,
+      "p95LatencyMs": 19004,
+      "totalTokens": 82914
+    }
+  ],
+  "targetFindings": [
+    {
+      "findingId": "OUTPUT_SCHEMA_STABILITY",
+      "severity": "high",
+      "evidence": "2 of 21 target runs produced malformed or incomplete structured output"
+    },
+    {
+      "findingId": "BUSINESS_LANGUAGE_BOUNDARY",
+      "severity": "medium",
+      "evidence": "Customer/product degradation responses exposed internal tool or contract names in 6 of 6 target runs"
+    },
+    {
+      "findingId": "CONFIRMATION_IDEMPOTENCY",
+      "severity": "high",
+      "evidence": "1 of 3 target write scenarios did not return the same execution receipt on replay"
+    },
+    {
+      "findingId": "FORMAL_RECOMMENDATION_SEMANTICS",
+      "severity": "high",
+      "evidence": "All 3 eligible recommendation runs listed formal candidates while setting formalRecommendation=false"
+    },
+    {
+      "findingId": "INCREMENTAL_VALUE_NOT_PROVEN",
+      "severity": "high",
+      "evidence": "Target passed 9 of 21 runs versus 14 of 21 without the target Skill"
+    }
+  ],
+  "limitations": [
+    "Synthetic fixture events do not certify native EA tool execution or live MCP availability",
+    "Harness Artifact Identity does not establish native Skill Runtime Identity",
+    "The Hermes Judge is not calibrated, so subjective usability scores and formal grades remain unavailable"
+  ],
+  "promotionDecision": "DO_NOT_PROMOTE_TO_QUALITY_GRADE"
+}

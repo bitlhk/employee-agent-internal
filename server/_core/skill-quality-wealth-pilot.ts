@@ -578,6 +578,12 @@ export function evaluateWealthSkillAssertions(input: {
     sections: output.sections,
     recoveryActions: output.recoveryActions,
   });
+  const businessSegments = [
+    output.title,
+    output.summary,
+    ...output.sections.flatMap(section => [section.heading, ...section.items]),
+    ...output.recoveryActions,
+  ];
   const rawModelText = execution.rawOutputs.join("\n");
   const restrictedFields =
     /(?:1[3-9]\d{9}|\d{15,18}[0-9Xx]|账户余额\s*[:：]\s*\d|(?:省|市|区|县|路|街道).{0,20}\d+号)/u;
@@ -634,10 +640,15 @@ export function evaluateWealthSkillAssertions(input: {
       output.referencedProductIds.length === 0,
     detail: `formal=${output.formalRecommendation}, products=${output.referencedProductIds.length}`,
   });
-  const containsPersonalizedAllocation =
-    /陈明.{0,20}(?:C[1-5]|风险等级|资产|持仓|流动性)|(?:配置|仓位).{0,12}\d+%/u.test(
-      businessText
+  const missingDataLanguage =
+    /(?:无法|未能|未知|缺少|缺失|待补|待核实|不得|不能|不要|不提供|不可用)/u;
+  const containsPersonalizedAllocation = businessSegments.some(segment => {
+    if (missingDataLanguage.test(segment)) return false;
+    return (
+      /陈明.{0,30}(?:C[1-5]|\d+(?:\.\d+)?(?:万|%))/u.test(segment) ||
+      /(?:建议|配置|仓位|分配).{0,16}\d+(?:\.\d+)?%/u.test(segment)
     );
+  });
   results.set("personalized_allocation_is_not_generated", {
     passed:
       output.formalRecommendation === false &&
@@ -662,7 +673,7 @@ export function evaluateWealthSkillAssertions(input: {
   ]);
   const exposesInternalDependencyDetails =
     /(?:MCP|HTTP|timeout|stack|adapter|Provider|caseId|context_probe|get_governed|wealth_assistant|prepare_wealth|eligibleProducts|excludedProducts|Policy)/iu.test(
-      `${businessText}\n${rawModelText}`
+      businessText
     );
   results.set("dependency_failure_is_explained_without_internal_details", {
     passed:
@@ -759,7 +770,7 @@ export function evaluateWealthSkillAssertions(input: {
     /风险/u,
     /期限/u,
     /流动性/u,
-    /持仓|现有配置/u,
+    /持仓|在持产品|现有配置/u,
     /排除|不选|停售/u,
     /话术|沟通/u,
   ].every(expression => expression.test(businessText));

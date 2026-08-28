@@ -9,7 +9,10 @@ import {
   runWealthSkillQualityPhase1,
 } from "./skill-quality-evaluation-phase1";
 import {
+  evaluateWealthSkillAssertions,
   executeWealthSkillEvaluationCase,
+  type WealthSkillEvaluationExecution,
+  wealthSkillEvaluationFixture,
   WealthSkillModelOutputError,
 } from "./skill-quality-wealth-pilot";
 
@@ -331,5 +334,115 @@ describe("Skill Quality Evaluation Phase 1", () => {
         usage: expect.objectContaining({ total_tokens: 13 }),
       }),
     });
+  });
+
+  it("does not mistake missing-data language for personalized advice", () => {
+    const contracts = loadSkillQualityPilotContracts({
+      skillId: "wealth-manager-assistant",
+    });
+    const evalCase = contracts.suite.cases.find(
+      item => item.caseId === "WM-SKILL-EVAL-003"
+    )!;
+    const fixture = wealthSkillEvaluationFixture(evalCase.caseId);
+    const output = {
+      ...responseFor({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({ caseId: evalCase.caseId }),
+          },
+        ],
+      }),
+      summary:
+        "客户数据不可用，无法核验陈明的风险等级、持仓和流动性，因此不提供个性化配置。",
+      sourceRefs: [],
+    } as WealthSkillEvaluationExecution["output"];
+    const execution: WealthSkillEvaluationExecution = {
+      output,
+      firstOutput: output,
+      rawOutputs: [JSON.stringify(output)],
+      model: "test",
+      elapsedMs: 1,
+      usage: [],
+      approvalCardCount: 0,
+      confirmationCount: 0,
+      capabilityExecutionCount: 0,
+      capabilityExecutedBeforeConfirmation: false,
+      repeatedConfirmationCount: 0,
+      duplicateRecordCount: 0,
+      confirmationReceiptMatched: false,
+      executionReceipt: null,
+    };
+    const assertions = evaluateWealthSkillAssertions({
+      evalCase,
+      fixture,
+      execution,
+    });
+    expect(
+      assertions.find(
+        item => item.assertionId === "personalized_allocation_is_not_generated"
+      )?.status
+    ).toBe("PASS");
+  });
+
+  it("checks user-facing dependency text without treating evidence ids as leakage", () => {
+    const contracts = loadSkillQualityPilotContracts({
+      skillId: "wealth-manager-assistant",
+    });
+    const evalCase = contracts.suite.cases.find(
+      item => item.caseId === "WM-SKILL-EVAL-003B"
+    )!;
+    const fixture = wealthSkillEvaluationFixture(evalCase.caseId);
+    const output = {
+      ...responseFor({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({ caseId: evalCase.caseId }),
+          },
+        ],
+      }),
+      sourceRefs: ["C005", "wealth-policy-v2.2"],
+    } as WealthSkillEvaluationExecution["output"];
+    const execution: WealthSkillEvaluationExecution = {
+      output,
+      firstOutput: output,
+      rawOutputs: [JSON.stringify(output)],
+      model: "test",
+      elapsedMs: 1,
+      usage: [],
+      approvalCardCount: 0,
+      confirmationCount: 0,
+      capabilityExecutionCount: 0,
+      capabilityExecutedBeforeConfirmation: false,
+      repeatedConfirmationCount: 0,
+      duplicateRecordCount: 0,
+      confirmationReceiptMatched: false,
+      executionReceipt: null,
+    };
+    const assertions = evaluateWealthSkillAssertions({
+      evalCase,
+      fixture,
+      execution,
+    });
+    expect(
+      assertions.find(
+        item =>
+          item.assertionId ===
+          "dependency_failure_is_explained_without_internal_details"
+      )?.status
+    ).toBe("PASS");
+
+    execution.output = {
+      ...output,
+      summary: "产品服务不可用，无法调用 prepare_wealth_allocation_context。",
+    };
+    expect(
+      evaluateWealthSkillAssertions({ evalCase, fixture, execution }).find(
+        item =>
+          item.assertionId ===
+          "dependency_failure_is_explained_without_internal_details"
+      )?.status
+    ).toBe("FAIL");
   });
 });
