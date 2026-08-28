@@ -786,6 +786,10 @@ export class FileSkillRegistry implements SkillRegistry {
     });
   }
 
+  async refreshRuntimeProjection(adoptId: string): Promise<void> {
+    await this.invalidateRuntime(adoptId);
+  }
+
   private async syncOpenClawAgentSkillFilter(adoptId: string): Promise<void> {
     const runtimeAgentId = await this.runtimeAgentId(adoptId);
     const configPath = this.openclawJsonPath();

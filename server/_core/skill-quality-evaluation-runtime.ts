@@ -1,0 +1,434 @@
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { z } from "zod";
+import type { SkillEvaluationExecutionArm } from "../../shared/skill-quality-evaluation";
+import { getClawByAdoptId } from "../db/claw";
+import { governanceFingerprint } from "./governance/contracts";
+import { loadSkillQualityPilotContracts } from "./skill-quality-evaluation-contracts";
+import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
+import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
+
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
+const runtimeSkillIdentitySchema = z.strictObject({
+  skillId: z.string().min(1),
+  skillVersionId: z.string().min(1),
+  version: z.string().min(1),
+  artifactSha256: sha256Schema,
+});
+
+const runtimeArmSchema = z.strictObject({
+  executionArm: z.enum(["target_skill", "without_skill", "previous_version"]),
+  adoptionId: z.string().regex(/^lgj-eval-[a-z0-9-]{3,48}$/u),
+  expectedAgentId: z.string().regex(/^jiuwen_lgj-eval-[a-z0-9-]{3,48}$/u),
+  roleTemplate: z.literal("wealth-manager"),
+  expectedSkill: runtimeSkillIdentitySchema.nullable(),
+});
+
+export const skillEvaluationRuntimeProfileV1Schema = z
+  .strictObject({
+    schema: z.literal("ea.skill-quality-runtime-profile.v1"),
+    profileId: z.string().min(1),
+    baseUrl: z.string().url(),
+    chatEndpoint: z.literal("/api/claw/chat-stream"),
+    internalAuthEnv: z.literal("INTERNAL_API_KEY"),
+    arms: z.array(runtimeArmSchema).length(3),
+    profileFingerprint: sha256Schema,
+  })
+  .superRefine((profile, context) => {
+    const arms = new Set(profile.arms.map(arm => arm.executionArm));
+    const adoptions = new Set(profile.arms.map(arm => arm.adoptionId));
+    if (arms.size !== 3) {
+      context.addIssue({ code: "custom", path: ["arms"], message: "all three execution arms are required" });
+    }
+    if (adoptions.size !== 3) {
+      context.addIssue({ code: "custom", path: ["arms"], message: "each execution arm requires a distinct evaluation adoption" });
+    }
+  });
+
+export type SkillEvaluationRuntimeProfileV1 = z.infer<
+  typeof skillEvaluationRuntimeProfileV1Schema
+>;
+export type SkillEvaluationRuntimeArmV1 = z.infer<typeof runtimeArmSchema>;
+
+function profileFingerprint(
+  profile: Omit<SkillEvaluationRuntimeProfileV1, "profileFingerprint">
+): string {
+  return governanceFingerprint(profile);
+}
+
+function defaultAdoptionId(arm: SkillEvaluationExecutionArm): string {
+  if (arm === "target_skill") return "lgj-eval-wealth-target";
+  if (arm === "previous_version") return "lgj-eval-wealth-previous";
+  return "lgj-eval-wealth-without";
+}
+
+export function skillEvaluationAgentId(adoptionId: string): string {
+  return `jiuwen_${adoptionId}`;
+}
+
+export function buildSkillEvaluationRuntimeProfile(input: {
+  root?: string;
+  skillStoreRoot?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}): SkillEvaluationRuntimeProfileV1 {
+  const env = input.env || process.env;
+  const contracts = loadSkillQualityPilotContracts({
+    root: input.root,
+    skillId: "wealth-manager-assistant",
+    skillStoreRoot: input.skillStoreRoot,
+  });
+  const byVersionId = new Map(
+    contracts.inventory.records.map(record => [record.skillVersionId, record])
+  );
+  const target = byVersionId.get(contracts.pilot.target.skillVersionId);
+  const previousRef = contracts.pilot.baselines.find(
+    baseline => baseline.mode === "previous_version"
+  );
+  const previous = previousRef?.skillVersionId
+    ? byVersionId.get(previousRef.skillVersionId)
+    : null;
+  if (!target || !previous) {
+    throw new Error("Target or previous Skill artifact is missing from the approved inventory");
+  }
+  const baseUrl = String(
+    env.EA_SKILL_EVAL_RUNTIME_BASE_URL || "http://127.0.0.1:5180"
+  ).replace(/\/$/u, "");
+  const url = new URL(baseUrl);
+  const localHosts = new Set(["127.0.0.1", "localhost", "::1"]);
+  if (!localHosts.has(url.hostname) && env.EA_SKILL_EVAL_ALLOW_REMOTE !== "1") {
+    throw new Error(
+      `Refusing remote Skill evaluation Runtime ${url.hostname}; set EA_SKILL_EVAL_ALLOW_REMOTE=1 explicitly`
+    );
+  }
+  const expected = (record: typeof target) => ({
+    skillId: contracts.pilot.skillId,
+    skillVersionId: record.skillVersionId,
+    version: record.version,
+    artifactSha256: record.artifactSha256,
+  });
+  const body = {
+    schema: "ea.skill-quality-runtime-profile.v1" as const,
+    profileId: String(env.EA_SKILL_EVAL_RUNTIME_PROFILE_ID || "wealth-manager-phase1b-local-v1"),
+    baseUrl,
+    chatEndpoint: "/api/claw/chat-stream" as const,
+    internalAuthEnv: "INTERNAL_API_KEY" as const,
+    arms: [
+      {
+        executionArm: "target_skill" as const,
+        adoptionId: String(env.EA_SKILL_EVAL_TARGET_ADOPTION_ID || defaultAdoptionId("target_skill")),
+        expectedAgentId: skillEvaluationAgentId(
+          String(env.EA_SKILL_EVAL_TARGET_ADOPTION_ID || defaultAdoptionId("target_skill"))
+        ),
+        roleTemplate: "wealth-manager" as const,
+        expectedSkill: expected(target),
+      },
+      {
+        executionArm: "without_skill" as const,
+        adoptionId: String(env.EA_SKILL_EVAL_WITHOUT_ADOPTION_ID || defaultAdoptionId("without_skill")),
+        expectedAgentId: skillEvaluationAgentId(
+          String(env.EA_SKILL_EVAL_WITHOUT_ADOPTION_ID || defaultAdoptionId("without_skill"))
+        ),
+        roleTemplate: "wealth-manager" as const,
+        expectedSkill: null,
+      },
+      {
+        executionArm: "previous_version" as const,
+        adoptionId: String(env.EA_SKILL_EVAL_PREVIOUS_ADOPTION_ID || defaultAdoptionId("previous_version")),
+        expectedAgentId: skillEvaluationAgentId(
+          String(env.EA_SKILL_EVAL_PREVIOUS_ADOPTION_ID || defaultAdoptionId("previous_version"))
+        ),
+        roleTemplate: "wealth-manager" as const,
+        expectedSkill: expected(previous),
+      },
+    ],
+  };
+  return skillEvaluationRuntimeProfileV1Schema.parse({
+    ...body,
+    profileFingerprint: profileFingerprint(body),
+  });
+}
+
+export type SkillEvaluationRuntimeProfileCheck = {
+  executionArm: SkillEvaluationExecutionArm;
+  adoptionId: string;
+  status: "PASS" | "FAIL";
+  checks: Array<{ code: string; passed: boolean; detail: string }>;
+  runtimeSkill: {
+    skillId: string;
+    version: string;
+    artifactSha256: string;
+    runtimePathFingerprint: string;
+  } | null;
+};
+
+export async function verifySkillEvaluationRuntimeProfile(
+  profile: SkillEvaluationRuntimeProfileV1
+): Promise<{
+  status: "PASS" | "FAIL";
+  profileFingerprint: string;
+  arms: SkillEvaluationRuntimeProfileCheck[];
+}> {
+  const arms: SkillEvaluationRuntimeProfileCheck[] = [];
+  for (const arm of profile.arms) {
+    const checks: SkillEvaluationRuntimeProfileCheck["checks"] = [];
+    const adoption = await getClawByAdoptId(arm.adoptionId);
+    checks.push({
+      code: "DEDICATED_ADOPTION_EXISTS",
+      passed: Boolean(adoption),
+      detail: adoption ? arm.adoptionId : "adoption not found",
+    });
+    checks.push({
+      code: "ADOPTION_ACTIVE",
+      passed: adoption?.status === "active",
+      detail: String(adoption?.status || "missing"),
+    });
+    checks.push({
+      code: "ROLE_TEMPLATE_MATCH",
+      passed: adoption?.roleTemplate === arm.roleTemplate,
+      detail: String(adoption?.roleTemplate || "missing"),
+    });
+    checks.push({
+      code: "RUNTIME_AGENT_ID_MATCH",
+      passed: adoption?.agentId === arm.expectedAgentId,
+      detail: String(adoption?.agentId || "missing"),
+    });
+    let runtimeSkill: SkillEvaluationRuntimeProfileCheck["runtimeSkill"] = null;
+    if (adoption) {
+      const listed = await listSkillsWithRoleDefaults({
+        adoptId: arm.adoptionId,
+        agentId: String(adoption.agentId),
+        roleTemplate: String(adoption.roleTemplate),
+      });
+      const skill = listed.ok
+        ? listed.value.find(item => item.id === "wealth-manager-assistant")
+        : undefined;
+      if (!arm.expectedSkill) {
+        const absent = !skill || !skill.enabled || skill.state !== "ready";
+        checks.push({
+          code: "WITHOUT_SKILL_BASELINE_CLEAN",
+          passed: absent,
+          detail: skill ? `state=${skill.state}, enabled=${skill.enabled}` : "Skill absent",
+        });
+      } else {
+        const runtimePath = String(skill?.sync.runtimePath || "").trim();
+        const runtimeExists = Boolean(
+          runtimePath && existsSync(path.join(runtimePath, "SKILL.md"))
+        );
+        const digest = runtimeExists ? digestSkillSourceTree(runtimePath) : null;
+        runtimeSkill = digest
+          ? {
+              skillId: arm.expectedSkill.skillId,
+              version: String(skill?.source.version || ""),
+              artifactSha256: digest.sha256,
+              runtimePathFingerprint: governanceFingerprint(path.resolve(runtimePath)),
+            }
+          : null;
+        checks.push({
+          code: "RUNTIME_SKILL_READY",
+          passed: Boolean(skill?.enabled && skill.state === "ready" && runtimeExists),
+          detail: skill
+            ? `state=${skill.state}, enabled=${skill.enabled}, runtime=${runtimeExists}`
+            : "Skill not listed",
+        });
+        checks.push({
+          code: "RUNTIME_ARTIFACT_SHA_MATCH",
+          passed: digest?.sha256 === arm.expectedSkill.artifactSha256,
+          detail: digest?.sha256 || "runtime artifact missing",
+        });
+        checks.push({
+          code: "RUNTIME_VERSION_MATCH",
+          passed: String(skill?.source.version || "") === arm.expectedSkill.version,
+          detail: String(skill?.source.version || "missing"),
+        });
+      }
+    }
+    arms.push({
+      executionArm: arm.executionArm,
+      adoptionId: arm.adoptionId,
+      status: checks.every(check => check.passed) ? "PASS" : "FAIL",
+      checks,
+      runtimeSkill,
+    });
+  }
+  return {
+    status: arms.every(arm => arm.status === "PASS") ? "PASS" : "FAIL",
+    profileFingerprint: profile.profileFingerprint,
+    arms,
+  };
+}
+
+type RuntimeSseEvent = { event: string; data: Record<string, unknown> };
+
+function parseRuntimeSse(raw: string): {
+  events: RuntimeSseEvent[];
+  assistantText: string;
+  run: Record<string, unknown> | null;
+  usage: Record<string, unknown> | null;
+} {
+  const events: RuntimeSseEvent[] = [];
+  let eventName = "message";
+  let assistantText = "";
+  let finalText: string | null = null;
+  let run: Record<string, unknown> | null = null;
+  let usage: Record<string, unknown> | null = null;
+  for (const line of raw.split(/\r?\n/u)) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice(6).trim() || "message";
+      continue;
+    }
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") {
+      eventName = "message";
+      continue;
+    }
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(payload) as Record<string, unknown>;
+    } catch {
+      events.push({ event: eventName, data: { unparsedSha256: governanceFingerprint(payload) } });
+      eventName = "message";
+      continue;
+    }
+    events.push({ event: eventName, data });
+    if (data.__run && typeof data.__run === "object") run = data.__run as Record<string, unknown>;
+    if (data.__perf && typeof data.__perf === "object") {
+      usage = (data.__perf as Record<string, unknown>).usage as Record<string, unknown> || null;
+    }
+    if (typeof data.__final_text === "string") finalText = data.__final_text;
+    const choices = Array.isArray(data.choices) ? data.choices : [];
+    const first = choices[0] as Record<string, unknown> | undefined;
+    const delta = first?.delta as Record<string, unknown> | undefined;
+    if (typeof delta?.content === "string") assistantText += delta.content;
+    eventName = "message";
+  }
+  return { events, assistantText: finalText ?? assistantText, run, usage };
+}
+
+export type SkillEvaluationRuntimeTurn = {
+  executionArm: SkillEvaluationExecutionArm;
+  adoptionId: string;
+  conversationId: string;
+  status: "PASS" | "FAIL";
+  httpStatus: number;
+  elapsedMs: number;
+  assistantText: string;
+  assistantTextSha256: string;
+  rawSseSha256: string;
+  runtimeIdentityStatus: "VERIFIED" | "UNVERIFIED";
+  runtimeIdentity: Record<string, unknown> | null;
+  runtimeIdentityFingerprint: string | null;
+  run: Record<string, unknown> | null;
+  usage: Record<string, unknown> | null;
+  events: RuntimeSseEvent[];
+  error: string | null;
+};
+
+export async function executeSkillEvaluationRuntimeTurn(input: {
+  profile: SkillEvaluationRuntimeProfileV1;
+  arm: SkillEvaluationRuntimeArmV1;
+  message: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<SkillEvaluationRuntimeTurn> {
+  const internalKey = String(process.env[input.profile.internalAuthEnv] || "").trim();
+  if (!internalKey) throw new Error(`${input.profile.internalAuthEnv} is unavailable`);
+  const conversationId = `skill-eval-${randomUUID()}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), input.timeoutMs || 180_000);
+  const started = Date.now();
+  try {
+    const response = await (input.fetchImpl || fetch)(
+      `${input.profile.baseUrl}${input.profile.chatEndpoint}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Key": internalKey,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          adoptId: input.arm.adoptionId,
+          message: input.message,
+          conversationId,
+          channel: "skill_evaluation",
+          runtimeMode: "fast",
+          selectedSkillIds: input.arm.expectedSkill
+            ? [input.arm.expectedSkill.skillId]
+            : [],
+          skillEvaluation: {
+            profileFingerprint: input.profile.profileFingerprint,
+            disableAutomaticSkillSelection: true,
+          },
+        }),
+      }
+    );
+    const raw = await response.text();
+    const parsed = parseRuntimeSse(raw);
+    const identityHeader = response.headers.get(
+      "x-ea-skill-evaluation-runtime-identity"
+    );
+    const identityFingerprint = response.headers.get(
+      "x-ea-skill-evaluation-runtime-fingerprint"
+    );
+    let runtimeIdentity: Record<string, unknown> | null = null;
+    try {
+      runtimeIdentity = identityHeader
+        ? (JSON.parse(Buffer.from(identityHeader, "base64url").toString("utf8")) as Record<string, unknown>)
+        : null;
+    } catch {
+      runtimeIdentity = null;
+    }
+    const returnedSkills = Array.isArray(runtimeIdentity?.runtimeSkills)
+      ? runtimeIdentity.runtimeSkills as Array<Record<string, unknown>>
+      : [];
+    const expectedRuntimeIdentity = input.arm.expectedSkill
+      ? returnedSkills.length === 1 &&
+        returnedSkills[0]?.skillId === input.arm.expectedSkill.skillId &&
+        returnedSkills[0]?.version === input.arm.expectedSkill.version &&
+        returnedSkills[0]?.artifactSha256 === input.arm.expectedSkill.artifactSha256
+      : returnedSkills.length === 0;
+    const runtimeIdentityVerified = Boolean(
+      runtimeIdentity &&
+        identityFingerprint &&
+        governanceFingerprint(runtimeIdentity) === identityFingerprint &&
+        runtimeIdentity.profileFingerprint === input.profile.profileFingerprint &&
+        runtimeIdentity.adoptId === input.arm.adoptionId &&
+        expectedRuntimeIdentity &&
+        parsed.run
+    );
+    const streamError = parsed.events.find(event => event.data.__stream_error === true);
+    const error = response.ok
+      ? streamError
+        ? String(streamError.data.error || "EA Runtime stream failed")
+        : null
+      : String((() => {
+          try {
+            return (JSON.parse(raw) as Record<string, unknown>).error;
+          } catch {
+            return `HTTP ${response.status}`;
+          }
+        })() || `HTTP ${response.status}`);
+    return {
+      executionArm: input.arm.executionArm,
+      adoptionId: input.arm.adoptionId,
+      conversationId,
+      status: response.ok && !error && runtimeIdentityVerified ? "PASS" : "FAIL",
+      httpStatus: response.status,
+      elapsedMs: Date.now() - started,
+      assistantText: parsed.assistantText,
+      assistantTextSha256: governanceFingerprint(parsed.assistantText),
+      rawSseSha256: governanceFingerprint(raw),
+      runtimeIdentityStatus: runtimeIdentityVerified ? "VERIFIED" : "UNVERIFIED",
+      runtimeIdentity,
+      runtimeIdentityFingerprint: identityFingerprint,
+      run: parsed.run,
+      usage: parsed.usage,
+      events: parsed.events,
+      error,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}

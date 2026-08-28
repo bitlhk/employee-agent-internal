@@ -126,6 +126,15 @@ describe("Skill Quality Evaluation Phase 1", () => {
           string,
           unknown
         >;
+        const messages = body.messages as Array<{ content: string }>;
+        const modelInput = JSON.parse(messages.at(-1)?.content || "{}") as Record<
+          string,
+          unknown
+        >;
+        expect(modelInput).not.toHaveProperty("executionArm");
+        expect(JSON.stringify(modelInput)).not.toMatch(
+          /target_skill|without_skill|previous_version/u
+        );
         return new Response(
           JSON.stringify({
             choices: [
@@ -150,7 +159,10 @@ describe("Skill Quality Evaluation Phase 1", () => {
         modelConfig,
       });
       expect(result.report.status).toBe("DIAGNOSTIC_COMPLETE");
-      expect(result.report.targetHardGateStatus).toBe("PASS");
+      expect(result.report.targetHardGateStatus).toBe("UNVERIFIED");
+      expect(result.report.resultSemantics).toBe(
+        "superseded_non_certifying"
+      );
       expect(result.report.execution).toMatchObject({
         plannedRuns: 45,
         completedRuns: 45,
@@ -159,12 +171,25 @@ describe("Skill Quality Evaluation Phase 1", () => {
       expect(result.report.formalScore).toBeNull();
       expect(result.report.formalGrade).toBeNull();
       expect(result.report.diagnosticFailures).toEqual([]);
+      expect(result.report.unverifiedHardGates).toHaveLength(45);
       expect(result.report.runEvidenceFingerprints).toHaveLength(45);
       expect(new Set(result.report.runEvidenceFingerprints).size).toBe(45);
       const persisted = JSON.parse(
         readFileSync(path.join(outputRoot, "report.json"), "utf8")
       ) as typeof result.report;
       expect(persisted.reportFingerprint).toBe(result.report.reportFingerprint);
+      const firstRunId = result.report.unverifiedHardGates[0]!.runId;
+      const trace = JSON.parse(
+        readFileSync(
+          path.join(outputRoot, "runs", firstRunId, "trace.json"),
+          "utf8"
+        )
+      ) as Record<string, unknown>;
+      expect(trace).toMatchObject({
+        traceSource: "synthetic_fixture",
+        runtimeSkillIdentity: { status: "UNVERIFIED" },
+      });
+      expect(trace).not.toHaveProperty("toolCalls");
     } finally {
       rmSync(outputRoot, { recursive: true, force: true });
     }
@@ -191,13 +216,68 @@ describe("Skill Quality Evaluation Phase 1", () => {
     await expect(
       executeWealthSkillEvaluationCase({
         evalCase,
-        executionArm: "without_skill",
         skillText: null,
         modelConfig,
       })
     ).rejects.toMatchObject<Partial<WealthSkillModelOutputError>>({
       name: "WealthSkillModelOutputError",
       evidence: expect.objectContaining({ rawOutput: '{"status":"READY"' }),
+    });
+  });
+
+  it("rejects text outside the single JSON result", async () => {
+    const valid = {
+      status: "READY",
+      title: "评测结果",
+      summary: "已根据授权客户事实准备访前材料。",
+      sections: [
+        { heading: "客户概况", items: ["陈明，风险等级 C4"] },
+        { heading: "谈话要点", items: ["核实目标", "了解期限", "确认流动性"] },
+      ],
+      sourceRefs: [],
+      referencedProductIds: [],
+      formalRecommendation: false,
+      recoveryActions: [],
+      approvalCards: [],
+      executionReceipt: null,
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    content: `internal preface\n${JSON.stringify(valid)}`,
+                  },
+                },
+              ],
+              usage: {
+                prompt_tokens: 9,
+                completion_tokens: 4,
+                total_tokens: 13,
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } }
+          )
+      )
+    );
+    const evalCase = loadSkillQualityPilotContracts({
+      skillId: "wealth-manager-assistant",
+    }).suite.cases[0];
+    await expect(
+      executeWealthSkillEvaluationCase({
+        evalCase,
+        skillText: null,
+        modelConfig,
+      })
+    ).rejects.toMatchObject<Partial<WealthSkillModelOutputError>>({
+      evidence: expect.objectContaining({
+        rawOutput: expect.stringContaining("internal preface"),
+        usage: expect.objectContaining({ total_tokens: 13 }),
+      }),
     });
   });
 });

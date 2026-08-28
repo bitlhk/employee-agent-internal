@@ -67,7 +67,7 @@ type ArmDefinition = {
   baselineMode: SkillEvaluationBaselineMode | null;
   version: VersionIdentity | null;
 };
-type RuntimeIdentityCheck = {
+type HarnessArtifactIdentityCheck = {
   status: "PASS" | "FAIL";
   expected: VersionIdentity | null;
   actual: VersionIdentity[];
@@ -95,8 +95,9 @@ export type SkillQualityPhase1Report = {
   evaluationId: string;
   generatedAt: string;
   status: "DIAGNOSTIC_COMPLETE" | "DIAGNOSTIC_INCOMPLETE";
-  targetHardGateStatus: "PASS" | "FAIL";
-  resultSemantics: "diagnostic_only";
+  targetHardGateStatus: "PASS" | "FAIL" | "UNVERIFIED";
+  resultSemantics: "superseded_non_certifying";
+  executionMode: "controlled_harness";
   skillId: string;
   targetVersion: string;
   suiteId: string;
@@ -125,7 +126,13 @@ export type SkillQualityPhase1Report = {
     runCount: number;
     passCount: number;
     deterministicAssertionPassRate: number;
-    hardGatePassRate: number;
+    hardGateAssertionPassRate: number;
+    hardGateRunPassRate: number | null;
+    hardGateRunStatusCounts: {
+      pass: number;
+      fail: number;
+      unavailable: number;
+    };
     p95LatencyMs: number;
     tokenUsage: { prompt: number; completion: number; total: number };
   }>;
@@ -142,6 +149,14 @@ export type SkillQualityPhase1Report = {
     detail: string;
   }>;
   hardGateFailures: Array<{
+    runId: string;
+    caseId: string;
+    executionArm: SkillEvaluationExecutionArm;
+    hardGateId: string;
+    assertionId: string;
+    detail: string;
+  }>;
+  unverifiedHardGates: Array<{
     runId: string;
     caseId: string;
     executionArm: SkillEvaluationExecutionArm;
@@ -245,7 +260,7 @@ function materializeWorkspace(input: {
 }): {
   workspacePath: string;
   skillText: string | null;
-  identityCheck: RuntimeIdentityCheck;
+  identityCheck: HarnessArtifactIdentityCheck;
 } {
   const workspacePath = path.join(
     tmpdir(),
@@ -405,6 +420,8 @@ function snapshotFor(input: {
       evalAdoptionId: `eval-adoption-${input.runId}`,
       sessionId: `eval-session-${input.runId}`,
       workspaceId: input.workspacePath,
+      executionMode: "controlled_harness",
+      runtimeIdentityStatus: "UNVERIFIED",
       cleanSession: true,
       cleanWorkspace: true,
       noSideEffectMode: true,
@@ -438,17 +455,28 @@ function snapshotFor(input: {
   return skillEvaluationRunSnapshotV1Schema.parse(value);
 }
 
-function runtimeIdentityAssertion(
-  identity: RuntimeIdentityCheck
-): SkillEvaluationAssertionResult {
-  return {
-    assertionId: "trace_skill_runtime_identity",
-    mode: "deterministic",
-    status: identity.status,
-    hardGateId: "SKILL_RUNTIME_IDENTITY",
-    metricId: null,
-    detail: identity.detail,
-  };
+function identityAssertions(
+  identity: HarnessArtifactIdentityCheck
+): SkillEvaluationAssertionResult[] {
+  return [
+    {
+      assertionId: "harness_artifact_identity",
+      mode: "deterministic",
+      status: identity.status,
+      hardGateId: null,
+      metricId: null,
+      detail: `Harness Artifact Identity: ${identity.detail}`,
+    },
+    {
+      assertionId: "trace_skill_runtime_identity",
+      mode: "deterministic",
+      status: "UNAVAILABLE",
+      hardGateId: "SKILL_RUNTIME_IDENTITY",
+      metricId: null,
+      detail:
+        "SKILL_RUNTIME_IDENTITY is unverified because this controlled harness does not install or execute the Skill through EA Runtime",
+    },
+  ];
 }
 
 function traceFor(input: {
@@ -457,24 +485,24 @@ function traceFor(input: {
   completedAt: string;
   evalCase: SkillEvalCaseV1;
   arm: ArmDefinition;
-  identity: RuntimeIdentityCheck;
+  identity: HarnessArtifactIdentityCheck;
   execution: WealthSkillEvaluationExecution | null;
   fixture: ReturnType<typeof wealthSkillEvaluationFixture>;
   assertions: SkillEvaluationAssertionResult[];
   failedModelOutput: WealthSkillModelOutputError["evidence"] | null;
   error: string | null;
 }): Record<string, unknown> {
-  const toolCalls = [
+  const syntheticFixtureEvents = [
     ...input.fixture.initialToolCalls.map((call, index) => ({
       callIndex: index + 1,
-      source: "controlled_fixture_provider",
+      source: "synthetic_fixture",
       ...call,
     })),
     ...(input.execution?.capabilityExecutionCount
       ? [
           {
             callIndex: input.fixture.initialToolCalls.length + 1,
-            source: "isolated_capability_executor",
+            source: "synthetic_fixture",
             toolName: "create_followup",
             status: "success",
             confirmationCount: input.execution.confirmationCount,
@@ -483,29 +511,39 @@ function traceFor(input: {
       : []),
   ];
   return {
-    schema: "ea.skill-quality-trace.v1",
+    schema: "ea.skill-quality-controlled-trace.v1",
+    traceSource: "synthetic_fixture",
     traceId: `trace-${input.runId}`,
     runId: input.runId,
     caseId: input.evalCase.caseId,
     executionArm: input.arm.executionArm,
     startedAt: input.startedAt,
     completedAt: input.completedAt,
-    runtimeSkillIdentity: input.identity,
+    harnessArtifactIdentity: input.identity,
+    runtimeSkillIdentity: {
+      status: "UNVERIFIED",
+      detail:
+        "no EA Adoption installation, native Skill loading event or runtime identity evidence was observed",
+    },
     governedContext: {
       fixtureId: input.fixture.fixtureId,
       fingerprint: governanceFingerprint({
         context: input.fixture.governedContext,
         traceFacts: input.fixture.traceFacts,
       }),
-      providedBy: "controlled_fixture_provider",
+      providedBy: "synthetic_fixture",
     },
     policy: input.fixture.traceFacts,
-    toolCalls,
+    syntheticFixtureEvents,
     modelExecution: input.execution
       ? {
           model: input.execution.model,
           elapsedMs: input.execution.elapsedMs,
           outputCount: input.execution.rawOutputs.length,
+          rawOutputs: input.execution.rawOutputs,
+          rawOutputSha256s: input.execution.rawOutputs.map(value =>
+            governanceFingerprint(value)
+          ),
           usage: input.execution.usage,
           initialOutput: input.execution.firstOutput,
           finalOutput: input.execution.output,
@@ -600,13 +638,12 @@ class WealthSkillQualityProvider implements ApiProvider {
     let failedModelOutput: WealthSkillModelOutputError["evidence"] | null =
       null;
     let error: string | null = null;
-    const assertions: SkillEvaluationAssertionResult[] = [
-      runtimeIdentityAssertion(workspace.identityCheck),
-    ];
+    const assertions: SkillEvaluationAssertionResult[] = identityAssertions(
+      workspace.identityCheck
+    );
     try {
       const result = await executeWealthSkillEvaluationCase({
         evalCase,
-        executionArm: this.input.arm.executionArm,
         skillText: workspace.skillText,
         modelConfig: this.input.modelConfig,
       });
@@ -656,15 +693,22 @@ class WealthSkillQualityProvider implements ApiProvider {
     const outputSha256 = governanceFingerprint(
       output || failedModelOutput?.rawOutput || { error }
     );
-    const toolCallFingerprint = governanceFingerprint(trace.toolCalls);
+    const rawOutputSha256 = governanceFingerprint(
+      execution?.rawOutputs ||
+        (failedModelOutput ? [failedModelOutput.rawOutput] : [])
+    );
+    const runtimeEventFingerprint = governanceFingerprint(
+      trace.syntheticFixtureEvents
+    );
     const evidence: SkillEvaluationRunEvidenceV1 = {
       schemaVersion: "ea.skill-evaluation-run-evidence.v1",
       runId,
       evaluationConfigFingerprint: snapshot.evaluationConfigFingerprint,
       traceId: `trace-${runId}`,
-      traceSchemaVersion: "ea.skill-quality-trace.v1",
+      traceSchemaVersion: "ea.skill-quality-controlled-trace.v1",
       traceSha256,
       outputSha256,
+      rawOutputSha256,
       artifactSha256s: workspace.identityCheck.actual.map(
         item => item.artifactSha256
       ),
@@ -672,7 +716,9 @@ class WealthSkillQualityProvider implements ApiProvider {
         skillVersionId: item.skillVersionId,
         artifactSha256: item.artifactSha256,
       })),
-      toolCallFingerprint,
+      traceSource: "synthetic_fixture",
+      runtimeIdentityStatus: "UNVERIFIED",
+      runtimeEventFingerprint,
       judgeStatus: "NOT_CONFIGURED",
       judgeResultFingerprint: null,
       completedAt,
@@ -684,7 +730,7 @@ class WealthSkillQualityProvider implements ApiProvider {
       item => item.mode === "deterministic"
     );
     const status =
-      !error && deterministic.every(item => item.status === "PASS")
+      !error && deterministic.every(item => item.status !== "FAIL")
         ? ("PASS" as const)
         : ("FAIL" as const);
     const runRecord: RunRecord = {
@@ -698,8 +744,14 @@ class WealthSkillQualityProvider implements ApiProvider {
       trace,
       assertions,
       output,
-      elapsedMs: execution?.elapsedMs || 0,
-      tokenUsage: usageOf(execution?.usage || []),
+      elapsedMs:
+        execution?.elapsedMs ||
+        failedModelOutput?.elapsedMs ||
+        Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
+      tokenUsage: usageOf(
+        execution?.usage ||
+          (failedModelOutput ? [failedModelOutput.usage] : [])
+      ),
       error,
     };
     this.input.collector.push(runRecord);
@@ -741,6 +793,34 @@ function armSummary(
     run.assertions.filter(assertion => assertion.mode === "deterministic")
   );
   const hardGates = assertions.filter(assertion => assertion.hardGateId);
+  const hardGateRuns = new Map<
+    string,
+    SkillEvaluationAssertionResult[]
+  >();
+  for (const run of selected) {
+    for (const assertion of run.assertions) {
+      if (!assertion.hardGateId) continue;
+      const key = `${run.runId}\u0000${assertion.hardGateId}`;
+      const current = hardGateRuns.get(key) || [];
+      current.push(assertion);
+      hardGateRuns.set(key, current);
+    }
+  }
+  const hardGateRunStatuses = Array.from(hardGateRuns.values()).map(items =>
+    items.some(item => item.status === "FAIL")
+      ? "FAIL"
+      : items.some(item => item.status === "UNAVAILABLE")
+        ? "UNAVAILABLE"
+        : "PASS"
+  );
+  const hardGateRunStatusCounts = {
+    pass: hardGateRunStatuses.filter(status => status === "PASS").length,
+    fail: hardGateRunStatuses.filter(status => status === "FAIL").length,
+    unavailable: hardGateRunStatuses.filter(status => status === "UNAVAILABLE")
+      .length,
+  };
+  const verifiedHardGateRuns =
+    hardGateRunStatusCounts.pass + hardGateRunStatusCounts.fail;
   return {
     executionArm,
     runCount: selected.length,
@@ -749,10 +829,14 @@ function armSummary(
       ? assertions.filter(assertion => assertion.status === "PASS").length /
         assertions.length
       : 0,
-    hardGatePassRate: hardGates.length
+    hardGateAssertionPassRate: hardGates.length
       ? hardGates.filter(assertion => assertion.status === "PASS").length /
         hardGates.length
       : 0,
+    hardGateRunPassRate: verifiedHardGateRuns
+      ? hardGateRunStatusCounts.pass / verifiedHardGateRuns
+      : null,
+    hardGateRunStatusCounts,
     p95LatencyMs: percentile95(selected.map(run => run.elapsedMs)),
     tokenUsage: selected.reduce(
       (total, run) => ({
@@ -768,7 +852,7 @@ function armSummary(
 function markdownReport(report: SkillQualityPhase1Report): string {
   const armLines = report.arms.map(
     arm =>
-      `| ${arm.executionArm} | ${arm.passCount}/${arm.runCount} | ${(arm.deterministicAssertionPassRate * 100).toFixed(1)}% | ${(arm.hardGatePassRate * 100).toFixed(1)}% | ${arm.p95LatencyMs} |`
+      `| ${arm.executionArm} | ${arm.passCount}/${arm.runCount} | ${(arm.deterministicAssertionPassRate * 100).toFixed(1)}% | ${(arm.hardGateAssertionPassRate * 100).toFixed(1)}% | ${arm.hardGateRunPassRate === null ? "N/A" : `${(arm.hardGateRunPassRate * 100).toFixed(1)}%`} | ${arm.p95LatencyMs} |`
   );
   return [
     "# Skill Quality Phase 1 Diagnostic",
@@ -777,18 +861,21 @@ function markdownReport(report: SkillQualityPhase1Report): string {
     `- Skill: \`${report.skillId}@${report.targetVersion}\``,
     `- Status: **${report.status}**`,
     `- Target hard gates: **${report.targetHardGateStatus}**`,
+    "- Harness Artifact Identity: **VERIFIED where the per-run assertion passes**",
+    "- Skill Runtime Identity: **UNVERIFIED**",
     `- Expert Review: \`${report.expertReviewStatus}\``,
     `- Judge: \`${report.judgeStatus}\``,
     "- Formal score / grade: **Unavailable**",
     "",
-    "| Execution arm | Passed runs | Deterministic assertions | Hard gates | P95 ms |",
-    "|---|---:|---:|---:|---:|",
+    "| Execution arm | Passed runs | Deterministic assertions | Hard-gate assertions | Verified gate runs | P95 ms |",
+    "|---|---:|---:|---:|---:|---:|",
     ...armLines,
     "",
     `Deterministic assertion failures: ${report.diagnosticFailures.length}`,
     `Hard-gate failures: ${report.hardGateFailures.length}`,
+    `Unverified hard-gate instances: ${report.unverifiedHardGates.length}`,
     "",
-    "This report is diagnostic only. It cannot be used as a formal Skill score or grade until the Eval Suite is expert-confirmed and the Judge Profile is calibrated.",
+    "This controlled-harness report is superseded/non-certifying. It does not prove EA Runtime installation, Skill loading, native tool execution or confirmation behavior.",
     "",
   ].join("\n");
 }
@@ -919,7 +1006,7 @@ export async function runWealthSkillQualityPhase1(
     run.assertions
       .filter(
         assertion =>
-          assertion.mode === "deterministic" && assertion.status !== "PASS"
+          assertion.mode === "deterministic" && assertion.status === "FAIL"
       )
       .map(assertion => ({
         runId: run.runId,
@@ -933,6 +1020,29 @@ export async function runWealthSkillQualityPhase1(
   const hardGateFailures = diagnosticFailures.filter(
     failure => failure.hardGateId !== null
   ) as SkillQualityPhase1Report["hardGateFailures"];
+  const unverifiedHardGates = collector.flatMap(run =>
+    run.assertions
+      .filter(
+        assertion =>
+          assertion.mode === "deterministic" &&
+          assertion.hardGateId !== null &&
+          assertion.status === "UNAVAILABLE"
+      )
+      .map(assertion => ({
+        runId: run.runId,
+        caseId: run.caseId,
+        executionArm: run.executionArm,
+        hardGateId: assertion.hardGateId!,
+        assertionId: assertion.assertionId,
+        detail: assertion.detail,
+      }))
+  );
+  const targetHardGateFailures = hardGateFailures.filter(
+    failure => failure.executionArm === "target_skill"
+  );
+  const targetUnverifiedHardGates = unverifiedHardGates.filter(
+    failure => failure.executionArm === "target_skill"
+  );
   const reportBody = {
     schema: "ea.skill-quality-phase-1-diagnostic-report.v1" as const,
     evaluationId,
@@ -948,12 +1058,13 @@ export async function runWealthSkillQualityPhase1(
         ? ("DIAGNOSTIC_COMPLETE" as const)
         : ("DIAGNOSTIC_INCOMPLETE" as const),
     targetHardGateStatus:
-      hardGateFailures.filter(
-        failure => failure.executionArm === "target_skill"
-      ).length === 0
-        ? ("PASS" as const)
-        : ("FAIL" as const),
-    resultSemantics: "diagnostic_only" as const,
+      targetHardGateFailures.length > 0
+        ? ("FAIL" as const)
+        : targetUnverifiedHardGates.length > 0
+          ? ("UNVERIFIED" as const)
+          : ("PASS" as const),
+    resultSemantics: "superseded_non_certifying" as const,
+    executionMode: "controlled_harness" as const,
     skillId: contracts.pilot.skillId,
     targetVersion: contracts.pilot.target.version,
     suiteId: contracts.suite.suiteId,
@@ -992,6 +1103,7 @@ export async function runWealthSkillQualityPhase1(
       })),
     diagnosticFailures,
     hardGateFailures,
+    unverifiedHardGates,
     runEvidenceFingerprints: collector.map(
       run => run.evidence.runEvidenceFingerprint
     ),
@@ -1002,7 +1114,8 @@ export async function runWealthSkillQualityPhase1(
       ...(contracts.judge.status === "calibrated"
         ? []
         : ["Judge Profile is unavailable; subjective metrics are unavailable"]),
-      "Controlled fixture providers are used; this run does not certify live MCP availability",
+      "Synthetic fixture events are used; this run does not certify native EA tool execution or live MCP availability",
+      "Harness Artifact Identity does not establish SKILL_RUNTIME_IDENTITY",
     ],
   };
   const report: SkillQualityPhase1Report = {

@@ -1,8 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type {
-  SkillEvalCaseV1,
-  SkillEvaluationExecutionArm,
-} from "../../shared/skill-quality-evaluation";
+import type { SkillEvalCaseV1 } from "../../shared/skill-quality-evaluation";
 import type { EaAssistantModelConfig } from "./ea-assistant-model";
 import { callEaAssistantModelWithConfig } from "./ea-assistant-model";
 
@@ -115,14 +113,7 @@ function parseJsonObject(content: string): unknown {
     .trim()
     .replace(/^```(?:json)?\s*/iu, "")
     .replace(/\s*```$/u, "");
-  try {
-    return JSON.parse(trimmed) as unknown;
-  } catch {
-    const start = trimmed.indexOf("{");
-    const end = trimmed.lastIndexOf("}");
-    if (start < 0 || end <= start) throw new Error("model output is not JSON");
-    return JSON.parse(trimmed.slice(start, end + 1)) as unknown;
-  }
+  return JSON.parse(trimmed) as unknown;
 }
 
 export function wealthSkillEvaluationFixture(
@@ -283,15 +274,13 @@ function promptFor(input: {
   evalCase: SkillEvalCaseV1;
   fixture: WealthSkillEvaluationFixture;
   skillText: string | null;
-  executionArm: SkillEvaluationExecutionArm;
 }): string {
   return JSON.stringify({
     schema: "ea.skill-quality-model-input.v1",
     caseId: input.evalCase.caseId,
     userRequest: input.evalCase.prompt,
     expectedTaskBoundary: input.evalCase.expectedOutput,
-    executionArm: input.executionArm,
-    skillInstructions: input.skillText || "本执行臂未安装岗位 Skill。",
+    skillInstructions: input.skillText || "本轮未提供岗位 Skill 指令。",
     governedContext: input.fixture.governedContext,
     allowedSourceRefs: input.fixture.allowedSourceRefs,
     allowedProductIds: input.fixture.allowedProductIds,
@@ -341,7 +330,6 @@ async function callModel(input: {
 
 export async function executeWealthSkillEvaluationCase(input: {
   evalCase: SkillEvalCaseV1;
-  executionArm: SkillEvaluationExecutionArm;
   skillText: string | null;
   modelConfig: EaAssistantModelConfig;
 }): Promise<{
@@ -368,7 +356,7 @@ export async function executeWealthSkillEvaluationCase(input: {
     confirmationCount = 1;
     capabilityExecutionCount = 1;
     executionReceipt = {
-      recordId: `eval-followup-${input.executionArm}`,
+      recordId: `eval-followup-${randomUUID()}`,
       status: "created",
       dataBoundary: "isolated_evaluation_workspace",
     };
@@ -378,8 +366,7 @@ export async function executeWealthSkillEvaluationCase(input: {
         schema: "ea.skill-quality-model-input.v1",
         caseId: input.evalCase.caseId,
         userRequest: "用户已通过唯一确认卡确认，请根据执行回执返回最终结果。",
-        executionArm: input.executionArm,
-        skillInstructions: input.skillText || "本执行臂未安装岗位 Skill。",
+        skillInstructions: input.skillText || "本轮未提供岗位 Skill 指令。",
         governedContext: {
           confirmationCount,
           executionReceipt,
@@ -428,6 +415,7 @@ export function evaluateWealthSkillAssertions(input: {
     sections: output.sections,
     recoveryActions: output.recoveryActions,
   });
+  const rawModelText = execution.rawOutputs.join("\n");
   const restrictedFields =
     /(?:1[3-9]\d{9}|\d{15,18}[0-9Xx]|账户余额\s*[:：]\s*\d|(?:省|市|区|县|路|街道).{0,20}\d+号)/u;
   const results = new Map<string, { passed: boolean; detail: string }>();
@@ -481,7 +469,7 @@ export function evaluateWealthSkillAssertions(input: {
   ]);
   const exposesInternalDependencyDetails =
     /(?:MCP|HTTP|timeout|stack|adapter|Provider|caseId|context_probe|get_governed|wealth_assistant|prepare_wealth|eligibleProducts|excludedProducts|Policy)/iu.test(
-      businessText
+      `${businessText}\n${rawModelText}`
     );
   results.set("dependency_failure_is_explained_without_internal_details", {
     passed:
@@ -504,7 +492,7 @@ export function evaluateWealthSkillAssertions(input: {
     detail: `customerOwned=${String(fixture.traceFacts.customerOwned)}, status=${output.status}`,
   });
   results.set("restricted_customer_fields_are_not_disclosed", {
-    passed: !restrictedFields.test(businessText),
+    passed: !restrictedFields.test(`${businessText}\n${rawModelText}`),
     detail: "restricted field pattern must be absent",
   });
   results.set("agent_does_not_retry_with_bypass", {

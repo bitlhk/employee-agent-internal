@@ -43,7 +43,8 @@ import { parseUploadedAttachmentRuntimeMessage } from "../../shared/uploaded-att
 import { summarizeCapabilityPreflight, type CapabilityPreflight } from "../../shared/capability-preflight";
 import { classifyPermissionRisk } from "./permission-risk";
 import { capabilitySetFingerprint } from "./governance/capability-registry";
-import { principalFingerprint } from "./governance/contracts";
+import { governanceFingerprint, principalFingerprint } from "./governance/contracts";
+import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
 import { resolveRuntimePrincipal } from "./governance/principal";
 import {
   listChatSkillAffinities,
@@ -54,6 +55,49 @@ import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
 import { buildTrustedApprovalContinuation } from "./governance/approval-continuation";
 
 type ChatRuntimeMode = "fast" | "plan";
+
+export type SkillEvaluationRuntimeControl = {
+  profileFingerprint: string;
+  disableAutomaticSkillSelection: true;
+};
+
+export function resolveSkillEvaluationRuntimeControl(input: {
+  raw: unknown;
+  adoptId: string;
+  internalRequest: boolean;
+}):
+  | { ok: true; value: SkillEvaluationRuntimeControl | null }
+  | { ok: false; status: number; error: string } {
+  if (input.raw === undefined || input.raw === null) {
+    return { ok: true, value: null };
+  }
+  if (!input.internalRequest) {
+    return { ok: false, status: 403, error: "Skill evaluation control requires internal authorization" };
+  }
+  if (!/^lgj-eval-[a-z0-9-]{3,48}$/u.test(String(input.adoptId || ""))) {
+    return { ok: false, status: 400, error: "Skill evaluation control requires a dedicated lgj-eval-* adoption" };
+  }
+  const raw = input.raw && typeof input.raw === "object"
+    ? input.raw as Record<string, unknown>
+    : {};
+  const profileFingerprint = String(raw.profileFingerprint || "").trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/u.test(profileFingerprint)) {
+    return { ok: false, status: 400, error: "Skill evaluation profile fingerprint is invalid" };
+  }
+  if (raw.disableAutomaticSkillSelection !== true) {
+    return { ok: false, status: 400, error: "Skill evaluation must explicitly disable automatic Skill selection" };
+  }
+  const unknownKeys = Object.keys(raw).filter(
+    key => !["profileFingerprint", "disableAutomaticSkillSelection"].includes(key),
+  );
+  if (unknownKeys.length > 0) {
+    return { ok: false, status: 400, error: `Unknown Skill evaluation control fields: ${unknownKeys.join(", ")}` };
+  }
+  return {
+    ok: true,
+    value: { profileFingerprint, disableAutomaticSkillSelection: true },
+  };
+}
 
 type SelectedSkillsContext =
   | {
@@ -358,6 +402,7 @@ export function registerChatStreamRoutes(app: express.Express) {
         cancelPendingPermission,
         resumeGovernanceApprovalId,
         experienceMode,
+        skillEvaluation,
       } = req.body || {};
       const clientRunId = normalizeClientRunId(req.body?.clientRunId);
       const restrictedMiniExperience = experienceMode === "mini_trial"
@@ -367,6 +412,15 @@ export function registerChatStreamRoutes(app: express.Express) {
         : normalizeChatRuntimeMode(runtimeMode);
       if (!adoptId || !message) {
         res.status(400).json({ error: "adoptId and message required" });
+        return;
+      }
+      const skillEvaluationControl = resolveSkillEvaluationRuntimeControl({
+        raw: skillEvaluation,
+        adoptId: String(adoptId),
+        internalRequest: isAuthorizedInternalRequest(req),
+      });
+      if (!skillEvaluationControl.ok) {
+        res.status(skillEvaluationControl.status).json({ error: skillEvaluationControl.error });
         return;
       }
 
@@ -486,7 +540,11 @@ export function registerChatStreamRoutes(app: express.Express) {
       let listedSkills: any[] | undefined;
       let automaticSkillMatch: ReturnType<typeof selectAutomaticSkillMatch> = null;
       const skillSessionId = String(conversationId || "").trim().slice(0, 160);
-      if (!restrictedMiniExperience && effectiveSkillIds.length === 0) {
+      if (
+        !restrictedMiniExperience &&
+        !skillEvaluationControl.value?.disableAutomaticSkillSelection &&
+        effectiveSkillIds.length === 0
+      ) {
         const listed = await listSkillsWithRoleDefaults({ adoptId: String(adoption.adoptId), agentId, roleTemplate });
         if (listed.ok) {
           listedSkills = listed.value;
@@ -543,6 +601,33 @@ export function registerChatStreamRoutes(app: express.Express) {
           sessionId: skillSessionId,
           error: error instanceof Error ? error.message : String(error),
         }));
+      }
+
+      if (skillEvaluationControl.value) {
+        const runtimeSkills = (selectedSkills?.ok ? selectedSkills.metadata : []).map(skill => {
+          const runtimePath = String(skill.runtimePath || "").trim();
+          const digest = runtimePath ? digestSkillSourceTree(runtimePath) : null;
+          return {
+            skillId: skill.id,
+            version: String(skill.version || ""),
+            artifactSha256: digest?.sha256 || null,
+          };
+        });
+        const runtimeIdentity = {
+          profileFingerprint: skillEvaluationControl.value.profileFingerprint,
+          adoptId: String(adoption.adoptId),
+          agentId,
+          roleTemplate,
+          runtimeSkills,
+        };
+        res.setHeader(
+          "X-EA-Skill-Evaluation-Runtime-Identity",
+          Buffer.from(JSON.stringify(runtimeIdentity), "utf8").toString("base64url"),
+        );
+        res.setHeader(
+          "X-EA-Skill-Evaluation-Runtime-Fingerprint",
+          governanceFingerprint(runtimeIdentity),
+        );
       }
 
       const requestedModelId = String(model || "").trim();

@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   );
   if (
     result.report.status !== "DIAGNOSTIC_COMPLETE" ||
-    result.report.targetHardGateStatus !== "PASS"
+    result.report.targetHardGateStatus === "FAIL"
   ) {
     process.exitCode = 1;
   }

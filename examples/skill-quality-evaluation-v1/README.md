@@ -6,7 +6,9 @@
 
 > Phase 0 Engineering Complete
 >
-> Phase 1 Diagnostic Runner Complete / Pilot Expert Validation Pending
+> Phase 1A Controlled Harness Complete / Diagnostic Executed
+>
+> Phase 1B EA Runtime Profile + Three-arm Read-only Smoke Verified / Full Suite Pending / Pilot Expert Validation Pending
 
 已冻结并可机器校验：
 
@@ -20,21 +22,44 @@
 - 配置指纹与单次运行证据指纹的分离规则
 - 财富经理与 GoldenCoach 试点版本清单及只读 Approved Skill Inventory
 
-Phase 1 已具备：
+Phase 1A 已具备：
 
 - 固定版本 Promptfoo Node Runner；
 - 目标版、上一版、无 Skill 三执行臂；
-- 每轮独立 Eval Adoption、Session 和 Workspace；
-- 不可变 Artifact 装载、运行身份校验和基线污染检查；
+- 每轮独立的 Harness Workspace，以及逻辑 Adoption/Session 标识；
+- 不可变 Artifact 装载、Harness Artifact Identity 校验和基线污染检查；
 - `Snapshot → Trace → Evidence → Report` 完整证据链；
 - 确定性断言、Runner 硬门禁、重复运行、时延和 Token 诊断；
 - 关闭缓存、结果共享和远程红队生成；
-- 模型输出失败时保留原始响应和摘要指纹。
+- 成功与失败的原始模型输出、摘要、时延和 Token 证据；
+- 实验臂对模型完全盲化，输出必须是唯一 JSON 对象；
+- 合成事件明确标记为 `synthetic_fixture`，不再冒充原生工具 Trace；
+- 按 assertion 与 `runId + hardGateId` 两种口径分别汇总硬门禁。
+
+Phase 1A 的证据边界：
+
+- `Harness Artifact Identity = VERIFIED` 仅表示临时工作区中的 Artifact SHA 与冻结清单一致；
+- `SKILL_RUNTIME_IDENTITY = UNVERIFIED`，因为 Phase 1A 不经过真实 EA 安装、加载和 JiuwenSwarm 执行；
+- Phase 1A 报告统一标记为 `superseded_non_certifying`，不得用于正式分数、认证、市场徽章或发布门禁。
+
+Phase 1B 已增加真实 Runtime 接入基础：
+
+- 三个独立 `lgj-eval-*` Adoption 分别承载目标版、无 Skill 和上一版；
+- Runtime Profile 绑定 Adoption、标准 `jiuwen_${adoptId}` Agent 身份、Role、Skill Version 与 Artifact SHA；
+- 通过真实 `/api/claw/chat-stream` 执行，并采集原生 SSE Run、工具事件和响应；
+- 仅内部密钥且仅 `lgj-eval-*` 可关闭自动 Skill 匹配，普通业务请求不受影响；
+- EA 在响应头返回实际选中的 Runtime Skill 身份摘要，Runner 复算 fingerprint；
+- 目标版 `2.0.1`、无 Skill、上一版 `1.4.0` 已分别通过只读 Runtime Smoke；
+- 三份证据可聚合校验为同一 Profile、同一 Suite、不同 Conversation、三臂身份均 `VERIFIED`；
+- 已固化非认证 Smoke 摘要：`phase1b-runtime-smoke-baseline-v1.json`，聚合指纹为 `030685fd5859268a70bc9c28197d5ee51fd9e35a21c119f17f6d563f44474003`；
+- 当前只证明读操作 Smoke；完整受控 MCP Fixture、原生确认执行和 45 次 Suite 重跑仍待完成。
 
 尚未完成：
 
 - Hermes Judge 模型与专家校准集
 - 两套 Eval Suite 的专家确认
+- 原生受控 MCP Fixture 与确认/回写隔离执行
+- 同一 Suite 的真实 EA Runtime 三臂重跑
 - 正式分数、等级和市场徽章
 
 因此当前资产只能证明评测契约与版本边界已经建立，不能证明两个 Skill 已通过质量评测。
@@ -71,13 +96,48 @@ pnpm skills:quality:phase1:plan
 
 # 执行 5 案例 × 3 执行臂 × 3 次的离线诊断
 pnpm skills:quality:phase1:wealth
+
+# Phase 1B 全流程固定使用隔离 EA Runtime 地址
+export EA_SKILL_EVAL_RUNTIME_BASE_URL=http://127.0.0.1:5199
+
+# 显式创建本地隔离 Eval Adoption（只允许回环 Runtime）
+EA_SKILL_EVAL_ALLOW_LOCAL_PROVISION=1 pnpm skills:quality:phase1b:provision -- --apply
+
+# 验证真实 EA Runtime Profile 与安装身份
+pnpm skills:quality:phase1b:verify
+
+# 为临时 EA Runtime 生成隔离的 Jiuwen 配置，不修改现有配置
+pnpm skills:quality:phase1b:jiuwen-config
+
+# 在独立终端启动隔离 EA Runtime；不会替换现有 5180 服务
+pnpm skills:quality:phase1b:runtime
+
+# 启动隔离 AgentServer；命令会在配置加载前安全注入临时环境变量
+pnpm skills:quality:phase1b:agentserver
+
+# 通过真实 /api/claw/chat-stream 执行三臂只读 Smoke
+pnpm skills:quality:phase1b:smoke
+
+# 环境诊断：只执行指定执行臂；结果不能替代三臂完整 Smoke
+pnpm skills:quality:phase1b:smoke -- --smoke-arm=target_skill
+
+# 三个执行臂分别完成后，将三份单臂证据聚合为机器可验证的非认证基线
+pnpm skills:quality:phase1b:aggregate -- \
+  --report=<target-report.json> \
+  --report=<without-skill-report.json> \
+  --report=<previous-version-report.json>
 ```
 
-Phase 1 运行产物写入被 Git 忽略的
+Phase 1A 运行产物写入被 Git 忽略的
 `reports/skill-quality-evaluation/<evaluation-id>/`。每次运行分别保存
 `snapshot.json`、`trace.json` 和 `evidence.json`，汇总生成 `report.json` 与
 `report.md`。模型输出或基线硬门禁失败属于诊断结果；只有证据未完整生成才标记
 `DIAGNOSTIC_INCOMPLETE`。
+
+Phase 1B 的独立报告写入
+`reports/skill-quality-evaluation-runtime/<timestamp>/`，三臂聚合报告写入同目录下的
+`aggregate-<timestamp>/`，均不会覆盖 Phase 1A 报告。当前 Runtime Smoke 仍是
+`runtime_integration_non_certifying`，不能生成正式分数或等级。
 
 通用 CI Runner 如果没有挂载只读 Skill Store，只能运行结构校验，不能据此宣告 Phase 0 冻结通过。正式 CI/发布环境必须提供 `SKILL_STORE` 并运行 `verify:strict`；缺少任一 Artifact 时直接失败。
 
