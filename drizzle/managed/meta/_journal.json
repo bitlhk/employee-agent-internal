@@ -239,6 +239,13 @@
       "when": 1788422400000,
       "tag": "0033_runtime_context_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788508800000,
+      "tag": "0034_governance_approval_operation_payload",
+      "breakpoints": true
     }
   ]
 }

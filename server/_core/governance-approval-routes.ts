@@ -14,6 +14,7 @@ import {
 import { auditActor, auditRequest, recordAuditBestEffort, recordAuditRequired } from "./audit-events";
 import { requireClawOwner } from "./helpers";
 import { decideApproval } from "./governance/approval-service";
+import { handleCustomerCrmPlatformTool } from "./customer-crm-platform-tools";
 
 const APPROVAL_ID_RE = /^apr_[0-9a-f-]{36}$/i;
 type ApprovalStatus = "pending" | "approved" | "rejected" | "consumed" | "expired";
@@ -40,6 +41,57 @@ function publicApproval(item: Awaited<ReturnType<typeof listGovernanceApprovals>
 function fingerprint(value: string | null | undefined): string | null {
   if (!value) return null;
   return createHash("sha256").update(value).digest("hex").slice(0, 16);
+}
+
+async function executeApprovedPlatformOperation(input: {
+  req: Parameters<typeof handleCustomerCrmPlatformTool>[0]["req"];
+  claw: Parameters<typeof handleCustomerCrmPlatformTool>[0]["adoption"];
+  approval: Awaited<ReturnType<typeof getGovernanceApproval>>;
+}): Promise<{ status: "completed" | "failed"; message: string; executionReceipt?: unknown } | null> {
+  const approval = input.approval;
+  if (
+    !approval
+    || approval.policyCode !== "EA_CUSTOMER_CRM_FOLLOWUP_WRITE_V1"
+    || approval.capabilityId !== "enterprise.crm"
+    || approval.operation !== "create_followup"
+  ) return null;
+  const payload = approval.operationPayloadJson;
+  const customerId = String(payload?.globalCustomerId || "").trim();
+  const objective = String(payload?.objective || "").trim();
+  const dueAt = String(payload?.dueAt || "").trim();
+  const idempotencyKey = String(payload?.idempotencyKey || "").trim();
+  const runtimeSessionId = String(payload?.runtimeSessionId || "").trim();
+  if (!customerId || !objective || !dueAt || !idempotencyKey) {
+    return { status: "failed", message: "确认已记录，但待执行任务载荷不完整，未写入 CRM。" };
+  }
+  try {
+    const result = await handleCustomerCrmPlatformTool({
+      req: input.req,
+      name: "create_customer_followup_task",
+      args: {
+        customer_id: customerId,
+        objective,
+        due_at: dueAt,
+        idempotency_key: idempotencyKey,
+        approval_id: approval.approvalId,
+      },
+      adoption: input.claw,
+      adoptId: approval.adoptId,
+      sessionId: runtimeSessionId,
+    });
+    const receipt = result.executionReceipt as { status?: unknown } | undefined;
+    if (receipt?.status === "completed") {
+      return {
+        status: "completed",
+        message: "本次确认已执行，客户跟进任务已写入 CRM。",
+        executionReceipt: receipt,
+      };
+    }
+    const message = String(result.content?.[0]?.text || "").trim();
+    return { status: "failed", message: message || "确认已记录，但 CRM 写入未完成。" };
+  } catch {
+    return { status: "failed", message: "确认已记录，但 CRM 写入暂时失败，请查看执行依据后重试。" };
+  }
 }
 
 function publicReceipt(receipt: Awaited<ReturnType<typeof getCustomMcpCallReceiptByApprovalId>> | Awaited<ReturnType<typeof getEnterpriseMcpCallReceiptByApprovalId>>) {
@@ -208,14 +260,22 @@ export function registerGovernanceApprovalRoutes(app: Express): void {
       reason: String(req.body?.reason || "").trim().slice(0, 1000) || null,
     });
     if (!item) return res.status(409).json({ error: "确认请求不存在、已处理或已过期" });
+    const execution = rawDecision === "approved"
+      ? await executeApprovedPlatformOperation({ req, claw, approval: item })
+      : null;
+    const finalItem = await getGovernanceApproval(approvalId) || item;
     await recordAuditBestEffort({
       action: "governance.approval.decision_completed",
       result: "success",
       severity: rawDecision === "approved" ? "high" : "info",
       ...auditBase,
-      metadata: { ...auditBase.metadata, finalStatus: item.status },
+      metadata: {
+        ...auditBase.metadata,
+        finalStatus: finalItem.status,
+        directExecutionStatus: execution?.status || null,
+      },
     });
-    res.json({ item: publicApproval(item) });
+    res.json({ item: publicApproval(finalItem), ...(execution ? { execution } : {}) });
     } catch {
       if (!res.headersSent) {
         res.status(503).json({ error: "确认服务暂时不可用，未执行本次决定" });

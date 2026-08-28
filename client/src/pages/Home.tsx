@@ -2688,7 +2688,13 @@ export default function Home() {
       if (!resp.ok || payload?.ok === false) {
         throw new Error(payload?.error || `授权提交失败 (${resp.status})`);
       }
-      const continuedText = String(payload?.text || "").trim();
+      const directExecution = payload?.execution && typeof payload.execution === "object"
+        ? payload.execution
+        : null;
+      if (directExecution?.status === "failed") {
+        throw new Error(String(directExecution.message || "确认已记录，但业务操作执行失败"));
+      }
+      const continuedText = String(directExecution?.message || payload?.text || "").trim();
       setLingxiaMsgs((prev) => prev.map((msg) => {
         if (msg.id !== messageId) return msg;
         const current = msg.text || "";
@@ -2702,7 +2708,10 @@ export default function Home() {
           jiuwenPermission: nextPermission,
         };
       }));
-      if (isGovernanceApproval && action !== "reject") {
+      if (directExecution?.status === "completed") {
+        toast.success(continuedText || "本次操作已执行");
+      }
+      if (isGovernanceApproval && action !== "reject" && !directExecution) {
         window.setTimeout(() => {
           void sendLingxiaMessage(
             `[平台操作确认已完成] 确认编号 ${permission.requestId}。请使用上一轮完全相同的工具参数和 idempotency_key 继续执行，不得修改业务参数。`,

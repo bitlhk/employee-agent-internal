@@ -140,6 +140,15 @@ describe("customer CRM platform write tool", () => {
       isError: true,
       _meta: { eaGovernance: { code: "EA_APPROVAL_REQUIRED" } },
     });
+    expect(mocks.enforceApproval).toHaveBeenCalledWith(expect.objectContaining({
+      operationPayload: {
+        globalCustomerId: "CUST-000201",
+        objective: "明天下午联系客户确认配置方案",
+        dueAt: "2026-08-29T08:00:00.000Z",
+        idempotencyKey: "followup-c005-20260829",
+        runtimeSessionId: "session-1",
+      },
+    }));
     expect(mocks.writeFollowupTask).not.toHaveBeenCalled();
   });
 
@@ -168,6 +177,7 @@ describe("customer CRM platform write tool", () => {
         assignmentKey: "role-adoption:lgj-lihongkun:CUST-000201",
         idempotencyKey: "followup-c005-20260829",
       },
+      _meta: { eaMetadataIssuer: "employee-agent" },
     });
     expect(mocks.recordAudit).toHaveBeenCalledTimes(2);
   });

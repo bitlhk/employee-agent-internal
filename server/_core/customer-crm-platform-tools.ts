@@ -153,6 +153,7 @@ export async function handleCustomerCrmPlatformTool(input: {
     operation,
     approvalId: approvalId || null,
     idempotencyKey,
+    operationPayload: { ...canonicalPayload, runtimeSessionId: principal.sessionId },
   });
   if (approval.effect === "REQUIRE_APPROVAL") {
     return approvalRequiredToolResult({
@@ -271,5 +272,9 @@ export async function handleCustomerCrmPlatformTool(input: {
   return textResult(`EA_CUSTOMER_CRM_EXECUTION_RECEIPT:${JSON.stringify(receipt)}`, {
     externalRequestId: taskKey,
     executionReceipt: receipt,
+    _meta: {
+      eaMetadataIssuer: "employee-agent",
+      eaExecutionReceipt: receipt,
+    },
   });
 }

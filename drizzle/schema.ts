@@ -1908,6 +1908,7 @@ export const governanceApprovals = mysqlTable("governance_approvals", {
   operation: varchar("operation", { length: 256 }).notNull(),
   resource: varchar("resource", { length: 512 }),
   payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+  operationPayloadJson: json("operation_payload_json").$type<Record<string, unknown>>(),
   idempotencyKey: varchar("idempotency_key", { length: 191 }),
   reason: text("reason").notNull(),
   decisionReason: text("decision_reason"),

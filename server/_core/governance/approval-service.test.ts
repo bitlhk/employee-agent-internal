@@ -65,6 +65,7 @@ function approval(status: "pending" | "approved" | "consumed" = "pending") {
     operation: operation.operation,
     resource: operation.resource || null,
     payloadHash: operation.payloadHash!,
+    operationPayloadJson: null,
     idempotencyKey: "idem-1",
     reason: "test decision",
     decisionReason: null,
@@ -102,6 +103,23 @@ describe("governance approval service", () => {
       requirement: { approvalId: pending.approvalId, created: false },
     });
     expect(mocks.createGovernanceApproval).not.toHaveBeenCalled();
+  });
+
+  it("persists the minimal operation payload for deterministic execution after approval", async () => {
+    const created = approval("pending");
+    mocks.getActiveGovernanceApproval.mockResolvedValue(null);
+    mocks.createGovernanceApproval.mockResolvedValue({ created: true, approval: created });
+    const operationPayload = { globalCustomerId: "CUST-000201", objective: "跟进客户" };
+    await enforceGovernanceApproval({
+      decision: decision("REQUIRE_APPROVAL"),
+      principal,
+      operation,
+      idempotencyKey: "idem-1",
+      operationPayload,
+    });
+    expect(mocks.createGovernanceApproval).toHaveBeenCalledWith(expect.objectContaining({
+      operationPayloadJson: operationPayload,
+    }));
   });
 
   it("atomically consumes an approved action with the current principal fingerprint", async () => {

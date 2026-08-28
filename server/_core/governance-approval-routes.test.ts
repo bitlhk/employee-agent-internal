@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   customReceipt: vi.fn(),
   enterpriseReceipt: vi.fn(),
   demoRecord: vi.fn(),
+  executeCustomerCrm: vi.fn(),
 }));
 
 vi.mock("../db", () => ({
@@ -41,6 +42,9 @@ vi.mock("./audit-events", () => ({
   recordAuditBestEffort: mocks.auditBestEffort,
 }));
 vi.mock("./governance/approval-service", () => ({ decideApproval: mocks.decide }));
+vi.mock("./customer-crm-platform-tools", () => ({
+  handleCustomerCrmPlatformTool: mocks.executeCustomerCrm,
+}));
 
 import { registerGovernanceApprovalRoutes } from "./governance-approval-routes";
 
@@ -80,6 +84,10 @@ beforeEach(async () => {
   mocks.customReceipt.mockResolvedValue(null);
   mocks.enterpriseReceipt.mockResolvedValue(null);
   mocks.demoRecord.mockResolvedValue(null);
+  mocks.executeCustomerCrm.mockResolvedValue({
+    content: [{ type: "text", text: "completed" }],
+    executionReceipt: { schema: "ea.customer-crm-execution-receipt.v1", status: "completed", executionReceiptId: "crmex_1" },
+  });
   const app = express();
   app.use(express.json());
   registerGovernanceApprovalRoutes(app);
@@ -121,6 +129,44 @@ describe("governance approval routes", () => {
     const response = await decide();
     expect(response.status).toBe(503);
     expect(mocks.decide).not.toHaveBeenCalled();
+  });
+
+  it("executes a bound CRM follow-up directly after the one approval", async () => {
+    const crmPending = {
+      ...pending,
+      policyCode: "EA_CUSTOMER_CRM_FOLLOWUP_WRITE_V1",
+      capabilityId: "enterprise.crm",
+      operation: "create_followup",
+      resource: "customer:CUST-000201",
+      operationPayloadJson: {
+        globalCustomerId: "CUST-000201",
+        objective: "回访客户",
+        dueAt: "2026-09-08T01:00:00.000Z",
+        idempotencyKey: "followup-cust-201",
+        runtimeSessionId: "session-original",
+      },
+    };
+    const approved = { ...crmPending, status: "approved", approvedAt: new Date() };
+    const consumed = { ...approved, status: "consumed", consumedAt: new Date() };
+    mocks.getApproval.mockResolvedValueOnce(crmPending).mockResolvedValueOnce(consumed);
+    mocks.decide.mockResolvedValue(approved);
+    const response = await decide();
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      item: { status: "consumed" },
+      execution: { status: "completed", executionReceipt: { executionReceiptId: "crmex_1" } },
+    });
+    expect(mocks.executeCustomerCrm).toHaveBeenCalledWith(expect.objectContaining({
+      name: "create_customer_followup_task",
+      args: expect.objectContaining({
+        customer_id: "CUST-000201",
+        objective: "回访客户",
+        idempotency_key: "followup-cust-201",
+        approval_id: approvalId,
+      }),
+      sessionId: "session-original",
+    }));
   });
 
   it("does not disclose or decide another adoption's approval", async () => {

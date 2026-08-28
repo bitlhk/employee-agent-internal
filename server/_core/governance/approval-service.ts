@@ -58,6 +58,7 @@ export async function requestGovernanceApproval(input: {
   principal: RuntimePrincipal;
   operation: GovernanceOperation;
   idempotencyKey?: string | null;
+  operationPayload?: Record<string, unknown> | null;
   ttlMs?: number;
 }): Promise<ApprovalRequirement> {
   const ttlMs = Math.min(Math.max(input.ttlMs || DEFAULT_APPROVAL_TTL_MS, 60_000), MAX_APPROVAL_TTL_MS);
@@ -75,6 +76,7 @@ export async function requestGovernanceApproval(input: {
     operation: input.operation.operation,
     resource: input.operation.resource || null,
     payloadHash: input.operation.payloadHash || governanceFingerprint(null),
+    operationPayloadJson: input.operationPayload || null,
     idempotencyKey: input.idempotencyKey || null,
     reason: input.decision.reason,
     decisionReason: null,
@@ -99,6 +101,7 @@ export async function enforceGovernanceApproval(input: {
   operation: GovernanceOperation;
   approvalId?: string | null;
   idempotencyKey?: string | null;
+  operationPayload?: Record<string, unknown> | null;
   ttlMs?: number;
 }): Promise<ApprovalEnforcement> {
   if (input.decision.effect === "ALLOW") return { effect: "ALLOW", approval: null };
