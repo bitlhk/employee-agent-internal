@@ -12,8 +12,9 @@
 - `SkillEvaluationRunSnapshotV1`
 - `SkillScorecardProfileV1`
 - `JudgeProfileV1`
+- 递归严格字段校验，未知字段不能被静默裁剪后绕过 fingerprint
 - 配置指纹与单次运行证据指纹的分离规则
-- 财富经理与 GoldenCoach 试点版本清单
+- 财富经理与 GoldenCoach 试点版本清单及只读 Approved Skill Inventory
 
 尚未完成：
 
@@ -45,14 +46,16 @@
 
 ```bash
 pnpm skills:quality:phase0:verify
+pnpm skills:quality:phase0:verify -- --require-local-artifacts
 pnpm exec vitest run server/_core/skill-quality-evaluation.test.ts
 ```
 
 校验会检查：
 
 - 四项契约的 Zod Schema；
-- Suite、Scorecard、Judge 和 Pilot Manifest fingerprint；
+- Suite、Scorecard、Judge、Approved Skill Inventory 和 Pilot Manifest fingerprint；
 - Eval Suite 与不可变 Skill Identity / Version / SHA 的绑定；
+- Inventory 与本机不可变 Artifact 的目录 SHA256 和大小；
 - 仓库内 Benchmark 和 Golden Task 来源文件的内容摘要；
 - Scorecard 指标引用和权重；
 - 试点基线与案例声明的一致性；
@@ -60,6 +63,6 @@ pnpm exec vitest run server/_core/skill-quality-evaluation.test.ts
 
 ## 指纹边界
 
-`evaluationConfigFingerprint` 只绑定影响结果的评测条件，相同条件的重复运行必须一致。`runId`、Eval Adoption、Session、Workspace、Trace ID 和时间戳不进入该指纹。
+`evaluationConfigFingerprint` 绑定影响结果的评测条件，包括模型、权限、工具、超时、重试、并发、工具调用上限、Token 预算和网络出口策略。相同条件的重复运行必须一致。`runId`、Eval Adoption、Session、Workspace、Trace ID 和时间戳不进入该指纹。
 
-`runEvidenceFingerprint` 绑定单次运行身份、实际 Trace、输出和产物。即使配置相同，不同运行也必须生成不同证据指纹。
+`runEvidenceFingerprint` 绑定单次运行身份、完整规范化 Trace 的 SHA256、Judge 状态、输出和产物。即使配置相同，不同运行也必须生成不同证据指纹。

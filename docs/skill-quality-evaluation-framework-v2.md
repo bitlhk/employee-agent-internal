@@ -65,16 +65,16 @@
 
 本方案是“基于业界框架的内部标准”，不是“行业统一认证”。各来源承担不同作用。
 
-| 参考体系 | 本方案采用的内容 | 不做的事情 |
-| --- | --- | --- |
-| [Agent Skills Specification](https://agentskills.io/specification) | Skill 包结构、元数据、脚本、参考资料、资产和渐进式披露 | 不把格式合规等同于业务质量 |
-| [Agent Skills Evaluation Guide](https://agentskills.io/skill-creation/evaluating-skills) | 真实用例、边界用例、独立上下文、有/无 Skill 对照、断言、耗时和 Token、盲评与人工复核 | 不照搬示例作为 EA 业务标准 |
-| [Promptfoo](https://www.promptfoo.dev/docs/intro/) | 多模型与多配置矩阵、Provider、断言、CI、报告和红队执行 | 不认为 Promptfoo 天然理解 EA Skill 语义 |
-| [DeepEval Agent Metrics](https://deepeval.com/guides/guides-ai-agent-evaluation-metrics) | 工具正确性、参数正确性、任务完成度、步骤效率和计划遵循度 | 第一版不安装 DeepEval 服务或 Python 依赖 |
-| [Ragas Agent Metrics](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/agents/) | Tool Call Accuracy/F1、Agent Goal Accuracy 和知识类指标 | 第一版不把 Ragas 作为通用 Skill 执行器 |
-| [ISO/IEC 25010:2023](https://www.iso.org/standard/78176.html) | 功能适合性、可靠性、性能效率、安全和可维护性等软件质量思路 | 不宣称通过 ISO 认证 |
-| [NIST AI RMF Measure](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/) | 可重复 TEVV、Benchmark 对比、不确定性、文档化、独立复核和生产监测 | 不把自定义总分说成 NIST 分数 |
-| [OWASP GenAI Top 10](https://genai.owasp.org/llm-top-10/) | 提示词注入、敏感信息泄露、不当输出、过度代理、供应链和资源消耗等风险 | 不以一次红队通过证明绝对安全 |
+| 参考体系                                                                                          | 本方案采用的内容                                                                     | 不做的事情                               |
+| ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------- |
+| [Agent Skills Specification](https://agentskills.io/specification)                                | Skill 包结构、元数据、脚本、参考资料、资产和渐进式披露                               | 不把格式合规等同于业务质量               |
+| [Agent Skills Evaluation Guide](https://agentskills.io/skill-creation/evaluating-skills)          | 真实用例、边界用例、独立上下文、有/无 Skill 对照、断言、耗时和 Token、盲评与人工复核 | 不照搬示例作为 EA 业务标准               |
+| [Promptfoo](https://www.promptfoo.dev/docs/intro/)                                                | 多模型与多配置矩阵、Provider、断言、CI、报告和红队执行                               | 不认为 Promptfoo 天然理解 EA Skill 语义  |
+| [DeepEval Agent Metrics](https://deepeval.com/guides/guides-ai-agent-evaluation-metrics)          | 工具正确性、参数正确性、任务完成度、步骤效率和计划遵循度                             | 第一版不安装 DeepEval 服务或 Python 依赖 |
+| [Ragas Agent Metrics](https://docs.ragas.io/en/stable/concepts/metrics/available_metrics/agents/) | Tool Call Accuracy/F1、Agent Goal Accuracy 和知识类指标                              | 第一版不把 Ragas 作为通用 Skill 执行器   |
+| [ISO/IEC 25010:2023](https://www.iso.org/standard/78176.html)                                     | 功能适合性、可靠性、性能效率、安全和可维护性等软件质量思路                           | 不宣称通过 ISO 认证                      |
+| [NIST AI RMF Measure](https://airc.nist.gov/airmf-resources/airmf/5-sec-core/)                    | 可重复 TEVV、Benchmark 对比、不确定性、文档化、独立复核和生产监测                    | 不把自定义总分说成 NIST 分数             |
+| [OWASP GenAI Top 10](https://genai.owasp.org/llm-top-10/)                                         | 提示词注入、敏感信息泄露、不当输出、过度代理、供应链和资源消耗等风险                 | 不以一次红队通过证明绝对安全             |
 
 对外统一表述：
 
@@ -90,17 +90,17 @@
 
 各组件职责如下：
 
-| 组件 | 第一版状态 | 职责 |
-| --- | --- | --- |
-| Agent Skills 测试格式 | 参考采用 | 组织案例、预期、输入文件和断言；资产与 Skill Artifact 分别冻结 |
-| Promptfoo | 计划引入 | 调度有/无 Skill、版本、模型和重复运行，执行断言并生成结果矩阵 |
-| EA Provider | 计划新增 | 将 Promptfoo 测试任务转换为真实 EA 请求，绑定运行快照并返回规范化结果 |
-| EA Trace | 复用 | 提供 Skill 加载、工具调用、参数、证据、耗时、Token、错误和产物信息 |
-| Hermes Judge | 计划新增 | 通过冻结的 Judge Profile 进行结构化专业评分和 Pairwise 盲评 |
-| 人工复核 | 必需 | 校准 Judge，确认业务价值、高风险结论和演示材料 |
-| DeepEval | 暂不安装 | 只参考 Agent 轨迹指标和命名 |
-| Ragas | 暂不安装 | 只参考知识检索、工具调用和目标完成指标 |
-| LangSmith | 暂不引入 | 与现有 EA Trace 和拟建评测报告存在较多重叠 |
+| 组件                  | 第一版状态 | 职责                                                                  |
+| --------------------- | ---------- | --------------------------------------------------------------------- |
+| Agent Skills 测试格式 | 参考采用   | 组织案例、预期、输入文件和断言；资产与 Skill Artifact 分别冻结        |
+| Promptfoo             | 计划引入   | 调度有/无 Skill、版本、模型和重复运行，执行断言并生成结果矩阵         |
+| EA Provider           | 计划新增   | 将 Promptfoo 测试任务转换为真实 EA 请求，绑定运行快照并返回规范化结果 |
+| EA Trace              | 复用       | 提供 Skill 加载、工具调用、参数、证据、耗时、Token、错误和产物信息    |
+| Hermes Judge          | 计划新增   | 通过冻结的 Judge Profile 进行结构化专业评分和 Pairwise 盲评           |
+| 人工复核              | 必需       | 校准 Judge，确认业务价值、高风险结论和演示材料                        |
+| DeepEval              | 暂不安装   | 只参考 Agent 轨迹指标和命名                                           |
+| Ragas                 | 暂不安装   | 只参考知识检索、工具调用和目标完成指标                                |
+| LangSmith             | 暂不引入   | 与现有 EA Trace 和拟建评测报告存在较多重叠                            |
 
 ### 4.2 为什么选择 Promptfoo
 
@@ -279,6 +279,7 @@ SkillEvaluationRunSnapshotV1
 - toolPolicyFingerprint/toolVersions
 - evalAdoptionId/sessionId/workspaceId
 - cleanSession/cleanWorkspace/noSideEffectMode
+- executionPolicy: timeout/retry/concurrency/tool-call/token/network-egress limits
 - scorecardProfileFingerprint
 - judgeStatus: NOT_CONFIGURED | READY
 - judgeProfileFingerprint: nullable
@@ -290,6 +291,7 @@ SkillEvaluationRunSnapshotV1
 
 - 快照创建后不可编辑；重跑产生新的 `runId`、Session 和 Workspace。
 - `evaluationConfigFingerprint` 对全部可影响评测条件的配置和资产 fingerprint 计算，但排除 `runId`、`evalAdoptionId`、`sessionId`、`workspaceId`、Trace ID 和时间戳等单次运行身份。同一对照臂在相同评测条件下重跑，该值必须一致。
+- 超时、重试退避、并发、最大工具调用、Token 预算和默认拒绝的网络出口清单属于执行条件，必须进入 `evaluationConfigFingerprint`；任一条件变化都不能沿用旧配置身份。
 - 使用专用 Eval Adoption，并为每个对照臂创建干净 Session/Workspace。
 - `noSideEffectMode` 默认开启；写数据库、发通知、调用外部业务动作时使用模拟器或拒绝执行。
 - 生产 Agent 的 `activeVersionId`、用户安装和岗位预装在评测期间保持不变。
@@ -316,6 +318,8 @@ EA Provider 返回输出、Trace 和产物等基础证据，Eval Runner 补充 J
     "skillVersion": "1.4.0",
     "skillSha256": "...",
     "traceId": "trace_xxx",
+    "traceSchemaVersion": "ea-trace-v1",
+    "traceSha256": "...",
     "toolCalls": [],
     "durationMs": 28000,
     "artifacts": [],
@@ -330,7 +334,7 @@ EA Provider 返回输出、Trace 和产物等基础证据，Eval Runner 补充 J
 
 每次报告必须同时绑定 Skill 版本/SHA、Eval Suite、Run Snapshot、Scorecard Profile 和 Judge Profile fingerprint，防止“评测的是一个版本或标准，展示的是另一个版本或标准”。
 
-`runEvidenceFingerprint` 在单次运行完成后生成，绑定 `runId`、`evaluationConfigFingerprint`、实际 Trace、最终输出和产物内容 SHA；即使配置相同，每次运行的证据指纹也必须不同。断言和 Judge 结果分别由 Scorecard/Judge Profile 解释该证据，不改变原始证据指纹。重复稳定性只能聚合具有相同 `evaluationConfigFingerprint` 的运行，并按不同 `runEvidenceFingerprint` 去重。
+`runEvidenceFingerprint` 在单次运行完成后生成，绑定 `runId`、`evaluationConfigFingerprint`、`traceSchemaVersion`、完整规范化 Trace 的 `traceSha256`、最终输出和产物内容 SHA。Trace 摘要必须覆盖节点状态、策略决策、工具调用与参数、耗时和错误；只保存 `traceId` 或工具调用摘要不构成完整证据。即使配置相同，不同运行也必须生成不同证据指纹。断言和 Judge 结果分别由 Scorecard/Judge Profile 解释该证据，不改变原始证据指纹。重复稳定性只能聚合具有相同 `evaluationConfigFingerprint` 的运行，并按不同 `runEvidenceFingerprint` 去重。
 
 Judge 字段语义：
 
@@ -343,6 +347,7 @@ Judge 字段语义：
 ### 6.6 Fingerprint 通用规则
 
 - 所有 fingerprint 使用同一规范化 JSON 和 SHA-256 实现，字段排序、空值、数字和时间格式必须稳定。
+- 所有冻结契约递归拒绝未知字段；不得依赖解析器静默删除字段后再计算 fingerprint。
 - 配置指纹计算时排除对象自身的 fingerprint、单次运行身份、创建时间和执行状态等非语义字段；Skill Version ID、Suite Version ID、Role Pack Release ID 等会改变评测语义的稳定身份不得排除。
 - 外部文件不只记录路径，必须记录内容 SHA-256；目录按规范化相对路径和文件摘要计算清单 fingerprint。
 - 任何会影响输入、运行、判分或报告解释的字段发生变化，都必须生成新的对象版本和 fingerprint。
@@ -387,11 +392,11 @@ Scorecard 必须分别展示：
 
 ### 7.3 三种运行档位
 
-| 档位 | 目的 | 建议范围 |
-| --- | --- | --- |
-| 快速评测 | 开发过程中发现明显回归 | 3 至 5 个关键案例，主模型，单次运行；不生成等级 |
-| 标准评测 | 形成 Skill 质量报告 | 6 至 10 个真实和边界案例，有/无 Skill及适用的版本对照；关键案例至少重复 3 次 |
-| 发布/演示评测 | 发布门禁和对外证据 | 全量关键案例，主模型重复运行；代表案例增加第二模型和竞品盲评 |
+| 档位          | 目的                   | 建议范围                                                                     |
+| ------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| 快速评测      | 开发过程中发现明显回归 | 3 至 5 个关键案例，主模型，单次运行；不生成等级                              |
+| 标准评测      | 形成 Skill 质量报告    | 6 至 10 个真实和边界案例，有/无 Skill及适用的版本对照；关键案例至少重复 3 次 |
+| 发布/演示评测 | 发布门禁和对外证据     | 全量关键案例，主模型重复运行；代表案例增加第二模型和竞品盲评                 |
 
 跨模型不应无条件做全排列。只有宣称“跨模型稳定”或目标环境确实支持多个模型时，才把第二模型设为门禁。
 
@@ -468,7 +473,7 @@ SkillScorecardProfileV1
 - schemaVersion
 - profileId/version/fingerprint
 - applicableSkillTypes
-- dimensions/weights
+- dimensions/weights/metricContributions
 - metricDefinitions/normalizationFormula/thresholds
 - requiredMetrics/optionalMetrics
 - caseImportanceWeights
@@ -483,14 +488,14 @@ SkillScorecardProfileV1
 
 第一版权重为**试点权重**：
 
-| 维度 | 权重 | 评价问题 | 代表指标 |
-| --- | ---: | --- | --- |
-| 业务任务效果 | 30 | 是否正确、完整地完成真实岗位任务，产物能否直接使用 | Task Success、事实正确率、必要字段、产物可用率 |
-| Skill 增益 | 20 | 相比无 Skill、上一版本或等价竞品提升多少 | 通过率 Delta、Pairwise 胜率、关键失败减少量 |
-| 专业执行过程 | 15 | 是否选择正确工具、参数、证据和业务步骤 | Tool Correctness、Argument Correctness、Grounding、Step Efficiency |
-| 稳定与泛化 | 15 | 不同问法、边界输入、重复运行和必要的跨模型是否稳定 | 重复通过率、标准差、边界通过率、跨模型一致性 |
-| 工程与效率 | 10 | 是否具备可发布、可复现、可维护和可接受的资源成本 | 依赖就绪率、P95 时延、Token、版本与回滚完整性 |
-| 安全与合规 | 10 | 是否守住权限、隐私、适当性、提示词注入和副作用边界 | 红队通过率、越权率、敏感信息泄露率、Fail-close |
+| 维度         | 权重 | 评价问题                                           | 代表指标                                                           |
+| ------------ | ---: | -------------------------------------------------- | ------------------------------------------------------------------ |
+| 业务任务效果 |   30 | 是否正确、完整地完成真实岗位任务，产物能否直接使用 | Task Success、事实正确率、必要字段、产物可用率                     |
+| Skill 增益   |   20 | 相比无 Skill、上一版本或等价竞品提升多少           | 通过率 Delta、Pairwise 胜率、关键失败减少量                        |
+| 专业执行过程 |   15 | 是否选择正确工具、参数、证据和业务步骤             | Tool Correctness、Argument Correctness、Grounding、Step Efficiency |
+| 稳定与泛化   |   15 | 不同问法、边界输入、重复运行和必要的跨模型是否稳定 | 重复通过率、标准差、边界通过率、跨模型一致性                       |
+| 工程与效率   |   10 | 是否具备可发布、可复现、可维护和可接受的资源成本   | 依赖就绪率、P95 时延、Token、版本与回滚完整性                      |
+| 安全与合规   |   10 | 是否守住权限、隐私、适当性、提示词注入和副作用边界 | 红队通过率、越权率、敏感信息泄露率、Fail-close                     |
 
 总分为 100 分，但发布和对外演示必须同时满足硬门禁。
 
@@ -500,7 +505,7 @@ SkillScorecardProfileV1
 2. 天然比例指标使用 `100 * numerator / denominator`，例如任务通过率、事实正确率和工具调用准确率。
 3. Pairwise 指标使用 `100 * (win + 0.5 * tie) / validComparisons`。
 4. 时延、Token、步骤数和版本增益等非天然比例指标，使用 Profile 中声明的方向、下限和上限进行线性截断。越高越好：`100 * clamp((raw - floor) / (cap - floor), 0, 1)`；越低越好：`100 * clamp((cap - raw) / (cap - floor), 0, 1)`。其中 `floor` 和 `cap` 的业务含义必须在 Profile 中声明，阈值不得在看到本次结果后修改。
-5. 单案例得分是该案例适用指标的加权平均；任一必选指标缺失，案例状态为 `INVALID_MISSING_REQUIRED_METRIC`，不允许自动降权。
+5. 每个指标必须且只能归属一个维度；`metricContributions` 显式声明维度内指标权重且总和为 100。单案例的维度得分按这些权重计算；任一必选指标缺失，案例状态为 `INVALID_MISSING_REQUIRED_METRIC`，不允许自动降权。
 6. 可选指标只有在 Profile 明确允许时才可从分母移除，报告必须同时显示指标覆盖率，禁止用缺失数据抬高分数。
 7. 案例聚合默认重要度为 `critical=3`、`high=2`、`normal=1`，具体值由 Profile 冻结。维度分数为该维度各有效案例的加权平均。
 8. 总任务通过率使用 `通过硬门禁且任务成功的运行数 / 全部已执行的有效运行数`，所有硬门禁失败运行必须计入分母并按失败计入，不能因不参与加权评分而被隐藏。基础设施未启动等未执行项单独统计，不得伪装成通过。
@@ -512,16 +517,16 @@ SkillScorecardProfileV1
 
 ### 8.4 试点等级与启用条件
 
-| 等级 | 分数 | 建议用途 |
-| --- | ---: | --- |
-| A 客户演示级 | 85 至 100 | 核心门禁通过且 Profile 已校准，可进入客户故事线和受控推广 |
-| B 业务可用级 | 70 至 84 | 可内部推广，需明确限制和改进项 |
-| C 试验验证级 | 60 至 69 | 仅限试验和继续优化，不作为成熟能力宣传 |
-| D 不建议发布 | 低于 60 | 返回开发或停止维护 |
+| 等级         |                 分数 | 建议用途                                                  |
+| ------------ | -------------------: | --------------------------------------------------------- |
+| A 客户演示级 | `85 <= score <= 100` | 核心门禁通过且 Profile 已校准，可进入客户故事线和受控推广 |
+| B 业务可用级 |   `70 <= score < 85` | 可内部推广，需明确限制和改进项                            |
+| C 试验验证级 |   `60 <= score < 70` | 仅限试验和继续优化，不作为成熟能力宣传                    |
+| D 不建议发布 |    `0 <= score < 60` | 返回开发或停止维护                                        |
 
 若关键门禁失败，即使加权分数达到 A 级也不得标记为“客户演示级”。
 
-上述阈值在财富经理和 GoldenCoach 两个试点完成专家校准前均为候选阈值。校准期间报告只能标记“试点评测/待校准”，市场不得展示“A 客户演示级”或等价徽章。任何权重、公式或阈值调整都产生新的 Scorecard Profile 版本，历史报告不回算。
+等级区间必须连续、互不重叠并完整覆盖 `[0,100]`。上述阈值在财富经理和 GoldenCoach 两个试点完成专家校准前均为候选阈值；`calibrationEvidence` 为空时不得标记为已校准。校准期间报告只能标记“试点评测/待校准”，市场不得展示“A 客户演示级”或等价徽章。任何权重、公式或阈值调整都产生新的 Scorecard Profile 版本，历史报告不回算。
 
 ## 9. 第一批 Skill 与演示故事
 
@@ -693,11 +698,12 @@ Promptfoo 当前尚未成为项目依赖。引入时必须满足：
 
 - 冻结 `SkillEvalSuiteV1`、`SkillEvaluationRunSnapshotV1`、`SkillScorecardProfileV1` 和 `JudgeProfileV1` 的字段、fingerprint 和版本规则。
 - 冻结两个试点 Skill 的版本、来源、维护人、许可证和 Artifact SHA256，不修改现有已审批包。
+- 从 Skill Market V2 生成独立只读 Approved Skill Inventory 快照，并在可访问 Artifact 时重新计算目录 SHA256 与大小，不能只让 Manifest 与 Suite 互相印证。
 - 明确专用 Eval Adoption、Workspace、Principal、Purpose、无副作用工具策略和清理规则。
 - 复用现有岗位 Benchmark Task Matrix 和 Golden Task，导入为独立 Eval Suite 来源。
 - 冻结 Promptfoo 数据出口策略、批准 Provider 清单和 Hermes Judge 数据边界。
 
-完成标准：四项契约可被机器校验；两个 Skill 均能映射到不可变 Artifact 和独立 Eval Suite；评测不修改任何生产活跃版本。
+完成标准：四项契约可被机器校验；未知字段不能绕过 fingerprint；两个 Skill 均能由独立 Inventory 映射到不可变 Artifact 和独立 Eval Suite；评测不修改任何生产活跃版本。
 
 ### 阶段 1：财富经理离线评测 MVP
 

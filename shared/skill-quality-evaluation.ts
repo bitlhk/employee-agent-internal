@@ -36,7 +36,7 @@ export type SkillEvaluationBaselineMode = z.infer<
   typeof skillEvaluationBaselineModeSchema
 >;
 
-export const skillEvalSourceReferenceV1Schema = z.object({
+export const skillEvalSourceReferenceV1Schema = z.strictObject({
   sourceType: z.enum([
     "repository_file",
     "benchmark",
@@ -48,14 +48,14 @@ export const skillEvalSourceReferenceV1Schema = z.object({
   contentSha256: sha256Schema,
 });
 
-export const skillEvalAssertionV1Schema = z.object({
+export const skillEvalAssertionV1Schema = z.strictObject({
   assertionId: nonEmptyId,
   mode: z.enum(["deterministic", "judge"]),
   hardGate: z.boolean(),
   metricId: nonEmptyId.nullable().default(null),
 });
 
-export const skillEvalCaseV1Schema = z.object({
+export const skillEvalCaseV1Schema = z.strictObject({
   caseId: nonEmptyId,
   name: z.string().trim().min(1).max(512),
   importance: z.enum(["critical", "high", "normal"]),
@@ -71,7 +71,7 @@ export const skillEvalCaseV1Schema = z.object({
 });
 
 export const skillEvalExpertReviewV1Schema = z
-  .object({
+  .strictObject({
     status: z.enum([
       "proposed",
       "expert_reviewing",
@@ -102,7 +102,7 @@ export const skillEvalExpertReviewV1Schema = z
   });
 
 export const skillEvalSuiteV1Schema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal(SKILL_EVAL_SUITE_V1_SCHEMA),
     suiteId: nonEmptyId,
     skillIdentityId: nonEmptyId,
@@ -156,13 +156,13 @@ export const skillEvalSuiteV1Schema = z
   });
 export type SkillEvalSuiteV1 = z.infer<typeof skillEvalSuiteV1Schema>;
 
-const skillVersionRefSchema = z.object({
+const skillVersionRefSchema = z.strictObject({
   skillVersionId: nonEmptyId,
   artifactSha256: sha256Schema,
 });
 
 export const skillEvaluationRunSnapshotV1Schema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal(SKILL_EVALUATION_RUN_SNAPSHOT_V1_SCHEMA),
     runId: nonEmptyId,
     createdAt: isoTimestamp,
@@ -175,7 +175,7 @@ export const skillEvaluationRunSnapshotV1Schema = z
     rolePackReleaseId: nonEmptyId,
     rolePackReleaseFingerprint: sha256Schema,
     systemPromptFingerprint: sha256Schema,
-    model: z.object({
+    model: z.strictObject({
       provider: nonEmptyId,
       modelId: nonEmptyId,
       modelVersion: nonEmptyId,
@@ -185,7 +185,7 @@ export const skillEvaluationRunSnapshotV1Schema = z
     contextFingerprint: sha256Schema,
     dataSnapshotId: nonEmptyId,
     dataFingerprint: sha256Schema,
-    principal: z.object({
+    principal: z.strictObject({
       principalId: nonEmptyId,
       purpose: nonEmptyId,
       permissionSnapshotId: nonEmptyId,
@@ -193,7 +193,7 @@ export const skillEvaluationRunSnapshotV1Schema = z
     }),
     toolPolicyFingerprint: sha256Schema,
     toolVersions: z.record(z.string(), nonEmptyId),
-    runtime: z.object({
+    runtime: z.strictObject({
       evalAdoptionId: nonEmptyId,
       sessionId: nonEmptyId,
       workspaceId: nonEmptyId,
@@ -201,8 +201,51 @@ export const skillEvaluationRunSnapshotV1Schema = z
       cleanWorkspace: z.literal(true),
       noSideEffectMode: z.literal(true),
     }),
+    executionPolicy: z
+      .strictObject({
+        timeoutMs: z.number().int().positive(),
+        maxRetries: z.number().int().nonnegative(),
+        retryBackoffMs: z.number().int().nonnegative(),
+        concurrency: z.number().int().positive(),
+        maxToolCalls: z.number().int().positive(),
+        tokenBudget: z.strictObject({
+          maxPromptTokens: z.number().int().positive(),
+          maxCompletionTokens: z.number().int().positive(),
+          maxTotalTokens: z.number().int().positive(),
+        }),
+        networkEgress: z.strictObject({
+          mode: z.literal("deny_by_default"),
+          allowedEndpointFingerprints: z.array(sha256Schema),
+        }),
+      })
+      .superRefine((policy, context) => {
+        if (
+          policy.tokenBudget.maxTotalTokens <
+          Math.max(
+            policy.tokenBudget.maxPromptTokens,
+            policy.tokenBudget.maxCompletionTokens
+          )
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["tokenBudget", "maxTotalTokens"],
+            message:
+              "the total token budget must cover both prompt and completion limits",
+          });
+        }
+        if (
+          new Set(policy.networkEgress.allowedEndpointFingerprints).size !==
+          policy.networkEgress.allowedEndpointFingerprints.length
+        ) {
+          context.addIssue({
+            code: "custom",
+            path: ["networkEgress", "allowedEndpointFingerprints"],
+            message: "network endpoint fingerprints must be unique",
+          });
+        }
+      }),
     scorecardProfileFingerprint: sha256Schema,
-    judgeStatus: z.enum(["NOT_CONFIGURED", "CONFIGURED"]),
+    judgeStatus: z.enum(["NOT_CONFIGURED", "READY"]),
     judgeProfileFingerprint: sha256Schema.nullable(),
     runnerVersion: nonEmptyId,
     providerVersion: nonEmptyId,
@@ -245,24 +288,40 @@ export type SkillEvaluationRunSnapshotV1 = z.infer<
   typeof skillEvaluationRunSnapshotV1Schema
 >;
 
-export const skillEvaluationRunEvidenceV1Schema = z.object({
-  schemaVersion: z.literal(SKILL_EVALUATION_RUN_EVIDENCE_V1_SCHEMA),
-  runId: nonEmptyId,
-  evaluationConfigFingerprint: sha256Schema,
-  traceId: nonEmptyId,
-  outputSha256: sha256Schema,
-  artifactSha256s: z.array(sha256Schema),
-  actualSkillVersions: z.array(skillVersionRefSchema),
-  toolCallFingerprint: sha256Schema,
-  completedAt: isoTimestamp,
-  runEvidenceFingerprint: sha256Schema,
-});
+export const skillEvaluationRunEvidenceV1Schema = z
+  .strictObject({
+    schemaVersion: z.literal(SKILL_EVALUATION_RUN_EVIDENCE_V1_SCHEMA),
+    runId: nonEmptyId,
+    evaluationConfigFingerprint: sha256Schema,
+    traceId: nonEmptyId,
+    traceSchemaVersion: nonEmptyId,
+    traceSha256: sha256Schema,
+    outputSha256: sha256Schema,
+    artifactSha256s: z.array(sha256Schema),
+    actualSkillVersions: z.array(skillVersionRefSchema),
+    toolCallFingerprint: sha256Schema,
+    judgeStatus: z.enum(["NOT_CONFIGURED", "EXECUTED", "PENDING_REVIEW"]),
+    judgeResultFingerprint: sha256Schema.nullable(),
+    completedAt: isoTimestamp,
+    runEvidenceFingerprint: sha256Schema,
+  })
+  .superRefine((evidence, context) => {
+    const requiresJudgeResult = evidence.judgeStatus !== "NOT_CONFIGURED";
+    if (requiresJudgeResult !== Boolean(evidence.judgeResultFingerprint)) {
+      context.addIssue({
+        code: "custom",
+        path: ["judgeResultFingerprint"],
+        message:
+          "executed or pending-review Judge evidence requires a result fingerprint; non-Judge runs must not carry one",
+      });
+    }
+  });
 export type SkillEvaluationRunEvidenceV1 = z.infer<
   typeof skillEvaluationRunEvidenceV1Schema
 >;
 
 export const scorecardMetricDefinitionV1Schema = z
-  .object({
+  .strictObject({
     metricId: nonEmptyId,
     displayName: z.string().trim().min(1).max(256),
     normalization: z.enum(["ratio", "pairwise", "bounded_high", "bounded_low"]),
@@ -285,7 +344,7 @@ export const scorecardMetricDefinitionV1Schema = z
   });
 
 export const skillScorecardProfileV1Schema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal(SKILL_SCORECARD_PROFILE_V1_SCHEMA),
     profileId: nonEmptyId,
     profileVersion: strictSemverSchema,
@@ -293,23 +352,30 @@ export const skillScorecardProfileV1Schema = z
     applicableSkillTypes: z.array(skillEvaluationSkillTypeSchema).min(1),
     dimensions: z
       .array(
-        z.object({
+        z.strictObject({
           dimensionId: nonEmptyId,
           displayName: z.string().trim().min(1).max(256),
           weight: z.number().positive().max(100),
-          metricIds: z.array(nonEmptyId).min(1),
+          metricContributions: z
+            .array(
+              z.strictObject({
+                metricId: nonEmptyId,
+                weight: z.number().positive().max(100),
+              })
+            )
+            .min(1),
         })
       )
       .min(1),
     metrics: z.array(scorecardMetricDefinitionV1Schema).min(1),
     requiredMetrics: z.array(nonEmptyId).min(1),
     optionalMetrics: z.array(nonEmptyId).default([]),
-    caseImportanceWeights: z.object({
+    caseImportanceWeights: z.strictObject({
       critical: z.number().positive(),
       high: z.number().positive(),
       normal: z.number().positive(),
     }),
-    repeatPolicy: z.object({
+    repeatPolicy: z.strictObject({
       minimumRuns: z.number().int().positive(),
       reportMean: z.boolean(),
       reportStandardDeviation: z.boolean(),
@@ -320,10 +386,10 @@ export const skillScorecardProfileV1Schema = z
     judgeDisagreementPolicy: z.literal("expert_review"),
     hardGates: z.array(nonEmptyId).min(1),
     gradeThresholds: z.array(
-      z.object({
+      z.strictObject({
         grade: z.enum(["A", "B", "C", "D"]),
-        minimum: z.number().min(0).max(100),
-        maximum: z.number().min(0).max(100),
+        minimumInclusive: z.number().min(0).max(100),
+        maximumExclusive: z.number().positive().max(100).nullable(),
       })
     ),
     calibrationStatus: z.enum(["pilot", "calibrated"]),
@@ -364,7 +430,9 @@ export const skillScorecardProfileV1Schema = z
     const referenced = [
       ...profile.requiredMetrics,
       ...profile.optionalMetrics,
-      ...profile.dimensions.flatMap(dimension => dimension.metricIds),
+      ...profile.dimensions.flatMap(dimension =>
+        dimension.metricContributions.map(contribution => contribution.metricId)
+      ),
     ];
     for (const metricId of referenced) {
       if (!metricIds.has(metricId)) {
@@ -375,6 +443,22 @@ export const skillScorecardProfileV1Schema = z
       }
     }
     const optional = new Set(profile.optionalMetrics);
+    if (
+      new Set(profile.requiredMetrics).size !== profile.requiredMetrics.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["requiredMetrics"],
+        message: "required Scorecard metrics must be unique",
+      });
+    }
+    if (optional.size !== profile.optionalMetrics.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["optionalMetrics"],
+        message: "optional Scorecard metrics must be unique",
+      });
+    }
     for (const metricId of profile.requiredMetrics) {
       if (optional.has(metricId)) {
         context.addIssue({
@@ -382,6 +466,85 @@ export const skillScorecardProfileV1Schema = z
           message: `metric ${metricId} cannot be both required and optional`,
         });
       }
+    }
+    const classifiedMetrics = new Set([
+      ...profile.requiredMetrics,
+      ...profile.optionalMetrics,
+    ]);
+    for (const metricId of metricIds) {
+      if (!classifiedMetrics.has(metricId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["requiredMetrics"],
+          message: `metric ${metricId} must be classified as required or optional`,
+        });
+      }
+    }
+    for (const dimension of profile.dimensions) {
+      const contributionIds = new Set(
+        dimension.metricContributions.map(contribution => contribution.metricId)
+      );
+      if (contributionIds.size !== dimension.metricContributions.length) {
+        context.addIssue({
+          code: "custom",
+          path: ["dimensions"],
+          message: `${dimension.dimensionId}: metric contributions must be unique`,
+        });
+      }
+      const contributionWeight = dimension.metricContributions.reduce(
+        (total, contribution) => total + contribution.weight,
+        0
+      );
+      if (Math.abs(contributionWeight - 100) > 0.000001) {
+        context.addIssue({
+          code: "custom",
+          path: ["dimensions"],
+          message: `${dimension.dimensionId}: metric contribution weights must sum to 100`,
+        });
+      }
+    }
+    const contributedMetricIds = profile.dimensions.flatMap(dimension =>
+      dimension.metricContributions.map(contribution => contribution.metricId)
+    );
+    const contributedMetrics = new Set(contributedMetricIds);
+    if (
+      contributedMetrics.size !== contributedMetricIds.length ||
+      contributedMetrics.size !== metricIds.size ||
+      [...metricIds].some(metricId => !contributedMetrics.has(metricId))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["dimensions"],
+        message:
+          "every Scorecard metric must contribute to exactly one dimension",
+      });
+    }
+    if (
+      profile.calibrationStatus === "calibrated" &&
+      profile.calibrationEvidence.length === 0
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["calibrationEvidence"],
+        message: "calibrated Scorecards require calibration evidence",
+      });
+    }
+    if (
+      new Set(profile.calibrationEvidence).size !==
+      profile.calibrationEvidence.length
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["calibrationEvidence"],
+        message: "Scorecard calibration evidence must be unique",
+      });
+    }
+    if (new Set(profile.hardGates).size !== profile.hardGates.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["hardGates"],
+        message: "Scorecard hard gates must be unique",
+      });
     }
     if (
       profile.formalGradesEnabled !==
@@ -393,18 +556,32 @@ export const skillScorecardProfileV1Schema = z
         message: "formal grades are enabled only for calibrated Scorecards",
       });
     }
-    const gradeIds = new Set(profile.gradeThresholds.map(item => item.grade));
-    if (
-      profile.gradeThresholds.length !== 4 ||
-      gradeIds.size !== 4 ||
-      !(["A", "B", "C", "D"] as const).every(grade => gradeIds.has(grade)) ||
-      profile.gradeThresholds.some(item => item.minimum > item.maximum)
-    ) {
+    const sortedGrades = [...profile.gradeThresholds].sort(
+      (left, right) => left.minimumInclusive - right.minimumInclusive
+    );
+    const expectedGrades = ["D", "C", "B", "A"] as const;
+    const completeGradeCoverage =
+      sortedGrades.length === expectedGrades.length &&
+      sortedGrades.every(
+        (item, index) => item.grade === expectedGrades[index]
+      ) &&
+      sortedGrades[0]?.minimumInclusive === 0 &&
+      sortedGrades.at(-1)?.maximumExclusive === null &&
+      sortedGrades.every((item, index) => {
+        if (index === sortedGrades.length - 1) return true;
+        const next = sortedGrades[index + 1];
+        return (
+          item.maximumExclusive !== null &&
+          item.maximumExclusive > item.minimumInclusive &&
+          item.maximumExclusive === next.minimumInclusive
+        );
+      });
+    if (!completeGradeCoverage) {
       context.addIssue({
         code: "custom",
         path: ["gradeThresholds"],
         message:
-          "Scorecard grade thresholds must define valid, unique A, B, C and D ranges",
+          "Scorecard grades must continuously and uniquely cover [0,100] as D, C, B and A half-open ranges",
       });
     }
   });
@@ -413,7 +590,7 @@ export type SkillScorecardProfileV1 = z.infer<
 >;
 
 export const judgeProfileV1Schema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal(JUDGE_PROFILE_V1_SCHEMA),
     judgeProfileId: nonEmptyId,
     profileVersion: strictSemverSchema,
@@ -425,7 +602,7 @@ export const judgeProfileV1Schema = z
     rubricVersion: strictSemverSchema,
     rubric: z
       .array(
-        z.object({
+        z.strictObject({
           criterionId: nonEmptyId,
           description: z.string().trim().min(1),
           weight: z.number().positive().max(100),
@@ -434,12 +611,12 @@ export const judgeProfileV1Schema = z
       .min(1),
     outputSchemaVersion: nonEmptyId,
     blindOrderSeedPolicy: z.literal("run_seed_with_reverse_order"),
-    repeatPolicy: z.object({
+    repeatPolicy: z.strictObject({
       minimumVotes: z.number().int().positive(),
       reverseOrder: z.literal(true),
     }),
     disagreementThreshold: z.number().min(0).max(1),
-    expertCalibration: z.object({
+    expertCalibration: z.strictObject({
       status: z.enum(["unavailable", "pending", "calibrated"]),
       datasetId: nonEmptyId.nullable(),
       calibrationFingerprint: sha256Schema.nullable(),

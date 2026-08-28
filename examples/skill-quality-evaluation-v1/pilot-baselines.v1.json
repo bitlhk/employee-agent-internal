@@ -1,10 +1,11 @@
 {
   "schemaVersion": "ea.skill-quality-evaluation-pilots.v1",
-  "manifestVersion": "1.0.0",
-  "manifestFingerprint": "5b39356a90c06a1a389d856c0ba26f7e23ea0b326c1b66ba5ed03e740c55d3d5",
+  "manifestVersion": "1.0.1",
+  "manifestFingerprint": "2a7575f858b4a27a956e093b44d902b0d0aae15c6353fe7e64f2ffc1c7d18082",
   "status": "phase_0_frozen",
   "scorecardProfilePath": "examples/skill-quality-evaluation-v1/profiles/governed-workflow-scorecard.v1.json",
   "judgeProfilePath": "examples/skill-quality-evaluation-v1/profiles/hermes-pairwise-judge.v1.json",
+  "approvedSkillInventoryPath": "examples/skill-quality-evaluation-v1/approved-skill-inventory.v1.json",
   "runtimeIsolation": {
     "dedicatedEvalAdoption": true,
     "cleanSessionPerArm": true,

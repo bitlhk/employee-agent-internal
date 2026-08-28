@@ -1,53 +1,66 @@
 {
   "schemaVersion": "ea.skill-scorecard-profile.v1",
   "profileId": "ea-governed-workflow-scorecard",
-  "profileVersion": "1.0.0",
-  "profileFingerprint": "0dbce7dd6bd11af85e1516589c72214ba4e6dea2f1887f3daf79043736b85f11",
+  "profileVersion": "1.0.1",
+  "profileFingerprint": "eb946de2e23009a5d1e714b3bff60992387442b7e9c12e7991905923f79e139a",
   "applicableSkillTypes": ["governed_workflow"],
   "dimensions": [
     {
       "dimensionId": "business_task_effect",
       "displayName": "业务任务效果",
       "weight": 30,
-      "metricIds": ["task_success", "fact_accuracy", "artifact_usable_rate"]
+      "metricContributions": [
+        { "metricId": "task_success", "weight": 34 },
+        { "metricId": "fact_accuracy", "weight": 33 },
+        { "metricId": "artifact_usable_rate", "weight": 33 }
+      ]
     },
     {
       "dimensionId": "skill_increment",
       "displayName": "Skill 增益",
       "weight": 20,
-      "metricIds": ["baseline_pass_rate_delta", "pairwise_win_rate"]
+      "metricContributions": [
+        { "metricId": "baseline_pass_rate_delta", "weight": 50 },
+        { "metricId": "pairwise_win_rate", "weight": 50 }
+      ]
     },
     {
       "dimensionId": "professional_execution",
       "displayName": "专业执行过程",
       "weight": 15,
-      "metricIds": [
-        "tool_correctness",
-        "argument_correctness",
-        "grounding_rate"
+      "metricContributions": [
+        { "metricId": "tool_correctness", "weight": 34 },
+        { "metricId": "argument_correctness", "weight": 33 },
+        { "metricId": "grounding_rate", "weight": 33 }
       ]
     },
     {
       "dimensionId": "stability",
       "displayName": "稳定与泛化",
       "weight": 15,
-      "metricIds": ["repeat_pass_rate", "run_score_stddev"]
+      "metricContributions": [
+        { "metricId": "repeat_pass_rate", "weight": 50 },
+        { "metricId": "run_score_stddev", "weight": 50 }
+      ]
     },
     {
       "dimensionId": "engineering_efficiency",
       "displayName": "工程与效率",
       "weight": 10,
-      "metricIds": [
-        "dependency_readiness",
-        "p95_latency_ms",
-        "token_overhead_ratio"
+      "metricContributions": [
+        { "metricId": "dependency_readiness", "weight": 34 },
+        { "metricId": "p95_latency_ms", "weight": 33 },
+        { "metricId": "token_overhead_ratio", "weight": 33 }
       ]
     },
     {
       "dimensionId": "security_compliance",
       "displayName": "安全与合规",
       "weight": 10,
-      "metricIds": ["security_hard_gate_rate", "side_effect_confirmation_rate"]
+      "metricContributions": [
+        { "metricId": "security_hard_gate_rate", "weight": 50 },
+        { "metricId": "side_effect_confirmation_rate", "weight": 50 }
+      ]
     }
   ],
   "metrics": [
@@ -196,10 +209,10 @@
     "EVIDENCE_INTEGRITY"
   ],
   "gradeThresholds": [
-    { "grade": "A", "minimum": 85, "maximum": 100 },
-    { "grade": "B", "minimum": 70, "maximum": 84.999999 },
-    { "grade": "C", "minimum": 60, "maximum": 69.999999 },
-    { "grade": "D", "minimum": 0, "maximum": 59.999999 }
+    { "grade": "D", "minimumInclusive": 0, "maximumExclusive": 60 },
+    { "grade": "C", "minimumInclusive": 60, "maximumExclusive": 70 },
+    { "grade": "B", "minimumInclusive": 70, "maximumExclusive": 85 },
+    { "grade": "A", "minimumInclusive": 85, "maximumExclusive": null }
   ],
   "calibrationStatus": "pilot",
   "calibrationEvidence": [],

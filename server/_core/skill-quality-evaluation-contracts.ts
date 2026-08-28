@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
 import {
@@ -18,12 +19,13 @@ import {
   skillEvalSuiteFingerprint,
   skillScorecardProfileFingerprint,
 } from "./skill-quality-evaluation";
+import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
 
 export const SKILL_QUALITY_EVALUATION_ROOT =
   "examples/skill-quality-evaluation-v1";
 export const SKILL_QUALITY_PILOT_MANIFEST_PATH = `${SKILL_QUALITY_EVALUATION_ROOT}/pilot-baselines.v1.json`;
 
-const nullableVersionRefSchema = z.object({
+const nullableVersionRefSchema = z.strictObject({
   mode: skillEvaluationBaselineModeSchema,
   skillVersionId: z.string().min(1).nullable(),
   version: strictSemverSchema.nullable(),
@@ -31,14 +33,15 @@ const nullableVersionRefSchema = z.object({
 });
 
 const pilotManifestSchema = z
-  .object({
+  .strictObject({
     schemaVersion: z.literal("ea.skill-quality-evaluation-pilots.v1"),
     manifestVersion: strictSemverSchema,
     manifestFingerprint: sha256Schema,
     status: z.literal("phase_0_frozen"),
     scorecardProfilePath: z.string().min(1),
     judgeProfilePath: z.string().min(1),
-    runtimeIsolation: z.object({
+    approvedSkillInventoryPath: z.string().min(1),
+    runtimeIsolation: z.strictObject({
       dedicatedEvalAdoption: z.literal(true),
       cleanSessionPerArm: z.literal(true),
       cleanWorkspacePerArm: z.literal(true),
@@ -47,11 +50,11 @@ const pilotManifestSchema = z
     }),
     pilots: z
       .array(
-        z.object({
+        z.strictObject({
           skillId: z.string().min(1),
           skillIdentityId: z.string().min(1),
           suitePath: z.string().min(1),
-          target: z.object({
+          target: z.strictObject({
             skillVersionId: z.string().min(1),
             version: strictSemverSchema,
             artifactSha256: sha256Schema,
@@ -94,6 +97,68 @@ const pilotManifestSchema = z
 
 type PilotManifest = z.infer<typeof pilotManifestSchema>;
 
+const approvedSkillInventorySchema = z
+  .strictObject({
+    schemaVersion: z.literal("ea.approved-skill-inventory.v1"),
+    snapshotId: z.string().min(1),
+    capturedAt: z.string().datetime({ offset: true }),
+    source: z.literal("local_skill_market_v2_readonly_snapshot"),
+    inventoryFingerprint: sha256Schema,
+    records: z
+      .array(
+        z.strictObject({
+          skillId: z.string().min(1),
+          skillIdentityId: z.string().min(1),
+          skillVersionId: z.string().min(1),
+          version: strictSemverSchema,
+          artifactSha256: sha256Schema,
+          artifactSize: z.number().int().nonnegative(),
+          artifactRelativePath: z.string().min(1),
+          status: z.literal("approved"),
+        })
+      )
+      .min(1),
+  })
+  .superRefine((inventory, context) => {
+    const versions = new Set<string>();
+    for (const [index, record] of inventory.records.entries()) {
+      if (versions.has(record.skillVersionId)) {
+        context.addIssue({
+          code: "custom",
+          path: ["records", index, "skillVersionId"],
+          message: `duplicate approved Skill version ${record.skillVersionId}`,
+        });
+      }
+      versions.add(record.skillVersionId);
+      if (
+        path.isAbsolute(record.artifactRelativePath) ||
+        record.artifactRelativePath.split(/[\\/]+/u).includes("..")
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["records", index, "artifactRelativePath"],
+          message: "approved Skill artifact path must stay inside SKILL_STORE",
+        });
+      }
+      const expectedPath = path.join(
+        "marketplace",
+        "artifacts",
+        record.skillId,
+        record.version,
+        record.artifactSha256
+      );
+      if (path.normalize(record.artifactRelativePath) !== expectedPath) {
+        context.addIssue({
+          code: "custom",
+          path: ["records", index, "artifactRelativePath"],
+          message:
+            "approved Skill artifact path must match its Skill, version and digest",
+        });
+      }
+    }
+  });
+type ApprovedSkillInventory = z.infer<typeof approvedSkillInventorySchema>;
+
 function readJson(filePath: string): unknown {
   return JSON.parse(readFileSync(filePath, "utf8")) as unknown;
 }
@@ -117,6 +182,23 @@ function formatZodErrors(prefix: string, error: z.ZodError): string[] {
 function manifestFingerprint(manifest: PilotManifest): string {
   const { manifestFingerprint: _stored, ...body } = manifest;
   return governanceFingerprint(body);
+}
+
+export function approvedSkillInventoryFingerprint(
+  inventory: ApprovedSkillInventory
+): string {
+  const { inventoryFingerprint: _stored, ...body } = inventory;
+  return governanceFingerprint(body);
+}
+
+function defaultSkillStoreRoot(): string {
+  const configured = process.env.SKILL_STORE?.trim();
+  if (!configured) return path.join(homedir(), "skill-store");
+  if (configured === "~") return homedir();
+  if (configured.startsWith("~/")) {
+    return path.join(homedir(), configured.slice(2));
+  }
+  return path.resolve(configured);
 }
 
 function loadContract<T>(input: {
@@ -150,13 +232,40 @@ function validateSuiteSources(input: {
   root: string;
   suite: SkillEvalSuiteV1;
   scorecard: SkillScorecardProfileV1;
+  approvedInventory: ApprovedSkillInventory | null;
   errors: string[];
 }): void {
   const metricIds = new Set(
     input.scorecard.metrics.map(metric => metric.metricId)
   );
   for (const source of input.suite.sourceReferences) {
-    if (source.sourceType === "approved_skill_artifact") continue;
+    if (source.sourceType === "approved_skill_artifact") {
+      const match = /^skill-store:\/\/([^/]+)\/([^/]+)\/([a-f0-9]{64})$/u.exec(
+        source.reference
+      );
+      if (!match) {
+        input.errors.push(
+          `${input.suite.suiteId}: approved Skill source reference is malformed`
+        );
+        continue;
+      }
+      const [, skillId, version, artifactSha256] = match;
+      const inventoryMatch = input.approvedInventory?.records.find(
+        record =>
+          record.skillId === skillId &&
+          record.version === version &&
+          record.artifactSha256 === artifactSha256
+      );
+      if (
+        !inventoryMatch ||
+        source.contentSha256 !== inventoryMatch.artifactSha256
+      ) {
+        input.errors.push(
+          `${input.suite.suiteId}: approved Skill source is absent from the frozen inventory`
+        );
+      }
+      continue;
+    }
     if (!isSafeRepositoryPath(source.reference)) {
       input.errors.push(
         `${input.suite.suiteId}: source path escapes the repository: ${source.reference}`
@@ -188,11 +297,91 @@ function validateSuiteSources(input: {
   }
 }
 
+function validatePilotInventory(input: {
+  pilot: PilotManifest["pilots"][number];
+  inventory: ApprovedSkillInventory;
+  errors: string[];
+}): void {
+  const expectedVersions = [
+    input.pilot.target,
+    ...input.pilot.baselines.flatMap(baseline =>
+      baseline.mode === "without_skill"
+        ? []
+        : [
+            {
+              skillVersionId: baseline.skillVersionId!,
+              version: baseline.version!,
+              artifactSha256: baseline.artifactSha256!,
+            },
+          ]
+    ),
+  ];
+  for (const expected of expectedVersions) {
+    const record = input.inventory.records.find(
+      item => item.skillVersionId === expected.skillVersionId
+    );
+    if (
+      !record ||
+      record.skillId !== input.pilot.skillId ||
+      record.skillIdentityId !== input.pilot.skillIdentityId ||
+      record.version !== expected.version ||
+      record.artifactSha256 !== expected.artifactSha256
+    ) {
+      input.errors.push(
+        `${input.pilot.skillId}@${expected.version}: version identity is not independently confirmed by the approved Skill inventory`
+      );
+    }
+  }
+}
+
+function verifyLocalInventoryArtifacts(input: {
+  inventory: ApprovedSkillInventory;
+  skillStoreRoot: string;
+  requireLocalArtifacts: boolean;
+  warnings: string[];
+  errors: string[];
+}): number {
+  let verified = 0;
+  for (const record of input.inventory.records) {
+    const artifactPath = path.join(
+      input.skillStoreRoot,
+      record.artifactRelativePath
+    );
+    if (!existsSync(artifactPath)) {
+      const message = `${record.skillId}@${record.version}: local approved artifact is unavailable at ${record.artifactRelativePath}`;
+      if (input.requireLocalArtifacts) input.errors.push(message);
+      else input.warnings.push(message);
+      continue;
+    }
+    try {
+      const digest = digestSkillSourceTree(artifactPath);
+      if (
+        digest.sha256 !== record.artifactSha256 ||
+        digest.size !== record.artifactSize
+      ) {
+        input.errors.push(
+          `${record.skillId}@${record.version}: local artifact differs from the approved Skill inventory`
+        );
+        continue;
+      }
+      verified += 1;
+    } catch (error) {
+      input.errors.push(
+        `${record.skillId}@${record.version}: local artifact cannot be verified: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+  return verified;
+}
+
 export type SkillQualityPhase0Report = {
   schema: "ea.skill-quality-phase-0-report.v1";
   status: "PASS" | "FAIL";
   phase: "phase_0";
   manifestFingerprint: string | null;
+  approvedSkillInventoryFingerprint: string | null;
+  inventoryRecordCount: number;
+  locallyVerifiedArtifactCount: number;
   scorecardProfileFingerprint: string | null;
   judgeProfileFingerprint: string | null;
   judgeAvailability: "unavailable" | "configured";
@@ -213,7 +402,11 @@ export type SkillQualityPhase0Report = {
 };
 
 export function runSkillQualityPhase0ContractChecks(
-  root = process.cwd()
+  root = process.cwd(),
+  options: {
+    requireLocalArtifacts?: boolean;
+    skillStoreRoot?: string;
+  } = {}
 ): SkillQualityPhase0Report {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -230,6 +423,9 @@ export function runSkillQualityPhase0ContractChecks(
       status: "FAIL",
       phase: "phase_0",
       manifestFingerprint: null,
+      approvedSkillInventoryFingerprint: null,
+      inventoryRecordCount: 0,
+      locallyVerifiedArtifactCount: 0,
       scorecardProfileFingerprint: null,
       judgeProfileFingerprint: null,
       judgeAvailability: "unavailable",
@@ -247,6 +443,7 @@ export function runSkillQualityPhase0ContractChecks(
   for (const repositoryPath of [
     manifest.scorecardProfilePath,
     manifest.judgeProfilePath,
+    manifest.approvedSkillInventoryPath,
     ...manifest.pilots.flatMap(pilot => [
       pilot.suitePath,
       ...(pilot.releaseEvidencePath ? [pilot.releaseEvidencePath] : []),
@@ -257,6 +454,31 @@ export function runSkillQualityPhase0ContractChecks(
         `Skill quality asset path escapes the repository: ${repositoryPath}`
       );
     }
+  }
+  const approvedInventory = loadContract({
+    root,
+    relativePath: manifest.approvedSkillInventoryPath,
+    schema: approvedSkillInventorySchema,
+    label: "Approved Skill Inventory",
+    errors,
+  });
+  let calculatedInventoryFingerprint: string | null = null;
+  let locallyVerifiedArtifactCount = 0;
+  if (approvedInventory) {
+    calculatedInventoryFingerprint =
+      approvedSkillInventoryFingerprint(approvedInventory);
+    if (
+      approvedInventory.inventoryFingerprint !== calculatedInventoryFingerprint
+    ) {
+      errors.push("Approved Skill Inventory fingerprint is inconsistent");
+    }
+    locallyVerifiedArtifactCount = verifyLocalInventoryArtifacts({
+      inventory: approvedInventory,
+      skillStoreRoot: options.skillStoreRoot || defaultSkillStoreRoot(),
+      requireLocalArtifacts: options.requireLocalArtifacts === true,
+      warnings,
+      errors,
+    });
   }
   const scorecard = loadContract({
     root,
@@ -297,6 +519,9 @@ export function runSkillQualityPhase0ContractChecks(
 
   const pilotReports: SkillQualityPhase0Report["pilots"] = [];
   for (const pilot of manifest.pilots) {
+    if (approvedInventory) {
+      validatePilotInventory({ pilot, inventory: approvedInventory, errors });
+    }
     const suite = loadContract({
       root,
       relativePath: pilot.suitePath,
@@ -339,7 +564,13 @@ export function runSkillQualityPhase0ContractChecks(
       }
     }
     if (scorecard) {
-      validateSuiteSources({ root, suite, scorecard, errors });
+      validateSuiteSources({
+        root,
+        suite,
+        scorecard,
+        approvedInventory,
+        errors,
+      });
     }
     if (suite.expertReview.status !== "expert_confirmed") {
       warnings.push(
@@ -364,6 +595,9 @@ export function runSkillQualityPhase0ContractChecks(
     status: errors.length ? "FAIL" : "PASS",
     phase: "phase_0",
     manifestFingerprint: calculatedManifestFingerprint,
+    approvedSkillInventoryFingerprint: calculatedInventoryFingerprint,
+    inventoryRecordCount: approvedInventory?.records.length || 0,
+    locallyVerifiedArtifactCount,
     scorecardProfileFingerprint: scorecard?.profileFingerprint || null,
     judgeProfileFingerprint: judge?.judgeProfileFingerprint || null,
     judgeAvailability:
@@ -375,4 +609,4 @@ export function runSkillQualityPhase0ContractChecks(
   };
 }
 
-export type { JudgeProfileV1, PilotManifest };
+export type { ApprovedSkillInventory, JudgeProfileV1, PilotManifest };

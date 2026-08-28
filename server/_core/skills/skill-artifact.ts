@@ -1,51 +1,15 @@
-import { createHash, randomUUID } from "node:crypto";
-import {
-  existsSync,
-  lstatSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 import { skillInstaller } from "./skill-installer";
 import { safeSkillStorePath, skillStorePath } from "./skill-store";
+import {
+  digestSkillSourceTree,
+  type SkillArtifactDigest,
+} from "./skill-artifact-digest";
 
-export type SkillArtifactDigest = {
-  sha256: string;
-  size: number;
-};
-
-export function digestSkillSourceTree(sourcePath: string): SkillArtifactDigest {
-  const hash = createHash("sha256");
-  const root = realpathSync(sourcePath);
-  let size = 0;
-
-  function visit(current: string, relative: string): void {
-    const stat = lstatSync(current);
-    if (stat.isSymbolicLink()) {
-      throw new Error(`symbolic link is not digestible: ${relative || "."}`);
-    }
-    if (stat.isDirectory()) {
-      hash.update(`D\0${relative}\0`);
-      for (const name of readdirSync(current).sort()) {
-        visit(path.join(current, name), path.join(relative, name));
-      }
-      return;
-    }
-    if (!stat.isFile()) {
-      throw new Error(`unsupported artifact entry: ${relative || "."}`);
-    }
-    const content = readFileSync(current);
-    size += content.length;
-    hash.update(`F\0${relative}\0${content.length}\0`);
-    hash.update(content);
-    hash.update("\0");
-  }
-
-  visit(root, "");
-  return { sha256: hash.digest("hex"), size };
-}
+export { digestSkillSourceTree, type SkillArtifactDigest };
 
 export async function materializeImmutableSkillArtifact(input: {
   sourcePath: string;
