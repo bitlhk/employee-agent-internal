@@ -119,3 +119,4 @@ const evidence = {
 
 // eslint-disable-next-line no-console
 console.log(JSON.stringify(evidence, null, 2));
+process.exit(0);
