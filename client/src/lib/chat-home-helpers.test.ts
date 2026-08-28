@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { flattenComposerSkills, localizedComposerSkillLabel } from "./chat-home-helpers";
+import {
+  flattenComposerSkills,
+  localizedComposerSkillLabel,
+  prioritizeRoleConfiguredSkills,
+} from "./chat-home-helpers";
 
 describe("flattenComposerSkills", () => {
   it("preserves the registry source kind carried by the skill DTO", () => {
@@ -35,5 +39,21 @@ describe("flattenComposerSkills", () => {
       label: "组合诊断师（Portfolio Doctor）",
       desc: "分析投资组合。",
     })).toBe("组合诊断师");
+  });
+
+  it("puts role-configured skills first without removing other skills", () => {
+    const skills = flattenComposerSkills({
+      private: [
+        { id: "optional-report", label: "报告助手", sourceKind: "marketplace", state: "ready" },
+        { id: "wealth-manager-assistant", label: "客户经理财富助手", sourceKind: "role_default", state: "ready" },
+        { id: "personal-note", label: "记录助手", sourceKind: "uploaded", state: "ready" },
+      ],
+    });
+
+    expect(prioritizeRoleConfiguredSkills(skills).map((skill) => skill.id)).toEqual([
+      "wealth-manager-assistant",
+      "optional-report",
+      "personal-note",
+    ]);
   });
 });

@@ -7299,6 +7299,14 @@ input.session-searchbar__input:focus-visible,
   background: color-mix(in oklab, var(--oc-bg-soft) 90%, var(--role-accent) 10%);
   border-color: color-mix(in oklab, var(--role-accent) 32%, var(--oc-border));
 }
+.role-task-launchpad__skill[data-role-configured="true"] {
+  background: color-mix(in oklab, var(--oc-bg-soft) 88%, var(--role-accent) 12%);
+  border-color: color-mix(in oklab, var(--role-accent) 28%, var(--oc-border));
+}
+.role-task-launchpad__skill .role-task-launchpad__skill-star {
+  color: var(--role-accent);
+  fill: currentColor;
+}
 .role-task-launchpad__skill strong {
   overflow: hidden;
   color: var(--oc-text-primary);

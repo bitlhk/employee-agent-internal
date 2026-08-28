@@ -16,6 +16,21 @@ export type ComposerSkillOption = {
   requiredMcpServers: string[];
 };
 
+export function isRoleConfiguredSkill(
+  skill: Pick<ComposerSkillOption, "source">
+): boolean {
+  return skill.source === "role_default";
+}
+
+export function prioritizeRoleConfiguredSkills(
+  skills: ComposerSkillOption[]
+): ComposerSkillOption[] {
+  return [...skills].sort((left, right) => {
+    const priority = Number(isRoleConfiguredSkill(right)) - Number(isRoleConfiguredSkill(left));
+    return priority || left.label.localeCompare(right.label, "zh-CN");
+  });
+}
+
 export function inferKnowledgeCaptureTitle(text: string): string {
   const normalized = stripEaInternalRuntimeContext(String(text || ""))
     .replace(/^\s{0,3}#{1,6}\s+/gm, "")

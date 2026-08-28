@@ -10,6 +10,7 @@ import {
   Puzzle,
   Search,
   ShieldCheck,
+  Star,
   Target,
   UserRound,
   Wrench,
@@ -18,7 +19,12 @@ import {
 import type { RoleHomeRuntimeStatus, RoleHomeTaskStatus } from "@shared/role-home";
 import { ConnectorIcon } from "@/components/ConnectorIcon";
 import type { ComposerConnector } from "@/lib/composer-connectors";
-import { localizedComposerSkillLabel, type ComposerSkillOption } from "@/lib/chat-home-helpers";
+import {
+  isRoleConfiguredSkill,
+  localizedComposerSkillLabel,
+  prioritizeRoleConfiguredSkills,
+  type ComposerSkillOption,
+} from "@/lib/chat-home-helpers";
 import { roleExperience, selectRoleHomeTaskIds, type RoleTaskStarter } from "@/lib/role-experience";
 
 const TASK_ICONS: Record<RoleTaskStarter["icon"], LucideIcon> = {
@@ -84,6 +90,8 @@ export function RoleTaskLaunchpad({
   const statuses = runtimeStatus?.roleTemplate === experience.roleTemplate ? runtimeStatus.tasks : [];
   const statusById = new Map(statuses.map((status) => [status.taskId, status]));
   const tasks = featuredTasks(experience.roleTemplate, statuses);
+  const orderedSkills = prioritizeRoleConfiguredSkills(skills);
+  const roleConfiguredSkillCount = orderedSkills.filter(isRoleConfiguredSkill).length;
 
   return (
     <section className="role-task-launchpad" aria-label={`${roleName}可开始的任务`}>
@@ -94,6 +102,46 @@ export function RoleTaskLaunchpad({
           <p>{experience.description}</p>
         </div>
       </header>
+
+      <section className="role-task-launchpad__skills" aria-labelledby="role-skills-title">
+        <div className="role-task-launchpad__section-heading">
+          <div>
+            <h2 id="role-skills-title">岗位技能</h2>
+            <span>{skills.length > 0
+              ? roleConfiguredSkillCount > 0
+                ? `${roleConfiguredSkillCount} 项岗位配置 · 共启用 ${skills.length} 项`
+                : `已启用 ${skills.length} 项`
+              : "暂无已启用技能"}</span>
+          </div>
+        </div>
+        {orderedSkills.length > 0 ? (
+          <div className="role-task-launchpad__skill-list">
+            {orderedSkills.map((skill) => {
+              const selected = selectedSkillIds.includes(skill.id);
+              const roleConfigured = isRoleConfiguredSkill(skill);
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  className="role-task-launchpad__skill"
+                  data-skill-id={skill.id}
+                  data-role-configured={roleConfigured ? "true" : "false"}
+                  data-selected={selected ? "true" : "false"}
+                  aria-pressed={selected}
+                  title={roleConfigured ? `岗位配置技能：${skill.desc || skill.label}` : skill.desc || skill.label}
+                  onClick={() => onSelectSkill(skill)}
+                >
+                  {roleConfigured
+                    ? <Star className="role-task-launchpad__skill-star" aria-label="岗位配置技能" />
+                    : <Puzzle aria-hidden="true" />}
+                  <strong>{localizedComposerSkillLabel(skill)}</strong>
+                  {selected ? <Check className="role-task-launchpad__skill-check" aria-hidden="true" /> : null}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
 
       <section className="role-task-launchpad__work" aria-labelledby="role-task-launchpad-title">
         <h2 id="role-task-launchpad-title">今天可以开始</h2>
@@ -138,38 +186,6 @@ export function RoleTaskLaunchpad({
             );
           })}
         </div>
-      </section>
-
-      <section className="role-task-launchpad__skills" aria-labelledby="role-skills-title">
-        <div className="role-task-launchpad__section-heading">
-          <div>
-            <h2 id="role-skills-title">岗位技能</h2>
-            <span>{skills.length > 0 ? `已启用 ${skills.length} 项` : "暂无已启用技能"}</span>
-          </div>
-        </div>
-        {skills.length > 0 ? (
-          <div className="role-task-launchpad__skill-list">
-            {skills.map((skill) => {
-              const selected = selectedSkillIds.includes(skill.id);
-              return (
-                <button
-                  key={skill.id}
-                  type="button"
-                  className="role-task-launchpad__skill"
-                  data-skill-id={skill.id}
-                  data-selected={selected ? "true" : "false"}
-                  aria-pressed={selected}
-                  title={skill.desc || skill.label}
-                  onClick={() => onSelectSkill(skill)}
-                >
-                  <Puzzle aria-hidden="true" />
-                  <strong>{localizedComposerSkillLabel(skill)}</strong>
-                  {selected ? <Check className="role-task-launchpad__skill-check" aria-hidden="true" /> : null}
-                </button>
-              );
-            })}
-          </div>
-        ) : null}
       </section>
 
       {enterpriseTools.length > 0 ? (
