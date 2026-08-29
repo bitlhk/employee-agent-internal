@@ -41,6 +41,7 @@ import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/Monitor
 import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
 import { EnterpriseAssetsPanel } from "@/components/admin/EnterpriseAssetsPanel";
 import { SecurityAssurancePanel } from "@/components/admin/SecurityAssurancePanel";
+import { SkillValueEvaluationDialog } from "@/components/admin/SkillValueEvaluationDialog";
 import { uploadSystemSkillPackage } from "@/lib/skill-market-release";
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
@@ -458,6 +459,7 @@ export default function ClawAdmin() {
   const [activeTab, setActiveTab] = useState("instances");
   const [keyword, setKeyword] = useState("");
   const [viewingSkillId, setViewingSkillId] = useState<number | null>(null);
+  const [skillValueEvaluationTarget, setSkillValueEvaluationTarget] = useState<{ skillId: string; name: string } | null>(null);
   const [aiReviewing, setAiReviewing] = useState(false);
   const [skillUploading, setSkillUploading] = useState(false);
   const [aiReviewResult, setAiReviewResult] = useState<string | null>(null);
@@ -1301,6 +1303,9 @@ export default function ClawAdmin() {
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
+                            <Button size="sm" variant="outline" className="admin-secondary-action h-7 text-xs" onClick={() => setSkillValueEvaluationTarget({ skillId: item.skillId, name: item.name })}>
+                              <BarChart3 className="mr-1 h-3.5 w-3.5" />价值评测
+                            </Button>
                             <Button size="sm" variant="outline" className="admin-secondary-action h-7 text-xs" onClick={() => openGrantEditor("skill", item.skillId, item.name)}>
                               岗位授权
                             </Button>
@@ -1498,6 +1503,13 @@ export default function ClawAdmin() {
                 )}
               </Card>
             )}
+
+            <SkillValueEvaluationDialog
+              open={Boolean(skillValueEvaluationTarget)}
+              onOpenChange={(open) => { if (!open) setSkillValueEvaluationTarget(null); }}
+              skillId={skillValueEvaluationTarget?.skillId || null}
+              skillName={skillValueEvaluationTarget?.name || null}
+            />
           </TabsContent>
 
           <TabsContent value="collaboration" className="space-y-4">
