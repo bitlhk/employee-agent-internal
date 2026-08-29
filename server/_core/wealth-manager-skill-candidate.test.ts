@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildWealthSkill21CandidateComparisonPlan } from "./skill-quality-evaluation-candidate";
+import {
+  buildWealthSkill21CandidateComparisonPlan,
+  loadWealthSkill21CandidateComparison,
+} from "./skill-quality-evaluation-candidate";
 import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
 import { parseSkillSourceDirectory } from "./skills/skill-source";
 
@@ -12,6 +15,14 @@ const candidateRoot = path.resolve(
   "candidates",
   "wealth-manager-assistant",
   "2.1.0"
+);
+const hardenedCandidateRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "candidates",
+  "wealth-manager-assistant",
+  "2.1.1"
 );
 const productionRoot = path.resolve(
   process.cwd(),
@@ -206,5 +217,62 @@ describe("wealth manager assistant 2.1 candidate", () => {
       "without_target_skill",
       "previous_version",
     ]);
+  });
+
+  it("freezes 2.1.1 as a separate evidence-hardening candidate", () => {
+    const parsed = parseSkillSourceDirectory(
+      hardenedCandidateRoot,
+      "wealth-manager-assistant"
+    );
+    expect(parsed.manifest).toMatchObject({
+      version: "2.1.1",
+      status: "candidate",
+      source: {
+        originalAuthor: "李文华",
+        baseVersion: "2.1.0",
+        adaptation: "professional-evidence-hardening",
+      },
+    });
+    expect(parsed.warnings).toEqual([]);
+
+    const comparison = loadWealthSkill21CandidateComparison(
+      process.cwd(),
+      "wealth-manager-assistant-2.1.1"
+    );
+    expect(comparison.target).toMatchObject({
+      version: "2.1.1",
+      artifactSha256:
+        "a9a38f60c4ee9b9918350c1cb27548fcc860ec586969cf24db3644b0e100513b",
+    });
+    expect(comparison.previousVersion).toMatchObject({ version: "2.1.0" });
+  });
+
+  it("keeps raw business codes and unsupported numeric scenarios out of professional claims", () => {
+    const skill = readFileSync(
+      path.join(hardenedCandidateRoot, "SKILL.md"),
+      "utf8"
+    );
+    const previsit = readFileSync(
+      path.join(
+        hardenedCandidateRoot,
+        "references",
+        "previsit-and-discovery.md"
+      ),
+      "utf8"
+    );
+    const communication = readFileSync(
+      path.join(
+        hardenedCandidateRoot,
+        "references",
+        "communication-patterns.md"
+      ),
+      "utf8"
+    );
+    expect(skill).toContain("原始业务码不是自然语言结论");
+    expect(skill).toContain("具体含义待机构口径确认");
+    expect(skill).toContain("不自行选择 `3%`、`5%` 等场景");
+    expect(skill).toContain("当前来源在数据时点未返回相应记录");
+    expect(previsit).toContain("最大短期浮亏大约是多少");
+    expect(communication).not.toContain("短期下降 3%");
   });
 });

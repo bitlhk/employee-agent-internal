@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "ea.skill-quality-candidate-comparison.v1",
+  "comparisonId": "wealth-skill-2.1.1-candidate",
+  "comparisonFingerprint": "d43e222c8dc7330c58ebdf8cdd3edf7a81cd22a7c6bcaf1fe79face790015e44",
+  "status": "ready",
+  "baseSuitePath": "examples/skill-quality-evaluation-v1/suites/wealth-manager-assistant.v1.json",
+  "baseSuiteFingerprint": "5edfef1d7eb15026a5fbd9b4b3f6dadfe40192cad2afa5b32a8c7b6d3810dd6b",
+  "derivedSuiteId": "wealth-manager-assistant-quality-2.1.1-candidate-v1",
+  "derivedSuiteVersion": "1.1.2",
+  "domainReview": {
+    "reviewerId": "AI-WM-EXPERT-03",
+    "reviewerRole": "AI辅助财富管理专业与事实完整性评审",
+    "reviewedAt": "2026-08-29T16:30:00+08:00",
+    "reviewComment": "确认三项事实完整性修复可进入隔离三臂诊断与单 Adoption 内部试点；不代表人类专家签署或正式发布审批。",
+    "groundTruthVersion": "wm-skill-2.1.1-domain-review-v1",
+    "evidencePath": "docs/wealth-manager-skill-2.1.1-domain-review-v1.md",
+    "evidenceSha256": "6c05b6aed06de24a62f8b62fad47a077a855974378df28e7f6ad7ec0654f7b21"
+  },
+  "target": {
+    "skillId": "wealth-manager-assistant",
+    "skillVersionId": "candidate_wealth-manager-assistant_2.1.1_a9a38f60c4ee",
+    "version": "2.1.1",
+    "artifactSha256": "a9a38f60c4ee9b9918350c1cb27548fcc860ec586969cf24db3644b0e100513b",
+    "artifactSize": 35087,
+    "artifactRelativePath": "examples/skill-quality-evaluation-v1/candidates/wealth-manager-assistant/2.1.1",
+    "controlledReferencePathsByCase": {
+      "WM-SKILL-EVAL-001": ["references/previsit-and-discovery.md"],
+      "WM-SKILL-EVAL-002": ["references/portfolio-recommendation.md"],
+      "WM-SKILL-EVAL-003": [
+        "references/previsit-and-discovery.md",
+        "references/portfolio-recommendation.md"
+      ],
+      "WM-SKILL-EVAL-003B": ["references/portfolio-recommendation.md"],
+      "WM-SKILL-EVAL-004": ["references/previsit-and-discovery.md"],
+      "WM-SKILL-EVAL-005": [],
+      "WM-SKILL-EVAL-006": [
+        "references/portfolio-recommendation.md",
+        "references/communication-patterns.md"
+      ]
+    }
+  },
+  "previousVersion": {
+    "skillId": "wealth-manager-assistant",
+    "skillVersionId": "candidate_wealth-manager-assistant_2.1.0_d36ac98aa2a1",
+    "version": "2.1.0",
+    "artifactSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+    "artifactSize": 32996,
+    "artifactRelativePath": "examples/skill-quality-evaluation-v1/candidates/wealth-manager-assistant/2.1.0",
+    "controlledReferencePathsByCase": {
+      "WM-SKILL-EVAL-001": ["references/previsit-and-discovery.md"],
+      "WM-SKILL-EVAL-002": ["references/portfolio-recommendation.md"],
+      "WM-SKILL-EVAL-003": [
+        "references/previsit-and-discovery.md",
+        "references/portfolio-recommendation.md"
+      ],
+      "WM-SKILL-EVAL-003B": ["references/portfolio-recommendation.md"],
+      "WM-SKILL-EVAL-004": ["references/previsit-and-discovery.md"],
+      "WM-SKILL-EVAL-005": [],
+      "WM-SKILL-EVAL-006": [
+        "references/portfolio-recommendation.md",
+        "references/communication-patterns.md"
+      ]
+    }
+  },
+  "repeatCount": 3
+}

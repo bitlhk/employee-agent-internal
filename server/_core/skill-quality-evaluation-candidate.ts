@@ -19,8 +19,18 @@ import {
 import { skillEvalSuiteFingerprint } from "./skill-quality-evaluation";
 import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
 
-export const WEALTH_SKILL_2_1_COMPARISON_PATH =
-  "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.0.v1.json";
+export const WEALTH_SKILL_2_1_COMPARISON_PATHS = {
+  "wealth-manager-assistant-2.1.0":
+    "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.0.v1.json",
+  "wealth-manager-assistant-2.1.1":
+    "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.1.v1.json",
+} as const;
+
+export type WealthSkill21ComparisonName =
+  keyof typeof WEALTH_SKILL_2_1_COMPARISON_PATHS;
+
+const DEFAULT_WEALTH_SKILL_2_1_COMPARISON: WealthSkill21ComparisonName =
+  "wealth-manager-assistant-2.1.0";
 
 const safeRelativePathSchema = z
   .string()
@@ -173,10 +183,23 @@ function derivedSuite(input: {
 }
 
 export function loadWealthSkill21CandidateComparison(
-  root = process.cwd()
+  root = process.cwd(),
+  requestedComparison = String(
+    process.env.EA_SKILL_EVAL_CANDIDATE_COMPARISON ||
+      DEFAULT_WEALTH_SKILL_2_1_COMPARISON
+  ).trim()
 ): SkillQualityPhase1CandidateComparison & { repeatCount: number } {
+  if (!(requestedComparison in WEALTH_SKILL_2_1_COMPARISON_PATHS)) {
+    throw new Error(
+      `Unsupported Skill evaluation candidate comparison: ${requestedComparison}`
+    );
+  }
+  const comparisonPath =
+    WEALTH_SKILL_2_1_COMPARISON_PATHS[
+      requestedComparison as WealthSkill21ComparisonName
+    ];
   const config = candidateComparisonSchema.parse(
-    readJson(path.join(root, WEALTH_SKILL_2_1_COMPARISON_PATH))
+    readJson(path.join(root, comparisonPath))
   );
   const actualComparisonFingerprint = comparisonFingerprint(config);
   if (actualComparisonFingerprint !== config.comparisonFingerprint) {

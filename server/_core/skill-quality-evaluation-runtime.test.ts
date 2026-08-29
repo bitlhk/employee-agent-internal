@@ -105,6 +105,23 @@ describe("Skill Quality Phase 1B EA Runtime integration", () => {
     expect(profile.arms[2].expectedSkill).toMatchObject({ version: "2.0.2" });
   });
 
+  it("binds the hardened Runtime profile to 2.1.1 and its 2.1.0 baseline", () => {
+    const profile = buildSkillEvaluationRuntimeProfile({
+      env: {
+        ...process.env,
+        EA_SKILL_EVAL_CANDIDATE_COMPARISON:
+          "wealth-manager-assistant-2.1.1",
+        EA_SKILL_EVAL_RUNTIME_BASE_URL: "http://127.0.0.1:5199",
+      },
+    });
+    expect(profile.arms[0].expectedSkill).toMatchObject({
+      version: "2.1.1",
+      artifactSha256:
+        "a9a38f60c4ee9b9918350c1cb27548fcc860ec586969cf24db3644b0e100513b",
+    });
+    expect(profile.arms[2].expectedSkill).toMatchObject({ version: "2.1.0" });
+  });
+
   it("binds a native SSE turn to the expected Runtime Skill identity", async () => {
     process.env.INTERNAL_API_KEY = "runtime-test-key";
     const profile = buildSkillEvaluationRuntimeProfile({

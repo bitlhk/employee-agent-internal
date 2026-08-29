@@ -1,0 +1,15 @@
+{
+  "name": "wealth-manager-assistant",
+  "displayName": "客户经理财富助手",
+  "description": "在 EA Runtime 已完成授权、适当性和产品准入后，完成财富客户洞察、关键提问、组合推导、产品映射和客户沟通。",
+  "version": "2.1.1",
+  "status": "candidate",
+  "source": {
+    "originalAuthor": "李文华",
+    "baseVersion": "2.1.0",
+    "baseRepository": "https://gitcode.com/customer_manager_assistant/skills/tree/master/skill",
+    "candidateMaintainer": "灵感岗位智能体团队",
+    "adaptation": "professional-evidence-hardening",
+    "domainReview": "ai_assisted_confirmed"
+  }
+}

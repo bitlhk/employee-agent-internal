@@ -93,13 +93,9 @@ export function resolveSkillEvaluationRuntimeArtifactSet(input: {
     env.EA_SKILL_EVAL_CANDIDATE_COMPARISON || ""
   ).trim();
   if (requestedComparison) {
-    if (requestedComparison !== "wealth-manager-assistant-2.1.0") {
-      throw new Error(
-        `Unsupported Skill evaluation candidate comparison: ${requestedComparison}`
-      );
-    }
     const comparison = loadWealthSkill21CandidateComparison(
-      input.root || process.cwd()
+      input.root || process.cwd(),
+      requestedComparison
     );
     const smokeCase = comparison.suite.cases.find(
       item => item.caseId === "WM-SKILL-EVAL-001"
