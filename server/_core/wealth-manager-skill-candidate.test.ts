@@ -24,6 +24,14 @@ const hardenedCandidateRoot = path.resolve(
   "wealth-manager-assistant",
   "2.1.1"
 );
+const runtimeHardenedCandidateRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "candidates",
+  "wealth-manager-assistant",
+  "2.1.2"
+);
 const productionRoot = path.resolve(
   process.cwd(),
   "examples",
@@ -274,5 +282,62 @@ describe("wealth manager assistant 2.1 candidate", () => {
     expect(skill).toContain("当前来源在数据时点未返回相应记录");
     expect(previsit).toContain("最大短期浮亏大约是多少");
     expect(communication).not.toContain("短期下降 3%");
+  });
+
+  it("freezes 2.1.2 as a runtime-injection hardening candidate", () => {
+    const parsed = parseSkillSourceDirectory(
+      runtimeHardenedCandidateRoot,
+      "wealth-manager-assistant"
+    );
+    expect(parsed.manifest).toMatchObject({
+      version: "2.1.2",
+      status: "candidate",
+      source: {
+        originalAuthor: "李文华",
+        baseVersion: "2.1.1",
+        adaptation: "runtime-injection-hardening",
+      },
+    });
+    expect(parsed.warnings).toEqual([]);
+
+    const comparison = loadWealthSkill21CandidateComparison(
+      process.cwd(),
+      "wealth-manager-assistant-2.1.2"
+    );
+    expect(comparison.target).toMatchObject({
+      version: "2.1.2",
+      artifactSha256:
+        "b669dd2ad7e6f95a1b0945d2c43302f1d307d7b1d8c8b463424fbcd2fba2f606",
+    });
+    expect(comparison.previousVersion).toMatchObject({
+      version: "2.1.1",
+      artifactSha256:
+        "a9a38f60c4ee9b9918350c1cb27548fcc860ec586969cf24db3644b0e100513b",
+    });
+  });
+
+  it("places the runtime fact rules inside the complete injected entrypoint", () => {
+    const skill = readFileSync(
+      path.join(runtimeHardenedCandidateRoot, "SKILL.md"),
+      "utf8"
+    );
+    const hardRules = skill.indexOf("## 事实表达硬规则");
+    const references = skill.indexOf("## 参考资料按需读取");
+    expect(skill.length).toBeLessThan(8_000);
+    expect(hardRules).toBeGreaterThanOrEqual(0);
+    expect(hardRules).toBeLessThan(1_000);
+    expect(references).toBeGreaterThan(hardRules);
+    expect(skill.slice(hardRules, references)).toContain(
+      "不得把 `C4` 写成“进取型”"
+    );
+    expect(skill.slice(hardRules, references)).toContain(
+      "不得把层级 `2` 写成“2级”“2星”"
+    );
+    expect(skill.slice(hardRules, references)).toContain(
+      "不得自行补 `3%`、`1-3年`、`24小时`、`3个工作日`"
+    );
+    expect(skill.slice(hardRules, references)).toContain(
+      "用户未明确要求下载文件时，直接在对话中输出"
+    );
   });
 });

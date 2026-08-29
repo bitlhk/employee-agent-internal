@@ -24,6 +24,8 @@ export const WEALTH_SKILL_2_1_COMPARISON_PATHS = {
     "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.0.v1.json",
   "wealth-manager-assistant-2.1.1":
     "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.1.v1.json",
+  "wealth-manager-assistant-2.1.2":
+    "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.2.v1.json",
 } as const;
 
 export type WealthSkill21ComparisonName =
