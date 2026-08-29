@@ -486,6 +486,25 @@ function NewEvaluationWorkbench({
         </div>
       </section>
 
+      <section className="border border-gray-200 bg-white px-4 py-3">
+        <div className="text-[11px] font-medium text-gray-500">本轮怎么测</div>
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-gray-700">
+          {[
+            ["Agent Skills", "读取 SKILL.md 与引用"],
+            ["AI 组题", "标准题 + 变化题"],
+            ["Promptfoo", "同题左右对照"],
+            ["EA Runtime", "真实模型与工具链"],
+            ["专业 Judge", "匿名业务四维评审"],
+          ].map(([label, description], index) => (
+            <div key={label} className="flex items-center gap-2">
+              {index > 0 ? <ArrowRight className="h-3.5 w-3.5 text-gray-300" /> : null}
+              <span className="font-semibold text-gray-900">{label}</span>
+              <span className="text-gray-500">{description}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <ComparisonSide
           label="A"
