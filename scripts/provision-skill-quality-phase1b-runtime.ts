@@ -9,9 +9,9 @@ import { createUser, getUserByEmail } from "../server/db/users";
 import { resolveRuntimeWorkspaceByIds } from "../server/_core/helpers";
 import {
   buildSkillEvaluationRuntimeProfile,
+  resolveSkillEvaluationRuntimeArtifactSet,
   skillEvaluationAgentId,
 } from "../server/_core/skill-quality-evaluation-runtime";
-import { loadSkillQualityPilotContracts } from "../server/_core/skill-quality-evaluation-contracts";
 import { roleSkillPreferences } from "../server/_core/skills/role-skill-preferences";
 import { skillInstaller } from "../server/_core/skills/skill-installer";
 import { skillRegistry } from "../server/_core/skills/skill-registry";
@@ -35,9 +35,7 @@ function assertIntentionalLocalProvision(): void {
 async function main(): Promise<void> {
   assertIntentionalLocalProvision();
   const profile = buildSkillEvaluationRuntimeProfile();
-  const contracts = loadSkillQualityPilotContracts({
-    skillId: "wealth-manager-assistant",
-  });
+  const artifacts = resolveSkillEvaluationRuntimeArtifactSet();
   const email = "skill-quality-eval@local.linggan.invalid";
   let user = await getUserByEmail(email);
   if (!user) {
@@ -53,7 +51,10 @@ async function main(): Promise<void> {
     if (!user || user.id !== userId) throw new Error("Failed to reload evaluation user");
   }
   const inventory = new Map(
-    contracts.inventory.records.map(record => [record.skillVersionId, record])
+    [artifacts.target, artifacts.previousVersion].map(record => [
+      record.skillVersionId,
+      record,
+    ])
   );
   const results = [];
   for (const arm of profile.arms) {
@@ -100,15 +101,15 @@ async function main(): Promise<void> {
     if (!arm.expectedSkill) {
       roleSkillPreferences.setDefaultSkillEnabled(
         arm.adoptionId,
-        contracts.pilot.skillId,
+        artifacts.skillId,
         false
       );
-      await skillRegistry.uninstall(arm.adoptionId, contracts.pilot.skillId).catch(() => undefined);
+      await skillRegistry.uninstall(arm.adoptionId, artifacts.skillId).catch(() => undefined);
       await skillRegistry.refreshRuntimeProjection(arm.adoptionId);
       const runtimePath = path.join(
         resolveRuntimeWorkspaceByIds(arm.adoptionId, agentId),
         "skills",
-        contracts.pilot.skillId
+        artifacts.skillId
       );
       if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
       results.push({ executionArm: arm.executionArm, adoptionId: arm.adoptionId, skill: null });
@@ -116,17 +117,20 @@ async function main(): Promise<void> {
     }
     const record = inventory.get(arm.expectedSkill.skillVersionId);
     if (!record) throw new Error(`Inventory record ${arm.expectedSkill.skillVersionId} is missing`);
-    const sourcePath = path.join(contracts.skillStoreRoot, record.artifactRelativePath);
+    const sourcePath = path.join(
+      artifacts.skillStoreRoot,
+      record.artifactRelativePath
+    );
     roleSkillPreferences.setDefaultSkillEnabled(
       arm.adoptionId,
-      contracts.pilot.skillId,
+      artifacts.skillId,
       true
     );
     const installed = await skillRegistry.install(
       arm.adoptionId,
       {
         kind: "marketplace",
-        skillId: contracts.pilot.skillId,
+        skillId: artifacts.skillId,
         displayName: "客户经理财富助手",
         description: "Skill Quality isolated Runtime artifact",
         sourcePath,

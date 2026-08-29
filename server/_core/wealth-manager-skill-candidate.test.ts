@@ -1,0 +1,210 @@
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { buildWealthSkill21CandidateComparisonPlan } from "./skill-quality-evaluation-candidate";
+import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
+import { parseSkillSourceDirectory } from "./skills/skill-source";
+
+const candidateRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "candidates",
+  "wealth-manager-assistant",
+  "2.1.0"
+);
+const productionRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "wealth-manager-reference-role-pack",
+  "skills",
+  "wealth-manager-assistant"
+);
+const baselinePath = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "wealth-manager-assistant-2.1-candidate-baseline.v1.json"
+);
+
+describe("wealth manager assistant 2.1 candidate", () => {
+  it("is a separate parseable candidate for the existing Skill identity", () => {
+    const parsed = parseSkillSourceDirectory(
+      candidateRoot,
+      "wealth-manager-assistant"
+    );
+    expect(parsed.skillId).toBe("wealth-manager-assistant");
+    expect(parsed.manifest?.version).toBe("2.1.0");
+    expect(parsed.manifest?.status).toBe("candidate");
+    expect(parsed.manifest?.source).toMatchObject({
+      originalAuthor: "李文华",
+      baseVersion: "2.0.2",
+      candidateMaintainer: "灵感岗位智能体团队",
+      domainReview: "ai_assisted_confirmed",
+    });
+    expect(parsed.warnings).toEqual([]);
+  });
+
+  it("binds the candidate and professional-delta baseline to source digests", () => {
+    const baseline = JSON.parse(readFileSync(baselinePath, "utf8")) as {
+      status: string;
+      candidate: {
+        sourceTreeSha256: string;
+        sourceTreeSize: number;
+        published: boolean;
+        deployed: boolean;
+      };
+      comparisonBaselines: { professionalDelta: { sourceTreeSha256: string } };
+      promotionBoundary: {
+        mayPublish: boolean;
+        mayDeploy: boolean;
+        internalPilot: {
+          status: string;
+          maxAdoptionsPerEnvironment: number;
+          roleDefaultReleaseAllowed: boolean;
+          marketQualityBadgeAllowed: boolean;
+          formalScoreAvailable: boolean;
+          rollbackVersion: string;
+          requiredCandidateSha256: string;
+        };
+      };
+    };
+    const candidateDigest = digestSkillSourceTree(candidateRoot);
+    const productionDigest = digestSkillSourceTree(productionRoot);
+    expect(baseline.status).toBe(
+      "controlled_harness_runtime_ai_expert_and_judge_holdout_passed_human_review_pending"
+    );
+    expect(baseline.candidate).toMatchObject({
+      sourceTreeSha256: candidateDigest.sha256,
+      sourceTreeSize: candidateDigest.size,
+      published: false,
+      deployed: false,
+    });
+    expect(
+      baseline.comparisonBaselines.professionalDelta.sourceTreeSha256
+    ).toBe(productionDigest.sha256);
+    expect(baseline.promotionBoundary).toMatchObject({
+      mayPublish: false,
+      mayDeploy: false,
+      internalPilot: {
+        status: "APPROVED_FOR_SINGLE_ADOPTION_PILOT",
+        maxAdoptionsPerEnvironment: 1,
+        roleDefaultReleaseAllowed: false,
+        marketQualityBadgeAllowed: false,
+        formalScoreAvailable: false,
+        rollbackVersion: "2.0.2",
+        requiredCandidateSha256: candidateDigest.sha256,
+      },
+    });
+  });
+
+  it("keeps the default entrypoint smaller than the current reference Skill", () => {
+    const candidate = readFileSync(
+      path.join(candidateRoot, "SKILL.md"),
+      "utf8"
+    );
+    const production = readFileSync(
+      path.join(productionRoot, "SKILL.md"),
+      "utf8"
+    );
+    expect(Buffer.byteLength(candidate)).toBeLessThan(
+      Buffer.byteLength(production)
+    );
+    expect(candidate.split(/\r?\n/u).length).toBeLessThan(220);
+    expect(candidate).toContain("EA Runtime 决定能不能做");
+    expect(candidate).toContain("先组合、后产品");
+    expect(candidate).toContain("首轮最多提出三个");
+    expect(candidate).toContain("不为凑格式强制两套方案");
+  });
+
+  it("uses canonical customer tools and the governed recommendation contract", () => {
+    const skill = readFileSync(path.join(candidateRoot, "SKILL.md"), "utf8");
+    expect(skill).toContain("`search_customers`");
+    expect(skill).toContain("`get_customer_profile`");
+    expect(skill).toContain("`get_customer_portfolio`");
+    expect(skill).toContain("`prepare_wealth_allocation_context`");
+    expect(skill).toContain("`wealth_assistant_product_search`");
+    expect(skill).toContain("`wealth_assistant_product_info`");
+    expect(skill).toContain("正式推荐只能使用 `eligibleProducts`");
+    expect(skill).toContain("可以解释 `excludedProducts`");
+    expect(skill).toContain("应完成正式候选推荐");
+    expect(skill).toContain("只读结果，不生成确认卡");
+    expect(skill).not.toContain("wealth_assistant_customer_list");
+    expect(skill).not.toContain("wealth_assistant_customer_detail");
+  });
+
+  it("ships only the four frozen professional references", () => {
+    const references = readdirSync(path.join(candidateRoot, "references"))
+      .filter(file => file.endsWith(".md"))
+      .sort();
+    expect(references).toEqual([
+      "communication-patterns.md",
+      "expert-cases-v1.md",
+      "portfolio-recommendation.md",
+      "previsit-and-discovery.md",
+    ]);
+  });
+
+  it("covers insight, risk experience, complaint recovery and positive recommendation", () => {
+    const cases = readFileSync(
+      path.join(candidateRoot, "references", "expert-cases-v1.md"),
+      "utf8"
+    );
+    for (const caseId of [
+      "WM-PRE-001",
+      "WM-PRE-004",
+      "WM-COM-008",
+      "WM-REC-009",
+    ]) {
+      expect(cases).toContain(caseId);
+    }
+    expect(cases).toContain("将 323 天期限产品描述为高流动性资产");
+    expect(cases).toContain("先选择产品，再反向拼配置理由");
+  });
+
+  it("keeps locked products outside the liquidity floor", () => {
+    const recommendation = readFileSync(
+      path.join(candidateRoot, "references", "portfolio-recommendation.md"),
+      "utf8"
+    );
+    expect(recommendation).toContain("323` 天封闭产品应归入期限受限的稳健层");
+    expect(recommendation).toContain("必须使用这些事实形成两套金额闭合的方案");
+    expect(recommendation).toContain("必须形成正式候选");
+    expect(recommendation).toContain("正向推荐本身是只读分析");
+  });
+
+  it("does not duplicate platform authorization and transaction engines", () => {
+    const files = [
+      "SKILL.md",
+      ...readdirSync(path.join(candidateRoot, "references")).map(
+        file => `references/${file}`
+      ),
+    ];
+    const text = files
+      .map(file => readFileSync(path.join(candidateRoot, file), "utf8"))
+      .join("\n");
+    expect(text).not.toContain("allowedPurposes:");
+    expect(text).not.toContain("mappingRuleVersion:");
+    expect(text).not.toContain("calculatorRef:");
+    expect(text).not.toContain("hardGateFailures:");
+  });
+
+  it("freezes a repository-bound three-arm candidate comparison", () => {
+    const plan = buildWealthSkill21CandidateComparisonPlan();
+    expect(plan).toMatchObject({
+      status: "READY",
+      sourceIdentityMode: "candidate_repository",
+      targetVersion: "2.1.0",
+      previousVersion: "2.0.2",
+      cases: 7,
+      repeats: 3,
+      plannedRuns: 63,
+      nativeRuntimeIdentity: "UNVERIFIED",
+    });
+    expect(plan.arms).toEqual([
+      "target_skill",
+      "without_target_skill",
+      "previous_version",
+    ]);
+  });
+});

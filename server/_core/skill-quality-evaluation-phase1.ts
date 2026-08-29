@@ -21,6 +21,7 @@ import type {
   SkillEvaluationRunEvidenceV1,
   SkillEvaluationRunSnapshotV1,
   SkillEvalCaseV1,
+  SkillEvalSuiteV1,
 } from "../../shared/skill-quality-evaluation";
 import {
   skillEvaluationRunEvidenceV1Schema,
@@ -55,13 +56,15 @@ const PROMPTFOO_VERSION = "0.122.2";
 const EXECUTION_CONCURRENCY = 2;
 
 type Pilot = PilotManifest["pilots"][number];
-type VersionIdentity = {
+export type SkillQualityPhase1SourceArtifact = {
   skillId: string;
   skillVersionId: string;
   version: string;
   artifactSha256: string;
   artifactRelativePath: string;
+  controlledReferencePathsByCase?: Record<string, string[]>;
 };
+type VersionIdentity = SkillQualityPhase1SourceArtifact;
 type ArmDefinition = {
   executionArm: SkillEvaluationExecutionArm;
   baselineMode: SkillEvaluationBaselineMode | null;
@@ -98,6 +101,8 @@ export type SkillQualityPhase1Report = {
   targetHardGateStatus: "PASS" | "FAIL" | "UNVERIFIED";
   resultSemantics: "superseded_non_certifying";
   executionMode: "controlled_harness";
+  sourceIdentityMode: "approved_inventory" | "candidate_repository";
+  comparisonFingerprint: string | null;
   skillId: string;
   targetVersion: string;
   suiteId: string;
@@ -167,6 +172,15 @@ export type SkillQualityPhase1Report = {
   runEvidenceFingerprints: string[];
   warnings: string[];
   reportFingerprint: string;
+};
+
+export type SkillQualityPhase1CandidateComparison = {
+  comparisonId: string;
+  comparisonFingerprint: string;
+  suite: SkillEvalSuiteV1;
+  target: SkillQualityPhase1SourceArtifact;
+  previousVersion: SkillQualityPhase1SourceArtifact;
+  skillStoreRoot: string;
 };
 
 function percentile95(values: number[]): number {
@@ -254,6 +268,7 @@ function buildArmDefinitions(input: {
 function materializeWorkspace(input: {
   evaluationId: string;
   runId: string;
+  caseId: string;
   arm: ArmDefinition;
   target: VersionIdentity;
   skillStoreRoot: string;
@@ -285,7 +300,27 @@ function materializeWorkspace(input: {
       artifactSha256: digest.sha256,
     };
     actual.push(materialized);
-    skillText = readFileSync(path.join(destinationPath, "SKILL.md"), "utf8");
+    const instructionFiles = [
+      "SKILL.md",
+      ...(input.arm.version.controlledReferencePathsByCase?.[input.caseId] ||
+        []),
+    ];
+    skillText = instructionFiles
+      .map(relativePath => {
+        if (
+          path.isAbsolute(relativePath) ||
+          relativePath.split(/[\\/]+/u).includes("..")
+        ) {
+          throw new Error(
+            `controlled Skill reference escapes the artifact: ${relativePath}`
+          );
+        }
+        return [
+          `\n\n## Controlled reference: ${relativePath}\n`,
+          readFileSync(path.join(destinationPath, relativePath), "utf8"),
+        ].join("");
+      })
+      .join("");
   }
   const skillDirectories = readdirSync(skillsPath, {
     withFileTypes: true,
@@ -389,6 +424,10 @@ function snapshotFor(input: {
         maxTokens: 1_200,
         disableThinking: input.modelConfig.disableThinking,
         tokenParam: input.modelConfig.tokenParam,
+        thinkingControl:
+          input.modelConfig.thinkingControl || "chat_template_kwargs",
+        structuredOutputMode:
+          input.modelConfig.structuredOutputMode || "none",
         endpointFingerprint: modelEndpointFingerprint(input.modelConfig),
       },
     },
@@ -610,6 +649,7 @@ class WealthSkillQualityProvider implements ApiProvider {
     const workspace = materializeWorkspace({
       evaluationId: this.input.evaluationId,
       runId,
+      caseId,
       arm: this.input.arm,
       target: this.input.target,
       skillStoreRoot: this.input.contracts.skillStoreRoot,
@@ -749,8 +789,7 @@ class WealthSkillQualityProvider implements ApiProvider {
         failedModelOutput?.elapsedMs ||
         Math.max(0, Date.parse(completedAt) - Date.parse(startedAt)),
       tokenUsage: usageOf(
-        execution?.usage ||
-          (failedModelOutput ? [failedModelOutput.usage] : [])
+        execution?.usage || (failedModelOutput ? [failedModelOutput.usage] : [])
       ),
       error,
     };
@@ -793,10 +832,7 @@ function armSummary(
     run.assertions.filter(assertion => assertion.mode === "deterministic")
   );
   const hardGates = assertions.filter(assertion => assertion.hardGateId);
-  const hardGateRuns = new Map<
-    string,
-    SkillEvaluationAssertionResult[]
-  >();
+  const hardGateRuns = new Map<string, SkillEvaluationAssertionResult[]>();
   for (const run of selected) {
     for (const assertion of run.assertions) {
       if (!assertion.hardGateId) continue;
@@ -933,28 +969,79 @@ export async function runWealthSkillQualityPhase1(
     outputRoot?: string;
     modelConfig?: EaAssistantModelConfig;
     onProgress?: (completed: number, total: number) => void;
+    candidateComparison?: SkillQualityPhase1CandidateComparison;
   } = {}
 ): Promise<{ report: SkillQualityPhase1Report; outputRoot: string }> {
   const root = input.root || process.cwd();
-  const contracts = loadSkillQualityPilotContracts({
+  const baseContracts = loadSkillQualityPilotContracts({
     root,
     skillId: "wealth-manager-assistant",
     skillStoreRoot: input.skillStoreRoot,
   });
+  const contracts = input.candidateComparison
+    ? {
+        ...baseContracts,
+        suite: input.candidateComparison.suite,
+        pilot: {
+          ...baseContracts.pilot,
+          suitePath: `repository-candidate://${input.candidateComparison.comparisonId}`,
+          target: {
+            skillVersionId: input.candidateComparison.target.skillVersionId,
+            version: input.candidateComparison.target.version,
+            artifactSha256: input.candidateComparison.target.artifactSha256,
+          },
+          baselines: [
+            {
+              mode: "without_target_skill" as const,
+              skillVersionId: null,
+              version: null,
+              artifactSha256: null,
+            },
+            {
+              mode: "previous_version" as const,
+              skillVersionId:
+                input.candidateComparison.previousVersion.skillVersionId,
+              version: input.candidateComparison.previousVersion.version,
+              artifactSha256:
+                input.candidateComparison.previousVersion.artifactSha256,
+            },
+          ],
+        },
+        skillStoreRoot: input.candidateComparison.skillStoreRoot,
+      }
+    : baseContracts;
   const modelConfig = input.modelConfig || getEaAssistantModelConfig();
   if (!modelConfig.apiKey)
     throw new Error("EA assistant model API key is unavailable");
-  const arms = buildArmDefinitions({
-    pilot: contracts.pilot,
-    inventory: contracts.inventory,
-  });
+  const arms = input.candidateComparison
+    ? [
+        {
+          executionArm: "target_skill" as const,
+          baselineMode: null,
+          version: input.candidateComparison.target,
+        },
+        {
+          executionArm: "without_target_skill" as const,
+          baselineMode: "without_target_skill" as const,
+          version: null,
+        },
+        {
+          executionArm: "previous_version" as const,
+          baselineMode: "previous_version" as const,
+          version: input.candidateComparison.previousVersion,
+        },
+      ]
+    : buildArmDefinitions({
+        pilot: contracts.pilot,
+        inventory: contracts.inventory,
+      });
   const target = arms.find(arm => arm.executionArm === "target_skill")?.version;
   if (!target) throw new Error("Target Skill artifact is unavailable");
   const repeats = Math.max(
     contracts.scorecard.repeatPolicy.minimumRuns,
     ...contracts.suite.cases.map(item => item.minimumRuns)
   );
-  const evaluationId = `wealth-skill-v1-${new Date().toISOString().replace(/[-:.]/gu, "")}`;
+  const evaluationId = `${input.candidateComparison?.comparisonId || "wealth-skill-v1"}-${new Date().toISOString().replace(/[-:.]/gu, "")}`;
   const outputRoot =
     input.outputRoot ||
     path.join(root, "reports", "skill-quality-evaluation", evaluationId);
@@ -1065,6 +1152,11 @@ export async function runWealthSkillQualityPhase1(
           : ("PASS" as const),
     resultSemantics: "superseded_non_certifying" as const,
     executionMode: "controlled_harness" as const,
+    sourceIdentityMode: input.candidateComparison
+      ? ("candidate_repository" as const)
+      : ("approved_inventory" as const),
+    comparisonFingerprint:
+      input.candidateComparison?.comparisonFingerprint || null,
     skillId: contracts.pilot.skillId,
     targetVersion: contracts.pilot.target.version,
     suiteId: contracts.suite.suiteId,
@@ -1116,6 +1208,11 @@ export async function runWealthSkillQualityPhase1(
         : ["Judge Profile is unavailable; subjective metrics are unavailable"]),
       "Synthetic fixture events are used; this run does not certify native EA tool execution or live MCP availability",
       "Harness Artifact Identity does not establish SKILL_RUNTIME_IDENTITY",
+      ...(input.candidateComparison
+        ? [
+            "Candidate and baseline identities are verified repository source trees, not approved Skill inventory records",
+          ]
+        : []),
     ],
   };
   const report: SkillQualityPhase1Report = {

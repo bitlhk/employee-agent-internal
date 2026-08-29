@@ -6,9 +6,9 @@ import { governanceFingerprint } from "../server/_core/governance/contracts";
 import {
   buildSkillEvaluationRuntimeProfile,
   executeSkillEvaluationRuntimeTurn,
+  resolveSkillEvaluationRuntimeArtifactSet,
   verifySkillEvaluationRuntimeProfile,
 } from "../server/_core/skill-quality-evaluation-runtime";
-import { loadSkillQualityPilotContracts } from "../server/_core/skill-quality-evaluation-contracts";
 import type { SkillEvaluationExecutionArm } from "../shared/skill-quality-evaluation";
 
 const executionArms: SkillEvaluationExecutionArm[] = [
@@ -89,15 +89,9 @@ async function main(): Promise<void> {
   }
   const profile = buildSkillEvaluationRuntimeProfile();
   const profileVerification = await verifySkillEvaluationRuntimeProfile(profile);
-  const contracts = loadSkillQualityPilotContracts({
-    skillId: "wealth-manager-assistant",
-  });
+  const artifacts = resolveSkillEvaluationRuntimeArtifactSet();
   const runtimeTurns = [];
   if (profileVerification.status === "PASS" && executeSmoke) {
-    const smokeCase = contracts.suite.cases.find(
-      item => item.caseId === "WM-SKILL-EVAL-001"
-    );
-    if (!smokeCase) throw new Error("Read-only Runtime smoke case is missing");
     const selectedArms = smokeArm
       ? profile.arms.filter(arm => arm.executionArm === smokeArm)
       : profile.arms;
@@ -106,7 +100,7 @@ async function main(): Promise<void> {
         await executeSkillEvaluationRuntimeTurn({
           profile,
           arm,
-          message: smokeCase.prompt,
+          message: artifacts.smokePrompt,
         })
       );
     }
@@ -131,8 +125,10 @@ async function main(): Promise<void> {
     resultSemantics: "runtime_integration_non_certifying",
     profile,
     profileVerification,
-    suiteId: contracts.suite.suiteId,
-    suiteFingerprint: contracts.suite.suiteFingerprint,
+    sourceIdentityMode: artifacts.sourceIdentityMode,
+    comparisonFingerprint: artifacts.comparisonFingerprint,
+    suiteId: artifacts.suiteId,
+    suiteFingerprint: artifacts.suiteFingerprint,
     runtimeTurns,
   };
   const report = {

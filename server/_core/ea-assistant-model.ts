@@ -19,6 +19,8 @@ export type EaAssistantModelConfig = {
   timeoutMs: number;
   disableThinking: boolean;
   tokenParam: "max_completion_tokens" | "max_tokens";
+  thinkingControl?: "chat_template_kwargs" | "thinking";
+  structuredOutputMode?: "none" | "json_object" | "json_schema";
 };
 
 export type EaAssistantModelDraft = {
@@ -35,6 +37,16 @@ export type EaAssistantCallOptions = {
   maxTokens?: number;
   temperature?: number;
   timeoutMs?: number;
+  responseFormat?:
+    | { type: "json_object" }
+    | {
+        type: "json_schema";
+        json_schema: {
+          name: string;
+          strict?: boolean;
+          schema: Record<string, unknown>;
+        };
+      };
 };
 
 function stripQuotes(value: string) {
@@ -238,7 +250,14 @@ export async function callEaAssistantModelWithConfig(config: EaAssistantModelCon
     };
     body[config.tokenParam] = opts.maxTokens ?? 64;
     if (config.disableThinking) {
-      body.chat_template_kwargs = { thinking: false };
+      if (config.thinkingControl === "thinking") {
+        body.thinking = { type: "disabled" };
+      } else {
+        body.chat_template_kwargs = { thinking: false };
+      }
+    }
+    if (opts.responseFormat) {
+      body.response_format = opts.responseFormat;
     }
 
     const response = await fetch(config.baseUrl, {

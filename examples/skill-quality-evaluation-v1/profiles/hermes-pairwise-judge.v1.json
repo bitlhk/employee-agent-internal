@@ -1,17 +1,17 @@
 {
   "schemaVersion": "ea.skill-judge-profile.v1",
   "judgeProfileId": "hermes-skill-pairwise",
-  "profileVersion": "1.0.0",
-  "judgeProfileFingerprint": "7b25083ea2cc940312afc9252c2de0a8d268f96626cdcd1211c980f3df2c19a6",
+  "profileVersion": "1.1.1",
+  "judgeProfileFingerprint": "030605fe0078e7d3d1fe386afc773f47110aea440e405c3d31ba45f08dfe2162",
   "provider": null,
   "modelId": null,
   "modelVersion": null,
   "modelConfig": {},
-  "rubricVersion": "1.0.0",
+  "rubricVersion": "1.1.1",
   "rubric": [
     {
       "criterionId": "professional_fit",
-      "description": "输出是否符合目标岗位的专业表达、业务边界和工作方式。",
+      "description": "输出是否符合目标岗位的专业判断、业务边界和工作方式。优先评价是否从客户目标与约束形成判断；不得仅因产品代码、风险标签、到账属性或技术字段更多而加分，也不重新裁决已经由EA硬门禁验证通过的输出状态字段。不能把简单复述C/R标签或eligibleProducts来源当作比方案取舍解释更强的专业判断。",
       "weight": 25
     },
     {
@@ -21,12 +21,12 @@
     },
     {
       "criterionId": "business_completeness",
-      "description": "输出是否解决完整业务问题，而非只覆盖表面标题。",
+      "description": "输出是否解决完整业务问题，而非只覆盖表面标题。完整性取决于是否覆盖会改变业务决策的事实、约束、方案取舍和下一步，不等同于字段或产品属性数量更多。若适当性、eligibleProducts和来源完整性已由机器硬门禁验证，不因答案再次复述这些契约而额外加分。",
       "weight": 30
     },
     {
       "criterionId": "actionability",
-      "description": "建议或产物是否能够直接支持下一步岗位行动。",
+      "description": "建议或产物是否能够直接支持下一步岗位行动或客户作出真实选择。若存在导致方案不可执行的核心事实、期限、流动性、适当性或产品可用性错误，该回答本维度不得高于1分；若两份方案都正确，应进一步评价哪一份更清楚解释方案取舍、风险感受和客户决策条件，不能只因金额或产品属性更具体而加分。",
       "weight": 20
     }
   ],
@@ -35,10 +35,10 @@
   "repeatPolicy": { "minimumVotes": 2, "reverseOrder": true },
   "disagreementThreshold": 0.25,
   "expertCalibration": {
-    "status": "unavailable",
-    "datasetId": null,
-    "calibrationFingerprint": null
+    "status": "pending",
+    "datasetId": "wealth-manager-assistant-2.1-expert-calibration-v2",
+    "calibrationFingerprint": "b0dc7ea1e8f47d47e22ef2e87c1c842b6a6a64278ae63595dad01064f1aa2b5a"
   },
   "approvedDataClassifications": ["public", "internal_demo", "desensitized"],
-  "status": "unavailable"
+  "status": "draft"
 }

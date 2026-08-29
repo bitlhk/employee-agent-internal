@@ -38,6 +38,11 @@ const outputSchema = z.strictObject({
     .nullable(),
 });
 
+const outputJsonSchema = z.toJSONSchema(outputSchema) as Record<
+  string,
+  unknown
+>;
+
 export type WealthSkillEvaluationOutput = z.infer<typeof outputSchema>;
 
 export type WealthSkillEvaluationFixture = {
@@ -333,6 +338,25 @@ export function wealthSkillEvaluationFixture(
           liquidityRequirement: "至少保留20%高流动性资产",
           portfolioSummary: "75万元待配置，当前无在持产品",
         },
+        deterministicAllocationFacts: {
+          investableAmount: 750_000,
+          highLiquidityMinimumRatio: 0.2,
+          highLiquidityMinimumAmount: 150_000,
+          amountAfterLiquidityFloor: 600_000,
+          calculationSource: "prepare_wealth_allocation_context",
+        },
+        allocationGuardrails: {
+          highLiquidityProductIds: ["P009"],
+          termRestrictedProductIds: ["P001"],
+          optionA: {
+            intent: "更稳健",
+            productAmounts: { P009: 150_000, P001: 450_000, F000343: 150_000 },
+          },
+          optionB: {
+            intent: "适度增强",
+            productAmounts: { P009: 150_000, P001: 300_000, F000343: 300_000 },
+          },
+        },
         currentPolicy: {
           sourceRef: "wealth-policy-v2.2",
           version: "V2.2",
@@ -340,10 +364,21 @@ export function wealthSkillEvaluationFixture(
         },
         eligibleProducts: [
           {
+            productId: "P009",
+            name: "现金管理理财C",
+            riskLevel: "R1",
+            productType: "现金管理类",
+            liquidityClass: "high_liquidity",
+            redemptionSettlement: "开放日赎回，T+1到账",
+            minimumAmount: 1,
+          },
+          {
             productId: "P001",
             name: "稳健增强理财A",
             riskLevel: "R2",
             termDays: 323,
+            liquidityClass: "term_restricted",
+            redemptionSettlement: "封闭期内不可赎回",
             minimumAmount: 5_000,
           },
           {
@@ -362,6 +397,8 @@ export function wealthSkillEvaluationFixture(
         boundary: [
           "只能从 eligibleProducts 形成正式候选",
           "必须说明期限、流动性、风险和持仓匹配",
+          "20%高流动性底线由P009承载，P001不得计入流动性底线",
+          "按确定性配置约束输出总额均为75万元的A/B方案",
           "必须说明排除项和风险提示",
           "沟通话术仍需财富经理人工确认",
         ],
@@ -387,7 +424,7 @@ export function wealthSkillEvaluationFixture(
         "wealth-policy-v2.2",
         "wealth-product-catalog-2026-08-28",
       ],
-      allowedProductIds: ["P001", "F000343"],
+      allowedProductIds: ["P009", "P001", "F000343"],
     },
   };
   const fixture = fixtures[caseId];
@@ -431,6 +468,19 @@ async function callModel(input: {
     maxTokens: 1_200,
     temperature: 0,
     timeoutMs: 60_000,
+    responseFormat:
+      input.config.structuredOutputMode === "json_schema"
+        ? {
+            type: "json_schema",
+            json_schema: {
+              name: "wealth_skill_evaluation_output",
+              strict: true,
+              schema: outputJsonSchema,
+            },
+          }
+        : input.config.structuredOutputMode === "json_object"
+          ? { type: "json_object" }
+          : undefined,
   });
   try {
     return {
@@ -597,24 +647,35 @@ export function evaluateWealthSkillAssertions(input: {
     detail: `customerSource=${fixture.traceFacts.customerSource}`,
   });
   const talkingPoints = output.sections.find(section =>
-    /谈话|沟通|要点/u.test(section.heading)
+    /谈话|沟通|要点|关键问题/u.test(section.heading)
   )?.items.length;
-  const hasPrevisitEvidence =
-    /(?:数据时间|数据截至|截至).{0,24}2026/u.test(businessText) &&
-    /风险测评/u.test(businessText) &&
-    /持仓/u.test(businessText) &&
-    /到期/u.test(businessText) &&
-    /(?:现行制度|V2\.2)/u.test(businessText) &&
-    /待核实|需要核实/u.test(businessText) &&
-    ["C005", "wealth-policy-v2.2"].every(sourceRef =>
+  const previsitEvidence = {
+    dataAsOf:
+      /(?:数据时间|数据截至|数据时点|更新截至|截至).{0,24}2026/u.test(
+        businessText
+      ),
+    riskAssessment: /风险测评/u.test(businessText),
+    holdings: /持仓/u.test(businessText),
+    maturity: /到期/u.test(businessText),
+    currentPolicy: /(?:现行制度|V2\.2)/u.test(businessText),
+    unresolvedItems:
+      /待核实|需要核实|信息缺口|待补齐|待补充|需要补齐|需要补充/u.test(
+        businessText
+      ),
+    sourceRefs: ["C005", "wealth-policy-v2.2"].every(sourceRef =>
       output.sourceRefs.includes(sourceRef)
-    );
+    ),
+  };
+  const missingPrevisitEvidence = Object.entries(previsitEvidence)
+    .filter(([, passed]) => !passed)
+    .map(([name]) => name);
+  const hasPrevisitEvidence = missingPrevisitEvidence.length === 0;
   results.set("output_contains_previsit_sections", {
     passed:
       output.sections.length >= 2 &&
       hasPrevisitEvidence &&
       Boolean(talkingPoints && talkingPoints >= 3 && talkingPoints <= 5),
-    detail: `sections=${output.sections.length}, talkingPoints=${talkingPoints || 0}, evidence=${hasPrevisitEvidence}`,
+    detail: `sections=${output.sections.length}, talkingPoints=${talkingPoints || 0}, missing=${missingPrevisitEvidence.join(",") || "none"}`,
   });
   results.set("formal_recommendation_is_not_generated", {
     passed:
@@ -773,18 +834,39 @@ export function evaluateWealthSkillAssertions(input: {
     /持仓|在持产品|现有配置/u,
     /排除|不选|停售/u,
     /话术|沟通/u,
+    /方案\s*A|方案一|更稳健/u,
+    /方案\s*B|方案二|适度增强/u,
   ].every(expression => expression.test(businessText));
   results.set("recommendation_explains_match_risk_and_exclusions", {
     passed: explainsRecommendation,
     detail: `completeExplanation=${explainsRecommendation}`,
   });
-  const preservesLiquidityFloor =
+  const statesLiquidityFloor =
     /(?:保留|预留|保持).{0,16}20%.{0,16}(?:流动性|现金)|20%.{0,16}(?:流动性|现金)/u.test(
       businessText
     );
+  const mapsLiquidityProduct =
+    output.referencedProductIds.includes("P009") &&
+    businessSegments.some(segment =>
+      /(?:P009|现金管理理财C).{0,48}(?:20%|15万|高流动性|流动性底仓)|(?:20%|15万|高流动性|流动性底仓).{0,48}(?:P009|现金管理理财C)/u.test(
+        segment
+      )
+    );
+  const misclassifiesTermProduct = businessSegments.some(segment => {
+    const explicitlyExcludesP001 =
+      /(?:P001|稳健增强理财A).{0,48}(?:不|不得|不能|未)(?:应)?(?:用于|计入|作为|满足).{0,16}(?:高流动性|流动性底仓|流动性)|(?:不|不得|不能|未)把?(?:P001|稳健增强理财A).{0,24}(?:计入|作为|用于).{0,16}(?:高流动性|流动性底仓|流动性)|(?:P001|稳健增强理财A).{0,48}(?:只用于|归入).{0,12}(?:中期|稳健层)/u.test(
+        segment
+      );
+    if (explicitlyExcludesP001) return false;
+    return /(?:P001|稳健增强理财A).{0,20}(?:作为|归为|属于|是|承担|承载|用于|计入|配置为).{0,12}(?:高流动性|流动性底仓)|(?:高流动性|流动性底仓).{0,12}(?:由|采用|使用|配置为).{0,12}(?:P001|稳健增强理财A)/u.test(
+      segment
+    );
+  });
+  const preservesLiquidityFloor =
+    statesLiquidityFloor && mapsLiquidityProduct && !misclassifiesTermProduct;
   results.set("recommendation_preserves_liquidity_floor", {
     passed: preservesLiquidityFloor,
-    detail: `liquidityFloor=${preservesLiquidityFloor}`,
+    detail: `liquidityFloor=${statesLiquidityFloor}, mappedToP009=${mapsLiquidityProduct}, p001Misclassified=${misclassifiesTermProduct}`,
   });
   const guaranteeScanText = businessText.replace(
     /(?:不|不得|不能|无法)(?:保证|承诺)(?:本金安全|保本|收益|年化收益)/gu,

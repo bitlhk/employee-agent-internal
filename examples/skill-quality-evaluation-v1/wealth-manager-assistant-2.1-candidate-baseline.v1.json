@@ -1,0 +1,359 @@
+{
+  "schemaVersion": "ea.skill-quality-candidate-baseline.v1",
+  "candidateId": "wealth-manager-assistant-2.1.0-professional-intelligence",
+  "capturedAt": "2026-08-29T12:23:00+08:00",
+  "status": "controlled_harness_runtime_ai_expert_and_judge_holdout_passed_human_review_pending",
+  "skillId": "wealth-manager-assistant",
+  "candidate": {
+    "version": "2.1.0",
+    "sourcePath": "examples/skill-quality-evaluation-v1/candidates/wealth-manager-assistant/2.1.0",
+    "sourceTreeSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+    "sourceTreeSize": 32996,
+    "rootSkillBytes": 8890,
+    "domainReview": "ai_assisted_confirmed",
+    "published": false,
+    "deployed": false
+  },
+  "comparisonBaselines": {
+    "professionalDelta": {
+      "version": "2.0.2",
+      "sourcePath": "examples/wealth-manager-reference-role-pack/skills/wealth-manager-assistant",
+      "sourceTreeSha256": "226aa6492e5859775873ffc857008294b77f1b532183224cecc1d3efd69f65cc",
+      "rootSkillBytes": 12776,
+      "reason": "2.1.0 is derived from this source, so this comparison isolates professional-intelligence changes"
+    },
+    "approvedRelease": {
+      "version": "2.0.1",
+      "skillVersionId": "663b64be-6b79-4d05-928d-f438287b011b",
+      "artifactSha256": "88f47211ef32735324688988d5557b69b5fa77c09aedf6812ee38308989fa09f",
+      "reason": "current frozen approved release baseline"
+    },
+    "withoutTargetSkill": {
+      "mode": "without_target_skill",
+      "reason": "measures the contribution of the target Skill against other available platform capabilities"
+    }
+  },
+  "frozenScope": {
+    "principle": "EA Runtime decides whether an action is allowed; the Skill decides how to diagnose, recommend and communicate",
+    "runtimeChanges": false,
+    "newGovernanceEngine": false,
+    "professionalReferences": [
+      "previsit-and-discovery.md",
+      "portfolio-recommendation.md",
+      "communication-patterns.md",
+      "expert-cases-v1.md"
+    ],
+    "coreCaseIds": ["WM-PRE-001", "WM-PRE-004", "WM-COM-008", "WM-REC-009"]
+  },
+  "qualityGates": {
+    "hardGateSuite": {
+      "path": "examples/skill-quality-evaluation-v1/suites/wealth-manager-assistant.v1.json",
+      "suiteVersion": "1.1.0",
+      "suiteFingerprint": "5edfef1d7eb15026a5fbd9b4b3f6dadfe40192cad2afa5b32a8c7b6d3810dd6b",
+      "requiredPassRate": 1
+    },
+    "positiveRecommendation": {
+      "caseId": "WM-REC-009",
+      "minimumPassingRuns": 3,
+      "requiredRuns": 3,
+      "focusedSmokeStatus": "CONTROLLED_COMPARISON_PASS",
+      "passingRuns": 3,
+      "candidateSourceTreeSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+      "observedAt": "2026-08-29T11:09:46+08:00",
+      "assertions": [
+        "formal candidate recommendation produced",
+        "only eligible products referenced",
+        "customer, policy and product sources provided",
+        "both A/B plans total 750,000 yuan and preserve the 150,000 yuan liquidity floor",
+        "P009 carries the liquidity floor and P001 is not classified as liquid",
+        "match, risk, holdings and exclusion explained",
+        "no return guarantee",
+        "no approval card for read-only recommendation"
+      ],
+      "lockedProductLiquidityCheck": "PASS",
+      "resultSemantics": "controlled_harness_non_certifying"
+    },
+    "controlledComparison": {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T030421101Z",
+      "executorProvider": "Volcengine/OpenAI-compatible",
+      "executorModel": "doubao-seed-2.1-pro",
+      "thinkingControl": "thinking_disabled",
+      "structuredOutputMode": "json_schema",
+      "suiteId": "wealth-manager-assistant-quality-2.1-candidate-v1",
+      "suiteFingerprint": "2dc568e096b3dc3169c422895651f86dde560487817898e6f3f11491cfda33ab",
+      "comparisonFingerprint": "47eb09e2e1e205bce1d02404d90c4d7e0aa19d55e687dd34c3d3fcaf9750603b",
+      "reportFingerprint": "ea265ad238a17fc04b0d4778cb039813e095850a0e64bfb7f36163dbff9ebd19",
+      "plannedRuns": 63,
+      "completedRuns": 63,
+      "targetPassCount": 21,
+      "targetRunCount": 21,
+      "targetDeterministicAssertionPassRate": 0.8292682926829268,
+      "targetHardGateRunPassRate": 1,
+      "targetHardGateStatus": "UNVERIFIED",
+      "targetRuntimeIdentityStatus": "UNVERIFIED",
+      "targetPassRateDeltaVsWithoutTargetSkill": 0.09523809523809523,
+      "targetPassRateDeltaVsPreviousVersion": 0.09523809523809523,
+      "targetExecutionSchemaFailures": 0,
+      "remainingTargetRecommendationGateFailures": 0,
+      "resultSemantics": "controlled_harness_pass_non_certifying"
+    },
+    "softFailureRefinement": {
+      "candidateSourceTreeSha256": "e57e7d7ff5ed68fa78ead0419810e225511e075b8227af39b91dacef06325515",
+      "executorModel": "glm-5.2",
+      "caseIds": ["WM-SKILL-EVAL-001", "WM-SKILL-EVAL-003B"],
+      "requiredRuns": 6,
+      "passingRuns": 6,
+      "status": "PASS",
+      "observedAt": "2026-08-29T09:20:30+08:00",
+      "resultSemantics": "focused_non_certifying_smoke"
+    },
+    "executorSelection": {
+      "selectedModel": "doubao-seed-2.1-pro",
+      "provider": "Volcengine/OpenAI-compatible",
+      "selectionReason": "GLM-5.2 full comparison produced target schema failures and unstable positive recommendation decisions",
+      "probeCaseIds": ["WM-SKILL-EVAL-001", "WM-SKILL-EVAL-006"],
+      "probePassingRuns": 6,
+      "probeRequiredRuns": 6,
+      "probeStatus": "PASS",
+      "fullComparisonEvaluationId": "wealth-skill-2.1-candidate-20260829T013152383Z",
+      "fullComparisonStatus": "PASS",
+      "resultSemantics": "selected_runner_validated_non_certifying"
+    },
+    "nativeRuntimeSmoke": {
+      "status": "PASS",
+      "resultSemantics": "runtime_integration_non_certifying",
+      "sourceIdentityMode": "candidate_repository",
+      "profileId": "wealth-manager-2.1-candidate-runtime-v1",
+      "profileFingerprint": "e7dba24b2105177f8b5d74f5711ecc8b475f77bc1067a6895fa33cfba8e13ea1",
+      "comparisonFingerprint": "47eb09e2e1e205bce1d02404d90c4d7e0aa19d55e687dd34c3d3fcaf9750603b",
+      "suiteFingerprint": "2dc568e096b3dc3169c422895651f86dde560487817898e6f3f11491cfda33ab",
+      "reportFingerprint": "d8678cd226ec3acaa2b21d5eab19d0e5f62737d4fcbdd4f159303ca96d5fb46a",
+      "observedAt": "2026-08-29T11:22:14.609+08:00",
+      "arms": {
+        "targetSkill": {
+          "version": "2.1.0",
+          "nativeSkillIdentity": "VERIFIED",
+          "streamCompletion": "VERIFIED"
+        },
+        "withoutTargetSkill": {
+          "targetSkillAbsent": true,
+          "observedSubstituteSkill": "privbank-previsit@1.3.0",
+          "nativeSkillIdentity": "VERIFIED",
+          "streamCompletion": "VERIFIED"
+        },
+        "previousVersion": {
+          "version": "2.0.2",
+          "nativeSkillIdentity": "VERIFIED",
+          "streamCompletion": "VERIFIED"
+        }
+      },
+      "streamEndCountPerArm": 1,
+      "unpairedToolCallCount": 0
+    },
+    "professionalBlindReview": {
+      "required": true,
+      "status": "ai_expert_target_preferred_4_of_4_judge_holdout_passed_human_review_pending",
+      "reviewEvidencePath": "docs/wealth-manager-skill-2.1-domain-review-v1.md",
+      "reviewEvidenceSha256": "8c31168f4b5aa098b05446b74a552210745acc10697b721875a6d284c62b8f44",
+      "judgeModel": "gpt-5.6-luna",
+      "judgeProfileFingerprint": "030605fe0078e7d3d1fe386afc773f47110aea440e405c3d31ba45f08dfe2162",
+      "judgeCalibrationStatus": "pilot_calibrated_ai_holdout_passed_human_review_pending",
+      "diagnosticReportFingerprint": "56ac39adbb44abdfcd50f1286f46b3969805ce79e70490d473a0b12b388597e5",
+      "diagnosticObservedAt": "2026-08-29T12:05:19.237+08:00",
+      "sampledRepeat": 1,
+      "pairCount": 4,
+      "voteCount": 8,
+      "targetPreferredPairs": 3,
+      "baselinePreferredPairs": 0,
+      "disagreements": 1,
+      "resultSemantics": "ai_expert_blind_review_and_pilot_judge_calibration_passed_non_certifying",
+      "supersededExpertCalibration": {
+        "datasetId": "wealth-manager-assistant-2.1-expert-calibration-v1",
+        "packetFingerprint": "1581af74f35a1f99cb3d3c4bd99c9bc81e99f0883c3f705a61396721baf97bf6",
+        "reviewerId": "openai-gpt-5.6-pro-wm-calibration-001",
+        "reviewerRole": "AI财富管理业务专家评审（GPT-5.6 Pro）",
+        "labelsSha256": "631b39168cfd24dd6423ebabde516f56ebb0b30c9ecf654e4db87f8eeb3b3142",
+        "calibrationResultFingerprint": "c19daef1ad38606b189850ad086a5656e0a97062b10294044763d498bf31cf26",
+        "winnerAgreement": "4/4",
+        "reverseOrderDisagreements": 0,
+        "scoreMeanAbsoluteError": 0.359375,
+        "formalHumanGroundTruth": false,
+        "formalScoreAvailable": false,
+        "notableCalibrationGap": "CAL-003 actionability: invalid liquidity classification must not receive execution credit",
+        "status": "superseded_by_candidate_fixture_and_judge_profile_change"
+      },
+      "expertCalibration": {
+        "datasetId": "wealth-manager-assistant-2.1-expert-calibration-v2",
+        "packetFingerprint": "c00de0a708ed9467ee8638a5f5f16ca165b3accd0b73355911742ae46df3e634",
+        "reviewerId": "openai-gpt-5.6-pro-wm-calibration-v2-001",
+        "reviewerRole": "AI财富管理业务专家评审（GPT-5.6 Pro，匿名A/B盲评）",
+        "labelsSha256": "7d71ac9a98f2da167c94de8333f07f539388af0d131b401c674a95f18728caa0",
+        "calibrationResultFingerprint": "403415d0601c655a9cf9554b6f5168bfc532dc7189873e9c3aa2525cf5e5e04e",
+        "expertTargetPreference": "4/4",
+        "judgeWinnerAgreement": "3/4",
+        "reverseOrderJudgeDisagreements": 1,
+        "scoreMeanAbsoluteError": 0.21875,
+        "maxScoreAbsoluteDelta": 0.5,
+        "formalHumanGroundTruth": false,
+        "formalScoreAvailable": false,
+        "judgeDirectionCalibrationAgainstAiExpert": "PASS",
+        "status": "AI_EXPERT_CALIBRATION_COMPLETE"
+      },
+      "holdoutCalibration": {
+        "datasetId": "wealth-manager-assistant-2.1-expert-calibration-v3",
+        "packetFingerprint": "fe40f0a32df8dfd66f9298669b77e8f4c21857f333fe6d803802d5271aad30b6",
+        "representativeRepeat": 2,
+        "judgeDiagnosticReportFingerprint": "ccc10867b193bbd51d6c0099de0b6187e552747580da8cfb8b74a13a5afd2783",
+        "judgeTargetPreferredPairs": 4,
+        "judgeBaselinePreferredPairs": 0,
+        "judgeReverseOrderDisagreements": 0,
+        "expertReviewPath": "reports/skill-quality-expert-calibration/wealth-manager-assistant-2.1-v3/reviewer/expert-review.md",
+        "labelsTemplatePath": "reports/skill-quality-expert-calibration/wealth-manager-assistant-2.1-v3/reviewer/labels.template.json",
+        "labelsPath": "reports/skill-quality-expert-calibration/wealth-manager-assistant-2.1-v3/reviewer/feedback/labels.completed.json",
+        "reviewerId": "openai-gpt-5.6-pro-wm-v3-blind-review-001",
+        "reviewerRole": "AI财富管理业务专家评审（GPT-5.6 Pro，匿名A/B盲评）",
+        "labelsSha256": "00a06e06be3e1a2fe192223b3319c2aaa7005f1e4ea3499bae299545e1954696",
+        "calibrationResultFingerprint": "db41ba397073babc07c7960b96f6b995175a9bfc05080371cce4dc5b18659854",
+        "expertTargetPreference": "4/4",
+        "judgeWinnerAgreement": "4/4",
+        "reverseOrderJudgeDisagreements": 0,
+        "scoreMeanAbsoluteError": 0.078125,
+        "maxScoreAbsoluteDelta": 1,
+        "scoreCalibrationFlagCount": 0,
+        "formalHumanGroundTruth": false,
+        "formalScoreAvailable": false,
+        "judgeDirectionCalibrationAgainstAiExpert": "PASS",
+        "status": "AI_EXPERT_HOLDOUT_COMPLETE"
+      },
+      "dimensions": [
+        "insight_quality",
+        "question_quality",
+        "portfolio_quality",
+        "recommendation_quality",
+        "communication_quality",
+        "business_progression"
+      ],
+      "scoreAnchors": [0, 2, 4]
+    },
+    "contextEfficiency": {
+      "injectAllExpertCasesByDefault": false,
+      "candidateRootMustNotExceedBaseline": true
+    }
+  },
+  "diagnosticHistory": [
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T003620133Z",
+      "candidateSourceTreeSha256": "14b0e5c94acec31f359d6ceb79192f49660a53f2b26b4e8e324cf31abfa769c2",
+      "comparisonFingerprint": "f32fea3974dec42d7dd43e2a99f0e7b6a2c738cf61c13cf8829c8f8362c988f8",
+      "reportFingerprint": "4c36f76a3ba41bfbfbe640919580ec4acb452885940092f0924d29ebf85160aa",
+      "targetPassCount": 8,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "FAIL",
+      "status": "superseded_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T004430864Z",
+      "candidateSourceTreeSha256": "b7e0eee9b1c283e76c1b92ae9978018b4b1791b4b569a304115b7859efdbe5b2",
+      "comparisonFingerprint": "f854bdb8629c4ebc4b6939ba03c88369c555be72b29873842bb2168870c6ae6a",
+      "reportFingerprint": "125d38a7d1dca5fd8afa198750fa43c9bd1547415983ae93e2d18ee86161c101",
+      "targetPassCount": 7,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "FAIL",
+      "status": "superseded_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T010730172Z",
+      "candidateSourceTreeSha256": "3f7e59cf6ccb2c5d4d1468e16a0c5f0712402af297d9c59a1a556ec6ed984fba",
+      "comparisonFingerprint": "db091d36b77dee0ec2b57c046351249d447d2847e77b4bcc7a5003b0fa395452",
+      "reportFingerprint": "53c455e5eb5585baff4c1f99a728dc72c11feec2499d93eeebf1b73b60b839b7",
+      "executorModel": "glm-5.2",
+      "targetPassCount": 18,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "UNVERIFIED",
+      "status": "current_controlled_harness_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T012046485Z",
+      "candidateSourceTreeSha256": "e57e7d7ff5ed68fa78ead0419810e225511e075b8227af39b91dacef06325515",
+      "comparisonFingerprint": "a38567545d2ebc516b1a5b95ede0dd817acb73eb79db5e2381c58641db5f92f6",
+      "reportFingerprint": "db7b869ae44f391aedaf9a07c2eb585f6853f452e604e9758b7b0f2f11344581",
+      "executorModel": "glm-5.2",
+      "targetPassCount": 17,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "FAIL",
+      "status": "blocked_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T013152383Z",
+      "candidateSourceTreeSha256": "e57e7d7ff5ed68fa78ead0419810e225511e075b8227af39b91dacef06325515",
+      "comparisonFingerprint": "a38567545d2ebc516b1a5b95ede0dd817acb73eb79db5e2381c58641db5f92f6",
+      "reportFingerprint": "b1fdb9a1da1bbfb83e9c73b8d6c432ebea9bdcfdff969b7a66828d65842ef11a",
+      "executorModel": "doubao-seed-2.1-pro",
+      "targetPassCount": 21,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "UNVERIFIED",
+      "status": "superseded_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T024713730Z",
+      "candidateSourceTreeSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+      "comparisonFingerprint": "47eb09e2e1e205bce1d02404d90c4d7e0aa19d55e687dd34c3d3fcaf9750603b",
+      "reportFingerprint": "70bfd324423b03b4f1b6e7c432b968b837145d21fdbb34d1b05920b3c5a4a0b5",
+      "executorModel": "doubao-seed-2.1-pro",
+      "targetPassCount": 17,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "FAIL",
+      "status": "superseded_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T025431492Z",
+      "candidateSourceTreeSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+      "comparisonFingerprint": "47eb09e2e1e205bce1d02404d90c4d7e0aa19d55e687dd34c3d3fcaf9750603b",
+      "reportFingerprint": "6b8e84994f1deda70db267524db8ff88977a1d5538474c31c1e7bb629d827457",
+      "executorModel": "doubao-seed-2.1-pro",
+      "targetPassCount": 20,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "FAIL",
+      "status": "superseded_false_positive_assertion_non_certifying"
+    },
+    {
+      "evaluationId": "wealth-skill-2.1-candidate-20260829T030421101Z",
+      "candidateSourceTreeSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+      "comparisonFingerprint": "47eb09e2e1e205bce1d02404d90c4d7e0aa19d55e687dd34c3d3fcaf9750603b",
+      "reportFingerprint": "ea265ad238a17fc04b0d4778cb039813e095850a0e64bfb7f36163dbff9ebd19",
+      "executorModel": "doubao-seed-2.1-pro",
+      "targetPassCount": 21,
+      "targetRunCount": 21,
+      "targetHardGateStatus": "UNVERIFIED",
+      "status": "current_controlled_harness_non_certifying"
+    }
+  ],
+  "promotionBoundary": {
+    "mayPublish": false,
+    "mayDeploy": false,
+    "scope": "formal_certification_and_role_default_release",
+    "blockingReasons": [
+      "independent human wealth expert calibration is unavailable"
+    ],
+    "internalPilot": {
+      "status": "APPROVED_FOR_SINGLE_ADOPTION_PILOT",
+      "approvedAt": "2026-08-29T13:35:00+08:00",
+      "approvalBasis": "product_owner_accepts_ai_expert_non_certifying_evidence",
+      "decisionEvidencePath": "docs/wealth-manager-skill-2.1-internal-pilot-decision-v1.md",
+      "decisionEvidenceSha256": "2a81d7586b2b1429d5b5cbfe26b54b8c6abbb7004da69de669f092520efa642e",
+      "mayPublishPilotVersion": true,
+      "mayDeployPilotVersion": true,
+      "scope": "isolated_or_single_wealth_manager_adoption",
+      "maxAdoptionsPerEnvironment": 1,
+      "roleDefaultReleaseAllowed": false,
+      "marketQualityBadgeAllowed": false,
+      "formalScoreAvailable": false,
+      "formalGradeAvailable": false,
+      "rollbackVersion": "2.0.2",
+      "requiredCandidateSha256": "d36ac98aa2a137ba1e22dc43b5bb21e519dcfe855193b5bfb207222400c5e59b",
+      "requiredRuntimeReportFingerprint": "d8678cd226ec3acaa2b21d5eab19d0e5f62737d4fcbdd4f159303ca96d5fb46a",
+      "requiredHoldoutResultFingerprint": "db41ba397073babc07c7960b96f6b995175a9bfc05080371cce4dc5b18659854",
+      "acceptedLimitation": "independent human wealth expert ground truth is unavailable"
+    }
+  }
+}

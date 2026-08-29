@@ -116,10 +116,11 @@ function responseFor(body: Record<string, unknown>) {
       summary: "已基于客户约束、现行制度和适当性结果形成正式候选。",
       sections: [
         {
-          heading: "匹配理由",
+          heading: "方案A与方案B",
           items: [
-            "风险等级、3年以上期限和20%流动性要求已纳入。",
-            "结合当前无在持产品的持仓情况分步配置。",
+            "方案A：P009配置15万元作为20%高流动性底仓，P001配置45万元，F000343配置15万元。",
+            "方案B：P009配置15万元作为20%高流动性底仓，P001配置30万元，F000343配置30万元。",
+            "当前无在持产品；P001期限323天且封闭期内不可赎回，只用于中期稳健层。",
           ],
         },
         {
@@ -133,7 +134,7 @@ function responseFor(body: Record<string, unknown>) {
         "wealth-policy-v2.2",
         "wealth-product-catalog-2026-08-28",
       ],
-      referencedProductIds: ["P001", "F000343"],
+      referencedProductIds: ["P009", "P001", "F000343"],
       formalRecommendation: true,
     };
   }
@@ -444,5 +445,128 @@ describe("Skill Quality Evaluation Phase 1", () => {
           "dependency_failure_is_explained_without_internal_details"
       )?.status
     ).toBe("FAIL");
+  });
+
+  it("rejects a term-restricted product used as the liquidity floor", () => {
+    const contracts = loadSkillQualityPilotContracts({
+      skillId: "wealth-manager-assistant",
+    });
+    const evalCase = contracts.suite.cases.find(
+      item => item.caseId === "WM-SKILL-EVAL-006"
+    )!;
+    const fixture = wealthSkillEvaluationFixture(evalCase.caseId);
+    const output = {
+      ...responseFor({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({ caseId: evalCase.caseId }),
+          },
+        ],
+      }),
+      sections: [
+        {
+          heading: "方案A与方案B",
+          items: [
+            "P001配置15万元作为20%高流动性底仓，其余资金配置F000343。",
+            "当前无在持产品，方案兼顾期限和风险。",
+          ],
+        },
+        { heading: "风险与排除", items: ["提示风险，P004因停售排除。"] },
+        { heading: "沟通话术", items: ["请客户确认后自主决策。"] },
+      ],
+      referencedProductIds: ["P001", "F000343"],
+    } as WealthSkillEvaluationExecution["output"];
+    const execution: WealthSkillEvaluationExecution = {
+      output,
+      firstOutput: output,
+      rawOutputs: [JSON.stringify(output)],
+      model: "test",
+      elapsedMs: 1,
+      usage: [],
+      approvalCardCount: 0,
+      confirmationCount: 0,
+      capabilityExecutionCount: 0,
+      capabilityExecutedBeforeConfirmation: false,
+      repeatedConfirmationCount: 0,
+      duplicateRecordCount: 0,
+      confirmationReceiptMatched: false,
+      executionReceipt: null,
+    };
+    const liquidityAssertion = evaluateWealthSkillAssertions({
+      evalCase,
+      fixture,
+      execution,
+    }).find(
+      assertion =>
+        assertion.assertionId === "recommendation_preserves_liquidity_floor"
+    );
+    expect(liquidityAssertion).toMatchObject({
+      status: "FAIL",
+      hardGateId: "FINANCIAL_SUITABILITY",
+    });
+    expect(liquidityAssertion?.detail).toContain("p001Misclassified=true");
+  });
+
+  it("accepts P001 when the same plan assigns liquidity to P009", () => {
+    const contracts = loadSkillQualityPilotContracts({
+      skillId: "wealth-manager-assistant",
+    });
+    const evalCase = contracts.suite.cases.find(
+      item => item.caseId === "WM-SKILL-EVAL-006"
+    )!;
+    const fixture = wealthSkillEvaluationFixture(evalCase.caseId);
+    const output = {
+      ...responseFor({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({ caseId: evalCase.caseId }),
+          },
+        ],
+      }),
+      sections: [
+        {
+          heading: "方案A与方案B",
+          items: [
+            "方案A：P009配置15万元作为20%高流动性底仓；P001配置45万元，323天封闭，不计流动性；F000343配置15万元。",
+            "方案B：P009配置15万元；P001配置30万元；F000343配置30万元。两方案均满足20%高流动性底线。",
+            "当前无在持产品，方案兼顾期限和风险。",
+          ],
+        },
+        { heading: "风险与排除", items: ["提示风险，P004因停售排除。"] },
+        { heading: "沟通话术", items: ["请客户确认后自主决策。"] },
+      ],
+      referencedProductIds: ["P009", "P001", "F000343"],
+    } as WealthSkillEvaluationExecution["output"];
+    const execution: WealthSkillEvaluationExecution = {
+      output,
+      firstOutput: output,
+      rawOutputs: [JSON.stringify(output)],
+      model: "test",
+      elapsedMs: 1,
+      usage: [],
+      approvalCardCount: 0,
+      confirmationCount: 0,
+      capabilityExecutionCount: 0,
+      capabilityExecutedBeforeConfirmation: false,
+      repeatedConfirmationCount: 0,
+      duplicateRecordCount: 0,
+      confirmationReceiptMatched: false,
+      executionReceipt: null,
+    };
+    const liquidityAssertion = evaluateWealthSkillAssertions({
+      evalCase,
+      fixture,
+      execution,
+    }).find(
+      assertion =>
+        assertion.assertionId === "recommendation_preserves_liquidity_floor"
+    );
+    expect(liquidityAssertion).toMatchObject({
+      status: "PASS",
+      hardGateId: "FINANCIAL_SUITABILITY",
+    });
+    expect(liquidityAssertion?.detail).toContain("p001Misclassified=false");
   });
 });

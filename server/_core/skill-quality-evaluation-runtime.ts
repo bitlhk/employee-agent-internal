@@ -5,10 +5,8 @@ import { z } from "zod";
 import type { SkillEvaluationExecutionArm } from "../../shared/skill-quality-evaluation";
 import { getClawByAdoptId } from "../db/claw";
 import { governanceFingerprint } from "./governance/contracts";
-import {
-  loadSkillQualityPilotContracts,
-  resolveSkillStoreRoot,
-} from "./skill-quality-evaluation-contracts";
+import { loadWealthSkill21CandidateComparison } from "./skill-quality-evaluation-candidate";
+import { loadSkillQualityPilotContracts } from "./skill-quality-evaluation-contracts";
 import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
 import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
 import { parseSkillMarkdown } from "./skills/skill-source";
@@ -65,6 +63,97 @@ export type SkillEvaluationRuntimeProfileV1 = z.infer<
 >;
 export type SkillEvaluationRuntimeArmV1 = z.infer<typeof runtimeArmSchema>;
 
+type SkillEvaluationRuntimeArtifact = {
+  skillId: string;
+  skillVersionId: string;
+  version: string;
+  artifactSha256: string;
+  artifactRelativePath: string;
+};
+
+export type SkillEvaluationRuntimeArtifactSet = {
+  sourceIdentityMode: "approved_inventory" | "candidate_repository";
+  comparisonFingerprint: string | null;
+  skillId: string;
+  skillStoreRoot: string;
+  target: SkillEvaluationRuntimeArtifact;
+  previousVersion: SkillEvaluationRuntimeArtifact;
+  suiteId: string;
+  suiteFingerprint: string;
+  smokePrompt: string;
+};
+
+export function resolveSkillEvaluationRuntimeArtifactSet(input: {
+  root?: string;
+  skillStoreRoot?: string;
+  env?: NodeJS.ProcessEnv;
+} = {}): SkillEvaluationRuntimeArtifactSet {
+  const env = input.env || process.env;
+  const requestedComparison = String(
+    env.EA_SKILL_EVAL_CANDIDATE_COMPARISON || ""
+  ).trim();
+  if (requestedComparison) {
+    if (requestedComparison !== "wealth-manager-assistant-2.1.0") {
+      throw new Error(
+        `Unsupported Skill evaluation candidate comparison: ${requestedComparison}`
+      );
+    }
+    const comparison = loadWealthSkill21CandidateComparison(
+      input.root || process.cwd()
+    );
+    const smokeCase = comparison.suite.cases.find(
+      item => item.caseId === "WM-SKILL-EVAL-001"
+    );
+    if (!smokeCase) throw new Error("Candidate Runtime smoke case is missing");
+    return {
+      sourceIdentityMode: "candidate_repository",
+      comparisonFingerprint: comparison.comparisonFingerprint,
+      skillId: comparison.target.skillId,
+      skillStoreRoot: comparison.skillStoreRoot,
+      target: comparison.target,
+      previousVersion: comparison.previousVersion,
+      suiteId: comparison.suite.suiteId,
+      suiteFingerprint: comparison.suite.suiteFingerprint,
+      smokePrompt: smokeCase.prompt,
+    };
+  }
+
+  const contracts = loadSkillQualityPilotContracts({
+    root: input.root,
+    skillId: "wealth-manager-assistant",
+    skillStoreRoot: input.skillStoreRoot,
+  });
+  const byVersionId = new Map(
+    contracts.inventory.records.map(record => [record.skillVersionId, record])
+  );
+  const target = byVersionId.get(contracts.pilot.target.skillVersionId);
+  const previousRef = contracts.pilot.baselines.find(
+    baseline => baseline.mode === "previous_version"
+  );
+  const previous = previousRef?.skillVersionId
+    ? byVersionId.get(previousRef.skillVersionId)
+    : null;
+  const smokeCase = contracts.suite.cases.find(
+    item => item.caseId === "WM-SKILL-EVAL-001"
+  );
+  if (!target || !previous || !smokeCase) {
+    throw new Error(
+      "Target, previous Skill artifact or Runtime smoke case is missing from the approved evaluation contracts"
+    );
+  }
+  return {
+    sourceIdentityMode: "approved_inventory",
+    comparisonFingerprint: null,
+    skillId: contracts.pilot.skillId,
+    skillStoreRoot: contracts.skillStoreRoot,
+    target,
+    previousVersion: previous,
+    suiteId: contracts.suite.suiteId,
+    suiteFingerprint: contracts.suite.suiteFingerprint,
+    smokePrompt: smokeCase.prompt,
+  };
+}
+
 export function skillEvaluationRuntimeProfileFingerprint(
   profile: Omit<SkillEvaluationRuntimeProfileV1, "profileFingerprint">
 ): string {
@@ -102,24 +191,11 @@ export function buildSkillEvaluationRuntimeProfile(input: {
   env?: NodeJS.ProcessEnv;
 } = {}): SkillEvaluationRuntimeProfileV1 {
   const env = input.env || process.env;
-  const contracts = loadSkillQualityPilotContracts({
+  const artifacts = resolveSkillEvaluationRuntimeArtifactSet({
     root: input.root,
-    skillId: "wealth-manager-assistant",
     skillStoreRoot: input.skillStoreRoot,
+    env,
   });
-  const byVersionId = new Map(
-    contracts.inventory.records.map(record => [record.skillVersionId, record])
-  );
-  const target = byVersionId.get(contracts.pilot.target.skillVersionId);
-  const previousRef = contracts.pilot.baselines.find(
-    baseline => baseline.mode === "previous_version"
-  );
-  const previous = previousRef?.skillVersionId
-    ? byVersionId.get(previousRef.skillVersionId)
-    : null;
-  if (!target || !previous) {
-    throw new Error("Target or previous Skill artifact is missing from the approved inventory");
-  }
   const baseUrl = String(
     env.EA_SKILL_EVAL_RUNTIME_BASE_URL || "http://127.0.0.1:5180"
   ).replace(/\/$/u, "");
@@ -130,8 +206,8 @@ export function buildSkillEvaluationRuntimeProfile(input: {
       `Refusing remote Skill evaluation Runtime ${url.hostname}; set EA_SKILL_EVAL_ALLOW_REMOTE=1 explicitly`
     );
   }
-  const expected = (record: typeof target) => ({
-    skillId: contracts.pilot.skillId,
+  const expected = (record: SkillEvaluationRuntimeArtifact) => ({
+    skillId: artifacts.skillId,
     skillVersionId: record.skillVersionId,
     version: record.version,
     artifactSha256: record.artifactSha256,
@@ -139,7 +215,7 @@ export function buildSkillEvaluationRuntimeProfile(input: {
       .update(
         readFileSync(
           path.join(
-            input.skillStoreRoot || resolveSkillStoreRoot(),
+            artifacts.skillStoreRoot,
             record.artifactRelativePath,
             "SKILL.md"
           ),
@@ -151,8 +227,13 @@ export function buildSkillEvaluationRuntimeProfile(input: {
   });
   const body = {
     schema: "ea.skill-quality-runtime-profile.v1" as const,
-    profileId: String(env.EA_SKILL_EVAL_RUNTIME_PROFILE_ID || "wealth-manager-phase1b-local-v1"),
-    evaluatedSkillId: contracts.pilot.skillId,
+    profileId: String(
+      env.EA_SKILL_EVAL_RUNTIME_PROFILE_ID ||
+        (artifacts.sourceIdentityMode === "candidate_repository"
+          ? "wealth-manager-2.1-candidate-runtime-v1"
+          : "wealth-manager-phase1b-local-v1")
+    ),
+    evaluatedSkillId: artifacts.skillId,
     baseUrl,
     chatEndpoint: "/api/claw/chat-stream" as const,
     internalAuthEnv: "INTERNAL_API_KEY" as const,
@@ -164,7 +245,7 @@ export function buildSkillEvaluationRuntimeProfile(input: {
           String(env.EA_SKILL_EVAL_TARGET_ADOPTION_ID || defaultAdoptionId("target_skill"))
         ),
         roleTemplate: "wealth-manager" as const,
-        expectedSkill: expected(target),
+        expectedSkill: expected(artifacts.target),
       },
       {
         executionArm: "without_target_skill" as const,
@@ -182,7 +263,7 @@ export function buildSkillEvaluationRuntimeProfile(input: {
           String(env.EA_SKILL_EVAL_PREVIOUS_ADOPTION_ID || defaultAdoptionId("previous_version"))
         ),
         roleTemplate: "wealth-manager" as const,
-        expectedSkill: expected(previous),
+        expectedSkill: expected(artifacts.previousVersion),
       },
     ],
   };
