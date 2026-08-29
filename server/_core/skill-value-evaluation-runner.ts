@@ -13,6 +13,7 @@ import {
   createUser,
   getClawByAdoptId,
   getUserByEmail,
+  resolveEffectiveRoleAssets,
 } from "../db";
 import { governanceFingerprint } from "./governance/contracts";
 import { callEaAssistantModelWithConfig } from "./ea-assistant-model";
@@ -27,8 +28,21 @@ import { roleSkillPreferences } from "./skills/role-skill-preferences";
 import { skillInstaller } from "./skills/skill-installer";
 import { skillRegistry } from "./skills/skill-registry";
 import { resolveSkillValueModelConfig } from "./skill-value-evaluation";
+import {
+  JIUWENSWARM_PLATFORM_MCP_SERVER_IDS,
+  writeJiuwenSwarmRoleScopeManifest,
+} from "./jiuwenswarm-role-scope";
+import { refreshJiuwenRuntimeCapabilities } from "./jiuwenswarm-runtime-refresh";
+import {
+  getSkillMcpRequirement,
+  resolveAgentRoleTemplate,
+  type SkillMcpRequirement,
+} from "./role-templates";
 
 type EvaluationSide = "left" | "right";
+
+const RUNTIME_TURN_TIMEOUT_MS = 300_000;
+const PROMPTFOO_TURN_TIMEOUT_MS = 310_000;
 
 export type SkillValueEvaluationArtifact = {
   versionId: string;
@@ -89,6 +103,17 @@ export type SkillValueEvaluationJudgeResult = {
   reviewerLabel: string;
 };
 
+export type SkillValueEvaluationEnvironment = {
+  mode: "skill_declared";
+  isolation: "target_skill_only";
+  sameForBothSides: true;
+  mcpServers: Array<{
+    serverId: string;
+    requiredTools: string[];
+  }>;
+  declaredToolCount: number;
+};
+
 export type SkillValueEvaluationJob = {
   jobId: string;
   skillId: string;
@@ -119,6 +144,7 @@ export type SkillValueEvaluationJob = {
     modelId: string;
     completedCases: number;
   };
+  environment: SkillValueEvaluationEnvironment;
   summary: {
     leftWins: number;
     rightWins: number;
@@ -240,10 +266,22 @@ async function ensureEvaluationAdoption(input: {
 async function materializeSide(input: {
   adoptionId: string;
   agentId: string;
+  roleTemplate: string;
   skillId: string;
   skillName: string;
   artifact: SkillValueEvaluationArtifact;
 }) {
+  const effectiveAssets = await resolveEffectiveRoleAssets(input.roleTemplate);
+  for (const defaultSkillId of effectiveAssets.skills.default) {
+    roleSkillPreferences.setDefaultSkillEnabled(input.adoptionId, defaultSkillId, false);
+  }
+  const listed = await skillRegistry.listSkills(input.adoptionId);
+  if (listed.ok) {
+    for (const skill of listed.value) {
+      if (input.artifact && skill.id === input.skillId) continue;
+      await skillRegistry.uninstall(input.adoptionId, skill.id).catch(() => undefined);
+    }
+  }
   if (!input.artifact) {
     roleSkillPreferences.setDefaultSkillEnabled(input.adoptionId, input.skillId, false);
     await skillRegistry.uninstall(input.adoptionId, input.skillId).catch(() => undefined);
@@ -261,7 +299,7 @@ async function materializeSide(input: {
     throw new Error(`${input.skillId}@${input.artifact.version} Artifact 已变化`);
   }
   roleSkillPreferences.setDefaultSkillEnabled(input.adoptionId, input.skillId, true);
-  const installed = await skillRegistry.install(
+  const installResult = await skillRegistry.install(
     input.adoptionId,
     {
       kind: "marketplace",
@@ -277,10 +315,69 @@ async function materializeSide(input: {
       preserveImmutableSourcePath: true,
     },
   );
-  if (!installed.ok) throw new Error(installed.error.detail);
-  const runtimePath = String(installed.value.sync.runtimePath || "").trim();
+  if (!installResult.ok) throw new Error(installResult.error.detail);
+  const runtimePath = String(installResult.value.sync.runtimePath || "").trim();
   if (!runtimePath) throw new Error("Skill 评测 Runtime 路径为空");
   await skillInstaller.installFromSource(input.artifact.artifactPath, runtimePath);
+  await skillRegistry.refreshRuntimeProjection(input.adoptionId);
+}
+
+export function buildSkillValueEvaluationEnvironment(
+  skillId: string,
+  requirement: SkillMcpRequirement = getSkillMcpRequirement(skillId),
+): SkillValueEvaluationEnvironment {
+  const mcpServers = Object.entries(requirement.servers)
+    .map(([serverId, tools]) => ({
+      serverId,
+      requiredTools: Array.from(new Set(tools)).sort(),
+    }))
+    .sort((left, right) => left.serverId.localeCompare(right.serverId));
+  return {
+    mode: "skill_declared",
+    isolation: "target_skill_only",
+    sameForBothSides: true,
+    mcpServers,
+    declaredToolCount: mcpServers.reduce((sum, server) => sum + server.requiredTools.length, 0),
+  };
+}
+
+async function applyEvaluationEnvironment(input: {
+  adoptionId: string;
+  agentId: string;
+  roleTemplate: string;
+  environment: SkillValueEvaluationEnvironment;
+}): Promise<void> {
+  const role = resolveAgentRoleTemplate(input.roleTemplate);
+  const effectiveAssets = await resolveEffectiveRoleAssets(role.id);
+  const platformServers = new Set(JIUWENSWARM_PLATFORM_MCP_SERVER_IDS);
+  const authorizedServers = new Set([
+    ...effectiveAssets.mcpServers.default,
+    ...effectiveAssets.mcpServers.optional,
+    ...JIUWENSWARM_PLATFORM_MCP_SERVER_IDS,
+  ]);
+  const requiredServerIds = input.environment.mcpServers.map(server => server.serverId);
+  const unauthorized = requiredServerIds.filter(serverId => !authorizedServers.has(serverId));
+  if (unauthorized.length > 0) {
+    throw new Error(`Skill 声明的 MCP 未获岗位授权：${unauthorized.join("、")}`);
+  }
+  const scopedAssets = {
+    ...effectiveAssets,
+    mcpServers: {
+      default: Array.from(new Set([
+        ...effectiveAssets.mcpServers.default,
+        ...requiredServerIds.filter(serverId => platformServers.has(serverId)),
+      ])).sort(),
+      optional: [...effectiveAssets.mcpServers.optional],
+    },
+  };
+  writeJiuwenSwarmRoleScopeManifest({
+    workspaceDir: resolveRuntimeWorkspaceByIds(input.adoptionId, input.agentId),
+    role,
+    effectiveAssets: scopedAssets,
+    activeMcpServerIds: requiredServerIds,
+    includePlatformMcp: false,
+  });
+  await refreshJiuwenRuntimeCapabilities(input.adoptionId);
 }
 
 function parseHeaderIdentity(value: string | null): Record<string, unknown> | null {
@@ -310,7 +407,7 @@ async function executeRuntimeTurn(input: {
   const port = Number(process.env.PORT || 5180) || 5180;
   const baseUrl = String(process.env.EA_SELF_BASE_URL || `http://127.0.0.1:${port}`).replace(/\/$/u, "");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 180_000);
+  const timer = setTimeout(() => controller.abort(), RUNTIME_TURN_TIMEOUT_MS);
   const startedAt = Date.now();
   try {
     const response = await fetch(`${baseUrl}/api/claw/chat-stream`, {
@@ -353,12 +450,19 @@ async function executeRuntimeTurn(input: {
           && String(skill.version || "") === input.artifact?.version
           && String(skill.artifactSha256 || "") === input.artifact?.artifactSha256)
       : injectedSkills.every(skill => String(skill.skillId || "") !== input.skillId);
+    const nativeIdentityMatches = input.artifact
+      ? loadedSkills.some(skill => (
+          skill.skillId === input.skillId
+          && skill.version === input.artifact?.version
+        )) && loadedSkills.every(skill => skill.skillId === input.skillId)
+      : loadedSkills.length === 0;
     const runtimeIdentityVerified = Boolean(
       headerIdentity
       && headerFingerprint
       && governanceFingerprint(headerIdentity) === headerFingerprint
       && headerIdentity.profileFingerprint === input.configurationFingerprint
-      && identityMatches,
+      && identityMatches
+      && nativeIdentityMatches
     );
     const streamError = parsed.events.find(event => event.data.__stream_error === true);
     const toolResults = new Map(
@@ -384,7 +488,7 @@ async function executeRuntimeTurn(input: {
         : !completion.completed
           ? "Runtime 响应未完整结束"
           : !runtimeIdentityVerified
-            ? "Runtime Skill 身份与所选版本不一致"
+            ? "Runtime Skill 装配或隔离状态与所选配置不一致"
             : null;
     return {
       side: input.side,
@@ -626,6 +730,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     await materializeSide({
       adoptionId: job.left.adoptionId,
       agentId: String(leftAdoption.agentId),
+      roleTemplate: input.roleTemplate,
       skillId: input.skillId,
       skillName: input.skillName,
       artifact: input.left.artifact,
@@ -633,9 +738,22 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     await materializeSide({
       adoptionId: job.right.adoptionId,
       agentId: String(rightAdoption.agentId),
+      roleTemplate: input.roleTemplate,
       skillId: input.skillId,
       skillName: input.skillName,
       artifact: input.right.artifact,
+    });
+    await applyEvaluationEnvironment({
+      adoptionId: job.left.adoptionId,
+      agentId: String(leftAdoption.agentId),
+      roleTemplate: input.roleTemplate,
+      environment: job.environment,
+    });
+    await applyEvaluationEnvironment({
+      adoptionId: job.right.adoptionId,
+      agentId: String(rightAdoption.agentId),
+      roleTemplate: input.roleTemplate,
+      environment: job.environment,
     });
     job.status = "running";
     job.stageLabel = "Promptfoo 正在执行左右对比";
@@ -671,10 +789,10 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
       {
         cache: false,
         generateSuggestions: false,
-        maxConcurrency: 4,
+        maxConcurrency: 2,
         showProgressBar: false,
         silent: true,
-        timeoutMs: 180_000,
+        timeoutMs: PROMPTFOO_TURN_TIMEOUT_MS,
       },
     );
     job.promptfoo.completed = true;
@@ -710,12 +828,14 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
     throw new Error("每个评测批次需要 1 到 5 条测试题");
   }
   const ids = adoptionIds(input.skillId, input.roleTemplate);
+  const environment = buildSkillValueEvaluationEnvironment(input.skillId);
   const configurationFingerprint = governanceFingerprint({
     skillId: input.skillId,
     roleTemplate: input.roleTemplate,
     left: input.left,
     right: input.right,
     prompts: input.prompts,
+    environment,
   });
   const jobId = `skill-eval-${configurationFingerprint.slice(0, 12)}-${Date.now().toString(36)}`;
   const now = new Date().toISOString();
@@ -749,6 +869,7 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
     })),
     promptfoo: { version: "0.122.2", completed: false },
     judge: { modelId: "glm-5.2", completedCases: 0 },
+    environment,
     summary: null,
     configurationFingerprint,
     error: null,

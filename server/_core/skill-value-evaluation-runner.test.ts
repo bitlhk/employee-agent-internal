@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSkillValueEvaluationEnvironment,
   summarizeSkillValueEvaluationCases,
   type SkillValueEvaluationCaseResult,
   type SkillValueEvaluationJudgeResult,
@@ -70,5 +71,36 @@ describe("summarizeSkillValueEvaluationCases", () => {
       ties: 0,
       headline: "左右输出已完成，专业 Judge 暂未形成可用结论",
     });
+  });
+});
+
+describe("skill value evaluation environment", () => {
+  it("normalizes the declared MCP tool environment shared by both sides", () => {
+    expect(buildSkillValueEvaluationEnvironment("stock-screener", {
+      servers: {
+        wind_stock_data: ["search_stocks", "get_stock_basicinfo", "search_stocks"],
+        wind_analytics_data: ["get_financial_data"],
+      },
+    })).toEqual({
+      mode: "skill_declared",
+      isolation: "target_skill_only",
+      sameForBothSides: true,
+      mcpServers: [
+        {
+          serverId: "wind_analytics_data",
+          requiredTools: ["get_financial_data"],
+        },
+        {
+          serverId: "wind_stock_data",
+          requiredTools: ["get_stock_basicinfo", "search_stocks"],
+        },
+      ],
+      declaredToolCount: 3,
+    });
+  });
+
+  it("keeps a Skill without MCP requirements in a native-only environment", () => {
+    expect(buildSkillValueEvaluationEnvironment("report-writer", { servers: {} }))
+      .toMatchObject({ mcpServers: [], declaredToolCount: 0, sameForBothSides: true });
   });
 });

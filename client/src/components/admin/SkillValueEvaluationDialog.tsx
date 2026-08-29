@@ -330,7 +330,7 @@ function ComparisonSide({
             <span>Artifact <span className="font-mono text-gray-700">{selectedVersion.artifactSha256.slice(0, 12)}</span></span>
           </span>
         ) : (
-          <span>保留岗位基础能力，仅移除当前目标 Skill。</span>
+          <span>不装配任何 Skill；保留与目标组相同的评测工具环境。</span>
         )}
       </div>
     </section>
@@ -688,6 +688,33 @@ function NewEvaluationWorkbench({
           {job.error ? (
             <div className="mt-4 border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-800">{job.error}</div>
           ) : null}
+          <div className="mt-4 border border-blue-200 bg-blue-50/40 px-4 py-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-xs font-semibold text-blue-950">统一评测环境</div>
+                <div className="mt-1 text-[11px] leading-5 text-blue-800">
+                  左右使用同一岗位工具环境；
+                  A 侧{job.left.skillVersion ? `仅装配 v${job.left.skillVersion}` : "不装配任何 Skill"}，
+                  B 侧{job.right.skillVersion ? `仅装配 v${job.right.skillVersion}` : "不装配任何 Skill"}。
+                </div>
+              </div>
+              <span className="border border-blue-200 bg-white px-2 py-1 text-[10px] font-medium text-blue-800">
+                {job.environment.mcpServers.length} 个 MCP · {job.environment.declaredToolCount} 个声明工具
+              </span>
+            </div>
+            {job.environment.mcpServers.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {job.environment.mcpServers.map(server => (
+                  <div key={server.serverId} className="border border-blue-100 bg-white px-2 py-1 text-[10px] leading-4 text-gray-700">
+                    <span className="font-medium text-gray-900">{server.serverId}</span>
+                    <span className="ml-1 text-gray-500">{server.requiredTools.join("、") || "服务级依赖"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 text-[10px] text-gray-500">该 Skill 未声明业务 MCP，本轮只保留 Runtime 原生基础工具。</div>
+            )}
+          </div>
           {job.summary ? (
             <div className="mt-4 border border-emerald-200 bg-emerald-50/40">
               <div className="flex flex-col gap-3 border-b border-emerald-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -766,7 +793,14 @@ function NewEvaluationWorkbench({
                             </div>
                             <div className="mt-3 flex flex-wrap gap-1.5 border-t border-gray-100 pt-3">
                               {result.runtimeIdentityVerified ? (
-                                <span className="border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] text-emerald-700">所选 Skill 已装配</span>
+                                <span className={cn(
+                                  "border px-2 py-0.5 text-[10px]",
+                                  sideMeta.skillVersion
+                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                    : "border-gray-200 bg-gray-50 text-gray-600",
+                                )}>
+                                  {sideMeta.skillVersion ? "所选 Skill 已装配" : "无 Skill 隔离已确认"}
+                                </span>
                               ) : null}
                               {result.toolCalls.map((tool, toolIndex) => (
                                 <span key={`${tool.name}-${toolIndex}`} className={cn("border px-2 py-0.5 text-[10px]", tool.status === "completed" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-red-200 bg-red-50 text-red-700")}>

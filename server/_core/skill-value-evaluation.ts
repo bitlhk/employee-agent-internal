@@ -309,6 +309,7 @@ async function analyzeSkill(input: {
           "prompts 必须恰好 3 条，每条包含 name、prompt、evaluationGoal。",
           "整个 JSON 控制在 1800 个汉字以内，不输出 Markdown 或解释。",
           "测试题应像真实用户请求，不要提到正在评测、版本号或评分标准。",
+          "需要调用外部工具的任务必须能在两分钟左右完成：限定合理候选范围和核验数量，不设计全市场穷举或无边界深挖。",
         ].join("\n"),
       },
       {
