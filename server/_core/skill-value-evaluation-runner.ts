@@ -318,8 +318,16 @@ async function materializeSide(input: {
   if (!installResult.ok) throw new Error(installResult.error.detail);
   const runtimePath = String(installResult.value.sync.runtimePath || "").trim();
   if (!runtimePath) throw new Error("Skill 评测 Runtime 路径为空");
-  await skillInstaller.installFromSource(input.artifact.artifactPath, runtimePath);
   await skillRegistry.refreshRuntimeProjection(input.adoptionId);
+
+  // Role projection refreshes shared defaults. Re-apply the frozen evaluation
+  // artifact last so an existing shared version cannot replace the selected one.
+  await skillInstaller.installFromSource(input.artifact.artifactPath, runtimePath);
+  const runtimeDigest = digestSkillSourceTree(runtimePath);
+  if (runtimeDigest.sha256 !== input.artifact.artifactSha256) {
+    throw new Error(`${input.skillId}@${input.artifact.version} Runtime Artifact 装配失败`);
+  }
+  await refreshJiuwenRuntimeCapabilities(input.adoptionId);
 }
 
 export function buildSkillValueEvaluationEnvironment(
@@ -400,6 +408,19 @@ function parseHeaderIdentity(value: string | null): Record<string, unknown> | nu
   }
 }
 
+export function buildSkillValueEvaluationRuntimePrompt(
+  prompt: string,
+  hasSelectedSkill: boolean,
+): string {
+  if (hasSelectedSkill) return prompt;
+  return [
+    "<skill_evaluation_control>",
+    "本侧未装配任何 Skill。不要调用 skill_tool 搜索或加载技能；直接使用当前已授权的业务工具完成用户任务。业务工具返回文件路径时，可以使用 read_file 读取该结果。",
+    "</skill_evaluation_control>",
+    prompt,
+  ].join("\n");
+}
+
 async function executeRuntimeTurn(input: {
   side: EvaluationSide;
   adoptionId: string;
@@ -426,7 +447,7 @@ async function executeRuntimeTurn(input: {
       },
       body: JSON.stringify({
         adoptId: input.adoptionId,
-        message: input.prompt,
+        message: buildSkillValueEvaluationRuntimePrompt(input.prompt, Boolean(input.artifact)),
         model: input.modelId,
         conversationId: `skill-eval-ui-${randomUUID()}`,
         channel: "skill_evaluation_ui",
@@ -798,7 +819,9 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
       {
         cache: false,
         generateSuggestions: false,
-        maxConcurrency: 2,
+        // Jiuwen's tool registry is process-global. Run the two isolated
+        // workspaces sequentially so one side cannot replace the other's tools.
+        maxConcurrency: 1,
         showProgressBar: false,
         silent: true,
         timeoutMs: PROMPTFOO_TURN_TIMEOUT_MS,

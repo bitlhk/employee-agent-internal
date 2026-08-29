@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSkillValueEvaluationRuntimePrompt,
   buildSkillValueEvaluationEnvironment,
   summarizeSkillValueEvaluationCases,
   type SkillValueEvaluationCaseResult,
@@ -102,5 +103,18 @@ describe("skill value evaluation environment", () => {
   it("keeps a Skill without MCP requirements in a native-only environment", () => {
     expect(buildSkillValueEvaluationEnvironment("report-writer", { servers: {} }))
       .toMatchObject({ mcpServers: [], declaredToolCount: 0, sameForBothSides: true });
+  });
+
+  it("keeps the selected-skill prompt unchanged", () => {
+    expect(buildSkillValueEvaluationRuntimePrompt("请完成选股", true)).toBe("请完成选股");
+  });
+
+  it("directs the no-skill arm to use business tools without discovering skills", () => {
+    const prompt = buildSkillValueEvaluationRuntimePrompt("请完成选股", false);
+
+    expect(prompt).toContain("本侧未装配任何 Skill");
+    expect(prompt).toContain("不要调用 skill_tool");
+    expect(prompt).toContain("可以使用 read_file");
+    expect(prompt).toContain("请完成选股");
   });
 });
