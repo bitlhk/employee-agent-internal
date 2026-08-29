@@ -1272,7 +1272,8 @@ export const clawRouter = router({
         }));
         const versions = [...candidateVersions, ...approvedVersions];
         const models = await getAvailableJiuwenModels();
-        const recommendedModel = models.find(model => model.id !== JIUWEN_AUTO_MODEL_ID)
+        const recommendedModel = models.find(model => model.id === "glm-5.2")
+          || models.find(model => model.id !== JIUWEN_AUTO_MODEL_ID)
           || models[0];
         return {
           skill: {
