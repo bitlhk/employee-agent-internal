@@ -160,6 +160,7 @@ export function assembleWealthCustomerContext(input: {
   expectedCustomerId: string;
   profilePayload: JsonObject;
   portfolioPayload: JsonObject;
+  allowCanonicalAliasResolution?: boolean;
 }): WealthCustomerContextAssembly {
   const governed = governedProfile(input.profilePayload);
   const rawProfile = customerObject(input.profilePayload);
@@ -167,11 +168,19 @@ export function assembleWealthCustomerContext(input: {
   const portfolioCustomer = customerObject(input.portfolioPayload);
   const returnedProfileId = customerId(profile);
   const returnedPortfolioId = customerId(portfolioCustomer);
-  if (!returnedProfileId || returnedProfileId !== input.expectedCustomerId) {
+  if (!returnedProfileId) {
     throw new Error("客户画像来源返回的客户标识与请求不一致");
   }
-  if (!returnedPortfolioId || returnedPortfolioId !== input.expectedCustomerId) {
+  if (!returnedPortfolioId) {
     throw new Error("客户持仓来源返回的客户标识与请求不一致");
+  }
+  const exactIdentity = returnedProfileId === input.expectedCustomerId
+    && returnedPortfolioId === input.expectedCustomerId;
+  const governedAliasIdentity = input.allowCanonicalAliasResolution === true
+    && returnedProfileId === returnedPortfolioId
+    && /^CUST-[0-9]{6}$/u.test(returnedProfileId);
+  if (!exactIdentity && !governedAliasIdentity) {
+    throw new Error("客户画像与持仓来源未解析到同一客户标识");
   }
 
   const portfolio = portfolioData(input.portfolioPayload);
@@ -199,7 +208,7 @@ export function assembleWealthCustomerContext(input: {
   return {
     customer,
     evidence: {
-      customerId: input.expectedCustomerId,
+      customerId: returnedProfileId,
       profileDataAsOf,
       portfolioDataAsOf,
       profileResultFingerprint,
@@ -227,6 +236,7 @@ export async function loadWealthCustomerContext(input: {
       expectedCustomerId: input.customerId,
       profilePayload,
       portfolioPayload,
+      allowCanonicalAliasResolution: true,
     });
   }
   if (!input.loadCustomer) throw new Error("客户画像与持仓来源未配置");

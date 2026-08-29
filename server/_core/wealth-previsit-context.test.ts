@@ -114,4 +114,54 @@ describe("wealth previsit context", () => {
     expect(result.evidence.profileResultFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(result.evidence.portfolioResultFingerprint).toMatch(/^[a-f0-9]{64}$/u);
   });
+
+  it("accepts a legacy source id only when governed profile and portfolio resolve to the same canonical customer", async () => {
+    const result = await prepareWealthPrevisitContext({
+      principal,
+      customerId: "C005",
+      dependencies: {
+        probeIdentity: async () => ({ allowed: true }),
+        loadCustomerProfile: async () => ({
+          logicalContextId: "customer_profile",
+          sourceEvidence: [{ asOf: "2026-08-25T06:00:00.000Z" }],
+          fields: [
+            { path: "subject.subjectId", value: "CUST-000005" },
+            { path: "subject.displayName", value: "陈明" },
+          ],
+        }),
+        loadCustomerPortfolio: async () => ({
+          subjectId: "CUST-000005",
+          summary: { totalAssets: 750_810 },
+          sourceEvidence: [{ asOf: "2026-08-25T06:01:00.000Z" }],
+        }),
+        resolveKnowledge: async () => ({
+          status: "ready", evaluatedAt: "2026-08-25T06:02:00.000Z",
+          selected: { sourceAssetId: "wm-previsit-sop", documentId: "doc-1", versionLabel: "V1.0", contentHash: "b".repeat(64), sourceDepartment: "财富管理部" },
+          eligibilityFingerprint: "c".repeat(64), userMessage: "已就绪",
+        }),
+      },
+    });
+
+    expect(result.customer).toMatchObject({ customerId: "CUST-000005", name: "陈明" });
+    expect(result.evidence.customerId).toBe("CUST-000005");
+  });
+
+  it("rejects split governed sources that resolve a legacy id to different customers", async () => {
+    await expect(prepareWealthPrevisitContext({
+      principal,
+      customerId: "C005",
+      dependencies: {
+        probeIdentity: async () => ({ allowed: true }),
+        loadCustomerProfile: async () => ({
+          logicalContextId: "customer_profile",
+          fields: [{ path: "subject.subjectId", value: "CUST-000005" }],
+        }),
+        loadCustomerPortfolio: async () => ({ subjectId: "CUST-000006" }),
+        resolveKnowledge: async () => ({
+          status: "unavailable", evaluatedAt: "", selected: null,
+          eligibilityFingerprint: "", userMessage: "",
+        }),
+      },
+    })).rejects.toThrow(/同一客户标识/u);
+  });
 });
