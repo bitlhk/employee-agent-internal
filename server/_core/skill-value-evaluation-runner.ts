@@ -412,13 +412,19 @@ export function buildSkillValueEvaluationRuntimePrompt(
   prompt: string,
   hasSelectedSkill: boolean,
 ): string {
-  if (hasSelectedSkill) return prompt;
-  return [
-    "<skill_evaluation_control>",
-    "本侧未装配任何 Skill。不要调用 skill_tool 搜索或加载技能；直接使用当前已授权的业务工具完成用户任务。业务工具返回文件路径时，可以使用 read_file 读取该结果。",
-    "</skill_evaluation_control>",
-    prompt,
-  ].join("\n");
+  const controls = [
+    "<skill_evaluation_budget>",
+    "本轮为快速业务对比，最多调用 10 次业务工具。优先完成用户要求的核心结果；缺失项明确标注后停止，不为补充非核心细节继续扩展查询。",
+    "</skill_evaluation_budget>",
+  ];
+  if (!hasSelectedSkill) {
+    controls.push(
+      "<skill_evaluation_control>",
+      "本侧未装配任何 Skill。不要调用 skill_tool 搜索或加载技能；直接使用当前已授权的业务工具完成用户任务。业务工具返回文件路径时，可以使用 read_file 读取该结果。",
+      "</skill_evaluation_control>",
+    );
+  }
+  return [...controls, prompt].join("\n");
 }
 
 async function executeRuntimeTurn(input: {

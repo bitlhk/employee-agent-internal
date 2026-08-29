@@ -105,13 +105,18 @@ describe("skill value evaluation environment", () => {
       .toMatchObject({ mcpServers: [], declaredToolCount: 0, sameForBothSides: true });
   });
 
-  it("keeps the selected-skill prompt unchanged", () => {
-    expect(buildSkillValueEvaluationRuntimePrompt("请完成选股", true)).toBe("请完成选股");
+  it("applies the same fast comparison budget to the selected-skill arm", () => {
+    const prompt = buildSkillValueEvaluationRuntimePrompt("请完成选股", true);
+
+    expect(prompt).toContain("最多调用 10 次业务工具");
+    expect(prompt).not.toContain("本侧未装配任何 Skill");
+    expect(prompt).toContain("请完成选股");
   });
 
   it("directs the no-skill arm to use business tools without discovering skills", () => {
     const prompt = buildSkillValueEvaluationRuntimePrompt("请完成选股", false);
 
+    expect(prompt).toContain("最多调用 10 次业务工具");
     expect(prompt).toContain("本侧未装配任何 Skill");
     expect(prompt).toContain("不要调用 skill_tool");
     expect(prompt).toContain("可以使用 read_file");
