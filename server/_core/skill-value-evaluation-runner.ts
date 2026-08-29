@@ -346,6 +346,7 @@ async function applyEvaluationEnvironment(input: {
   agentId: string;
   roleTemplate: string;
   environment: SkillValueEvaluationEnvironment;
+  skillIds: string[];
 }): Promise<void> {
   const role = resolveAgentRoleTemplate(input.roleTemplate);
   const effectiveAssets = await resolveEffectiveRoleAssets(role.id);
@@ -360,8 +361,14 @@ async function applyEvaluationEnvironment(input: {
   if (unauthorized.length > 0) {
     throw new Error(`Skill 声明的 MCP 未获岗位授权：${unauthorized.join("、")}`);
   }
+  const selectedSkillIds = Array.from(new Set(input.skillIds.map(skillId => skillId.trim()).filter(Boolean)))
+    .sort();
   const scopedAssets = {
     ...effectiveAssets,
+    skills: {
+      default: selectedSkillIds,
+      optional: [],
+    },
     mcpServers: {
       default: Array.from(new Set([
         ...effectiveAssets.mcpServers.default,
@@ -748,12 +755,14 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
       agentId: String(leftAdoption.agentId),
       roleTemplate: input.roleTemplate,
       environment: job.environment,
+      skillIds: input.left.artifact ? [input.skillId] : [],
     });
     await applyEvaluationEnvironment({
       adoptionId: job.right.adoptionId,
       agentId: String(rightAdoption.agentId),
       roleTemplate: input.roleTemplate,
       environment: job.environment,
+      skillIds: input.right.artifact ? [input.skillId] : [],
     });
     job.status = "running";
     job.stageLabel = "Promptfoo 正在执行左右对比";
