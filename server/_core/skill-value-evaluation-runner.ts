@@ -11,9 +11,11 @@ import { z } from "zod";
 import {
   createClawAdoption,
   createUser,
+  deleteAgentMcpPreference,
   getClawByAdoptId,
   getUserByEmail,
   resolveEffectiveRoleAssets,
+  setAgentMcpPreference,
 } from "../db";
 import { governanceFingerprint } from "./governance/contracts";
 import { callEaAssistantModelWithConfig } from "./ea-assistant-model";
@@ -43,6 +45,10 @@ type EvaluationSide = "left" | "right";
 
 const RUNTIME_TURN_TIMEOUT_MS = 300_000;
 const PROMPTFOO_TURN_TIMEOUT_MS = 310_000;
+const EVALUATION_MCP_TRANSPORT_SERVER_IDS = [
+  "enterprise_mcp_gateway",
+  "role_mcp_gateway",
+];
 
 export type SkillValueEvaluationArtifact = {
   versionId: string;
@@ -349,6 +355,16 @@ export function buildSkillValueEvaluationEnvironment(
   };
 }
 
+export function buildSkillValueEvaluationRuntimeMcpServerIds(
+  environment: SkillValueEvaluationEnvironment,
+): string[] {
+  const requiredServerIds = environment.mcpServers.map(server => server.serverId);
+  return Array.from(new Set([
+    ...requiredServerIds,
+    ...(requiredServerIds.length > 0 ? EVALUATION_MCP_TRANSPORT_SERVER_IDS : []),
+  ])).sort();
+}
+
 async function applyEvaluationEnvironment(input: {
   adoptionId: string;
   agentId: string;
@@ -369,8 +385,23 @@ async function applyEvaluationEnvironment(input: {
   if (unauthorized.length > 0) {
     throw new Error(`Skill 声明的 MCP 未获岗位授权：${unauthorized.join("、")}`);
   }
+  const requiredServerIdSet = new Set(requiredServerIds);
+  await Promise.all(Array.from(authorizedServers)
+    .filter(serverId => !platformServers.has(serverId))
+    .map(async (serverId) => {
+      if (requiredServerIdSet.has(serverId)) {
+        await deleteAgentMcpPreference(input.adoptionId, serverId);
+        return;
+      }
+      await setAgentMcpPreference({
+        adoptId: input.adoptionId,
+        serverId,
+        enabled: false,
+      });
+    }));
   const selectedSkillIds = Array.from(new Set(input.skillIds.map(skillId => skillId.trim()).filter(Boolean)))
     .sort();
+  const runtimeServerIds = buildSkillValueEvaluationRuntimeMcpServerIds(input.environment);
   const scopedAssets = {
     ...effectiveAssets,
     skills: {
@@ -380,7 +411,7 @@ async function applyEvaluationEnvironment(input: {
     mcpServers: {
       default: Array.from(new Set([
         ...effectiveAssets.mcpServers.default,
-        ...requiredServerIds.filter(serverId => platformServers.has(serverId)),
+        ...runtimeServerIds.filter(serverId => platformServers.has(serverId)),
       ])).sort(),
       optional: [...effectiveAssets.mcpServers.optional],
     },
@@ -389,7 +420,7 @@ async function applyEvaluationEnvironment(input: {
     workspaceDir: resolveRuntimeWorkspaceByIds(input.adoptionId, input.agentId),
     role,
     effectiveAssets: scopedAssets,
-    activeMcpServerIds: requiredServerIds,
+    activeMcpServerIds: runtimeServerIds,
     includePlatformMcp: false,
   });
   await refreshJiuwenRuntimeCapabilities(input.adoptionId);
@@ -651,6 +682,14 @@ function parseJudgeJson(content: string): unknown {
   throw new Error("专业 Judge 未返回 JSON");
 }
 
+export function remapAnonymousJudgeSideLabels(text: string, swapped: boolean): string {
+  if (!swapped) return text;
+  return text
+    .replace(/(?<![A-Za-z0-9])A(?![A-Za-z0-9])/g, "__EA_JUDGE_SIDE_A__")
+    .replace(/(?<![A-Za-z0-9])B(?![A-Za-z0-9])/g, "A")
+    .replace(/__EA_JUDGE_SIDE_A__/g, "B");
+}
+
 function deterministicFailureJudge(
   result: SkillValueEvaluationCaseResult,
 ): SkillValueEvaluationJudgeResult | null {
@@ -734,13 +773,13 @@ async function judgeCase(
   return {
     winner: mappedWinner,
     confidence: judged.confidence,
-    summary: judged.summary,
+    summary: remapAnonymousJudgeSideLabels(judged.summary, swapped),
     dimensions: judged.dimensions.map(dimension => ({
       id: dimension.id,
       label: dimension.label,
       leftScore: swapped ? dimension.bScore : dimension.aScore,
       rightScore: swapped ? dimension.aScore : dimension.bScore,
-      reason: dimension.reason,
+      reason: remapAnonymousJudgeSideLabels(dimension.reason, swapped),
     })),
     reviewerLabel: `GLM-5.2 匿名业务 Judge`,
   };

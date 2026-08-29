@@ -103,6 +103,21 @@ function parseJsonObject(content: string): unknown {
   throw new Error("AI Skill 分析未返回 JSON 对象");
 }
 
+function normalizeGeneratedPlan(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const plan = value as Record<string, unknown>;
+  return {
+    ...plan,
+    capabilities: Array.isArray(plan.capabilities)
+      ? plan.capabilities.slice(0, 6)
+      : plan.capabilities,
+    evaluationFocus: Array.isArray(plan.evaluationFocus)
+      ? plan.evaluationFocus.slice(0, 6)
+      : plan.evaluationFocus,
+    prompts: Array.isArray(plan.prompts) ? plan.prompts.slice(0, 5) : plan.prompts,
+  };
+}
+
 function listReferenceFiles(skillRoot: string): string[] {
   const referencesRoot = path.join(skillRoot, "references");
   if (!existsSync(referencesRoot)) return [];
@@ -306,6 +321,7 @@ async function analyzeSkill(input: {
           "关注专业判断、业务完整性、表达质量和可执行性，不把回答更长视为更好。",
           "输出严格 JSON：summary、taskMode、capabilities、evaluationFocus、prompts。",
           "taskMode 只能是 single_turn、multi_step、mixed。",
+          "capabilities 和 evaluationFocus 各输出 2 至 6 项。",
           "prompts 必须恰好 3 条，每条包含 name、prompt、evaluationGoal。",
           "整个 JSON 控制在 1800 个汉字以内，不输出 Markdown 或解释。",
           "测试题应像真实用户请求，不要提到正在评测、版本号或评分标准。",
@@ -326,7 +342,9 @@ async function analyzeSkill(input: {
     ],
   });
   return {
-    analysis: generatedPlanSchema.parse(parseJsonObject(result.content)),
+    analysis: generatedPlanSchema.parse(
+      normalizeGeneratedPlan(parseJsonObject(result.content)),
+    ),
     model: result.model,
   };
 }

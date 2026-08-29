@@ -375,7 +375,7 @@ async function callTool(
   name: string,
   args: Record<string, unknown>,
   requestIdentity?: unknown,
-) {
+): Promise<Record<string, unknown> & { isError?: boolean }> {
   let adoptId = "";
   try {
     adoptId = resolveAdoptId(req, args);

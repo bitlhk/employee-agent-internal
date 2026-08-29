@@ -6,8 +6,8 @@
   "targetVersionId": "skillver_a905cf2ee3627ddae8d0d654b0dd4924",
   "targetVersion": "1.0.1",
   "targetArtifactSha256": "62f0cd24fd9f67e4beeea81d4de5e2b69a3bec1c30f703b3136e94d6425be70a",
-  "suiteVersion": "1.0.1",
-  "suiteFingerprint": "f0f43437fcd4af82c1a02705a3c2a5f3733de9a16066104f01506c8e7233267c",
+  "suiteVersion": "1.0.2",
+  "suiteFingerprint": "30c96a99f479f9c7ba483eb2a04ece03c2dcd2786f35bc5586b73b39b61e1bf7",
   "sourceReferences": [
     {
       "sourceType": "approved_skill_artifact",
@@ -22,9 +22,9 @@
       "importance": "high",
       "skillType": "governed_workflow",
       "taskId": null,
-      "prompt": "请对这段脱敏销售对话进行阶段化点评，指出当前阶段、关键证据和下一步改进建议。",
+      "prompt": "请对以下脱敏车险续保对话进行阶段化点评，指出已经完成和缺失的销售阶段；每个判断必须引用对话原句，并给出下一轮最优先的三个追问。\n\n顾问：王女士您好，看到您的车辆下月续保，今天想先了解过去一年用车有没有变化。\n客户：我换了工作，每天通勤更远，周末偶尔带孩子自驾。\n顾问：去年是否有出险？\n客户：有一次小剐蹭，理赔两千多。\n顾问：今年我们有一款保障更全的，要不要直接给您算一下？\n客户：我主要担心保费涨太多。\n顾问：那我先按去年方案报价，优惠我再争取。",
       "expectedOutput": "准确区分已出现与缺失阶段，引用对话原句作为证据，并给出可执行的下一轮建议。",
-      "fixtureRefs": ["pending_expert_fixture"],
+      "fixtureRefs": ["GC-DEMO-SALES-DIALOGUE-001"],
       "assertions": [
         {
           "assertionId": "covered_stages_match_expert_ground_truth",

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "ea.skill-value-evaluation-curated.v1",
+  "skillId": "bond-quote-parse",
+  "cases": [
+    {
+      "caseId": "BOND-VALUE-001",
+      "name": "债券群聊报价解析",
+      "prompt": "请校验并解析下面的 BCCP 报价语料，输出结构化报价表、成功/失败统计和失败原因，并明确结果来源。\n\n{\"schema_version\":\"1.0\",\"client_request_id\":\"value-demo-001\",\"bond_context\":{\"room_name\":\"示例申购群\",\"tranches\":[{\"tranche_name\":\"24示例01\",\"term\":\"5Y\"}]},\"messages\":[{\"message_id\":\"m-001\",\"corpus_id\":1,\"corpus_type\":2,\"speak_time\":\"2026-06-02 09:30:00\",\"raw_content\":\"【发行】24示例01 5Y 规模10亿\"},{\"message_id\":\"m-002\",\"corpus_id\":2,\"corpus_type\":1,\"speaker_id\":\"trader_a\",\"speaker_name\":\"交易员甲\",\"institution_name\":\"示例券商A\",\"speak_time\":\"2026-06-02 10:05:00\",\"raw_content\":\"2.65% 5kw 账户4\"}],\"parse_options\":{\"debug\":false}}",
+      "expectedOutput": "先校验再调用服务端解析，展示 quotes_table 和失败项；不由模型自行推断机构、利率或投标量。"
+    },
+    {
+      "caseId": "BOND-VALUE-002",
+      "name": "报价字段缺失处理",
+      "prompt": "请处理下面的报价语料：corpus_id=101，corpus_type=报价，speak_time=2026-06-02 10:10:00，raw_content=2.70% 3000w，但没有 speaker_id。请说明能否形成最终报价表以及下一步需要补充什么。",
+      "expectedOutput": "识别报价行缺少 speaker_id，不能伪造机构或交易员并直接输出最终报价表，应明确最小补充字段。"
+    }
+  ]
+}

@@ -222,6 +222,5 @@ export async function handleSmartAuditTool(input: {
   });
   return attachContextReceipt({
     content: [{ type: "text", text: `EA_SMART_AUDIT_DECISION:${JSON.stringify(modelResult)}` }],
-    ...(ready ? {} : { isError: true }),
   }, receipt);
 }

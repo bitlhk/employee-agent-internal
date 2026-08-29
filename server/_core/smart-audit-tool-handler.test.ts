@@ -56,7 +56,7 @@ describe("smart audit platform tool handler", () => {
       adoptId: principal.adoptionId,
       principal,
     });
-    expect(result.isError).toBe(true);
+    expect(result).not.toHaveProperty("isError");
     expect(result.content[0].text).toContain('"level":"L4"');
     expect(mocks.recordAuditBestEffort).toHaveBeenCalledWith(expect.objectContaining({
       action: "governance.smart_audit.blocked",

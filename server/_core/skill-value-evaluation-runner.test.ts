@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildSkillValueEvaluationRuntimePrompt,
   buildSkillValueEvaluationEnvironment,
+  buildSkillValueEvaluationRuntimeMcpServerIds,
+  remapAnonymousJudgeSideLabels,
   summarizeSkillValueEvaluationCases,
   type SkillValueEvaluationCaseResult,
   type SkillValueEvaluationJudgeResult,
@@ -105,6 +107,31 @@ describe("skill value evaluation environment", () => {
       .toMatchObject({ mcpServers: [], declaredToolCount: 0, sameForBothSides: true });
   });
 
+  it("keeps governed MCP transports available without exposing them as declared tools", () => {
+    const environment = buildSkillValueEvaluationEnvironment("insurance", {
+      servers: {
+        customer_context: ["search_customers"],
+        insurance_product_exam_points: ["list_products"],
+      },
+    });
+
+    expect(buildSkillValueEvaluationRuntimeMcpServerIds(environment)).toEqual([
+      "customer_context",
+      "enterprise_mcp_gateway",
+      "insurance_product_exam_points",
+      "role_mcp_gateway",
+    ]);
+    expect(environment.mcpServers.map(server => server.serverId)).toEqual([
+      "customer_context",
+      "insurance_product_exam_points",
+    ]);
+  });
+
+  it("does not add MCP transports when the Skill declares no MCP environment", () => {
+    const environment = buildSkillValueEvaluationEnvironment("report-writer", { servers: {} });
+    expect(buildSkillValueEvaluationRuntimeMcpServerIds(environment)).toEqual([]);
+  });
+
   it("applies the same fast comparison budget to the selected-skill arm", () => {
     const prompt = buildSkillValueEvaluationRuntimePrompt("请完成选股", true);
 
@@ -121,5 +148,18 @@ describe("skill value evaluation environment", () => {
     expect(prompt).toContain("不要调用 skill_tool");
     expect(prompt).toContain("可以使用 read_file");
     expect(prompt).toContain("请完成选股");
+  });
+});
+
+describe("anonymous Judge labels", () => {
+  it("keeps visible A/B explanations aligned after a blind side swap", () => {
+    expect(remapAnonymousJudgeSideLabels(
+      "B 比 A 更完整；A/B 都已完成。ProductA 不应被改写。",
+      true,
+    )).toBe("A 比 B 更完整；B/A 都已完成。ProductA 不应被改写。");
+  });
+
+  it("leaves Judge explanations unchanged when the blind order was not swapped", () => {
+    expect(remapAnonymousJudgeSideLabels("A 胜出，B 次之。", false)).toBe("A 胜出，B 次之。");
   });
 });
