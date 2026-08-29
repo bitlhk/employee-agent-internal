@@ -28,6 +28,8 @@ import {
   deleteSkillMarketItem,
   getSkillVersionByLegacyMarketId,
   getSkillIdentityById,
+  getSkillIdentityBySkillId,
+  getSkillVersionById,
   listSkillVersionsByIdentity,
   reviewSkillVersionByLegacyMarketId,
   listSkillMarketV2Projection,
@@ -116,6 +118,16 @@ import {
 } from "./claw-memory-conflicts";
 import { getAvailableJiuwenModels, type RuntimeModelOption } from "../_core/available-models";
 import {
+  listRepositorySkillCandidates,
+  prepareSkillValueEvaluationPlan,
+} from "../_core/skill-value-evaluation";
+import { digestSkillSourceTree } from "../_core/skills/skill-artifact-digest";
+import {
+  getSkillValueEvaluationJob,
+  startSkillValueEvaluationJob,
+  type SkillValueEvaluationArtifact,
+} from "../_core/skill-value-evaluation-runner";
+import {
   applyAdminRoleReset,
   resolveSelectableAdoptRoleTemplate,
   type AdminClawAdoption,
@@ -196,6 +208,66 @@ const getAvailableModelsForRuntime = async (adoptId?: unknown): Promise<RuntimeM
 };
 
 const skillMarketDir = () => skillStoreMarketplaceDir();
+
+async function resolveSkillValueArtifact(
+  skillId: string,
+  versionId: string,
+): Promise<SkillValueEvaluationArtifact> {
+  if (versionId === "without_target_skill") return null;
+  if (versionId.startsWith("candidate_")) {
+    const candidate = listRepositorySkillCandidates(APP_ROOT, skillId)
+      .find(item => item.versionId === versionId);
+    if (!candidate) throw new Error("所选候选版本不存在");
+    return candidate;
+  }
+  if (versionId.startsWith("legacy-market-")) {
+    const marketId = Number(versionId.slice("legacy-market-".length));
+    const item = await getSkillMarketItem(marketId);
+    if (!item || String(item.skillId || "") !== skillId) {
+      throw new Error("所选 Skill 版本不存在");
+    }
+    const artifactPath = remapLegacySkillMarketPath(String(item.packagePath || ""));
+    if (!artifactPath || !existsSync(artifactPath)) throw new Error("Skill Artifact 不存在");
+    return {
+      versionId,
+      version: String(item.version || "1.0.0"),
+      artifactSha256: digestSkillSourceTree(artifactPath).sha256,
+      artifactPath,
+    };
+  }
+  const identity = await getSkillIdentityBySkillId(skillId);
+  const stored = await getSkillVersionById(versionId);
+  if (
+    !identity
+    || !stored
+    || stored.skillIdentityId !== identity.identityId
+    || stored.status !== "approved"
+  ) {
+    throw new Error("所选 Skill 版本不可用于评测");
+  }
+  return {
+    versionId: stored.versionId,
+    version: stored.version,
+    artifactSha256: stored.artifactSha256,
+    artifactPath: stored.artifactPath,
+  };
+}
+
+async function resolveSkillValueRoleTemplate(skillId: string): Promise<string> {
+  const validRoles = new Set(listAgentRoleTemplates().map(role => role.id));
+  const grants = (await listRoleAssetGrants())
+    .filter(grant =>
+      grant.assetType === "skill"
+      && grant.assetId === skillId
+      && grant.enabled
+      && grant.roleKey !== "*"
+      && validRoles.has(grant.roleKey))
+    .sort((left, right) => {
+      if (left.grantMode !== right.grantMode) return left.grantMode === "default" ? -1 : 1;
+      return left.roleKey.localeCompare(right.roleKey);
+    });
+  return grants[0]?.roleKey || "general-assistant";
+}
 
 export const clawRouter = router({
     me: protectedProcedure.query(async ({ ctx }) => {
@@ -1149,6 +1221,264 @@ export const clawRouter = router({
             versionCount: identity ? versionCount.get(identity.identityId) || 0 : 0,
           };
         });
+      }),
+
+    adminSkillEvaluationContext: adminProcedure
+      .input(z.object({ skillId: skillIdSchema }))
+      .query(async ({ input }) => {
+        const marketRows = (await listSkillMarketItems())
+          .filter(row => String(row.skillId || "") === input.skillId);
+        const marketItem = marketRows.find(row => row.status === "approved") || marketRows[0];
+        if (!marketItem) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Skill 不存在" });
+        }
+        const identity = await getSkillIdentityBySkillId(input.skillId);
+        const storedVersions = identity
+          ? (await listSkillVersionsByIdentity(identity.identityId))
+            .filter(version => version.status === "approved")
+          : [];
+        const approvedVersions = storedVersions.length > 0
+          ? storedVersions.map(version => ({
+              versionId: version.versionId,
+              version: version.version,
+              artifactSha256: version.artifactSha256,
+              submittedAt: version.submittedAt,
+              isLatest: version.versionId === identity?.latestApprovedVersionId,
+              releaseStatus: "approved" as const,
+            }))
+          : (() => {
+              const artifactPath = remapLegacySkillMarketPath(String(marketItem.packagePath || ""));
+              const digest = artifactPath && existsSync(artifactPath)
+                ? digestSkillSourceTree(artifactPath)
+                : null;
+              return [{
+                versionId: `legacy-market-${marketItem.id}`,
+                version: String(marketItem.version || "1.0.0"),
+                artifactSha256: digest?.sha256 || "",
+                submittedAt: marketItem.createdAt,
+                isLatest: true,
+                releaseStatus: "approved" as const,
+              }];
+            })();
+        const repositoryCandidates = listRepositorySkillCandidates(APP_ROOT, input.skillId);
+        const candidateVersions = repositoryCandidates.map((candidate, index) => ({
+          versionId: candidate.versionId,
+          version: candidate.version,
+          artifactSha256: candidate.artifactSha256,
+          submittedAt: null,
+          isLatest: false,
+          releaseStatus: "candidate" as const,
+          isRecommendedCandidate: index === 0,
+        }));
+        const versions = [...candidateVersions, ...approvedVersions];
+        const models = await getAvailableJiuwenModels();
+        const recommendedModel = models.find(model => model.id !== JIUWEN_AUTO_MODEL_ID)
+          || models[0];
+        return {
+          skill: {
+            skillId: input.skillId,
+            name: String(marketItem.name || input.skillId),
+            description: String(marketItem.description || ""),
+            category: String(marketItem.category || "general"),
+            author: String(marketItem.author || ""),
+          },
+          versions,
+          models: models.filter(model => model.id !== JIUWEN_AUTO_MODEL_ID).map(model => ({
+            id: model.id,
+            name: model.name,
+            description: model.desc || "",
+          })),
+          recommendedModelId: recommendedModel?.id || JIUWEN_AUTO_MODEL_ID,
+          defaultComparison: {
+            left: { mode: "without_target_skill" as const, versionId: null },
+            right: {
+              mode: "skill_version" as const,
+              versionId: candidateVersions.find(version => version.isRecommendedCandidate)?.versionId
+                || versions.find(version => version.isLatest)?.versionId
+                || versions[0]?.versionId
+                || null,
+            },
+          },
+        };
+      }),
+
+    adminPrepareSkillEvaluation: adminProcedure
+      .input(z.object({
+        skillId: skillIdSchema,
+        targetVersionId: z.string().trim().min(1).max(128),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const marketRows = (await listSkillMarketItems())
+          .filter(row => String(row.skillId || "") === input.skillId);
+        const marketItem = marketRows.find(row => row.status === "approved") || marketRows[0];
+        if (!marketItem) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Skill 不存在" });
+        }
+        const identity = await getSkillIdentityBySkillId(input.skillId);
+        let version: {
+          versionId: string;
+          version: string;
+          artifactSha256: string;
+          artifactPath: string;
+        } | null = null;
+        if (input.targetVersionId.startsWith("legacy-market-")) {
+          const legacyMarketId = Number(input.targetVersionId.slice("legacy-market-".length));
+          const legacyItem = marketRows.find(row => Number(row.id) === legacyMarketId);
+          if (legacyItem) {
+            const artifactPath = remapLegacySkillMarketPath(String(legacyItem.packagePath || ""));
+            if (artifactPath && existsSync(artifactPath)) {
+              version = {
+                versionId: input.targetVersionId,
+                version: String(legacyItem.version || "1.0.0"),
+                artifactSha256: digestSkillSourceTree(artifactPath).sha256,
+                artifactPath,
+              };
+            }
+          }
+        } else if (input.targetVersionId.startsWith("candidate_")) {
+          const candidate = listRepositorySkillCandidates(APP_ROOT, input.skillId)
+            .find(item => item.versionId === input.targetVersionId);
+          if (candidate) version = candidate;
+        } else {
+          const stored = await getSkillVersionById(input.targetVersionId);
+          if (
+            stored
+            && identity
+            && stored.skillIdentityId === identity.identityId
+            && stored.status === "approved"
+          ) {
+            version = {
+              versionId: stored.versionId,
+              version: stored.version,
+              artifactSha256: stored.artifactSha256,
+              artifactPath: stored.artifactPath,
+            };
+          }
+        }
+        if (!version) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "所选 Skill 版本不可用于评测" });
+        }
+        try {
+          const plan = await prepareSkillValueEvaluationPlan({
+            root: APP_ROOT,
+            skillId: input.skillId,
+            skillName: String(marketItem.name || input.skillId),
+            description: marketItem.description,
+            version,
+          });
+          await recordAuditBestEffort({
+            action: "skill.value_evaluation.prepared",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "skill",
+            targetId: input.skillId,
+            targetName: String(marketItem.name || input.skillId),
+            metadata: {
+              targetVersionId: version.versionId,
+              targetVersion: version.version,
+              analyzerModel: plan.analyzerModel,
+              analyzerStatus: plan.analyzerStatus,
+              promptCount: plan.prompts.length,
+              planFingerprint: plan.planFingerprint,
+            },
+          });
+          return plan;
+        } catch (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error instanceof Error ? error.message : "准备 Skill 评测失败",
+          });
+        }
+      }),
+
+    adminStartSkillEvaluation: adminProcedure
+      .input(z.object({
+        skillId: skillIdSchema,
+        left: z.object({
+          selectionId: z.string().trim().min(1).max(128),
+          modelId: z.string().trim().min(1).max(200),
+        }),
+        right: z.object({
+          selectionId: z.string().trim().min(1).max(128),
+          modelId: z.string().trim().min(1).max(200),
+        }),
+        prompts: z.array(z.object({
+          promptId: z.string().trim().min(1).max(128),
+          name: z.string().trim().min(1).max(120),
+          prompt: z.string().trim().min(8).max(4_000),
+          evaluationGoal: z.string().trim().min(1).max(500),
+        })).min(1).max(5),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        if (
+          input.left.selectionId === input.right.selectionId
+          && input.left.modelId === input.right.modelId
+        ) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "左右配置完全相同" });
+        }
+        const marketRows = (await listSkillMarketItems())
+          .filter(row => String(row.skillId || "") === input.skillId);
+        const marketItem = marketRows.find(row => row.status === "approved") || marketRows[0];
+        if (!marketItem) throw new TRPCError({ code: "NOT_FOUND", message: "Skill 不存在" });
+        const availableModels = await getAvailableJiuwenModels();
+        const availableModelIds = new Set(
+          availableModels
+            .filter(model => model.id !== JIUWEN_AUTO_MODEL_ID)
+            .map(model => model.id),
+        );
+        if (
+          !availableModelIds.has(input.left.modelId)
+          || !availableModelIds.has(input.right.modelId)
+        ) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "所选模型当前不可用" });
+        }
+        try {
+          const [leftArtifact, rightArtifact, roleTemplate] = await Promise.all([
+            resolveSkillValueArtifact(input.skillId, input.left.selectionId),
+            resolveSkillValueArtifact(input.skillId, input.right.selectionId),
+            resolveSkillValueRoleTemplate(input.skillId),
+          ]);
+          const job = startSkillValueEvaluationJob({
+            skillId: input.skillId,
+            skillName: String(marketItem.name || input.skillId),
+            roleTemplate,
+            left: { modelId: input.left.modelId, artifact: leftArtifact },
+            right: { modelId: input.right.modelId, artifact: rightArtifact },
+            prompts: input.prompts,
+          });
+          await recordAuditBestEffort({
+            action: "skill.value_evaluation.started",
+            ...auditActor(ctx.user),
+            ...auditRequest(ctx.req),
+            targetType: "skill",
+            targetId: input.skillId,
+            targetName: String(marketItem.name || input.skillId),
+            metadata: {
+              jobId: job.jobId,
+              roleTemplate,
+              leftSelectionId: input.left.selectionId,
+              rightSelectionId: input.right.selectionId,
+              leftModelId: input.left.modelId,
+              rightModelId: input.right.modelId,
+              promptCount: input.prompts.length,
+              configurationFingerprint: job.configurationFingerprint,
+            },
+          });
+          return job;
+        } catch (error) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: error instanceof Error ? error.message : "启动 Skill 评测失败",
+          });
+        }
+      }),
+
+    adminGetSkillEvaluationJob: adminProcedure
+      .input(z.object({ jobId: z.string().trim().min(1).max(128) }))
+      .query(({ input }) => {
+        const job = getSkillValueEvaluationJob(input.jobId);
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "评测任务不存在或已过期" });
+        return job;
       }),
 
     adminRoleAssetCatalog: adminProcedure.query(async () => {

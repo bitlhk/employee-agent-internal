@@ -437,7 +437,7 @@ function pythonStringField(value: string, field: string): string | null {
   return null;
 }
 
-function nativeLoadedSkills(events: RuntimeSseEvent[]): NativeLoadedSkillEvidence[] {
+export function nativeLoadedSkills(events: RuntimeSseEvent[]): NativeLoadedSkillEvidence[] {
   const calls = new Map<string, { skillId: string }>();
   for (const event of events) {
     if (event.event !== "tool_call" || event.data.name !== "skill_tool") continue;
@@ -474,7 +474,7 @@ function nativeLoadedSkills(events: RuntimeSseEvent[]): NativeLoadedSkillEvidenc
   return loaded;
 }
 
-function streamGate(events: RuntimeSseEvent[]): {
+export function streamGate(events: RuntimeSseEvent[]): {
   completed: boolean;
   streamEndCount: number;
   unpairedToolCallIds: string[];
@@ -498,7 +498,7 @@ function streamGate(events: RuntimeSseEvent[]): {
   };
 }
 
-function parseRuntimeSse(raw: string): {
+export function parseRuntimeSse(raw: string): {
   events: RuntimeSseEvent[];
   assistantText: string;
   run: Record<string, unknown> | null;
