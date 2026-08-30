@@ -405,7 +405,11 @@ function parseRecord(value: unknown): Record<string, unknown> | null {
   }
 }
 
-function pythonStringField(value: string, field: string): string | null {
+function pythonStringField(
+  value: string,
+  field: string,
+  options: { allowTruncated?: boolean } = {},
+): string | null {
   const marker = `'${field}': '`;
   const start = value.indexOf(marker);
   if (start < 0) return null;
@@ -418,7 +422,7 @@ function pythonStringField(value: string, field: string): string | null {
       continue;
     }
     const escaped = value[index + 1];
-    if (escaped === undefined) return null;
+    if (escaped === undefined) return options.allowTruncated && output ? output : null;
     index += 1;
     if (escaped === "n") output += "\n";
     else if (escaped === "r") output += "\r";
@@ -434,7 +438,7 @@ function pythonStringField(value: string, field: string): string | null {
       index += 2;
     } else output += escaped;
   }
-  return null;
+  return options.allowTruncated && output ? output : null;
 }
 
 export function nativeLoadedSkills(events: RuntimeSseEvent[]): NativeLoadedSkillEvidence[] {
@@ -456,7 +460,9 @@ export function nativeLoadedSkills(events: RuntimeSseEvent[]): NativeLoadedSkill
     const structuredData = parseRecord(structured?.data) || structured;
     const rawResult = typeof event.data.result === "string" ? event.data.result : "";
     const skillContent = String(
-      structuredData?.skill_content || pythonStringField(rawResult, "skill_content") || ""
+      structuredData?.skill_content
+      || pythonStringField(rawResult, "skill_content", { allowTruncated: true })
+      || ""
     );
     if (!skillContent) continue;
     const metadata = parseSkillMarkdown(skillContent);

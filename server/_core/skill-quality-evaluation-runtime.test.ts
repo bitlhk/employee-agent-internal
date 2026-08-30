@@ -9,6 +9,8 @@ import {
 import {
   buildSkillEvaluationRuntimeProfile,
   executeSkillEvaluationRuntimeTurn,
+  nativeLoadedSkills,
+  parseRuntimeSse,
   skillEvaluationRuntimeProfileV1Schema,
 } from "./skill-quality-evaluation-runtime";
 
@@ -62,6 +64,35 @@ afterEach(() => {
 });
 
 describe("Skill Quality Phase 1B EA Runtime integration", () => {
+  it("reads Skill identity from an enterprise-truncated skill_tool result", () => {
+    const skillId = "wealth-manager-assistant";
+    const callId = `call-${skillId}`;
+    const skillContent = [
+      "---",
+      `name: ${skillId}`,
+      "version: 2.0.1",
+      "---",
+      "# 客户经理财富助手",
+      "x".repeat(2_000),
+    ].join("\n");
+    const result = `success=True data={'skill_directory': 'workspace/skills/${skillId}', 'skill_content': '${pythonString(skillContent)}'}`
+      .slice(0, 1_000);
+    const raw = [
+      "event: tool_call",
+      `data: ${JSON.stringify({ id: callId, name: "skill_tool", arguments: JSON.stringify({ skill_name: skillId }) })}`,
+      "",
+      "event: tool_result",
+      `data: ${JSON.stringify({ tool_call_id: callId, name: "skill_tool", result, is_error: false })}`,
+      "",
+      `data: ${JSON.stringify({ __stream_end: true })}`,
+      "",
+    ].join("\n");
+
+    expect(nativeLoadedSkills(parseRuntimeSse(raw).events)).toMatchObject([
+      { skillId, version: "2.0.1" },
+    ]);
+  });
+
   it("builds a three-adoption local Runtime profile", () => {
     const profile = buildSkillEvaluationRuntimeProfile({
       env: {
