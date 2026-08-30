@@ -16,11 +16,14 @@ describe("post-loan risk control Reference Role Pack assets", () => {
     const parsed = parseSkillSourceDirectory(skillRoot, "post-loan-risk-control-assistant");
     const markdown = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
     expect(parsed.warnings).toEqual([]);
-    expect(parsed.manifest?.version).toBe("1.2.0");
-    expect(markdown).toContain("version: 1.2.0");
+    expect(parsed.manifest?.version).toBe("1.2.1");
+    expect(markdown).toContain("version: 1.2.1");
     expect(markdown).toContain("references/four-dimension-diagnostic-framework.md");
     expect(markdown).toContain("get_post_loan_risk_snapshot");
     expect(markdown).toContain("snapshotRef");
+    expect(markdown).toContain("不得先逐项取数后再重复获取快照");
+    expect(markdown).toContain("快照就绪后立即");
+    expect(markdown).toContain("再且仅调用一次");
     expect(markdown).toContain("不得把完整快照交给模型转抄");
     expect(markdown).toContain("risk-control-a2a");
     expect(markdown).toContain("evaluate_post_loan_risk_escalation");

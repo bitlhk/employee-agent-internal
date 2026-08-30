@@ -66,6 +66,26 @@ export async function getSkillIdentityBySkillId(skillId: string) {
   )[0];
 }
 
+export async function updateSkillIdentityPresentation(input: {
+  identityId: string;
+  displayName: string;
+  description: string | null;
+  category: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db
+    .update(skillIdentities)
+    .set({
+      displayName: input.displayName,
+      description: input.description,
+      category: input.category,
+      updatedAt: new Date(),
+    })
+    .where(eq(skillIdentities.identityId, input.identityId));
+  return getSkillIdentityById(input.identityId);
+}
+
 export async function listSkillIdentitiesForMaintainer(
   userId: number,
   isAdmin: boolean

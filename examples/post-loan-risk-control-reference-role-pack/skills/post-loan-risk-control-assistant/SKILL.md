@@ -1,7 +1,7 @@
 ---
 name: post-loan-risk-control-assistant
 description: 贷后风控岗位主入口，协调授权企业数据、岗位知识、确定性预警规则与异步专业分析完成核查、诊断、报告和跟踪任务
-version: 1.2.0
+version: 1.2.1
 risk_level: high
 ---
 
@@ -23,24 +23,40 @@ risk_level: high
 1. 企业和贷款事实必须来自 `post_loan_risk_data`，不得从知识文档、远端 Agent 私有数据或模型常识补写。
 2. 每项业务事实标注数据来源和更新时间；缺失数据必须显式列出。
 3. 输出分为“已核验事实、分析判断、待核验事项、建议动作”。
-4. 未给出统一社会信用代码时，先调用 `search_risk_enterprises`；不得凭名称猜测企业身份。
-5. 单项查询直接调用 MCP；用户要求完整评估报告时先获取 `get_post_loan_risk_snapshot`，再调用 `submit_agent_task` 委派给 `risk-control-a2a`。
-6. 异步 Agent 只允许消费本轮受治理风险快照；远端自带 Mock、缓存或历史事实不得进入正式报告。
-7. 四维诊断只使用本 Skill 的 `references/four-dimension-diagnostic-framework.md`。不得加载其他技能中的缺失数据假设、自动五级分类或自动处置规则。
-8. 综合预警必须调用 `evaluate_post_loan_risk_escalation`，不得让模型或远端 Agent 替代确定性分级。
-9. Policy 输出是内部预警，不等同监管五级分类或授信审批结论。
-10. 创建跟踪任务必须调用当前环境已授权的企业任务能力，并经过确认、幂等和业务回执；该写能力不可用时只保留草稿，不阻断只读核查和报告。
+4. 用户给出企业名称时调用 `search_risk_enterprises` 定位统一社会信用代码；用户要求浏览授权企业时调用 `list_risk_enterprises`。不得凭名称猜测企业身份。
+5. 单项查询直接调用对应 MCP；全景核查、综合预警或报告任务优先调用一次 `get_post_loan_risk_snapshot`，不得先逐项取数后再重复获取快照。
+6. 同一企业、同一数据时点的目录、快照和领域工具不得重复调用。仅当快照明确缺失或用户要求刷新某个领域时，才补调领域工具。
+7. 综合预警在快照就绪后，先聚合所有贷款中的最大逾期天数、最不利五级分类、最大评级下调、最低押品覆盖和重大外部事件，再且仅调用一次 `evaluate_post_loan_risk_escalation`。不得按贷款分别调用，也不得对同一快照重算。
+8. 用户明确要求深度分析或异步报告时，才在快速预警完成后调用 `submit_agent_task` 委派给 `risk-control-a2a`。A2A 不得阻断快速核查和预警结果。
+9. 异步 Agent 只允许消费本轮受治理风险快照；远端自带 Mock、缓存或历史事实不得进入正式报告。
+10. 四维诊断只使用本 Skill 的 `references/four-dimension-diagnostic-framework.md`。不得加载其他技能中的缺失数据假设、自动五级分类或自动处置规则。
+11. Policy 输出是内部预警，不等同监管五级分类或授信审批结论。
+12. 创建跟踪任务必须调用当前环境已授权的企业任务能力，并经过确认、幂等和业务回执；该写能力不可用时只保留草稿，不阻断只读核查和报告。
+
+## 默认专业主链
+
+默认在一次交互内完成可执行的快速研判：
+
+```text
+企业定位
+→ 统一风险快照
+→ 确定性预警
+→ 风险主因与传导链
+→ 待核验证据
+→ P0 / P1 / P2 人工动作
+```
+
+专业判断优先回答四个问题：当前最主要的风险触发是什么；第一还款来源是否恶化；押品、担保等第二还款来源能否覆盖；外部事件和行业环境是否正在放大风险。不得只罗列指标，也不得把所有异常写成同一优先级。涉及授信、提款、分类、保全或重组的建议，只能表述为“提请有权人员评估或审批”，不得写成 Agent 已决定或立即执行。
 
 ## 任务路由
 
 ### RC-GT-01 企业贷后全景核查
 
-先通过 `search_risk_enterprises` 定位统一社会信用代码，再依次核验：
+用户要求列出企业时调用一次 `list_risk_enterprises`；用户给出企业名称或统一社会信用代码时调用一次 `search_risk_enterprises`。完成身份定位后：
 
-1. `get_enterprise_profile`；
-2. `get_loan_account`；
-3. `get_credit_rating`；
-4. 按需要补充财务、还款、押品和担保。
+1. 全景核查直接调用 `get_post_loan_risk_snapshot`；
+2. 单项问题只调用对应领域工具；
+3. 快照已包含企业、贷款、评级、财务、还款、押品、担保和外部风险时，不再重复调用这些领域工具。
 
 主体或贷款账户不可用时停止并索取最小输入，不得编造企业事实。
 
@@ -68,13 +84,13 @@ get_dishonest_record
 
 ### RC-GT-05 综合预警分级与评估报告
 
-1. 调用 `get_post_loan_risk_snapshot`，确认 `status=READY`、`data.completeness.criticalComplete=true` 并保存 `snapshotFingerprint`；
-2. 快照不完整时输出已核验事实和缺口，禁止提交完整评估，也禁止用假设值补齐；
-3. 读取 `references/four-dimension-diagnostic-framework.md`，仅使用其中的证据组织方法；
-4. 调用 `submit_agent_task`，`agent_id` 必须为 `risk-control-a2a`；任务正文只描述分析目标，`governed_payload` 使用下述不可变快照引用，完整快照由 EA 服务端按指纹校验后注入；
-5. 异步提交成功后展示任务卡或 `task_id`，不得在任务完成前声称报告已生成；
-6. A2A 结果返回后，将快照中的逾期、分类、评级变化、重大外部事件、押品覆盖和数据完整性传给 `evaluate_post_loan_risk_escalation`；
-7. 最终报告明确区分 MCP 事实、远端分析和 EA Policy，并列出快照指纹、规则版本和人工复核要求；
+1. 调用一次 `get_post_loan_risk_snapshot`，确认 `status=READY`、`data.completeness.criticalComplete=true` 并保存 `snapshotFingerprint`；
+2. 快照不完整时输出已核验事实和缺口，禁止形成正式综合预警，也禁止用假设值补齐；
+3. 快照就绪后立即将其中的逾期、分类、评级变化、重大外部事件、押品覆盖和完整性传给 `evaluate_post_loan_risk_escalation`；
+4. 使用 `references/four-dimension-diagnostic-framework.md` 组织快速报告，先给预警等级和核心触发，再解释风险传导、待核验证据及 P0/P1/P2 人工动作；
+5. 只有用户明确要求深度分析或异步报告时，才调用 `submit_agent_task`。`agent_id` 必须为 `risk-control-a2a`，`governed_payload` 使用下述不可变快照引用；
+6. 异步提交成功后展示任务卡或 `task_id`，不得在任务完成前声称深度报告已生成；
+7. A2A 结果返回后不得再次调用已完成的 Policy；最终报告明确区分 MCP 事实、远端分析和 EA Policy，并列出快照指纹、规则版本和人工复核要求；
 8. 使用当前有效的 V2.0 处置细则，禁止引用历史 V1.0。
 
 ## 异步委派契约
