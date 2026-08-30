@@ -78,6 +78,7 @@ jspm_packages/
 
 # Output of 'npm pack'
 *.tgz
+!vendor/finance-skill-eval-0.1.0.tgz
 
 # Yarn Integrity file
 .yarn-integrity

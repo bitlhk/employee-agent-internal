@@ -72,6 +72,9 @@ importers:
       express-validator:
         specifier: ^7.3.2
         version: 7.3.2
+      finance-skill-eval:
+        specifier: file:vendor/finance-skill-eval-0.1.0.tgz
+        version: file:vendor/finance-skill-eval-0.1.0.tgz(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9)
       form-data:
         specifier: ^4.0.6
         version: 4.0.6
@@ -4365,6 +4368,12 @@ packages:
     resolution: {integrity: sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==}
     engines: {node: '>= 18.0.0'}
 
+  finance-skill-eval@file:vendor/finance-skill-eval-0.1.0.tgz:
+    resolution: {integrity: sha512-qeKQnl/eF8g/hEK5Cvz2J3LGKICtvvvi8BnaRy9Y2BrM/H/mAObBZ72zK0Zco76R/5QIFXtRjhZcEBysVf+bgA==, tarball: file:vendor/finance-skill-eval-0.1.0.tgz}
+    version: 0.1.0
+    engines: {node: '>=22'}
+    hasBin: true
+
   find-up@4.1.0:
     resolution: {integrity: sha512-PpOwAdQ/YlXQ2vj8a3h8IipDuYRi3wceVQQGYWxNINccq40Anw7BlsEXCMbt1Zt+OLA6Fq9suIpIWD0OsnISlw==}
     engines: {node: '>=8'}
@@ -6972,6 +6981,11 @@ packages:
     resolution: {integrity: sha512-YgvUTfwqyc7UXVMrB+SImsVYSmTS8X/tSrtdNZMImM+n7+QTriRXyXim0mBrTXNeqzVF0KWGgHPeiyViFFrNDw==}
     engines: {node: '>=18'}
 
+  yaml@2.8.1:
+    resolution: {integrity: sha512-lcYcMxX2PO9XMGvAJkJ3OsNMw+/7FKes7/hgerGUYWIoWu5j/+YQqcZr5JnPZWzOsEBgMbSbiSTn/dv/69Mkpw==}
+    engines: {node: '>= 14.6'}
+    hasBin: true
+
   yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
     engines: {node: '>= 14.6'}
@@ -7009,6 +7023,9 @@ packages:
     engines: {node: '>=18.0.0'}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
+
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
   zod@4.1.12:
     resolution: {integrity: sha512-JInaHOamG8pt5+Ey8kGmdcAcg3OL9reK8ltczgHTAwNhMys/6ThXHityHxVV2p3fkw/c+MAvBHFVYHFZDmjMCQ==}
@@ -11302,6 +11319,63 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  finance-skill-eval@file:vendor/finance-skill-eval-0.1.0.tgz(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9):
+    dependencies:
+      promptfoo: 0.122.2(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9)
+      yaml: 2.8.1
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@aws-sdk/credential-provider-node'
+      - '@aws-sdk/credential-providers'
+      - '@cfworker/json-schema'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client-wasm'
+      - '@mongodb-js/zstd'
+      - '@neondatabase/serverless'
+      - '@node-rs/xxhash'
+      - '@op-engineering/op-sqlite'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@smithy/hash-node'
+      - '@smithy/signature-v4'
+      - '@swc/helpers'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/json-schema'
+      - '@types/node'
+      - '@types/pg'
+      - '@types/react'
+      - '@types/sql.js'
+      - '@upstash/redis'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - babel-plugin-macros
+      - better-sqlite3
+      - bufferutil
+      - bun-types
+      - expo-sqlite
+      - gel
+      - graphql
+      - kerberos
+      - knex
+      - kysely
+      - mongodb-client-encryption
+      - mysql2
+      - pg
+      - pg-native
+      - playwright-core
+      - postgres
+      - prisma
+      - react-devtools-core
+      - snappy
+      - socks
+      - sql.js
+      - sqlite3
+      - supports-color
+      - utf-8-validate
+
   find-up@4.1.0:
     dependencies:
       locate-path: 5.0.0
@@ -14569,6 +14643,8 @@ snapshots:
 
   yallist@5.0.0: {}
 
+  yaml@2.8.1: {}
+
   yaml@2.9.0:
     optional: true
 
@@ -14616,6 +14692,8 @@ snapshots:
   zod-validation-error@4.0.2(zod@4.1.12):
     dependencies:
       zod: 4.1.12
+
+  zod@3.25.76: {}
 
   zod@4.1.12: {}
 

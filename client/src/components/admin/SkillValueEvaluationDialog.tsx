@@ -490,6 +490,7 @@ function NewEvaluationWorkbench({
         <div className="text-[11px] font-medium text-gray-500">本轮怎么测</div>
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-gray-700">
           {[
+            ["Finance Skill Eval", "金融试卷与评价方法"],
             ["Agent Skills", "读取 SKILL.md 与引用"],
             ["AI 组题", "标准题 + 变化题"],
             ["Promptfoo", "同题左右对照"],
@@ -672,7 +673,7 @@ function NewEvaluationWorkbench({
                 {job.stageLabel}
               </div>
               <div className="mt-1 text-xs text-gray-500">
-                {job.roleTemplate} · Promptfoo {job.promptfoo.version}
+                {job.roleTemplate} · Finance Skill Eval {job.evaluationEngine.version} · Promptfoo {job.promptfoo.version}
               </div>
             </div>
             <div className="flex items-center gap-3">

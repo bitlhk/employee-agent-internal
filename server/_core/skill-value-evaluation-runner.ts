@@ -2,12 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
-  evaluate,
-  type ApiProvider,
-  type CallApiContextParams,
-  type ProviderResponse,
-} from "promptfoo";
-import { z } from "zod";
+  FINANCE_SKILL_EVAL_VERSION,
+  fingerprint as financeEvalFingerprint,
+  ModelPairwiseJudge,
+  runEvaluation,
+  type EvalCase as FinanceEvalCase,
+  type EvalPack as FinanceEvalPack,
+  type ModelAdapter as FinanceModelAdapter,
+  type RuntimeAdapter as FinanceRuntimeAdapter,
+  type RuntimeExecutionEvidence,
+} from "finance-skill-eval";
 import {
   createClawAdoption,
   createUser,
@@ -145,6 +149,10 @@ export type SkillValueEvaluationJob = {
   promptfoo: {
     version: "0.122.2";
     completed: boolean;
+  };
+  evaluationEngine: {
+    id: "finance-skill-eval";
+    version: string;
   };
   judge: {
     modelId: string;
@@ -577,111 +585,6 @@ async function executeRuntimeTurn(input: {
   }
 }
 
-class RuntimeComparisonProvider implements ApiProvider {
-  constructor(
-    private readonly input: {
-      jobId: string;
-      side: EvaluationSide;
-      adoptionId: string;
-      skillId: string;
-      config: SkillValueEvaluationSideConfig;
-    },
-  ) {}
-
-  id(): string {
-    return `ea:skill-value:${this.input.side}`;
-  }
-
-  async callApi(
-    _prompt: string,
-    context?: CallApiContextParams,
-  ): Promise<ProviderResponse> {
-    const promptId = String(context?.vars?.promptId || "");
-    const prompt = String(context?.vars?.prompt || "");
-    const job = jobs.get(this.input.jobId);
-    if (!job) return { error: "Skill 评测任务不存在" };
-    const caseResult = job.cases.find(item => item.promptId === promptId);
-    if (!caseResult) return { error: `未知测试题 ${promptId}` };
-    let result: SkillValueEvaluationTurnResult;
-    try {
-      result = await executeRuntimeTurn({
-        side: this.input.side,
-        adoptionId: this.input.adoptionId,
-        skillId: this.input.skillId,
-        modelId: this.input.config.modelId,
-        artifact: this.input.config.artifact,
-        prompt,
-        configurationFingerprint: job.configurationFingerprint,
-      });
-    } catch (error) {
-      result = {
-        side: this.input.side,
-        status: "failed",
-        modelId: this.input.config.modelId,
-        skillVersion: this.input.config.artifact?.version || null,
-        assistantText: "",
-        elapsedMs: 0,
-        toolCalls: [],
-        loadedSkills: [],
-        usage: null,
-        runtimeIdentityVerified: false,
-        streamCompleted: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-    caseResult[this.input.side] = result;
-    job.completedRuns += 1;
-    job.updatedAt = new Date().toISOString();
-    return result.error
-      ? { output: result.assistantText || `执行失败：${result.error}` }
-      : { output: result.assistantText };
-  }
-}
-
-const judgeResponseSchema = z.strictObject({
-  winner: z.preprocess(value => {
-    const normalized = String(value || "").trim().toUpperCase();
-    if (["平", "持平", "平局"].includes(String(value || "").trim())) return "TIE";
-    return normalized;
-  }, z.enum(["A", "B", "TIE"])),
-  confidence: z.preprocess(value => {
-    if (typeof value === "number") {
-      return value >= 0.8 ? "high" : value >= 0.55 ? "medium" : "low";
-    }
-    const normalized = String(value || "").trim().toLowerCase();
-    if (["高", "较高", "high"].includes(normalized)) return "high";
-    if (["中", "中等", "medium"].includes(normalized)) return "medium";
-    if (["低", "较低", "low"].includes(normalized)) return "low";
-    return normalized;
-  }, z.enum(["low", "medium", "high"])),
-  summary: z.string().trim().min(1).max(600),
-  dimensions: z.array(z.strictObject({
-    id: z.enum([
-      "professional_fit",
-      "business_completeness",
-      "clarity",
-      "actionability",
-    ]),
-    label: z.string().trim().min(1).max(40),
-    aScore: z.coerce.number().int().min(1).max(4),
-    bScore: z.coerce.number().int().min(1).max(4),
-    reason: z.string().trim().min(1).max(300),
-  })).length(4),
-});
-
-function parseJudgeJson(content: string): unknown {
-  const trimmed = content.trim();
-  try {
-    return JSON.parse(trimmed);
-  } catch {}
-  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/iu)?.[1];
-  if (fenced) return JSON.parse(fenced);
-  const start = trimmed.indexOf("{");
-  const end = trimmed.lastIndexOf("}");
-  if (start >= 0 && end > start) return JSON.parse(trimmed.slice(start, end + 1));
-  throw new Error("专业 Judge 未返回 JSON");
-}
-
 export function remapAnonymousJudgeSideLabels(text: string, swapped: boolean): string {
   if (!swapped) return text;
   return text
@@ -690,101 +593,211 @@ export function remapAnonymousJudgeSideLabels(text: string, swapped: boolean): s
     .replace(/__EA_JUDGE_SIDE_A__/g, "B");
 }
 
-function deterministicFailureJudge(
-  result: SkillValueEvaluationCaseResult,
-): SkillValueEvaluationJudgeResult | null {
-  if (!result.left || !result.right) return null;
-  if (result.left.status === "completed" && result.right.status === "completed") return null;
-  const winner = result.left.status === result.right.status
-    ? "tie" as const
-    : result.left.status === "completed"
-      ? "left" as const
-      : "right" as const;
+function financeUsageFromRuntime(
+  usage: Record<string, unknown> | null,
+): RuntimeExecutionEvidence["usage"] {
+  if (!usage) return null;
+  const numberValue = (...keys: string[]) => {
+    for (const key of keys) {
+      const value = usage[key];
+      if (typeof value === "number" && Number.isFinite(value)) return value;
+    }
+    return undefined;
+  };
   return {
-    winner,
-    confidence: "high",
-    summary: winner === "tie"
-      ? "左右两组均未完成 Runtime 执行，本题无法比较专业质量。"
-      : `${winner === "left" ? "左侧" : "右侧"}完成执行，另一侧发生 Runtime 失败。`,
-    dimensions: [
-      ["professional_fit", "专业匹配"],
-      ["business_completeness", "业务完整"],
-      ["clarity", "表达清晰"],
-      ["actionability", "可执行性"],
-    ].map(([id, label]) => ({
-      id: id as SkillValueEvaluationJudgeResult["dimensions"][number]["id"],
-      label,
-      leftScore: result.left?.status === "completed" ? 1 : 0,
-      rightScore: result.right?.status === "completed" ? 1 : 0,
-      reason: "Runtime 未完成的一侧不进入专业内容比较。",
-    })),
-    reviewerLabel: "Runtime 完整性判断",
+    inputTokens: numberValue("input", "prompt_tokens", "input_tokens"),
+    outputTokens: numberValue("output", "completion_tokens", "output_tokens"),
+    totalTokens: numberValue("total", "total_tokens"),
   };
 }
 
-async function judgeCase(
-  result: SkillValueEvaluationCaseResult,
-): Promise<SkillValueEvaluationJudgeResult> {
-  const failureJudge = deterministicFailureJudge(result);
-  if (failureJudge) return failureJudge;
-  if (!result.left || !result.right) throw new Error("左右输出尚未完成");
-  const swapped = Number.parseInt(
-    governanceFingerprint({ promptId: result.promptId, prompt: result.prompt }).slice(-1),
-    16,
-  ) % 2 === 1;
-  const outputA = swapped ? result.right.assistantText : result.left.assistantText;
-  const outputB = swapped ? result.left.assistantText : result.right.assistantText;
-  const modelConfig = await resolveSkillValueModelConfig("glm-5.2");
-  const response = await callEaAssistantModelWithConfig(modelConfig, {
-    maxTokens: 2_000,
-    temperature: 0.1,
-    timeoutMs: 90_000,
-    responseFormat: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: [
-          "你是匿名 Agent Skill 业务质量评审。",
-          "不知道 A/B 使用了什么 Skill 或版本，也不得猜测。",
-          "只比较专业匹配度、业务完整性、结构与表达清晰度、可执行性。",
-          "回答更长、字段更多或技术术语更多不构成优势。",
-          "具体或有冲击力不等于专业；任务未提供且输出无法证明的客户、产品或业务假设应降低专业匹配度和可执行性评分。",
-          "每个维度按 1-4 分评价，必须解释真正影响业务采用的差异。",
-          "输出严格 JSON，包含 winner(A/B/TIE)、confidence、summary、dimensions。",
-          "dimensions 必须恰好包含 professional_fit、business_completeness、clarity、actionability，字段为 id、label、aScore、bScore、reason。",
-        ].join("\n"),
-      },
-      {
-        role: "user",
-        content: JSON.stringify({
-          task: result.prompt,
-          evaluationGoal: result.evaluationGoal,
-          outputA,
-          outputB,
-        }),
-      },
-    ],
-  });
-  const judged = judgeResponseSchema.parse(parseJudgeJson(response.content));
-  const mappedWinner = judged.winner === "TIE"
-    ? "tie" as const
-    : judged.winner === "A"
-      ? swapped ? "right" as const : "left" as const
-      : swapped ? "left" as const : "right" as const;
+function runtimeTurnFromFinanceEvidence(
+  evidence: RuntimeExecutionEvidence,
+): SkillValueEvaluationTurnResult {
   return {
-    winner: mappedWinner,
-    confidence: judged.confidence,
-    summary: remapAnonymousJudgeSideLabels(judged.summary, swapped),
-    dimensions: judged.dimensions.map(dimension => ({
-      id: dimension.id,
-      label: dimension.label,
-      leftScore: swapped ? dimension.bScore : dimension.aScore,
-      rightScore: swapped ? dimension.aScore : dimension.bScore,
-      reason: remapAnonymousJudgeSideLabels(dimension.reason, swapped),
-    })),
-    reviewerLabel: `GLM-5.2 匿名业务 Judge`,
+    side: evidence.side,
+    status: evidence.status,
+    modelId: evidence.modelId,
+    skillVersion: evidence.skillVersion,
+    assistantText: evidence.output,
+    elapsedMs: evidence.elapsedMs,
+    toolCalls: evidence.toolCalls,
+    loadedSkills: evidence.loadedSkills,
+    usage: evidence.usage ? {
+      input: evidence.usage.inputTokens,
+      output: evidence.usage.outputTokens,
+      total: evidence.usage.totalTokens,
+    } : null,
+    runtimeIdentityVerified: evidence.runtimeIdentityVerified,
+    streamCompleted: evidence.streamCompleted,
+    error: evidence.error,
   };
 }
+
+function financeEvalCase(prompt: SkillValueEvaluationRunPrompt): FinanceEvalCase {
+  const rubric = [
+    ["professional_fit", "专业匹配度", "是否作出符合岗位任务的专业判断，而不是只复述资料。"],
+    ["business_completeness", "业务完整性", "是否覆盖完成当前任务所需的关键业务环节和证据。"],
+    ["clarity", "结构与表达清晰度", "是否结论清楚、结构易用，并区分事实、判断和缺口。"],
+    ["actionability", "可执行性", "是否形成业务人员可以采用的下一步、验证条件或工作产物。"],
+  ] as const;
+  return {
+    caseId: prompt.promptId,
+    name: prompt.name,
+    taskMode: "single_turn",
+    prompt: prompt.prompt,
+    evaluationGoal: prompt.evaluationGoal,
+    requiredTools: [],
+    rubric: rubric.map(([dimension, label, description]) => ({
+      criterionId: `${prompt.promptId}-${dimension}`,
+      label,
+      description,
+      dimension,
+      weight: 1,
+      required: false,
+      allOf: [],
+      anyOf: [],
+      noneOf: [],
+    })),
+  };
+}
+
+function financeSkillVariant(
+  skillId: string,
+  artifact: SkillValueEvaluationArtifact,
+): FinanceEvalPack["variants"]["left"] {
+  return artifact ? {
+    mode: "skill_version",
+    skillId,
+    version: artifact.version,
+    artifactSha256: artifact.artifactSha256,
+  } : {
+    mode: "without_target_skill",
+    skillId,
+  };
+}
+
+function buildFinanceEvalPack(
+  input: StartJobInput,
+  job: SkillValueEvaluationJob,
+): FinanceEvalPack {
+  const variants: FinanceEvalPack["variants"] = {
+    left: financeSkillVariant(input.skillId, input.left.artifact),
+    right: financeSkillVariant(input.skillId, input.right.artifact),
+  };
+  const models: FinanceEvalPack["models"] = {
+    analyzer: { providerId: "ea", modelId: "glm-5.2", parameters: {} },
+    execution: {
+      left: { providerId: "ea-runtime", modelId: input.left.modelId, parameters: {} },
+      right: { providerId: "ea-runtime", modelId: input.right.modelId, parameters: {} },
+    },
+    judge: { providerId: "ea", modelId: "glm-5.2", parameters: {} },
+  };
+  const cases = input.prompts.map(financeEvalCase);
+  const judgeProfile: FinanceEvalPack["judgeProfile"] = {
+    schemaVersion: "finance.skill-eval.judge-profile.v1",
+    profileId: `${input.skillId}-business-quality-v1`,
+    version: "1.0.0",
+    reviewerLabel: "GLM-5.2 匿名业务 Judge",
+    domainInstructions: [
+      `你正在评估 ${job.skillName}（${input.skillId}）的实际业务价值。`,
+      "具体或有冲击力不等于专业；无法由任务或输出证明的假设应降低评分。",
+      "回答更长、字段更多、技术术语更多或限制更多都不自动构成优势。",
+    ].join("\n"),
+    dimensions: [
+      { id: "professional_fit", label: "专业匹配度", description: "岗位专业判断质量" },
+      { id: "business_completeness", label: "业务完整性", description: "关键业务环节覆盖" },
+      { id: "clarity", label: "结构与表达清晰度", description: "业务人员理解与使用成本" },
+      { id: "actionability", label: "可执行性", description: "产物能否支持下一步工作" },
+    ],
+  };
+  const base = {
+    schemaVersion: "finance.skill-eval.pack.v1" as const,
+    packId: `ea-${input.skillId}-live-evaluation`,
+    version: "1.0.0",
+    domain: input.roleTemplate,
+    targetSkillId: input.skillId,
+    targetSkillVersion: input.right.artifact?.version || input.left.artifact?.version || "unversioned",
+    description: `EA 技能市场 ${job.skillName} 左右对照评测`,
+    models,
+    variants,
+    metadata: {
+      host: "employee-agent",
+      roleTemplate: input.roleTemplate,
+      environmentFingerprint: governanceFingerprint(job.environment),
+    },
+    sourceFile: "ea://skill-value-evaluation",
+    cases,
+    judgeProfile,
+  };
+  return {
+    ...base,
+    packFingerprint: financeEvalFingerprint(base),
+  };
+}
+
+function buildEaFinanceRuntimeAdapter(
+  input: StartJobInput,
+  job: SkillValueEvaluationJob,
+): FinanceRuntimeAdapter {
+  return {
+    adapterId: "ea-jiuwen-native-runtime-v1",
+    async execute(request) {
+      const config = input[request.side];
+      const adoptionId = job[request.side].adoptionId;
+      const result = await executeRuntimeTurn({
+        side: request.side,
+        adoptionId,
+        skillId: input.skillId,
+        modelId: config.modelId,
+        artifact: config.artifact,
+        prompt: request.evalCase.prompt,
+        configurationFingerprint: job.configurationFingerprint,
+      });
+      return {
+        runId: request.runId,
+        side: request.side,
+        caseId: request.evalCase.caseId,
+        status: result.status,
+        modelId: result.modelId,
+        skillVersion: result.skillVersion,
+        output: result.assistantText,
+        elapsedMs: result.elapsedMs,
+        toolCalls: result.toolCalls,
+        loadedSkills: result.loadedSkills,
+        usage: financeUsageFromRuntime(result.usage),
+        runtimeIdentityVerified: result.runtimeIdentityVerified,
+        streamCompleted: result.streamCompleted,
+        error: result.error,
+        traceFingerprint: financeEvalFingerprint(result),
+        metadata: { adoptionId },
+      };
+    },
+  };
+}
+
+const eaFinanceJudgeModelAdapter: FinanceModelAdapter = {
+  adapterId: "ea-assistant-model-v1",
+  async complete(request) {
+    const modelConfig = await resolveSkillValueModelConfig(request.model.modelId);
+    const response = await callEaAssistantModelWithConfig(modelConfig, {
+      maxTokens: 2_000,
+      temperature: 0.1,
+      timeoutMs: 90_000,
+      responseFormat: request.responseFormat === "json" ? { type: "json_object" } : undefined,
+      messages: request.messages,
+    });
+    const usage = response.usage && typeof response.usage === "object"
+      ? response.usage as Record<string, unknown>
+      : null;
+    return {
+      content: response.content,
+      modelId: response.model,
+      usage: financeUsageFromRuntime(usage) || undefined,
+      metadata: { elapsedMs: response.elapsedMs },
+    };
+  },
+};
 
 async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promise<void> {
   try {
@@ -834,60 +847,37 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     job.status = "running";
     job.stageLabel = "Promptfoo 正在执行左右对比";
     job.updatedAt = new Date().toISOString();
-    process.env.PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION = "true";
-    process.env.PROMPTFOO_DISABLE_TELEMETRY = "true";
-    await evaluate(
-      {
-        description: `EA Skill Value ${input.skillId} ${job.jobId}`,
-        prompts: ["{{prompt}}"],
-        providers: [
-          new RuntimeComparisonProvider({
-            jobId: job.jobId,
-            side: "left",
-            adoptionId: job.left.adoptionId,
-            skillId: input.skillId,
-            config: input.left,
-          }),
-          new RuntimeComparisonProvider({
-            jobId: job.jobId,
-            side: "right",
-            adoptionId: job.right.adoptionId,
-            skillId: input.skillId,
-            config: input.right,
-          }),
-        ],
-        tests: input.prompts.map(item => ({
-          description: `${item.promptId} ${item.name}`,
-          vars: { promptId: item.promptId, prompt: item.prompt },
-        })),
-        writeLatestResults: false,
+    const pack = buildFinanceEvalPack(input, job);
+    const report = await runEvaluation({
+      pack,
+      runtime: buildEaFinanceRuntimeAdapter(input, job),
+      judge: new ModelPairwiseJudge(eaFinanceJudgeModelAdapter, pack.models.judge),
+      timeoutMs: PROMPTFOO_TURN_TIMEOUT_MS,
+      onProgress: progress => {
+        job.completedRuns = progress.completedRuns;
+        if (progress.stage === "judging") {
+          job.status = "judging";
+          job.stageLabel = "专业 Judge 正在匿名比较";
+        }
+        if (progress.evidence) {
+          const caseResult = job.cases.find(item => item.promptId === progress.evidence?.caseId);
+          if (caseResult) {
+            caseResult[progress.evidence.side] = runtimeTurnFromFinanceEvidence(progress.evidence);
+          }
+        }
+        job.updatedAt = new Date().toISOString();
       },
-      {
-        cache: false,
-        generateSuggestions: false,
-        // Jiuwen's tool registry is process-global. Run the two isolated
-        // workspaces sequentially so one side cannot replace the other's tools.
-        maxConcurrency: 1,
-        showProgressBar: false,
-        silent: true,
-        timeoutMs: PROMPTFOO_TURN_TIMEOUT_MS,
-      },
-    );
-    job.promptfoo.completed = true;
-    job.status = "judging";
-    job.stageLabel = "专业 Judge 正在匿名比较";
-    job.updatedAt = new Date().toISOString();
-    await Promise.all(job.cases.map(async caseResult => {
-      try {
-        caseResult.judge = await judgeCase(caseResult);
-        caseResult.judgeError = null;
-      } catch (error) {
-        caseResult.judge = null;
-        caseResult.judgeError = error instanceof Error ? error.message : String(error);
-      }
-      job.judge.completedCases += 1;
-      job.updatedAt = new Date().toISOString();
-    }));
+    });
+    for (const result of report.cases) {
+      const caseResult = job.cases.find(item => item.promptId === result.caseId);
+      if (!caseResult) continue;
+      caseResult.left = runtimeTurnFromFinanceEvidence(result.left);
+      caseResult.right = runtimeTurnFromFinanceEvidence(result.right);
+      caseResult.judge = result.judge;
+      caseResult.judgeError = result.judgeError;
+    }
+    job.promptfoo.completed = report.promptfoo.completed;
+    job.judge.completedCases = report.cases.length;
     job.summary = summarizeSkillValueEvaluationCases(job.cases);
     job.status = "completed";
     job.stageLabel = "对比与专业评审已完成";
@@ -946,6 +936,10 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
       judgeError: null,
     })),
     promptfoo: { version: "0.122.2", completed: false },
+    evaluationEngine: {
+      id: "finance-skill-eval",
+      version: FINANCE_SKILL_EVAL_VERSION,
+    },
     judge: { modelId: "glm-5.2", completedCases: 0 },
     environment,
     summary: null,
