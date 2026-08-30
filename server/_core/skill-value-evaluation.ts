@@ -235,7 +235,25 @@ export function listRepositorySkillCandidates(
   );
 }
 
-function curatedPrompts(root: string, skillId: string): SkillValueEvaluationPrompt[] {
+export function curatedSkillValueSuiteMatchesVersion(
+  suite: {
+    targetVersion?: unknown;
+    targetArtifactSha256?: unknown;
+  },
+  version: Pick<SkillEvaluationVersionInput, "version" | "artifactSha256">,
+): boolean {
+  const targetVersion = String(suite.targetVersion || "").trim();
+  const targetArtifactSha256 = String(suite.targetArtifactSha256 || "").trim();
+  if (targetVersion && targetVersion !== version.version) return false;
+  if (targetArtifactSha256 && targetArtifactSha256 !== version.artifactSha256) return false;
+  return true;
+}
+
+function curatedPrompts(
+  root: string,
+  skillId: string,
+  version: Pick<SkillEvaluationVersionInput, "version" | "artifactSha256">,
+): SkillValueEvaluationPrompt[] {
   const suitePath = path.join(
     root,
     "examples",
@@ -245,7 +263,12 @@ function curatedPrompts(root: string, skillId: string): SkillValueEvaluationProm
   );
   if (!existsSync(suitePath)) return [];
   try {
-    const suite = JSON.parse(readFileSync(suitePath, "utf8")) as { cases?: CuratedCase[] };
+    const suite = JSON.parse(readFileSync(suitePath, "utf8")) as {
+      targetVersion?: unknown;
+      targetArtifactSha256?: unknown;
+      cases?: CuratedCase[];
+    };
+    if (!curatedSkillValueSuiteMatchesVersion(suite, version)) return [];
     return (Array.isArray(suite.cases) ? suite.cases : [])
       .flatMap((item, index) => {
         const prompt = String(item.prompt || "").trim();
@@ -389,7 +412,7 @@ export async function prepareSkillValueEvaluationPlan(input: {
 }): Promise<SkillValueEvaluationPlan> {
   const root = path.resolve(input.root || process.cwd());
   const source = readSkillAnalysisSource(root, input.version.artifactPath);
-  const anchors = curatedPrompts(root, input.skillId);
+  const anchors = curatedPrompts(root, input.skillId, input.version);
   let analyzerStatus: SkillValueEvaluationPlan["analyzerStatus"] = "generated";
   let analyzerModel: string;
   let analyzerMessage: string | null = null;
