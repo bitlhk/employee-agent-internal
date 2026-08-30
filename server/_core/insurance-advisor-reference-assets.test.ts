@@ -26,7 +26,7 @@ describe("insurance advisor reference role pack", () => {
     const skillDir = path.join(root, "skills", "auto-insurance-advisor");
     const parsed = parseSkillSourceDirectory(skillDir, "auto-insurance-advisor");
     expect(parsed.skillId).toBe("auto-insurance-advisor");
-    expect(parsed.manifest?.version).toBe("1.1.0");
+    expect(parsed.manifest?.version).toBe("1.2.5");
     expect(parsed.warnings).toEqual([]);
     const markdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
     expect(markdown).toContain("客户画像和产品事实必须来自本轮已授权 MCP");

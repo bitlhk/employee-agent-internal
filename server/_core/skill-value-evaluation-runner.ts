@@ -748,6 +748,7 @@ async function judgeCase(
           "不知道 A/B 使用了什么 Skill 或版本，也不得猜测。",
           "只比较专业匹配度、业务完整性、结构与表达清晰度、可执行性。",
           "回答更长、字段更多或技术术语更多不构成优势。",
+          "具体或有冲击力不等于专业；任务未提供且输出无法证明的客户、产品或业务假设应降低专业匹配度和可执行性评分。",
           "每个维度按 1-4 分评价，必须解释真正影响业务采用的差异。",
           "输出严格 JSON，包含 winner(A/B/TIE)、confidence、summary、dimensions。",
           "dimensions 必须恰好包含 professional_fit、business_completeness、clarity、actionability，字段为 id、label、aScore、bScore、reason。",

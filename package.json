@@ -109,6 +109,7 @@
     "rolepack:insurance:scenarios": "tsx scripts/run-insurance-role-pack-scenarios.ts",
     "rolepack:risk:install": "tsx scripts/install-post-loan-risk-control-reference-pack.ts",
     "rolepack:risk:release": "tsx scripts/release-post-loan-risk-skill.ts",
+    "rolepack:insurance:release": "tsx scripts/release-auto-insurance-advisor-skill.ts",
     "rolepack:risk:contracts": "tsx scripts/run-post-loan-risk-role-pack-contracts.ts",
     "rolepack:risk:scenarios": "tsx scripts/run-post-loan-risk-role-pack-scenarios.ts",
     "rolepack:audit:install": "tsx scripts/install-smart-audit-reference-pack.ts",
