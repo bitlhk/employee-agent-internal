@@ -12,13 +12,18 @@ describe("investment research Reference Role Pack assets", () => {
     const parsed = parseSkillSourceDirectory(skillRoot, "investment-research-assistant");
     const markdown = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
     expect(parsed.skillId).toBe("investment-research-assistant");
-    expect(parsed.manifest?.version).toBe("1.0.0");
+    expect(parsed.manifest?.version).toBe("1.1.0");
     expect(parsed.warnings).toEqual([]);
     expect(markdown).toContain("wind_stock_data");
+    expect(markdown).toContain("盈利与估值真正由什么驱动");
+    expect(markdown).toContain("反证");
+    expect(markdown).toContain("失效条件");
     expect(markdown).toContain("wind_financial_docs");
-    expect(markdown).toContain("evaluate_investment_research_data_assurance");
-    expect(markdown).toContain("evaluate_investment_research_output_boundary");
-    expect(markdown).toContain("demo_create_research_watch_task");
+    expect(markdown).toContain("最多三次核心取数");
+    expect(markdown).toContain("不查询 K 线或技术指标");
+    expect(markdown).toContain("利润表、现金流量表和资产负债表交叉验证");
+    expect(markdown).toContain("EA Runtime 负责工具授权");
+    expect(markdown).toContain("需要写入跟踪任务时先生成草稿");
     expect(markdown).not.toMatch(/张先生|李女士|CUST[-_]/u);
   });
 
