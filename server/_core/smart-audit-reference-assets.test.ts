@@ -14,7 +14,7 @@ describe("smart audit Reference Role Pack assets", () => {
     const markdown = readFileSync(path.join(skillRoot, "SKILL.md"), "utf8");
 
     expect(parsed.skillId).toBe("smart-audit-assistant");
-    expect(parsed.manifest?.version).toBe("1.0.0");
+    expect(parsed.manifest?.version).toBe("1.1.0");
     expect(parsed.warnings).toEqual([]);
     expect(markdown).toContain("credential_image_extract_from_workspace");
     expect(markdown).toContain("evaluate_audit_required_materials");

@@ -11,12 +11,12 @@ import {
 
 export const SMART_AUDIT_REQUIRED_MATERIALS_TOOL = {
   name: "evaluate_audit_required_materials",
-  description: "对智能审核任务执行确定性的材料完整性检查，输出已提供、缺失和需补正材料。不得据此自动形成最终审批结论。",
+  description: "仅在当前有效规则或用户已明确给出必需材料清单时，执行确定性的材料完整性检查。required_material_types 必须逐项来自该清单；没有清单时不得调用，也不得使用模型自建的通用清单。不得据此自动形成最终审批结论。",
   inputSchema: {
     type: "object",
     properties: {
-      required_material_types: { type: "array", items: { type: "string" } },
-      provided_material_types: { type: "array", items: { type: "string" } },
+      required_material_types: { type: "array", description: "当前有效规则或用户明确给出的必需材料原文；禁止模型补充通用材料", items: { type: "string" } },
+      provided_material_types: { type: "array", description: "当前案件已实际提供的材料", items: { type: "string" } },
       unreadable_material_types: { type: "array", items: { type: "string" } },
     },
     required: ["required_material_types", "provided_material_types"],
@@ -52,16 +52,16 @@ export const SMART_AUDIT_RULE_ELIGIBILITY_TOOL = {
 
 export const SMART_AUDIT_HUMAN_REVIEW_TOOL = {
   name: "evaluate_audit_human_review",
-  description: "根据关键缺件、字段冲突、规则状态和影像不确定性执行人工复核门禁。该工具只分级和给出义务，不执行最终审批。",
+  description: "根据已核验的关键缺件、可比字段冲突、当前规则状态和影像不确定性执行人工复核分级。口径或期间不可比不得填关键冲突；没有明确高风险规则不得填高风险命中；缺少某项阈值不等于规则版本不可用。该工具只分级和给出义务，不执行最终审批。",
   inputSchema: {
     type: "object",
     properties: {
-      critical_missing: { type: "boolean" },
-      critical_conflicts: { type: "boolean" },
-      rule_version_ready: { type: "boolean" },
-      image_verification_uncertain: { type: "boolean" },
-      high_risk_rule_hit: { type: "boolean" },
-      final_decision_requested: { type: "boolean" },
+      critical_missing: { type: "boolean", description: "仅当当前有效材料清单已明确要求且关键材料确实缺失时为 true；没有清单时为 false" },
+      critical_conflicts: { type: "boolean", description: "仅当主体、期间和口径可比且冲突已成立时为 true；不可比或待解释时为 false" },
+      rule_version_ready: { type: "boolean", description: "当前人工复核规则是否可用。只有上游明确返回当前规则不可用时才为 false；用户请求未展示材料清单或某项差异阈值时仍为 true" },
+      image_verification_uncertain: { type: "boolean", description: "仅当本轮真实影像核验存在不确定性时为 true" },
+      high_risk_rule_hit: { type: "boolean", description: "仅当当前有效规则明确命中高风险条件时为 true；没有阈值或仅有数值差异时为 false" },
+      final_decision_requested: { type: "boolean", description: "仅当用户明确要求通过、拒绝或授信调整等最终审批决定时为 true；分析和工作意见为 false" },
     },
     required: ["critical_missing", "critical_conflicts", "rule_version_ready", "image_verification_uncertain", "high_risk_rule_hit", "final_decision_requested"],
   },

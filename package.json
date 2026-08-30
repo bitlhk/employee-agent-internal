@@ -113,6 +113,7 @@
     "rolepack:risk:contracts": "tsx scripts/run-post-loan-risk-role-pack-contracts.ts",
     "rolepack:risk:scenarios": "tsx scripts/run-post-loan-risk-role-pack-scenarios.ts",
     "rolepack:audit:install": "tsx scripts/install-smart-audit-reference-pack.ts",
+    "rolepack:audit:release": "tsx scripts/release-smart-audit-assistant-skill.ts",
     "rolepack:audit:contracts": "tsx scripts/run-smart-audit-role-pack-contracts.ts",
     "rolepack:audit:scenarios": "tsx scripts/run-smart-audit-role-pack-scenarios.ts",
     "rolepack:audit:browser-e2e": "tsx scripts/verify-smart-audit-browser-e2e.ts",
