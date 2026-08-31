@@ -24,7 +24,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 10,
       restart_delay: 3000,
-      max_memory_restart: process.env.PM2_MAX_MEMORY_RESTART || "1200M",
+      max_memory_restart: process.env.PM2_MAX_MEMORY_RESTART || "3072M",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       error_file: path.join(appRoot, "logs", "pm2-error.log"),
       out_file: path.join(appRoot, "logs", "pm2-out.log"),

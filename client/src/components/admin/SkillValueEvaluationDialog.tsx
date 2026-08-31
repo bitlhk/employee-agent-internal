@@ -673,6 +673,28 @@ function NewEvaluationWorkbench({
         )}
       </section>
 
+      {jobId && jobQuery.error && !job ? (
+        <section className="border border-red-200 bg-red-50 p-4">
+          <div className="flex items-start gap-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-red-900">本轮评测已中断</div>
+              <p className="mt-1 text-xs leading-5 text-red-700">
+                运行服务已重启或任务已过期，本轮结果无法恢复，请重新开始评测。
+              </p>
+              <Button
+                className="mt-3"
+                size="sm"
+                variant="outline"
+                onClick={() => setJobId("")}
+              >
+                <RefreshCw />返回重新评测
+              </Button>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       {job ? (
         <section className="border border-gray-200 bg-white p-4">
           <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between">

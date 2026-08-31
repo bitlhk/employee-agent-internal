@@ -811,6 +811,10 @@ function buildEaFinanceRuntimeAdapter(
     async execute(request) {
       const config = input[request.side];
       const adoptionId = job[request.side].adoptionId;
+      const sideLabel = request.side === "left" ? "A" : "B";
+      job.status = "running";
+      job.stageLabel = `${sideLabel} 正在执行：${request.evalCase.name}`;
+      job.updatedAt = new Date().toISOString();
       const result = await executeRuntimeTurn({
         side: request.side,
         adoptionId,
