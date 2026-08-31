@@ -71,9 +71,16 @@ async function wealthCustomerSourceId(input: {
 }): Promise<string> {
   const usesLegacyWealthSource = input.profileTarget.toolName === "wealth_assistant_customer_detail"
     && input.portfolioTarget.toolName === "wealth_assistant_customer_detail";
-  if (!usesLegacyWealthSource || !/^CUST-[0-9]{6}$/u.test(input.customerId)) {
-    return input.customerId;
+  if (!usesLegacyWealthSource) {
+    if (/^CUST-[0-9]{6}$/u.test(input.customerId)) return input.customerId;
+    if (!/^C[0-9]{3}$/u.test(input.customerId)) return input.customerId;
+    return await createConfiguredTwentyCustomerClient()
+      .resolveGlobalCustomerId({
+        customerId: input.customerId,
+        allowedSourceSystems: ["wealth_assistant_customer"],
+      }) || input.customerId;
   }
+  if (!/^CUST-[0-9]{6}$/u.test(input.customerId)) return input.customerId;
   const sourceCustomerId = await createConfiguredTwentyCustomerClient()
     .resolveSourceCustomerId({
       globalCustomerId: input.customerId,
