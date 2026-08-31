@@ -47,6 +47,7 @@ import { CUSTOMER_CRM_PLATFORM_TOOLS, handleCustomerCrmPlatformTool, isCustomerC
 import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
 import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
 import { createConfiguredTwentyCustomerClient } from "./customer-context-twenty-access";
+import { readSkillValueEvaluationAllowedTools } from "./skill-value-evaluation-tool-scope";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -1237,7 +1238,24 @@ async function handleMessage(req: Request, msg: any) {
     if (msg.method === "ping") return hasRequestId(id) ? ok(id, {}) : null;
     if (msg.method === "resources/list") return hasRequestId(id) ? ok(id, { resources: [] }) : null;
     if (msg.method === "prompts/list") return hasRequestId(id) ? ok(id, { prompts: [] }) : null;
-    if (msg.method === "tools/list") return hasRequestId(id) ? ok(id, { tools: PLATFORM_TOOLS }) : null;
+    if (msg.method === "tools/list") {
+      if (!hasRequestId(id)) return null;
+      const adoptId = resolveAdoptId(req, {});
+      const runtimeAgentId = resolveRuntimeAgentId(
+        adoptId,
+        pickHeader(req, ["x-linggan-agent-id"]),
+      );
+      const allowedTools = adoptId.startsWith("lgj-eval-")
+        ? readSkillValueEvaluationAllowedTools(
+            resolveRuntimeWorkspaceByIds(adoptId, runtimeAgentId),
+            "platform_tools",
+          )
+        : null;
+      const tools = allowedTools
+        ? PLATFORM_TOOLS.filter(tool => allowedTools.has(tool.name))
+        : PLATFORM_TOOLS;
+      return ok(id, { tools });
+    }
     if (msg.method === "tools/call") {
       if (!hasRequestId(id)) return null;
       const finishMetric = beginMcpCall("platform");

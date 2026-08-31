@@ -115,7 +115,7 @@ describe("skill value evaluation environment", () => {
       .toMatchObject({ mcpServers: [], declaredToolCount: 0, sameForBothSides: true });
   });
 
-  it("keeps governed MCP transports available without exposing them as declared tools", () => {
+  it("loads only the MCP servers declared by the evaluated Skill", () => {
     const environment = buildSkillValueEvaluationEnvironment("insurance", {
       servers: {
         customer_context: ["search_customers"],
@@ -125,9 +125,7 @@ describe("skill value evaluation environment", () => {
 
     expect(buildSkillValueEvaluationRuntimeMcpServerIds(environment)).toEqual([
       "customer_context",
-      "enterprise_mcp_gateway",
       "insurance_product_exam_points",
-      "role_mcp_gateway",
     ]);
     expect(environment.mcpServers.map(server => server.serverId)).toEqual([
       "customer_context",

@@ -44,15 +44,12 @@ import {
   resolveAgentRoleTemplate,
   type SkillMcpRequirement,
 } from "./role-templates";
+import { writeSkillValueEvaluationToolScope } from "./skill-value-evaluation-tool-scope";
 
 type EvaluationSide = "left" | "right";
 
 const RUNTIME_TURN_TIMEOUT_MS = 300_000;
 const PROMPTFOO_TURN_TIMEOUT_MS = 310_000;
-const EVALUATION_MCP_TRANSPORT_SERVER_IDS = [
-  "enterprise_mcp_gateway",
-  "role_mcp_gateway",
-];
 
 export type SkillValueEvaluationArtifact = {
   versionId: string;
@@ -376,11 +373,7 @@ export function buildSkillValueEvaluationEnvironment(
 export function buildSkillValueEvaluationRuntimeMcpServerIds(
   environment: SkillValueEvaluationEnvironment,
 ): string[] {
-  const requiredServerIds = environment.mcpServers.map(server => server.serverId);
-  return Array.from(new Set([
-    ...requiredServerIds,
-    ...(requiredServerIds.length > 0 ? EVALUATION_MCP_TRANSPORT_SERVER_IDS : []),
-  ])).sort();
+  return Array.from(new Set(environment.mcpServers.map(server => server.serverId))).sort();
 }
 
 async function applyEvaluationEnvironment(input: {
@@ -434,12 +427,17 @@ async function applyEvaluationEnvironment(input: {
       optional: [...effectiveAssets.mcpServers.optional],
     },
   };
+  const workspaceDir = resolveRuntimeWorkspaceByIds(input.adoptionId, input.agentId);
   writeJiuwenSwarmRoleScopeManifest({
-    workspaceDir: resolveRuntimeWorkspaceByIds(input.adoptionId, input.agentId),
+    workspaceDir,
     role,
     effectiveAssets: scopedAssets,
     activeMcpServerIds: runtimeServerIds,
     includePlatformMcp: false,
+  });
+  writeSkillValueEvaluationToolScope({
+    workspaceDir,
+    mcpServers: input.environment.mcpServers,
   });
   await refreshJiuwenRuntimeCapabilities(input.adoptionId);
 }
@@ -589,6 +587,25 @@ async function executeRuntimeTurn(input: {
       runtimeIdentityVerified,
       streamCompleted: completion.completed,
       error,
+    };
+  } catch (error) {
+    const timedOut = controller.signal.aborted
+      || (error instanceof Error && error.name === "AbortError");
+    return {
+      side: input.side,
+      status: "failed",
+      modelId: input.modelId,
+      skillVersion: input.artifact?.version || null,
+      assistantText: "",
+      elapsedMs: Date.now() - startedAt,
+      toolCalls: [],
+      loadedSkills: [],
+      usage: null,
+      runtimeIdentityVerified: false,
+      streamCompleted: false,
+      error: timedOut
+        ? "模型在 5 分钟内未完成本题，已停止本次执行；这通常是模型服务响应波动，可重新运行该批次。"
+        : `本题执行失败：${error instanceof Error ? error.message : String(error)}`,
     };
   } finally {
     clearTimeout(timer);
