@@ -48,6 +48,14 @@ const optimizedCandidateRoot = path.resolve(
   "wealth-manager-assistant",
   "2.1.4"
 );
+const presentationCandidateRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "candidates",
+  "wealth-manager-assistant",
+  "2.1.5"
+);
 const productionRoot = path.resolve(
   process.cwd(),
   "examples",
@@ -461,5 +469,33 @@ describe("wealth manager assistant 2.1 candidate", () => {
     expect(skill).toContain("约 1200 个中文字符以内");
     expect(recommendation).toContain("未返回持仓记录");
     expect(recommendation).toContain("不得重复查询");
+  });
+
+  it("keeps 2.1.5 tool execution silent and presents business language", () => {
+    const parsed = parseSkillSourceDirectory(
+      presentationCandidateRoot,
+      "wealth-manager-assistant"
+    );
+    expect(parsed.manifest).toMatchObject({
+      version: "2.1.5",
+      status: "candidate",
+      source: {
+        originalAuthor: "李文华",
+        baseVersion: "2.1.4",
+        adaptation: "silent-tool-execution-and-business-language",
+      },
+    });
+    expect(parsed.warnings).toEqual([]);
+
+    const skill = readFileSync(
+      path.join(presentationCandidateRoot, "SKILL.md"),
+      "utf8"
+    );
+    expect(skill).toContain("工具调用期间保持静默");
+    expect(skill).toContain("正式配置任务直接将该客户编号传给");
+    expect(skill).toContain("不得先搜索客户");
+    expect(skill).toContain("已具备正式建议条件");
+    expect(skill).toContain("当前不能形成正式建议");
+    expect(skill).toContain("不得出现 `READY`、`DEGRADED`、`BLOCKED`");
   });
 });

@@ -30,7 +30,7 @@ const SKILL_ROOT = path.join(
   "skill-quality-evaluation-v1",
   "candidates",
   SKILL_ID,
-  "2.1.4"
+  "2.1.5"
 );
 
 function option(name: string): string {
@@ -139,7 +139,7 @@ async function main() {
       selectedIdentityId: identity.identityId,
       requestedVersion: versionName,
       changelog:
-        "升级访前诊断、配置约束、组合优先的产品映射与客户沟通；严格区分待配置金额、当前持仓和新增资金。",
+        "优化正式推荐的业务呈现：已有客户编号直接核验，工具调用过程保持静默，内部状态统一转为一线可理解的业务语言。",
       authorLabel: parsed.manifest?.author || "李文华",
       sourceOrigin: identity.sourceOrigin,
       category: "finance",
