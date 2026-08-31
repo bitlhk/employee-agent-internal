@@ -73,8 +73,8 @@ importers:
         specifier: ^7.3.2
         version: 7.3.2
       finance-skill-eval:
-        specifier: file:vendor/finance-skill-eval-0.2.2.tgz
-        version: file:vendor/finance-skill-eval-0.2.2.tgz(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9)
+        specifier: file:vendor/finance-skill-eval-0.2.3.tgz
+        version: file:vendor/finance-skill-eval-0.2.3.tgz(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9)
       form-data:
         specifier: ^4.0.6
         version: 4.0.6
@@ -4368,9 +4368,9 @@ packages:
     resolution: {integrity: sha512-S8KoZgRZN+a5rNwqTxlZZePjT/4cnm0ROV70LedRHZ0p8u9fRID0hJUZQpkKLzro8LfmC8sx23bY6tVNxv8pQA==}
     engines: {node: '>= 18.0.0'}
 
-  finance-skill-eval@file:vendor/finance-skill-eval-0.2.2.tgz:
-    resolution: {integrity: sha512-oLXOBTV85b3EWsP7Y75SH59LVfeT1h8ScnGupTK+cX6goGmU6Azzfu16fY7zrdvDBu+0n1Zml3hs7wJPz1TElw==, tarball: file:vendor/finance-skill-eval-0.2.2.tgz}
-    version: 0.2.2
+  finance-skill-eval@file:vendor/finance-skill-eval-0.2.3.tgz:
+    resolution: {integrity: sha512-XU4ywTmthW8ijpXMdg1OXBvAl4N5NPcfwnBowIm4feMqTRGKJpDn/Y5yfa/HezY2ofTM4GHU2jXP++gIv5UjxQ==, tarball: file:vendor/finance-skill-eval-0.2.3.tgz}
+    version: 0.2.3
     engines: {node: '>=22'}
     hasBin: true
 
@@ -11319,7 +11319,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  finance-skill-eval@file:vendor/finance-skill-eval-0.2.2.tgz(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9):
+  finance-skill-eval@file:vendor/finance-skill-eval-0.2.3.tgz(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9):
     dependencies:
       promptfoo: 0.122.2(@aws-sdk/credential-provider-node@3.972.81)(@cfworker/json-schema@4.1.1)(@smithy/signature-v4@5.7.3)(@types/json-schema@7.0.15)(@types/node@24.7.0)(@types/react@19.2.1)(graphql@17.0.2)(mysql2@3.16.0)(pg@8.23.0)(playwright-core@1.62.1)(socks@2.8.9)
       yaml: 2.8.1
