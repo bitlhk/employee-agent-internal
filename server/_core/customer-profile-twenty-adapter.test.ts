@@ -170,7 +170,11 @@ describe("Twenty Customer Profile adapter", () => {
         detailSchemaVersion: "wealth.v1",
         maskedPhone: "138****8005",
         demographics: { ageBand: "45_59", occupationCategory: "1" },
-        preferences: { riskPreference: "2" },
+        preferences: {
+          riskPreference: "2",
+          investmentHorizon: "3年以上",
+          liquidityNeeds: "保留20%高流动性资产",
+        },
         insuranceFacts: {},
         detail: {
           customerTier: "2",
@@ -194,6 +198,10 @@ describe("Twenty Customer Profile adapter", () => {
     );
     expect(values.get("contact.maskedPhone")).toBe("138****8005");
     expect(values.get("risk.investmentRiskLevel")).toBe("C4");
+    expect(values.get("preferences.investmentHorizon")).toBe("3年以上");
+    expect(values.get("preferences.liquidityNeeds")).toBe(
+      "保留20%高流动性资产"
+    );
     expect(values.get("wealth.aumBand")).toBe("500k_1m");
     expect(values.get("wealth.assetAllocationSummary")).toBe(
       "资产规模区间：500k_1m"

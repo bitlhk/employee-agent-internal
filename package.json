@@ -119,6 +119,7 @@
     "rolepack:audit:browser-e2e": "tsx scripts/verify-smart-audit-browser-e2e.ts",
     "rolepack:investment:install": "tsx scripts/install-investment-research-reference-pack.ts",
     "rolepack:investment:release": "tsx scripts/release-investment-research-assistant-skill.ts",
+    "rolepack:wealth:release": "tsx scripts/release-wealth-manager-assistant-skill.ts",
     "rolepack:investment:contracts": "tsx scripts/run-investment-research-role-pack-contracts.ts",
     "rolepack:investment:scenarios": "tsx scripts/run-investment-research-role-pack-scenarios.ts",
     "rolepack:replication:validate": "tsx scripts/run-role-replication-validation.ts",

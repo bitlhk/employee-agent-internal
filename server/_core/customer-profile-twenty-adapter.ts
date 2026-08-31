@@ -204,6 +204,16 @@ export function normalizeTwentyCustomerProfileSource(input: {
   if (confirmedNeeds.length)
     add("relationship.confirmedNeeds", confirmedNeeds, "confirmedNeeds");
   add("preferences.riskPreference", preferences.riskPreference);
+  add(
+    "preferences.investmentHorizon",
+    preferences.investmentHorizon,
+    "preferences.investmentHorizon"
+  );
+  add(
+    "preferences.liquidityNeeds",
+    preferences.liquidityNeeds,
+    "preferences.liquidityNeeds"
+  );
   add("preferences.budgetConcern", preferences.budgetConcern, "budgetConcern");
   add(
     "preferences.servicePreference",
