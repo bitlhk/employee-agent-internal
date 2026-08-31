@@ -88,6 +88,9 @@ describe("selected skills chat context", () => {
     expect(manifest).toContain("selectedSkillCount: 2");
     expect(manifest.indexOf("fund-compare")).toBeLessThan(manifest.indexOf("portfolio-report"));
     expect(manifest).toContain("根据用户目标决定组合方式和执行顺序");
+    expect(manifest).toContain("执行技能和业务工具时保持静默");
+    expect(manifest).toContain("不展示 READY、DEGRADED、BLOCKED");
+    expect(manifest).toContain("聚合工具已经返回的事实不重复查询");
     expect(manifest).toContain("不得再用 glob、list_files、find、bash");
     expect(manifest).toContain("读取 SKILL.md 成功后应立即按其中任务路由调用已授权业务工具");
     expect(manifest).toContain("用户问题：先比较两只基金，再生成组合建议");
@@ -193,6 +196,9 @@ describe("selected skills chat context", () => {
 
     expect(manifest).toContain("skill_tool");
     expect(manifest).toContain("不要连续重试未知工具");
+    expect(manifest).toContain("执行技能和业务工具时保持静默");
+    expect(manifest).toContain("不展示 READY、DEGRADED、BLOCKED");
+    expect(manifest).toContain("聚合工具已经返回的事实不重复查询");
     expect(manifest).toContain("直接在对话中给出完整结果");
     expect(manifest).toContain("不得声称文件已经生成");
     expect(manifest).toContain("auto-insurance-advisor");
