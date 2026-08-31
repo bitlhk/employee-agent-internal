@@ -8,6 +8,7 @@ import {
   gatewayPermissionEventMatchesRequest,
   resolveGatewayArtifactWorkspace,
   shouldKeepGatewayRunAfterClientClose,
+  shouldDeferSelectedSkillText,
 } from "./jiuwenswarm-gateway-client";
 
 describe("gateway progress continuity", () => {
@@ -21,6 +22,12 @@ describe("gateway progress continuity", () => {
   it("keeps enterprise work attached to the gateway after the browser disconnects", () => {
     expect(shouldKeepGatewayRunAfterClientClose(true)).toBe(true);
     expect(shouldKeepGatewayRunAfterClientClose(false)).toBe(false);
+  });
+
+  it("defers selected Skill narration until the final business answer", () => {
+    expect(shouldDeferSelectedSkillText([{ id: "wealth-manager-assistant", name: "客户经理财富助手" }])).toBe(true);
+    expect(shouldDeferSelectedSkillText([])).toBe(false);
+    expect(shouldDeferSelectedSkillText(undefined)).toBe(false);
   });
 
   it("stores enterprise artifacts in the bound enterprise runtime workspace", () => {

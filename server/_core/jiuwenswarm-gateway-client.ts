@@ -318,6 +318,12 @@ function gatewayEventToText(eventType: string, payload: Record<string, unknown>)
   return "";
 }
 
+export function shouldDeferSelectedSkillText(
+  selectedSkills: JiuwenForwardOptions["selectedSkills"],
+): boolean {
+  return Array.isArray(selectedSkills) && selectedSkills.length > 0;
+}
+
 function shouldFinishGatewayStream(eventType: string, payload: Record<string, unknown>): boolean {
   if (eventType === "chat.final" || eventType === "chat.session_result") return true;
   if (eventType === "chat.processing_status" && payload.is_processing === false) return true;
@@ -343,13 +349,16 @@ async function handleGatewayEvent(args: {
   collectPermission?: (permission: JiuwenContinuationPermission) => void;
   knowledgeCitationIndexes?: number[];
   remoteFileWsUrl?: string;
+  deferAssistantText?: boolean;
 }): Promise<"permission" | "done" | "continue"> {
   const { eventType, payload } = args;
   const text = gatewayEventToText(eventType, payload);
   if (text) {
     const publicText = sanitizePublicRuntimePaths(text, args.workspaceDir);
     args.collectText?.(publicText);
-    if (args.res) writeSseData(args.res, buildJiuwenTextDelta(publicText));
+    if (args.res && !args.deferAssistantText) {
+      writeSseData(args.res, buildJiuwenTextDelta(publicText));
+    }
   }
 
   if (eventType === "chat.final") {
@@ -358,7 +367,9 @@ async function handleGatewayEvent(args: {
       args.workspaceDir,
       args.knowledgeCitationIndexes,
     );
-    if (finalSnapshot && args.res) writeSseData(args.res, finalSnapshot);
+    if (finalSnapshot && args.res && !args.deferAssistantText) {
+      writeSseData(args.res, finalSnapshot);
+    }
   }
 
   if (eventType === "chat.usage_summary" || eventType === "chat.usage_metadata" || eventType === "context.usage") {
@@ -489,6 +500,7 @@ export async function forwardToJiuwenGateway(
   initSse(res);
 
   const msgTrim = String(message || "").trim();
+  const deferSelectedSkillText = shouldDeferSelectedSkillText(opts.selectedSkills);
   if (msgTrim === "/new" || msgTrim === "/reset") {
     bumpSessionEpoch(claw.adoptId);
     writeSseData(res, { choices: [{ delta: { content: "已开始新对话。" }, index: 0 }] });
@@ -726,10 +738,17 @@ export async function forwardToJiuwenGateway(
         resolve();
         return;
       }
-      const rawAssistantMessage = finalAssistantText.trim() || memoryAssistantText.trim();
+      const rawAssistantMessage = deferSelectedSkillText
+        ? memoryAssistantText.trim()
+        : finalAssistantText.trim() || memoryAssistantText.trim();
       const citationValidation = validateKnowledgeCitations(rawAssistantMessage, knowledgeCitationIndexes);
       const validatedAssistantMessage = citationValidation.text;
-      if (reason === "done" && validatedAssistantMessage && validatedAssistantMessage !== rawAssistantMessage && !clientClosed) {
+      if (
+        reason === "done"
+        && validatedAssistantMessage
+        && !clientClosed
+        && (deferSelectedSkillText || validatedAssistantMessage !== rawAssistantMessage)
+      ) {
         writeSseData(res, { __final_text: validatedAssistantMessage });
       }
       const citedKnowledgeSources = reason === "done" && opts.knowledgeSources?.length
@@ -864,6 +883,11 @@ export async function forwardToJiuwenGateway(
           eventTime: Date.now(),
         }).catch(() => payload);
       }
+      const memoryTool = normalizeJiuwenToolPayload(eventType, payload);
+      if (deferSelectedSkillText && memoryTool && !memoryTool.isResult) {
+        memoryAssistantText = "";
+        finalAssistantText = "";
+      }
       if (eventType === "chat.error") {
         const message = String(payload.error || payload.message || "JiuwenSwarm gateway 返回错误");
         if (enterpriseRoute && message.includes("EA_RUNTIME_ASSET_BOOTSTRAP_FAILED")) {
@@ -879,7 +903,6 @@ export async function forwardToJiuwenGateway(
           knowledgeCitationIndexes,
         ).text;
       }
-      const memoryTool = normalizeJiuwenToolPayload(eventType, payload);
       if (memoryTool?.toolName) memoryToolNames.add(memoryTool.toolName);
       if (memoryTool?.isResult) {
         responseEvidence.capture(memoryTool.toolName, memoryTool.resultPayload);
@@ -908,6 +931,7 @@ export async function forwardToJiuwenGateway(
         },
         collectUsage: opts.onUsage,
         knowledgeCitationIndexes,
+        deferAssistantText: deferSelectedSkillText,
         ...(enterpriseRoute ? { remoteFileWsUrl: wsUrl } : {}),
       });
       if (action === "permission") {
