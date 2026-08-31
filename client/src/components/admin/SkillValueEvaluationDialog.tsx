@@ -492,6 +492,7 @@ function NewEvaluationWorkbench({
           {[
             ["Finance Skill Eval", "金融试卷与评价方法"],
             ["Agent Skills", "读取 SKILL.md 与引用"],
+            ["宿主上下文", "可选业务场景增强"],
             ["AI 组题", "标准题 + 变化题"],
             ["Promptfoo", "同题左右对照"],
             ["EA Runtime", "真实模型与工具链"],
@@ -561,8 +562,8 @@ function NewEvaluationWorkbench({
         </div>
 
         {prepareMutation.isPending ? (
-          <div className="mt-4 grid gap-2 border-t border-gray-100 pt-4 sm:grid-cols-4">
-            {["读取 Skill", "识别任务", "生成变化题", "组装对照"].map((label, index) => (
+          <div className="mt-4 grid gap-2 border-t border-gray-100 pt-4 sm:grid-cols-5">
+            {["读取 Skill", "读取业务场景", "识别任务", "生成变化题", "组装对照"].map((label, index) => (
               <div key={label} className="flex items-center gap-2 text-xs text-gray-600">
                 {index === 0 ? <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-600" /> : <span className="h-2 w-2 rounded-full bg-gray-200" />}
                 {label}
@@ -591,6 +592,20 @@ function NewEvaluationWorkbench({
                 <div className="mt-4 text-[11px] leading-5 text-gray-500">
                   已读取 {plan.inspectedFiles.length} 个文件 · {plan.taskMode === "single_turn" ? "单步任务" : plan.taskMode === "multi_step" ? "多步任务" : "混合任务"}
                 </div>
+                <div className={cn(
+                  "mt-3 border px-3 py-2 text-[11px] leading-5",
+                  plan.context.status === "enhanced"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : plan.context.status === "unavailable"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-gray-200 bg-white text-gray-500",
+                )}>
+                  {plan.context.status === "enhanced"
+                    ? `${plan.context.sourceLabel} · 已冻结 ${plan.context.seedCount} 个脱敏业务场景`
+                    : plan.context.status === "unavailable"
+                      ? "业务环境暂不可用，本轮已回退为 Skill 通用出题"
+                      : "本 Skill 未声明业务场景适配，本轮使用通用出题"}
+                </div>
               </div>
               <div className="space-y-2">
                 {plan.prompts.map((item, index) => {
@@ -608,8 +623,8 @@ function NewEvaluationWorkbench({
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-xs font-semibold text-gray-900">{index + 1}. {item.name}</span>
-                            <span className={cn("border px-1.5 py-0.5 text-[10px]", item.source === "curated" ? "border-blue-200 bg-blue-50 text-blue-700" : "border-violet-200 bg-violet-50 text-violet-700")}>
-                              {item.source === "curated" ? "标准题" : item.source === "ai_generated" ? "AI 变化题" : "规则题"}
+                            <span className={cn("border px-1.5 py-0.5 text-[10px]", item.source === "curated" ? "border-blue-200 bg-blue-50 text-blue-700" : item.source === "context_generated" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-violet-200 bg-violet-50 text-violet-700")}>
+                              {item.source === "curated" ? "标准题" : item.source === "context_generated" ? "业务环境题" : item.source === "ai_generated" ? "AI 变化题" : "规则题"}
                             </span>
                           </div>
                           <div className="mt-1 text-[11px] text-gray-500">{item.evaluationGoal}</div>

@@ -8,6 +8,11 @@ import {
 import path from "node:path";
 import { z } from "zod";
 import {
+  resolveEvaluationContext,
+  type EvaluationContextAdapter,
+  type EvaluationContextSnapshot,
+} from "finance-skill-eval";
+import {
   callEaAssistantModelWithConfig,
   type EaAssistantModelConfig,
 } from "./ea-assistant-model";
@@ -41,7 +46,7 @@ export type SkillValueEvaluationPrompt = {
   name: string;
   prompt: string;
   evaluationGoal: string;
-  source: "curated" | "ai_generated" | "fallback";
+  source: "curated" | "context_generated" | "ai_generated" | "fallback";
 };
 
 export type SkillValueEvaluationPlan = {
@@ -60,6 +65,16 @@ export type SkillValueEvaluationPlan = {
   capabilities: string[];
   evaluationFocus: string[];
   inspectedFiles: string[];
+  context: {
+    status: "enhanced" | "skill_only" | "unavailable";
+    sourceLabel: string | null;
+    providerId: string | null;
+    snapshotFingerprint: string | null;
+    seedCount: number;
+    capabilities: string[];
+    asOf: string | null;
+    message: string | null;
+  };
   prompts: SkillValueEvaluationPrompt[];
   planFingerprint: string;
 };
@@ -326,6 +341,7 @@ async function analyzeSkill(input: {
   version: string;
   source: string;
   metadata: ReturnType<typeof parseSkillMarkdown>;
+  evaluationContext?: EvaluationContextSnapshot | null;
   analyzerModelId?: string;
 }) {
   const modelConfig = await resolveSkillValueModelConfig(input.analyzerModelId);
@@ -349,6 +365,8 @@ async function analyzeSkill(input: {
           "整个 JSON 控制在 1800 个汉字以内，不输出 Markdown 或解释。",
           "测试题应像真实用户请求，不要提到正在评测、版本号或评分标准。",
           "不得在题面中声称实时授权、客户数据、产品数据、适当性或系统就绪状态已经通过；这些事实必须由实际 Runtime 工具核验。需要测试正向能力时，应写成先核验、就绪则完成，未就绪则说明真实缺口。",
+          "如果提供 evaluationContext，只能把它作为脱敏出题素材：subject 用于稳定定位客户；promptFacts 可以自然写入题面；verificationFacts 只能用于 evaluationGoal，不能把答案直接写进题面；missingFacts 用于设计信息不完整任务。",
+          "优先为不同场景种子生成具体业务题，不要退回‘完成一个典型任务’之类泛化题目。左右 Runtime 仍须通过自身工具核验当前事实。",
           "需要调用外部工具的任务必须能在两分钟左右完成：限定合理候选范围和核验数量，不设计全市场穷举或无边界深挖。",
         ].join("\n"),
       },
@@ -360,6 +378,7 @@ async function analyzeSkill(input: {
           description: input.description,
           version: input.version,
           sourceSha256: sha256(input.source),
+          evaluationContext: input.evaluationContext || null,
           skillSource: input.source,
         }),
       },
@@ -410,10 +429,33 @@ export async function prepareSkillValueEvaluationPlan(input: {
   description?: string | null;
   version: SkillEvaluationVersionInput;
   analyzerModelId?: string;
+  roleTemplate?: string;
+  contextAdapter?: EvaluationContextAdapter;
 }): Promise<SkillValueEvaluationPlan> {
   const root = path.resolve(input.root || process.cwd());
   const source = readSkillAnalysisSource(root, input.version.artifactPath);
   const anchors = curatedPrompts(root, input.skillId, input.version);
+  let evaluationContext: EvaluationContextSnapshot | null = null;
+  let contextMessage: string | null = null;
+  if (input.contextAdapter) {
+    try {
+      evaluationContext = await resolveEvaluationContext({
+        adapter: input.contextAdapter,
+        request: {
+          skillId: input.skillId,
+          role: input.roleTemplate,
+          maximumSeeds: 3,
+        },
+      });
+    } catch (error) {
+      contextMessage = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+      logWarn("skill.value_evaluation.context_fallback", {
+        skillId: input.skillId,
+        version: input.version.version,
+        error: contextMessage,
+      });
+    }
+  }
   let analyzerStatus: SkillValueEvaluationPlan["analyzerStatus"] = "generated";
   let analyzerModel: string;
   let analyzerMessage: string | null = null;
@@ -426,6 +468,7 @@ export async function prepareSkillValueEvaluationPlan(input: {
       version: input.version.version,
       source: source.content,
       metadata: source.metadata,
+      evaluationContext,
       analyzerModelId: input.analyzerModelId,
     });
     analysis = generated.analysis;
@@ -448,7 +491,9 @@ export async function prepareSkillValueEvaluationPlan(input: {
   const generatedPrompts = analysis.prompts.map((item, index) => ({
     promptId: `AI-${String(index + 1).padStart(2, "0")}`,
     ...item,
-    source: analyzerStatus === "generated" ? "ai_generated" as const : "fallback" as const,
+    source: analyzerStatus === "generated"
+      ? evaluationContext ? "context_generated" as const : "ai_generated" as const
+      : "fallback" as const,
   }));
   const prompts = [...anchors, ...generatedPrompts].slice(0, 5);
   const body = {
@@ -466,6 +511,20 @@ export async function prepareSkillValueEvaluationPlan(input: {
     capabilities: analysis.capabilities,
     evaluationFocus: analysis.evaluationFocus,
     inspectedFiles: source.inspectedFiles,
+    context: {
+      status: evaluationContext
+        ? "enhanced" as const
+        : contextMessage
+          ? "unavailable" as const
+          : "skill_only" as const,
+      sourceLabel: evaluationContext?.sourceLabel || null,
+      providerId: evaluationContext?.providerId || null,
+      snapshotFingerprint: evaluationContext?.snapshotFingerprint || null,
+      seedCount: evaluationContext?.seeds.length || 0,
+      capabilities: evaluationContext?.capabilities || [],
+      asOf: evaluationContext?.asOf || null,
+      message: contextMessage,
+    },
     prompts,
   };
   const planFingerprint = governanceFingerprint(body);

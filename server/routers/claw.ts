@@ -128,6 +128,10 @@ import {
   type SkillValueEvaluationArtifact,
 } from "../_core/skill-value-evaluation-runner";
 import {
+  createEaSkillEvaluationContextAdapter,
+  ensureEaSkillEvaluationContextPrincipal,
+} from "../_core/skill-value-evaluation-context";
+import {
   applyAdminRoleReset,
   resolveSelectableAdoptRoleTemplate,
   type AdminClawAdoption,
@@ -1360,12 +1364,36 @@ export const clawRouter = router({
           throw new TRPCError({ code: "BAD_REQUEST", message: "所选 Skill 版本不可用于评测" });
         }
         try {
+          const roleTemplate = await resolveSkillValueRoleTemplate(input.skillId);
+          const usesCustomerContext = Object.keys(
+            getSkillMcpRequirement(input.skillId).servers,
+          ).includes("customer_context");
+          let contextAdapter: Parameters<typeof prepareSkillValueEvaluationPlan>[0]["contextAdapter"];
+          if (usesCustomerContext) {
+            try {
+              const principal = await ensureEaSkillEvaluationContextPrincipal({
+                organization: String(ctx.user.organization || "EA Skill Evaluation"),
+                roleTemplate,
+              });
+              contextAdapter = createEaSkillEvaluationContextAdapter({ principal });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              contextAdapter = {
+                adapterId: "ea-customer-context-v1",
+                async load() {
+                  throw new Error(message);
+                },
+              };
+            }
+          }
           const plan = await prepareSkillValueEvaluationPlan({
             root: APP_ROOT,
             skillId: input.skillId,
             skillName: String(marketItem.name || input.skillId),
             description: marketItem.description,
             version,
+            roleTemplate,
+            contextAdapter,
           });
           await recordAuditBestEffort({
             action: "skill.value_evaluation.prepared",
@@ -1381,6 +1409,10 @@ export const clawRouter = router({
               analyzerStatus: plan.analyzerStatus,
               promptCount: plan.prompts.length,
               planFingerprint: plan.planFingerprint,
+              contextStatus: plan.context.status,
+              contextProviderId: plan.context.providerId,
+              contextSnapshotFingerprint: plan.context.snapshotFingerprint,
+              contextSeedCount: plan.context.seedCount,
             },
           });
           return plan;
