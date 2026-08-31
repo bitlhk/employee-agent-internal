@@ -45,9 +45,43 @@ import { buildWealthAllocationTaskContextPack, finalizeWealthPolicyResolutionEvi
 import { GOVERNED_WORK_PLATFORM_TOOLS, handleGovernedWorkPlatformTool, isGovernedWorkPlatformTool } from "./governed-work-platform-tools";
 import { CUSTOMER_CRM_PLATFORM_TOOLS, handleCustomerCrmPlatformTool, isCustomerCrmPlatformTool } from "./customer-crm-platform-tools";
 import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
+import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
+import { createConfiguredTwentyCustomerClient } from "./customer-context-twenty-access";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
+
+function customerSourceAgentId(
+  principal: Parameters<typeof issueCustomerSourceDelegation>[0]["principal"],
+  toolName: string,
+): string {
+  return toolName === "wealth_assistant_customer_detail"
+    || toolName === "wealth_assistant_customer_list"
+    ? issueCustomerSourceDelegation({
+        principal,
+        sourceServerId: "wealth_assistant_customer",
+      }).sourceAgentId
+    : principal.agentId;
+}
+
+async function wealthCustomerSourceId(input: {
+  customerId: string;
+  profileTarget: { toolName: string };
+  portfolioTarget: { toolName: string };
+}): Promise<string> {
+  const usesLegacyWealthSource = input.profileTarget.toolName === "wealth_assistant_customer_detail"
+    && input.portfolioTarget.toolName === "wealth_assistant_customer_detail";
+  if (!usesLegacyWealthSource || !/^CUST-[0-9]{6}$/u.test(input.customerId)) {
+    return input.customerId;
+  }
+  const sourceCustomerId = await createConfiguredTwentyCustomerClient()
+    .resolveSourceCustomerId({
+      globalCustomerId: input.customerId,
+      sourceSystem: "wealth_assistant_customer",
+    });
+  if (!sourceCustomerId) throw new Error("客户统一标识缺少财富来源映射");
+  return sourceCustomerId;
+}
 
 type WealthAllocationDependency = "profile" | "portfolio" | "products" | "policy";
 
@@ -821,9 +855,23 @@ async function callTool(
         productEndpoint,
       });
       const { profileTarget, portfolioTarget, productTarget, knowledgeSource } = runtimeSources;
+      const sourceCustomerId = await wealthCustomerSourceId({
+        customerId,
+        profileTarget,
+        portfolioTarget,
+      });
       const result = await prepareWealthAllocationContext({
         principal: principalV2.principal,
-        request: { customerId, amount, horizonMonths, channel, keyword, productType, maxProducts },
+        request: {
+          customerId,
+          ...(sourceCustomerId === customerId ? {} : { sourceCustomerId }),
+          amount,
+          horizonMonths,
+          channel,
+          keyword,
+          productType,
+          maxProducts,
+        },
         dependencies: {
           ...(profileTarget.endpointUrl === portfolioTarget.endpointUrl && profileTarget.toolName === portfolioTarget.toolName ? {
             loadCustomer: async (requestedCustomerId: string) => {
@@ -832,7 +880,10 @@ async function callTool(
                   endpointUrl: portfolioTarget.endpointUrl,
                   toolName: portfolioTarget.toolName,
                   args: { customerId: requestedCustomerId },
-                  agentId: principal.principal.agentId,
+                  agentId: customerSourceAgentId(
+                    principalV2.principal,
+                    portfolioTarget.toolName,
+                  ),
                   adoptId,
                   sessionId: principal.principal.sessionId,
                 })),
@@ -850,7 +901,10 @@ async function callTool(
                 args: profileTarget.toolName === "get_governed_customer_profile"
                   ? { customer_id: requestedCustomerId, task_id: allocationTaskId }
                   : { customerId: requestedCustomerId },
-                agentId: principal.principal.agentId,
+                agentId: customerSourceAgentId(
+                  principalV2.principal,
+                  profileTarget.toolName,
+                ),
                 adoptId,
                 sessionId: principal.principal.sessionId,
               })),
@@ -864,7 +918,10 @@ async function callTool(
                 args: portfolioTarget.toolName === "get_customer_portfolio"
                   ? { customer_id: requestedCustomerId, task_id: allocationTaskId }
                   : { customerId: requestedCustomerId },
-                agentId: principal.principal.agentId,
+                agentId: customerSourceAgentId(
+                  principalV2.principal,
+                  portfolioTarget.toolName,
+                ),
                 adoptId,
                 sessionId: principal.principal.sessionId,
               })),

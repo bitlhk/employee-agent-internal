@@ -1443,6 +1443,7 @@ export const clawRouter = router({
             skillId: input.skillId,
             skillName: String(marketItem.name || input.skillId),
             roleTemplate,
+            organization: String(ctx.user.organization || "EA Skill Evaluation"),
             left: { modelId: input.left.modelId, artifact: leftArtifact },
             right: { modelId: input.right.modelId, artifact: rightArtifact },
             prompts: input.prompts,

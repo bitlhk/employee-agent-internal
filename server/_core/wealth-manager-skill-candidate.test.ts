@@ -32,6 +32,14 @@ const runtimeHardenedCandidateRoot = path.resolve(
   "wealth-manager-assistant",
   "2.1.2"
 );
+const fastPathCandidateRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "candidates",
+  "wealth-manager-assistant",
+  "2.1.3"
+);
 const productionRoot = path.resolve(
   process.cwd(),
   "examples",
@@ -213,8 +221,8 @@ describe("wealth manager assistant 2.1 candidate", () => {
     expect(plan).toMatchObject({
       status: "READY",
       sourceIdentityMode: "candidate_repository",
-      targetVersion: "2.1.0",
-      previousVersion: "2.0.2",
+      targetVersion: "2.1.3",
+      previousVersion: "2.1.2",
       cases: 7,
       repeats: 3,
       plannedRuns: 63,
@@ -339,5 +347,55 @@ describe("wealth manager assistant 2.1 candidate", () => {
     expect(skill.slice(hardRules, references)).toContain(
       "用户未明确要求下载文件时，直接在对话中输出"
     );
+  });
+
+  it("freezes 2.1.3 as a professional fast-path candidate", () => {
+    const parsed = parseSkillSourceDirectory(
+      fastPathCandidateRoot,
+      "wealth-manager-assistant"
+    );
+    expect(parsed.manifest).toMatchObject({
+      version: "2.1.3",
+      status: "candidate",
+      source: {
+        originalAuthor: "李文华",
+        baseVersion: "2.1.2",
+        adaptation: "professional-fast-path-and-product-rigor",
+      },
+    });
+    expect(parsed.warnings).toEqual([]);
+
+    const comparison = loadWealthSkill21CandidateComparison(
+      process.cwd(),
+      "wealth-manager-assistant-2.1.3"
+    );
+    expect(comparison.target).toMatchObject({
+      version: "2.1.3",
+      artifactSha256:
+        "be28b298fd3ff80406338099c8e7c4ff2fd18e24c270f958f2d1bc0e785b0bfc",
+    });
+    expect(comparison.previousVersion).toMatchObject({ version: "2.1.2" });
+  });
+
+  it("uses short task paths and comparable product metrics", () => {
+    const skill = readFileSync(
+      path.join(fastPathCandidateRoot, "SKILL.md"),
+      "utf8"
+    );
+    const recommendation = readFileSync(
+      path.join(
+        fastPathCandidateRoot,
+        "references",
+        "portfolio-recommendation.md"
+      ),
+      "utf8"
+    );
+    expect(skill).toContain("单客户访前或需求诊断");
+    expect(skill).toContain("不调用批量到期扫描、市场资讯或任何产品工具");
+    expect(skill).toContain("普通单任务最多调用五次业务工具");
+    expect(skill).toContain("一次任务最多读取一个参考文件");
+    expect(skill).toContain("不得改写成“近一年收益”");
+    expect(skill).toContain("不代表未来“收益潜力”");
+    expect(recommendation).toContain("权益类、固定收益类或风险等级更高不等于“收益潜力最高”");
   });
 });

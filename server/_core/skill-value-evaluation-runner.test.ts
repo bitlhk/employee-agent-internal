@@ -55,6 +55,7 @@ describe("summarizeSkillValueEvaluationCases", () => {
       leftWins: 0,
       rightWins: 2,
       ties: 1,
+      unavailable: 0,
       headline: "B 在 2/3 个任务中表现更优",
     });
   });
@@ -72,8 +73,15 @@ describe("summarizeSkillValueEvaluationCases", () => {
       leftWins: 0,
       rightWins: 0,
       ties: 0,
+      unavailable: 1,
       headline: "左右输出已完成，专业 Judge 暂未形成可用结论",
     });
+
+    expect(summarizeSkillValueEvaluationCases([
+      evaluationCase("left"),
+      evaluationCase("right"),
+      evaluationCase(null),
+    ]).headline).toBe("本轮对比持平：A、B 各胜 1 题，1 题未判定");
   });
 });
 

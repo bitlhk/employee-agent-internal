@@ -212,6 +212,36 @@ describe("wealth allocation context", () => {
     expect(result.evidence.policyDecisionIds).toHaveLength(3);
   });
 
+  it("uses a governed source alias internally while preserving the canonical customer ID", async () => {
+    let requestedCustomerId = "";
+    const result = await prepareWealthAllocationContext({
+      principal,
+      request: {
+        customerId: "CUST-000005",
+        sourceCustomerId: "C005",
+        amount: 500_000,
+        horizonMonths: 36,
+        channel: "branch",
+        keyword: "",
+        productType: "",
+        maxProducts: 10,
+      },
+      dependencies: dependencies({
+        loadCustomer: async customerId => {
+          requestedCustomerId = customerId;
+          return {
+            ...customer,
+            data: { ...customer.data, customerId: "C005" },
+          };
+        },
+      }),
+      now: new Date("2026-08-10T00:00:00.000Z"),
+    });
+
+    expect(requestedCustomerId).toBe("C005");
+    expect(result.customer.customerId).toBe("CUST-000005");
+  });
+
   it("fails closed when the current policy source is unavailable", async () => {
     const result = await prepareWealthAllocationContext({
       principal,
@@ -277,6 +307,6 @@ describe("wealth allocation context", () => {
       request: { customerId: "C-OTHER", amount: null, horizonMonths: null, channel: "", keyword: "", productType: "", maxProducts: 10 },
       dependencies: dependencies(),
       now: new Date("2026-08-10T00:00:00.000Z"),
-    })).rejects.toThrow("客户标识与请求不一致");
+    })).rejects.toThrow("客户标识");
   });
 });

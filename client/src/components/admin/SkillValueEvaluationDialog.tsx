@@ -732,6 +732,9 @@ function NewEvaluationWorkbench({
                   <span className="border border-gray-300 bg-white px-2.5 py-1 text-gray-800">A 胜 {job.summary.leftWins}</span>
                   <span className="border border-emerald-300 bg-white px-2.5 py-1 text-emerald-800">B 胜 {job.summary.rightWins}</span>
                   <span className="border border-gray-200 bg-white px-2.5 py-1 text-gray-600">持平 {job.summary.ties}</span>
+                  {job.summary.unavailable > 0 ? (
+                    <span className="border border-amber-200 bg-white px-2.5 py-1 text-amber-800">未判定 {job.summary.unavailable}</span>
+                  ) : null}
                 </div>
               </div>
               <div className="grid grid-cols-2 divide-x divide-emerald-100 text-center text-xs text-gray-600 sm:grid-cols-4">

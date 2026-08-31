@@ -157,6 +157,38 @@ describe("Twenty Customer CRM client", () => {
     ).resolves.toBe("CUST-000005");
   });
 
+  it("resolves a canonical customer ID back to one governed source ID", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      response({
+        data: {
+          customerSourceLinks: [
+            {
+              sourceSystem: "wealth_assistant_customer",
+              sourceCustomerId: "C005",
+              globalCustomerId: "CUST-000005",
+            },
+            {
+              sourceSystem: "insurance_customer_profile",
+              sourceCustomerId: "17",
+              globalCustomerId: "CUST-000005",
+            },
+          ],
+        },
+      })
+    );
+    const client = new TwentyCustomerCrmClientV1({
+      baseUrl: "http://127.0.0.1:19030",
+      apiKey: "test-key",
+      request,
+    });
+    await expect(
+      client.resolveSourceCustomerId({
+        globalCustomerId: "CUST-000005",
+        sourceSystem: "wealth_assistant_customer",
+      })
+    ).resolves.toBe("C005");
+  });
+
   it("pushes role profile and runtime status filters down before listing customer IDs", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       response({

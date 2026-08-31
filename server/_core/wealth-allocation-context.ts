@@ -18,6 +18,7 @@ type JsonObject = Record<string, unknown>;
 
 export type WealthAllocationRequest = {
   customerId: string;
+  sourceCustomerId?: string;
   amount: number | null;
   horizonMonths: number | null;
   channel: string;
@@ -254,7 +255,7 @@ export async function prepareWealthAllocationContext(input: {
 }): Promise<WealthAllocationContextResult> {
   const [customerContext, productPayload, policySource] = await Promise.all([
     loadWealthCustomerContext({
-      customerId: input.request.customerId,
+      customerId: input.request.sourceCustomerId || input.request.customerId,
       loadCustomer: input.dependencies.loadCustomer,
       loadCustomerProfile: input.dependencies.loadCustomerProfile,
       loadCustomerPortfolio: input.dependencies.loadCustomerPortfolio,
@@ -266,8 +267,13 @@ export async function prepareWealthAllocationContext(input: {
     }),
     input.dependencies.resolvePolicySource(),
   ]);
-  const customer = normalizeWealthCustomer({ customer: customerContext.customer }, input.request.customerId);
-  if (customer.customerId !== input.request.customerId) throw new Error("客户 MCP 返回的客户标识与请求不一致");
+  const expectedSourceCustomerId = input.request.sourceCustomerId || input.request.customerId;
+  const customer = normalizeWealthCustomer(
+    { customer: customerContext.customer },
+    expectedSourceCustomerId,
+  );
+  if (customer.customerId !== expectedSourceCustomerId) throw new Error("客户 MCP 返回的客户标识与请求不一致");
+  customer.customerId = input.request.customerId;
   const products = normalizeWealthProducts(productPayload).slice(0, input.request.maxProducts);
   const evaluatedAt = (input.now || new Date()).toISOString();
   const decisions = await Promise.all(products.map(async (product) => ({

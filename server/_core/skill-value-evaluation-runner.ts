@@ -163,6 +163,7 @@ export type SkillValueEvaluationJob = {
     leftWins: number;
     rightWins: number;
     ties: number;
+    unavailable: number;
     headline: string;
   } | null;
   configurationFingerprint: string;
@@ -173,6 +174,7 @@ type StartJobInput = {
   skillId: string;
   skillName: string;
   roleTemplate: string;
+  organization: string;
   left: SkillValueEvaluationSideConfig;
   right: SkillValueEvaluationSideConfig;
   prompts: SkillValueEvaluationRunPrompt[];
@@ -188,11 +190,11 @@ export function summarizeSkillValueEvaluationCases(
   const headline = unavailable === cases.length
     ? "左右输出已完成，专业 Judge 暂未形成可用结论"
     : leftWins === rightWins
-      ? `本轮对比持平：A、B 各胜 ${leftWins} 题${ties ? `，${ties} 题持平` : ""}`
+      ? `本轮对比持平：A、B 各胜 ${leftWins} 题${ties ? `，${ties} 题持平` : ""}${unavailable ? `，${unavailable} 题未判定` : ""}`
       : rightWins > leftWins
-        ? `B 在 ${rightWins}/${cases.length} 个任务中表现更优`
-        : `A 在 ${leftWins}/${cases.length} 个任务中表现更优`;
-  return { leftWins, rightWins, ties, headline };
+        ? `B 在 ${rightWins}/${cases.length} 个任务中表现更优${unavailable ? `，${unavailable} 题未判定` : ""}`
+        : `A 在 ${leftWins}/${cases.length} 个任务中表现更优${unavailable ? `，${unavailable} 题未判定` : ""}`;
+  return { leftWins, rightWins, ties, unavailable, headline };
 }
 
 const jobs = new Map<string, SkillValueEvaluationJob>();
@@ -210,12 +212,19 @@ function cleanupJobs(): void {
   }
 }
 
-function adoptionIds(skillId: string, roleTemplate: string): {
+function evaluationOrganizationKey(organization: string): string {
+  return createHash("sha256")
+    .update(organization.trim() || "default", "utf8")
+    .digest("hex")
+    .slice(0, 10);
+}
+
+function adoptionIds(skillId: string, roleTemplate: string, organization: string): {
   left: string;
   right: string;
 } {
   const digest = createHash("sha256")
-    .update(`${skillId}:${roleTemplate}`, "utf8")
+    .update(`${skillId}:${roleTemplate}:${organization}`, "utf8")
     .digest("hex")
     .slice(0, 10);
   return {
@@ -224,8 +233,9 @@ function adoptionIds(skillId: string, roleTemplate: string): {
   };
 }
 
-async function ensureEvaluationUser() {
-  const email = "skill-value-eval@local.linggan.invalid";
+async function ensureEvaluationUser(organization: string) {
+  const organizationName = organization.trim() || "EA Skill Evaluation";
+  const email = `skill-value-eval+${evaluationOrganizationKey(organizationName)}@local.linggan.invalid`;
   let user = await getUserByEmail(email);
   if (!user) {
     await createUser({
@@ -234,7 +244,7 @@ async function ensureEvaluationUser() {
       loginMethod: "internal_evaluation",
       role: "user",
       accessLevel: "all",
-      organization: "EA Isolated Skill Evaluation",
+      organization: organizationName,
     });
     user = await getUserByEmail(email);
   }
@@ -694,6 +704,15 @@ function buildFinanceEvalPack(
     judge: { providerId: "ea", modelId: "glm-5.2", parameters: {} },
   };
   const cases = input.prompts.map(financeEvalCase);
+  const wealthJudgeInstructions = input.roleTemplate === "wealth-manager" ? [
+    "财富业务口径：客户风险、层级等原始业务码只有存在机构映射时才能翻译；保留原始码并说明待确认优于自行解释。",
+    "正式配置工具返回 BLOCKED 时，额外搜索和罗列原始在售产品不构成业务完整性或推荐价值，也不能替代 eligibleProducts。",
+    "正式配置工具返回的 eligibleProducts 和企业 salesEligibility 决定本机构产品是否可售。第三方基金数据中的未代销或不可认购只代表该数据源或渠道，不得自动推翻本机构销售资格；同一企业销售资格明确停售或到期时才应剔除。",
+    "固定期限、封闭期或赎回受限产品不能满足高流动性底线；例如 131 天或 323 天期限产品不能因为相对较短或风险较低就称为高流动性。没有当前可购的合格流动性工具时，说明产品缺口优于强行凑出完整方案。",
+    "不得仅凭回答中产品编号陌生就断言它不在正式候选；只有 Runtime 证据或回答自身明确显示它来自原始搜索而非 eligibleProducts 时，才按绕过候选处理。判断流动性时应查看方案中承担流动性角色的具体产品，不得把同表中的固定收益产品误判为流动性承载工具。",
+    "持仓或到期数组为空只代表当前数据时点未返回记录，不等于客户确定没有持仓或到期事项。",
+    "访前和亏损修复应优先识别会改变决策的事实与问题；未核验客户前提前列产品应降低评分。",
+  ] : [];
   const judgeProfile: FinanceEvalPack["judgeProfile"] = {
     schemaVersion: "finance.skill-eval.judge-profile.v1",
     profileId: `${input.skillId}-business-quality-v1`,
@@ -703,6 +722,8 @@ function buildFinanceEvalPack(
       `你正在评估 ${job.skillName}（${input.skillId}）的实际业务价值。`,
       "具体或有冲击力不等于专业；无法由任务或输出证明的假设应降低评分。",
       "回答更长、字段更多、技术术语更多或限制更多都不自动构成优势。",
+      "实时 Runtime 和正式业务工具返回的就绪、候选或阻断结果，优先于题面中未经工具核验的系统状态描述。正式客户推荐应优先使用官方配置上下文工具；不得奖励绕过该工具直接拼接原始产品的答案。",
+      ...wealthJudgeInstructions,
     ].join("\n"),
     dimensions: [
       { id: "professional_fit", label: "专业匹配度", description: "岗位专业判断质量" },
@@ -801,7 +822,7 @@ const eaFinanceJudgeModelAdapter: FinanceModelAdapter = {
 
 async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promise<void> {
   try {
-    const user = await ensureEvaluationUser();
+    const user = await ensureEvaluationUser(input.organization);
     job.stageLabel = "准备隔离运行环境";
     job.updatedAt = new Date().toISOString();
     const leftAdoption = await ensureEvaluationAdoption({
@@ -895,11 +916,12 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
   if (input.prompts.length < 1 || input.prompts.length > 5) {
     throw new Error("每个评测批次需要 1 到 5 条测试题");
   }
-  const ids = adoptionIds(input.skillId, input.roleTemplate);
+  const ids = adoptionIds(input.skillId, input.roleTemplate, input.organization);
   const environment = buildSkillValueEvaluationEnvironment(input.skillId);
   const configurationFingerprint = governanceFingerprint({
     skillId: input.skillId,
     roleTemplate: input.roleTemplate,
+    organization: input.organization,
     left: input.left,
     right: input.right,
     prompts: input.prompts,

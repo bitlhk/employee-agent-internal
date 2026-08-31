@@ -207,6 +207,31 @@ export class TwentyCustomerCrmClientV1 {
     return globalIds[0] || null;
   }
 
+  async resolveSourceCustomerId(input: {
+    globalCustomerId: string;
+    sourceSystem: string;
+  }): Promise<string | null> {
+    const globalCustomerId = input.globalCustomerId.trim();
+    const sourceSystem = input.sourceSystem.trim();
+    if (!globalCustomerId || !sourceSystem) return null;
+    const links = await this.findMany(
+      "customerSourceLinks",
+      `globalCustomerId[eq]:${JSON.stringify(globalCustomerId)}`,
+      100
+    );
+    const sourceIds = Array.from(
+      new Set(
+        links
+          .filter(link => string(link.sourceSystem) === sourceSystem)
+          .map(link => string(link.sourceCustomerId))
+          .filter(Boolean)
+      )
+    );
+    if (sourceIds.length > 1)
+      throw new Error("TWENTY_CUSTOMER_CRM_SOURCE_ID_AMBIGUOUS");
+    return sourceIds[0] || null;
+  }
+
   async listPublicCustomers(limit = 500): Promise<TwentyCustomerSummaryV1[]> {
     const rows = await this.findMany(
       "enterpriseCustomers",
