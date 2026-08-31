@@ -216,17 +216,44 @@ function evaluationOrganizationKey(organization: string): string {
     .slice(0, 10);
 }
 
-function adoptionIds(skillId: string, roleTemplate: string, organization: string): {
+function evaluationArtifactIdentity(artifact: SkillValueEvaluationArtifact): string {
+  if (!artifact) return "without_target_skill";
+  return [
+    artifact.versionId,
+    artifact.version,
+    artifact.artifactSha256,
+  ].join(":");
+}
+
+export function buildSkillValueEvaluationAdoptionIds(input: {
+  skillId: string;
+  roleTemplate: string;
+  organization: string;
+  leftArtifact: SkillValueEvaluationArtifact;
+  rightArtifact: SkillValueEvaluationArtifact;
+}): {
   left: string;
   right: string;
 } {
-  const digest = createHash("sha256")
-    .update(`${skillId}:${roleTemplate}:${organization}`, "utf8")
-    .digest("hex")
-    .slice(0, 10);
+  const adoptionId = (
+    side: EvaluationSide,
+    artifact: SkillValueEvaluationArtifact,
+  ) => {
+    const digest = createHash("sha256")
+      .update([
+        input.skillId,
+        input.roleTemplate,
+        input.organization,
+        side,
+        evaluationArtifactIdentity(artifact),
+      ].join(":"), "utf8")
+      .digest("hex")
+      .slice(0, 12);
+    return `lgj-eval-ui-${digest}-${side === "left" ? "a" : "b"}`;
+  };
   return {
-    left: `lgj-eval-ui-${digest}-a`,
-    right: `lgj-eval-ui-${digest}-b`,
+    left: adoptionId("left", input.leftArtifact),
+    right: adoptionId("right", input.rightArtifact),
   };
 }
 
@@ -934,7 +961,13 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
   if (input.prompts.length < 1 || input.prompts.length > 5) {
     throw new Error("每个评测批次需要 1 到 5 条测试题");
   }
-  const ids = adoptionIds(input.skillId, input.roleTemplate, input.organization);
+  const ids = buildSkillValueEvaluationAdoptionIds({
+    skillId: input.skillId,
+    roleTemplate: input.roleTemplate,
+    organization: input.organization,
+    leftArtifact: input.left.artifact,
+    rightArtifact: input.right.artifact,
+  });
   const environment = buildSkillValueEvaluationEnvironment(input.skillId);
   const configurationFingerprint = governanceFingerprint({
     skillId: input.skillId,

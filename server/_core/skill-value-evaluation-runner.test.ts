@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildSkillValueEvaluationAdoptionIds,
   buildSkillValueEvaluationRuntimePrompt,
   buildSkillValueEvaluationEnvironment,
   buildSkillValueEvaluationRuntimeMcpServerIds,
@@ -86,6 +87,36 @@ describe("summarizeSkillValueEvaluationCases", () => {
 });
 
 describe("skill value evaluation environment", () => {
+  it("isolates reused runtime instances by side and frozen Skill artifact", () => {
+    const artifact = {
+      versionId: "version-214",
+      version: "2.1.4",
+      artifactSha256: "a".repeat(64),
+      artifactPath: "/tmp/wealth-manager-assistant-2.1.4",
+    };
+    const base = {
+      skillId: "wealth-manager-assistant",
+      roleTemplate: "wealth-manager",
+      organization: "Shanghai Demo",
+      leftArtifact: null,
+      rightArtifact: artifact,
+    };
+    const first = buildSkillValueEvaluationAdoptionIds(base);
+
+    expect(buildSkillValueEvaluationAdoptionIds(base)).toEqual(first);
+    expect(first.left).not.toBe(first.right);
+    expect(buildSkillValueEvaluationAdoptionIds({
+      ...base,
+      rightArtifact: {
+        ...artifact,
+        versionId: "version-215",
+        version: "2.1.5",
+        artifactSha256: "b".repeat(64),
+        artifactPath: "/tmp/wealth-manager-assistant-2.1.5",
+      },
+    }).right).not.toBe(first.right);
+  });
+
   it("normalizes the declared MCP tool environment shared by both sides", () => {
     expect(buildSkillValueEvaluationEnvironment("stock-screener", {
       servers: {
