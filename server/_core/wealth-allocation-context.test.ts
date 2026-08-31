@@ -101,18 +101,36 @@ describe("wealth allocation context", () => {
           name: "稳盈1号理财",
           dataSourceType: "demo",
           riskLevel: "R2",
+          productCategory: "固定收益类",
           minPurchaseAmount: 5_000,
           salesStatus: "on_sale",
+          salesPeriod: { start: "2026-08-01", end: "2026-09-30" },
         }],
       },
     })).toEqual([expect.objectContaining({
       productId: "P001",
       dataSourceType: "demo",
+      productCategory: "固定收益类",
       riskLevel: "R2",
       status: "on_sale",
       minAmount: 5_000,
+      salesPeriod: { start: "2026-08-01", end: "2026-09-30" },
       dataAsOf: "2026-08-20",
     })]);
+  });
+
+  it("prefers the governed sales status over a generic scenario status", () => {
+    expect(normalizeWealthProducts({
+      data: {
+        items: [{
+          productId: "P004",
+          name: "灵活配置理财",
+          riskLevel: "R4",
+          status: "on_sale",
+          salesStatus: "suspended",
+        }],
+      },
+    })[0]?.status).toBe("suspended");
   });
 
   it("normalizes nested product facts and sales eligibility", () => {
@@ -299,6 +317,13 @@ describe("wealth allocation context", () => {
     expect(result.evidence.profileDataAsOf).toBe("2026-08-10T00:00:00.000Z");
     expect(result.evidence.portfolioDataAsOf).toBe("2026-08-10T00:01:00.000Z");
     expect(result.evidence.portfolioResultFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.portfolio).toMatchObject({
+      totalAssets: 1_500_000,
+      holdingsStatus: "records_returned",
+      maturitiesStatus: "no_rows_returned",
+      dataAsOf: "2026-08-10T00:01:00.000Z",
+    });
+    expect(result.portfolio.holdings).toEqual([{ productId: "P-OLD" }]);
   });
 
   it("rejects a customer response for a different customer id", async () => {

@@ -31,6 +31,14 @@ export type WealthAllocationContextResult = {
   schema: "ea.wealth-allocation-context.v1";
   status: "ready" | "no_eligible_products";
   customer: WealthCustomerSuitabilityContext & { name: string; aum: number | null };
+  portfolio: {
+    totalAssets: number | null;
+    holdings: unknown[];
+    maturities: unknown[];
+    holdingsStatus: "records_returned" | "no_rows_returned";
+    maturitiesStatus: "records_returned" | "no_rows_returned";
+    dataAsOf: string;
+  };
   eligibleProducts: WealthProductSuitabilityContext[];
   excludedProducts: Array<{
     productId: string;
@@ -100,6 +108,43 @@ function dataObject(payload: JsonObject): JsonObject {
   return Object.keys(data).length ? data : payload;
 }
 
+function firstArray(...values: unknown[]): unknown[] {
+  for (const value of values) {
+    if (Array.isArray(value)) return value.slice(0, 50);
+  }
+  return [];
+}
+
+function normalizePortfolio(customer: JsonObject, dataAsOf: string): WealthAllocationContextResult["portfolio"] {
+  const portfolio = object(customer.portfolio);
+  const summary = object(portfolio.summary);
+  const assetInfo = object(portfolio.assetInfo);
+  const holdings = firstArray(
+    portfolio.holdings,
+    portfolio.heldProducts,
+    portfolio.positions,
+    portfolio.assets,
+  );
+  const maturities = firstArray(
+    portfolio.maturities,
+    portfolio.expiringProducts,
+    portfolio.maturedProducts,
+  );
+  return {
+    totalAssets: finiteNumber(
+      summary.totalAssets,
+      summary.total_assets,
+      assetInfo.totalAssets,
+      assetInfo.total_assets,
+    ),
+    holdings,
+    maturities,
+    holdingsStatus: holdings.length ? "records_returned" : "no_rows_returned",
+    maturitiesStatus: maturities.length ? "records_returned" : "no_rows_returned",
+    dataAsOf,
+  };
+}
+
 function customerRiskLevel(value: unknown): string {
   const riskLevel = String(value ?? "").trim().toUpperCase();
   return /^[1-5]$/.test(riskLevel) ? `C${riskLevel}` : riskLevel;
@@ -164,11 +209,24 @@ export function normalizeWealthProducts(payload: JsonObject): WealthProductSuita
   return productRows(payload).map((product) => {
     const facts = object(product.productFacts || product.product_facts);
     const salesEligibility = object(product.salesEligibility || product.sales_eligibility);
+    const salesPeriod = object(
+      product.salesPeriod
+      || product.sales_period
+      || salesEligibility.salesPeriod
+      || salesEligibility.sales_period,
+    );
     const termDays = finiteNumber(product.termDays, product.term_days, facts.termDays, facts.term_days);
     return {
       productId: firstString(product.productId, product.product_id, product.productCode, product.product_code, product.code, product.id),
       name: firstString(product.name, product.productName, product.product_name, facts.name),
       dataSourceType: firstString(product.dataSourceType, product.data_source_type),
+      productCategory: firstString(
+        product.productCategory,
+        product.product_category,
+        product.type,
+        facts.productCategory,
+        facts.product_category,
+      ),
       riskLevel: productRiskLevel(firstString(
         product.riskLevel,
         product.risk_level,
@@ -179,7 +237,15 @@ export function normalizeWealthProducts(payload: JsonObject): WealthProductSuita
         facts.risk_level,
         facts.riskLevelCode,
       )),
-      status: firstString(product.status, product.saleStatus, product.sale_status, product.salesStatus, product.sales_status, salesEligibility.salesStatus, salesEligibility.sales_status),
+      status: firstString(
+        salesEligibility.salesStatus,
+        salesEligibility.sales_status,
+        product.salesStatus,
+        product.sales_status,
+        product.saleStatus,
+        product.sale_status,
+        product.status,
+      ),
       channels: stringArray(product.channels, product.saleChannels, product.sale_channels, product.channel, salesEligibility.channels),
       minAmount: finiteNumber(
         product.minAmount,
@@ -191,6 +257,7 @@ export function normalizeWealthProducts(payload: JsonObject): WealthProductSuita
         facts.minPurchaseAmount,
         facts.min_purchase_amount,
       ),
+      termDays,
       termMonths: finiteNumber(
         product.termMonths,
         product.term_months,
@@ -200,6 +267,10 @@ export function normalizeWealthProducts(payload: JsonObject): WealthProductSuita
         facts.termMonths,
         facts.term_months,
       ) ?? (termDays === null ? null : Math.ceil(termDays / 30)),
+      salesPeriod: {
+        start: firstString(salesPeriod.start, salesPeriod.startsAt, salesPeriod.start_at) || null,
+        end: firstString(salesPeriod.end, salesPeriod.endsAt, salesPeriod.end_at) || null,
+      },
       dataAsOf: firstString(product.dataAsOf, product.data_as_of, salesEligibility.asOf, salesEligibility.as_of, product.updatedAt, product.updated_at, defaultDataAsOf),
     };
   }).slice(0, 50);
@@ -274,6 +345,10 @@ export async function prepareWealthAllocationContext(input: {
   );
   if (customer.customerId !== expectedSourceCustomerId) throw new Error("客户 MCP 返回的客户标识与请求不一致");
   customer.customerId = input.request.customerId;
+  const portfolio = normalizePortfolio(
+    customerContext.customer,
+    customerContext.evidence.portfolioDataAsOf,
+  );
   const products = normalizeWealthProducts(productPayload).slice(0, input.request.maxProducts);
   const evaluatedAt = (input.now || new Date()).toISOString();
   const decisions = await Promise.all(products.map(async (product) => ({
@@ -297,6 +372,7 @@ export async function prepareWealthAllocationContext(input: {
     schema: "ea.wealth-allocation-context.v1",
     status: eligibleProducts.length ? "ready" : "no_eligible_products",
     customer,
+    portfolio,
     eligibleProducts,
     excludedProducts,
     policySource,

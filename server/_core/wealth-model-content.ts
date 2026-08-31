@@ -43,6 +43,7 @@ export function wealthAllocationModelContent(result: WealthAllocationContextResu
     schema: result.schema,
     status: result.status,
     customer: result.customer,
+    portfolio: result.portfolio,
     eligibleProducts: result.eligibleProducts,
     excludedProducts: result.excludedProducts,
     policySource: {

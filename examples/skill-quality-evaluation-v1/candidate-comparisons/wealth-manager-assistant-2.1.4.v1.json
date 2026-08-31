@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "ea.skill-quality-candidate-comparison.v1",
+  "comparisonId": "wealth-skill-2.1.4-candidate",
+  "comparisonFingerprint": "e45edbf932c82ac0cb5e6e81c9b1a41a4f488b56370380d06ba8cd3a7336579e",
+  "status": "ready",
+  "baseSuitePath": "examples/skill-quality-evaluation-v1/suites/wealth-manager-assistant.v1.json",
+  "baseSuiteFingerprint": "5edfef1d7eb15026a5fbd9b4b3f6dadfe40192cad2afa5b32a8c7b6d3810dd6b",
+  "derivedSuiteId": "wealth-manager-assistant-quality-2.1.4-candidate-v1",
+  "derivedSuiteVersion": "1.1.5",
+  "domainReview": {
+    "reviewerId": "AI-WM-EXPERT-05",
+    "reviewerRole": "AI辅助财富管理专业与运行效率评审",
+    "reviewedAt": "2026-08-31T12:35:00+08:00",
+    "reviewComment": "确认单次统一上下文、有限产品补查和事实纪律优化可进入真实 Runtime 对照；不代表人类专家签署或正式发布审批。",
+    "groundTruthVersion": "wm-skill-2.1.4-optimization-review-v1",
+    "evidencePath": "docs/wealth-manager-skill-2.1.4-optimization-review-v1.md",
+    "evidenceSha256": "59ef833a574c979db2e1a5a58b34531b4cadb283d1ee4f67d11aabdd838384c9"
+  },
+  "target": {
+    "skillId": "wealth-manager-assistant",
+    "skillVersionId": "candidate_wealth-manager-assistant_2.1.4_b9c612eaf7e7",
+    "version": "2.1.4",
+    "artifactSha256": "b9c612eaf7e7aa95649eec42a277033f2534d7f2a6a7ec59fd149dae1ddd0419",
+    "artifactSize": 39901,
+    "artifactRelativePath": "examples/skill-quality-evaluation-v1/candidates/wealth-manager-assistant/2.1.4",
+    "controlledReferencePathsByCase": {
+      "WM-SKILL-EVAL-001": [],
+      "WM-SKILL-EVAL-002": [],
+      "WM-SKILL-EVAL-003": [],
+      "WM-SKILL-EVAL-003B": [],
+      "WM-SKILL-EVAL-004": [],
+      "WM-SKILL-EVAL-005": [],
+      "WM-SKILL-EVAL-006": []
+    }
+  },
+  "previousVersion": {
+    "skillId": "wealth-manager-assistant",
+    "skillVersionId": "candidate_wealth-manager-assistant_2.1.3_be28b298fd3f",
+    "version": "2.1.3",
+    "artifactSha256": "be28b298fd3ff80406338099c8e7c4ff2fd18e24c270f958f2d1bc0e785b0bfc",
+    "artifactSize": 38270,
+    "artifactRelativePath": "examples/skill-quality-evaluation-v1/candidates/wealth-manager-assistant/2.1.3",
+    "controlledReferencePathsByCase": {
+      "WM-SKILL-EVAL-001": [],
+      "WM-SKILL-EVAL-002": [],
+      "WM-SKILL-EVAL-003": [],
+      "WM-SKILL-EVAL-003B": [],
+      "WM-SKILL-EVAL-004": [],
+      "WM-SKILL-EVAL-005": [],
+      "WM-SKILL-EVAL-006": []
+    }
+  },
+  "repeatCount": 3
+}

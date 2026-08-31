@@ -706,6 +706,7 @@ function buildFinanceEvalPack(
   const cases = input.prompts.map(financeEvalCase);
   const wealthJudgeInstructions = input.roleTemplate === "wealth-manager" ? [
     "财富业务口径：客户风险、层级等原始业务码只有存在机构映射时才能翻译；保留原始码并说明待确认优于自行解释。",
+    "不得自行推导客户风险码与产品风险等级的映射，尤其不得仅凭 C4 假定 R4 可以推荐。产品风险更高、数量更多或品类更多不自动代表更专业；只有正式 eligibleProducts 明确包含时，才能奖励对应产品的使用。",
     "正式配置工具返回 BLOCKED 时，额外搜索和罗列原始在售产品不构成业务完整性或推荐价值，也不能替代 eligibleProducts。",
     "正式配置工具返回的 eligibleProducts 和企业 salesEligibility 决定本机构产品是否可售。第三方基金数据中的未代销或不可认购只代表该数据源或渠道，不得自动推翻本机构销售资格；同一企业销售资格明确停售或到期时才应剔除。",
     "固定期限、封闭期或赎回受限产品不能满足高流动性底线；例如 131 天或 323 天期限产品不能因为相对较短或风险较低就称为高流动性。没有当前可购的合格流动性工具时，说明产品缺口优于强行凑出完整方案。",

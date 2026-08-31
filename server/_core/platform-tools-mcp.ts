@@ -275,6 +275,7 @@ export const PLATFORM_TOOLS = [
       "Prepare governed wealth-allocation context for one authorized customer.",
       "This is the only platform tool that may produce a formal candidate-product set for a wealth allocation task.",
       "It loads current customer and product data, verifies the currently effective suitability policy, and returns only products allowed by deterministic policy.",
+      "For a customer-specific formal recommendation, call this tool first and wait for its result; do not call customer profile, portfolio, policy, or product-list tools in parallel because this result already includes those facts.",
       "Use eligibleProducts for recommendations; excludedProducts are reason-only and must never be recommended.",
     ].join(" "),
     inputSchema: {

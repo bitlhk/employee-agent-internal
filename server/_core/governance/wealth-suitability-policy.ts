@@ -37,11 +37,17 @@ export type WealthProductSuitabilityContext = {
   productId: string;
   name: string;
   dataSourceType?: string;
+  productCategory?: string;
   riskLevel: string;
   status: string;
   channels: string[];
   minAmount: number | null;
+  termDays?: number | null;
   termMonths: number | null;
+  salesPeriod?: {
+    start: string | null;
+    end: string | null;
+  };
   dataAsOf: string;
 };
 

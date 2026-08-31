@@ -28,13 +28,15 @@ export const WEALTH_SKILL_2_1_COMPARISON_PATHS = {
     "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.2.v1.json",
   "wealth-manager-assistant-2.1.3":
     "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.3.v1.json",
+  "wealth-manager-assistant-2.1.4":
+    "examples/skill-quality-evaluation-v1/candidate-comparisons/wealth-manager-assistant-2.1.4.v1.json",
 } as const;
 
 export type WealthSkill21ComparisonName =
   keyof typeof WEALTH_SKILL_2_1_COMPARISON_PATHS;
 
 const DEFAULT_WEALTH_SKILL_2_1_COMPARISON: WealthSkill21ComparisonName =
-  "wealth-manager-assistant-2.1.3";
+  "wealth-manager-assistant-2.1.4";
 
 const safeRelativePathSchema = z
   .string()

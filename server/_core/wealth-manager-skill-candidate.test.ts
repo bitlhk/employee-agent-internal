@@ -40,6 +40,14 @@ const fastPathCandidateRoot = path.resolve(
   "wealth-manager-assistant",
   "2.1.3"
 );
+const optimizedCandidateRoot = path.resolve(
+  process.cwd(),
+  "examples",
+  "skill-quality-evaluation-v1",
+  "candidates",
+  "wealth-manager-assistant",
+  "2.1.4"
+);
 const productionRoot = path.resolve(
   process.cwd(),
   "examples",
@@ -221,8 +229,8 @@ describe("wealth manager assistant 2.1 candidate", () => {
     expect(plan).toMatchObject({
       status: "READY",
       sourceIdentityMode: "candidate_repository",
-      targetVersion: "2.1.3",
-      previousVersion: "2.1.2",
+      targetVersion: "2.1.4",
+      previousVersion: "2.1.3",
       cases: 7,
       repeats: 3,
       plannedRuns: 63,
@@ -397,5 +405,61 @@ describe("wealth manager assistant 2.1 candidate", () => {
     expect(skill).toContain("不得改写成“近一年收益”");
     expect(skill).toContain("不代表未来“收益潜力”");
     expect(recommendation).toContain("权益类、固定收益类或风险等级更高不等于“收益潜力最高”");
+  });
+
+  it("freezes 2.1.4 as the single-context-call optimization candidate", () => {
+    const parsed = parseSkillSourceDirectory(
+      optimizedCandidateRoot,
+      "wealth-manager-assistant"
+    );
+    expect(parsed.manifest).toMatchObject({
+      version: "2.1.4",
+      status: "candidate",
+      source: {
+        originalAuthor: "李文华",
+        baseVersion: "2.1.3",
+        adaptation: "single-context-call-and-fact-discipline",
+      },
+    });
+    expect(parsed.warnings).toEqual([]);
+
+    const comparison = loadWealthSkill21CandidateComparison(
+      process.cwd(),
+      "wealth-manager-assistant-2.1.4"
+    );
+    expect(comparison.target).toMatchObject({
+      version: "2.1.4",
+      artifactSha256:
+        "b9c612eaf7e7aa95649eec42a277033f2534d7f2a6a7ec59fd149dae1ddd0419",
+    });
+    expect(comparison.previousVersion).toMatchObject({
+      version: "2.1.3",
+      artifactSha256:
+        "be28b298fd3ff80406338099c8e7c4ff2fd18e24c270f958f2d1bc0e785b0bfc",
+    });
+  });
+
+  it("uses one governed allocation context and avoids unsupported timing claims", () => {
+    const skill = readFileSync(
+      path.join(optimizedCandidateRoot, "SKILL.md"),
+      "utf8"
+    );
+    const recommendation = readFileSync(
+      path.join(
+        optimizedCandidateRoot,
+        "references",
+        "portfolio-recommendation.md"
+      ),
+      "utf8"
+    );
+    expect(skill).toContain("首个业务调用必须是且只能是一次");
+    expect(skill).toContain("最多一次统一配置调用和三次最终产品补查");
+    expect(skill).toContain("不得称为“新增资金”");
+    expect(skill).toContain("不得把它与当前持仓直接相加");
+    expect(skill).toContain("A/B 默认复用同一个已核验流动性产品");
+    expect(skill).toContain("不自行生成“提前 30 天提醒”");
+    expect(skill).toContain("约 1200 个中文字符以内");
+    expect(recommendation).toContain("未返回持仓记录");
+    expect(recommendation).toContain("不得重复查询");
   });
 });

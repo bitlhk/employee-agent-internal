@@ -287,6 +287,9 @@ describe("platform MCP PEP wiring", () => {
       name: "create_customer_followup_task",
       inputSchema: { required: ["customer_id", "objective", "due_at", "idempotency_key"] },
     });
+    const allocationTool = body.result?.tools?.find((item: any) => item.name === "prepare_wealth_allocation_context");
+    expect(allocationTool?.description).toContain("call this tool first and wait for its result");
+    expect(allocationTool?.description).toContain("do not call customer profile, portfolio, policy, or product-list tools in parallel");
   });
 
   it("provides confirmed work state as governed Context instead of conversation inference", async () => {
