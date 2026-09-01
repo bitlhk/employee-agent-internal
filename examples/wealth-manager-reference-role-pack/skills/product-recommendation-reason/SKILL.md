@@ -20,7 +20,7 @@ category: 财富管理-产品推荐
 
 - `wealth_assistant_context_probe`：确认当前客户经理身份。
 - `wealth_assistant_customer_list`：在本人授权客户范围内定位稳定客户标识。
-- `get_governed_customer_profile`：取得当前财富用途允许使用的客户画像。
+- `get_governed_customer_profile`（企业运行时等价能力为 `get_customer_profile`）：取得当前财富用途允许使用的客户画像。
 - `prepare_wealth_allocation_context`：取得客户、产品和确定性适当性结果。
 
 不得通过网页搜索补齐客户事实、产品事实、市场结论或制度规则。不得向用户展示工具名称、内部状态码、Policy Code 或 Decision ID。

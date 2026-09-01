@@ -69,11 +69,11 @@ describe("wealth manager reference role pack", () => {
     const specialists = [
       {
         skillId: "product-recommendation-reason",
-        requiredText: ["eligibleProducts", "无法形成正式推荐理由", "不得编造收益"],
+        requiredText: ["eligibleProducts", "无法形成正式推荐理由", "不得编造收益", "get_customer_profile"],
       },
       {
         skillId: "product-recommendation-script",
-        requiredText: ["eligibleProducts", "不得说“可以先小额尝试”", "不执行交易、通知、外发或 CRM 写入"],
+        requiredText: ["eligibleProducts", "不得说“可以先小额尝试”", "不执行交易、通知、外发或 CRM 写入", "get_customer_profile"],
       },
     ];
 

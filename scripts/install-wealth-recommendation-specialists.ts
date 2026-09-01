@@ -29,7 +29,6 @@ const REQUIRED_MCP_SERVERS = {
     "wealth_assistant_customer_detail",
   ],
   platform_tools: [
-    "get_governed_customer_profile",
     "prepare_wealth_allocation_context",
   ],
 };

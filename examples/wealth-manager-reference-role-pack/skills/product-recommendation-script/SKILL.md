@@ -20,7 +20,7 @@ category: 财富管理-营销话术
 
 - `wealth_assistant_context_probe`：确认当前客户经理身份。
 - `wealth_assistant_customer_list`：在本人授权客户范围内定位稳定客户标识。
-- `get_governed_customer_profile`：取得当前财富用途允许使用的客户画像。
+- `get_governed_customer_profile`（企业运行时等价能力为 `get_customer_profile`）：取得当前财富用途允许使用的客户画像。
 - `prepare_wealth_allocation_context`：取得产品事实、正式候选集合和确定性适当性结果。
 
 客户事实和产品事实必须来自本轮权威能力。不得通过网页搜索或历史摘要补齐，不得向用户展示工具名称、内部状态码、Policy Code 或 Decision ID。
