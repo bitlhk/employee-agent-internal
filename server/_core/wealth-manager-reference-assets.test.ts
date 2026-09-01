@@ -65,6 +65,29 @@ describe("wealth manager reference role pack", () => {
     }
   });
 
+  it("ships governed recommendation reason and script specialist skills", () => {
+    const specialists = [
+      {
+        skillId: "product-recommendation-reason",
+        requiredText: ["eligibleProducts", "无法形成正式推荐理由", "不得编造收益"],
+      },
+      {
+        skillId: "product-recommendation-script",
+        requiredText: ["eligibleProducts", "不得说“可以先小额尝试”", "不执行交易、通知、外发或 CRM 写入"],
+      },
+    ];
+
+    for (const specialist of specialists) {
+      const skillDir = path.join(root, "skills", specialist.skillId);
+      const parsed = parseSkillSourceDirectory(skillDir, specialist.skillId);
+      expect(parsed.skillId).toBe(specialist.skillId);
+      expect(parsed.manifest?.version).toBe("2.1.0");
+      expect(parsed.warnings).toEqual([]);
+      const skillMarkdown = readFileSync(path.join(skillDir, "SKILL.md"), "utf8");
+      for (const text of specialist.requiredText) expect(skillMarkdown).toContain(text);
+    }
+  });
+
   it("defines normal, deny and degraded benchmark paths without static business data", () => {
     const evalText = readFileSync(path.join(root, "eval", "wm-gt-01-cases.json"), "utf8");
     const suite = JSON.parse(evalText) as {

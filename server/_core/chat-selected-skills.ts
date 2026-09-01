@@ -129,7 +129,7 @@ function isContinuationRequest(value: string): boolean {
   const text = String(value || "").normalize("NFKC").trim();
   if (!text || text.length > 180) return false;
   return /(?:^|[，。！？,.!?\s])(?:继续|接着|再来|再做|再改|然后|下一步|按这个|基于这个|刚才|上面|前面|这个|那个|它|其|补充|调整|修改|优化|重试)(?:一下|下|吧|呢|看看|处理|分析|生成|执行|完善)?(?:$|[，。！？,.!?\s])/u.test(text)
-    || /^(?:继续|接着|再|然后|下一步|按这个|基于这个|刚才|上面|前面|这个|那个|它|其)/u.test(text);
+    || /^(?:继续|接着|再|然后|下一步|按这个|基于这个|刚才|上面|前面|这个|那个|它|其|推荐给|面向|针对)/u.test(text);
 }
 
 function affinityBoost(affinity: SkillSessionAffinity | undefined, nowMs: number): number {
@@ -173,8 +173,16 @@ function resolveFinancialTaskSkillId(
   const productAnalysis = productMention
     && /(?:分析|解读|评估|研究|详情|详细|看看|怎么样)/u.test(text);
   const customerAnalysis = /(?:客户画像|客户分析|分析(?:一下)?客户|客户情况|客户经营|\bkyc\b|cust-\d+)/iu.test(text);
+  const recommendationReason = /(?:推荐理由|为什么(?:向|给)?[^，。！？,.!?]{0,40}推荐|为何推荐|推荐依据|推荐逻辑)/u.test(text);
+  const recommendationScript = /(?:推荐话术|营销话术|沟通话术|怎么跟[^，。！？,.!?]{0,30}(?:说|讲|沟通)|微信怎么发|电话怎么说|面谈内容)/u.test(text);
   const governedWealthTask = /(?:推荐产品|产品推荐|推荐理由|推荐话术|营销话术|资产配置|配置方案|组合建议|适当性|到期客户|跟进任务)/u.test(text);
 
+  if (recommendationReason) {
+    return firstAvailable("product-recommendation-reason", "wealth-manager-assistant");
+  }
+  if (recommendationScript) {
+    return firstAvailable("product-recommendation-script", "wealth-manager-assistant");
+  }
   if (governedWealthTask) return firstAvailable("wealth-manager-assistant");
   if (productComparison) return firstAvailable("product-comparison", "wealth-manager-assistant");
   if (fundSpecialistQuestion) {

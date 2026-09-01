@@ -187,6 +187,8 @@ describe("selected skills chat context", () => {
       skill("product-analysis"),
       skill("product-comparison"),
       skill("fund-analyst"),
+      skill("product-recommendation-reason"),
+      skill("product-recommendation-script"),
     ];
 
     expect(selectAutomaticSkillMatch(skills, "分析一下F000343")).toMatchObject({
@@ -206,8 +208,32 @@ describe("selected skills chat context", () => {
       reason: "task",
     });
     expect(selectAutomaticSkillMatch(skills, "给李承泽准备产品推荐话术")).toMatchObject({
-      skillId: "wealth-manager-assistant",
+      skillId: "product-recommendation-script",
       reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "为什么向李承泽推荐 F000343")).toMatchObject({
+      skillId: "product-recommendation-reason",
+      reason: "task",
+    });
+  });
+
+  it("keeps a recommendation specialist for a short follow-up that supplies the customer", () => {
+    const skills = [{
+      id: "product-recommendation-reason",
+      enabled: true,
+      state: "ready",
+      sync: { runtimePath: "/workspace/skills/product-recommendation-reason" },
+      source: { displayName: "产品推荐理由", description: "形成受控推荐依据" },
+    }];
+    const now = new Date("2026-09-01T10:00:00.000Z");
+
+    expect(selectAutomaticSkillMatch(skills, "推荐给李承泽", [{
+      skillId: "product-recommendation-reason",
+      useCount: 1,
+      lastSelectedAt: new Date("2026-09-01T09:59:00.000Z"),
+    }], now)).toMatchObject({
+      skillId: "product-recommendation-reason",
+      reason: "session",
     });
   });
 
@@ -230,6 +256,10 @@ describe("selected skills chat context", () => {
     ];
 
     expect(selectAutomaticSkillMatch(skills, "分析一下 P001")).toMatchObject({
+      skillId: "wealth-manager-assistant",
+      reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "给 P001 生成推荐理由")).toMatchObject({
       skillId: "wealth-manager-assistant",
       reason: "task",
     });

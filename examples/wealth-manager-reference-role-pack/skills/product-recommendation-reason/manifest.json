@@ -1,0 +1,10 @@
+{
+  "name": "product-recommendation-reason",
+  "displayName": "产品推荐理由",
+  "description": "基于授权客户画像、已核验产品事实和确定性适当性结果，形成面向指定客户的结构化产品推荐依据。",
+  "version": "2.1.0",
+  "source": {
+    "maintainer": "李文华",
+    "adaptation": "governed-specialist"
+  }
+}

@@ -152,6 +152,7 @@
     "skills:quality:wealth-2.1:calibration:verify": "tsx scripts/verify-wealth-skill-2.1-expert-calibration.ts",
     "skills:quality:wealth-2.1:calibration:prepare:holdout": "EA_SKILL_EVAL_CALIBRATION_VERSION=v3 EA_SKILL_EVAL_CALIBRATION_REPEAT=2 tsx scripts/prepare-wealth-skill-2.1-expert-calibration.ts",
     "skills:quality:wealth-2.1:calibration:verify:holdout": "EA_SKILL_EVAL_CALIBRATION_VERSION=v3 tsx scripts/verify-wealth-skill-2.1-expert-calibration.ts",
+    "skills:wealth:recommendation-specialists:install": "tsx scripts/install-wealth-recommendation-specialists.ts",
     "stats:backfill": "tsx scripts/visit-stats-backfill.ts",
     "stats:reconcile": "tsx scripts/visit-stats-reconcile.ts",
     "compress:images": "tsx scripts/compress-images.ts",

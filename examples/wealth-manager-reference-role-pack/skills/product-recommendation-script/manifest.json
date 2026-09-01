@@ -1,0 +1,10 @@
+{
+  "name": "product-recommendation-script",
+  "displayName": "产品推荐话术",
+  "description": "基于已核验客户、产品和适当性事实，生成电话、微信或面谈场景的合规产品沟通话术。",
+  "version": "2.1.0",
+  "source": {
+    "maintainer": "李文华",
+    "adaptation": "governed-specialist"
+  }
+}
