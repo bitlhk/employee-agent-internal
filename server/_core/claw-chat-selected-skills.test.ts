@@ -173,6 +173,69 @@ describe("selected skills chat context", () => {
     ], "开始智能陪练")).toBeNull();
   });
 
+  it("routes precise wealth tasks to one available specialist skill", () => {
+    const skill = (id: string, enabled = true) => ({
+      id,
+      enabled,
+      state: enabled ? "ready" : "disabled",
+      sync: { runtimePath: `/workspace/skills/${id}` },
+      source: { displayName: id, description: "岗位技能" },
+    });
+    const skills = [
+      skill("wealth-manager-assistant"),
+      skill("client-kyc-profiling"),
+      skill("product-analysis"),
+      skill("product-comparison"),
+      skill("fund-analyst"),
+    ];
+
+    expect(selectAutomaticSkillMatch(skills, "分析一下F000343")).toMatchObject({
+      skillId: "product-analysis",
+      reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "比较 F000343 和 F000198")).toMatchObject({
+      skillId: "product-comparison",
+      reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "查询 F000343 的七日年化和万份收益")).toMatchObject({
+      skillId: "fund-analyst",
+      reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "分析一下客户 李承泽")).toMatchObject({
+      skillId: "client-kyc-profiling",
+      reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "给李承泽准备产品推荐话术")).toMatchObject({
+      skillId: "wealth-manager-assistant",
+      reason: "task",
+    });
+  });
+
+  it("falls back to the wealth main skill when a specialist is unavailable", () => {
+    const skills = [
+      {
+        id: "wealth-manager-assistant",
+        enabled: true,
+        state: "ready",
+        sync: { runtimePath: "/workspace/skills/wealth-manager-assistant" },
+        source: { displayName: "客户经理财富助手", description: "财富岗位主技能" },
+      },
+      {
+        id: "product-analysis",
+        enabled: false,
+        state: "disabled",
+        sync: { runtimePath: "/workspace/skills/product-analysis" },
+        source: { displayName: "产品深度分析", description: "单产品分析" },
+      },
+    ];
+
+    expect(selectAutomaticSkillMatch(skills, "分析一下 P001")).toMatchObject({
+      skillId: "wealth-manager-assistant",
+      reason: "task",
+    });
+    expect(selectAutomaticSkillMatch(skills, "订单 123456 怎么处理")).toBeNull();
+  });
+
   it("labels automatic selection without claiming the user clicked a chip", () => {
     const manifest = buildSelectedSkillsManifest([{
       id: "vehicle-insurance-coach",
@@ -199,6 +262,7 @@ describe("selected skills chat context", () => {
     expect(manifest).toContain("执行技能和业务工具时保持静默");
     expect(manifest).toContain("不展示 READY、DEGRADED、BLOCKED");
     expect(manifest).toContain("聚合工具已经返回的事实不重复查询");
+    expect(manifest).toContain("历史对话摘要只用于定位，不得替代详情核验");
     expect(manifest).toContain("直接在对话中给出完整结果");
     expect(manifest).toContain("不得声称文件已经生成");
     expect(manifest).toContain("auto-insurance-advisor");

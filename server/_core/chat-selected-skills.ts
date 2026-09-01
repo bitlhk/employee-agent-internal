@@ -5,7 +5,7 @@ export type SkillSelectionMode = "manual" | "automatic";
 export type AutomaticSkillMatch = {
   skillId: string;
   score: number;
-  reason: "name" | "trigger" | "description" | "intent" | "session";
+  reason: "name" | "trigger" | "description" | "intent" | "task" | "session";
 };
 
 export type SkillSessionAffinity = {
@@ -143,6 +143,48 @@ function affinityBoost(affinity: SkillSessionAffinity | undefined, nowMs: number
   return recency + frequency;
 }
 
+function isRunnableSkill(skill: RuntimeSkillCandidate): boolean {
+  return skill?.enabled === true
+    && skill?.state === "ready"
+    && Boolean(String(skill?.sync?.runtimePath || "").trim());
+}
+
+function resolveFinancialTaskSkillId(
+  skills: RuntimeSkillCandidate[],
+  userMessage: string,
+): string | null {
+  const availableIds = new Set(skills
+    .filter(isRunnableSkill)
+    .map((skill) => String(skill?.id || "").trim())
+    .filter(Boolean));
+  const firstAvailable = (...skillIds: string[]) =>
+    skillIds.find((skillId) => availableIds.has(skillId)) || null;
+
+  const text = String(userMessage || "").normalize("NFKC").trim();
+  if (!text) return null;
+
+  const productCodeMention = /(?:^|[^a-z0-9])(?:[fp]\d{3,12})(?=$|[^a-z0-9])/iu.test(text);
+  const productMention = productCodeMention
+    || /(?:产品|基金|理财|存款|保险|净值|收益率|万份收益|七日年化)/u.test(text);
+  const productComparison = productMention
+    && /(?:对比|比较|区别|差异|哪个好|选哪个|更适合)/u.test(text);
+  const fundSpecialistQuestion = productMention
+    && /(?:七日年化|万份收益|净值|回撤|波动率|夏普|基金经理|基金持仓|重仓|业绩走势)/u.test(text);
+  const productAnalysis = productMention
+    && /(?:分析|解读|评估|研究|详情|详细|看看|怎么样)/u.test(text);
+  const customerAnalysis = /(?:客户画像|客户分析|分析(?:一下)?客户|客户情况|客户经营|\bkyc\b|cust-\d+)/iu.test(text);
+  const governedWealthTask = /(?:推荐产品|产品推荐|推荐理由|推荐话术|营销话术|资产配置|配置方案|组合建议|适当性|到期客户|跟进任务)/u.test(text);
+
+  if (governedWealthTask) return firstAvailable("wealth-manager-assistant");
+  if (productComparison) return firstAvailable("product-comparison", "wealth-manager-assistant");
+  if (fundSpecialistQuestion) {
+    return firstAvailable("fund-analyst", "product-analysis", "wealth-manager-assistant");
+  }
+  if (productAnalysis) return firstAvailable("product-analysis", "wealth-manager-assistant");
+  if (customerAnalysis) return firstAvailable("client-kyc-profiling", "wealth-manager-assistant");
+  return null;
+}
+
 export function rankAutomaticSkillMatches(
   skills: RuntimeSkillCandidate[],
   userMessage: string,
@@ -152,10 +194,14 @@ export function rankAutomaticSkillMatches(
   const affinityBySkill = new Map(affinities.map((item) => [item.skillId, item]));
   const continuation = isContinuationRequest(userMessage);
   const nowMs = now.getTime();
+  const financialTaskSkillId = resolveFinancialTaskSkillId(skills, userMessage);
   const ranked = skills
-    .filter((skill) => skill?.enabled === true && skill?.state === "ready" && String(skill?.sync?.runtimePath || "").trim())
+    .filter(isRunnableSkill)
     .map((skill) => {
       const skillId = String(skill?.id || "").trim();
+      if (skillId && skillId === financialTaskSkillId) {
+        return { skillId, score: 150, reason: "task" as const };
+      }
       const name = String(
         skill?.source?.displayName || skill?.displayName || skill?.label || skill?.name || skillId,
       ).trim();
@@ -212,6 +258,7 @@ export function buildSelectedSkillsManifest(
     "执行技能和业务工具时保持静默，不输出正在加载、正在查询、正在核验或工具返回状态等过程性旁白；等待必要结果后一次性给出业务答案。",
     "最终回答只使用用户可理解的业务语言，不展示 READY、DEGRADED、BLOCKED、Runtime、Context、MCP、内部工具名或状态码。",
     "严格遵守技能定义的工具调用上限；聚合工具已经返回的事实不重复查询，单个参数错误最多纠正一次。",
+    "涉及具体客户、产品、市场或制度事实时，必须在本轮调用技能声明的权威业务能力；历史对话摘要只用于定位，不得替代详情核验。工具未返回的字段必须明确为缺失，不得用常识补齐。",
     "请仅按平台给出的 selectedSkillFile 精确路径读取对应 SKILL.md；路径已由平台校验，不得再用 glob、list_files、find、bash 或其他工具搜索、定位或安装已选技能。",
     "读取 SKILL.md 成功后应立即按其中任务路由调用已授权业务工具，并只在明确需要时读取该技能目录内的 references/scripts/examples；不要一次性加载无关材料。",
     "如果用户输入已经足够启动技能，请直接进入执行流程；如果缺少必要参数，再简短追问。",
@@ -243,6 +290,7 @@ export function buildEnterpriseSelectedSkillsManifest(
     "执行技能和业务工具时保持静默，不输出正在加载、正在查询、正在核验或工具返回状态等过程性旁白；等待必要结果后一次性给出业务答案。",
     "最终回答只使用用户可理解的业务语言，不展示 READY、DEGRADED、BLOCKED、Runtime、Context、MCP、内部工具名或状态码。",
     "严格遵守技能定义的工具调用上限；聚合工具已经返回的事实不重复查询，单个参数错误最多纠正一次。",
+    "涉及具体客户、产品、市场或制度事实时，必须在本轮调用技能声明的权威业务能力；历史对话摘要只用于定位，不得替代详情核验。工具未返回的字段必须明确为缺失，不得用常识补齐。",
     "请通过企业运行时原生 skill_tool 加载上述已授权技能；不要使用文件、命令行或搜索工具定位技能。",
     "如果技能材料引用当前运行时不存在的工具，请按当前已授权工具的等价语义完成任务；不要连续重试未知工具。",
     "除非用户明确要求生成可下载文件且当前运行时已提供文件能力，否则直接在对话中给出完整结果；文件能力不可用时不得重试，也不得声称文件已经生成。",
