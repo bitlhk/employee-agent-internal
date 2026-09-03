@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -352,8 +352,12 @@ function NewEvaluationWorkbench({
     onError: error => toast.error(error.message || "准备评测失败"),
   });
   const [jobId, setJobId] = useState("");
+  const jobStatusRef = useRef<HTMLElement | null>(null);
   const startMutation = trpc.claw.adminStartSkillEvaluation.useMutation({
-    onSuccess: job => setJobId(job.jobId),
+    onSuccess: job => {
+      setJobId(job.jobId);
+      toast.success("评测任务已创建，正在执行左右对比");
+    },
     onError: error => toast.error(error.message || "启动评测失败"),
   });
   const jobQuery = trpc.claw.adminGetSkillEvaluationJob.useQuery(
@@ -392,6 +396,13 @@ function NewEvaluationWorkbench({
     );
     setPromptDrafts(Object.fromEntries(plan.prompts.map(item => [item.promptId, item.prompt])));
   }, [plan]);
+  useEffect(() => {
+    if (!jobId) return;
+    const frame = window.requestAnimationFrame(() => {
+      jobStatusRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [jobId, job?.status]);
 
   const versions = (context?.versions || []) as EvaluationVersionOption[];
   const models = (context?.models || []) as EvaluationModelOption[];
@@ -673,8 +684,17 @@ function NewEvaluationWorkbench({
         )}
       </section>
 
+      {jobId && jobQuery.isLoading && !job ? (
+        <section ref={jobStatusRef} className="border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex items-center gap-3 text-sm font-semibold text-emerald-900">
+            <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+            评测任务已创建，正在初始化运行环境
+          </div>
+        </section>
+      ) : null}
+
       {jobId && jobQuery.error && !job ? (
-        <section className="border border-red-200 bg-red-50 p-4">
+        <section ref={jobStatusRef} className="border border-red-200 bg-red-50 p-4">
           <div className="flex items-start gap-3">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
             <div className="min-w-0 flex-1">
@@ -696,7 +716,7 @@ function NewEvaluationWorkbench({
       ) : null}
 
       {job ? (
-        <section className="border border-gray-200 bg-white p-4">
+        <section ref={jobStatusRef} className="border border-gray-200 bg-white p-4">
           <div className="flex flex-col gap-3 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">

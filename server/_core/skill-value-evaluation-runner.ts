@@ -1,5 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import {
   FINANCE_SKILL_EVAL_VERSION,
@@ -197,15 +206,69 @@ export function summarizeSkillValueEvaluationCases(
 const jobs = new Map<string, SkillValueEvaluationJob>();
 const jobPromises = new Map<string, Promise<void>>();
 const JOB_TTL_MS = 2 * 60 * 60 * 1_000;
+const JOB_STORE_DIR = String(process.env.EA_SKILL_EVAL_JOB_DIR || "").trim()
+  || path.join(process.cwd(), "data", "skill-value-evaluation-jobs");
 
 function cloneJob(job: SkillValueEvaluationJob): SkillValueEvaluationJob {
   return structuredClone(job);
+}
+
+function persistedJobPath(jobId: string): string | null {
+  if (!/^skill-eval-[A-Za-z0-9-]+$/u.test(jobId)) return null;
+  return path.join(JOB_STORE_DIR, `${jobId}.json`);
+}
+
+function persistJob(job: SkillValueEvaluationJob): void {
+  const targetPath = persistedJobPath(job.jobId);
+  if (!targetPath) return;
+  try {
+    mkdirSync(JOB_STORE_DIR, { recursive: true, mode: 0o700 });
+    const temporaryPath = `${targetPath}.${process.pid}.tmp`;
+    writeFileSync(temporaryPath, JSON.stringify(job), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    renameSync(temporaryPath, targetPath);
+  } catch (error) {
+    console.error("[SkillValueEval] Failed to persist job", job.jobId, error);
+  }
+}
+
+function loadPersistedJob(jobId: string): SkillValueEvaluationJob | null {
+  const targetPath = persistedJobPath(jobId);
+  if (!targetPath || !existsSync(targetPath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(targetPath, "utf8")) as SkillValueEvaluationJob;
+    if (!parsed || parsed.jobId !== jobId) return null;
+    if (["preparing", "running", "judging"].includes(parsed.status)) {
+      parsed.status = "failed";
+      parsed.stageLabel = "评测服务在执行期间重启";
+      parsed.error = "服务在评测过程中重启，本轮未完成，请重新运行。";
+      parsed.updatedAt = new Date().toISOString();
+      persistJob(parsed);
+    }
+    jobs.set(jobId, parsed);
+    return parsed;
+  } catch (error) {
+    console.error("[SkillValueEval] Failed to load persisted job", jobId, error);
+    return null;
+  }
 }
 
 function cleanupJobs(): void {
   const cutoff = Date.now() - JOB_TTL_MS;
   for (const [jobId, job] of jobs) {
     if (Date.parse(job.updatedAt) < cutoff) jobs.delete(jobId);
+  }
+  if (!existsSync(JOB_STORE_DIR)) return;
+  try {
+    for (const entry of readdirSync(JOB_STORE_DIR)) {
+      if (!entry.startsWith("skill-eval-") || !entry.endsWith(".json")) continue;
+      const targetPath = path.join(JOB_STORE_DIR, entry);
+      if (statSync(targetPath).mtimeMs < cutoff) rmSync(targetPath, { force: true });
+    }
+  } catch (error) {
+    console.error("[SkillValueEval] Failed to clean persisted jobs", error);
   }
 }
 
@@ -815,6 +878,7 @@ function buildEaFinanceRuntimeAdapter(
       job.status = "running";
       job.stageLabel = `${sideLabel} 正在执行：${request.evalCase.name}`;
       job.updatedAt = new Date().toISOString();
+      persistJob(job);
       const result = await executeRuntimeTurn({
         side: request.side,
         adoptionId,
@@ -874,6 +938,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     const user = await ensureEvaluationUser(input.organization);
     job.stageLabel = "准备隔离运行环境";
     job.updatedAt = new Date().toISOString();
+    persistJob(job);
     const leftAdoption = await ensureEvaluationAdoption({
       adoptionId: job.left.adoptionId,
       userId: user.id,
@@ -917,6 +982,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     job.status = "running";
     job.stageLabel = "Promptfoo 正在执行左右对比";
     job.updatedAt = new Date().toISOString();
+    persistJob(job);
     const pack = buildFinanceEvalPack(input, job);
     const report = await runEvaluation({
       pack,
@@ -936,6 +1002,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
           }
         }
         job.updatedAt = new Date().toISOString();
+        persistJob(job);
       },
     });
     for (const result of report.cases) {
@@ -952,11 +1019,13 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     job.status = "completed";
     job.stageLabel = "对比与专业评审已完成";
     job.updatedAt = new Date().toISOString();
+    persistJob(job);
   } catch (error) {
     job.status = "failed";
     job.stageLabel = "评测执行失败";
     job.error = error instanceof Error ? error.message : String(error);
     job.updatedAt = new Date().toISOString();
+    persistJob(job);
   }
 }
 
@@ -1024,6 +1093,7 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
     error: null,
   };
   jobs.set(jobId, job);
+  persistJob(job);
   const promise = runJob(input, job).finally(() => jobPromises.delete(jobId));
   jobPromises.set(jobId, promise);
   void promise;
@@ -1032,7 +1102,7 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
 
 export function getSkillValueEvaluationJob(jobId: string): SkillValueEvaluationJob | null {
   cleanupJobs();
-  const job = jobs.get(jobId);
+  const job = jobs.get(jobId) ?? loadPersistedJob(jobId);
   return job ? cloneJob(job) : null;
 }
 
