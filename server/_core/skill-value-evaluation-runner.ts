@@ -32,6 +32,7 @@ import {
 } from "../db";
 import { governanceFingerprint } from "./governance/contracts";
 import { callEaAssistantModelWithConfig } from "./ea-assistant-model";
+import { refreshEnterpriseRuntimeAssetsIfBound } from "./enterprise-runtime-assets";
 import { resolveRuntimeWorkspaceByIds } from "./helpers";
 import {
   nativeLoadedSkills,
@@ -529,6 +530,9 @@ async function applyEvaluationEnvironment(input: {
     workspaceDir,
     mcpServers: input.environment.mcpServers,
   });
+  // The enterprise runtime consumes a published workspace bundle. Publish only
+  // after the evaluation-specific skill and tool scope are both finalized.
+  await refreshEnterpriseRuntimeAssetsIfBound(input.adoptionId);
   await refreshJiuwenRuntimeCapabilities(input.adoptionId);
 }
 
