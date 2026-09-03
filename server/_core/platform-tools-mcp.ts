@@ -48,6 +48,7 @@ import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
 import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
 import { createConfiguredTwentyCustomerClient } from "./customer-context-twenty-access";
 import { readSkillValueEvaluationAllowedTools } from "./skill-value-evaluation-tool-scope";
+import { customerProfileRequiredFieldIssue } from "./customer-profile-required-fields";
 
 const SERVICE_NAME = "platform-tools";
 const SERVICE_VERSION = "1.0.0";
@@ -101,31 +102,6 @@ class WealthAllocationDependencyError extends Error {
     super(dependencyError instanceof Error ? dependencyError.message : String(dependencyError || `${dependency} unavailable`));
     this.name = "WealthAllocationDependencyError";
   }
-}
-
-const CUSTOMER_REQUIRED_FIELD_LABELS: Record<string, string> = {
-  "subject.displayName": "客户姓名",
-  "subject.customerStatus": "客户状态",
-  "risk.investmentRiskLevel": "风险等级",
-  "risk.investmentRiskValidUntil": "风险测评有效期",
-  "preferences.investmentHorizon": "投资期限",
-  "preferences.liquidityNeeds": "流动性需求",
-};
-
-function customerRequiredFieldIssue(error: unknown): { paths: string[]; labels: string[] } | null {
-  const dependencyError = error instanceof WealthAllocationDependencyError
-    ? error.dependencyError
-    : error;
-  if (!dependencyError || typeof dependencyError !== "object") return null;
-  const payload = (dependencyError as { payload?: unknown }).payload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const record = payload as Record<string, unknown>;
-  const reasonCodes = Array.isArray(record.reasonCodes) ? record.reasonCodes.map(String) : [];
-  if (!reasonCodes.includes("CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING")) return null;
-  const paths = Array.isArray(record.missingRequiredFields)
-    ? Array.from(new Set(record.missingRequiredFields.map((value) => String(value || "").trim()).filter(Boolean)))
-    : [];
-  return { paths, labels: paths.map((path) => CUSTOMER_REQUIRED_FIELD_LABELS[path] || path) };
 }
 
 function requiredCustomerFieldsMessage(labels: string[]): string {
@@ -1058,7 +1034,7 @@ async function callTool(
       const failedDependency = error instanceof WealthAllocationDependencyError
         ? error.dependency
         : null;
-      const requiredFieldIssue = customerRequiredFieldIssue(error);
+      const requiredFieldIssue = customerProfileRequiredFieldIssue(error);
       const requiredFieldMessage = requiredFieldIssue
         ? requiredCustomerFieldsMessage(requiredFieldIssue.labels)
         : "";

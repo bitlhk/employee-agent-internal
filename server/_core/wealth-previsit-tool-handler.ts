@@ -31,6 +31,8 @@ import {
   wealthKnowledgeSourceFromPlan,
 } from "./context-resolution/wealth-source-resolution";
 import { mcpResourceRef, resolveMcpBindingTarget } from "./context-resolution/mcp-adapter";
+import { customerProfileRequiredFieldIssue } from "./customer-profile-required-fields";
+import { logError } from "./observability/logger";
 
 type ToolResult = {
   content: Array<{ type: string; text: string }>;
@@ -349,7 +351,18 @@ export async function handleWealthPrevisitTool(input: {
       taskMemoryContext: taskMemory.context,
     }))}`), contextReceipt, interactionGrant);
   } catch (error) {
+    logError("wealth_previsit_context.failed", error, {
+      adoptId,
+      taskId: "WM-GT-01",
+      correlationId: correlationId(req),
+    });
     const message = error instanceof Error ? error.message : String(error || "");
+    const requiredFieldIssue = customerProfileRequiredFieldIssue(error);
+    const missingFields = requiredFieldIssue?.labels || [];
+    const missingFieldsText = missingFields.length
+      ? missingFields.join("、")
+      : "当前任务必需的客户信息";
+    const requiredFieldMessage = `当前客户缺少生成专属访前简报的必需信息：${missingFieldsText}。请补充后重试。`;
     const authorizationDenied = /标识|范围|归属|授权/u.test(message);
     const contextBindingBlocked = /上下文来源|Context binding|来源未配置/u.test(message);
     const readiness = evaluateWealthTaskReadiness({
@@ -358,7 +371,9 @@ export async function handleWealthPrevisitTool(input: {
         identity: authorizationDenied
           ? readinessCheck("BLOCKED", "CUSTOMER_SCOPE_DENIED", "当前岗位无权读取该客户资料。")
           : readinessCheck("READY", "PRINCIPAL_V2_READY", "岗位身份已就绪。"),
-        customerData: authorizationDenied
+        customerData: requiredFieldIssue
+          ? readinessCheck("BLOCKED", "CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING", requiredFieldMessage)
+          : authorizationDenied
           ? readinessCheck("BLOCKED", "CUSTOMER_SCOPE_DENIED", "该客户不在当前岗位授权范围内。")
           : contextBindingBlocked
             ? readinessCheck("BLOCKED", "REQUIRED_CONTEXT_BINDING_MISSING", "必需客户上下文来源尚未完成受治理绑定。")
@@ -378,11 +393,24 @@ export async function handleWealthPrevisitTool(input: {
     return textResult(`EA_WEALTH_PREVISIT_CONTEXT:${JSON.stringify({
       schema: "ea.wealth-previsit-context.v1",
       status: readiness.status.toLowerCase(),
-      message: authorizationDenied
+      errorCode: requiredFieldIssue
+        ? "CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"
+        : authorizationDenied
+          ? "CUSTOMER_SCOPE_DENIED"
+          : contextBindingBlocked
+            ? "REQUIRED_CONTEXT_BINDING_MISSING"
+            : "CUSTOMER_DATA_UNAVAILABLE",
+      message: requiredFieldIssue
+        ? `${requiredFieldMessage}仍可基于已核验信息整理通用访前检查清单。`
+        : authorizationDenied
         ? "当前岗位无权读取该客户资料。"
         : contextBindingBlocked
           ? "客户画像或持仓来源尚未完成受治理配置，可以先生成通用访前检查清单。"
           : "客户数据服务暂时不可用，可以先生成通用访前检查清单。",
+      ...(requiredFieldIssue ? {
+        missingFields,
+        remediation: "在客户资料中补充最近联系情况后重新生成专属访前简报。",
+      } : {}),
       readiness,
     })}`, authorizationDenied ? { isError: true } : {});
   }

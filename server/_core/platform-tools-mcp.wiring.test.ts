@@ -434,6 +434,34 @@ describe("platform MCP PEP wiring", () => {
     expect(body.result?.content?.[0]?.text).toContain("generic_previsit_checklist");
   });
 
+  it("reports missing previsit fields instead of calling the customer service unavailable", async () => {
+    mocks.prepareWealthPrevisitContext.mockRejectedValueOnce(Object.assign(
+      new Error("Internal MCP call failed"),
+      {
+        payload: {
+          reasonCodes: ["CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"],
+          missingRequiredFields: ["relationship.recentContactSummary"],
+        },
+      },
+    ));
+    const response = await fetch(`${baseUrl}/api/internal/platform-tools/mcp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-agent-adopt-id": "lgj-platform" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: "wealth-previsit-missing-fields", method: "tools/call",
+        params: { name: "prepare_wealth_previsit_context", arguments: { customer_id: "C-001" } },
+      }),
+    });
+    const body = await response.json() as { result?: { isError?: boolean; content?: Array<{ text: string }> } };
+    const text = body.result?.content?.[0]?.text || "";
+    expect(body.result?.isError).not.toBe(true);
+    expect(text).toContain('"errorCode":"CUSTOMER_PROFILE_REQUIRED_FIELD_MISSING"');
+    expect(text).toContain('"missingFields":["最近联系摘要"]');
+    expect(text).toContain("补充最近联系情况后重新生成");
+    expect(text).not.toContain("客户数据服务暂时不可用");
+    expect(text).not.toContain('"code":"CUSTOMER_DATA_UNAVAILABLE"');
+  });
+
   it("returns blocked formal recommendation with safe fallbacks instead of an MCP protocol error", async () => {
     mocks.callInternalMcpTool.mockImplementation(async (input: { toolName: string }) => {
       if (input.toolName === "wealth_assistant_product_search") {

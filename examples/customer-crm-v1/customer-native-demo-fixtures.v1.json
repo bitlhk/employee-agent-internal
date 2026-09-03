@@ -22,7 +22,9 @@
             "riskPreference": "balanced",
             "communicationPreference": "面谈"
           },
-          "insuranceFacts": {},
+          "insuranceFacts": {
+            "recentContactSummary": "已确认本次面谈重点沟通9月到期资金安排与持仓分散需求"
+          },
           "detail": {
             "customerTier": "private_banking",
             "riskAssessment": {
@@ -106,7 +108,9 @@
           "profileType": "wealth",
           "demographics": { "ageBand": "45_59", "occupationCategory": "企业经营者", "city": "上海" },
           "preferences": { "riskPreference": "balanced", "communicationPreference": "面谈" },
-          "insuranceFacts": {},
+          "insuranceFacts": {
+            "recentContactSummary": "已约定复盘10月到期资金安排与稳健配置需求"
+          },
           "detail": {
             "customerTier": "private_banking",
             "riskAssessment": { "riskLevel": "C3", "riskPreference": "balanced", "validUntil": "2027-06-30T23:59:59.000Z" },
@@ -139,7 +143,9 @@
           "profileType": "wealth",
           "demographics": { "ageBand": "30_44", "occupationCategory": "专业人士", "city": "杭州" },
           "preferences": { "riskPreference": "growth", "communicationPreference": "线上" },
-          "insuranceFacts": {},
+          "insuranceFacts": {
+            "recentContactSummary": "已在线沟通成长型资产配置与流动性安排"
+          },
           "detail": {
             "customerTier": "affluent",
             "riskAssessment": { "riskLevel": "C4", "riskPreference": "growth", "validUntil": "2027-09-30T23:59:59.000Z" },
@@ -172,7 +178,9 @@
           "profileType": "wealth",
           "demographics": { "ageBand": "60_plus", "occupationCategory": "退休企业高管", "city": "南京" },
           "preferences": { "riskPreference": "conservative", "communicationPreference": "电话" },
-          "insuranceFacts": {},
+          "insuranceFacts": {
+            "recentContactSummary": "已电话确认关注本金波动控制与养老现金流安排"
+          },
           "detail": {
             "customerTier": "private_banking",
             "riskAssessment": { "riskLevel": "C2", "riskPreference": "conservative", "validUntil": "2027-04-30T23:59:59.000Z" },
@@ -205,7 +213,9 @@
           "profileType": "wealth",
           "demographics": { "ageBand": "30_44", "occupationCategory": "互联网管理者", "city": "深圳" },
           "preferences": { "riskPreference": "balanced", "communicationPreference": "线上" },
-          "insuranceFacts": {},
+          "insuranceFacts": {
+            "recentContactSummary": "已在线沟通均衡配置与闲置资金安排"
+          },
           "detail": {
             "customerTier": "affluent",
             "riskAssessment": { "riskLevel": "C3", "riskPreference": "balanced", "validUntil": "2027-11-30T23:59:59.000Z" },
@@ -238,7 +248,9 @@
           "profileType": "wealth",
           "demographics": { "ageBand": "45_59", "occupationCategory": "制造业管理者", "city": "苏州" },
           "preferences": { "riskPreference": "growth", "communicationPreference": "面谈" },
-          "insuranceFacts": {},
+          "insuranceFacts": {
+            "recentContactSummary": "已约面谈讨论进取组合分散与12月到期资金安排"
+          },
           "detail": {
             "customerTier": "private_banking",
             "riskAssessment": { "riskLevel": "C4", "riskPreference": "growth", "validUntil": "2027-10-31T23:59:59.000Z" },
