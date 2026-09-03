@@ -20,6 +20,8 @@
           },
           "preferences": {
             "riskPreference": "balanced",
+            "investmentHorizon": "3年以上",
+            "liquidityNeeds": "至少保留20%高流动性资产",
             "communicationPreference": "面谈"
           },
           "insuranceFacts": {
