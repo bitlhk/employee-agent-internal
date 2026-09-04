@@ -547,7 +547,10 @@ export function parseRuntimeSse(raw: string): {
     if (typeof delta?.content === "string") assistantText += delta.content;
     eventName = "message";
   }
-  return { events, assistantText: finalText ?? assistantText, run, usage };
+  const resolvedAssistantText = finalText && finalText.length >= assistantText.length
+    ? finalText
+    : assistantText;
+  return { events, assistantText: resolvedAssistantText, run, usage };
 }
 
 export type SkillEvaluationRuntimeTurn = {

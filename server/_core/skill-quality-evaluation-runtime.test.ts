@@ -64,6 +64,23 @@ afterEach(() => {
 });
 
 describe("Skill Quality Phase 1B EA Runtime integration", () => {
+  it("keeps substantial streamed output when the final frame is only a completion note", () => {
+    const report = "## 完整点评报告\n\n已完成阶段识别、证据引用和下一步建议。";
+    const completion = "点评报告已输出完毕。";
+    const raw = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: report } }] })}`,
+      "",
+      `data: ${JSON.stringify({ choices: [{ delta: { content: completion } }] })}`,
+      "",
+      `data: ${JSON.stringify({ __final_text: completion })}`,
+      "",
+      `data: ${JSON.stringify({ __stream_end: true })}`,
+      "",
+    ].join("\n");
+
+    expect(parseRuntimeSse(raw).assistantText).toBe(`${report}${completion}`);
+  });
+
   it("reads Skill identity from an enterprise-truncated skill_tool result", () => {
     const skillId = "wealth-manager-assistant";
     const callId = `call-${skillId}`;
