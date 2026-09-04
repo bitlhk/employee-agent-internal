@@ -190,12 +190,22 @@ type StartJobInput = {
 export function summarizeSkillValueEvaluationCases(
   cases: SkillValueEvaluationCaseResult[],
 ): NonNullable<SkillValueEvaluationJob["summary"]> {
-  const leftWins = cases.filter(item => item.judge?.winner === "left").length;
-  const rightWins = cases.filter(item => item.judge?.winner === "right").length;
-  const ties = cases.filter(item => item.judge?.winner === "tie").length;
+  const comparableCases = cases.filter(item => (
+    item.left?.status === "completed"
+    && item.right?.status === "completed"
+  ));
+  const leftWins = comparableCases.filter(item => item.judge?.winner === "left").length;
+  const rightWins = comparableCases.filter(item => item.judge?.winner === "right").length;
+  const ties = comparableCases.filter(item => item.judge?.winner === "tie").length;
   const unavailable = cases.length - leftWins - rightWins - ties;
-  const headline = unavailable === cases.length
-    ? "左右输出已完成，专业 Judge 暂未形成可用结论"
+  const hasRuntimeFailure = cases.some(item => (
+    item.left?.status === "failed"
+    || item.right?.status === "failed"
+  ));
+  const headline = hasRuntimeFailure
+    ? "本轮存在 Runtime 执行失败，未形成有效专业对比"
+    : unavailable === cases.length
+      ? "左右输出已完成，专业 Judge 暂未形成可用结论"
     : leftWins === rightWins
       ? `本轮对比持平：A、B 各胜 ${leftWins} 题${ties ? `，${ties} 题持平` : ""}${unavailable ? `，${unavailable} 题未判定` : ""}`
       : rightWins > leftWins
@@ -1018,6 +1028,34 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
       caseResult.judgeError = result.judgeError;
     }
     job.promptfoo.completed = report.promptfoo.completed;
+    const runtimeFailures = job.cases.flatMap(item => ([
+      ...(item.left?.status === "failed"
+        ? [{ name: item.name, side: "A", error: item.left.error }]
+        : []),
+      ...(item.right?.status === "failed"
+        ? [{ name: item.name, side: "B", error: item.right.error }]
+        : []),
+    ]));
+    if (runtimeFailures.length > 0) {
+      for (const item of job.cases) {
+        if (item.left?.status !== "failed" && item.right?.status !== "failed") continue;
+        item.judge = null;
+        item.judgeError = "Runtime 执行未完成，本题不进入专业质量比较。";
+      }
+      job.judge.completedCases = job.cases.filter(item => (
+        item.left?.status === "completed"
+        && item.right?.status === "completed"
+        && item.judge
+      )).length;
+      const firstFailure = runtimeFailures[0];
+      job.summary = null;
+      job.status = "failed";
+      job.stageLabel = "Runtime 执行失败，未形成有效对比";
+      job.error = `${firstFailure.name} · ${firstFailure.side} 侧：${firstFailure.error || "执行未完成"}${runtimeFailures.length > 1 ? `；另有 ${runtimeFailures.length - 1} 项执行失败` : ""}`;
+      job.updatedAt = new Date().toISOString();
+      persistJob(job);
+      return;
+    }
     job.judge.completedCases = report.cases.length;
     job.summary = summarizeSkillValueEvaluationCases(job.cases);
     job.status = "completed";

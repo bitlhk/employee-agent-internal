@@ -31,8 +31,8 @@ function evaluationCase(
     name: "测试题",
     prompt: "请完成测试任务",
     evaluationGoal: "比较专业质量",
-    left: null,
-    right: null,
+    left: runtimeResult("left"),
+    right: runtimeResult("right"),
     judge: winner ? {
       winner,
       confidence: "high",
@@ -42,6 +42,26 @@ function evaluationCase(
     } : null,
     judgeError: winner ? null : "Judge unavailable",
   };
+}
+
+function runtimeResult(
+  side: "left" | "right",
+  status: "completed" | "failed" = "completed",
+) {
+  return {
+    side,
+    status,
+    modelId: "glm-5.2",
+    skillVersion: side === "right" ? "2.1.5" : null,
+    assistantText: status === "completed" ? "测试输出" : "",
+    elapsedMs: 100,
+    toolCalls: [],
+    loadedSkills: [],
+    usage: null,
+    runtimeIdentityVerified: status === "completed",
+    streamCompleted: status === "completed",
+    error: status === "failed" ? "HTTP 503" : null,
+  } as const;
 }
 
 describe("summarizeSkillValueEvaluationCases", () => {
@@ -83,6 +103,20 @@ describe("summarizeSkillValueEvaluationCases", () => {
       evaluationCase("right"),
       evaluationCase(null),
     ]).headline).toBe("本轮对比持平：A、B 各胜 1 题，1 题未判定");
+  });
+
+  it("does not count a runtime failure as a side win", () => {
+    const failedCase = evaluationCase("left");
+    failedCase.left = runtimeResult("left");
+    failedCase.right = runtimeResult("right", "failed");
+
+    expect(summarizeSkillValueEvaluationCases([failedCase])).toEqual({
+      leftWins: 0,
+      rightWins: 0,
+      ties: 0,
+      unavailable: 1,
+      headline: "本轮存在 Runtime 执行失败，未形成有效专业对比",
+    });
   });
 });
 
