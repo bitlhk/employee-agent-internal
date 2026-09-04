@@ -105,7 +105,9 @@ export function SkillValueEvaluationEvidence({
                 <div className="mt-0.5 truncate font-mono text-[10px] text-gray-500">
                   {configuration.skillArtifactSha256
                     ? `Artifact ${configuration.skillArtifactSha256.slice(0, 12)}`
-                    : "隔离对照环境"}
+                    : configuration.skillVersion
+                      ? "历史记录未保存 Artifact 摘要"
+                      : "隔离对照环境"}
                 </div>
               </div>
             </div>
