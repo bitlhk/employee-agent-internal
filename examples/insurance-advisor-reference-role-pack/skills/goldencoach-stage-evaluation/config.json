@@ -1,0 +1,25 @@
+{
+  "skill_name": "goldencoach-stage-evaluation",
+  "version": "2.2.1",
+  "default_mode": "targeted_stage_review",
+  "full_evaluation_requires_explicit_request": true,
+  "targeted_review": {
+    "default_max_questions": 3,
+    "target_length_chinese_characters": "900-1300",
+    "forbidden_sections": [
+      "full_seven_module_score",
+      "overall_grade",
+      "inferred_customer_profile"
+    ]
+  },
+  "evidence_policy": {
+    "quote_source_dialogue": true,
+    "separate_fact_inference_unknown": true,
+    "forbid_unsupported_customer_labels": true,
+    "forbid_unsupported_product_facts": true
+  },
+  "full_evaluation": {
+    "module_reference": "references/full-evaluation.md",
+    "objection_reference": "references/lscpa.md"
+  }
+}

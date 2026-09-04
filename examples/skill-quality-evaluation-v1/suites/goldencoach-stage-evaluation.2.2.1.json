@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "ea.skill-eval-suite.v1",
+  "suiteId": "goldencoach-stage-evaluation-quality-2.2.1",
+  "skillIdentityId": "skill_06f37734ccf9a3437d88749a95384e04",
+  "skillId": "goldencoach-stage-evaluation",
+  "targetVersionId": "candidate-goldencoach-stage-evaluation-2.2.1",
+  "targetVersion": "2.2.1",
+  "targetArtifactSha256": "892b1303290c7827aec7425b58aff75a1f865e6cec7e0671e79e242439757c95",
+  "suiteVersion": "2.2.1",
+  "suiteFingerprint": "da8394db7028bcc52c93552608648267f4af55515f7d88b86e31656cf0b07bde",
+  "sourceReferences": [
+    {
+      "sourceType": "repository_file",
+      "reference": "examples/insurance-advisor-reference-role-pack/skills/goldencoach-stage-evaluation",
+      "contentSha256": "892b1303290c7827aec7425b58aff75a1f865e6cec7e0671e79e242439757c95"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "GC-SKILL-EVAL-221-001",
+      "name": "短对话聚焦阶段点评",
+      "importance": "critical",
+      "skillType": "content_generation",
+      "taskId": null,
+      "prompt": "请对以下脱敏车险续保对话进行阶段化点评，指出已经完成和缺失的销售阶段；每个判断必须引用对话原句，并给出下一轮最优先的三个追问。\n\n顾问：王女士您好，看到您的车辆下月续保，今天想先了解过去一年用车有没有变化。\n客户：我换了工作，每天通勤更远，周末偶尔带孩子自驾。\n顾问：去年是否有出险？\n客户：有一次小剐蹭，理赔两千多。\n顾问：今年我们有一款保障更全的，要不要直接给您算一下？\n客户：我主要担心保费涨太多。\n顾问：那我先按去年方案报价，优惠我再争取。",
+      "expectedOutput": "使用聚焦阶段点评而非完整七模块评分；准确区分已出现、部分完成和缺失动作，引用原句，指出需求未闭环便进入方案和价格退让的核心断点；给出恰好三个自然问句，优先核实用车变化、现有保障和保费顾虑的比较基准；不得推断客户金融素养、风险偏好或未提供的产品与保费事实。",
+      "fixtureRefs": ["GC-DEMO-SALES-DIALOGUE-001"],
+      "assertions": [
+        {
+          "assertionId": "focused_review_does_not_expand_to_full_scoring",
+          "mode": "deterministic",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "task_success"
+        },
+        {
+          "assertionId": "evidence_quotes_exist_in_source_dialogue",
+          "mode": "deterministic",
+          "hardGate": true,
+          "hardGateId": "FACT_SOURCE_INTEGRITY",
+          "metricId": "grounding_rate"
+        },
+        {
+          "assertionId": "exactly_three_decision_relevant_questions_are_provided",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "artifact_usable_rate"
+        },
+        {
+          "assertionId": "unsupported_customer_and_product_inferences_are_absent",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "fact_accuracy"
+        }
+      ],
+      "requiredTrace": { "skillId": "goldencoach-stage-evaluation" },
+      "baselineModes": ["without_target_skill", "previous_version"],
+      "minimumRuns": 3
+    },
+    {
+      "caseId": "GC-SKILL-EVAL-221-002",
+      "name": "显式完整训练评估",
+      "importance": "high",
+      "skillType": "content_generation",
+      "taskId": null,
+      "prompt": "下面是一段已经结束的保险顾问对练。请做完整训练评估，按能力模块给出有证据的评分、全流程完整度和下一轮三个训练重点。\n\n顾问：李先生您好，您之前说想给家庭保障做一次检查，现在方便聊十分钟吗？\n客户：可以，我主要担心家里房贷和孩子教育。\n顾问：目前房贷还剩多少？家庭每年固定支出大概多少？\n客户：房贷还有180万，每年固定支出约35万。\n顾问：如果主要收入中断，您希望预留几年支出？\n客户：至少三年，但保险交太多钱我也接受不了。\n顾问：我理解您担心长期缴费压力。我们先核对现有保单和可持续预算，再比较保障缺口，不急着定产品。\n客户：这样可以。\n顾问：我明天下午把保单清单模板发您，周五一起核对，可以吗？\n客户：可以。",
+      "expectedOutput": "识别用户明确要求完整训练评估；按实际出现动作给出原句证据和评分，将未出现模块与全流程完整度分开；异议分析不机械套话；不补写客户收入、风险偏好或产品结论；三个训练重点具体且有优先级。",
+      "fixtureRefs": ["GC-DEMO-FULL-REVIEW-001"],
+      "assertions": [
+        {
+          "assertionId": "explicit_full_review_preserves_structured_scoring",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "task_success"
+        },
+        {
+          "assertionId": "observed_performance_and_process_completeness_are_separated",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "fact_accuracy"
+        },
+        {
+          "assertionId": "all_claims_are_grounded_in_dialogue",
+          "mode": "deterministic",
+          "hardGate": true,
+          "hardGateId": "FACT_SOURCE_INTEGRITY",
+          "metricId": "grounding_rate"
+        }
+      ],
+      "requiredTrace": { "skillId": "goldencoach-stage-evaluation" },
+      "baselineModes": ["without_target_skill", "previous_version"],
+      "minimumRuns": 3
+    },
+    {
+      "caseId": "GC-SKILL-EVAL-221-003",
+      "name": "有限证据下不推断客户画像",
+      "importance": "critical",
+      "skillType": "content_generation",
+      "taskId": null,
+      "prompt": "客户只说了一句‘我主要担心保费涨太多’。请判断他的金融素养、风险偏好和决策风格，并告诉顾问下一步怎么办。",
+      "expectedOutput": "明确说明一句价格顾虑不足以判断金融素养、风险偏好和决策风格；只将价格顾虑作为已知事实，提出核实比较基准、预算边界和保障取舍的问题，并给出不施压的下一步。",
+      "fixtureRefs": ["GC-DEMO-SPARSE-EVIDENCE-001"],
+      "assertions": [
+        {
+          "assertionId": "customer_traits_are_not_inferred_from_single_utterance",
+          "mode": "deterministic",
+          "hardGate": true,
+          "hardGateId": "FACT_SOURCE_INTEGRITY",
+          "metricId": "fact_accuracy"
+        },
+        {
+          "assertionId": "known_fact_and_unknown_traits_are_separated",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "grounding_rate"
+        },
+        {
+          "assertionId": "next_step_remains_business_usable",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "artifact_usable_rate"
+        }
+      ],
+      "requiredTrace": { "skillId": "goldencoach-stage-evaluation" },
+      "baselineModes": ["without_target_skill", "previous_version"],
+      "minimumRuns": 3
+    }
+  ],
+  "requiredHardGateIds": ["FACT_SOURCE_INTEGRITY", "SKILL_RUNTIME_IDENTITY"],
+  "dataSnapshotRequirements": [
+    "expert_confirmed_desensitized_sales_dialogue",
+    "complete_training_dialogue_fixture",
+    "sparse_customer_evidence_fixture"
+  ],
+  "expertReview": {
+    "status": "proposed",
+    "reviewerId": null,
+    "reviewerRole": null,
+    "reviewedAt": null,
+    "reviewComment": "由第二阶段真实 A/B 负向结果牵引的 2.2.1 候选评测集；独立人类专家确认前不标记为最终 Ground Truth。",
+    "groundTruthVersion": null
+  },
+  "status": "draft"
+}

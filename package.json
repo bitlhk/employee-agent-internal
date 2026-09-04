@@ -145,6 +145,7 @@
     "skills:quality:phase1b:aggregate": "tsx scripts/aggregate-skill-quality-phase1b-smokes.ts",
     "skills:value:priority:verify": "node --env-file-if-exists=.env --import tsx scripts/verify-priority-skill-value-evaluations.ts",
     "skills:value:priority:smoke": "node --env-file-if-exists=.env --import tsx scripts/verify-priority-skill-value-evaluations.ts --execute-smoke",
+    "skills:value:candidate:smoke": "node --env-file-if-exists=.env --import tsx scripts/verify-skill-value-candidate.ts",
     "skills:quality:wealth-2.1:runtime:provision": "EA_SKILL_EVAL_CANDIDATE_COMPARISON=wealth-manager-assistant-2.1.4 EA_SKILL_EVAL_RUNTIME_BASE_URL=http://127.0.0.1:5199 EA_SKILL_EVAL_ALLOW_LOCAL_PROVISION=1 tsx scripts/provision-skill-quality-phase1b-runtime.ts --apply",
     "skills:quality:wealth-2.1:runtime:verify": "EA_SKILL_EVAL_CANDIDATE_COMPARISON=wealth-manager-assistant-2.1.4 EA_SKILL_EVAL_RUNTIME_BASE_URL=http://127.0.0.1:5199 tsx scripts/verify-skill-quality-phase1b-runtime.ts",
     "skills:quality:wealth-2.1:runtime:smoke": "EA_SKILL_EVAL_CANDIDATE_COMPARISON=wealth-manager-assistant-2.1.4 EA_SKILL_EVAL_RUNTIME_BASE_URL=http://127.0.0.1:5199 tsx scripts/verify-skill-quality-phase1b-runtime.ts --execute-smoke",
