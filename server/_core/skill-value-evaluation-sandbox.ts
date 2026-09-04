@@ -91,7 +91,9 @@ export async function reclaimExpiredSkillValueEvaluationSandboxes(
   for (const row of rows) {
     const adoptId = String(row.adoptId || "");
     const expiresAt = row.expiresAt ? new Date(row.expiresAt).getTime() : 0;
-    if (!adoptId.startsWith("lgj-eval-") || activeAdoptionIds.has(adoptId) || expiresAt > now) continue;
+    const managedSandbox = adoptId.startsWith("lgj-eval-ui-")
+      || adoptId.startsWith("lgj-eval-context-");
+    if (!managedSandbox || activeAdoptionIds.has(adoptId) || expiresAt > now) continue;
     const agentId = String(row.agentId || "");
     if (agentId) {
       rmSync(resolveRuntimeWorkspaceByIds(adoptId, agentId), { recursive: true, force: true });
