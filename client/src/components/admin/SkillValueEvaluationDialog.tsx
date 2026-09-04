@@ -64,6 +64,20 @@ type EvaluationVersionOption = {
   isLatest: boolean;
   releaseStatus: "approved" | "candidate";
   isRecommendedCandidate?: boolean;
+  evaluationSupport: {
+    level: "full" | "partial" | "unsupported";
+    label: "完全支持" | "部分支持" | "暂不支持";
+    canStart: boolean;
+    summary: string;
+    curatedCaseCount: number;
+    checks: Array<{
+      id: "artifact" | "standard_cases" | "model" | "runtime_environment";
+      label: string;
+      status: "pass" | "warning" | "fail";
+      detail: string;
+    }>;
+    limitations: string[];
+  };
 };
 
 type EvaluationModelOption = {
@@ -268,6 +282,7 @@ function NewEvaluationWorkbench({
   );
   const mixedVariables = leftSelection !== rightSelection && leftModel !== rightModel;
   const jobIsActive = Boolean(job && ["queued", "preparing", "running", "judging"].includes(job.status));
+  const selectedSupport = versions.find(item => item.versionId === selectedVersionId)?.evaluationSupport;
 
   if (contextQuery.isLoading) {
     return (
@@ -345,6 +360,58 @@ function NewEvaluationWorkbench({
         </div>
       </section>
 
+      {selectedSupport ? (
+        <section className={cn(
+          "border px-4 py-3",
+          selectedSupport.level === "full"
+            ? "border-emerald-200 bg-emerald-50"
+            : selectedSupport.level === "partial"
+              ? "border-amber-200 bg-amber-50"
+              : "border-red-200 bg-red-50",
+        )}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                <PackageCheck className="h-4 w-4" />
+                当前版本评测适配
+                <span className={cn(
+                  "border px-2 py-0.5 text-[11px]",
+                  selectedSupport.level === "full"
+                    ? "border-emerald-300 bg-white text-emerald-800"
+                    : selectedSupport.level === "partial"
+                      ? "border-amber-300 bg-white text-amber-800"
+                      : "border-red-300 bg-white text-red-800",
+                )}>
+                  {selectedSupport.label}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-gray-700">{selectedSupport.summary}</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => contextQuery.refetch()}>
+              <RefreshCw />重新检查
+            </Button>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {selectedSupport.checks.map(check => (
+              <div key={check.id} className="border border-white/80 bg-white/80 px-3 py-2">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-900">
+                  <span className={cn(
+                    "h-2 w-2 rounded-full",
+                    check.status === "pass"
+                      ? "bg-emerald-500"
+                      : check.status === "warning"
+                        ? "bg-amber-500"
+                        : "bg-red-500",
+                  )} />
+                  {check.label}
+                </div>
+                <div className="mt-1 text-[11px] leading-4 text-gray-600">{check.detail}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="border border-gray-200 bg-white px-4 py-3">
         <div className="text-[11px] font-medium text-gray-500">本轮怎么测</div>
         <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-gray-700">
@@ -413,7 +480,12 @@ function NewEvaluationWorkbench({
           <Button
             size="sm"
             onClick={prepare}
-            disabled={!selectedVersionId || sameConfiguration || prepareMutation.isPending}
+            disabled={
+              !selectedVersionId
+              || sameConfiguration
+              || prepareMutation.isPending
+              || selectedSupport?.canStart === false
+            }
           >
             {prepareMutation.isPending ? <Loader2 className="animate-spin" /> : <Sparkles />}
             {plan ? "重新准备" : "准备测试"}
@@ -511,6 +583,7 @@ function NewEvaluationWorkbench({
                   || sameConfiguration
                   || startMutation.isPending
                   || jobIsActive
+                  || selectedSupport?.canStart === false
                 }
               >
                 {startMutation.isPending

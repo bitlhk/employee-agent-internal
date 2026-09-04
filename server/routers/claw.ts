@@ -121,6 +121,14 @@ import {
   listRepositorySkillCandidates,
   prepareSkillValueEvaluationPlan,
 } from "../_core/skill-value-evaluation";
+import {
+  assessSkillValueEvaluationSupport,
+  inspectCuratedSkillValueSuite,
+} from "../_core/skill-value-evaluation-support";
+import {
+  buildPrioritySkillValueEvaluationSupportCatalog,
+  resolveSkillValueRoleTemplate,
+} from "../_core/skill-value-evaluation-catalog";
 import { digestSkillSourceTree } from "../_core/skills/skill-artifact-digest";
 import {
   cancelSkillValueEvaluationJob,
@@ -257,22 +265,6 @@ async function resolveSkillValueArtifact(
     artifactSha256: stored.artifactSha256,
     artifactPath: stored.artifactPath,
   };
-}
-
-async function resolveSkillValueRoleTemplate(skillId: string): Promise<string> {
-  const validRoles = new Set(listAgentRoleTemplates().map(role => role.id));
-  const grants = (await listRoleAssetGrants())
-    .filter(grant =>
-      grant.assetType === "skill"
-      && grant.assetId === skillId
-      && grant.enabled
-      && grant.roleKey !== "*"
-      && validRoles.has(grant.roleKey))
-    .sort((left, right) => {
-      if (left.grantMode !== right.grantMode) return left.grantMode === "default" ? -1 : 1;
-      return left.roleKey.localeCompare(right.roleKey);
-    });
-  return grants[0]?.roleKey || "general-assistant";
 }
 
 export const clawRouter = router({
@@ -1248,6 +1240,7 @@ export const clawRouter = router({
               versionId: version.versionId,
               version: version.version,
               artifactSha256: version.artifactSha256,
+              artifactAvailable: existsSync(path.join(version.artifactPath, "SKILL.md")),
               submittedAt: version.submittedAt,
               isLatest: version.versionId === identity?.latestApprovedVersionId,
               releaseStatus: "approved" as const,
@@ -1261,6 +1254,7 @@ export const clawRouter = router({
                 versionId: `legacy-market-${marketItem.id}`,
                 version: String(marketItem.version || "1.0.0"),
                 artifactSha256: digest?.sha256 || "",
+                artifactAvailable: Boolean(artifactPath && existsSync(path.join(artifactPath, "SKILL.md"))),
                 submittedAt: marketItem.createdAt,
                 isLatest: true,
                 releaseStatus: "approved" as const,
@@ -1271,16 +1265,45 @@ export const clawRouter = router({
           versionId: candidate.versionId,
           version: candidate.version,
           artifactSha256: candidate.artifactSha256,
+          artifactAvailable: existsSync(path.join(candidate.artifactPath, "SKILL.md")),
           submittedAt: null,
           isLatest: false,
           releaseStatus: "candidate" as const,
           isRecommendedCandidate: index === 0,
         }));
         const versions = [...candidateVersions, ...approvedVersions];
-        const models = await getAvailableJiuwenModels();
-        const recommendedModel = models.find(model => model.id === "glm-5.2")
-          || models.find(model => model.id !== JIUWEN_AUTO_MODEL_ID)
-          || models[0];
+        const [models, roleTemplate] = await Promise.all([
+          getAvailableJiuwenModels(),
+          resolveSkillValueRoleTemplate(input.skillId),
+        ]);
+        const selectableModels = models.filter(model => model.id !== JIUWEN_AUTO_MODEL_ID);
+        const readiness = await probeJiuwenSkillMcpReadiness({
+          skillId: input.skillId,
+          roleTemplate,
+        }).catch((error): import("../_core/skill-mcp-readiness").SkillMcpReadiness => ({
+          skillId: input.skillId,
+          status: "unchecked",
+          canProceed: true,
+          message: `运行环境暂未完成检查：${error instanceof Error ? error.message : String(error)}`.slice(0, 240),
+          checkedAt: new Date().toISOString(),
+          servers: [],
+        }));
+        const versionsWithSupport = versions.map(version => ({
+          ...version,
+          evaluationSupport: assessSkillValueEvaluationSupport({
+            artifactAvailable: version.artifactAvailable,
+            modelCount: selectableModels.length,
+            suite: inspectCuratedSkillValueSuite({
+              root: APP_ROOT,
+              skillId: input.skillId,
+              version: version.version,
+              artifactSha256: version.artifactSha256,
+            }),
+            readiness,
+          }),
+        }));
+        const recommendedModel = selectableModels.find(model => model.id === "glm-5.2")
+          || selectableModels[0];
         return {
           skill: {
             skillId: input.skillId,
@@ -1289,8 +1312,8 @@ export const clawRouter = router({
             category: String(marketItem.category || "general"),
             author: String(marketItem.author || ""),
           },
-          versions,
-          models: models.filter(model => model.id !== JIUWEN_AUTO_MODEL_ID).map(model => ({
+          versions: versionsWithSupport,
+          models: selectableModels.map(model => ({
             id: model.id,
             name: model.name,
             description: model.desc || "",
@@ -1301,13 +1324,19 @@ export const clawRouter = router({
             right: {
               mode: "skill_version" as const,
               versionId: candidateVersions.find(version => version.isRecommendedCandidate)?.versionId
-                || versions.find(version => version.isLatest)?.versionId
-                || versions[0]?.versionId
+                || versionsWithSupport.find(version => version.isLatest)?.versionId
+                || versionsWithSupport[0]?.versionId
                 || null,
             },
           },
+          roleTemplate,
+          readiness,
         };
       }),
+
+    adminSkillEvaluationSupportMatrix: adminProcedure.query(async () => {
+      return await buildPrioritySkillValueEvaluationSupportCatalog(APP_ROOT);
+    }),
 
     adminPrepareSkillEvaluation: adminProcedure
       .input(z.object({

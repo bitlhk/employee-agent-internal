@@ -100,7 +100,10 @@ export async function reclaimExpiredSkillValueEvaluationSandboxes(
     }
     if (row.status !== "recycled") {
       await updateClawAdoptionStatus(Number(row.id), "recycled", {
-        expiresAt: new Date(expiresAt),
+        // Legacy evaluation rows may not have an expiry. Record the actual
+        // recycle time instead of writing the Unix epoch, which MySQL can
+        // reject after timezone conversion.
+        expiresAt: new Date(now),
         lastError: null,
       });
     }

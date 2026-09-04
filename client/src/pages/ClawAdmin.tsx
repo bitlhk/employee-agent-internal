@@ -553,6 +553,17 @@ export default function ClawAdmin() {
     enabled: activeTab === "skills",
     retry: false,
   });
+  const {
+    data: skillEvaluationSupport,
+    isLoading: skillEvaluationSupportLoading,
+    isFetching: skillEvaluationSupportRefreshing,
+    error: skillEvaluationSupportError,
+    refetch: refetchSkillEvaluationSupport,
+  } = trpc.claw.adminSkillEvaluationSupportMatrix.useQuery(undefined, {
+    enabled: activeTab === "skills",
+    retry: false,
+    staleTime: 30_000,
+  });
   const { data: roleAssetCatalog, refetch: refetchRoleAssetCatalog } = trpc.claw.adminRoleAssetCatalog.useQuery(undefined, {
     enabled: activeTab === "skills",
     retry: false,
@@ -1224,6 +1235,70 @@ export default function ClawAdmin() {
 
           {/* ── 技能广场 ── */}
           <TabsContent value="skills" className="space-y-4">
+            <Card className="p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">重点 Skill 评测适配</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">动态检查版本、固定业务题、评测模型和真实工具环境；点击即可进入同一套 A/B 评测。</p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="admin-secondary-action"
+                  disabled={skillEvaluationSupportRefreshing}
+                  onClick={() => refetchSkillEvaluationSupport()}
+                >
+                  <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${skillEvaluationSupportRefreshing ? "animate-spin" : ""}`} />
+                  重新检查
+                </Button>
+              </div>
+              {skillEvaluationSupportLoading ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />正在检查评测环境
+                </div>
+              ) : skillEvaluationSupportError ? (
+                <div className="mt-4 flex items-center justify-between gap-3 border border-red-200 bg-red-50 px-3 py-3 text-xs text-red-700">
+                  <span>适配检查暂时失败：{skillEvaluationSupportError.message}</span>
+                  <Button size="sm" variant="outline" onClick={() => refetchSkillEvaluationSupport()}>
+                    重试
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-4 divide-y border border-gray-200">
+                  {(skillEvaluationSupport || []).map(item => {
+                    const tone = item.support.level === "full"
+                      ? "border-green-200 bg-green-50 text-green-700"
+                      : item.support.level === "partial"
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "border-red-200 bg-red-50 text-red-700";
+                    return (
+                      <div key={item.skillId} className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-gray-900">{item.name}</span>
+                            <span className={`border px-1.5 py-0.5 text-[10px] font-medium ${tone}`}>{item.support.label}</span>
+                            {item.version ? <span className="font-mono text-[10px] text-gray-500">v{item.version}</span> : null}
+                          </div>
+                          <div className="mt-1 text-[11px] leading-5 text-gray-500">
+                            {formatRole(item.roleTemplate)} · {item.support.curatedCaseCount} 道固定题 · {item.requiredServerCount > 0 ? `${item.requiredServerCount} 个工具服务已检查` : "无需外部工具"}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="admin-secondary-action h-7 shrink-0 text-xs"
+                          onClick={() => setSkillValueEvaluationTarget({ skillId: item.skillId, name: item.name })}
+                        >
+                          <BarChart3 className="mr-1 h-3.5 w-3.5" />
+                          {item.support.canStart ? "进入评测" : "查看原因"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
+
             {/* 上传区 */}
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
