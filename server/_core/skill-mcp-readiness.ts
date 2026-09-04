@@ -8,7 +8,10 @@ import {
   probeRoleMcpServerForReadiness,
   type RoleMcpReadinessProbe,
 } from "./role-mcp-gateway";
-import { resolveEnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
+import {
+  enterpriseRuntimeProvisioningAvailable,
+  resolveEnterpriseRuntimeRoute,
+} from "./enterprise-runtime-adapter";
 import { platformToolNames } from "./platform-tools-mcp";
 import { POST_LOAN_RISK_DATA_TOOLS } from "./post-loan-risk-data-provider";
 import { CUSTOMER_CONTEXT_ALL_TOOL_NAMES } from "../../shared/customer-context-contract";
@@ -389,6 +392,7 @@ export async function probeJiuwenSkillMcpReadiness(args: {
   skillId: string;
   roleTemplate: string;
   force?: boolean;
+  allowPlannedEnterpriseRuntime?: boolean;
 }): Promise<SkillMcpReadiness> {
   const requirement = getSkillMcpRequirement(args.skillId);
   const requiredServerIds = Object.keys(requirement.servers);
@@ -428,7 +432,8 @@ export async function probeJiuwenSkillMcpReadiness(args: {
     ? await resolveEnterpriseRuntimeRoute(args.adoptId)
       .then((decision) => decision.target === "enterprise")
       .catch(() => false)
-    : false;
+    : args.allowPlannedEnterpriseRuntime === true
+      && enterpriseRuntimeProvisioningAvailable();
   configuredServers = includeEnterpriseRoleGateway(configuredServers, enterpriseBound);
   configuredServers = includeEnterpriseCustomerContext(
     configuredServers,

@@ -9,6 +9,7 @@ import {
   buildEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
   buildEnterpriseRuntimeAttachmentRefs,
+  enterpriseRuntimeProvisioningAvailable,
   enterpriseRuntimeSupportsModel,
   managedMcpServerId,
   resolveEnterpriseRuntimeRoute,
@@ -59,6 +60,16 @@ afterEach(() => {
 });
 
 describe("enterprise runtime adapter", () => {
+  it("reports whether a new adoption can be provisioned on enterprise runtime", () => {
+    process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
+    process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "wss://runtime.example.test/ws";
+    process.env.EA_ENTERPRISE_RUNTIME_EA_BASE_URL = "https://ea.example.test";
+    expect(enterpriseRuntimeProvisioningAvailable()).toBe(true);
+
+    delete process.env.EA_ENTERPRISE_RUNTIME_EA_BASE_URL;
+    expect(enterpriseRuntimeProvisioningAvailable()).toBe(false);
+  });
+
   it("keeps all traffic on standalone unless the feature is enabled", async () => {
     process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "false";
     const getBinding = vi.fn();

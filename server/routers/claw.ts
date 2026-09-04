@@ -1280,6 +1280,7 @@ export const clawRouter = router({
         const readiness = await probeJiuwenSkillMcpReadiness({
           skillId: input.skillId,
           roleTemplate,
+          allowPlannedEnterpriseRuntime: true,
         }).catch((error): import("../_core/skill-mcp-readiness").SkillMcpReadiness => ({
           skillId: input.skillId,
           status: "unchecked",
@@ -1506,6 +1507,7 @@ export const clawRouter = router({
             skillId: input.skillId,
             roleTemplate,
             force: true,
+            allowPlannedEnterpriseRuntime: true,
           });
           const job = startSkillValueEvaluationJob({
             skillId: input.skillId,

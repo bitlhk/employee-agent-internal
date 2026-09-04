@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "ea.skill-eval-suite.v1",
+  "suiteId": "goldencoach-stage-evaluation-quality-2.2",
+  "skillIdentityId": "skill_06f37734ccf9a3437d88749a95384e04",
+  "skillId": "goldencoach-stage-evaluation",
+  "targetVersionId": "591f5542-b714-4d5c-9a98-d5b8d784ecd6",
+  "targetVersion": "2.2.0",
+  "targetArtifactSha256": "d6522cfab72140f2311a392970a6a373e11dacb74e6d2094f7382663060c8520",
+  "suiteVersion": "2.2.0",
+  "suiteFingerprint": "510a418cfb58ecdded01eb567dae849f82434e31d19c1e206f03b2884b74b38c",
+  "sourceReferences": [
+    {
+      "sourceType": "approved_skill_artifact",
+      "reference": "skill-store://goldencoach-stage-evaluation/2.2.0/d6522cfab72140f2311a392970a6a373e11dacb74e6d2094f7382663060c8520",
+      "contentSha256": "d6522cfab72140f2311a392970a6a373e11dacb74e6d2094f7382663060c8520"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "GC-SKILL-EVAL-220-001",
+      "name": "销售阶段识别与原句证据",
+      "importance": "high",
+      "skillType": "governed_workflow",
+      "taskId": null,
+      "prompt": "请对以下脱敏车险续保对话进行阶段化点评，指出已经完成和缺失的销售阶段；每个判断必须引用对话原句，并给出下一轮最优先的三个追问。\n\n顾问：王女士您好，看到您的车辆下月续保，今天想先了解过去一年用车有没有变化。\n客户：我换了工作，每天通勤更远，周末偶尔带孩子自驾。\n顾问：去年是否有出险？\n客户：有一次小剐蹭，理赔两千多。\n顾问：今年我们有一款保障更全的，要不要直接给您算一下？\n客户：我主要担心保费涨太多。\n顾问：那我先按去年方案报价，优惠我再争取。",
+      "expectedOutput": "准确区分已出现与缺失阶段，引用对话原句作为证据，按当前 Skill 的阶段点评模式给出可执行的下一轮建议，不虚构未发生的对话。",
+      "fixtureRefs": ["GC-DEMO-SALES-DIALOGUE-001"],
+      "assertions": [
+        {
+          "assertionId": "covered_stages_match_expert_ground_truth",
+          "mode": "deterministic",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "task_success"
+        },
+        {
+          "assertionId": "evidence_quotes_exist_in_source_dialogue",
+          "mode": "deterministic",
+          "hardGate": true,
+          "hardGateId": "FACT_SOURCE_INTEGRITY",
+          "metricId": "grounding_rate"
+        },
+        {
+          "assertionId": "coaching_advice_is_actionable",
+          "mode": "judge",
+          "hardGate": false,
+          "hardGateId": null,
+          "metricId": "artifact_usable_rate"
+        }
+      ],
+      "requiredTrace": { "skillId": "goldencoach-stage-evaluation" },
+      "baselineModes": ["without_target_skill"],
+      "minimumRuns": 3
+    }
+  ],
+  "requiredHardGateIds": ["FACT_SOURCE_INTEGRITY", "SKILL_RUNTIME_IDENTITY"],
+  "dataSnapshotRequirements": ["expert_confirmed_desensitized_sales_dialogue"],
+  "expertReview": {
+    "status": "proposed",
+    "reviewerId": null,
+    "reviewerRole": null,
+    "reviewedAt": null,
+    "reviewComment": "销售专家 Ground Truth 未冻结前仅用于契约验证，不生成正式评分。",
+    "groundTruthVersion": null
+  },
+  "status": "draft"
+}

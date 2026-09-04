@@ -1,7 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
 import type { SkillMcpReadiness } from "./skill-mcp-readiness";
-import { curatedSkillValueSuiteMatchesVersion } from "./skill-value-evaluation";
+import { resolveCuratedSkillValueSuite } from "./skill-value-evaluation";
 
 export type SkillValueEvaluationSupportLevel = "full" | "partial" | "unsupported";
 
@@ -29,7 +27,6 @@ export type CuratedSkillValueSuiteInspection = {
 };
 
 export const PRIORITY_SKILL_VALUE_EVALUATION_IDS = [
-  "wealth-manager-assistant",
   "auto-insurance-advisor",
   "bond-quote-parse",
   "goldencoach-stage-evaluation",
@@ -44,31 +41,19 @@ export function inspectCuratedSkillValueSuite(input: {
   version: string;
   artifactSha256: string;
 }): CuratedSkillValueSuiteInspection {
-  const root = path.resolve(input.root || process.cwd());
-  const suitePath = path.join(
-    root,
-    "examples",
-    "skill-quality-evaluation-v1",
-    "suites",
-    `${input.skillId}.v1.json`,
+  const resolved = resolveCuratedSkillValueSuite(
+    input.root || process.cwd(),
+    input.skillId,
+    input,
   );
-  if (!existsSync(suitePath)) {
-    return { exists: false, matchesVersion: false, caseCount: 0 };
-  }
-  try {
-    const suite = JSON.parse(readFileSync(suitePath, "utf8")) as {
-      targetVersion?: unknown;
-      targetArtifactSha256?: unknown;
-      cases?: Array<{ prompt?: unknown }>;
-    };
-    const matchesVersion = curatedSkillValueSuiteMatchesVersion(suite, input);
-    const caseCount = matchesVersion && Array.isArray(suite.cases)
-      ? suite.cases.filter(item => String(item?.prompt || "").trim()).length
-      : 0;
-    return { exists: true, matchesVersion, caseCount };
-  } catch {
-    return { exists: true, matchesVersion: false, caseCount: 0 };
-  }
+  const caseCount = Array.isArray(resolved.suite?.cases)
+    ? resolved.suite.cases.filter(item => String(item?.prompt || "").trim()).length
+    : 0;
+  return {
+    exists: resolved.exists,
+    matchesVersion: Boolean(resolved.suite),
+    caseCount,
+  };
 }
 
 export function assessSkillValueEvaluationSupport(input: {

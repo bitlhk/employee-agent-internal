@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   getSkillIdentityBySkillId,
@@ -9,7 +8,10 @@ import {
   buildPrioritySkillValueEvaluationSupportCatalog,
   resolveSkillValueRoleTemplate,
 } from "../server/_core/skill-value-evaluation-catalog";
-import { listRepositorySkillCandidates } from "../server/_core/skill-value-evaluation";
+import {
+  listRepositorySkillCandidates,
+  resolveCuratedSkillValueSuite,
+} from "../server/_core/skill-value-evaluation";
 import { PRIORITY_SKILL_VALUE_EVALUATION_IDS } from "../server/_core/skill-value-evaluation-support";
 import { probeJiuwenSkillMcpReadiness } from "../server/_core/skill-mcp-readiness";
 import {
@@ -25,7 +27,6 @@ const requiredSkill = process.argv
   .find(argument => argument.startsWith("--skill="))
   ?.slice("--skill=".length);
 const targetSkillIds = PRIORITY_SKILL_VALUE_EVALUATION_IDS
-  .filter(skillId => skillId !== "wealth-manager-assistant")
   .filter(skillId => !requiredSkill || skillId === requiredSkill);
 
 async function resolveArtifact(skillId: string): Promise<SkillValueEvaluationArtifact> {
@@ -46,23 +47,20 @@ async function resolveArtifact(skillId: string): Promise<SkillValueEvaluationArt
   return listRepositorySkillCandidates(APP_ROOT, skillId)[0] || null;
 }
 
-function firstCuratedPrompt(skillId: string) {
-  const suitePath = path.join(
-    APP_ROOT,
-    "examples",
-    "skill-quality-evaluation-v1",
-    "suites",
-    `${skillId}.v1.json`,
-  );
-  if (!existsSync(suitePath)) return null;
-  const suite = JSON.parse(readFileSync(suitePath, "utf8")) as {
+function firstCuratedPrompt(
+  skillId: string,
+  artifact: SkillValueEvaluationArtifact,
+) {
+  if (!artifact) return null;
+  const suite = resolveCuratedSkillValueSuite(APP_ROOT, skillId, artifact).suite as {
     cases?: Array<{
       caseId?: unknown;
       name?: unknown;
       prompt?: unknown;
       expectedOutput?: unknown;
     }>;
-  };
+  } | null;
+  if (!suite) return null;
   const first = suite.cases?.find(item => String(item.prompt || "").trim());
   return first ? {
     promptId: String(first.caseId || `${skillId}-SMOKE`),
@@ -105,13 +103,14 @@ async function main() {
   const marketRows = await listSkillMarketItems();
   for (const item of catalog) {
     const artifact = await resolveArtifact(item.skillId);
-    const prompt = firstCuratedPrompt(item.skillId);
+    const prompt = firstCuratedPrompt(item.skillId, artifact);
     if (!artifact || !prompt) throw new Error(`${item.skillId} 缺少可执行版本或固定业务题`);
     const roleTemplate = await resolveSkillValueRoleTemplate(item.skillId);
     const preflight = await probeJiuwenSkillMcpReadiness({
       skillId: item.skillId,
       roleTemplate,
       force: true,
+      allowPlannedEnterpriseRuntime: true,
     });
     const marketItem = marketRows.find(row => (
       row.skillId === item.skillId && row.status === "approved"

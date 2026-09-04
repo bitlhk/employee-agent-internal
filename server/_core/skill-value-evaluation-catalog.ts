@@ -102,6 +102,7 @@ export async function buildPrioritySkillValueEvaluationSupportCatalog(
     const readiness = await probeJiuwenSkillMcpReadiness({
       skillId,
       roleTemplate,
+      allowPlannedEnterpriseRuntime: true,
     }).catch(error => uncheckedReadiness(skillId, error));
     const suite = inspectCuratedSkillValueSuite({
       root,

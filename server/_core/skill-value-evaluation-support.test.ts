@@ -94,6 +94,11 @@ describe("Skill value evaluation support", () => {
         { prompt: "请完成第二项业务任务" },
       ],
     }));
+    writeFileSync(path.join(suiteDir, "demo-skill.2.1.0.json"), JSON.stringify({
+      targetVersion: "2.1.0",
+      targetArtifactSha256: "b".repeat(64),
+      cases: [{ prompt: "请完成新版业务任务" }],
+    }));
     try {
       expect(inspectCuratedSkillValueSuite({
         root,
@@ -106,6 +111,12 @@ describe("Skill value evaluation support", () => {
         skillId: "demo-skill",
         version: "2.1.0",
         artifactSha256: "b".repeat(64),
+      })).toEqual({ exists: true, matchesVersion: true, caseCount: 1 });
+      expect(inspectCuratedSkillValueSuite({
+        root,
+        skillId: "demo-skill",
+        version: "2.2.0",
+        artifactSha256: "c".repeat(64),
       })).toEqual({ exists: true, matchesVersion: false, caseCount: 0 });
     } finally {
       rmSync(root, { recursive: true, force: true });

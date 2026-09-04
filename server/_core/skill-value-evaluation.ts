@@ -93,6 +93,18 @@ type CuratedCase = {
   expectedOutput?: unknown;
 };
 
+export type CuratedSkillValueSuite = {
+  targetVersion?: unknown;
+  targetArtifactSha256?: unknown;
+  cases?: CuratedCase[];
+};
+
+export type ResolvedCuratedSkillValueSuite = {
+  exists: boolean;
+  suite: CuratedSkillValueSuite | null;
+  suitePath: string | null;
+};
+
 export type RepositorySkillCandidate = {
   versionId: string;
   version: string;
@@ -264,26 +276,46 @@ export function curatedSkillValueSuiteMatchesVersion(
   return true;
 }
 
+export function resolveCuratedSkillValueSuite(
+  rootInput: string,
+  skillId: string,
+  version: Pick<SkillEvaluationVersionInput, "version" | "artifactSha256">,
+): ResolvedCuratedSkillValueSuite {
+  const suiteDirectory = path.join(
+    path.resolve(rootInput),
+    "examples",
+    "skill-quality-evaluation-v1",
+    "suites",
+  );
+  if (!existsSync(suiteDirectory)) return { exists: false, suite: null, suitePath: null };
+  const suitePaths = readdirSync(suiteDirectory, { withFileTypes: true })
+    .filter(entry => (
+      entry.isFile()
+      && entry.name.startsWith(`${skillId}.`)
+      && entry.name.endsWith(".json")
+    ))
+    .map(entry => path.join(suiteDirectory, entry.name))
+    .sort();
+  for (const suitePath of suitePaths) {
+    try {
+      const suite = JSON.parse(readFileSync(suitePath, "utf8")) as CuratedSkillValueSuite;
+      if (curatedSkillValueSuiteMatchesVersion(suite, version)) {
+        return { exists: true, suite, suitePath };
+      }
+    } catch {}
+  }
+  return { exists: suitePaths.length > 0, suite: null, suitePath: null };
+}
+
 function curatedPrompts(
   root: string,
   skillId: string,
   version: Pick<SkillEvaluationVersionInput, "version" | "artifactSha256">,
 ): SkillValueEvaluationPrompt[] {
-  const suitePath = path.join(
-    root,
-    "examples",
-    "skill-quality-evaluation-v1",
-    "suites",
-    `${skillId}.v1.json`,
-  );
-  if (!existsSync(suitePath)) return [];
+  const resolved = resolveCuratedSkillValueSuite(root, skillId, version);
+  if (!resolved.suite) return [];
   try {
-    const suite = JSON.parse(readFileSync(suitePath, "utf8")) as {
-      targetVersion?: unknown;
-      targetArtifactSha256?: unknown;
-      cases?: CuratedCase[];
-    };
-    if (!curatedSkillValueSuiteMatchesVersion(suite, version)) return [];
+    const suite = resolved.suite;
     return (Array.isArray(suite.cases) ? suite.cases : [])
       .flatMap((item, index) => {
         const prompt = String(item.prompt || "").trim();

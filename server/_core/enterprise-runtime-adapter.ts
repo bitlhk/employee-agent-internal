@@ -144,6 +144,12 @@ function enterpriseManagedMcpBaseUrl(): string | null {
   }
 }
 
+export function enterpriseRuntimeProvisioningAvailable(): boolean {
+  return enterpriseRuntimeEnabled()
+    && Boolean(enterpriseGatewayWsUrl())
+    && Boolean(enterpriseManagedMcpBaseUrl());
+}
+
 export function buildEnterpriseManagedMcpProvisioning(args: {
   route: EnterpriseRuntimeRoute;
   adoptId: string;
