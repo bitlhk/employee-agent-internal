@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BookOpenCheck, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/action-button";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
+import { SkillValueEvaluationEvidence } from "./SkillValueEvaluationEvidence";
 
 export function SkillValueEvaluationHistory({
   open,
@@ -15,7 +16,7 @@ export function SkillValueEvaluationHistory({
     { skillId, limit: 20 },
     { enabled: open && Boolean(skillId), retry: 2 },
   );
-  const jobs = historyQuery.data || [];
+  const jobs = useMemo(() => historyQuery.data || [], [historyQuery.data]);
   const [selectedJobId, setSelectedJobId] = useState("");
   useEffect(() => {
     if (!jobs.length) {
@@ -112,6 +113,9 @@ export function SkillValueEvaluationHistory({
                   {selectedJob.error}
                 </div>
               ) : null}
+              {selectedJob.summary ? (
+                <SkillValueEvaluationEvidence job={selectedJob} className="mt-3" />
+              ) : null}
               <div className="mt-3 space-y-3">
                 {selectedJob.cases.map((item, index) => (
                   <div key={item.promptId} className="border border-gray-200">
@@ -128,6 +132,15 @@ export function SkillValueEvaluationHistory({
                         </div>
                       ))}
                     </div>
+                    {item.judge ? (
+                      <div className="border-t border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-700">
+                        <span className="font-semibold text-gray-900">
+                          {item.judge.winner === "right" ? "B 更优" : item.judge.winner === "left" ? "A 更优" : "表现持平"}
+                        </span>
+                        <span className="ml-2 text-gray-500">置信度 {item.judge.confidence}</span>
+                        <p className="mt-1">{item.judge.summary}</p>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

@@ -44,6 +44,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SkillValueEvaluationHistory } from "./SkillValueEvaluationHistory";
+import { SkillValueEvaluationEvidence } from "./SkillValueEvaluationEvidence";
 import {
   SkillValueCaseComparison,
   SkillValueMetricComparison,
@@ -714,37 +715,7 @@ function NewEvaluationWorkbench({
             </div>
           </div>
           {job.summary ? (
-            <div className="mt-4 border border-emerald-200 bg-emerald-50/40">
-              <div className="flex flex-col gap-3 border-b border-emerald-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-sm font-semibold text-gray-950">
-                    <BarChart3 className="h-4 w-4 text-emerald-700" />
-                    {job.summary.headline}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    {job.judge.modelId} 匿名业务 Judge · 不读取 Skill 版本标签
-                  </div>
-                </div>
-                <div className="flex gap-2 text-xs font-medium">
-                  <span className="border border-gray-300 bg-white px-2.5 py-1 text-gray-800">A 胜 {job.summary.leftWins}</span>
-                  <span className="border border-emerald-300 bg-white px-2.5 py-1 text-emerald-800">B 胜 {job.summary.rightWins}</span>
-                  <span className="border border-gray-200 bg-white px-2.5 py-1 text-gray-600">持平 {job.summary.ties}</span>
-                  {job.summary.unavailable > 0 ? (
-                    <span className="border border-amber-200 bg-white px-2.5 py-1 text-amber-800">未判定 {job.summary.unavailable}</span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 divide-x divide-emerald-100 text-center text-xs text-gray-600 sm:grid-cols-4">
-                {[
-                  "专业匹配",
-                  "业务完整",
-                  "表达清晰",
-                  "可执行性",
-                ].map(label => (
-                  <div key={label} className="px-3 py-2">{label}</div>
-                ))}
-              </div>
-            </div>
+            <SkillValueEvaluationEvidence job={job} className="mt-4" />
           ) : job.status === "judging" ? (
             <div className="mt-4 flex items-center justify-between border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-900">
               <span className="flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" />专业 Judge 正在匿名比较左右输出</span>

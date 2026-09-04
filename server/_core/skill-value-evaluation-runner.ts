@@ -153,11 +153,15 @@ export type SkillValueEvaluationJob = {
   left: {
     modelId: string;
     skillVersion: string | null;
+    skillVersionId: string | null;
+    skillArtifactSha256: string | null;
     adoptionId: string;
   };
   right: {
     modelId: string;
     skillVersion: string | null;
+    skillVersionId: string | null;
+    skillArtifactSha256: string | null;
     adoptionId: string;
   };
   cases: SkillValueEvaluationCaseResult[];
@@ -1070,11 +1074,15 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
     left: {
       modelId: input.left.modelId,
       skillVersion: input.left.artifact?.version || null,
+      skillVersionId: input.left.artifact?.versionId || null,
+      skillArtifactSha256: input.left.artifact?.artifactSha256 || null,
       adoptionId: ids.left,
     },
     right: {
       modelId: input.right.modelId,
       skillVersion: input.right.artifact?.version || null,
+      skillVersionId: input.right.artifact?.versionId || null,
+      skillArtifactSha256: input.right.artifact?.artifactSha256 || null,
       adoptionId: ids.right,
     },
     cases: input.prompts.map(item => ({

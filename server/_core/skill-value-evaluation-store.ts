@@ -74,6 +74,10 @@ function normalizeLegacyJob(job: SkillValueEvaluationJob): void {
   job.queuePosition ??= null;
   job.organizationKey ??= "legacy";
   job.reportFingerprint ??= null;
+  job.left.skillVersionId ??= null;
+  job.left.skillArtifactSha256 ??= null;
+  job.right.skillVersionId ??= null;
+  job.right.skillArtifactSha256 ??= null;
   job.preflight ??= {
     skillId: job.skillId,
     status: "unchecked",
