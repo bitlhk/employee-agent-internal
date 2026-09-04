@@ -207,6 +207,8 @@ describe("skill value evaluation environment", () => {
     const prompt = buildSkillValueEvaluationRuntimePrompt("请完成选股", true);
 
     expect(prompt).toContain("最多调用 10 次业务工具");
+    expect(prompt).toContain("本轮只比较文本业务结果");
+    expect(prompt).toContain("不要调用 write_file、edit_file、send_file_to_user");
     expect(prompt).not.toContain("本侧未装配任何 Skill");
     expect(prompt).toContain("请完成选股");
   });

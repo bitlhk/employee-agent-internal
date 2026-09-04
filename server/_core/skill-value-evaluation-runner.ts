@@ -566,6 +566,7 @@ export function buildSkillValueEvaluationRuntimePrompt(
   const controls = [
     "<skill_evaluation_budget>",
     "本轮为快速业务对比，最多调用 10 次业务工具。优先完成用户要求的核心结果；缺失项明确标注后停止，不为补充非核心细节继续扩展查询。",
+    "本轮只比较文本业务结果。请直接在回复中给出完整答案，不要调用 write_file、edit_file、send_file_to_user 等生成、修改或发送附件的工具。",
     "</skill_evaluation_budget>",
   ];
   if (!hasSelectedSkill) {
