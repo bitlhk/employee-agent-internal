@@ -9,6 +9,7 @@ import {
   type SkillValueEvaluationCaseResult,
   type SkillValueEvaluationJudgeResult,
 } from "./skill-value-evaluation-runner";
+import { skillEvaluationRuntimeHttpFailure } from "./skill-value-evaluation-runtime-failure";
 
 const dimensions: SkillValueEvaluationJudgeResult["dimensions"] = [
   ["professional_fit", "专业匹配"],
@@ -234,5 +235,29 @@ describe("anonymous Judge labels", () => {
 
   it("leaves Judge explanations unchanged when the blind order was not swapped", () => {
     expect(remapAnonymousJudgeSideLabels("A 胜出，B 次之。", false)).toBe("A 胜出，B 次之。");
+  });
+});
+
+describe("runtime failure details", () => {
+  it("preserves structured 503 details and marks the request retryable", () => {
+    expect(skillEvaluationRuntimeHttpFailure(503, JSON.stringify({
+      code: "CAPACITY_EXCEEDED",
+      error: "当前请求较多，请稍后重试",
+    }))).toEqual({
+      message: "Runtime HTTP 503 · CAPACITY_EXCEEDED：当前请求较多，请稍后重试",
+      code: "CAPACITY_EXCEEDED",
+      retryable: true,
+    });
+  });
+
+  it("does not retry business request errors and redacts credentials", () => {
+    expect(skillEvaluationRuntimeHttpFailure(400, JSON.stringify({
+      code: "INVALID_TASK",
+      message: "token=secret-value 参数不完整",
+    }))).toEqual({
+      message: "Runtime HTTP 400 · INVALID_TASK：token=[REDACTED] 参数不完整",
+      code: "INVALID_TASK",
+      retryable: false,
+    });
   });
 });

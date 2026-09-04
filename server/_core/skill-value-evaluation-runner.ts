@@ -1,17 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import path from "node:path";
-import {
   FINANCE_SKILL_EVAL_VERSION,
+  EvaluationCancelledError,
   fingerprint as financeEvalFingerprint,
   ModelPairwiseJudge,
   runEvaluation,
@@ -22,11 +12,7 @@ import {
   type RuntimeExecutionEvidence,
 } from "finance-skill-eval";
 import {
-  createClawAdoption,
-  createUser,
   deleteAgentMcpPreference,
-  getClawByAdoptId,
-  getUserByEmail,
   resolveEffectiveRoleAssets,
   setAgentMcpPreference,
 } from "../db";
@@ -39,10 +25,6 @@ import {
   parseRuntimeSse,
   streamGate,
 } from "./skill-quality-evaluation-runtime";
-import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
-import { roleSkillPreferences } from "./skills/role-skill-preferences";
-import { skillInstaller } from "./skills/skill-installer";
-import { skillRegistry } from "./skills/skill-registry";
 import { resolveSkillValueModelConfig } from "./skill-value-evaluation";
 import {
   JIUWENSWARM_PLATFORM_MCP_SERVER_IDS,
@@ -55,11 +37,33 @@ import {
   type SkillMcpRequirement,
 } from "./role-templates";
 import { writeSkillValueEvaluationToolScope } from "./skill-value-evaluation-tool-scope";
+import type { SkillMcpReadiness } from "./skill-mcp-readiness";
+import {
+  cleanupSkillValueEvaluationJobs as cleanupJobs,
+  evaluationOrganizationKey,
+  finalizeSkillValueEvaluationJob as finalizeJob,
+  isTerminalEvaluationStatus as isTerminalStatus,
+  listPersistedSkillValueEvaluationJobs,
+  loadSkillValueEvaluationJob,
+  persistSkillValueEvaluationJob as persistJob,
+} from "./skill-value-evaluation-store";
+import {
+  sanitizeSkillEvaluationRuntimeError,
+  skillEvaluationRuntimeHttpFailure,
+  waitBeforeSkillEvaluationRetry,
+} from "./skill-value-evaluation-runtime-failure";
+import {
+  ensureSkillValueEvaluationAdoption,
+  ensureSkillValueEvaluationUser,
+  materializeSkillValueEvaluationSide,
+  reclaimExpiredSkillValueEvaluationSandboxes,
+} from "./skill-value-evaluation-sandbox";
 
 type EvaluationSide = "left" | "right";
 
 const RUNTIME_TURN_TIMEOUT_MS = 300_000;
 const PROMPTFOO_TURN_TIMEOUT_MS = 310_000;
+const MAX_CONCURRENT_EVALUATIONS = 1;
 
 export type SkillValueEvaluationArtifact = {
   versionId: string;
@@ -93,6 +97,9 @@ export type SkillValueEvaluationTurnResult = {
   runtimeIdentityVerified: boolean;
   streamCompleted: boolean;
   error: string | null;
+  attemptCount?: number;
+  errorCode?: string | null;
+  retryable?: boolean;
 };
 
 export type SkillValueEvaluationCaseResult = {
@@ -136,8 +143,9 @@ export type SkillValueEvaluationJob = {
   skillId: string;
   skillName: string;
   roleTemplate: string;
-  status: "preparing" | "running" | "judging" | "completed" | "failed";
+  status: "queued" | "preparing" | "running" | "judging" | "completed" | "failed" | "cancelled";
   stageLabel: string;
+  queuePosition: number | null;
   createdAt: string;
   updatedAt: string;
   completedRuns: number;
@@ -166,6 +174,7 @@ export type SkillValueEvaluationJob = {
     completedCases: number;
   };
   environment: SkillValueEvaluationEnvironment;
+  preflight: SkillMcpReadiness;
   summary: {
     leftWins: number;
     rightWins: number;
@@ -174,6 +183,8 @@ export type SkillValueEvaluationJob = {
     headline: string;
   } | null;
   configurationFingerprint: string;
+  organizationKey: string;
+  reportFingerprint: string | null;
   error: string | null;
 };
 
@@ -185,6 +196,7 @@ type StartJobInput = {
   left: SkillValueEvaluationSideConfig;
   right: SkillValueEvaluationSideConfig;
   prompts: SkillValueEvaluationRunPrompt[];
+  preflight: SkillMcpReadiness;
 };
 
 export function summarizeSkillValueEvaluationCases(
@@ -216,78 +228,27 @@ export function summarizeSkillValueEvaluationCases(
 
 const jobs = new Map<string, SkillValueEvaluationJob>();
 const jobPromises = new Map<string, Promise<void>>();
-const JOB_TTL_MS = 2 * 60 * 60 * 1_000;
-const JOB_STORE_DIR = String(process.env.EA_SKILL_EVAL_JOB_DIR || "").trim()
-  || path.join(process.cwd(), "data", "skill-value-evaluation-jobs");
+const jobControllers = new Map<string, AbortController>();
+
+type QueuedEvaluationJob = {
+  input: StartJobInput;
+  job: SkillValueEvaluationJob;
+  resolve: () => void;
+};
+
+const evaluationQueue: QueuedEvaluationJob[] = [];
+let activeEvaluationCount = 0;
 
 function cloneJob(job: SkillValueEvaluationJob): SkillValueEvaluationJob {
   return structuredClone(job);
 }
 
-function persistedJobPath(jobId: string): string | null {
-  if (!/^skill-eval-[A-Za-z0-9-]+$/u.test(jobId)) return null;
-  return path.join(JOB_STORE_DIR, `${jobId}.json`);
-}
-
-function persistJob(job: SkillValueEvaluationJob): void {
-  const targetPath = persistedJobPath(job.jobId);
-  if (!targetPath) return;
-  try {
-    mkdirSync(JOB_STORE_DIR, { recursive: true, mode: 0o700 });
-    const temporaryPath = `${targetPath}.${process.pid}.tmp`;
-    writeFileSync(temporaryPath, JSON.stringify(job), {
-      encoding: "utf8",
-      mode: 0o600,
-    });
-    renameSync(temporaryPath, targetPath);
-  } catch (error) {
-    console.error("[SkillValueEval] Failed to persist job", job.jobId, error);
-  }
-}
-
-function loadPersistedJob(jobId: string): SkillValueEvaluationJob | null {
-  const targetPath = persistedJobPath(jobId);
-  if (!targetPath || !existsSync(targetPath)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(targetPath, "utf8")) as SkillValueEvaluationJob;
-    if (!parsed || parsed.jobId !== jobId) return null;
-    if (["preparing", "running", "judging"].includes(parsed.status)) {
-      parsed.status = "failed";
-      parsed.stageLabel = "评测服务在执行期间重启";
-      parsed.error = "服务在评测过程中重启，本轮未完成，请重新运行。";
-      parsed.updatedAt = new Date().toISOString();
-      persistJob(parsed);
-    }
-    jobs.set(jobId, parsed);
-    return parsed;
-  } catch (error) {
-    console.error("[SkillValueEval] Failed to load persisted job", jobId, error);
-    return null;
-  }
-}
-
-function cleanupJobs(): void {
-  const cutoff = Date.now() - JOB_TTL_MS;
-  for (const [jobId, job] of jobs) {
-    if (Date.parse(job.updatedAt) < cutoff) jobs.delete(jobId);
-  }
-  if (!existsSync(JOB_STORE_DIR)) return;
-  try {
-    for (const entry of readdirSync(JOB_STORE_DIR)) {
-      if (!entry.startsWith("skill-eval-") || !entry.endsWith(".json")) continue;
-      const targetPath = path.join(JOB_STORE_DIR, entry);
-      if (statSync(targetPath).mtimeMs < cutoff) rmSync(targetPath, { force: true });
-    }
-  } catch (error) {
-    console.error("[SkillValueEval] Failed to clean persisted jobs", error);
-  }
-}
-
-function evaluationOrganizationKey(organization: string): string {
-  return createHash("sha256")
-    .update(organization.trim() || "default", "utf8")
-    .digest("hex")
-    .slice(0, 10);
+export function listSkillValueEvaluationJobs(input: {
+  skillId: string;
+  organization: string;
+  limit?: number;
+}): SkillValueEvaluationJob[] {
+  return listPersistedSkillValueEvaluationJobs({ ...input, liveJobs: jobs });
 }
 
 function evaluationArtifactIdentity(artifact: SkillValueEvaluationArtifact): string {
@@ -331,126 +292,22 @@ export function buildSkillValueEvaluationAdoptionIds(input: {
   };
 }
 
-async function ensureEvaluationUser(organization: string) {
-  const organizationName = organization.trim() || "EA Skill Evaluation";
-  const email = `skill-value-eval+${evaluationOrganizationKey(organizationName)}@local.linggan.invalid`;
-  let user = await getUserByEmail(email);
-  if (!user) {
-    await createUser({
-      name: "Skill Value Evaluator",
-      email,
-      loginMethod: "internal_evaluation",
-      role: "user",
-      accessLevel: "all",
-      organization: organizationName,
-    });
-    user = await getUserByEmail(email);
-  }
-  if (!user) throw new Error("无法创建 Skill 评测用户");
-  return user;
-}
-
-async function ensureEvaluationAdoption(input: {
-  adoptionId: string;
-  userId: number;
-  roleTemplate: string;
-}) {
-  const agentId = `jiuwen_${input.adoptionId}`;
-  let adoption = await getClawByAdoptId(input.adoptionId);
-  if (!adoption) {
-    await createClawAdoption({
-      userId: input.userId,
-      adoptId: input.adoptionId,
-      agentId,
-      status: "active",
-      permissionProfile: "internal",
-      roleTemplate: input.roleTemplate,
-      industry: input.roleTemplate.includes("insurance") ? "insurance" : "financial",
-      runtime: "jiuwenswarm",
-      ttlDays: 3650,
-      entryUrl: `/workspace?adoptId=${encodeURIComponent(input.adoptionId)}`,
-      expiresAt: null,
-    });
-    adoption = await getClawByAdoptId(input.adoptionId);
-  }
-  if (
-    !adoption
-    || Number(adoption.userId) !== input.userId
-    || String(adoption.agentId) !== agentId
-    || String(adoption.roleTemplate) !== input.roleTemplate
-    || adoption.status !== "active"
-  ) {
-    throw new Error(`隔离评测实例 ${input.adoptionId} 状态不兼容`);
-  }
-  return adoption;
-}
-
-async function materializeSide(input: {
-  adoptionId: string;
-  agentId: string;
-  roleTemplate: string;
-  skillId: string;
-  skillName: string;
-  artifact: SkillValueEvaluationArtifact;
-}) {
-  const effectiveAssets = await resolveEffectiveRoleAssets(input.roleTemplate);
-  for (const defaultSkillId of effectiveAssets.skills.default) {
-    roleSkillPreferences.setDefaultSkillEnabled(input.adoptionId, defaultSkillId, false);
-  }
-  const listed = await skillRegistry.listSkills(input.adoptionId);
-  if (listed.ok) {
-    for (const skill of listed.value) {
-      if (input.artifact && skill.id === input.skillId) continue;
-      await skillRegistry.uninstall(input.adoptionId, skill.id).catch(() => undefined);
-    }
-  }
-  if (!input.artifact) {
-    roleSkillPreferences.setDefaultSkillEnabled(input.adoptionId, input.skillId, false);
-    await skillRegistry.uninstall(input.adoptionId, input.skillId).catch(() => undefined);
-    await skillRegistry.refreshRuntimeProjection(input.adoptionId);
-    const runtimePath = path.join(
-      resolveRuntimeWorkspaceByIds(input.adoptionId, input.agentId),
-      "skills",
-      input.skillId,
-    );
-    if (existsSync(runtimePath)) rmSync(runtimePath, { recursive: true, force: true });
-    return;
-  }
-  const digest = digestSkillSourceTree(input.artifact.artifactPath);
-  if (digest.sha256 !== input.artifact.artifactSha256) {
-    throw new Error(`${input.skillId}@${input.artifact.version} Artifact 已变化`);
-  }
-  roleSkillPreferences.setDefaultSkillEnabled(input.adoptionId, input.skillId, true);
-  const installResult = await skillRegistry.install(
-    input.adoptionId,
-    {
-      kind: "marketplace",
-      skillId: input.skillId,
-      displayName: input.skillName,
-      description: "Skill 价值评测隔离版本",
-      sourcePath: input.artifact.artifactPath,
-      marketplaceId: input.artifact.versionId,
-      version: input.artifact.version,
-    },
-    {
-      allowVersionDowngrade: true,
-      preserveImmutableSourcePath: true,
-    },
+async function reclaimExpiredEvaluationSandboxes(): Promise<void> {
+  const activeAdoptionIds = new Set(
+    Array.from(jobControllers.keys()).flatMap(jobId => {
+      const job = jobs.get(jobId);
+      return job ? [job.left.adoptionId, job.right.adoptionId] : [];
+    }),
   );
-  if (!installResult.ok) throw new Error(installResult.error.detail);
-  const runtimePath = String(installResult.value.sync.runtimePath || "").trim();
-  if (!runtimePath) throw new Error("Skill 评测 Runtime 路径为空");
-  await skillRegistry.refreshRuntimeProjection(input.adoptionId);
-
-  // Role projection refreshes shared defaults. Re-apply the frozen evaluation
-  // artifact last so an existing shared version cannot replace the selected one.
-  await skillInstaller.installFromSource(input.artifact.artifactPath, runtimePath);
-  const runtimeDigest = digestSkillSourceTree(runtimePath);
-  if (runtimeDigest.sha256 !== input.artifact.artifactSha256) {
-    throw new Error(`${input.skillId}@${input.artifact.version} Runtime Artifact 装配失败`);
-  }
-  await refreshJiuwenRuntimeCapabilities(input.adoptionId);
+  await reclaimExpiredSkillValueEvaluationSandboxes(activeAdoptionIds);
 }
+
+const evaluationSandboxReaper = setInterval(() => {
+  void reclaimExpiredEvaluationSandboxes().catch(error => {
+    console.error("[SkillValueEval] Failed to reclaim expired sandboxes", error);
+  });
+}, 60 * 60 * 1_000);
+evaluationSandboxReaper.unref?.();
 
 export function buildSkillValueEvaluationEnvironment(
   skillId: string,
@@ -587,6 +444,7 @@ async function executeRuntimeTurn(input: {
   artifact: SkillValueEvaluationArtifact;
   prompt: string;
   configurationFingerprint: string;
+  signal?: AbortSignal;
 }): Promise<SkillValueEvaluationTurnResult> {
   const internalKey = String(process.env.INTERNAL_API_KEY || "").trim();
   if (!internalKey) throw new Error("INTERNAL_API_KEY 未配置");
@@ -594,8 +452,11 @@ async function executeRuntimeTurn(input: {
   const baseUrl = String(process.env.EA_SELF_BASE_URL || `http://127.0.0.1:${port}`).replace(/\/$/u, "");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), RUNTIME_TURN_TIMEOUT_MS);
+  const onCancel = () => controller.abort(input.signal?.reason);
+  input.signal?.addEventListener("abort", onCancel, { once: true });
   const startedAt = Date.now();
   try {
+    if (input.signal?.aborted) throw new EvaluationCancelledError("用户已取消本轮评测");
     const response = await fetch(`${baseUrl}/api/claw/chat-stream`, {
       method: "POST",
       signal: controller.signal,
@@ -667,8 +528,11 @@ async function executeRuntimeTurn(input: {
             : "failed" as const,
         };
       });
-    const error = !response.ok
-      ? `HTTP ${response.status}`
+    const httpFailure = !response.ok
+      ? skillEvaluationRuntimeHttpFailure(response.status, raw)
+      : null;
+    const error = httpFailure
+      ? httpFailure.message
       : streamError
         ? String(streamError.data.error || "Runtime 流执行失败")
         : !completion.completed
@@ -692,8 +556,14 @@ async function executeRuntimeTurn(input: {
       runtimeIdentityVerified,
       streamCompleted: completion.completed,
       error,
+      errorCode: httpFailure?.code
+        || (streamError ? "RUNTIME_STREAM_ERROR" : !completion.completed ? "RUNTIME_STREAM_INCOMPLETE" : null),
+      retryable: httpFailure?.retryable || Boolean(!streamError && !completion.completed),
     };
   } catch (error) {
+    if (input.signal?.aborted || error instanceof EvaluationCancelledError) {
+      throw new EvaluationCancelledError("用户已取消本轮评测");
+    }
     const timedOut = controller.signal.aborted
       || (error instanceof Error && error.name === "AbortError");
     return {
@@ -710,10 +580,13 @@ async function executeRuntimeTurn(input: {
       streamCompleted: false,
       error: timedOut
         ? "模型在 5 分钟内未完成本题，已停止本次执行；这通常是模型服务响应波动，可重新运行该批次。"
-        : `本题执行失败：${error instanceof Error ? error.message : String(error)}`,
+        : `本题执行失败：${sanitizeSkillEvaluationRuntimeError(error instanceof Error ? error.message : error)}`,
+      errorCode: timedOut ? "RUNTIME_TIMEOUT" : "RUNTIME_TRANSPORT_ERROR",
+      retryable: !timedOut,
     };
   } finally {
     clearTimeout(timer);
+    input.signal?.removeEventListener("abort", onCancel);
   }
 }
 
@@ -763,6 +636,13 @@ function runtimeTurnFromFinanceEvidence(
     runtimeIdentityVerified: evidence.runtimeIdentityVerified,
     streamCompleted: evidence.streamCompleted,
     error: evidence.error,
+    attemptCount: typeof evidence.metadata.attemptCount === "number"
+      ? evidence.metadata.attemptCount
+      : 1,
+    errorCode: typeof evidence.metadata.errorCode === "string"
+      ? evidence.metadata.errorCode
+      : null,
+    retryable: evidence.metadata.retryable === true,
   };
 }
 
@@ -894,15 +774,28 @@ function buildEaFinanceRuntimeAdapter(
       job.stageLabel = `${sideLabel} 正在执行：${request.evalCase.name}`;
       job.updatedAt = new Date().toISOString();
       persistJob(job);
-      const result = await executeRuntimeTurn({
-        side: request.side,
-        adoptionId,
-        skillId: input.skillId,
-        modelId: config.modelId,
-        artifact: config.artifact,
-        prompt: request.evalCase.prompt,
-        configurationFingerprint: job.configurationFingerprint,
-      });
+      let result: SkillValueEvaluationTurnResult | null = null;
+      let attemptCount = 0;
+      while (attemptCount < 2) {
+        attemptCount += 1;
+        result = await executeRuntimeTurn({
+          side: request.side,
+          adoptionId,
+          skillId: input.skillId,
+          modelId: config.modelId,
+          artifact: config.artifact,
+          prompt: request.evalCase.prompt,
+          configurationFingerprint: job.configurationFingerprint,
+          signal: request.signal,
+        });
+        result.attemptCount = attemptCount;
+        if (result.status === "completed" || !result.retryable || attemptCount >= 2) break;
+        job.stageLabel = `${sideLabel} 瞬时失败，正在进行唯一一次重试`;
+        job.updatedAt = new Date().toISOString();
+        persistJob(job);
+        await waitBeforeSkillEvaluationRetry(request.signal);
+      }
+      if (!result) throw new Error("Runtime 未产生执行结果");
       return {
         runId: request.runId,
         side: request.side,
@@ -919,7 +812,12 @@ function buildEaFinanceRuntimeAdapter(
         streamCompleted: result.streamCompleted,
         error: result.error,
         traceFingerprint: financeEvalFingerprint(result),
-        metadata: { adoptionId },
+        metadata: {
+          adoptionId,
+          attemptCount,
+          errorCode: result.errorCode,
+          retryable: result.retryable === true,
+        },
       };
     },
   };
@@ -948,23 +846,32 @@ const eaFinanceJudgeModelAdapter: FinanceModelAdapter = {
   },
 };
 
-async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promise<void> {
+async function runJob(
+  input: StartJobInput,
+  job: SkillValueEvaluationJob,
+  signal: AbortSignal,
+): Promise<void> {
   try {
-    const user = await ensureEvaluationUser(input.organization);
+    if (!input.preflight.canProceed) {
+      throw new Error(input.preflight.message);
+    }
+    await reclaimExpiredEvaluationSandboxes();
+    if (signal.aborted) throw new EvaluationCancelledError("用户已取消本轮评测");
+    const user = await ensureSkillValueEvaluationUser(input.organization);
     job.stageLabel = "准备隔离运行环境";
     job.updatedAt = new Date().toISOString();
     persistJob(job);
-    const leftAdoption = await ensureEvaluationAdoption({
+    const leftAdoption = await ensureSkillValueEvaluationAdoption({
       adoptionId: job.left.adoptionId,
       userId: user.id,
       roleTemplate: input.roleTemplate,
     });
-    const rightAdoption = await ensureEvaluationAdoption({
+    const rightAdoption = await ensureSkillValueEvaluationAdoption({
       adoptionId: job.right.adoptionId,
       userId: user.id,
       roleTemplate: input.roleTemplate,
     });
-    await materializeSide({
+    await materializeSkillValueEvaluationSide({
       adoptionId: job.left.adoptionId,
       agentId: String(leftAdoption.agentId),
       roleTemplate: input.roleTemplate,
@@ -972,7 +879,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
       skillName: input.skillName,
       artifact: input.left.artifact,
     });
-    await materializeSide({
+    await materializeSkillValueEvaluationSide({
       adoptionId: job.right.adoptionId,
       agentId: String(rightAdoption.agentId),
       roleTemplate: input.roleTemplate,
@@ -1019,6 +926,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
         job.updatedAt = new Date().toISOString();
         persistJob(job);
       },
+      signal,
     });
     for (const result of report.cases) {
       const caseResult = job.cases.find(item => item.promptId === result.caseId);
@@ -1054,7 +962,7 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
       job.stageLabel = "Runtime 执行失败，未形成有效对比";
       job.error = `${firstFailure.name} · ${firstFailure.side} 侧：${firstFailure.error || "执行未完成"}${runtimeFailures.length > 1 ? `；另有 ${runtimeFailures.length - 1} 项执行失败` : ""}`;
       job.updatedAt = new Date().toISOString();
-      persistJob(job);
+      finalizeJob(job);
       return;
     }
     job.judge.completedCases = report.cases.length;
@@ -1062,18 +970,69 @@ async function runJob(input: StartJobInput, job: SkillValueEvaluationJob): Promi
     job.status = "completed";
     job.stageLabel = "对比与专业评审已完成";
     job.updatedAt = new Date().toISOString();
-    persistJob(job);
+    finalizeJob(job);
   } catch (error) {
-    job.status = "failed";
-    job.stageLabel = "评测执行失败";
-    job.error = error instanceof Error ? error.message : String(error);
+    const cancelled = signal.aborted || error instanceof EvaluationCancelledError;
+    job.status = cancelled ? "cancelled" : "failed";
+    job.stageLabel = cancelled ? "本轮评测已取消" : "评测执行失败";
+    job.error = cancelled
+      ? "任务已按用户要求停止，未形成专业对比。"
+      : error instanceof Error ? error.message : String(error);
     job.updatedAt = new Date().toISOString();
-    persistJob(job);
+    finalizeJob(job);
   }
 }
 
+function updateEvaluationQueuePositions(): void {
+  evaluationQueue.forEach((entry, index) => {
+    entry.job.status = "queued";
+    entry.job.queuePosition = index + 1;
+    entry.job.stageLabel = index === 0
+      ? "等待当前评测释放运行资源"
+      : `评测任务排队中（前方 ${index} 个任务）`;
+    entry.job.updatedAt = new Date().toISOString();
+    persistJob(entry.job);
+  });
+}
+
+function drainEvaluationQueue(): void {
+  while (activeEvaluationCount < MAX_CONCURRENT_EVALUATIONS && evaluationQueue.length > 0) {
+    const entry = evaluationQueue.shift();
+    if (!entry) return;
+    updateEvaluationQueuePositions();
+    if (entry.job.status === "cancelled") {
+      entry.resolve();
+      continue;
+    }
+    activeEvaluationCount += 1;
+    entry.job.status = "preparing";
+    entry.job.queuePosition = null;
+    entry.job.stageLabel = "正在执行环境预检";
+    entry.job.updatedAt = new Date().toISOString();
+    persistJob(entry.job);
+    const controller = new AbortController();
+    jobControllers.set(entry.job.jobId, controller);
+    void runJob(entry.input, entry.job, controller.signal).finally(() => {
+      jobControllers.delete(entry.job.jobId);
+      activeEvaluationCount = Math.max(0, activeEvaluationCount - 1);
+      entry.resolve();
+      queueMicrotask(drainEvaluationQueue);
+    });
+  }
+}
+
+function enqueueEvaluationJob(input: StartJobInput, job: SkillValueEvaluationJob): void {
+  const promise = new Promise<void>(resolve => {
+    evaluationQueue.push({ input, job, resolve });
+    updateEvaluationQueuePositions();
+    queueMicrotask(drainEvaluationQueue);
+  });
+  jobPromises.set(job.jobId, promise);
+  void promise.finally(() => jobPromises.delete(job.jobId));
+}
+
 export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEvaluationJob {
-  cleanupJobs();
+  cleanupJobs(jobs);
   if (input.prompts.length < 1 || input.prompts.length > 5) {
     throw new Error("每个评测批次需要 1 到 5 条测试题");
   }
@@ -1101,8 +1060,9 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
     skillId: input.skillId,
     skillName: input.skillName,
     roleTemplate: input.roleTemplate,
-    status: "preparing",
-    stageLabel: "初始化评测",
+    status: "queued",
+    stageLabel: "评测任务已进入队列",
+    queuePosition: 1,
     createdAt: now,
     updatedAt: now,
     completedRuns: 0,
@@ -1131,21 +1091,49 @@ export function startSkillValueEvaluationJob(input: StartJobInput): SkillValueEv
     },
     judge: { modelId: "glm-5.2", completedCases: 0 },
     environment,
+    preflight: input.preflight,
     summary: null,
     configurationFingerprint,
+    organizationKey: evaluationOrganizationKey(input.organization),
+    reportFingerprint: null,
     error: null,
   };
   jobs.set(jobId, job);
   persistJob(job);
-  const promise = runJob(input, job).finally(() => jobPromises.delete(jobId));
-  jobPromises.set(jobId, promise);
-  void promise;
+  enqueueEvaluationJob(input, job);
+  return cloneJob(job);
+}
+
+export function cancelSkillValueEvaluationJob(jobId: string): SkillValueEvaluationJob | null {
+  cleanupJobs(jobs);
+  const job = jobs.get(jobId) ?? loadSkillValueEvaluationJob(jobId, jobs);
+  if (!job) return null;
+  if (isTerminalStatus(job.status)) return cloneJob(job);
+  const queuedIndex = evaluationQueue.findIndex(entry => entry.job.jobId === jobId);
+  if (queuedIndex >= 0) {
+    const [entry] = evaluationQueue.splice(queuedIndex, 1);
+    job.status = "cancelled";
+    job.stageLabel = "排队中的评测已取消";
+    job.error = "任务在开始执行前已取消。";
+    job.updatedAt = new Date().toISOString();
+    finalizeJob(job);
+    entry?.resolve();
+    updateEvaluationQueuePositions();
+    return cloneJob(job);
+  }
+  const controller = jobControllers.get(jobId);
+  if (controller) {
+    job.stageLabel = "正在停止评测任务";
+    job.updatedAt = new Date().toISOString();
+    persistJob(job);
+    controller.abort(new EvaluationCancelledError("用户已取消本轮评测"));
+  }
   return cloneJob(job);
 }
 
 export function getSkillValueEvaluationJob(jobId: string): SkillValueEvaluationJob | null {
-  cleanupJobs();
-  const job = jobs.get(jobId) ?? loadPersistedJob(jobId);
+  cleanupJobs(jobs);
+  const job = jobs.get(jobId) ?? loadSkillValueEvaluationJob(jobId, jobs);
   return job ? cloneJob(job) : null;
 }
 

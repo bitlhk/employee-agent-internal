@@ -8,6 +8,7 @@ import {
   createUser,
   getClawByAdoptId,
   getUserByEmail,
+  updateClawAdoptionStatus,
 } from "../db";
 import type { RuntimePrincipalV2 } from "./governance/contracts";
 import { resolveRuntimePrincipalV2 } from "./governance/principal";
@@ -270,9 +271,17 @@ export async function ensureEaSkillEvaluationContextPrincipal(input: {
       roleTemplate: input.roleTemplate,
       industry: input.roleTemplate.includes("insurance") ? "insurance" : "financial",
       runtime: "jiuwenswarm",
-      ttlDays: 3650,
+      ttlDays: 1,
       entryUrl: `/workspace?adoptId=${encodeURIComponent(adoptionId)}`,
-      expiresAt: null,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+    });
+    adoption = await getClawByAdoptId(adoptionId);
+  }
+  if (adoption) {
+    await updateClawAdoptionStatus(adoption.id, "active", {
+      ttlDays: 1,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+      lastError: null,
     });
     adoption = await getClawByAdoptId(adoptionId);
   }

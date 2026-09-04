@@ -173,7 +173,7 @@
     "express": "^4.21.2",
     "express-rate-limit": "^8.5.2",
     "express-validator": "^7.3.2",
-    "finance-skill-eval": "file:vendor/finance-skill-eval-0.2.4.tgz",
+    "finance-skill-eval": "file:vendor/finance-skill-eval-0.2.5.tgz",
     "form-data": "^4.0.6",
     "helmet": "^8.1.0",
     "highlight.js": "^11.11.1",

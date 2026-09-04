@@ -5,6 +5,7 @@ import {
   BookOpenCheck,
   BrainCircuit,
   CheckCircle2,
+  CircleStop,
   ClipboardList,
   FlaskConical,
   History,
@@ -37,13 +38,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
   getSkillValueEvaluationReport,
-  type SkillValueCase,
   type SkillValueEvaluationReport,
-  type SkillValueMetric,
 } from "@/data/skill-value-evaluations";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { SkillValueEvaluationHistory } from "./SkillValueEvaluationHistory";
+import {
+  SkillValueCaseComparison,
+  SkillValueMetricComparison,
+  SkillValueStatusBadge,
+} from "./SkillValueEvaluationStaticParts";
 
 type SkillValueEvaluationDialogProps = {
   open: boolean;
@@ -68,180 +73,6 @@ type EvaluationModelOption = {
 };
 
 const WITHOUT_TARGET_SKILL = "without_target_skill";
-
-const scoreText = (score: number) =>
-  Number.isInteger(score) ? String(score) : score.toFixed(2);
-
-function StatusBadge({ report }: { report: SkillValueEvaluationReport }) {
-  const tone =
-    report.statusTone === "positive"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-      : report.statusTone === "warning"
-        ? "border-amber-200 bg-amber-50 text-amber-700"
-        : "border-gray-200 bg-gray-50 text-gray-600";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
-        tone
-      )}
-    >
-      <CheckCircle2 className="h-3.5 w-3.5" />
-      {report.statusLabel}
-    </span>
-  );
-}
-
-function MetricComparison({ metric }: { metric: SkillValueMetric }) {
-  const scoreDelta = metric.targetScore - metric.baselineScore;
-  const baselineWidth = `${Math.max(0, Math.min(100, (metric.baselineScore / metric.maxScore) * 100))}%`;
-  const targetWidth = `${Math.max(0, Math.min(100, (metric.targetScore / metric.maxScore) * 100))}%`;
-  return (
-    <div className="border-b border-gray-100 py-4 last:border-0">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="text-sm font-semibold text-gray-900">
-            {metric.label}
-          </div>
-          <div className="mt-1 text-xs leading-5 text-gray-500">
-            {metric.description}
-          </div>
-        </div>
-        <div className="shrink-0 text-xs font-medium text-emerald-700">
-          {scoreDelta === 0 ? "持平" : `+${scoreText(scoreDelta)}`}
-        </div>
-      </div>
-      <div className="mt-3 grid gap-2.5">
-        <div className="grid grid-cols-[68px_1fr_32px] items-center gap-2 text-xs">
-          <span className="text-gray-500">对照平均</span>
-          <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-            <div
-              className="h-full rounded-full bg-gray-400"
-              style={{ width: baselineWidth }}
-            />
-          </div>
-          <span className="text-right font-mono text-gray-600">
-            {scoreText(metric.baselineScore)}
-          </span>
-        </div>
-        <div className="grid grid-cols-[68px_1fr_32px] items-center gap-2 text-xs">
-          <span className="font-medium text-emerald-700">目标 Skill</span>
-          <div className="h-2 overflow-hidden rounded-full bg-emerald-50">
-            <div
-              className="h-full rounded-full bg-emerald-500"
-              style={{ width: targetWidth }}
-            />
-          </div>
-          <span className="text-right font-mono font-semibold text-emerald-700">
-            {scoreText(metric.targetScore)}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CaseOutput({
-  label,
-  score,
-  items,
-  target,
-}: {
-  label: string;
-  score: number;
-  items: string[];
-  target?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "min-w-0 border p-4",
-        target
-          ? "border-emerald-200 bg-emerald-50/40"
-          : "border-gray-200 bg-gray-50/60"
-      )}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div
-          className={cn(
-            "text-sm font-semibold",
-            target ? "text-emerald-800" : "text-gray-700"
-          )}
-        >
-          {label}
-        </div>
-        <div
-          className={cn(
-            "font-mono text-sm font-semibold",
-            target ? "text-emerald-700" : "text-gray-600"
-          )}
-        >
-          {scoreText(score)} / 4
-        </div>
-      </div>
-      <ul className="mt-3 space-y-2.5">
-        {items.map(item => (
-          <li key={item} className="flex gap-2 text-sm leading-6 text-gray-700">
-            <span
-              className={cn(
-                "mt-2 h-1.5 w-1.5 shrink-0 rounded-full",
-                target ? "bg-emerald-500" : "bg-gray-400"
-              )}
-            />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function CaseComparison({ evalCase }: { evalCase: SkillValueCase }) {
-  return (
-    <div>
-      <div className="border-b border-gray-200 pb-4">
-        <div className="text-xs font-medium text-emerald-700">
-          {evalCase.caseId}
-        </div>
-        <h3 className="mt-1 text-base font-semibold text-gray-900">
-          {evalCase.name}
-        </h3>
-        <div className="mt-2 rounded border border-gray-200 bg-white px-3 py-2 text-sm leading-6 text-gray-600">
-          {evalCase.taskPrompt}
-        </div>
-      </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <CaseOutput
-          label={evalCase.baselineLabel}
-          score={evalCase.baselineScore}
-          items={evalCase.baselineExcerpt}
-        />
-        <CaseOutput
-          label={evalCase.targetLabel}
-          score={evalCase.targetScore}
-          items={evalCase.targetExcerpt}
-          target
-        />
-      </div>
-      <div className="mt-4 border border-emerald-200 bg-emerald-50/60 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-          <Scale className="h-4 w-4" />
-          专家为什么选择目标 Skill
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {evalCase.targetAdvantages.map(advantage => (
-            <span
-              key={advantage}
-              className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-xs text-emerald-800"
-            >
-              {advantage}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function ComparisonSide({
   label,
@@ -344,6 +175,7 @@ function NewEvaluationWorkbench({
   open: boolean;
   skillId: string;
 }) {
+  const utils = trpc.useUtils();
   const contextQuery = trpc.claw.adminSkillEvaluationContext.useQuery(
     { skillId },
     { enabled: open && Boolean(skillId), retry: false },
@@ -352,11 +184,13 @@ function NewEvaluationWorkbench({
     onError: error => toast.error(error.message || "准备评测失败"),
   });
   const [jobId, setJobId] = useState("");
+  const [polling, setPolling] = useState(false);
   const jobStatusRef = useRef<HTMLElement | null>(null);
   const startMutation = trpc.claw.adminStartSkillEvaluation.useMutation({
     onSuccess: job => {
       setJobId(job.jobId);
-      toast.success("评测任务已创建，正在执行左右对比");
+      setPolling(true);
+      toast.success("评测任务已创建，已进入执行队列");
     },
     onError: error => toast.error(error.message || "启动评测失败"),
   });
@@ -364,10 +198,18 @@ function NewEvaluationWorkbench({
     { jobId },
     {
       enabled: open && Boolean(jobId),
-      retry: false,
-      refetchInterval: jobId ? 1_000 : false,
+      retry: 2,
+      retryDelay: 1_000,
+      refetchInterval: polling ? 1_000 : false,
     },
   );
+  const cancelMutation = trpc.claw.adminCancelSkillEvaluationJob.useMutation({
+    onSuccess: cancelledJob => {
+      toast.success(cancelledJob.status === "cancelled" ? "评测已取消" : "正在停止评测");
+      void jobQuery.refetch();
+    },
+    onError: error => toast.error(error.message || "取消评测失败"),
+  });
   const [leftSelection, setLeftSelection] = useState(WITHOUT_TARGET_SKILL);
   const [rightSelection, setRightSelection] = useState("");
   const [leftModel, setLeftModel] = useState("");
@@ -403,6 +245,11 @@ function NewEvaluationWorkbench({
     });
     return () => window.cancelAnimationFrame(frame);
   }, [jobId, job?.status]);
+  useEffect(() => {
+    if (!job || !["completed", "failed", "cancelled"].includes(job.status)) return;
+    setPolling(false);
+    void utils.claw.adminListSkillEvaluationJobs.invalidate({ skillId, limit: 20 });
+  }, [job, skillId, utils.claw.adminListSkillEvaluationJobs]);
 
   const versions = (context?.versions || []) as EvaluationVersionOption[];
   const models = (context?.models || []) as EvaluationModelOption[];
@@ -420,6 +267,7 @@ function NewEvaluationWorkbench({
     && leftModel === rightModel,
   );
   const mixedVariables = leftSelection !== rightSelection && leftModel !== rightModel;
+  const jobIsActive = Boolean(job && ["queued", "preparing", "running", "judging"].includes(job.status));
 
   if (contextQuery.isLoading) {
     return (
@@ -662,15 +510,11 @@ function NewEvaluationWorkbench({
                   selectedPromptIds.length === 0
                   || sameConfiguration
                   || startMutation.isPending
-                  || job?.status === "preparing"
-                  || job?.status === "running"
-                  || job?.status === "judging"
+                  || jobIsActive
                 }
               >
                 {startMutation.isPending
-                  || job?.status === "preparing"
-                  || job?.status === "running"
-                  || job?.status === "judging"
+                  || jobIsActive
                   ? <Loader2 className="animate-spin" />
                   : <Play />}
                 {job ? "重新对比" : "开始对比"}
@@ -700,7 +544,7 @@ function NewEvaluationWorkbench({
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-red-900">本轮评测已中断</div>
               <p className="mt-1 text-xs leading-5 text-red-700">
-                运行服务已重启或任务已过期，本轮结果无法恢复，请重新开始评测。
+                {jobQuery.error.message || "运行服务已重启或任务已过期，本轮结果无法恢复，请重新开始评测。"}
               </p>
               <Button
                 className="mt-3"
@@ -722,7 +566,7 @@ function NewEvaluationWorkbench({
               <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
                 {job.status === "completed" ? (
                   <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                ) : job.status === "failed" ? (
+                ) : job.status === "failed" || job.status === "cancelled" ? (
                   <Info className="h-4 w-4 text-red-500" />
                 ) : (
                   <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
@@ -731,6 +575,7 @@ function NewEvaluationWorkbench({
               </div>
               <div className="mt-1 text-xs text-gray-500">
                 {job.roleTemplate} · Finance Skill Eval {job.evaluationEngine.version} · Promptfoo {job.promptfoo.version}
+                {job.status === "queued" && job.queuePosition ? ` · 队列第 ${job.queuePosition} 位` : ""}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -741,6 +586,18 @@ function NewEvaluationWorkbench({
                 />
               </div>
               <span className="font-mono text-xs text-gray-600">{job.completedRuns}/{job.totalRuns}</span>
+              {jobIsActive ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => cancelMutation.mutate({ jobId: job.jobId })}
+                  disabled={cancelMutation.isPending}
+                  title="取消本轮评测"
+                >
+                  {cancelMutation.isPending ? <Loader2 className="animate-spin" /> : <CircleStop />}
+                  取消
+                </Button>
+              ) : null}
             </div>
           </div>
           {job.error ? (
@@ -772,6 +629,16 @@ function NewEvaluationWorkbench({
             ) : (
               <div className="mt-2 text-[10px] text-gray-500">该 Skill 未声明业务 MCP，本轮只保留 Runtime 原生基础工具。</div>
             )}
+            <div className={cn(
+              "mt-2 border px-2 py-1.5 text-[10px] leading-4",
+              job.preflight.status === "blocked"
+                ? "border-red-200 bg-red-50 text-red-800"
+                : job.preflight.status === "unchecked"
+                  ? "border-amber-200 bg-amber-50 text-amber-800"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800",
+            )}>
+              环境预检 · {job.preflight.message} · {new Date(job.preflight.checkedAt).toLocaleString("zh-CN")}
+            </div>
           </div>
           {job.summary ? (
             <div className="mt-4 border border-emerald-200 bg-emerald-50/40">
@@ -870,6 +737,11 @@ function NewEvaluationWorkbench({
                               ))}
                               {result.error ? (
                                 <span className="border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] text-red-700">{result.error}</span>
+                              ) : null}
+                              {(result.attemptCount || 1) > 1 ? (
+                                <span className="border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800">
+                                  瞬时失败后已重试 1 次
+                                </span>
                               ) : null}
                             </div>
                           </>
@@ -984,7 +856,7 @@ function EvaluationReport({ report }: { report: SkillValueEvaluationReport }) {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div className="max-w-3xl">
                 <div className="flex flex-wrap items-center gap-2">
-                  <StatusBadge report={report} />
+                  <SkillValueStatusBadge report={report} />
                   <span className="text-xs text-gray-500">
                     {report.domain} · {report.evaluatedAt}
                   </span>
@@ -1033,7 +905,7 @@ function EvaluationReport({ report }: { report: SkillValueEvaluationReport }) {
                 </p>
               </div>
               {report.metrics.map(metric => (
-                <MetricComparison key={metric.id} metric={metric} />
+                <SkillValueMetricComparison key={metric.id} metric={metric} />
               ))}
             </section>
 
@@ -1089,7 +961,7 @@ function EvaluationReport({ report }: { report: SkillValueEvaluationReport }) {
               </button>
             ))}
           </div>
-          {selectedCase ? <CaseComparison evalCase={selectedCase} /> : null}
+          {selectedCase ? <SkillValueCaseComparison evalCase={selectedCase} /> : null}
         </TabsContent>
 
         <TabsContent value="method" className="space-y-5">
@@ -1209,7 +1081,7 @@ export function SkillValueEvaluationDialog({
               <FlaskConical />新建对比
             </TabsTrigger>
             <TabsTrigger value="history">
-              <History />历史结果{report ? " · 1" : ""}
+              <History />历史结果
             </TabsTrigger>
           </TabsList>
           <div className="max-h-[calc(86vh-150px)] overflow-y-auto pr-1">
@@ -1217,17 +1089,20 @@ export function SkillValueEvaluationDialog({
               {skillId ? <NewEvaluationWorkbench open={open} skillId={skillId} /> : null}
             </TabsContent>
             <TabsContent value="history">
-              {report ? (
-                <EvaluationReport report={report} />
-              ) : (
-                <div className="flex min-h-[320px] flex-col items-center justify-center border border-dashed border-gray-300 bg-gray-50 px-6 text-center">
-                  <BookOpenCheck className="h-9 w-9 text-gray-400" />
-                  <div className="mt-3 text-sm font-semibold text-gray-800">暂无历史评测结果</div>
-                  <p className="mt-2 max-w-md text-xs leading-5 text-gray-500">
-                    完成首轮对比后，结果会保留在这里。
-                  </p>
+              {skillId ? (
+                <div className="space-y-5">
+                  <SkillValueEvaluationHistory open={open} skillId={skillId} />
+                  {report ? (
+                    <section className="border-t border-gray-200 pt-5">
+                      <div className="mb-4">
+                        <h3 className="text-sm font-semibold text-gray-900">专家校准参考</h3>
+                        <p className="mt-1 text-xs text-gray-500">冻结的历史校准材料，不计入上方真实运行次数。</p>
+                      </div>
+                      <EvaluationReport report={report} />
+                    </section>
+                  ) : null}
                 </div>
-              )}
+              ) : null}
             </TabsContent>
           </div>
         </Tabs>

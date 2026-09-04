@@ -123,7 +123,9 @@ import {
 } from "../_core/skill-value-evaluation";
 import { digestSkillSourceTree } from "../_core/skills/skill-artifact-digest";
 import {
+  cancelSkillValueEvaluationJob,
   getSkillValueEvaluationJob,
+  listSkillValueEvaluationJobs,
   startSkillValueEvaluationJob,
   type SkillValueEvaluationArtifact,
 } from "../_core/skill-value-evaluation-runner";
@@ -1471,6 +1473,11 @@ export const clawRouter = router({
             resolveSkillValueArtifact(input.skillId, input.right.selectionId),
             resolveSkillValueRoleTemplate(input.skillId),
           ]);
+          const preflight = await probeJiuwenSkillMcpReadiness({
+            skillId: input.skillId,
+            roleTemplate,
+            force: true,
+          });
           const job = startSkillValueEvaluationJob({
             skillId: input.skillId,
             skillName: String(marketItem.name || input.skillId),
@@ -1479,6 +1486,7 @@ export const clawRouter = router({
             left: { modelId: input.left.modelId, artifact: leftArtifact },
             right: { modelId: input.right.modelId, artifact: rightArtifact },
             prompts: input.prompts,
+            preflight,
           });
           await recordAuditBestEffort({
             action: "skill.value_evaluation.started",
@@ -1496,6 +1504,8 @@ export const clawRouter = router({
               rightModelId: input.right.modelId,
               promptCount: input.prompts.length,
               configurationFingerprint: job.configurationFingerprint,
+              preflightStatus: preflight.status,
+              preflightMessage: preflight.message,
             },
           });
           return job;
@@ -1514,6 +1524,34 @@ export const clawRouter = router({
         if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "评测任务不存在或已过期" });
         return job;
       }),
+
+    adminCancelSkillEvaluationJob: adminProcedure
+      .input(z.object({ jobId: z.string().trim().min(1).max(128) }))
+      .mutation(async ({ input, ctx }) => {
+        const job = cancelSkillValueEvaluationJob(input.jobId);
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "评测任务不存在或已过期" });
+        await recordAuditBestEffort({
+          action: "skill.value_evaluation.cancelled",
+          ...auditActor(ctx.user),
+          ...auditRequest(ctx.req),
+          targetType: "skill",
+          targetId: job.skillId,
+          targetName: job.skillName,
+          metadata: { jobId: job.jobId, status: job.status },
+        });
+        return job;
+      }),
+
+    adminListSkillEvaluationJobs: adminProcedure
+      .input(z.object({
+        skillId: skillIdSchema,
+        limit: z.number().int().min(1).max(100).optional(),
+      }))
+      .query(({ input, ctx }) => listSkillValueEvaluationJobs({
+        skillId: input.skillId,
+        organization: String(ctx.user.organization || "EA Skill Evaluation"),
+        limit: input.limit,
+      })),
 
     adminRoleAssetCatalog: adminProcedure.query(async () => {
       await syncGlobalOpenSourceSkillGrants({ actor: "admin-role-asset-catalog" });

@@ -43,11 +43,23 @@ for (const file of frozenInstallFiles) {
 }
 
 const forbiddenSource = /^(?:git(?:\+[^:]+)?:|github:|gitlab:|bitbucket:|https?:|file:|link:)/i;
+const regexEscape = value => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const immutableVendoredTarball = (name, value) => new RegExp(
+  `^file:vendor/${regexEscape(name)}-\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?\\.tgz$`,
+).test(value);
 for (const section of ["dependencies", "devDependencies", "optionalDependencies"]) {
   for (const [name, specifier] of Object.entries(packageJson[section] || {})) {
     const value = String(specifier);
-    if (value === "*" || value === "latest" || forbiddenSource.test(value)) {
+    const vendoredTarball = immutableVendoredTarball(name, value);
+    if (value === "*" || value === "latest" || (forbiddenSource.test(value) && !vendoredTarball)) {
       violations.push(`${section}.${name} uses mutable or non-registry source ${value}`);
+    }
+    if (vendoredTarball) {
+      try {
+        await access(value.slice("file:".length));
+      } catch {
+        violations.push(`${section}.${name} references missing vendored package ${value}`);
+      }
     }
   }
 }
