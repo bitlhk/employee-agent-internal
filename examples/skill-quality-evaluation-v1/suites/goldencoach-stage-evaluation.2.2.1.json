@@ -3,11 +3,11 @@
   "suiteId": "goldencoach-stage-evaluation-quality-2.2.1",
   "skillIdentityId": "skill_06f37734ccf9a3437d88749a95384e04",
   "skillId": "goldencoach-stage-evaluation",
-  "targetVersionId": "candidate-goldencoach-stage-evaluation-2.2.1",
+  "targetVersionId": "0fa431c6-da52-4ab8-b5c1-1330665f1139",
   "targetVersion": "2.2.1",
   "targetArtifactSha256": "892b1303290c7827aec7425b58aff75a1f865e6cec7e0671e79e242439757c95",
   "suiteVersion": "2.2.1",
-  "suiteFingerprint": "da8394db7028bcc52c93552608648267f4af55515f7d88b86e31656cf0b07bde",
+  "suiteFingerprint": "7b3f979b4a04b627353675eb2433dd08d43ba7b96535a33c885d2efebd16d7b7",
   "sourceReferences": [
     {
       "sourceType": "repository_file",
