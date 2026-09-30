@@ -41,7 +41,7 @@ import { createResponseEvidenceCollector } from "./governance/response-evidence"
 import { restoreTrustedContextReceiptInToolResult } from "./governance/context-receipt-store";
 import {
   buildEnterpriseChatParams,
-  buildEnterpriseManagedMcpProvisioning,
+  prepareEnterpriseManagedMcpProvisioning,
   buildEnterpriseRuntimeAttachmentRefs,
   buildEnterprisePermissionAnswerParams,
   type EnterpriseRuntimeRoute,
@@ -557,7 +557,7 @@ export async function forwardToJiuwenGateway(
         selectedSkills: opts.selectedSkills,
       });
   const managedMcpProvisioning = enterpriseRoute
-    ? buildEnterpriseManagedMcpProvisioning({
+    ? await prepareEnterpriseManagedMcpProvisioning({
         route: enterpriseRoute,
         adoptId: claw.adoptId,
         agentId: claw.agentId,

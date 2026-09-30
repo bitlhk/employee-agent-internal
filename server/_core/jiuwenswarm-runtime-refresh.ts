@@ -1,4 +1,6 @@
 import { WebSocket, type RawData } from "ws";
+import { getRuntimeAgentBinding } from "../db/runtime-agent-bindings";
+import { refreshEnterpriseRuntimeAssetsIfBound } from "./enterprise-runtime-assets";
 
 const DEFAULT_AGENTSERVER_WS_URL = "ws://127.0.0.1:19001";
 const DEFAULT_REFRESH_TIMEOUT_MS = 15_000;
@@ -42,9 +44,27 @@ export function buildJiuwenCapabilityRefreshRequest(adoptId: string, requestId: 
   };
 }
 
-export async function refreshJiuwenRuntimeCapabilities(adoptIdRaw: string): Promise<void> {
+export async function refreshJiuwenRuntimeCapabilities(adoptIdRaw: string, dependencies: {
+  getBinding?: typeof getRuntimeAgentBinding;
+  refreshEnterpriseAssets?: typeof refreshEnterpriseRuntimeAssetsIfBound;
+} = {}): Promise<void> {
   const adoptId = String(adoptIdRaw || "").trim();
   if (!adoptId) throw new Error("adoptId is required for runtime capability refresh");
+
+  if (String(process.env.EA_ENTERPRISE_RUNTIME_ENABLED || "").trim().toLowerCase() === "true") {
+    const binding = await (dependencies.getBinding || getRuntimeAgentBinding)(adoptId);
+    if (binding && ["enterprise", "enterprise_canary"].includes(binding.runtimeProfile)
+      && binding.status !== "disabled") {
+      const updated = await (dependencies.refreshEnterpriseAssets || refreshEnterpriseRuntimeAssetsIfBound)(adoptId);
+      if (!updated || updated.status !== "ready"
+        || updated.publishedAssetRevision < updated.desiredAssetRevision) {
+        throw new Error("Enterprise runtime capability assets are not ready");
+      }
+      // Enterprise uses per-user tools.add before chat, not the standalone reload RPC.
+      // Its live catalog fingerprint invalidates both provisioning and MCP caches.
+      return;
+    }
+  }
 
   const wsUrl = String(
     process.env.JIUWENCLAW_AGENTSERVER_WS_URL || DEFAULT_AGENTSERVER_WS_URL,

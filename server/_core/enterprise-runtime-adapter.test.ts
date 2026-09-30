@@ -7,6 +7,7 @@ import {
   buildEnterpriseChatParams,
   buildEnterpriseHistoryParams,
   buildEnterpriseManagedMcpProvisioning,
+  prepareEnterpriseManagedMcpProvisioning,
   buildEnterprisePermissionAnswerParams,
   buildEnterpriseRuntimeAttachmentRefs,
   enterpriseRuntimeProvisioningAvailable,
@@ -60,6 +61,36 @@ afterEach(() => {
 });
 
 describe("enterprise runtime adapter", () => {
+  it("refreshes only the custom gateway when its selected catalog changes", async () => {
+    process.env.EA_ENTERPRISE_RUNTIME_EA_BASE_URL = "https://ea.example.test";
+    const row: any = { id: 6, enabled: true, healthStatus: "ready", displayName: "Restaurant",
+      selectedToolNames: ["queue"], toolsJson: [{ name: "queue", inputSchema: { type: "object" } }],
+      credentialEncrypted: "not-part-of-catalog" };
+    const listConnections = vi.fn().mockResolvedValue([row]);
+    const args = { route: route(), adoptId: "lgj-test", agentId: "agent-test" };
+    const first = await prepareEnterpriseManagedMcpProvisioning(args, { listConnections });
+    expect(listConnections).toHaveBeenCalledWith({ adoptId: "lgj-test", enabledOnly: true });
+    row.credentialEncrypted = "rotated-secret";
+    expect(await prepareEnterpriseManagedMcpProvisioning(args, { listConnections })).toEqual(first);
+    row.toolsJson[0].description = "Current queue";
+    const changed = await prepareEnterpriseManagedMcpProvisioning(args, { listConnections });
+    expect(changed?.fingerprint).not.toBe(first?.fingerprint);
+    const a = JSON.parse(String(first?.params.mcp_json)).mcpServers;
+    const b = JSON.parse(String(changed?.params.mcp_json)).mcpServers;
+    expect(a.custom_mcp_gateway.server_id).not.toBe(b.custom_mcp_gateway.server_id);
+    expect(a.role_mcp_gateway).toEqual(b.role_mcp_gateway);
+    row.selectedToolNames = [];
+    const unselected = await prepareEnterpriseManagedMcpProvisioning(args, { listConnections });
+    expect(unselected?.fingerprint).not.toBe(changed?.fingerprint);
+    row.enabled = false;
+    const disabled = await prepareEnterpriseManagedMcpProvisioning(args, { listConnections });
+    listConnections.mockResolvedValue([]);
+    expect(await prepareEnterpriseManagedMcpProvisioning(args, { listConnections })).toEqual(disabled);
+    row.enabled = true;
+    row.healthStatus = "error";
+    listConnections.mockResolvedValue([row]);
+    expect(await prepareEnterpriseManagedMcpProvisioning(args, { listConnections })).toEqual(disabled);
+  });
   it("reports whether a new adoption can be provisioned on enterprise runtime", () => {
     process.env.EA_ENTERPRISE_RUNTIME_ENABLED = "true";
     process.env.EA_ENTERPRISE_RUNTIME_GATEWAY_WS_URL = "wss://runtime.example.test/ws";

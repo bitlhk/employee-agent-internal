@@ -4,6 +4,7 @@ import path from "node:path";
 import type { RuntimeAgentBinding } from "../../drizzle/schema";
 import type { UploadedAttachmentContextFile } from "../../shared/uploaded-attachment-context";
 import { getRuntimeAgentBinding } from "../db/runtime-agent-bindings";
+import { listCustomMcpConnections, type CustomMcpToolSnapshot } from "../db/custom-mcp-connections";
 import {
   ensureEnterpriseRuntimeAssetsCurrent,
   ensureEnterpriseRuntimeBindingForAdoption,
@@ -154,6 +155,7 @@ export function buildEnterpriseManagedMcpProvisioning(args: {
   route: EnterpriseRuntimeRoute;
   adoptId: string;
   agentId: string;
+  customMcpCatalogFingerprint?: string;
 }): EnterpriseManagedMcpProvisioning | null {
   const baseUrl = enterpriseManagedMcpBaseUrl();
   if (!baseUrl) return null;
@@ -164,7 +166,9 @@ export function buildEnterpriseManagedMcpProvisioning(args: {
       server_id: managedMcpServerId(
         name,
         args.route.binding.bindingId,
-        managedMcpCatalogFingerprint(name),
+        name === "custom_mcp_gateway"
+          ? args.customMcpCatalogFingerprint || ""
+          : managedMcpCatalogFingerprint(name),
       ),
       description: "EA governed capability gateway",
       type: "streamableHttp",
@@ -190,6 +194,31 @@ export function buildEnterpriseManagedMcpProvisioning(args: {
       request_metadata: enterpriseRuntimeAssetMetadata(args),
     },
   };
+}
+
+// Hash only the model-facing catalog, never credentials or OAuth state.
+export async function prepareEnterpriseManagedMcpProvisioning(
+  args: Parameters<typeof buildEnterpriseManagedMcpProvisioning>[0],
+  dependencies: { listConnections?: typeof listCustomMcpConnections } = {},
+): Promise<EnterpriseManagedMcpProvisioning | null> {
+  const rows = await (dependencies.listConnections || listCustomMcpConnections)({
+    adoptId: args.adoptId,
+    enabledOnly: true,
+  });
+  const catalog = rows.filter((row) => row.enabled && row.healthStatus === "ready")
+    .sort((a, b) => a.id - b.id)
+    .map((row) => ({
+      id: row.id,
+      displayName: row.displayName,
+      tools: (Array.isArray(row.toolsJson) ? row.toolsJson as CustomMcpToolSnapshot[] : [])
+        .filter((tool) => Array.isArray(row.selectedToolNames)
+          && row.selectedToolNames.includes(tool.name))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    }));
+  return buildEnterpriseManagedMcpProvisioning({
+    ...args,
+    customMcpCatalogFingerprint: createHash("sha256").update(JSON.stringify(catalog)).digest("hex"),
+  });
 }
 
 export async function resolveEnterpriseRuntimeRoute(
