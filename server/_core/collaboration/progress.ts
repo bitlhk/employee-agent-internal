@@ -51,7 +51,7 @@ export async function goalAvailability(
     requests.push({
       request,
       name: person?.name || "组织成员",
-      result: resource.result,
+      result: "result" in resource ? resource.result : undefined,
       asked: requestedSlots(request.inputPayload),
     });
   }

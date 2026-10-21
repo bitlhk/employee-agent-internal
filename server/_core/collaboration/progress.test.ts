@@ -69,6 +69,15 @@ it("rejects another owner's goal or incoming card before accessing calendar data
   });
   expect(mocks.readOwnCalendar).not.toHaveBeenCalled();
 });
+it("does not infer availability when a waiting resource has no released result", async () => {
+  mocks.collaborationWaitingResources.mockResolvedValue([
+    { resourceKind: "request", resourceId: "2", state: "unavailable", terminal: true, completed: false },
+  ]);
+  const matrix = await goalAvailability(1, "A", "goal");
+  expect(matrix.rows[0].cells).toEqual(["free", "unshared"]);
+  expect(matrix.rows[0].common).toBe(false);
+  expect(mocks.getCalendarCredentials).toHaveBeenCalledExactlyOnceWith(1);
+});
 it("hides participants removed from the organization", async () => {
   mocks.canCollaborate.mockResolvedValue({ ok: false });
   const matrix = await goalAvailability(1, "A", "goal");
