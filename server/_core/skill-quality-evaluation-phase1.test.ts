@@ -1,20 +1,26 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { EaAssistantModelConfig } from "./ea-assistant-model";
 import { loadSkillQualityPilotContracts } from "./skill-quality-evaluation-contracts";
-import {
-  buildWealthSkillQualityPhase1Plan,
-  runWealthSkillQualityPhase1,
-} from "./skill-quality-evaluation-phase1";
-import {
-  evaluateWealthSkillAssertions,
-  executeWealthSkillEvaluationCase,
-  type WealthSkillEvaluationExecution,
-  wealthSkillEvaluationFixture,
-  WealthSkillModelOutputError,
-} from "./skill-quality-wealth-pilot";
+import { buildWealthSkillQualityPhase1Plan, runWealthSkillQualityPhase1, } from "./skill-quality-evaluation-phase1";
+import { evaluateWealthSkillAssertions, executeWealthSkillEvaluationCase, type WealthSkillEvaluationExecution, wealthSkillEvaluationFixture, WealthSkillModelOutputError, } from "./skill-quality-wealth-pilot";
+
+// Exercise the real strict contract loader against an isolated, synthetic store.
+// These unit tests must not depend on approved artifacts mounted on one developer's machine.
+const qualityFixture = vi.hoisted(() => ({ root: "" }));
+vi.mock("./skill-quality-evaluation-contracts", async importOriginal => {
+  const actual = await importOriginal<typeof import("./skill-quality-evaluation-contracts")>();
+  const { createSkillQualityTestFixture } = await import("./skill-quality-test-fixture");
+  const fixture = createSkillQualityTestFixture();
+  qualityFixture.root = fixture.root;
+  return { ...actual,
+    resolveSkillStoreRoot: () => fixture.skillStoreRoot,
+    loadSkillQualityPilotContracts: (input: Parameters<typeof actual.loadSkillQualityPilotContracts>[0]) => actual.loadSkillQualityPilotContracts({ ...input, ...fixture }),
+  };
+});
+afterAll(() => { if (qualityFixture.root) rmSync(qualityFixture.root, { recursive: true, force: true }); });
 
 const modelConfig: EaAssistantModelConfig = {
   baseUrl: "https://model.example.test/v1/chat/completions",

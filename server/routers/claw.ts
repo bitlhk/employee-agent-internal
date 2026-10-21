@@ -1,273 +1,41 @@
-import { publicProcedure, protectedProcedure, adminProcedure, router } from "../_core/trpc";
-import { z } from "zod";
+import { buildClawEntryUrl, eaAssistantModelDraftSchema, feedbackIdentitySchema, feedbackToolSchema, getAvailableModelsForRuntime, jiuwenModelDraftSchema, logIosLoadDebug, randomRuntimeSuffix, resolveClawRuntime, skillIdSchema } from './claw-shared';
+import { clawSkillAdminProcedures } from './claw-skill-admin';
+
 import { TRPCError } from "@trpc/server";
-import { nanoid } from "nanoid";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, rmSync } from "fs";
 import path from "path";
-import {
-  getCurrentClawByUserId,
-  listClawsByUserId,
-  getClawByAdoptId,
-  createClawAdoption,
-  updateClawAdoptionStatus,
-  listClawAdoptionsAdmin,
-  updateClawAdoptionAdmin,
-  batchUpdateClawAdoptionAdmin,
-  getClawAdoptionAdminById,
-  deleteClawAdoptionAdmin,
-  appendClawAdoptionEvent,
-  getClawProfileSettings,
-  upsertClawProfileSettings,
-  getSystemConfigValue,
-  getSystemConfigNumber,
-  upsertSystemConfig,
-  listSkillMarketItems,
-  getSkillMarketItem,
-  insertSkillMarketItem,
-  updateSkillMarketItem,
-  deleteSkillMarketItem,
-  getSkillVersionByLegacyMarketId,
-  getSkillIdentityById,
-  getSkillIdentityBySkillId,
-  getSkillVersionById,
-  listSkillVersionsByIdentity,
-  reviewSkillVersionByLegacyMarketId,
-  listSkillMarketV2Projection,
-  resolveEffectiveRoleAssets,
-  previewRoleAssetSeedSync,
-  syncRoleAssetSeed,
-  listRoleAssetGrants,
-  replaceAdminRoleAssetGrantsForAsset,
-  syncGlobalOpenSourceSkillGrants,
-  deleteMessageFeedback,
-  getMessageFeedbackAdminSummary,
-  listMessageFeedbackForConversation,
-  upsertMessageFeedback,
-  ensureInitialUserRoleAssignment,
-  getUserById,
-  listUserRoleAssignments,
-  listUserRoleAssignmentsForUsers,
-  replaceUserRoleAssignments,
-  resolveUserRoleAuthorization,
-} from "../db";
-import {
-  APP_ROOT,
-  assertClawOwnerOrThrow,
-  bumpClawSessionEpochBestEffort,
-  writeClawExecAudit,
-} from "./helpers";
-import {
-  isJiuwenClawAdoptId,
-  jiuwenClawAgentDir,
-  jiuwenClawWorkspaceDir,
-  resolveRuntimeAgentId,
-} from "../_core/helpers";
-import { getAdminSystemHealth } from "../_core/admin-system-health";
-import { logDebug, logWarn } from "../_core/observability/logger";
-import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort, recordAuditRequired } from "../_core/audit-events";
-import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
-import { ensureEnterpriseRuntimeBindingForAdoption } from "../_core/enterprise-runtime-assets";
-import { pruneSkillRegistryForAdopt, skillRegistry } from "../_core/skills/skill-registry";
-import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
-import { roleSkillPreferences } from "../_core/skills/role-skill-preferences";
-import { setAgentSkillEnabled } from "../_core/skills/skill-enable-service";
-import { parseSkillSourceDirectory } from "../_core/skills/skill-source";
-import {
-  remapLegacySkillMarketPath,
-  skillStoreMarketplaceDir,
-  safeSkillStorePath,
-  removeSkillStorePath,
-} from "../_core/skills/skill-store";
-import {
-  getAgentRoleTemplate,
-  getRoleSkillMcpBaseline,
-  getSkillMcpRequirement,
-  listAgentRoleTemplates,
-  resolveAgentRoleTemplate,
-} from "../_core/role-templates";
-import { reconcileRoleRuntimeAssets, resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
-import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
-import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
+import { z } from "zod";
 import { MESSAGE_FEEDBACK_REASON_CODES } from "../../shared/message-feedback";
-import { resolvePublicBaseUrl } from "../_core/public-base-url";
+import { applyAdminRoleReset, resolveSelectableAdoptRoleTemplate, type AdminClawAdoption, } from "../_core/admin-role-reset";
+import { getAdminSystemHealth } from "../_core/admin-system-health";
+import { applyNegativeMemoryFeedback, applyPositiveMemoryFeedback, changeAgentMemoryMode, confirmAgentMemory, forgetAgentMemory, listAgentMemoryView, refreshAgentMemorySynthesis, rejectAgentMemory, rememberExplicitPreference, updateAgentMemory, } from "../_core/agent-memory";
+import { auditActor, auditErrorMetadata, auditRequest, recordAuditBestEffort } from "../_core/audit-events";
+import { getAvailableJiuwenModels } from "../_core/available-models";
+import { listConfiguredMcpServers, listMcpToolGroups } from "../_core/claw-skills";
+import { getEaAssistantModelAdminConfig, saveEaAssistantModelConfig, validateEaAssistantModel, } from "../_core/ea-assistant-model";
+import { ensureEnterpriseRuntimeBindingForAdoption } from "../_core/enterprise-runtime-assets";
+import { isJiuwenClawAdoptId, jiuwenClawAgentDir, jiuwenClawWorkspaceDir, resolveRuntimeAgentId, } from "../_core/helpers";
+import { JIUWEN_AUTO_MODEL_ID, JIUWEN_MODEL_PROVIDERS, JIUWEN_REASONING_LEVELS, listJiuwenModelsWithSecrets, listSelectableJiuwenModels, modelIdentity, replaceJiuwenModels, resolveAutomaticSelectableJiuwenModel, resolveSelectableJiuwenModel, sanitizeModelAdminError, toPublicJiuwenModels, validateJiuwenModel, } from "../_core/jiuwenswarm-model-admin";
+import { logWarn } from "../_core/observability/logger";
+import { reconcileRoleRuntimeAssets, resolveRoleRuntimeProvisionPlan } from "../_core/role-runtime-adapter";
+import { getAgentRoleTemplate, getRoleSkillMcpBaseline, getSkillMcpRequirement, listAgentRoleTemplates, resolveAgentRoleTemplate, } from "../_core/role-templates";
+import { retiredRuntimeMessage } from "../_core/runtime-policy";
 import { probeJiuwenSkillMcpReadiness } from "../_core/skill-mcp-readiness";
-import { resolveActiveAgentRuntime, retiredRuntimeMessage } from "../_core/runtime-policy";
-import {
-  getEaAssistantModelAdminConfig,
-  saveEaAssistantModelConfig,
-  validateEaAssistantModel,
-} from "../_core/ea-assistant-model";
-import {
-  applyNegativeMemoryFeedback,
-  applyPositiveMemoryFeedback,
-  changeAgentMemoryMode,
-  confirmAgentMemory,
-  forgetAgentMemory,
-  listAgentMemoryView,
-  refreshAgentMemorySynthesis,
-  rememberExplicitPreference,
-  rejectAgentMemory,
-  updateAgentMemory,
-} from "../_core/agent-memory";
+import { listSkillsWithRoleDefaults } from "../_core/skills/role-default-skills";
+import { setAgentSkillEnabled } from "../_core/skills/skill-enable-service";
+import { onboardBuiltinSkillsForAdopt } from "../_core/skills/skill-onboarding";
+import { pruneSkillRegistryForAdopt } from "../_core/skills/skill-registry";
+import { adminProcedure, protectedProcedure, publicProcedure, router } from "../_core/trpc";
+import { appendClawAdoptionEvent, batchUpdateClawAdoptionAdmin, createClawAdoption, deleteClawAdoptionAdmin, deleteMessageFeedback, ensureInitialUserRoleAssignment, getClawAdoptionAdminById, getClawByAdoptId, getClawProfileSettings, getMessageFeedbackAdminSummary, getSystemConfigValue, getUserById, listClawAdoptionsAdmin, listClawsByUserId, listMessageFeedbackForConversation, listRoleAssetGrants, listSkillMarketItems, listUserRoleAssignments, listUserRoleAssignmentsForUsers, previewRoleAssetSeedSync, replaceAdminRoleAssetGrantsForAsset, replaceUserRoleAssignments, resolveEffectiveRoleAssets, resolveUserRoleAuthorization, syncGlobalOpenSourceSkillGrants, syncRoleAssetSeed, updateClawAdoptionAdmin, updateClawAdoptionStatus, upsertClawProfileSettings, upsertMessageFeedback, upsertSystemConfig } from "../db";
 import { contextMemoryFeedbackProcedure, contextMemoryPreviewsProcedure } from "./claw-context-memory-feedback";
-import { clawSkillMarketProcedures } from "./claw-skill-market";
+import { acceptMemoryConflictProcedure, rejectMemoryConflictProcedure, } from "./claw-memory-conflicts";
 import { restoreMemoryVersionProcedure } from "./claw-memory-version";
-import {
-  acceptMemoryConflictProcedure,
-  rejectMemoryConflictProcedure,
-} from "./claw-memory-conflicts";
-import { getAvailableJiuwenModels, type RuntimeModelOption } from "../_core/available-models";
-import {
-  listRepositorySkillCandidates,
-  prepareSkillValueEvaluationPlan,
-} from "../_core/skill-value-evaluation";
-import {
-  assessSkillValueEvaluationSupport,
-  inspectCuratedSkillValueSuite,
-} from "../_core/skill-value-evaluation-support";
-import {
-  buildPrioritySkillValueEvaluationSupportCatalog,
-  resolveSkillValueRoleTemplate,
-} from "../_core/skill-value-evaluation-catalog";
-import { digestSkillSourceTree } from "../_core/skills/skill-artifact-digest";
-import {
-  cancelSkillValueEvaluationJob,
-  getSkillValueEvaluationJob,
-  listSkillValueEvaluationJobs,
-  startSkillValueEvaluationJob,
-  type SkillValueEvaluationArtifact,
-} from "../_core/skill-value-evaluation-runner";
-import {
-  createEaSkillEvaluationContextAdapter,
-  ensureEaSkillEvaluationContextPrincipal,
-} from "../_core/skill-value-evaluation-context";
-import {
-  applyAdminRoleReset,
-  resolveSelectableAdoptRoleTemplate,
-  type AdminClawAdoption,
-} from "../_core/admin-role-reset";
-import {
-  JIUWEN_AUTO_MODEL_ID,
-  JIUWEN_MODEL_PROVIDERS,
-  JIUWEN_REASONING_LEVELS,
-  listSelectableJiuwenModels,
-  listJiuwenModelsWithSecrets,
-  modelIdentity,
-  replaceJiuwenModels,
-  resolveAutomaticSelectableJiuwenModel,
-  resolveSelectableJiuwenModel,
-  sanitizeModelAdminError,
-  toPublicJiuwenModels,
-  validateJiuwenModel,
-} from "../_core/jiuwenswarm-model-admin";
-
-type ResolvedClawRuntime = "jiuwenclaw" | "legacy_archived" | "unsupported";
-
-const skillIdSchema = z.string().min(1).max(64).regex(/^[a-z0-9-]+$/, "技能ID只能包含小写字母、数字和连字符");
-const feedbackIdentitySchema = z.string().min(1).max(128).regex(/^[A-Za-z0-9._:-]+$/, "消息标识格式不正确");
-const feedbackToolSchema = z.object({
-  name: z.string().trim().min(1).max(128),
-  status: z.enum(["running", "done", "error"]),
-  durationMs: z.number().int().nonnegative().max(3_600_000).optional(),
-});
-const jiuwenModelDraftSchema = z.object({
-  modelName: z.string().trim().min(1).max(200),
-  alias: z.string().trim().max(200).default(""),
-  apiBase: z.string().trim().url().max(2048),
-  apiKey: z.string().max(8192).optional(),
-  provider: z.enum(JIUWEN_MODEL_PROVIDERS),
-  reasoningLevel: z.enum(JIUWEN_REASONING_LEVELS).default(""),
-  temperature: z.number().min(0).max(2).default(0.95),
-  isDefault: z.boolean().default(true),
-  originIndex: z.number().int().nonnegative().optional(),
-});
-const eaAssistantModelDraftSchema = z.object({
-  apiBase: z.string().trim().url().max(2048),
-  modelName: z.string().trim().min(1).max(200),
-  apiKey: z.string().max(8192).optional(),
-  provider: z.enum(JIUWEN_MODEL_PROVIDERS).default("OpenAI"),
-  timeoutMs: z.number().int().min(1000).max(120000).default(8000),
-  disableThinking: z.boolean().default(true),
-});
-
-function safeChildPath(parentDir: string, childName: string): string {
-  const parent = path.resolve(parentDir);
-  const child = path.resolve(parent, childName);
-  if (child !== parent && child.startsWith(`${parent}${path.sep}`)) return child;
-  throw new Error("路径越权");
-}
-
-const resolveClawRuntime = (adoptId: unknown): ResolvedClawRuntime => {
-  return resolveActiveAgentRuntime(adoptId);
-};
-
-function buildClawEntryUrl(adoptId: string): string {
-  return `${resolvePublicBaseUrl()}/claw/${encodeURIComponent(adoptId)}`;
-}
-
-const randomRuntimeSuffix = () => nanoid(10).toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
-
-const iosLoadDebugEnabled = process.env.IOS_LOAD_DEBUG === "1";
-
-function logIosLoadDebug(message: string, fields: Record<string, unknown> = {}): void {
-  if (!iosLoadDebugEnabled) return;
-  logDebug(`ios.load.${message}`, fields);
-}
-
-const getAvailableModelsForRuntime = async (adoptId?: unknown): Promise<RuntimeModelOption[]> => {
-  if (!String(adoptId || "").trim()) return await getAvailableJiuwenModels();
-  const runtime = resolveClawRuntime(adoptId);
-  if (runtime === "jiuwenclaw") return await getAvailableJiuwenModels();
-  return [];
-};
-
-const skillMarketDir = () => skillStoreMarketplaceDir();
-
-async function resolveSkillValueArtifact(
-  skillId: string,
-  versionId: string,
-): Promise<SkillValueEvaluationArtifact> {
-  if (versionId === "without_target_skill") return null;
-  if (versionId.startsWith("candidate_")) {
-    const candidate = listRepositorySkillCandidates(APP_ROOT, skillId)
-      .find(item => item.versionId === versionId);
-    if (!candidate) throw new Error("所选候选版本不存在");
-    return candidate;
-  }
-  if (versionId.startsWith("legacy-market-")) {
-    const marketId = Number(versionId.slice("legacy-market-".length));
-    const item = await getSkillMarketItem(marketId);
-    if (!item || String(item.skillId || "") !== skillId) {
-      throw new Error("所选 Skill 版本不存在");
-    }
-    const artifactPath = remapLegacySkillMarketPath(String(item.packagePath || ""));
-    if (!artifactPath || !existsSync(artifactPath)) throw new Error("Skill Artifact 不存在");
-    return {
-      versionId,
-      version: String(item.version || "1.0.0"),
-      artifactSha256: digestSkillSourceTree(artifactPath).sha256,
-      artifactPath,
-    };
-  }
-  const identity = await getSkillIdentityBySkillId(skillId);
-  const stored = await getSkillVersionById(versionId);
-  if (
-    !identity
-    || !stored
-    || stored.skillIdentityId !== identity.identityId
-    || stored.status !== "approved"
-  ) {
-    throw new Error("所选 Skill 版本不可用于评测");
-  }
-  return {
-    versionId: stored.versionId,
-    version: stored.version,
-    artifactSha256: stored.artifactSha256,
-    artifactPath: stored.artifactPath,
-  };
-}
+import { clawSkillMarketProcedures } from "./claw-skill-market";
+import { APP_ROOT, assertClawOwnerOrThrow, bumpClawSessionEpochBestEffort, writeClawExecAudit, } from "./helpers";
+import { getRoleRuntimeAdapter, isJiuwenSwarmProvisionEnabled } from "./role-runtime-adapters";
 
 export const clawRouter = router({
+  ...clawSkillAdminProcedures,
     me: protectedProcedure.query(async ({ ctx }) => {
       const userId = ctx.user!.id;
       const all = await listClawsByUserId(userId);
@@ -331,13 +99,13 @@ export const clawRouter = router({
           });
           return null;
         }
-        const profile = await getClawProfileSettings(Number((claw as any).id || 0));
+        const profile = await getClawProfileSettings(Number((claw).id || 0));
         logIosLoadDebug("trpc_claw_getByAdoptId", {
           adoptId: input.adoptId,
           userId: ctx.user?.id,
-          clawId: (claw as any).id,
+          clawId: (claw).id,
           found: true,
-          status: (claw as any).status,
+          status: (claw).status,
           ms: Date.now() - startedAt,
         });
         return {
@@ -345,12 +113,12 @@ export const clawRouter = router({
           status: claw.status,
           entryUrl: buildClawEntryUrl(String(claw.adoptId || "")),
           expiresAt: claw.expiresAt,
-          displayName: String((profile as any)?.displayName || "岗位智能体"),
+          displayName: String((profile)?.displayName || "岗位智能体"),
           permissionProfile: String(claw.permissionProfile || "starter"),
-          roleTemplate: String((claw as any).roleTemplate || "general-assistant"),
-          roleName: getAgentRoleTemplate(String((claw as any).roleTemplate || "general-assistant"))?.name || "通用助手",
-          industry: String((claw as any).industry || "general"),
-          runtime: String((claw as any).runtime || resolveClawRuntime(claw.adoptId)),
+          roleTemplate: String((claw).roleTemplate || "general-assistant"),
+          roleName: getAgentRoleTemplate(String((claw).roleTemplate || "general-assistant"))?.name || "通用助手",
+          industry: String((claw).industry || "general"),
+          runtime: String((claw).runtime || resolveClawRuntime(claw.adoptId)),
           actualRuntime: resolveClawRuntime(claw.adoptId),
         };
       }),
@@ -407,7 +175,7 @@ export const clawRouter = router({
           rating: input.rating,
           reasonCodes: isNegative ? input.reasonCodes : [],
           comment: isNegative ? input.comment?.trim() || undefined : undefined,
-          roleTemplate: String((claw as any).roleTemplate || "general-assistant"),
+          roleTemplate: String((claw).roleTemplate || "general-assistant"),
           runtimeType: resolveClawRuntime(input.adoptId),
           selectedModelId: input.selectedModelId?.trim() || undefined,
           actualModelId: input.actualModelId?.trim() || undefined,
@@ -710,13 +478,13 @@ export const clawRouter = router({
         if (!jiuwenSelection) throw new Error("不支持的模型");
 
         const previousSettings = await getClawProfileSettings(Number(claw.id));
-        const previousModel = String((previousSettings as any)?.model || "");
+        const previousModel = String((previousSettings)?.model || "");
 
         // 1) 保存到业务设置（用于页面回显）
         await upsertClawProfileSettings(Number(claw.id), {
           model: input.modelId,
           updatedBy: ctx.user!.id,
-        } as any);
+        });
 
         await recordAuditBestEffort({
           action: "model.switched",
@@ -724,10 +492,10 @@ export const clawRouter = router({
           ...auditRequest(ctx.req),
           targetType: "agent",
           targetId: input.adoptId,
-          targetName: String((claw as any).agentId || input.adoptId),
+          targetName: String((claw).agentId || input.adoptId),
           agentInstanceId: input.adoptId,
           runtimeType,
-          runtimeAgentId: String((claw as any).agentId || ""),
+          runtimeAgentId: String((claw).agentId || ""),
           metadata: {
             previousModel: previousModel || null,
             model: input.modelId,
@@ -860,11 +628,11 @@ export const clawRouter = router({
           }
         }
         await updateClawAdoptionAdmin(input.id, {
-          permissionProfile: input.permissionProfile as any,
+          permissionProfile: input.permissionProfile,
           roleTemplate: role?.id,
           industry: role?.industry,
           ttlDays: input.ttlDays,
-          status: input.status as any,
+          status: input.status,
           expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
         });
         let roleReset: Awaited<ReturnType<typeof applyAdminRoleReset>> | null = null;
@@ -992,11 +760,11 @@ export const clawRouter = router({
           }
         }
         await batchUpdateClawAdoptionAdmin(input.ids, {
-          permissionProfile: input.permissionProfile as any,
+          permissionProfile: input.permissionProfile,
           roleTemplate: role?.id,
           industry: role?.industry,
           ttlDays: input.ttlDays,
-          status: input.status as any,
+          status: input.status,
         });
         const roleResetResults: Array<Awaited<ReturnType<typeof applyAdminRoleReset>> & { id: number; adoptId: string }> = [];
         if (role) {
@@ -1186,404 +954,6 @@ export const clawRouter = router({
         };
       }),
 
-    // ── 技能市场管理 ──
-
-    // 管理员列表（从 DB + 文件系统）
-    adminListMarketSkills: adminProcedure
-      .input(z.object({ status: z.string().optional() }).optional())
-      .query(async ({ input }) => {
-        const rows = await listSkillMarketItems(input?.status);
-        const projection = await listSkillMarketV2Projection(
-          rows.map(row => String(row.skillId || "")).filter(Boolean),
-          undefined,
-          true,
-        ).catch(() => ({ identities: [], versions: [], installations: [] }));
-        const identityBySkillId = new Map(projection.identities.map(identity => [identity.skillId, identity]));
-        const versionByMarketId = new Map(projection.versions
-          .filter(version => version.legacyMarketId)
-          .map(version => [Number(version.legacyMarketId), version]));
-        const versionCount = new Map<string, number>();
-        for (const version of projection.versions) {
-          versionCount.set(version.skillIdentityId, (versionCount.get(version.skillIdentityId) || 0) + 1);
-        }
-        return rows.map(row => {
-          const identity = identityBySkillId.get(String(row.skillId || ""));
-          const version = versionByMarketId.get(Number(row.id));
-          return {
-            ...row,
-            identityId: identity?.identityId,
-            maintainerType: identity?.maintainerType,
-            maintainerUserId: identity?.maintainerUserId,
-            versionId: version?.versionId,
-            artifactSha256: version?.artifactSha256,
-            versionCount: identity ? versionCount.get(identity.identityId) || 0 : 0,
-          };
-        });
-      }),
-
-    adminSkillEvaluationContext: adminProcedure
-      .input(z.object({ skillId: skillIdSchema }))
-      .query(async ({ input }) => {
-        const marketRows = (await listSkillMarketItems())
-          .filter(row => String(row.skillId || "") === input.skillId);
-        const marketItem = marketRows.find(row => row.status === "approved") || marketRows[0];
-        if (!marketItem) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Skill 不存在" });
-        }
-        const identity = await getSkillIdentityBySkillId(input.skillId);
-        const storedVersions = identity
-          ? (await listSkillVersionsByIdentity(identity.identityId))
-            .filter(version => version.status === "approved")
-          : [];
-        const approvedVersions = storedVersions.length > 0
-          ? storedVersions.map(version => ({
-              versionId: version.versionId,
-              version: version.version,
-              artifactSha256: version.artifactSha256,
-              artifactAvailable: existsSync(path.join(version.artifactPath, "SKILL.md")),
-              submittedAt: version.submittedAt,
-              isLatest: version.versionId === identity?.latestApprovedVersionId,
-              releaseStatus: "approved" as const,
-            }))
-          : (() => {
-              const artifactPath = remapLegacySkillMarketPath(String(marketItem.packagePath || ""));
-              const digest = artifactPath && existsSync(artifactPath)
-                ? digestSkillSourceTree(artifactPath)
-                : null;
-              return [{
-                versionId: `legacy-market-${marketItem.id}`,
-                version: String(marketItem.version || "1.0.0"),
-                artifactSha256: digest?.sha256 || "",
-                artifactAvailable: Boolean(artifactPath && existsSync(path.join(artifactPath, "SKILL.md"))),
-                submittedAt: marketItem.createdAt,
-                isLatest: true,
-                releaseStatus: "approved" as const,
-              }];
-            })();
-        const repositoryCandidates = listRepositorySkillCandidates(APP_ROOT, input.skillId);
-        const candidateVersions = repositoryCandidates.map((candidate, index) => ({
-          versionId: candidate.versionId,
-          version: candidate.version,
-          artifactSha256: candidate.artifactSha256,
-          artifactAvailable: existsSync(path.join(candidate.artifactPath, "SKILL.md")),
-          submittedAt: null,
-          isLatest: false,
-          releaseStatus: "candidate" as const,
-          isRecommendedCandidate: index === 0,
-        }));
-        const versions = [...candidateVersions, ...approvedVersions];
-        const [models, roleTemplate] = await Promise.all([
-          getAvailableJiuwenModels(),
-          resolveSkillValueRoleTemplate(input.skillId),
-        ]);
-        const selectableModels = models.filter(model => model.id !== JIUWEN_AUTO_MODEL_ID);
-        const readiness = await probeJiuwenSkillMcpReadiness({
-          skillId: input.skillId,
-          roleTemplate,
-          allowPlannedEnterpriseRuntime: true,
-        }).catch((error): import("../_core/skill-mcp-readiness").SkillMcpReadiness => ({
-          skillId: input.skillId,
-          status: "unchecked",
-          canProceed: true,
-          message: `运行环境暂未完成检查：${error instanceof Error ? error.message : String(error)}`.slice(0, 240),
-          checkedAt: new Date().toISOString(),
-          servers: [],
-        }));
-        const versionsWithSupport = versions.map(version => ({
-          ...version,
-          evaluationSupport: assessSkillValueEvaluationSupport({
-            artifactAvailable: version.artifactAvailable,
-            modelCount: selectableModels.length,
-            suite: inspectCuratedSkillValueSuite({
-              root: APP_ROOT,
-              skillId: input.skillId,
-              version: version.version,
-              artifactSha256: version.artifactSha256,
-            }),
-            readiness,
-          }),
-        }));
-        const recommendedModel = selectableModels.find(model => model.id === "glm-5.2")
-          || selectableModels[0];
-        return {
-          skill: {
-            skillId: input.skillId,
-            name: String(marketItem.name || input.skillId),
-            description: String(marketItem.description || ""),
-            category: String(marketItem.category || "general"),
-            author: String(marketItem.author || ""),
-          },
-          versions: versionsWithSupport,
-          models: selectableModels.map(model => ({
-            id: model.id,
-            name: model.name,
-            description: model.desc || "",
-          })),
-          recommendedModelId: recommendedModel?.id || JIUWEN_AUTO_MODEL_ID,
-          defaultComparison: {
-            left: { mode: "without_target_skill" as const, versionId: null },
-            right: {
-              mode: "skill_version" as const,
-              versionId: candidateVersions.find(version => version.isRecommendedCandidate)?.versionId
-                || versionsWithSupport.find(version => version.isLatest)?.versionId
-                || versionsWithSupport[0]?.versionId
-                || null,
-            },
-          },
-          roleTemplate,
-          readiness,
-        };
-      }),
-
-    adminSkillEvaluationSupportMatrix: adminProcedure.query(async () => {
-      return await buildPrioritySkillValueEvaluationSupportCatalog(APP_ROOT);
-    }),
-
-    adminPrepareSkillEvaluation: adminProcedure
-      .input(z.object({
-        skillId: skillIdSchema,
-        targetVersionId: z.string().trim().min(1).max(128),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const marketRows = (await listSkillMarketItems())
-          .filter(row => String(row.skillId || "") === input.skillId);
-        const marketItem = marketRows.find(row => row.status === "approved") || marketRows[0];
-        if (!marketItem) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Skill 不存在" });
-        }
-        const identity = await getSkillIdentityBySkillId(input.skillId);
-        let version: {
-          versionId: string;
-          version: string;
-          artifactSha256: string;
-          artifactPath: string;
-        } | null = null;
-        if (input.targetVersionId.startsWith("legacy-market-")) {
-          const legacyMarketId = Number(input.targetVersionId.slice("legacy-market-".length));
-          const legacyItem = marketRows.find(row => Number(row.id) === legacyMarketId);
-          if (legacyItem) {
-            const artifactPath = remapLegacySkillMarketPath(String(legacyItem.packagePath || ""));
-            if (artifactPath && existsSync(artifactPath)) {
-              version = {
-                versionId: input.targetVersionId,
-                version: String(legacyItem.version || "1.0.0"),
-                artifactSha256: digestSkillSourceTree(artifactPath).sha256,
-                artifactPath,
-              };
-            }
-          }
-        } else if (input.targetVersionId.startsWith("candidate_")) {
-          const candidate = listRepositorySkillCandidates(APP_ROOT, input.skillId)
-            .find(item => item.versionId === input.targetVersionId);
-          if (candidate) version = candidate;
-        } else {
-          const stored = await getSkillVersionById(input.targetVersionId);
-          if (
-            stored
-            && identity
-            && stored.skillIdentityId === identity.identityId
-            && stored.status === "approved"
-          ) {
-            version = {
-              versionId: stored.versionId,
-              version: stored.version,
-              artifactSha256: stored.artifactSha256,
-              artifactPath: stored.artifactPath,
-            };
-          }
-        }
-        if (!version) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "所选 Skill 版本不可用于评测" });
-        }
-        try {
-          const roleTemplate = await resolveSkillValueRoleTemplate(input.skillId);
-          const usesCustomerContext = Object.keys(
-            getSkillMcpRequirement(input.skillId).servers,
-          ).includes("customer_context");
-          let contextAdapter: Parameters<typeof prepareSkillValueEvaluationPlan>[0]["contextAdapter"];
-          if (usesCustomerContext) {
-            try {
-              const principal = await ensureEaSkillEvaluationContextPrincipal({
-                organization: String(ctx.user.organization || "EA Skill Evaluation"),
-                roleTemplate,
-              });
-              contextAdapter = createEaSkillEvaluationContextAdapter({ principal });
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              contextAdapter = {
-                adapterId: "ea-customer-context-v1",
-                async load() {
-                  throw new Error(message);
-                },
-              };
-            }
-          }
-          const plan = await prepareSkillValueEvaluationPlan({
-            root: APP_ROOT,
-            skillId: input.skillId,
-            skillName: String(marketItem.name || input.skillId),
-            description: marketItem.description,
-            version,
-            roleTemplate,
-            contextAdapter,
-          });
-          await recordAuditBestEffort({
-            action: "skill.value_evaluation.prepared",
-            ...auditActor(ctx.user),
-            ...auditRequest(ctx.req),
-            targetType: "skill",
-            targetId: input.skillId,
-            targetName: String(marketItem.name || input.skillId),
-            metadata: {
-              targetVersionId: version.versionId,
-              targetVersion: version.version,
-              analyzerModel: plan.analyzerModel,
-              analyzerStatus: plan.analyzerStatus,
-              promptCount: plan.prompts.length,
-              planFingerprint: plan.planFingerprint,
-              contextStatus: plan.context.status,
-              contextProviderId: plan.context.providerId,
-              contextSnapshotFingerprint: plan.context.snapshotFingerprint,
-              contextSeedCount: plan.context.seedCount,
-            },
-          });
-          return plan;
-        } catch (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: error instanceof Error ? error.message : "准备 Skill 评测失败",
-          });
-        }
-      }),
-
-    adminStartSkillEvaluation: adminProcedure
-      .input(z.object({
-        skillId: skillIdSchema,
-        left: z.object({
-          selectionId: z.string().trim().min(1).max(128),
-          modelId: z.string().trim().min(1).max(200),
-        }),
-        right: z.object({
-          selectionId: z.string().trim().min(1).max(128),
-          modelId: z.string().trim().min(1).max(200),
-        }),
-        prompts: z.array(z.object({
-          promptId: z.string().trim().min(1).max(128),
-          name: z.string().trim().min(1).max(120),
-          prompt: z.string().trim().min(8).max(4_000),
-          evaluationGoal: z.string().trim().min(1).max(500),
-        })).min(1).max(5),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        if (
-          input.left.selectionId === input.right.selectionId
-          && input.left.modelId === input.right.modelId
-        ) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "左右配置完全相同" });
-        }
-        const marketRows = (await listSkillMarketItems())
-          .filter(row => String(row.skillId || "") === input.skillId);
-        const marketItem = marketRows.find(row => row.status === "approved") || marketRows[0];
-        if (!marketItem) throw new TRPCError({ code: "NOT_FOUND", message: "Skill 不存在" });
-        const availableModels = await getAvailableJiuwenModels();
-        const availableModelIds = new Set(
-          availableModels
-            .filter(model => model.id !== JIUWEN_AUTO_MODEL_ID)
-            .map(model => model.id),
-        );
-        if (
-          !availableModelIds.has(input.left.modelId)
-          || !availableModelIds.has(input.right.modelId)
-        ) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "所选模型当前不可用" });
-        }
-        try {
-          const [leftArtifact, rightArtifact, roleTemplate] = await Promise.all([
-            resolveSkillValueArtifact(input.skillId, input.left.selectionId),
-            resolveSkillValueArtifact(input.skillId, input.right.selectionId),
-            resolveSkillValueRoleTemplate(input.skillId),
-          ]);
-          const preflight = await probeJiuwenSkillMcpReadiness({
-            skillId: input.skillId,
-            roleTemplate,
-            force: true,
-            allowPlannedEnterpriseRuntime: true,
-          });
-          const job = startSkillValueEvaluationJob({
-            skillId: input.skillId,
-            skillName: String(marketItem.name || input.skillId),
-            roleTemplate,
-            organization: String(ctx.user.organization || "EA Skill Evaluation"),
-            left: { modelId: input.left.modelId, artifact: leftArtifact },
-            right: { modelId: input.right.modelId, artifact: rightArtifact },
-            prompts: input.prompts,
-            preflight,
-          });
-          await recordAuditBestEffort({
-            action: "skill.value_evaluation.started",
-            ...auditActor(ctx.user),
-            ...auditRequest(ctx.req),
-            targetType: "skill",
-            targetId: input.skillId,
-            targetName: String(marketItem.name || input.skillId),
-            metadata: {
-              jobId: job.jobId,
-              roleTemplate,
-              leftSelectionId: input.left.selectionId,
-              rightSelectionId: input.right.selectionId,
-              leftModelId: input.left.modelId,
-              rightModelId: input.right.modelId,
-              promptCount: input.prompts.length,
-              configurationFingerprint: job.configurationFingerprint,
-              preflightStatus: preflight.status,
-              preflightMessage: preflight.message,
-            },
-          });
-          return job;
-        } catch (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: error instanceof Error ? error.message : "启动 Skill 评测失败",
-          });
-        }
-      }),
-
-    adminGetSkillEvaluationJob: adminProcedure
-      .input(z.object({ jobId: z.string().trim().min(1).max(128) }))
-      .query(({ input }) => {
-        const job = getSkillValueEvaluationJob(input.jobId);
-        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "评测任务不存在或已过期" });
-        return job;
-      }),
-
-    adminCancelSkillEvaluationJob: adminProcedure
-      .input(z.object({ jobId: z.string().trim().min(1).max(128) }))
-      .mutation(async ({ input, ctx }) => {
-        const job = cancelSkillValueEvaluationJob(input.jobId);
-        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "评测任务不存在或已过期" });
-        await recordAuditBestEffort({
-          action: "skill.value_evaluation.cancelled",
-          ...auditActor(ctx.user),
-          ...auditRequest(ctx.req),
-          targetType: "skill",
-          targetId: job.skillId,
-          targetName: job.skillName,
-          metadata: { jobId: job.jobId, status: job.status },
-        });
-        return job;
-      }),
-
-    adminListSkillEvaluationJobs: adminProcedure
-      .input(z.object({
-        skillId: skillIdSchema,
-        limit: z.number().int().min(1).max(100).optional(),
-      }))
-      .query(({ input, ctx }) => listSkillValueEvaluationJobs({
-        skillId: input.skillId,
-        organization: String(ctx.user.organization || "EA Skill Evaluation"),
-        limit: input.limit,
-      })),
-
     adminRoleAssetCatalog: adminProcedure.query(async () => {
       await syncGlobalOpenSourceSkillGrants({ actor: "admin-role-asset-catalog" });
       const roles = listAgentRoleTemplates()
@@ -1607,19 +977,19 @@ export const clawRouter = router({
         });
       }
       for (const group of Array.isArray(mcpGroups.items) ? mcpGroups.items : []) {
-        for (const child of Array.isArray((group as any).children) ? (group as any).children : []) {
-          const serverId = String((child as any).serverId || "").trim();
+        for (const child of Array.isArray((group).children) ? (group).children : []) {
+          const serverId = String((child).serverId || "").trim();
           if (!serverId) continue;
           const existing = mcpServersById.get(serverId) || {};
           mcpServersById.set(serverId, {
             ...existing,
             serverId,
-            name: (child as any).name || serverId,
-            groupId: (group as any).id || "",
-            groupName: (group as any).name || "",
-            status: (child as any).status || existing.status || "unknown",
-            configured: Boolean((child as any).configured || existing.configured),
-            enabled: Boolean((child as any).enabled || existing.enabled),
+            name: (child).name || serverId,
+            groupId: (group).id || "",
+            groupName: (group).name || "",
+            status: (child).status || existing.status || "unknown",
+            configured: Boolean((child).configured || existing.configured),
+            enabled: Boolean((child).enabled || existing.enabled),
           });
         }
       }
@@ -1663,8 +1033,8 @@ export const clawRouter = router({
           const mcpGroups = listMcpToolGroups();
           const serverIds = new Set<string>();
           for (const group of Array.isArray(mcpGroups.items) ? mcpGroups.items : []) {
-            for (const child of Array.isArray((group as any).children) ? (group as any).children : []) {
-              const serverId = String((child as any).serverId || "").trim();
+            for (const child of Array.isArray((group).children) ? (group).children : []) {
+              const serverId = String((child).serverId || "").trim();
               if (serverId) serverIds.add(serverId);
             }
           }
@@ -1696,349 +1066,6 @@ export const clawRouter = router({
       }),
 
     adminSystemHealth: adminProcedure.query(async () => getAdminSystemHealth(await getAvailableJiuwenModels())),
-
-    // 管理员上传技能包（zip）— 通过 Express 路由处理，这里只做元数据入库
-    adminPublishSkill: adminProcedure
-      .input(z.object({
-        skillId: skillIdSchema,
-        name: z.string().min(1).max(128),
-        description: z.string().optional(),
-        author: z.string().optional(),
-        version: z.string().optional(),
-        category: z.enum(["finance", "dev", "data", "writing", "general"]).optional(),
-        origin: z.enum(["opensource", "finance", "squad"]).optional(),
-        license: z.string().optional(),
-        status: z.enum(["pending", "approved", "rejected", "offline"]).optional(),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const marketDir = skillMarketDir();
-        const status = input.status || "approved";
-        const id = await insertSkillMarketItem({
-          skillId: input.skillId,
-          name: input.name,
-          description: input.description || null,
-          author: input.author || "官方",
-          authorUserId: ctx.user!.id,
-          version: input.version || "1.0.0",
-          category: input.category || "general",
-          origin: input.origin || "opensource",
-          status,
-          license: input.license || "MIT",
-          packagePath: `${marketDir}/${status}/${input.skillId}`,
-        });
-        if (status === "approved" && (input.origin || "opensource") === "opensource") {
-          await syncGlobalOpenSourceSkillGrants({ actor: ctx.user?.email || `user:${ctx.user?.id || "admin"}` });
-        }
-        await recordAuditBestEffort({
-          action: "skill.market.created",
-          ...auditActor(ctx.user),
-          ...auditRequest(ctx.req),
-          targetType: "skill",
-          targetId: input.skillId,
-          targetName: input.name,
-          metadata: {
-            marketId: id,
-            status,
-            category: input.category || "general",
-            origin: input.origin || "opensource",
-            version: input.version || "1.0.0",
-          },
-        });
-        return { ok: true, id };
-      }),
-
-    // 审核（通过/拒绝/下架）— 同时移动文件目录
-    adminReviewSkill: adminProcedure
-      .input(z.object({
-        id: z.number(),
-        status: z.enum(["approved", "rejected", "offline"]),
-        reviewNote: z.string().optional(),
-      }))
-      .mutation(async ({ input, ctx }) => {
-        const item = await getSkillMarketItem(input.id);
-        if (!item) throw new TRPCError({ code: "NOT_FOUND" });
-        const v2Version = await getSkillVersionByLegacyMarketId(input.id);
-        if (
-          input.status === "approved"
-          && v2Version
-          && Number(v2Version.submittedBy) === Number(ctx.user!.id)
-        ) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "发布人不能审核自己的技能版本，请由另一位管理员复核",
-          });
-        }
-        if (input.status === "approved") {
-          await recordAuditRequired({
-            action: "skill.market.approved.requested",
-            ...auditActor(ctx.user),
-            ...auditRequest(ctx.req),
-            targetType: "skill",
-            targetId: String(item.skillId || item.id),
-            targetName: item.name || null,
-            metadata: {
-              marketId: input.id,
-              previousStatus: item.status || null,
-              reviewNotePresent: Boolean(input.reviewNote),
-            },
-          });
-        }
-        try {
-          const marketDir = skillMarketDir();
-          const itemSkillId = skillIdSchema.parse(String(item.skillId || ""));
-          const oldRaw = item.packagePath || path.join(marketDir, String(item.status || "pending"), itemSkillId);
-          const oldDir = remapLegacySkillMarketPath(oldRaw);
-          if (input.status === "approved") {
-            if (!existsSync(oldDir)) {
-              throw new TRPCError({ code: "NOT_FOUND", message: "待审核技能包不存在" });
-            }
-            const scan = parseSkillSourceDirectory(oldDir, itemSkillId);
-            if (scan.warnings.length > 0) {
-              throw new TRPCError({
-                code: "BAD_REQUEST",
-                message: `技能安全扫描未通过: ${scan.warnings.slice(0, 5).join("；")}`,
-              });
-            }
-          }
-          const statusDir = safeChildPath(marketDir, input.status);
-          const newDir = v2Version
-            ? oldDir
-            : safeChildPath(statusDir, `${itemSkillId}-${item.id}`);
-          if (!v2Version && oldDir !== newDir) {
-            try {
-              mkdirSync(path.dirname(newDir), { recursive: true });
-              if (existsSync(oldDir)) {
-                cpSync(oldDir, newDir, { recursive: true, force: true });
-                try {
-                  const oldStorePath = safeSkillStorePath(oldDir);
-                  rmSync(oldStorePath, { recursive: true, force: true });
-                } catch {}
-              } else {
-                mkdirSync(newDir, { recursive: true });
-              }
-            } catch {}
-          }
-          if (input.status === "approved" && !v2Version) {
-            const origin = String((item as any).origin || "opensource");
-            const approvedRows = await listSkillMarketItems("approved");
-            for (const row of approvedRows) {
-              if (Number(row.id) === Number(item.id)) continue;
-              if (String(row.skillId) !== String(item.skillId)) continue;
-              if (String((row as any).origin || "opensource") !== origin) continue;
-              await updateSkillMarketItem(Number(row.id), { status: "offline" });
-            }
-          }
-          if (v2Version) {
-            await reviewSkillVersionByLegacyMarketId({
-              legacyMarketId: input.id,
-              status: input.status === "offline" ? "withdrawn" : input.status,
-              reviewedBy: ctx.user!.id,
-              reviewNote: input.reviewNote || null,
-            });
-            const identity = await getSkillIdentityById(v2Version.skillIdentityId);
-            const versions = await listSkillVersionsByIdentity(v2Version.skillIdentityId);
-            const latestMarketId = versions.find(version => (
-              version.versionId === identity?.latestApprovedVersionId
-            ))?.legacyMarketId;
-            const marketRows = await listSkillMarketItems();
-            for (const row of marketRows) {
-              if (String(row.skillId || "") !== String(item.skillId || "")) continue;
-              const linked = versions.find(version => Number(version.legacyMarketId) === Number(row.id));
-              if (!linked || linked.status !== "approved") continue;
-              await updateSkillMarketItem(Number(row.id), {
-                status: Number(row.id) === Number(latestMarketId) ? "approved" : "offline",
-              });
-            }
-          }
-          const compatibilityStatus = v2Version && input.status === "approved"
-            ? (await getSkillIdentityById(v2Version.skillIdentityId))?.latestApprovedVersionId === v2Version.versionId
-              ? "approved"
-              : "offline"
-            : input.status;
-          await updateSkillMarketItem(input.id, {
-            status: compatibilityStatus,
-            reviewNote: input.reviewNote || null,
-            packagePath: newDir,
-          });
-          if (String((item as any).origin || "opensource") === "opensource") {
-            await syncGlobalOpenSourceSkillGrants({ actor: ctx.user?.email || `user:${ctx.user?.id || "admin"}` });
-          }
-          if (input.status === "approved") {
-            await recordAuditRequired({
-              action: "skill.market.approved.completed",
-              ...auditActor(ctx.user),
-              ...auditRequest(ctx.req),
-              targetType: "skill",
-              targetId: String(item.skillId || item.id),
-              targetName: item.name || null,
-              metadata: {
-                marketId: input.id,
-                previousStatus: item.status || null,
-                status: input.status,
-                reviewNotePresent: Boolean(input.reviewNote),
-              },
-            });
-          } else {
-            await recordAuditBestEffort({
-              action: "skill.market.reviewed",
-              ...auditActor(ctx.user),
-              ...auditRequest(ctx.req),
-              targetType: "skill",
-              targetId: String(item.skillId || item.id),
-              targetName: item.name || null,
-              metadata: {
-                marketId: input.id,
-                previousStatus: item.status || null,
-                status: input.status,
-                reviewNotePresent: Boolean(input.reviewNote),
-              },
-            });
-          }
-        } catch (error) {
-          if (input.status === "approved") {
-            await recordAuditBestEffort({
-              action: "skill.market.approved.failed",
-              result: "failed",
-              severity: "high",
-              ...auditActor(ctx.user),
-              ...auditRequest(ctx.req),
-              targetType: "skill",
-              targetId: String(item.skillId || item.id),
-              targetName: item.name || null,
-              errorCode: "SKILL_MARKET_APPROVAL_FAILED",
-              metadata: {
-                marketId: input.id,
-                previousStatus: item.status || null,
-                reviewNotePresent: Boolean(input.reviewNote),
-                ...auditErrorMetadata(error),
-              },
-            });
-          }
-          throw error;
-        }
-        return { ok: true };
-      }),
-
-    // 查看技能源码（SKILL.md + 文本源码文件）
-    adminViewSkillSource: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
-        const item = await getSkillMarketItem(input.id);
-        if (!item) throw new TRPCError({ code: "NOT_FOUND" });
-        const { readFileSync, readdirSync, existsSync, statSync } = await import("fs");
-        const { join } = await import("path");
-        const dir = remapLegacySkillMarketPath(item.packagePath || "");
-        let skillMd = "";
-        let scripts: string[] = [];
-        const sourceFiles: Array<{ path: string; content: string; size: number; truncated: boolean }> = [];
-        const skippedDirs = new Set([".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"]);
-        const allowedSuffixes = [
-          ".md",
-          ".txt",
-          ".py",
-          ".ts",
-          ".tsx",
-          ".js",
-          ".jsx",
-          ".mjs",
-          ".cjs",
-          ".json",
-          ".yaml",
-          ".yml",
-          ".sh",
-          ".sql",
-          ".xml",
-          ".toml",
-          ".ini",
-          ".template",
-        ];
-        const maxFiles = 40;
-        const maxBytes = 120 * 1024;
-        const isViewableSource = (relativePath: string) => {
-          const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
-          if (normalized === "skill.md") return false;
-          if (/(^|\/)(\.env|secrets?|credentials?|tokens?|passwords?)(\.|\/|$)/.test(normalized)) return false;
-          if (/\.(pem|key|p12|pfx|crt|cer|der|sqlite|db|zip|tar|gz|png|jpg|jpeg|gif|webp|pdf|docx|xlsx)$/i.test(normalized)) return false;
-          return allowedSuffixes.some((suffix) => normalized.endsWith(suffix));
-        };
-        const collectSourceFiles = (currentDir: string, prefix = "") => {
-          if (sourceFiles.length >= maxFiles) return;
-          let entries: Array<{ name: string; isDirectory: () => boolean; isFile: () => boolean }> = [];
-          try {
-            entries = readdirSync(currentDir, { withFileTypes: true }) as any;
-          } catch {
-            return;
-          }
-          for (const entry of entries) {
-            if (sourceFiles.length >= maxFiles) break;
-            const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-            const fullPath = join(currentDir, entry.name);
-            if (entry.isDirectory()) {
-              if (!skippedDirs.has(entry.name)) collectSourceFiles(fullPath, relativePath);
-              continue;
-            }
-            if (!entry.isFile() || !isViewableSource(relativePath)) continue;
-            try {
-              const stat = statSync(fullPath);
-              const tooLarge = stat.size > maxBytes;
-              const content = tooLarge
-                ? `文件大小 ${stat.size} bytes，超过源码预览上限 ${maxBytes} bytes。`
-                : readFileSync(fullPath, "utf8");
-              if (!tooLarge && content.includes("\u0000")) continue;
-              sourceFiles.push({
-                path: relativePath.replace(/\\/g, "/"),
-                content,
-                size: stat.size,
-                truncated: tooLarge,
-              });
-            } catch {}
-          }
-        };
-        try { skillMd = readFileSync(`${dir}/SKILL.md`, "utf8"); } catch {}
-        try { if (existsSync(`${dir}/scripts`)) scripts = readdirSync(`${dir}/scripts`); } catch {}
-        if (dir) collectSourceFiles(dir);
-        sourceFiles.sort((a, b) => {
-          const aRank = a.path.startsWith("scripts/") ? 0 : a.path.startsWith("templates/") ? 1 : a.path.startsWith("reference/") ? 2 : 3;
-          const bRank = b.path.startsWith("scripts/") ? 0 : b.path.startsWith("templates/") ? 1 : b.path.startsWith("reference/") ? 2 : 3;
-          return aRank - bRank || a.path.localeCompare(b.path);
-        });
-        return { skillMd, scripts, sourceFiles, dir };
-      }),
-
-    // 删除
-    adminDeleteMarketSkill: adminProcedure
-      .input(z.object({ id: z.number() }))
-      .mutation(async ({ input, ctx }) => {
-        const item = await getSkillMarketItem(input.id);
-        const version = await getSkillVersionByLegacyMarketId(input.id);
-        if (version) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "版本化技能保留发布审计记录；请使用拒绝或下架，不支持物理删除",
-          });
-        }
-        if (item?.packagePath) {
-          try {
-            const packagePath = safeSkillStorePath(remapLegacySkillMarketPath(String(item.packagePath)));
-            removeSkillStorePath(packagePath);
-          } catch {}
-        }
-        await deleteSkillMarketItem(input.id);
-        await recordAuditBestEffort({
-          action: "skill.market.deleted",
-          ...auditActor(ctx.user),
-          ...auditRequest(ctx.req),
-          targetType: "skill",
-          targetId: String(item?.skillId || input.id),
-          targetName: item?.name || null,
-          metadata: {
-            marketId: input.id,
-            priorStatus: item?.status || null,
-            packagePathPresent: Boolean(item?.packagePath),
-          },
-        });
-        return { ok: true };
-      }),
 
     ...clawSkillMarketProcedures,
 
@@ -2226,7 +1253,7 @@ export const clawRouter = router({
       .mutation(async ({ input, ctx }) => {
         const { BRAND_DB_KEYS } = await import("@shared/brand");
         for (const [field, dbKey] of Object.entries(BRAND_DB_KEYS)) {
-          const val = (input as any)[field];
+          const val = input[field as keyof typeof input];
           if (val !== undefined && val !== null) {
             await upsertSystemConfig(
               { key: dbKey, value: String(val), description: `品牌配置: ${field}` },
@@ -2253,7 +1280,7 @@ export const clawRouter = router({
           const overrides = JSON.parse(readFileSync(`${APP_ROOT}/data/claw-model-overrides.json`, "utf8") || "{}");
           modelOverride = overrides[input.adoptId] || "";
         } catch {}
-        const modelPreference = String((settings as any)?.model || modelOverride || "");
+        const modelPreference = String((settings)?.model || modelOverride || "");
         const base = settings || {
           adoptionId: Number(claw.id),
           displayName: "岗位智能体",
@@ -2267,7 +1294,7 @@ export const clawRouter = router({
         };
         logIosLoadDebug("trpc_claw_getSettings", {
           adoptId: input.adoptId,
-          clawId: (claw as any).id,
+          clawId: (claw).id,
           hasSettings: Boolean(settings),
           modelOverride: modelPreference,
           ms: Date.now() - startedAt,
@@ -2325,7 +1352,7 @@ export const clawRouter = router({
 
         // 可见性复用 Demo 权限模型：internal 仅 all 用户可创建
         const clawVisibility = (await getSystemConfigValue("claw_visibility", "internal")).trim() || "internal";
-        const userAccessLevel = ((ctx.user as any)?.accessLevel || "public_only") as "public_only" | "all";
+        const userAccessLevel = ((ctx.user)?.accessLevel || "public_only") as "public_only" | "all";
         if (clawVisibility === "internal" && userAccessLevel !== "all") {
           throw new Error("当前岗位智能体为内部访问，仅内部权限用户可创建");
         }
@@ -2354,7 +1381,7 @@ export const clawRouter = router({
 
         // 幂等：只复用目标 runtime 的现有实例，避免老 lgc-* 阻止创建当前默认的 lgj-*。
         const existing = (await listClawsByUserId(userId)).find((claw) => {
-          const runtime = String((claw as any).runtime || resolveClawRuntime(claw.adoptId));
+          const runtime = String((claw).runtime || resolveClawRuntime(claw.adoptId));
           const runtimeMatches = runtime === provisionPlan.runtime
             || (provisionPlan.runtime === "jiuwenswarm" && claw.adoptId.startsWith("lgj-"));
           return runtimeMatches && String(claw.roleTemplate || "general-assistant") === role.id;
@@ -2362,7 +1389,7 @@ export const clawRouter = router({
         if (existing) {
           const normalizedExisting = {
             ...existing,
-            entryUrl: buildClawEntryUrl(String((existing as any).adoptId || "")),
+            entryUrl: buildClawEntryUrl(String((existing).adoptId || "")),
           };
           return {
             success: true,
@@ -2525,7 +1552,7 @@ export const clawRouter = router({
             adoption: latest
               ? {
                   ...latest,
-                  entryUrl: buildClawEntryUrl(String((latest as any).adoptId || adoptId)),
+                  entryUrl: buildClawEntryUrl(String((latest).adoptId || adoptId)),
                 }
               : null,
           };

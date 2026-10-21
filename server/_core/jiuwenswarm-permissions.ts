@@ -1,14 +1,5 @@
+import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, } from "fs";
 import path from "path";
-import {
-  chmodSync,
-  chownSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "fs";
 import { JIUWENCLAW_HOME } from "./helpers";
 
 const DEFAULT_JIUWENBOX_RUNTIME_GROUP = "jiuwenswarm";
@@ -79,6 +70,7 @@ export function normalizeJiuwenSwarmWorkspaceRuntimePermissions(
   workspaceDirRaw: string,
   options: { runtimeGid?: number | null } = {},
 ): boolean {
+  if (process.platform === "win32") return false; // Windows uses directory ACLs, not POSIX groups.
   const workspaceDir = path.resolve(workspaceDirRaw);
   const runtimeGid = options.runtimeGid === undefined ? resolveRuntimeGid() : options.runtimeGid;
   if (runtimeGid === null || !existsSync(workspaceDir)) return false;

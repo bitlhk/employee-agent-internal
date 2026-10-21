@@ -13,4 +13,10 @@ describe("restore path mappings", () => {
     expect(() => parseRestorePathMaps(["--path-map=/root/employee-agent"])).toThrow("invalid restore path mapping");
     expect(() => parseRestorePathMaps(["--path-map=/=/srv/root"])).toThrow("filesystem root");
   });
+  it("maps across host path conventions without accepting sibling prefixes", () => {
+    const mappings = parseRestorePathMaps(["--path-map=C:\\backup=/srv/restored"]);
+    expect(remapRestoredPath("C:\\backup\\skills\\a", mappings)).toBe("/srv/restored/skills/a");
+    expect(remapRestoredPath("C:\\backup-other\\a", mappings)).toBe("C:\\backup-other\\a");
+    expect(remapRestoredPath("/source/skills/a", parseRestorePathMaps(["--path-map=/source=D:\\restored"]))).toBe("D:\\restored\\skills\\a");
+  });
 });

@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe("normalizeJiuwenSwarmWorkspaceRuntimePermissions", () => {
-  it("makes newly provisioned workspace paths readable by the runtime group", () => {
+  it.skipIf(process.platform === "win32")("makes newly provisioned workspace paths readable by the runtime group", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-permissions-"));
     roots.push(root);
     const agentRoot = path.join(root, "agent_jiuwen_lgj-test");
@@ -35,7 +35,7 @@ describe("normalizeJiuwenSwarmWorkspaceRuntimePermissions", () => {
     expect(normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir, { runtimeGid })).toBe(false);
   });
 
-  it("does not follow workspace symlinks", () => {
+  it.skipIf(process.platform === "win32")("does not follow workspace symlinks", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-jiuwen-permissions-link-"));
     roots.push(root);
     const workspaceDir = path.join(root, "agent_jiuwen_lgj-test", "agent", "jiuwenclaw_workspace");
@@ -47,5 +47,13 @@ describe("normalizeJiuwenSwarmWorkspaceRuntimePermissions", () => {
     normalizeJiuwenSwarmWorkspaceRuntimePermissions(workspaceDir, { runtimeGid: process.getgid() });
 
     expect(lstatSync(outside).mode & 0o777).toBe(0o600);
+  });
+  it.runIf(process.platform === "win32")("leaves Windows ACL management to provisioning", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ea-permissions-windows-"));
+    roots.push(root);
+    writeFileSync(path.join(root, "IDENTITY.md"), "private");
+    const before = lstatSync(root).mode;
+    expect(normalizeJiuwenSwarmWorkspaceRuntimePermissions(root, { runtimeGid: 1000 })).toBe(false);
+    expect(lstatSync(root).mode).toBe(before);
   });
 });

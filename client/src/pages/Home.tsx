@@ -1,169 +1,61 @@
-import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { RuntimeWSClient } from "@/lib/runtime-ws";
-import { shouldAutoFollowChat } from "@/lib/chat-auto-follow";
-import {
-  applyAssistantFinalSnapshot,
-  mergeAssistantStreamText,
-  parseRuntimeRunDescriptor,
-} from "@/lib/assistant-stream";
-import { toast } from "sonner";
-import { useBrand } from "@/lib/useBrand";
-import { trpc } from "@/lib/trpc";
+import { hasPendingJiuwenPermissionMessage, normalizeIncomingToolName, normalizeMessageToolEvents, toolCallsSignature, type LxMsg } from './chat-message-state';
+
 import { useAuth } from "@/_core/hooks/useAuth";
-import { useRoute, useLocation } from "wouter";
-import { SidebarFooter } from "@/components/SidebarFooter";
+import { AgentArtifactPanel, type AgentArtifactView } from "@/components/AgentArtifactPanel";
+import type { AgentTask } from "@/components/AgentTaskCard";
+import { BrandIcon } from "@/components/BrandIcon";
 import { ChatInput } from "@/components/ChatInput";
-import { RoleTaskLaunchpad } from "@/components/RoleTaskLaunchpad";
+import { ChatMessage, type ChatKnowledgeSource, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
+import { ConnectorIcon } from "@/components/ConnectorIcon";
+import { MainPanel } from "@/components/console/MainPanel";
+import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
+import { SessionList } from "@/components/console/SessionList";
+import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
+import { TopBar } from "@/components/console/TopBar";
+import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
 import { CustomMcpDialog, type CustomMcpTemplate } from "@/components/CustomMcpDialog";
-import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
-import { KnowledgeCaptureDialog, type KnowledgeCaptureSource } from "@/components/KnowledgeCaptureDialog";
+import { ExpertAvatar } from "@/components/ExpertAvatar";
 import { ExpertInteractionPrompt } from "@/components/ExpertInteractionPrompt";
 import { JiuwenInteractionPrompt } from "@/components/JiuwenInteractionPrompt";
-import { ChatMessage, type ChatKnowledgeSource, type ChatMessageAttachment, type JiuwenPermissionRequestCard, type MessageEventEntry, type MessageFeedbackValue, type ToolCallEntry } from "@/components/ChatMessage";
-import { ConversationNavigator, buildConversationNavigatorItems } from "@/components/ConversationNavigator";
+import { KnowledgeCaptureDialog, type KnowledgeCaptureSource } from "@/components/KnowledgeCaptureDialog";
+import { KnowledgeCitationPanel } from "@/components/KnowledgeCitationPanel";
 import { ModelPicker } from "@/components/ModelPicker";
-import type { AgentTask } from "@/components/AgentTaskCard";
-import { AgentArtifactPanel, type AgentArtifactView } from "@/components/AgentArtifactPanel";
-import { BrandIcon } from "@/components/BrandIcon";
-import { ExpertAvatar } from "@/components/ExpertAvatar";
-import { ConnectorIcon } from "@/components/ConnectorIcon";
-import { Sidebar, isPageKey, type PageKey } from "@/components/console/Sidebar";
-import { SessionList } from "@/components/console/SessionList";
-import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
-import { TopBar } from "@/components/console/TopBar";
-import { MainPanel } from "@/components/console/MainPanel";
 import { ChatPage } from "@/components/pages/ChatPage";
 import { WorkspaceBrowser } from "@/components/pages/WorkspacePage";
-import { KnowledgeCitationPanel } from "@/components/KnowledgeCitationPanel";
-import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
-import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
-import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
+import { PersonalExpertDialog } from "@/components/PersonalExpertDialog";
+import { RoleTaskLaunchpad } from "@/components/RoleTaskLaunchpad";
+import { SidebarFooter } from "@/components/SidebarFooter";
 import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { BookOpen, BrainCircuit, Check, ChevronRight, FolderOpen, History, Link2, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Search, Settings2, Upload, Wand2, X } from "lucide-react";
-import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
-import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
-import {
-  buildExpertHandoffRuntimeMessage,
-  stripExpertHandoffRuntimeMessage,
-} from "@shared/expert-handoff-context";
-import {
-  EA_INTERACTION_SCHEMA,
-  agentInteractionResponseText,
-  parseAgentInteraction,
-  type AgentInteraction,
-  type AgentInteractionResponse,
-} from "@shared/agent-interaction";
-import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
-import { roleDisplayName, skillTrialPrompt } from "@/lib/role-experience";
-import {
-  composerMenuConnectors,
-  flattenComposerConnectors,
-  roleHomeEnterpriseConnectors,
-  type ComposerConnector,
-  type ComposerConnectorResponse,
-  type RoleHomeRuntimeStatus,
-} from "@/lib/composer-connectors";
-import {
-  expertTaskMessage,
-  normalizeExpertAgents,
-  type ExpertAgent,
-  type ExpertAgentsResponse,
-} from "@/lib/expert-agents";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger, } from "@/components/ui/dropdown-menu";
+import { WorkforceAgentIcon } from "@/components/WorkforceAgentIcon";
+import { applyAssistantFinalSnapshot, mergeAssistantStreamText, parseRuntimeRunDescriptor, } from "@/lib/assistant-stream";
+import { shouldAutoFollowChat } from "@/lib/chat-auto-follow";
 import { mergeCachedAssistantMetadata, mergeCanonicalAssistantToolCalls } from "@/lib/chat-history-metadata";
-import { isTaskReceiptBundleV1, type TaskReceiptBundleV1 } from "@shared/context-evidence";
-import {
-  arrayBufferToBase64,
-  chatRequestError,
-  buildExpertHandoff,
-  extractAgentTaskIds,
-  extractJiuwenPermissionMarker,
-  fetchWithTimeout,
-  flattenComposerSkills,
-  inferKnowledgeCaptureTitle,
-  messageAgentTaskIds,
-  withJiuwenPermissionMarker,
-  type ComposerSkillOption,
-} from "@/lib/chat-home-helpers";
-import {
-  clawModelFallbackStorageKey,
-  clawModelStorageKey,
-  clawStatusStorageKey,
-  compactSessionSearchText,
-  conversationHasMeaningfulContent,
-  inferSessionPreview,
-  inferSessionTitle,
-  initialWorkspacePanelWidth,
-  legacyClawModelFallbackStorageKey,
-  legacyClawModelStorageKey,
-  legacyClawStatusStorageKey,
-  legacyWebConversationStorageKeys,
-  legacyWebDraftStorageKey,
-  legacyWebHiddenSessionsStorageKey,
-  legacyWebInputHistoryStorageKey,
-  legacyWebMessagesStorageKeys,
-  legacyWebSessionIndexStorageKey,
-  makeClientRunId,
-  makeConversationId,
-  makeLxMsgId,
-  mergeWebSessionRecords,
-  normalizeSessionSearchText,
-  normalizeSessionText,
-  normalizeSessionViewRecord,
-  readHiddenWebSessions,
-  readLocalStorageWithLegacy,
-  readWebSessionIndex,
-  removeLocalStorageKeys,
-  sortWebSessionRecords,
-  visibleWebSessionIndex,
-  webConversationStorageKey,
-  webDraftStorageKey,
-  webExpertModeStorageKey,
-  webHiddenSessionsStorageKey,
-  webInputHistoryStorageKey,
-  webKnowledgeStorageKey,
-  webMessagesStorageKey,
-  webSessionIndexStorageKey,
-  writeHiddenWebSessions,
-  writeWebSessionIndex,
-  WORKSPACE_PANEL_DEFAULT_WIDTH,
-  WORKSPACE_PANEL_MAX_WIDTH,
-  WORKSPACE_PANEL_MIN_WIDTH,
-  WORKSPACE_PANEL_WIDTH_KEY,
-  type WebChatSessionRecord,
-} from "@/lib/chat-session-state";
+import { arrayBufferToBase64, buildExpertHandoff, chatRequestError, extractAgentTaskIds, extractJiuwenPermissionMarker, fetchWithTimeout, flattenComposerSkills, inferKnowledgeCaptureTitle, messageAgentTaskIds, withJiuwenPermissionMarker, type ComposerSkillOption, } from "@/lib/chat-home-helpers";
+import { WORKSPACE_PANEL_DEFAULT_WIDTH, WORKSPACE_PANEL_MAX_WIDTH, WORKSPACE_PANEL_MIN_WIDTH, WORKSPACE_PANEL_WIDTH_KEY, clawModelFallbackStorageKey, clawModelStorageKey, clawStatusStorageKey, compactSessionSearchText, conversationHasMeaningfulContent, inferSessionPreview, inferSessionTitle, initialWorkspacePanelWidth, legacyClawModelFallbackStorageKey, legacyClawModelStorageKey, legacyClawStatusStorageKey, legacyWebConversationStorageKeys, legacyWebDraftStorageKey, legacyWebHiddenSessionsStorageKey, legacyWebInputHistoryStorageKey, legacyWebMessagesStorageKeys, legacyWebSessionIndexStorageKey, makeClientRunId, makeConversationId, makeLxMsgId, mergeWebSessionRecords, normalizeSessionSearchText, normalizeSessionText, normalizeSessionViewRecord, readHiddenWebSessions, readLocalStorageWithLegacy, readWebSessionIndex, removeLocalStorageKeys, sortWebSessionRecords, visibleWebSessionIndex, webConversationStorageKey, webDraftStorageKey, webExpertModeStorageKey, webHiddenSessionsStorageKey, webInputHistoryStorageKey, webKnowledgeStorageKey, webMessagesStorageKey, webSessionIndexStorageKey, writeHiddenWebSessions, writeWebSessionIndex, type WebChatSessionRecord, } from "@/lib/chat-session-state";
+import { composerMenuConnectors, flattenComposerConnectors, roleHomeEnterpriseConnectors, type ComposerConnector, type ComposerConnectorResponse, type RoleHomeRuntimeStatus, } from "@/lib/composer-connectors";
+import { classifyDisplayError, displayErrorMessage } from "@/lib/errorDisplay";
+import { expertTaskMessage, normalizeExpertAgents, type ExpertAgent, type ExpertAgentsResponse, } from "@/lib/expert-agents";
+import { roleDisplayName, skillTrialPrompt } from "@/lib/role-experience";
+import { RuntimeWSClient } from "@/lib/runtime-ws";
+import { applySettings as applyUiSettings, getSettings, subscribeSettings } from "@/lib/settings";
+import { inspectSkillPackage, uploadSkillPackage } from "@/lib/skill-package-upload";
+import { trpc } from "@/lib/trpc";
+import { useBrand } from "@/lib/useBrand";
+import { EA_INTERACTION_SCHEMA, agentInteractionResponseText, parseAgentInteraction, type AgentInteraction, type AgentInteractionResponse, } from "@shared/agent-interaction";
+import { isTaskReceiptBundleV1 } from "@shared/context-evidence";
+import { stripEaInternalRuntimeContext } from "@shared/ea-runtime-context";
+import { buildExpertHandoffRuntimeMessage, stripExpertHandoffRuntimeMessage, } from "@shared/expert-handoff-context";
+import { buildUploadedAttachmentRuntimeMessage, parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
+import { BookOpen, BrainCircuit, Check, ChevronRight, FolderOpen, History, Link2, LoaderCircle, Menu, PanelLeftClose, PanelLeftOpen, Paperclip, Plus, Search, Settings2, Upload, Wand2, X } from "lucide-react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useLocation, useRoute } from "wouter";
 
 
 const ENABLE_OPENCLAW_WS_CHAT = true;
 const MAX_COMPOSER_SKILLS = 3;
-
-function toolCallsSignature(toolCalls?: ToolCallEntry[]) {
-  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return "";
-  return toolCalls
-    .map((tool) => [
-      tool.id,
-      tool.name,
-      tool.status,
-      String(tool.arguments || "").slice(0, 80),
-      String(tool.result || "").length,
-      tool.outputFiles?.length || 0,
-    ].join(":"))
-    .join("|");
-}
-
-function normalizeIncomingToolName(chunk: any): string {
-  const fn = chunk?.function && typeof chunk.function === "object" ? chunk.function : {};
-  const raw = chunk?.name ?? chunk?.toolName ?? chunk?.tool_name ?? chunk?.tool ?? fn?.name;
-  const value = String(raw || "").trim();
-  return value || "tool";
-}
 
 type UploadedLingxiaAttachment = {
   name: string;
@@ -173,75 +65,6 @@ type UploadedLingxiaAttachment = {
 };
 
 type ComposerAddMenuView = "root" | "knowledge" | "connectors" | "skills" | "experts";
-
-type LxMsg = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-  timeLabel: string;
-  status?: string;
-  usage?: { input: number; output: number };
-  model?: string;
-  contextWindow?: number;
-  contextPercent?: number;
-  selectedSkillIds?: string[];
-  selectedSkillId?: string;
-  agentTaskIds?: string[];
-  attachments?: ChatMessageAttachment[];
-  knowledgeSources?: ChatKnowledgeSource[];
-  receiptBundle?: TaskReceiptBundleV1;
-  toolCalls?: import("@/components/ChatMessage").ToolCallEntry[];
-  messageEvents?: MessageEventEntry[];
-  processingDurationMs?: number;
-  jiuwenPermission?: JiuwenPermissionRequestCard;
-  // 2026-04-29 批次 2 A3：截断恢复状态（仅 assistant 用）
-  recovering?: boolean;
-  recovered?: boolean;
-  recoveryFailed?: boolean;
-  partialText?: string;            // 截断时已显示的内容（恢复失败时保留）
-};
-
-function hasPendingJiuwenPermissionMessage(message?: LxMsg | null): boolean {
-  return Boolean(
-    message?.role === "assistant" &&
-    message.jiuwenPermission?.requestId &&
-    message.jiuwenPermission.state === "pending"
-  );
-}
-
-function toolCallToMessageEvent(tool: ToolCallEntry): MessageEventEntry {
-  return {
-    type: "tool_call",
-    id: String(tool.id || ""),
-    name: String(tool.name || "tool"),
-    arguments: String(tool.arguments || "{}"),
-    result: tool.result,
-    status: tool.status,
-    ts: Number(tool.ts || Date.now()),
-    durationMs: tool.durationMs,
-    executor: tool.executor,
-    truncated: tool.truncated,
-    suppressedOriginalResult: tool.suppressedOriginalResult,
-    policyDenyReason: tool.policyDenyReason,
-    auditId: tool.auditId,
-    outputFiles: tool.outputFiles,
-    adoptId: tool.adoptId,
-    _gateway: tool._gateway,
-  };
-}
-
-function normalizeMessageToolEvents(message: LxMsg): LxMsg {
-  const nonToolEvents = Array.isArray(message.messageEvents)
-    ? message.messageEvents.filter((event) => event?.type !== "tool_call")
-    : [];
-  const toolEvents = Array.isArray(message.toolCalls)
-    ? message.toolCalls.filter((tool) => tool?.id && tool?.name).map(toolCallToMessageEvent)
-    : [];
-  return {
-    ...message,
-    messageEvents: [...nonToolEvents, ...toolEvents],
-  };
-}
 
 type ClientLoadMetric = {
   key: string;

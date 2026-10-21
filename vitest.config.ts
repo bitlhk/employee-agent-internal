@@ -1,5 +1,5 @@
-import { defineConfig } from "vitest/config";
 import path from "path";
+import { defineConfig } from "vitest/config";
 
 const templateRoot = path.resolve(import.meta.dirname);
 
@@ -13,6 +13,9 @@ export default defineConfig({
     },
   },
   test: {
+    // Integration-style route tests import the full server graph; instrumented
+    // cold imports on Windows can exceed Vitest's five-second default.
+    testTimeout: 15000,
     environment: "node",
     include: [
       "server/**/*.test.ts",

@@ -1,187 +1,24 @@
 import { randomUUID } from "node:crypto";
-import {
-  cpSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  evaluate,
-  type ApiProvider,
-  type CallApiContextParams,
-  type ProviderResponse,
-} from "promptfoo";
-import type {
-  SkillEvaluationBaselineMode,
-  SkillEvaluationExecutionArm,
-  SkillEvaluationRunEvidenceV1,
-  SkillEvaluationRunSnapshotV1,
-  SkillEvalCaseV1,
-  SkillEvalSuiteV1,
-} from "../../shared/skill-quality-evaluation";
-import {
-  skillEvaluationRunEvidenceV1Schema,
-  skillEvaluationRunSnapshotV1Schema,
-} from "../../shared/skill-quality-evaluation";
+import { evaluate, type ApiProvider, type CallApiContextParams, type ProviderResponse, } from "promptfoo";
+import type { SkillEvalCaseV1, SkillEvaluationExecutionArm, SkillEvaluationRunEvidenceV1, SkillEvaluationRunSnapshotV1 } from "../../shared/skill-quality-evaluation";
+import { skillEvaluationRunEvidenceV1Schema, skillEvaluationRunSnapshotV1Schema, } from "../../shared/skill-quality-evaluation";
 import type { EaAssistantModelConfig } from "./ea-assistant-model";
 import { getEaAssistantModelConfig } from "./ea-assistant-model";
 import { governanceFingerprint } from "./governance/contracts";
-import {
-  loadSkillQualityPilotContracts,
-  type PilotManifest,
-} from "./skill-quality-evaluation-contracts";
-import {
-  evaluationConfigFingerprint,
-  runEvidenceFingerprint,
-} from "./skill-quality-evaluation";
-import {
-  evaluateWealthSkillAssertions,
-  executeWealthSkillEvaluationCase,
-  skillEvaluationBaseSystemPrompt,
-  wealthSkillEvaluationFixture,
-  WealthSkillModelOutputError,
-  type SkillEvaluationAssertionResult,
-  type WealthSkillEvaluationExecution,
-  type WealthSkillEvaluationOutput,
-} from "./skill-quality-wealth-pilot";
+import { evaluationConfigFingerprint, runEvidenceFingerprint, } from "./skill-quality-evaluation";
+import { loadSkillQualityPilotContracts } from "./skill-quality-evaluation-contracts";
+import { type ArmDefinition, type HarnessArtifactIdentityCheck, type Pilot, type RunRecord, type SkillQualityPhase1CandidateComparison, type SkillQualityPhase1Report, type VersionIdentity } from './skill-quality-phase1-types';
+import { evaluateWealthSkillAssertions, executeWealthSkillEvaluationCase, skillEvaluationBaseSystemPrompt, wealthSkillEvaluationFixture, WealthSkillModelOutputError, type SkillEvaluationAssertionResult, type WealthSkillEvaluationExecution, type WealthSkillEvaluationOutput, } from "./skill-quality-wealth-pilot";
 import { digestSkillSourceTree } from "./skills/skill-artifact-digest";
+export type { SkillQualityPhase1CandidateComparison,SkillQualityPhase1Report,SkillQualityPhase1SourceArtifact } from './skill-quality-phase1-types';
 
 const RUNNER_VERSION = "ea-skill-quality-phase1-v1";
 const PROVIDER_VERSION = "ea-promptfoo-provider-v1";
 const PROMPTFOO_VERSION = "0.122.2";
 const EXECUTION_CONCURRENCY = 2;
-
-type Pilot = PilotManifest["pilots"][number];
-export type SkillQualityPhase1SourceArtifact = {
-  skillId: string;
-  skillVersionId: string;
-  version: string;
-  artifactSha256: string;
-  artifactRelativePath: string;
-  controlledReferencePathsByCase?: Record<string, string[]>;
-};
-type VersionIdentity = SkillQualityPhase1SourceArtifact;
-type ArmDefinition = {
-  executionArm: SkillEvaluationExecutionArm;
-  baselineMode: SkillEvaluationBaselineMode | null;
-  version: VersionIdentity | null;
-};
-type HarnessArtifactIdentityCheck = {
-  status: "PASS" | "FAIL";
-  expected: VersionIdentity | null;
-  actual: VersionIdentity[];
-  targetArtifactPresentInBaseline: boolean;
-  detail: string;
-};
-type RunRecord = {
-  runId: string;
-  caseId: string;
-  repeatIndex: number;
-  executionArm: SkillEvaluationExecutionArm;
-  status: "PASS" | "FAIL";
-  snapshot: SkillEvaluationRunSnapshotV1;
-  evidence: SkillEvaluationRunEvidenceV1;
-  trace: Record<string, unknown>;
-  assertions: SkillEvaluationAssertionResult[];
-  output: WealthSkillEvaluationOutput | null;
-  elapsedMs: number;
-  tokenUsage: { prompt: number; completion: number; total: number };
-  error: string | null;
-};
-
-export type SkillQualityPhase1Report = {
-  schema: "ea.skill-quality-phase-1-diagnostic-report.v1";
-  evaluationId: string;
-  generatedAt: string;
-  status: "DIAGNOSTIC_COMPLETE" | "DIAGNOSTIC_INCOMPLETE";
-  targetHardGateStatus: "PASS" | "FAIL" | "UNVERIFIED";
-  resultSemantics: "superseded_non_certifying";
-  executionMode: "controlled_harness";
-  sourceIdentityMode: "approved_inventory" | "candidate_repository";
-  comparisonFingerprint: string | null;
-  skillId: string;
-  targetVersion: string;
-  suiteId: string;
-  suiteFingerprint: string;
-  expertReviewStatus: string;
-  judgeStatus: "unavailable" | "calibrated";
-  formalScore: null;
-  formalGrade: null;
-  promptfoo: {
-    version: string;
-    evaluationId: string | null;
-    cacheEnabled: false;
-    sharingEnabled: false;
-    remoteRedteamGenerationEnabled: false;
-  };
-  execution: {
-    caseCount: number;
-    armCount: number;
-    repeatCount: number;
-    plannedRuns: number;
-    completedRuns: number;
-    failedRuns: number;
-  };
-  arms: Array<{
-    executionArm: SkillEvaluationExecutionArm;
-    runCount: number;
-    passCount: number;
-    deterministicAssertionPassRate: number;
-    hardGateAssertionPassRate: number;
-    hardGateRunPassRate: number | null;
-    hardGateRunStatusCounts: {
-      pass: number;
-      fail: number;
-      unavailable: number;
-    };
-    p95LatencyMs: number;
-    tokenUsage: { prompt: number; completion: number; total: number };
-  }>;
-  diagnosticComparisons: Array<{
-    baseline: SkillEvaluationExecutionArm;
-    targetPassRateDelta: number;
-  }>;
-  diagnosticFailures: Array<{
-    runId: string;
-    caseId: string;
-    executionArm: SkillEvaluationExecutionArm;
-    hardGateId: string | null;
-    assertionId: string;
-    detail: string;
-  }>;
-  hardGateFailures: Array<{
-    runId: string;
-    caseId: string;
-    executionArm: SkillEvaluationExecutionArm;
-    hardGateId: string;
-    assertionId: string;
-    detail: string;
-  }>;
-  unverifiedHardGates: Array<{
-    runId: string;
-    caseId: string;
-    executionArm: SkillEvaluationExecutionArm;
-    hardGateId: string;
-    assertionId: string;
-    detail: string;
-  }>;
-  runEvidenceFingerprints: string[];
-  warnings: string[];
-  reportFingerprint: string;
-};
-
-export type SkillQualityPhase1CandidateComparison = {
-  comparisonId: string;
-  comparisonFingerprint: string;
-  suite: SkillEvalSuiteV1;
-  target: SkillQualityPhase1SourceArtifact;
-  previousVersion: SkillQualityPhase1SourceArtifact;
-  skillStoreRoot: string;
-};
 
 function percentile95(values: number[]): number {
   if (!values.length) return 0;
