@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "fs";
 import os from "os";
 import path from "path";
 import {
@@ -18,49 +25,67 @@ import {
 
 describe("jiuwenclaw bridge audit helpers", () => {
   it("publishes stable run and session identifiers for terminal reconciliation", () => {
-    expect(buildJiuwenRunDescriptor({
-      clientRunId: "client-run-1",
-      requestId: "request-1",
-      sessionId: "session-1",
-    })).toEqual({
+    expect(
+      buildJiuwenRunDescriptor({
+        clientRunId: "client-run-1",
+        requestId: "request-1",
+        sessionId: "session-1",
+      })
+    ).toEqual({
       runId: "client-run-1",
       requestId: "request-1",
       sessionId: "session-1",
     });
-    expect(buildJiuwenRunDescriptor({
-      requestId: "request-fallback",
-      sessionId: "session-2",
-    }).runId).toBe("request-fallback");
+    expect(
+      buildJiuwenRunDescriptor({
+        requestId: "request-fallback",
+        sessionId: "session-2",
+      }).runId
+    ).toBe("request-fallback");
   });
 
   it("separates post-tool text without adding duplicate blank lines", () => {
-    expect(formatJiuwenTextSectionDelta("查询完成。", true)).toBe("\n\n查询完成。");
-    expect(formatJiuwenTextSectionDelta("\n\n查询完成。", true)).toBe("\n\n查询完成。");
+    expect(formatJiuwenTextSectionDelta("查询完成。", true)).toBe(
+      "\n\n查询完成。"
+    );
+    expect(formatJiuwenTextSectionDelta("\n\n查询完成。", true)).toBe(
+      "\n\n查询完成。"
+    );
     expect(formatJiuwenTextSectionDelta("继续输出", false)).toBe("继续输出");
   });
 
   it("infers skill ids from jiuwenswarm tool arguments", () => {
-    expect(inferSkillIdFromJiuwenPayload({ command: "python skills/wealth-manager-assistant/run.py" })).toBe("wealth-manager-assistant");
-    expect(inferSkillIdFromJiuwenPayload({ skillId: "insurance-advisor-pro" })).toBe("insurance-advisor-pro");
+    expect(
+      inferSkillIdFromJiuwenPayload({
+        command: "python skills/wealth-manager-assistant/run.py",
+      })
+    ).toBe("wealth-manager-assistant");
+    expect(
+      inferSkillIdFromJiuwenPayload({ skillId: "insurance-advisor-pro" })
+    ).toBe("insurance-advisor-pro");
   });
 
   it("keeps ask-user questions separate from security permissions", () => {
-    const request = normalizeJiuwenPermissionRequest("chat.ask_user_question", {
-      request_id: "ask-1",
-      source: "ask_user_interrupt",
-      questions: [
-        {
-          header: "客户类型",
-          question: "请选择客户类型",
-          options: [{ label: "新保客户" }, { label: "续保客户" }],
-        },
-        {
-          header: "难度",
-          question: "请选择难度",
-          options: [{ label: "简单" }, { label: "困难" }],
-        },
-      ],
-    }, "fallback");
+    const request = normalizeJiuwenPermissionRequest(
+      "chat.ask_user_question",
+      {
+        request_id: "ask-1",
+        source: "ask_user_interrupt",
+        questions: [
+          {
+            header: "客户类型",
+            question: "请选择客户类型",
+            options: [{ label: "新保客户" }, { label: "续保客户" }],
+          },
+          {
+            header: "难度",
+            question: "请选择难度",
+            options: [{ label: "简单" }, { label: "困难" }],
+          },
+        ],
+      },
+      "fallback"
+    );
 
     expect(request).toMatchObject({
       requestId: "ask-1",
@@ -70,26 +95,33 @@ describe("jiuwenclaw bridge audit helpers", () => {
     });
     expect(request?.questions).toHaveLength(2);
     expect(request?.questions?.[1].options[1].label).toBe("困难");
-    expect(request?.options.map((option) => option.label)).toEqual(["新保客户", "续保客户"]);
+    expect(request?.options.map(option => option.label)).toEqual([
+      "新保客户",
+      "续保客户",
+    ]);
   });
 
   it("accepts ask_user_question events emitted by the ask tool", () => {
-    const request = normalizeJiuwenPermissionRequest("chat.ask_user_question", {
-      request_id: "ask_uq_live-1",
-      source: "ask_tool",
-      questions: [
-        {
-          header: "场景主题",
-          question: "本次陪练场景的主题是什么？",
-          options: [
-            { label: "新车主首次投保", description: "训练需求挖掘" },
-            { label: "老客户续保", description: "训练续保促成" },
-          ],
-          multi_select: false,
-        },
-      ],
-      session_id: "sess-live-1",
-    }, "fallback");
+    const request = normalizeJiuwenPermissionRequest(
+      "chat.ask_user_question",
+      {
+        request_id: "ask_uq_live-1",
+        source: "ask_tool",
+        questions: [
+          {
+            header: "场景主题",
+            question: "本次陪练场景的主题是什么？",
+            options: [
+              { label: "新车主首次投保", description: "训练需求挖掘" },
+              { label: "老客户续保", description: "训练续保促成" },
+            ],
+            multi_select: false,
+          },
+        ],
+        session_id: "sess-live-1",
+      },
+      "fallback"
+    );
 
     expect(request).toMatchObject({
       requestId: "ask_uq_live-1",
@@ -99,33 +131,47 @@ describe("jiuwenclaw bridge audit helpers", () => {
       question: "本次陪练场景的主题是什么？",
     });
     expect(request?.questions).toHaveLength(1);
-    expect(request?.options.map((option) => option.label)).toEqual(["新车主首次投保", "老客户续保"]);
+    expect(request?.options.map(option => option.label)).toEqual([
+      "新车主首次投保",
+      "老客户续保",
+    ]);
   });
 
   it("keeps real permission interrupts on the allow or reject contract", () => {
-    const request = normalizeJiuwenPermissionRequest("chat.permission", {
-      request_id: "permission-1",
-      source: "permission_interrupt",
-      question: "工具 bash 需要授权",
-    }, "fallback");
+    const request = normalizeJiuwenPermissionRequest(
+      "chat.permission",
+      {
+        request_id: "permission-1",
+        source: "permission_interrupt",
+        question: "工具 bash 需要授权",
+      },
+      "fallback"
+    );
 
     expect(request).toMatchObject({ kind: "permission", title: "权限确认" });
-    expect(request?.options.map((option) => option.value)).toEqual(["本次允许", "拒绝"]);
+    expect(request?.options.map(option => option.value)).toEqual([
+      "本次允许",
+      "拒绝",
+    ]);
     expect(request).toMatchObject({ riskLevel: "medium", allowAlways: false });
   });
 
   it("exposes persistent approval only when the runtime offers it and the action is not high risk", () => {
-    const request = normalizeJiuwenPermissionRequest("chat.permission", {
-      request_id: "permission-read",
-      source: "permission_interrupt",
-      tool_name: "read_file",
-      question: "读取工作区文件",
-      options: [
-        { label: "本次允许", value: "allow_once" },
-        { label: "总是允许", value: "allow_always" },
-        { label: "拒绝", value: "reject" },
-      ],
-    }, "fallback");
+    const request = normalizeJiuwenPermissionRequest(
+      "chat.permission",
+      {
+        request_id: "permission-read",
+        source: "permission_interrupt",
+        tool_name: "read_file",
+        question: "读取工作区文件",
+        options: [
+          { label: "本次允许", value: "allow_once" },
+          { label: "总是允许", value: "allow_always" },
+          { label: "拒绝", value: "reject" },
+        ],
+      },
+      "fallback"
+    );
 
     expect(request).toMatchObject({
       riskLevel: "low",
@@ -158,9 +204,11 @@ describe("jiuwenclaw bridge audit helpers", () => {
   });
 
   it("extracts final text nested in an AgentServer completion payload", () => {
-    expect(pickJiuwenText({ payload: { event_type: "chat.final", content: "模型不支持图片理解" } })).toBe(
-      "模型不支持图片理解",
-    );
+    expect(
+      pickJiuwenText({
+        payload: { event_type: "chat.final", content: "模型不支持图片理解" },
+      })
+    ).toBe("模型不支持图片理解");
   });
 
   it("publishes chat.final as an authoritative Markdown snapshot", () => {
@@ -171,7 +219,13 @@ describe("jiuwenclaw bridge audit helpers", () => {
   });
 
   it("publishes only whitelisted knowledge citations in the final snapshot", () => {
-    expect(buildJiuwenFinalSnapshot("依据[知识1 第 27 页]，未知[知识8]。", "/tmp/workspace", [1, 2])).toEqual({
+    expect(
+      buildJiuwenFinalSnapshot(
+        "依据[知识1 第 27 页]，未知[知识8]。",
+        "/tmp/workspace",
+        [1, 2]
+      )
+    ).toEqual({
       __final_text: "依据[知识1]，未知。",
     });
   });
@@ -195,9 +249,15 @@ describe("jiuwenclaw bridge audit helpers", () => {
       writeFileSync(generated, "output", "utf8");
       utimesSync(generated, new Date(cutoff + 1000), new Date(cutoff + 1000));
       writeFileSync(redirectedVersion, "", "utf8");
-      utimesSync(redirectedVersion, new Date(cutoff + 1000), new Date(cutoff + 1000));
+      utimesSync(
+        redirectedVersion,
+        new Date(cutoff + 1000),
+        new Date(cutoff + 1000)
+      );
 
-      expect(collectRecentWorkspaceFiles(root, cutoff).map((file) => file.name)).toEqual(["generated.txt"]);
+      expect(
+        collectRecentWorkspaceFiles(root, cutoff).map(file => file.name)
+      ).toEqual(["generated.txt"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -207,46 +267,129 @@ describe("jiuwenclaw bridge audit helpers", () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "ea-workspace-context-"));
     try {
       const cutoff = Date.now();
-      const contextDir = path.join(root, "context", "session_context", "offload");
+      const contextDir = path.join(
+        root,
+        "context",
+        "session_context",
+        "offload"
+      );
       mkdirSync(contextDir, { recursive: true });
-      writeFileSync(path.join(contextDir, "MessageSummaryOffloader.json"), "{}", "utf8");
+      writeFileSync(
+        path.join(contextDir, "MessageSummaryOffloader.json"),
+        "{}",
+        "utf8"
+      );
       const report = path.join(root, "risk-report.md");
       writeFileSync(report, "report", "utf8");
       utimesSync(report, new Date(cutoff + 1000), new Date(cutoff + 1000));
 
-      expect(collectRecentWorkspaceFiles(root, cutoff).map((file) => file.path)).toEqual(["risk-report.md"]);
+      expect(
+        collectRecentWorkspaceFiles(root, cutoff).map(file => file.path)
+      ).toEqual(["risk-report.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("filters fresh runtime initialization files in scanning and streamed events, preserving real exports", () => {
+    const root = mkdtempSync(
+      path.join(os.tmpdir(), "ea-workspace-initialization-")
+    );
+    try {
+      const cutoff = Date.now() - 1000;
+      const internals = [
+        "SOUL.md",
+        "AGENT.md",
+        "HEARTBEAT.md",
+        "IDENTITY.md",
+        "USER.md",
+        "coding_memory/MEMORY.md",
+        "todo/session/todo.json",
+        "messages/session.json",
+        "agents/worker/AGENT.md",
+      ];
+      const exports = [
+        "report.md",
+        "output/AGENT.md",
+        "output/table.xlsx",
+        "output/chart.png",
+        "output/script.py",
+      ];
+      for (const file of [...internals, ...exports]) {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), "fixture", "utf8");
+      }
+      const expected = [...exports].sort();
+      expect(
+        collectRecentWorkspaceFiles(root, cutoff)
+          .map(file => file.path)
+          .sort()
+      ).toEqual(expected);
+      expect(
+        normalizeJiuwenFileEvent(
+          {
+            files: [...internals, ...exports].map(file => ({
+              path: path.join(root, file),
+            })),
+          },
+          root
+        )
+          .map(file => file.path)
+          .sort()
+      ).toEqual(expected);
+      // Filtering must not suppress initialization or alter the workspace.
+      for (const file of internals)
+        expect(readFileSync(path.join(root, file), "utf8")).toBe("fixture");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("does not publish a remote Jiuwen path as a local attachment before materialization", () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "ea-workspace-remote-file-"));
+    const root = mkdtempSync(
+      path.join(os.tmpdir(), "ea-workspace-remote-file-")
+    );
     try {
-      expect(normalizeJiuwenFileEvent({
-        files: [{
-          path: "访前简报_陈明.md",
-          name: "访前简报_陈明.md",
-          size: 5400,
-          download_url: "/file-api/download?token=remote-file",
-        }],
-      }, root)).toEqual([]);
+      expect(
+        normalizeJiuwenFileEvent(
+          {
+            files: [
+              {
+                path: "访前简报_陈明.md",
+                name: "访前简报_陈明.md",
+                size: 5400,
+                download_url: "/file-api/download?token=remote-file",
+              },
+            ],
+          },
+          root
+        )
+      ).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
   it("publishes a generated file only after it exists in the EA workspace", () => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "ea-workspace-local-file-"));
+    const root = mkdtempSync(
+      path.join(os.tmpdir(), "ea-workspace-local-file-")
+    );
     try {
       writeFileSync(path.join(root, "访前简报_陈明.md"), "brief", "utf8");
-      expect(normalizeJiuwenFileEvent({
-        files: [{ path: "访前简报_陈明.md", size: 1 }],
-      }, root)).toEqual([{
-        name: "访前简报_陈明.md",
-        size: 5,
-        path: "访前简报_陈明.md",
-      }]);
+      expect(
+        normalizeJiuwenFileEvent(
+          {
+            files: [{ path: "访前简报_陈明.md", size: 1 }],
+          },
+          root
+        )
+      ).toEqual([
+        {
+          name: "访前简报_陈明.md",
+          size: 5,
+          path: "访前简报_陈明.md",
+        },
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -279,13 +422,15 @@ describe("jiuwenclaw bridge audit helpers", () => {
         model: "glm-5.2",
       });
 
-      expect(request.params.media_items).toEqual([{
-        type: "image",
-        filename: "risk.png",
-        path: imagePath,
-        mime_type: "image/png",
-        size_bytes: 8,
-      }]);
+      expect(request.params.media_items).toEqual([
+        {
+          type: "image",
+          filename: "risk.png",
+          path: imagePath,
+          mime_type: "image/png",
+          size_bytes: 8,
+        },
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

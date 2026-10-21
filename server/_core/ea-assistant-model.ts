@@ -78,7 +78,7 @@ function normalizeBaseUrl(value: string) {
 }
 
 function tokenParamFor(model: string): "max_completion_tokens" | "max_tokens" {
-  return /^openpangu-/i.test(model) ? "max_tokens" : "max_completion_tokens";
+  return /^(openpangu-|deepseek-)/i.test(model) ? "max_tokens" : "max_completion_tokens";
 }
 
 export function getEaAssistantModelConfig(): EaAssistantModelConfig {
@@ -90,16 +90,19 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
   const baseUrl =
     process.env.EA_ASSISTANT_MODEL_BASE_URL
     || fallbackEnv.EA_ASSISTANT_MODEL_BASE_URL
+    || fallbackEnv.MODEL_BASE_URL
     || "https://api.modelarts-maas.com/openai/v1";
   const model =
     process.env.EA_ASSISTANT_MODEL_NAME
     || fallbackEnv.EA_ASSISTANT_MODEL_NAME
+    || fallbackEnv.MODEL_NAME
     || "openpangu-2.0-flash";
   const apiKey =
     process.env.EA_ASSISTANT_MODEL_API_KEY
     || process.env.HUAWEI_MAAS_API_KEY
     || fallbackEnv.EA_ASSISTANT_MODEL_API_KEY
     || fallbackEnv.HUAWEI_MAAS_API_KEY
+    || fallbackEnv.MODEL_API_KEY
     || fallbackEnv.API_KEY
     || "";
   const provider = process.env.EA_ASSISTANT_MODEL_PROVIDER || fallbackEnv.EA_ASSISTANT_MODEL_PROVIDER || "OpenAI";
@@ -117,9 +120,7 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
   const tokenParam =
     configuredTokenParam === "max_tokens" || configuredTokenParam === "max_completion_tokens"
       ? configuredTokenParam
-      : /^openpangu-/i.test(model)
-        ? "max_tokens"
-        : "max_completion_tokens";
+      : tokenParamFor(model);
 
   return {
     baseUrl: normalizeBaseUrl(baseUrl),
@@ -129,6 +130,7 @@ export function getEaAssistantModelConfig(): EaAssistantModelConfig {
     timeoutMs,
     disableThinking,
     tokenParam,
+    thinkingControl: /deepseek\.com/i.test(baseUrl) ? "thinking" : "chat_template_kwargs",
   };
 }
 
@@ -148,6 +150,7 @@ function parseStoredEaModel(value: string): EaAssistantModelConfig | null {
       timeoutMs: Math.max(1000, Number(parsed.timeoutMs || 8000) || 8000),
       disableThinking: parsed.disableThinking !== false,
       tokenParam: tokenParamFor(modelName),
+      thinkingControl: /deepseek\.com/i.test(apiBase) ? "thinking" : "chat_template_kwargs",
     };
   } catch {
     return null;
@@ -184,6 +187,7 @@ async function mergeEaModelDraft(draft: EaAssistantModelDraft): Promise<EaAssist
     timeoutMs: draft.timeoutMs,
     disableThinking: draft.disableThinking,
     tokenParam: tokenParamFor(draft.modelName),
+    thinkingControl: /deepseek\.com/i.test(draft.apiBase) ? "thinking" : "chat_template_kwargs",
   };
 }
 

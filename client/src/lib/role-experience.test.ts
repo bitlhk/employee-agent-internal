@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { roleDisplayName, roleExperience, selectRoleHomeTaskIds, skillTrialPrompt } from "./role-experience";
 
 describe("roleExperience", () => {
+  it("adds scheduling collaboration without replacing general assistant tasks", () => {
+    const experience = roleExperience("general-assistant");
+    expect(experience.assistantLabel).toBe("你的 AI 工作助理");
+    expect(experience.tasks.map(task => task.id)).toEqual(expect.arrayContaining(["GENERAL-START-01", "GENERAL-START-02", "GENERAL-START-03", "GENERAL-START-04", "GENERAL-SCHED-01"]));
+    expect(selectRoleHomeTaskIds("general-assistant", [])).toContain("GENERAL-SCHED-01");
+    expect(experience.capabilities.find(capability => capability.id === "schedule-collaboration")?.label).toBe("日程协同");
+  });
   it.each([
     ["wealth-manager", "WM-GT-01"],
     ["insurance-advisor", "IA-GT-01"],

@@ -519,10 +519,11 @@ export async function forwardToJiuwenGateway(
 
   const wsUrl = gatewayWsUrl(enterpriseRoute);
   const serviceId = enterpriseRoute?.binding.serviceId || buildJiuwenServiceId();
-  const agentId = enterpriseRoute?.binding.runtimeAgentId || buildJiuwenAgentId(claw);
+  if (opts.collaboration && enterpriseRoute) throw new Error("Enterprise collaboration isolation is unavailable");
+  const agentId = opts.collaboration?.runtimeAgentId || enterpriseRoute?.binding.runtimeAgentId || buildJiuwenAgentId(claw);
   const sessionId = buildJiuwenSessionId(claw, agentId, opts);
   const channelId = claw.adoptId;
-  const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
+  const workspaceDir = opts.collaboration?.workspaceDir || resolveRuntimeWorkspace(claw, claw.adoptId);
   const artifactWorkspaceDir = resolveGatewayArtifactWorkspace({
     adoptId: claw.adoptId,
     defaultWorkspaceDir: workspaceDir,
@@ -764,7 +765,7 @@ export async function forwardToJiuwenGateway(
         const finalizedEvidence = responseEvidence.finalize(assistantMessage, citedKnowledgeSources);
         if (finalizedEvidence && !clientClosed) writeSseData(res, { __context_response_evidence: finalizedEvidence });
       }
-      if (reason === "done" && assistantMessage) {
+      if (!opts.collaboration && reason === "done" && assistantMessage) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
           userId: claw.userId,
           adoptId: claw.adoptId,

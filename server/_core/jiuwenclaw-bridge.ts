@@ -81,6 +81,7 @@ export type JiuwenClawRuntimeClaw = {
   roleTemplate?: string;
 };
 export type JiuwenForwardOptions = {
+  collaboration?: { workspaceDir: string; sessionId: string; runtimeAgentId: string };
   model?: string;
   modelName?: string;
   req?: Request;
@@ -168,6 +169,7 @@ export function buildJiuwenAgentId(claw: JiuwenClawRuntimeClaw): string {
 }
 
 export function buildJiuwenSessionId(claw: JiuwenClawRuntimeClaw, agentId: string, opts: JiuwenForwardOptions): string {
+  if (opts.collaboration) return opts.collaboration.sessionId;
   const epoch = readSessionEpoch(claw.adoptId);
   const scope = buildSessionRegistryScope(opts.channel, opts.conversationId);
   const found = lookupSessionRegistry(claw.adoptId, agentId, epoch, scope);
@@ -520,7 +522,7 @@ export function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: numbe
     try {
       for (const entry of readdirSync(dir)) {
         if (entry.startsWith(".")) continue;
-        if (depth === 0 && skipDirs.has(entry)) continue;
+        if (depth === 0 && (skipDirs.has(entry) || !isUserVisibleJiuwenArtifactPath(entry))) continue;
         const full = `${dir}/${entry}`;
         const rel = relBase ? `${relBase}/${entry}` : entry;
         try {
@@ -858,6 +860,7 @@ export async function forwardToJiuwenClaw(
   const enterpriseRoute = opts.enterpriseRoute === undefined
     ? await readyEnterpriseRuntimeRoute(claw.adoptId)
     : opts.enterpriseRoute;
+  if (opts.collaboration && enterpriseRoute) throw new Error("Bound enterprise runtime has no isolated collaboration workspace adapter");
   const { enterpriseRuntimeSupportsModel } = await import("./enterprise-runtime-adapter");
   if (enterpriseRoute && enterpriseRuntimeSupportsModel(opts.modelName || opts.model)) {
     const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
@@ -922,10 +925,10 @@ export async function forwardToJiuwenClaw(
 
   const wsUrl = String(process.env.JIUWENCLAW_AGENTSERVER_WS_URL || DEFAULT_AGENTSERVER_WS_URL);
   const serviceId = buildJiuwenServiceId();
-  const agentId = buildJiuwenAgentId(claw);
+  const agentId = opts.collaboration?.runtimeAgentId || buildJiuwenAgentId(claw);
   const sessionId = buildJiuwenSessionId(claw, agentId, opts);
   const channelId = claw.adoptId;
-  const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
+  const workspaceDir = opts.collaboration?.workspaceDir || resolveRuntimeWorkspace(claw, claw.adoptId);
   const rawTimeoutMs = String(process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || "180000").trim().toLowerCase();
   const maxRunMs = rawTimeoutMs === "0" || rawTimeoutMs === "off" || rawTimeoutMs === "disabled"
     ? 0
@@ -1119,7 +1122,7 @@ export async function forwardToJiuwenClaw(
       const finalizedEvidence = responseEvidence.finalize(memoryAssistantText, opts.knowledgeSources || [], citationValidation.citedIndexes);
       if (finalizedEvidence) writeData({ __context_response_evidence: finalizedEvidence });
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
-      if (sawText && memoryAssistantText.trim()) {
+      if (!opts.collaboration && sawText && memoryAssistantText.trim()) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
           userId: claw.userId,
           adoptId: claw.adoptId,

@@ -31,6 +31,18 @@ const retiredRuntimeExecutor: CoopRuntimeExecutor = {
   },
 };
 
-export function getCoopRuntimeExecutor(_runtime?: string | null): CoopRuntimeExecutor {
-  return retiredRuntimeExecutor;
+const jiuwenCollaborationExecutor: CoopRuntimeExecutor = {
+  protocol: "jiuwenswarm-collaboration-v1",
+  async execute(args) {
+    const { getCollabRequest } = await import("../db");
+    const { queueApprovedCollaboration } = await import("./collaboration/queue");
+    const request = await getCollabRequest(args.requestId);
+    if (!request || request.targetAdoptId !== args.targetAdoptId) throw new Error("协作执行目标不匹配");
+    if (request.sessionId || request.taskType !== "scheduling" || !request.requestKey) return retiredRuntimeExecutor.execute(args);
+    await queueApprovedCollaboration(request);
+  },
+};
+
+export function getCoopRuntimeExecutor(runtime?: string | null, request?: { taskType?: string | null; requestKey?: string | null; sessionId?: string | null }): CoopRuntimeExecutor {
+  return request?.taskType === "scheduling" && Boolean(request.requestKey) && !request.sessionId && ["jiuwenswarm", "jiuwenclaw"].includes(String(runtime)) && process.env.EA_COLLABORATION_RUNTIME_ENABLED === "true" && process.env.JIUWENCLAW_RUNTIME_ENABLED === "true" ? jiuwenCollaborationExecutor : retiredRuntimeExecutor;
 }

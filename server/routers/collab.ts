@@ -1,3 +1,8 @@
+import { assertCoopParticipants } from "../db/coop-identity";
+import { projectLegacyCollaborationResult, projectCollaborationConclusion } from "../_core/collaboration/result-projection";
+import { collaborationSettingsForTask } from "../../shared/scheduling-collaboration-policy";
+import { getCoopRuntimeExecutor } from "../_core/coop-runtime-executor";
+import { sendCollaborationRequest } from "../_core/collaboration/request-service";
 import { protectedProcedure, router } from "../_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
@@ -6,7 +11,6 @@ import {
   upsertCollabSettings,
   listCollabDirectory,
   listCollabDisplayNames,
-  createCollabRequest,
   getCollabRequest,
   updateCollabRequest,
   listIncomingCollabRequests,
@@ -15,6 +19,47 @@ import {
 import { fetchWithTimeout } from "../_core/fetch-timeout";
 
 export const collabRouter = router({
+    goalAvailability: protectedProcedure.input(z.object({ adoptId: z.string(), id: z.string().uuid() }).strict()).query(async ({ ctx, input }) => {
+      const { goalAvailability } = await import("../_core/collaboration/progress");
+      return goalAvailability(ctx.user.id, input.adoptId, input.id);
+    }),
+    schedulingRequestProgress: protectedProcedure.input(z.object({ adoptId: z.string(), requestId: z.number().int().positive() }).strict()).query(async ({ ctx, input }) => {
+      const { incomingSchedulingProgress } = await import("../_core/collaboration/progress");
+      return incomingSchedulingProgress(ctx.user.id, input.adoptId, input.requestId);
+    }),
+    goals: protectedProcedure.input(z.object({ adoptId: z.string(), conversationId: z.string().max(160).optional() }).strict()).query(async ({ ctx, input }) => {
+      const { getClawByAdoptId } = await import("../db");
+      const claw = await getClawByAdoptId(input.adoptId);
+      if (!claw || claw.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+      const { ownCollaborationRuns } = await import("../db/collaboration-runs");
+      const { collaborationWaitingResources } = await import("../_core/collaboration/resources");
+      // Automatic one-exchange replies use goals internally, but are plain chat replies in the UI.
+      return Promise.all((await ownCollaborationRuns(ctx.user.id, input.adoptId, input.conversationId)).filter(run => !run.requestKey?.startsWith("reply:")).map(async run => {
+        const calendarResources = (await collaborationWaitingResources(run)).filter(resource => ["draft", "meeting", "reschedule", "cascade"].includes(resource.resourceKind));
+        return { id: run.id, objective: run.objective, status: run.status, message: run.publicMessage || "", updatedAt: run.updatedAt,
+          // Use owner-bound execution receipts, never the goal status or model prose.
+          calendarUpdated: calendarResources.some(resource => resource.completed === true),
+          confirmations: calendarResources.filter(resource => resource.state !== "unavailable" && !resource.completed).map(resource => ({ kind: resource.resourceKind as "draft" | "meeting" | "reschedule" | "cascade", id: resource.resourceId })),
+        };
+      }));
+    }),
+    cancelGoal: protectedProcedure.input(z.object({ adoptId: z.string(), id: z.string().uuid() }).strict()).mutation(async ({ ctx, input }) => {
+      const { getClawByAdoptId } = await import("../db"); const claw = await getClawByAdoptId(input.adoptId);
+      if (!claw || claw.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+      const { cancelCollaborationRun } = await import("../db/collaboration-runs");
+      const { recordAuditRequired } = await import("../_core/audit-events");
+      await recordAuditRequired({ action: "collaboration.goal.cancel.requested", actorType: "user", actorUserId: ctx.user.id, targetType: "collaboration_run", targetId: input.id });
+      return { cancelled: await cancelCollaborationRun(ctx.user.id, input.id, input.adoptId) };
+    }),
+    resumeGoal: protectedProcedure.input(z.object({ adoptId: z.string(), id: z.string().uuid(), instruction: z.string().trim().min(1).max(2000) }).strict()).mutation(async ({ ctx, input }) => {
+      const { getClawByAdoptId } = await import("../db"); const claw = await getClawByAdoptId(input.adoptId);
+      if (!claw || claw.userId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN" });
+      const { resumeCollaborationGoal } = await import("../db/collaboration-runs");
+      const { recordAuditRequired } = await import("../_core/audit-events");
+      await recordAuditRequired({ action: "collaboration.goal.resume.requested", actorType: "user", actorUserId: ctx.user.id, targetType: "collaboration_run", targetId: input.id });
+      await resumeCollaborationGoal(ctx.user.id, input.adoptId, input.id, input.instruction);
+      return { resumed: true };
+    }),
 
     // ── 常量：协作执行上下文约束 ─────────────────────────────────────
     // 这些是平台级铁律，任何协作任务执行时必须注入，不可被 prompt 绕过
@@ -90,91 +135,10 @@ export const collabRouter = router({
         taskType: z.string().max(64).default("general"),
         taskSummary: z.string().max(1000),
         inputPayload: z.record(z.string(), z.unknown()).optional(),
+        requestKey: z.string().uuid().optional(),
       }))
       .mutation(async ({ input, ctx }) => {
-        const { getClawByAdoptId } = await import("../db");
-        const requester = await getClawByAdoptId(input.requesterAdoptId);
-        if (!requester || requester.userId !== ctx.user!.id) throw new TRPCError({ code: "FORBIDDEN" });
-        if (requester.permissionProfile === "starter") throw new TRPCError({ code: "FORBIDDEN", message: "当前智能体未开通协作权限，请联系管理员处理" });
-        const target = await getClawByAdoptId(input.targetAdoptId);
-        if (!target || target.permissionProfile === "starter") throw new TRPCError({ code: "NOT_FOUND" });
-        const targetSettings = await getCollabSettings(target.id);
-        if (!targetSettings || targetSettings.acceptTask === "off") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "target agent does not accept collaboration tasks" });
-        }
-
-        // ── 第1层：字段白名单过滤（auto 模式更严格）──────────────────────
-        // 无论什么模式，以下敏感字段一律剔除
-        const ALWAYS_BLOCKED = ["chat_history","memory","session","sessionKey","messages","history","context","user_data","personal_data","private"];
-        // auto 模式只允许这些字段通过（防止 prompt 注入绕过类型检查）
-        const AUTO_ALLOWED = ["input", "query", "file", "url", "keyword", "date_range", "filters", "target"];
-
-        let safeInput: Record<string, unknown> = {};
-        if (input.inputPayload) {
-          if (targetSettings.acceptTask === "auto") {
-            // auto 模式：严格白名单，只允许 AUTO_ALLOWED 字段
-            safeInput = Object.fromEntries(
-              Object.entries(input.inputPayload).filter(([k]) => AUTO_ALLOWED.includes(k))
-            );
-          } else {
-            // manual 模式：黑名单过滤
-            safeInput = Object.fromEntries(
-              Object.entries(input.inputPayload).filter(([k]) => !ALWAYS_BLOCKED.some(b => k.toLowerCase().includes(b)))
-            );
-          }
-        }
-
-        // ── 第2层：执行上下文约束（注入到请求记录，未来 agent 执行时读取）──
-        const EXECUTION_CONTEXT_DENY = ["chat_history", "memory_files", "session_context", "usage_logs", "private_notes"];
-        const executionScope = JSON.stringify({
-          mode: "collaboration",
-          forbidAccess: EXECUTION_CONTEXT_DENY,
-          allowedOutputTypes: ["result_summary", "data", "analysis"],
-          forbidOutput: ["session_ids", "memory_ids", "internal_refs", "user_pii"],
-          maxOutputLength: 2000,
-        });
-
-        // ── 第3层：风险评级 ────────────────────────────────────────────────
-        // high risk: 跨 owner + 文本长、medium: 跨 owner、low: 同 owner
-        const isCrossOwner = requester.userId !== target.userId;
-        const taskLen = (input.taskSummary || "").length;
-        const riskLevel = isCrossOwner ? (taskLen > 500 ? "high" : "medium") : "low";
-
-        const isAutoMode = targetSettings.acceptTask === "auto";
-        // auto 模式且 high risk 时自动降级为 pending（需人工审批）
-        const effectiveStatus = (isAutoMode && riskLevel !== "high") ? "approved" : "pending";
-
-        // 检查 auto 模式下 taskType 是否在目标 allowedTaskTypes 里
-        if (isAutoMode) {
-          const allowed: string[] = targetSettings.allowedTaskTypes ? JSON.parse(targetSettings.allowedTaskTypes) : [];
-          if (allowed.length > 0 && !allowed.includes(input.taskType)) {
-            throw new TRPCError({ code: "FORBIDDEN", message: "auto mode: taskType not in allowed list" });
-          }
-        }
-
-        const id = await createCollabRequest({
-          requesterAdoptId: input.requesterAdoptId,
-          targetAdoptId: input.targetAdoptId,
-          requesterUserId: requester.userId,
-          targetUserId: target.userId,
-          taskType: input.taskType,
-          taskSummary: input.taskSummary,
-          inputPayload: JSON.stringify(safeInput),
-          status: effectiveStatus,
-          approvalMode: isAutoMode ? "auto" : "manual",
-          approvedBy: (isAutoMode && effectiveStatus === "approved") ? null : undefined,
-          executionScope,
-          riskLevel,
-          constraintsApplied: JSON.stringify({ autoAllowedFields: isAutoMode ? AUTO_ALLOWED : null, alwaysBlocked: ALWAYS_BLOCKED }),
-        } as any);
-
-        return {
-          id,
-          status: effectiveStatus,
-          riskLevel,
-          approvalMode: isAutoMode ? "auto" : "manual",
-          note: effectiveStatus === "pending" && isAutoMode ? "auto模式但风险等级high，已降级为需人工审批" : undefined,
-        };
+        return sendCollaborationRequest(ctx.user!.id, input);
       }),
 
     // 审批/拒绝协作请求（目标方主人操作）
@@ -190,6 +154,7 @@ export const collabRouter = router({
         if (!claw || claw.userId !== ctx.user!.id) throw new TRPCError({ code: "FORBIDDEN" });
         const req = await getCollabRequest(input.requestId);
         if (!req || req.targetAdoptId !== input.adoptId) throw new TRPCError({ code: "NOT_FOUND" });
+        if (input.action === "approve" && req.taskType === "scheduling") await assertCoopParticipants(req.requesterUserId, [req.targetUserId]);
         if (!["pending"].includes(req.status)) throw new TRPCError({ code: "BAD_REQUEST", message: "request already processed" });
         await updateCollabRequest(input.requestId, {
           status: input.action === "approve" ? "approved" : "rejected",
@@ -198,7 +163,11 @@ export const collabRouter = router({
         } as any);
 
         // 审批通过后：自动触发 collab-exec，让目标 agent 开始执行任务
-        if (input.action === "approve") {
+        const autoExecutionAvailable = getCoopRuntimeExecutor(claw.runtime, req).protocol !== "runtime-retired";
+        if (input.action === "approve" && autoExecutionAvailable && !req.sessionId) {
+          const { queueApprovedCollaboration } = await import("../_core/collaboration/queue");
+          await queueApprovedCollaboration({ ...req, status: "approved", approvedBy: claw.userId });
+        } else if (input.action === "approve" && autoExecutionAvailable) {
           const port = parseInt(process.env.PORT || "5180", 10);
           const baseUrl = "http://127.0.0.1:" + port;
           // 用 fire-and-forget 的方式触发，不阻塞返回
@@ -218,7 +187,7 @@ export const collabRouter = router({
           });
         }
 
-        return { success: true };
+        return { success: true, autoExecutionAvailable };
       }),
 
     // 提交任务结果（目标方填写摘要，平台强制检查禁止词）
@@ -254,7 +223,7 @@ export const collabRouter = router({
         if (!claw || claw.userId !== ctx.user!.id) throw new TRPCError({ code: "FORBIDDEN" });
         const req = await getCollabRequest(input.requestId);
         if (!req || req.targetAdoptId !== input.adoptId) throw new TRPCError({ code: "NOT_FOUND" });
-        if (!["approved"].includes(req.status)) throw new TRPCError({ code: "BAD_REQUEST", message: "request not in approved state" });
+        if (!["approved", "running"].includes(req.status)) throw new TRPCError({ code: "BAD_REQUEST", message: "request not in approved state" });
 
         // 安全检查 summary 字段
         const summaryText = input.resultEnvelope?.summary || "";
@@ -312,7 +281,7 @@ export const collabRouter = router({
         await updateCollabRequest(input.requestId, {
           resultMeta: JSON.stringify(updatedMeta),
           // 把交付结果写入 resultSummary 供申请方查看（if not none）
-          ...(input.deliverMode !== "none" ? { resultSummary: deliveredContent } : {}),
+          resultSummary: deliveredContent,
           status: "completed",
         } as any);
 
@@ -357,22 +326,30 @@ export const collabRouter = router({
         const targetAdoptIds = [...new Set(rawRows.map(r => r.targetAdoptId))];
         const displayMap = await listCollabDisplayNames(targetAdoptIds).catch(() => new Map());
         const rows = rawRows.map(r => ({ ...r, targetDisplayName: displayMap.get(r.targetAdoptId) || null }));
-        return rows.map(r => ({
+        return Promise.all(rows.map(async r => {
+          let projection = projectLegacyCollaborationResult(r);
+          if (r.taskType === "scheduling") {
+            const target = await getClawByAdoptId(r.targetAdoptId);
+            const policy = target?.userId === r.targetUserId ? collaborationSettingsForTask(await getCollabSettings(target.id), "scheduling") : null;
+            const result = target?.userId === r.targetUserId ? projectCollaborationConclusion(r, policy?.sharingPolicy === "result-only") : { shared: false, summary: "" };
+            projection = { resultSummary: result.summary, resultMeta: result.shared ? { summary: result.summary } : { deliverMode: "none" } };
+          }
+          return {
           id: r.id,
           targetAdoptId: r.targetAdoptId,
           taskType: r.taskType,
           taskSummary: r.taskSummary,
           status: r.status,
-          resultSummary: r.resultSummary,
+          resultSummary: projection.resultSummary,
           approvalMode: (r as any).approvalMode,
           riskLevel: (r as any).riskLevel,
-          resultMeta: (r as any).resultMeta ? JSON.parse((r as any).resultMeta) : null,
-          resultEnvelope: (r as any).resultMeta ? JSON.parse((r as any).resultMeta) : null,
+          resultMeta: projection.resultMeta,
+          resultEnvelope: projection.resultMeta,
           createdAt: r.createdAt,
           approvedAt: r.approvedAt,
           completedAt: r.completedAt,
           targetDisplayName: (r as any).targetDisplayName || null,
-        }));
+        }; }));
       }),
 
 });

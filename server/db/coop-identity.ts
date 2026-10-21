@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import {
   lxCollabSpaces,
   lxCollabUserProfiles,
@@ -191,6 +192,22 @@ export async function canCollaborate(
   }
 
   return { ok: true, value: { requester: requester.value, target: target.value } };
+}
+
+// Shared assertions for existing collaboration entry points, including calendar tools.
+export async function assertCoopMember(userId: number, directory: CoopIdentityDirectory = defaultDirectory) {
+  const access = await requireActiveCoopProfile(userId, directory);
+  if (!access.ok) throw new TRPCError({ code: "FORBIDDEN", message: "请联系管理员开通组织协作权限并分配有效组织" });
+  return access.value;
+}
+
+export async function assertCoopParticipants(userId: number, participantIds: number[], directory: CoopIdentityDirectory = defaultDirectory) {
+  if (!participantIds.length) return;
+  await assertCoopMember(userId, directory);
+  for (const participantId of new Set(participantIds)) {
+    const access = await canCollaborate(userId, participantId, directory);
+    if (!access.ok) throw new TRPCError({ code: "FORBIDDEN", message: "只能与同一有效组织内的成员协作，请重新选择参与人" });
+  }
 }
 
 export async function canViewCoopSession(

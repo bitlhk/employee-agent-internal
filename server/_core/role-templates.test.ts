@@ -100,6 +100,13 @@ function withBaselineFile(payload: unknown, fn: () => void) {
 describe("role template baseline loader", () => {
   afterEach(() => resetRoleTemplateCacheForTests());
 
+  it("configures scheduling as a general-assistant skill rather than another role", () => {
+    const general = resolveAgentRoleTemplate("general-assistant");
+    expect(general.defaultSkills).toContain("scheduling-assistant");
+    expect(listAgentRoleTemplates().some(role => role.id === "scheduling-assistant")).toBe(false);
+    expect(general.runtime).toBe("jiuwenswarm");
+  });
+
   it("loads and flattens role templates from a valid baseline", () => {
     withBaselineFile(baseline(), () => {
       const loaded = getRoleSkillMcpBaseline();

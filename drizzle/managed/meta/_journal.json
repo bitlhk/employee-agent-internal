@@ -253,6 +253,104 @@
       "when": 1788595200000,
       "tag": "0035_user_role_assignments",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791763200000,
+      "tag": "0036_calendar_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791849600000,
+      "tag": "0037_calendar_write_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1791936000000,
+      "tag": "0038_calendar_coordination",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792022400000,
+      "tag": "0039_calendar_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0040_calendar_assistant_completion",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0041_calendar_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0042_calendar_access_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0043_collaboration_request_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0044_collaboration_runs_cascades",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0045_collaboration_coordination_waits",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792627200000,
+      "tag": "0046_collaboration_wait_polling",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0047_calendar_provisioning",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0048_scheduling_scoped_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0049_calendar_direct_events",
+      "breakpoints": true
     }
   ]
 }

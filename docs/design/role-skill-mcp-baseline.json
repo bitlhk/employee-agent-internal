@@ -1,7 +1,7 @@
 {
-  "version": "2026-07-09-oss-default",
+  "version": "2026-10-15-general-scheduling",
   "principles": [
-    "Open-source default grants only general assistant capability.",
+    "The general assistant includes scheduling collaboration as a skill; no separate scheduling role is created.",
     "Role templates define baseline skills, MCP servers, model, runtime, and visible zones.",
     "Production deployments should keep business roles and MCP grants in an external baseline file and point ROLE_SKILL_MCP_BASELINE_PATH to it.",
     "MCP tools are discovered from runtime tools/list; role grants remain server-level, while optional skillRequirements entries only declare readiness checks."
@@ -67,14 +67,16 @@
       "roles": {
         "general-assistant": {
           "name": "通用助手",
-          "description": "默认通用岗位智能体，只开放基础对话、文件、技能和平台能力；不默认授予业务 MCP。",
+          "description": "通用岗位智能体，支持日常对话、文件、技能与日程协同；日历访问需本人授权。",
           "status": "mvp",
           "displayOrder": 0,
           "permissionProfile": "plus",
           "defaultVisibleZones": [
             "opensource"
           ],
-          "defaultSkills": [],
+          "defaultSkills": [
+            "scheduling-assistant"
+          ],
           "optionalSkills": [],
           "mcpServers": [],
           "mcpTools": [],

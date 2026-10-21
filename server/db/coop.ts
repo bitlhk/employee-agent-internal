@@ -5,7 +5,7 @@
  * - 老 1:1 协作（collab_requests.sessionId IS NULL）零影响
  * - 新 N 人协作（sessionId 存在）走这里
  */
-import { and, eq, desc, sql, inArray, ne } from 'drizzle-orm';
+import { and, eq, desc, sql, inArray, ne, or, like } from 'drizzle-orm';
 import {
   lxCoopSessions,
   lxCoopEvents,
@@ -313,7 +313,9 @@ export async function listMentionCandidates(params: {
     const viewerProfile = await requireActiveCoopProfile(params.viewerUserId);
     if (!viewerProfile.ok || !viewerProfile.value.spaceId) return [];
 
-    let rows = await db
+    const keyword = params.keyword?.trim();
+    const pattern = keyword ? `%${keyword.replace(/[\\%_]/g, value => `\\${value}`)}%` : undefined;
+    const rows = await db
       .select({
         userId: users.id,
         userEmail: users.email,
@@ -346,29 +348,18 @@ export async function listMentionCandidates(params: {
           sql`${clawAdoptions.adoptId} LIKE 'lgj-%'`
         )
       )
-      .where(ne(users.id, params.viewerUserId))
-      .limit(Math.max(limit * 4, 50));
-
-    if (params.keyword?.trim()) {
-      const q = params.keyword.trim().toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          (r.userName || "").toLowerCase().includes(q) ||
-          (r.userEmail || "").toLowerCase().includes(q) ||
-          (r.groupName || "").toLowerCase().includes(q) ||
-          (r.orgName || "").toLowerCase().includes(q) ||
-          (r.departmentName || "").toLowerCase().includes(q) ||
-          (r.teamName || "").toLowerCase().includes(q)
-      );
-    }
-    if (params.groupId !== undefined && params.groupId !== null) {
-      rows = rows.filter((r) => r.groupId === params.groupId);
-    }
+      .where(and(
+        ne(users.id, params.viewerUserId),
+        params.groupId === undefined ? undefined : eq(users.groupId, params.groupId),
+        pattern ? or(...[users.name, users.email, lxGroups.name, lxCollabUserProfiles.realName, lxCollabUserProfiles.organizationName, lxCollabUserProfiles.departmentName, lxCollabUserProfiles.teamName].map(column => like(column, pattern))) : undefined,
+      ))
+      .orderBy(users.id, clawAdoptions.id);
 
     const byUserId = new Map<number, (typeof rows)[number]>();
+    const rank = (row: (typeof rows)[number]) => !row.adoptId ? 0 : (row.adoptionStatus === "creating" ? 1 : 3) + (row.agentRoleTemplate === "general-assistant" ? 1 : 0);
     for (const row of rows) {
       const current = byUserId.get(row.userId);
-      if (!current || (!current.adoptId && row.adoptId)) {
+      if (!current || rank(row) > rank(current)) {
         byUserId.set(row.userId, row);
       }
     }

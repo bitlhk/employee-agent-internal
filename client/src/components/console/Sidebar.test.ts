@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPageKey, isSidebarNavItemActive, primaryItems } from "./Sidebar";
+import { isPageKey, isSidebarNavItemActive, primaryItems, sidebarPrimaryItems } from "./Sidebar";
 
 describe("workbench page keys", () => {
   it("accepts current pages and rejects stale session values", () => {
@@ -16,6 +16,13 @@ describe("workbench page keys", () => {
 });
 
 describe("sidebar selection", () => {
+  it("adds a calendar utility only when enabled and preserves all historical navigation", () => {
+    expect(sidebarPrimaryItems()).toEqual(primaryItems);
+    const enabled = sidebarPrimaryItems(true);
+    expect(enabled.slice(0, primaryItems.length)).toEqual(primaryItems);
+    expect(enabled.at(-1)).toMatchObject({ key: "calendar", label: "我的日历" });
+    expect(isPageKey("calendar")).toBe(true);
+  });
   it("keeps navigation and history selection mutually exclusive", () => {
     expect(isSidebarNavItemActive("chat", "chat", true)).toBe(true);
     expect(isSidebarNavItemActive("chat", "chat", false)).toBe(false);

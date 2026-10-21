@@ -1,0 +1,4 @@
+# openjiuwen 0.1.16 HybridAsyncReadWriteLock transfers locks between tasks.
+# filelock 4 adds task ownership checks incompatible with that implementation.
+# Verified with real SysOperation file reads and runtime SkillTool calls.
+filelock==3.25.0

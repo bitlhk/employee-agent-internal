@@ -1,9 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   flattenComposerSkills,
+  chatRequestError,
   localizedComposerSkillLabel,
   prioritizeRoleConfiguredSkills,
 } from "./chat-home-helpers";
+
+describe("chat availability errors", () => {
+  it("explains a sanitized unavailable runtime without displaying internal details", () => {
+    expect(chatRequestError(503, { error: "内部服务器错误" })).toContain("智能体服务暂时不可用");
+    expect(chatRequestError(503, { error: "connect ECONNREFUSED private-host:19000" })).not.toContain("private-host");
+  });
+  it("preserves actionable validation errors and handles empty responses", () => {
+    expect(chatRequestError(400, { error: "请先输入问题" })).toBe("请先输入问题");
+    expect(chatRequestError(502, null)).toBe("请求失败 (502)");
+  });
+});
 
 describe("flattenComposerSkills", () => {
   it("preserves the registry source kind carried by the skill DTO", () => {

@@ -81,6 +81,7 @@ import { mergeCachedAssistantMetadata, mergeCanonicalAssistantToolCalls } from "
 import { isTaskReceiptBundleV1, type TaskReceiptBundleV1 } from "@shared/context-evidence";
 import {
   arrayBufferToBase64,
+  chatRequestError,
   buildExpertHandoff,
   extractAgentTaskIds,
   extractJiuwenPermissionMarker,
@@ -684,7 +685,7 @@ export default function Home() {
     setKnowledgeCitationPanel(source);
   }, []);
 
-  const selectWorkbenchPage = (page: PageKey) => {
+  const selectWorkbenchPage = useCallback((page: PageKey) => {
     setSidebarSelection("navigation");
     setActivePage(page);
     setMobileSidebarOpen(false);
@@ -693,7 +694,8 @@ export default function Home() {
       setArtifactPanel(null);
       setKnowledgeCitationPanel(null);
     }
-  };
+  }, []);
+  const openWorkbenchCalendar = useCallback(() => selectWorkbenchPage("calendar"), [selectWorkbenchPage]);
   const handleWorkbenchLogout = async () => {
     try {
       await logout();
@@ -3576,7 +3578,7 @@ export default function Home() {
 
       if (!resp.ok) {
         const payload = await resp.json().catch(() => null);
-        throw new Error(String(payload?.error || `请求失败 (${resp.status})`));
+        throw new Error(chatRequestError(resp.status, payload));
       }
       if (!resp.body) throw new Error("请求失败：服务器未返回流式响应");
 
@@ -4543,6 +4545,7 @@ export default function Home() {
             {/* 工作台导航（Phase A） */}
               <Sidebar
                 activePage={activePage}
+                calendarEnabled
                 setActivePage={selectWorkbenchPage}
                 navigationSelectionActive={sidebarSelection === "navigation"}
                 collapsed={effectiveSidebarCollapsed}
@@ -4762,6 +4765,7 @@ export default function Home() {
                     data-conversation-prompt={m.role === "user" ? m.id : undefined}
                   >
                   <ChatMessage
+                    onOpenCalendar={openWorkbenchCalendar}
                     messageId={m.id}
                     adoptId={resolvedAdoptId}
                     role={m.role as "user" | "assistant"}

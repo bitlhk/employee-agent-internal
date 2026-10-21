@@ -7,6 +7,13 @@ import type { ExpertHandoffContext } from "@shared/expert-handoff-context";
 const JIUWEN_PERMISSION_MARKER_RE =
   /<!--EA_JIUWEN_PERMISSION:([A-Za-z0-9+/=]+)-->/g;
 
+export function chatRequestError(status: number, payload: { error?: unknown } | null) {
+  // The server deliberately sanitizes all 5xx bodies. Explain availability
+  // without exposing internal addresses, credentials or exception details.
+  if (status === 503) return "智能体服务暂时不可用，请稍后重试或联系管理员检查运行服务。";
+  return String(payload?.error || `请求失败 (${status})`);
+}
+
 export type ComposerSkillOption = {
   id: string;
   label: string;

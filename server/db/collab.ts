@@ -1,4 +1,4 @@
-import { desc, eq, inArray, and, sql } from "drizzle-orm";
+import { desc, eq, inArray, and, or, isNull, sql } from "drizzle-orm";
 import { clawAdoptions, clawCollabSettings, clawCollabRequests, InsertClawCollabSetting, ClawCollabSetting, InsertClawCollabRequest, ClawCollabRequest } from "../../drizzle/schema";
 import { getDb } from "./connection";
 
@@ -29,7 +29,7 @@ export async function upsertCollabSettings(
 }
 
 // 获取组织内可见的协作目录（visibilityMode != private）
-export async function listCollabDirectory(excludeAdoptionId?: number) {
+export async function listCollabDirectory(excludeAdoptionId?: number, taskType?: string) {
   const db = await getDb();
   if (!db) return [];
   try {
@@ -43,6 +43,9 @@ export async function listCollabDirectory(excludeAdoptionId?: number) {
         acceptTask: clawCollabSettings.acceptTask,
         allowedTaskTypes: clawCollabSettings.allowedTaskTypes,
         sharingPolicy: clawCollabSettings.sharingPolicy,
+        schedulingAcceptTask: clawCollabSettings.schedulingAcceptTask,
+        schedulingSharingPolicy: clawCollabSettings.schedulingSharingPolicy,
+        schedulingDiscoverable: clawCollabSettings.schedulingDiscoverable,
         // 从 clawAdoptions 关联 adoptId（公开用）
         adoptId: clawAdoptions.adoptId,
         permissionProfile: clawAdoptions.permissionProfile,
@@ -52,10 +55,10 @@ export async function listCollabDirectory(excludeAdoptionId?: number) {
       .where(
         excludeAdoptionId
           ? and(
-              inArray(clawCollabSettings.visibilityMode, ["org", "public"]),
+              taskType === "scheduling" ? or(eq(clawCollabSettings.schedulingDiscoverable, true), and(isNull(clawCollabSettings.schedulingDiscoverable), inArray(clawCollabSettings.visibilityMode, ["org", "public"]))) : inArray(clawCollabSettings.visibilityMode, ["org", "public"]),
               sql`${clawCollabSettings.adoptionId} != ${excludeAdoptionId}`
             )
-          : inArray(clawCollabSettings.visibilityMode, ["org", "public"])
+          : taskType === "scheduling" ? or(eq(clawCollabSettings.schedulingDiscoverable, true), and(isNull(clawCollabSettings.schedulingDiscoverable), inArray(clawCollabSettings.visibilityMode, ["org", "public"]))) : inArray(clawCollabSettings.visibilityMode, ["org", "public"])
       );
     return rows;
   } catch (error) {
@@ -80,6 +83,26 @@ export async function getCollabRequest(id: number) {
   if (!db) return null;
   const rows = await db.select().from(clawCollabRequests).where(eq(clawCollabRequests.id, id)).limit(1);
   return rows[0] || null;
+}
+
+export async function getCollabRequestByKey(requesterAdoptId: string, requestKey: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const [row] = await db.select().from(clawCollabRequests).where(and(
+    eq(clawCollabRequests.requesterAdoptId, requesterAdoptId),
+    eq(clawCollabRequests.requestKey, requestKey),
+  )).limit(1);
+  return row || null;
+}
+
+export async function finishApprovedCollabRequest(id: number, targetAdoptId: string, patch: Pick<ClawCollabRequest, "status" | "resultSummary" | "resultMeta" | "completedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.update(clawCollabRequests).set(patch).where(and(
+    eq(clawCollabRequests.id, id), eq(clawCollabRequests.targetAdoptId, targetAdoptId),
+    inArray(clawCollabRequests.status, ["approved", "running"]),
+  ));
+  return result[0].affectedRows === 1;
 }
 
 export async function updateCollabRequest(

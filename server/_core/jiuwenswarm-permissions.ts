@@ -136,17 +136,17 @@ function renderExternalDirectoryBlock(entries: Map<string, string>): string {
 }
 
 function permissionsBlockRange(text: string): { start: number; end: number } | null {
-  const match = /^permissions:\n/m.exec(text);
+  const match = /^permissions:\r?\n/m.exec(text);
   if (!match) return null;
   const start = match.index;
   const restStart = start + match[0].length;
-  const nextTop = text.slice(restStart).search(/^[A-Za-z_][\w-]*:\n/m);
+  const nextTop = text.slice(restStart).search(/^[A-Za-z_][\w-]*:\r?\n/m);
   const end = nextTop >= 0 ? restStart + nextTop : text.length;
   return { start, end };
 }
 
 function externalDirectoryRange(permissionsBlock: string): { start: number; end: number } | null {
-  const match = /^  external_directory:\n/m.exec(permissionsBlock);
+  const match = /^  external_directory:\r?\n/m.exec(permissionsBlock);
   if (!match) return null;
   const start = match.index;
   const restStart = start + match[0].length;

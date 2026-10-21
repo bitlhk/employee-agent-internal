@@ -1,0 +1,6 @@
+{
+  "name": "scheduling-assistant",
+  "displayName": "日程协同",
+  "description": "查询本人日程、查找参与人并协商共同空闲时间，确认后创建或调整日程。",
+  "version": "1.4.3"
+}

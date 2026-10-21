@@ -44,6 +44,12 @@ import { resolveWealthPolicyBasis, resolveWealthSuitabilityPolicySource } from "
 import { buildWealthAllocationTaskContextPack, finalizeWealthPolicyResolutionEvidence, observeWealthAllocationRuntimeSources, observeWealthPolicyRuntimeSource, resolveWealthAllocationRuntimeSources, resolveWealthPolicyRuntimeSource } from "./context-resolution/wealth-runtime-sources";
 import { GOVERNED_WORK_PLATFORM_TOOLS, handleGovernedWorkPlatformTool, isGovernedWorkPlatformTool } from "./governed-work-platform-tools";
 import { CUSTOMER_CRM_PLATFORM_TOOLS, handleCustomerCrmPlatformTool, isCustomerCrmPlatformTool } from "./customer-crm-platform-tools";
+import { SCHEDULING_PLATFORM_TOOLS, handleSchedulingTool } from "./scheduling/platform-tools";
+import { COLLABORATION_PLATFORM_TOOLS, handleCollaborationTool } from "./collaboration/platform-tools";
+import { COLLABORATION_GOAL_TOOLS, handleCollaborationGoalTool } from "./collaboration/goal-tools";
+import { CASCADE_PLATFORM_TOOLS, handleCascadeTool } from "./scheduling/cascade-tools";
+import { scopedCollaborationForRequest, validateScopedTool, collaborationScopeTools } from "./collaboration/scope";
+import { collaborationOperationId } from "./collaboration/operation-id";
 import { registerMcpAgentAuthorizationRoute } from "./mcp-agent-authorization";
 import { issueCustomerSourceDelegation } from "./customer-context-source-delegation";
 import { createConfiguredTwentyCustomerClient } from "./customer-context-twenty-access";
@@ -213,6 +219,10 @@ export const PLATFORM_TOOLS = [
   },
   ...GOVERNED_WORK_PLATFORM_TOOLS,
   ...CUSTOMER_CRM_PLATFORM_TOOLS,
+  ...SCHEDULING_PLATFORM_TOOLS,
+  ...COLLABORATION_PLATFORM_TOOLS,
+  ...COLLABORATION_GOAL_TOOLS,
+  ...CASCADE_PLATFORM_TOOLS,
   {
     name: "get_wealth_policy_basis",
     description: [
@@ -395,6 +405,13 @@ async function callTool(
   args: Record<string, unknown>,
   requestIdentity?: unknown,
 ): Promise<Record<string, unknown> & { isError?: boolean }> {
+  const collaborationRun = await scopedCollaborationForRequest(req);
+  if (collaborationRun) await validateScopedTool(collaborationRun, name, args);
+  const evaluationAdoptId = pickHeader(req, ["x-jiuwen-channel-id", "x-agent-adopt-id"]);
+  if (collaborationRun && evaluationAdoptId.startsWith("lgj-eval-")) {
+    const evaluationTools = readSkillValueEvaluationAllowedTools(resolveRuntimeWorkspaceByIds(evaluationAdoptId, resolveRuntimeAgentId(evaluationAdoptId, pickHeader(req, ["x-linggan-agent-id"]))), "platform_tools");
+    if (evaluationTools && !evaluationTools.has(name)) return textResult("本次评估未授权该工具", { isError: true });
+  }
   let adoptId = "";
   try {
     adoptId = resolveAdoptId(req, args);
@@ -483,6 +500,31 @@ async function callTool(
     },
   });
   if (governance.effect !== "ALLOW") return textResult(governance.reason, { isError: true });
+
+  if (SCHEDULING_PLATFORM_TOOLS.some(tool => tool.name === name)) {
+    const scopedPrepare = collaborationRun && ["prepare_personal_schedule_write", "prepare_meeting_reschedule"].includes(name);
+    const operationId = scopedPrepare ? collaborationOperationId(collaborationRun.id, name, args.operationKey) : undefined;
+    const { operationKey: _operationKey, ...scopedArgs } = args;
+    const result = operationId ? await handleSchedulingTool(Number(claw.userId), name, scopedArgs, operationId) : await handleSchedulingTool(Number(claw.userId), name, args);
+    if (collaborationRun && !result.isError) {
+      const { watchPreparedCollaborationResource } = await import("./collaboration/watches");
+      await watchPreparedCollaborationResource(collaborationRun, name, result);
+    }
+    return result;
+  }
+  if (CASCADE_PLATFORM_TOOLS.some(tool => tool.name === name)) {
+    const result = await handleCascadeTool(Number(claw.userId), name, args);
+    if (collaborationRun) {
+      const { watchPreparedCollaborationResource } = await import("./collaboration/watches");
+      await watchPreparedCollaborationResource(collaborationRun, name, result);
+    }
+    return result;
+  }
+  const collaborationContext = { sessionId: principal.principal.sessionId, run: collaborationRun || undefined, leaseToken: String(req.headers["x-ea-collaboration-capability"] || ""), authorizationSnapshotId: executionAuthority?.taskSnapshotId };
+  if (COLLABORATION_GOAL_TOOLS.some(tool => tool.name === name)) return handleCollaborationGoalTool(Number(claw.userId), adoptId, name, args, collaborationContext);
+  if (COLLABORATION_PLATFORM_TOOLS.some(tool => tool.name === name)) {
+    return handleCollaborationTool(Number(claw.userId), adoptId, name, args, collaborationContext);
+  }
 
   if (name === "remember_preference") {
     const content = String(args.content || "").trim();
@@ -1227,10 +1269,12 @@ async function handleMessage(req: Request, msg: any) {
             "platform_tools",
           )
         : null;
-      const tools = allowedTools
-        ? PLATFORM_TOOLS.filter(tool => allowedTools.has(tool.name))
+      const collaborationRun = await scopedCollaborationForRequest(req);
+      const scopedTools = collaborationRun ? new Set([...collaborationScopeTools(collaborationRun.taskType)].filter(name => !allowedTools || allowedTools.has(name))) : allowedTools;
+      const tools = scopedTools
+        ? PLATFORM_TOOLS.filter(tool => scopedTools.has(tool.name))
         : PLATFORM_TOOLS;
-      return ok(id, { tools });
+      return ok(id, { tools: collaborationRun ? tools.map(tool => ["prepare_personal_schedule_write", "prepare_meeting_reschedule"].includes(tool.name) ? { ...tool, description: `${tool.description} In this isolated execution a stable UUID operationKey is required. Reuse it for retries; use a new key only for a new proposal.`, inputSchema: { ...tool.inputSchema, properties: { ...tool.inputSchema.properties, operationKey: { type: "string", format: "uuid" } }, required: [...(("required" in tool.inputSchema ? tool.inputSchema.required : []) || []), "operationKey"] } } : tool) : tools });
     }
     if (msg.method === "tools/call") {
       if (!hasRequestId(id)) return null;
@@ -1247,6 +1291,7 @@ async function handleMessage(req: Request, msg: any) {
         return ok(id, result);
       } catch (error) {
         finishMetric("error");
+        if (pickHeader(req, ["x-ea-collaboration-run-id"])) await recordAuditBestEffort({ action: "collaboration.tool.failed", actorType: "agent", targetType: "collaboration_run", targetId: pickHeader(req, ["x-ea-collaboration-run-id"]), result: "failed", toolName: String(msg.params?.name || ""), metadata: { reason: error instanceof Error ? error.message.slice(0, 600) : "Tool failed" } });
         throw error;
       }
     }

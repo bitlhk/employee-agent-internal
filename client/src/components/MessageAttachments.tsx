@@ -18,6 +18,7 @@ import type {
 } from "@/components/ChatMessage";
 import { Download, Eye, Loader2 } from "lucide-react";
 import { EA_ARTIFACT_SCHEMA } from "@shared/agent-artifact";
+import { isUserVisibleJiuwenArtifactPath } from "@shared/jiuwen-artifacts";
 
 type AttachmentPreviewKind =
   | "html"
@@ -80,11 +81,13 @@ function formatAttachmentSize(size: number): string {
 
 function collectMessageAttachments(
   toolCalls: ToolCallEntry[],
-  attachments: ChatMessageAttachment[]
+  attachments: ChatMessageAttachment[],
+  generatedOnly: boolean
 ): ChatMessageAttachment[] {
   const files = new Map<string, ChatMessageAttachment>();
   for (const file of attachments) {
     if (!file.path || !file.adoptId) continue;
+    if (generatedOnly && !isUserVisibleJiuwenArtifactPath(file.path)) continue;
     files.set(`${file.adoptId}:${file.path}`, file);
   }
   for (const tool of toolCalls) {
@@ -95,6 +98,7 @@ function collectMessageAttachments(
       );
       const adoptId = String(tool.adoptId || "");
       if (!path || !adoptId) continue;
+      if (generatedOnly && !isUserVisibleJiuwenArtifactPath(path)) continue;
       files.set(`${adoptId}:${path}`, {
         name: file.name,
         size: Number(file.size || 0),
@@ -377,8 +381,13 @@ export function MessageAttachments({
   ) => void;
 }) {
   const files = useMemo(
-    () => collectMessageAttachments(toolCalls, attachments),
-    [attachments, toolCalls]
+    () =>
+      collectMessageAttachments(
+        toolCalls,
+        attachments,
+        variant === "assistant"
+      ),
+    [attachments, toolCalls, variant]
   );
   const [downloading, setDownloading] = useState("");
   const [downloadError, setDownloadError] = useState("");

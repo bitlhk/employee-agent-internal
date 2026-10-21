@@ -44,6 +44,8 @@ def emit(decision: str, reason: str = "") -> int:
 
 
 def safe_when_policy_unavailable(payload: dict) -> bool:
+    if str(payload.get("session_id") or "").startswith("ea_collab_"):
+        return False
     tool_name = str(payload.get("tool_name") or "").strip().lower()
     return bool(SAFE_TOOL_RE.match(tool_name) or tool_name.startswith(READ_PREFIXES))
 

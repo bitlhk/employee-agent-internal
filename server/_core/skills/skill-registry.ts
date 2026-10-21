@@ -807,10 +807,14 @@ export class FileSkillRegistry implements SkillRegistry {
     try {
       const { getClawByAdoptId, resolveEffectiveRoleAssets } = await import("../../db");
       const claw = await getClawByAdoptId(adoptId);
-      const roleTemplate = String((claw as any)?.roleTemplate || "general-assistant");
-      const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
-      const disabled = new Set(roleSkillPreferences.getDisabledDefaultSkillIds(adoptId));
-      enabledRoleDefaults = effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId));
+      // A missing historical adoption is not a grant for today's general role.
+      // Keep its registered skills without injecting new role defaults.
+      if (claw) {
+        const roleTemplate = String(claw.roleTemplate || "general-assistant");
+        const effectiveAssets = await resolveEffectiveRoleAssets(roleTemplate);
+        const disabled = new Set(roleSkillPreferences.getDisabledDefaultSkillIds(adoptId));
+        enabledRoleDefaults = effectiveAssets.skills.default.filter((skillId) => !disabled.has(skillId));
+      }
     } catch {}
     const desired = Array.from(new Set([...enabledRoleDefaults, ...registeredSkills].filter(Boolean))).sort();
     const current = Array.isArray(agentEntry.skills)

@@ -56,6 +56,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { schedulingConfirmations } from "@/lib/scheduling-confirmations";
+import { SchedulingChatConfirmations } from "./SchedulingChatConfirmations";
+
 export type ToolCallEntry = {
   id: string;
   name: string;
@@ -266,6 +269,7 @@ type ChatMessageProps = {
   }) => Promise<Array<{ memoryId: number; version: number; safePreview: string; sourceType: string; asOf: string }>>;
   onCaptureKnowledge?: (input: { messageId?: string; text: string; modelId: string }) => void;
   onOpenKnowledgeSource?: (source: ChatKnowledgeSource) => void;
+  onOpenCalendar?: () => void;
   jiuwenPermission?: JiuwenPermissionRequestCard;
   onJiuwenPermissionAnswer?: (request: JiuwenPermissionRequestCard, action: "allow_once" | "allow_always" | "reject") => void;
   onOpenAgentArtifact?: (artifacts: AgentArtifactView[], artifactId?: string) => void;
@@ -796,6 +800,7 @@ function ChatMessageInner({
   onLoadContextMemoryPreviews,
   onCaptureKnowledge,
   onOpenKnowledgeSource,
+  onOpenCalendar,
   jiuwenPermission,
   onJiuwenPermissionAnswer,
   onOpenAgentArtifact,
@@ -1165,6 +1170,7 @@ function ChatMessageInner({
             ) : null}
           </div>
         ) : null}
+        {role === "assistant" && <SchedulingChatConfirmations references={schedulingConfirmations(effectiveToolCalls)} adoptId={adoptId} onOpenCalendar={onOpenCalendar} />}
         {jiuwenPermission && jiuwenPermission.kind !== "question" && (
           <div
             className="mt-2 rounded-xl px-3 py-3 text-xs"
@@ -1592,6 +1598,7 @@ export const ChatMessage = memo(ChatMessageInner, (prev, next) => {
     prev.onRetryExpert === next.onRetryExpert &&
     prev.onCaptureKnowledge === next.onCaptureKnowledge &&
     prev.onOpenKnowledgeSource === next.onOpenKnowledgeSource &&
+    prev.onOpenCalendar === next.onOpenCalendar &&
     prev.onContextMemoryFeedback === next.onContextMemoryFeedback &&
     prev.onLoadContextMemoryPreviews === next.onLoadContextMemoryPreviews &&
     JSON.stringify(prev.jiuwenPermission || null) === JSON.stringify(next.jiuwenPermission || null) &&

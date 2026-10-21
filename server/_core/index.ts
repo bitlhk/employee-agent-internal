@@ -122,6 +122,8 @@ import { startAgentMemoryRuntime } from "./agent-memory";
 import { registerLocalProfileA2AProxy } from "./local-profile-a2a-proxy";
 import { startAgentHealthMonitor } from "./agent-health";
 import { startKnowledgeIndexRecovery } from "./knowledge-service";
+import { startSchedulingRecovery } from "./scheduling/worker";
+import { startCollaborationRecovery } from "./collaboration/worker";
 import { centralAuthConfigFromEnv, centralAuthRedirectUrl } from "./central-auth";
 import {
   startManagedWorker,
@@ -905,6 +907,8 @@ async function startServer() {
           await startManagedWorkerAsync("agent_tasks", startAgentTaskRuntime);
           startManagedWorker("agent_memory", startAgentMemoryRuntime);
           startManagedWorker("knowledge_recovery", startKnowledgeIndexRecovery);
+          startManagedWorker("scheduling_recovery", startSchedulingRecovery);
+          startManagedWorker("collaboration_recovery", startCollaborationRecovery);
           startManagedWorker("runtime_assets", startEnterpriseRuntimeAssetSelfHeal);
           void reconcileEnterpriseMcpRuntimeScopes()
             .then((summary) => logInfo("enterprise_mcp.runtime_scopes_reconciled", summary))

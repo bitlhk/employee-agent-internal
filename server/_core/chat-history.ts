@@ -260,7 +260,7 @@ export function normalizeEnterpriseHistorySessions(args: {
         conversationId,
         sessionKey: String(latest?.session_id || ""),
         sessionId: String(latest?.session_id || ""),
-        title: truncateHistoryText(oldest?.title || latest?.title || "", 24) || "新对话",
+        title: conversationId === "calendar" ? "工作区动态" : truncateHistoryText(oldest?.title || latest?.title || "", 24) || "新对话",
         preview: "",
         searchText: normalizeHistoryText(segments.map((segment) => segment.title || "").join(" ")).slice(0, 12_000),
         messageCount: segments.reduce((sum, segment) => sum + Math.max(0, Number(segment.message_count || 0)), 0),
@@ -569,6 +569,7 @@ export function extractJiuwenChatMessagesFromRecords(
       event = row;
     }
     const role = String(event?.role || event?.message?.role || "");
+    if (String(event?.request_id || "").startsWith("ea-context-") && event?.ea_conversation?.presentation === "context-only") continue;
     if (role !== "user" && role !== "assistant") continue;
     const eventType = String(event?.event_type || event?.type || "").toLowerCase();
     const timestamp = normalizeJiuwenHistoryTimestamp(event?.timestamp || event?.created_at || event?.time);
@@ -607,6 +608,9 @@ export function extractJiuwenChatMessagesFromRecords(
         toolCalls: [],
       };
       assistantByRequest.set(requestId, existing);
+    }
+    if (requestId.startsWith("ea-context-") && event?.ea_conversation && Array.isArray(event.ea_conversation.actions)) {
+      existing.toolCalls.push({ id: `${requestId}:context`, name: "ea_conversation_update", arguments: "{}", result: JSON.stringify({ actions: event.ea_conversation.actions }), status: "done", ts: timestamp, executor: "jiuwenswarm" });
     }
     const toolCall = jiuwenToolCallFromEvent(event, timestamp, existing.toolCalls.length);
     if (toolCall) {
@@ -792,7 +796,7 @@ export function listJiuwenChatHistorySessions(args: {
         conversationId: latest.conversationId,
         sessionKey: latest.sessionId,
         sessionId: latest.sessionId,
-        title: truncateHistoryText(oldest?.metadata?.title || firstUser?.text || "", 24) || "新对话",
+        title: latest.conversationId === "calendar" ? "工作区动态" : truncateHistoryText(oldest?.metadata?.title || firstUser?.text || "", 24) || "新对话",
         preview: truncateHistoryText(last?.text || "", 42),
         searchText: normalizeHistoryText(messages.map((message) => message.text || "").join(" ")).slice(0, 12000),
         messageCount: messages.length,

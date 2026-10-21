@@ -3,6 +3,7 @@ import { clawChatLimiter } from "./security";
 import { requireClawOwner } from "./helpers";
 import { canViewCoopSession } from "../db/coop-identity";
 import { getCoopRuntimeExecutor } from "./coop-runtime-executor";
+import { streamStandaloneCollaboration } from "./collaboration/live-result";
 
 type LiveClient = {
   res: express.Response;
@@ -148,7 +149,7 @@ export function registerCollabRoutes(app: express.Express) {
     res.json({ ok: true, streaming: true }); // 立即返回给 fire-and-forget 调用方
 
     // 异步执行，不阻塞
-    getCoopRuntimeExecutor(String((claw as any).runtime || "")).execute({
+    getCoopRuntimeExecutor(String((claw as any).runtime || ""), collabReq).execute({
       requestId: Number(requestId),
       targetAdoptId: String(targetAdoptId),
       claw,
@@ -175,6 +176,7 @@ export function registerCollabRoutes(app: express.Express) {
     if (!claw) return;
     const userId = Number((claw as any).userId || 0);
     const sessionId = String((collabReq as any).sessionId || "");
+    if (userId && !sessionId) { streamStandaloneCollaboration(req, res, reqId, userId, true); return; }
     if (!userId || !sessionId) {
       res.status(403).json({ error: "coop_live_forbidden", reason: !sessionId ? "session_missing" : "profile_missing" });
       return;
@@ -216,6 +218,7 @@ export function registerCollabRoutes(app: express.Express) {
     if (!claw) return;
     const userId = Number((claw as any).userId || 0);
     const sessionId = String((collabReq as any).sessionId || "");
+    if (userId && !sessionId) { streamStandaloneCollaboration(req, res, reqId, userId, false); return; }
     if (!userId || !sessionId) {
       res.status(403).json({ error: "coop_live_forbidden", reason: !sessionId ? "session_missing" : "profile_missing" });
       return;
