@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { CollaborationAwaitingResources } from "./collaboration/errors";
 import type { Express, Request } from "express";
 import { recordAuditBestEffort } from "./audit-events";
 import { isAuthorizedInternalRequest } from "./helpers";
@@ -154,6 +155,7 @@ async function auditGovernanceDecision(input: {
 export function policyUnavailableDecision(
   body: JiuwenPreToolInput
 ): { decision: "allow" } | { decision: "block"; reason: string; policyCode: string } {
+  if (String(body.session_id || "").startsWith("ea_collab_")) return { decision: "block", reason: "协作权限校验暂不可用", policyCode: "EA_COLLABORATION_SCOPE_UNAVAILABLE" };
   const profile = resolveToolGovernance(body.tool_name);
   if (!isLikelyOutboundToolCall(body.tool_name, body.tool_input) && !shouldBlockWithoutPolicyCore(profile)) {
     return { decision: "allow" };
@@ -172,6 +174,21 @@ export async function evaluateJiuwenPreToolUse(
   | { decision: "block"; reason: string; policyCode: string }
 > {
   const toolName = normalizedManagedGatewayToolName(body.tool_name);
+  if (String(body.session_id || "").startsWith("ea_collab_")) {
+    const { getCollaborationRun, runSessionId } = await import("../db/collaboration-runs");
+    const { validateScopedTool } = await import("./collaboration/scope");
+    const run = await getCollaborationRun(String(body.session_id).slice("ea_collab_".length).split(/[:_]/)[0]);
+    try {
+      if (!run || body.session_id !== runSessionId(run.id, run.turn) || run.status !== "running" || !run.leaseUntil || run.leaseUntil.getTime() <= Date.now()) throw new Error("协作执行已失效");
+      if (!toolName.startsWith("mcp_platform_tools_")) throw new Error("协作执行不能访问文件、记忆、命令或其他业务系统");
+      const input: unknown = typeof body.tool_input === "string" ? JSON.parse(body.tool_input) : body.tool_input;
+      if (input != null && (typeof input !== "object" || Array.isArray(input))) throw new Error("工具参数无效");
+      await validateScopedTool(run, toolName.slice("mcp_platform_tools_".length), input as Record<string, unknown> || {});
+      body = { ...body, tool_input: input || {} };
+    } catch (error) {
+      return { decision: "block", reason: error instanceof CollaborationAwaitingResources ? error.message : "本次协作未授权该工具或执行上下文已失效", policyCode: "EA_COLLABORATION_SCOPE_DENIED" };
+    }
+  }
   body = { ...body, tool_name: toolName };
   const profile = resolveToolGovernance(toolName);
   const policyDecisionId = `pdec_${randomUUID()}`;

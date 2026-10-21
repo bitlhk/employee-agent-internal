@@ -316,6 +316,8 @@ export type ModelSelectionMode = "automatic" | "manual";
 export type AutomaticModelRouteReason = "sticky" | "least_loaded" | "fallback";
 export type McpKind = "platform" | "custom" | "enterprise";
 export type BackgroundWorkerName =
+  | "scheduling_recovery"
+  | "collaboration_recovery"
   | "log_retention"
   | "agent_health"
   | "agent_memory"

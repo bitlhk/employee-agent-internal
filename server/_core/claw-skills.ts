@@ -1,99 +1,36 @@
+import { discoverGeneratedRuntimeSkills } from './generated-skill-discovery';
+
 import express from "express";
-import {
-  cpSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  rmSync,
-  readdirSync,
-  statSync,
-} from "fs";
+import { existsSync, readFileSync, statSync } from "fs";
 import path from "path";
-import type { Skill, SkillSource } from "../../shared/types/skill";
-import {
-  requireClawOwner,
-  resolveRuntimeAgentId,
-  clearAgentSessionsCache,
-  OPENCLAW_BASE_HOME,
-  OPENCLAW_HOME,
-  OPENCLAW_JSON_PATH,
-  isJiuwenClawAdoptId,
-  openClawAgentDir,
-  readSessionEpoch,
-  resolveRuntimeWorkspaceByIds,
-} from "./helpers";
-import {
-  deleteAgentMcpPreference,
-  getAgentMcpPreference,
-  listCustomMcpConnections,
-  listEnterpriseMcpConnections,
-  listEnterpriseMcpToolPolicies,
-  listAccessibleKnowledgeBases,
-  getUserById,
-  listMcpInvocationCounts,
-  resolveEffectiveRoleAssets,
-  resolvePersistedAgentMcpSelection,
-  setAgentMcpPreference,
-  disableAgentSkillInstallation,
-} from "../db";
+import { CUSTOMER_CONTEXT_DESCRIPTION, CUSTOMER_CONTEXT_DISPLAY_NAME, CUSTOMER_CONTEXT_SERVER_ID, customerContextCanonicalToolNames, } from "../../shared/customer-context-contract";
 import { roleExperience } from "../../shared/role-experience";
-import type { RoleHomeConnectorState } from "./role-home-runtime";
-import { buildRoleHomeRuntimeStatus } from "./role-home-runtime";
-import { skillRegistry } from "./skills/skill-registry";
-import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
-import { roleSkillPreferences } from "./skills/role-skill-preferences";
-import { setAgentSkillEnabled } from "./skills/skill-enable-service";
-import { skillInstaller } from "./skills/skill-installer";
-import { parseSkillSourceDirectory } from "./skills/skill-source";
-import {
-  generatedSkillDiscoveryExcludedRoots,
-  shouldDiscoverGeneratedRuntimeSkill,
-} from "./skills/skill-discovery";
-import {
-  skillStoreGeneratedDir,
-  skillStoreRuntimeImportedDir,
-  skillSourceDirsForRuntime,
-} from "./skills/skill-store";
-import { registerSkillMarketRoutes } from "./skills/routes/skill-market-routes";
-import { registerSkillPackageRoutes } from "./skills/routes/skill-package-routes";
+import { deleteAgentMcpPreference, disableAgentSkillInstallation, getAgentMcpPreference, getUserById, listAccessibleKnowledgeBases, listCustomMcpConnections, listEnterpriseMcpConnections, listEnterpriseMcpToolPolicies, listMcpInvocationCounts, resolveEffectiveRoleAssets, resolvePersistedAgentMcpSelection, setAgentMcpPreference, } from "../db";
 import { getRoleRuntimeAdapter } from "../routers/role-runtime-adapters";
-import { resolveAgentRoleTemplate } from "./role-templates";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
-import {
-  customMcpServerId,
-  parseCustomMcpServerId,
-  toggleCustomMcpConnection,
-} from "./custom-mcp";
-import {
-  fetchMcpLiveStatuses,
-  MCP_TOOLS_LIVE_TTL_MS,
-  type McpLiveStatus,
-} from "./mcp-live-status";
-import {
-  removeSkillPackageIndexRows,
-} from "./skills/skill-package-index";
 import { createBoundedAsyncCache } from "./bounded-async-cache";
-import { recordMcpStatusCacheRequest } from "./observability/metrics";
+import { customMcpServerId, parseCustomMcpServerId, toggleCustomMcpConnection, } from "./custom-mcp";
+import { isJiuwenClawAdoptId, OPENCLAW_HOME, OPENCLAW_JSON_PATH, readSessionEpoch, requireClawOwner, resolveRuntimeAgentId } from "./helpers";
+import { fetchMcpLiveStatuses, MCP_TOOLS_LIVE_TTL_MS, type McpLiveStatus, } from "./mcp-live-status";
 import { buildMcpStatusResponse } from "./mcp-status-response";
-import {
-  CUSTOMER_CONTEXT_DESCRIPTION,
-  CUSTOMER_CONTEXT_DISPLAY_NAME,
-  CUSTOMER_CONTEXT_SERVER_ID,
-  customerContextCanonicalToolNames,
-} from "../../shared/customer-context-contract";
+import { recordMcpStatusCacheRequest } from "./observability/metrics";
 import { PLATFORM_TOOLS } from "./platform-tools-mcp";
 import { POST_LOAN_RISK_DATA_TOOLS } from "./post-loan-risk-data-provider";
+import type { RoleHomeConnectorState } from "./role-home-runtime";
+import { buildRoleHomeRuntimeStatus } from "./role-home-runtime";
+import { resolveAgentRoleTemplate } from "./role-templates";
+import { listSkillsWithRoleDefaults } from "./skills/role-default-skills";
+import { registerSkillMarketRoutes } from "./skills/routes/skill-market-routes";
+import { registerSkillPackageRoutes } from "./skills/routes/skill-package-routes";
+import { setAgentSkillEnabled } from "./skills/skill-enable-service";
+import { removeSkillPackageIndexRows, } from "./skills/skill-package-index";
+import { skillRegistry } from "./skills/skill-registry";
 
 function registryErrorStatus(kind?: string): number {
   if (kind === "not_found") return 404;
   if (kind === "permission_denied") return 403;
   if (kind === "validation_failed") return 400;
   return 500;
-}
-
-function skillSourceCacheDir(adoptId: string, skillId: string): string {
-  return skillStoreRuntimeImportedDir(adoptId, skillId);
 }
 
 type McpToolGroupOverride = {
@@ -539,124 +476,6 @@ export function listMcpToolGroups(options: {
       invocations: groups.reduce((sum, group: any) => sum + Number(group.invocationCount || 0), 0),
     },
   };
-}
-
-type GeneratedSkillDiscoveryResult = {
-  discovered: number;
-  installed: Array<{ skillId: string; displayName: string }>;
-  skipped: Array<{ skillId: string; reason: string }>;
-};
-
-const configuredSkillDiscoveryTtl = Number(
-  process.env.EA_SKILL_DISCOVERY_CACHE_TTL_MS || 30_000,
-);
-const generatedSkillDiscoveryCache = createBoundedAsyncCache<GeneratedSkillDiscoveryResult>({
-  ttlMs: Number.isFinite(configuredSkillDiscoveryTtl)
-    ? Math.min(300_000, Math.max(1_000, configuredSkillDiscoveryTtl))
-    : 30_000,
-  maxEntries: 2_000,
-});
-
-async function discoverGeneratedRuntimeSkillsUncached(
-  adoptId: string,
-  runtimeAgentId: string,
-  onlySkillId?: string
-): Promise<GeneratedSkillDiscoveryResult> {
-  const runtimeSkillsRoot = path.join(
-    resolveRuntimeWorkspaceByIds(adoptId, runtimeAgentId),
-    "skills"
-  );
-  if (!existsSync(runtimeSkillsRoot))
-    return { discovered: 0, installed: [], skipped: [] };
-
-  const listed = await skillRegistry.listSkills(adoptId);
-  const registered = new Set(
-    listed.ok ? listed.value.map(item => item.id) : []
-  );
-  const installed: Array<{ skillId: string; displayName: string }> = [];
-  const skipped: Array<{ skillId: string; reason: string }> = [];
-  const excludedRoots = generatedSkillDiscoveryExcludedRoots(OPENCLAW_HOME, skillSourceDirsForRuntime());
-
-  for (const entry of readdirSync(runtimeSkillsRoot, { withFileTypes: true })) {
-    const sourceDir = path.join(runtimeSkillsRoot, entry.name);
-    const discoverable = shouldDiscoverGeneratedRuntimeSkill(sourceDir, excludedRoots);
-    if (!discoverable.ok) {
-      if (existsSync(path.join(sourceDir, "SKILL.md"))) {
-        skipped.push({ skillId: entry.name, reason: discoverable.reason });
-      }
-      continue;
-    }
-    if (!existsSync(path.join(sourceDir, "SKILL.md"))) continue;
-    if (onlySkillId && entry.name !== onlySkillId) continue;
-
-    try {
-      const parsed = parseSkillSourceDirectory(sourceDir, entry.name);
-      if (
-        onlySkillId &&
-        parsed.skillId !== onlySkillId &&
-        entry.name !== onlySkillId
-      )
-        continue;
-      if (registered.has(parsed.skillId)) {
-        skipped.push({ skillId: parsed.skillId, reason: "already_registered" });
-        continue;
-      }
-
-      const sourceCache = skillSourceCacheDir(adoptId, parsed.skillId);
-      rmSync(sourceCache, { recursive: true, force: true });
-      mkdirSync(path.dirname(sourceCache), { recursive: true });
-      cpSync(sourceDir, sourceCache, { recursive: true });
-      const st = statSync(sourceCache);
-      if (!st.isDirectory()) {
-        skipped.push({ skillId: parsed.skillId, reason: "source_copy_failed" });
-        continue;
-      }
-
-      const source: SkillSource = {
-        kind: "runtime_imported",
-        skillId: parsed.skillId,
-        displayName: parsed.displayName || parsed.skillId,
-        description: parsed.description || "运行时导入的个人技能",
-        sourcePath: sourceCache,
-        version: String(parsed.manifest?.version || ""),
-      };
-      const result = await skillRegistry.install(adoptId, source);
-      if (!result.ok) {
-        skipped.push({ skillId: parsed.skillId, reason: result.error.detail });
-        continue;
-      }
-      await skillRegistry.updateScan(adoptId, parsed.skillId, {
-        warnings: parsed.warnings,
-        scannedAt: new Date().toISOString(),
-      });
-      registered.add(parsed.skillId);
-      installed.push({
-        skillId: parsed.skillId,
-        displayName: source.displayName,
-      });
-    } catch (e: any) {
-      skipped.push({ skillId: entry.name, reason: String(e?.message || e) });
-    }
-  }
-
-  return { discovered: installed.length, installed, skipped };
-}
-
-async function discoverGeneratedRuntimeSkills(
-  adoptId: string,
-  runtimeAgentId: string,
-  onlySkillId?: string,
-): Promise<GeneratedSkillDiscoveryResult> {
-  const prefix = `${adoptId}\u0000${runtimeAgentId}\u0000`;
-  if (onlySkillId) {
-    generatedSkillDiscoveryCache.invalidatePrefix(prefix);
-    return discoverGeneratedRuntimeSkillsUncached(adoptId, runtimeAgentId, onlySkillId);
-  }
-  const key = `${prefix}${readSessionEpoch(adoptId)}`;
-  return generatedSkillDiscoveryCache.getOrLoad(
-    key,
-    () => discoverGeneratedRuntimeSkillsUncached(adoptId, runtimeAgentId),
-  );
 }
 
 

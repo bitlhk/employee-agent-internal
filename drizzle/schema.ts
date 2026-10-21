@@ -39,6 +39,97 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
+export const calendarBindings = mysqlTable("calendar_bindings", {
+  userId: int("user_id").primaryKey(),
+  username: varchar("username", { length: 128 }).notNull(),
+  calendarName: varchar("calendar_name", { length: 128 }).notNull(),
+  encryptedPassword: text("encrypted_password").notNull(),
+  enabled: boolean("enabled").default(false).notNull(),
+  discoverable: boolean("discoverable").default(false).notNull(),
+  writeEnabled: boolean("write_enabled").default(false).notNull(),
+  autoAvailability: boolean("auto_availability").default(false).notNull(),
+  calendarEmail: varchar("calendar_email", { length: 320 }).default("").notNull(),
+  timeZone: varchar("time_zone", { length: 100 }).default("").notNull(),
+  grantId: varchar("grant_id", { length: 64 }).default("").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({ usernameUnique: uniqueIndex("uk_calendar_bindings_username").on(table.username) }));
+
+// Persist credentials before provider creation so an interrupted request can
+// verify its own account on retry without resetting any existing account.
+export const calendarProvisioning = mysqlTable("calendar_provisioning", {
+  userId: int("user_id").primaryKey(),
+  username: varchar("username", { length: 128 }).notNull().unique(),
+  encryptedPassword: text("encrypted_password").notNull(),
+  status: mysqlEnum("status", ["creating", "ready", "failed"]).default("creating").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+});
+
+export const calendarWriteDrafts = mysqlTable("calendar_write_drafts", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  userId: int("user_id").notNull(),
+  bindingFingerprint: varchar("binding_fingerprint", { length: 64 }).notNull(),
+  payload: json("payload").notNull(),
+  status: mysqlEnum("status", ["pending", "executing", "completed", "unknown", "cancelled"]).default("pending").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({ userIdx: index("idx_calendar_write_drafts_user").on(table.userId) }));
+
+export const calendarCoordinations = mysqlTable("calendar_coordinations", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  creatorUserId: int("creator_user_id").notNull(),
+  requestKey: varchar("request_key", { length: 64 }).notNull(),
+  payload: json("payload").notNull(),
+  payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+  status: mysqlEnum("status", ["collecting", "completed", "cancelled", "expired"]).default("collecting").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  excludeMeetingId: varchar("exclude_meeting_id", { length: 64 }),
+}, table => ({ requestUnique: uniqueIndex("uk_calendar_coordination_request").on(table.creatorUserId, table.requestKey) }));
+
+export const calendarAvailabilityTasks = mysqlTable("calendar_availability_tasks", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  coordinationId: varchar("coordination_id", { length: 64 }).notNull(),
+  targetUserId: int("target_user_id").notNull(),
+  displayName: varchar("display_name", { length: 200 }).notNull(),
+  status: mysqlEnum("status", ["pending", "running", "replied", "declined"]).default("pending").notNull(),
+  reply: json("reply"),
+  leaseToken: varchar("lease_token", { length: 64 }),
+  manualOnly: boolean("manual_only").default(false).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({ memberUnique: uniqueIndex("uk_calendar_availability_member").on(table.coordinationId, table.targetUserId), targetIdx: index("idx_calendar_availability_target").on(table.targetUserId) }));
+
+export const calendarMeetings = mysqlTable("calendar_meetings", {
+  id: varchar("id", { length: 64 }).primaryKey(),
+  coordinationId: varchar("coordination_id", { length: 64 }).unique(),
+  requestKey: varchar("request_key", { length: 64 }),
+  creatorUserId: int("creator_user_id").notNull(),
+  payload: json("payload").notNull(),
+  payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
+  bindingFingerprint: varchar("binding_fingerprint", { length: 64 }).notNull(),
+  checkCoordinationId: varchar("check_coordination_id", { length: 64 }),
+  status: mysqlEnum("status", ["pending", "checking", "creating", "invited", "unknown", "cancelled"]).default("pending").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({ requestUnique: uniqueIndex("uk_calendar_meeting_request").on(table.creatorUserId, table.requestKey) }));
+
+export const calendarReschedules = mysqlTable("calendar_reschedules", {
+  cascadeId: varchar("cascade_id", { length: 36 }),
+  id: varchar("id", { length: 64 }).primaryKey(),
+  meetingId: varchar("meeting_id", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  previous: json("previous").notNull(),
+  payload: json("payload").notNull(),
+  version: varchar("version", { length: 256 }).notNull(),
+  bindingFingerprint: varchar("binding_fingerprint", { length: 64 }).notNull(),
+  checkCoordinationId: varchar("check_coordination_id", { length: 64 }),
+  status: mysqlEnum("status", ["pending", "checking", "executing", "completed", "unknown", "cancelled"]).default("pending").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({ ownerIdx: index("idx_calendar_reschedules_owner").on(table.userId) }));
+
+// Legacy calendar_chat_turns, calendar_notifications and calendar_coop_links are
+// retained in deployed databases for history; no active code reads or writes them.
+
 // Stable enterprise identity records. users.organization remains a legacy
 // display/source field; runtime authorization must resolve through these IDs.
 export const runtimeOrganizations = mysqlTable("runtime_organizations", {
@@ -852,6 +943,9 @@ export const clawCollabSettings = mysqlTable("claw_collab_settings", {
   acceptDm: mysqlEnum("acceptDm", ["off", "org", "specified"]).default("off").notNull(),
   acceptTask: mysqlEnum("acceptTask", ["off", "approval", "auto"]).default("off").notNull(),
   allowedTaskTypes: text("allowedTaskTypes"),
+  schedulingAcceptTask: mysqlEnum("schedulingAcceptTask", ["off", "approval", "auto"]),
+  schedulingSharingPolicy: mysqlEnum("schedulingSharingPolicy", ["result-only", "none"]),
+  schedulingDiscoverable: boolean("schedulingDiscoverable"),
   sharingPolicy: mysqlEnum("sharingPolicy", ["result-only", "none"]).default("none").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -865,6 +959,8 @@ export type InsertClawCollabSetting = typeof clawCollabSettings.$inferInsert;
  */
 export const clawCollabRequests = mysqlTable("claw_collab_requests", {
   id: bigint("id", { mode: "number" }).autoincrement().primaryKey(),
+  requestKey: varchar("requestKey", { length: 36 }),
+  requestFingerprint: varchar("requestFingerprint", { length: 64 }),
   sessionId: varchar("sessionId", { length: 64 }),
   subtaskIndex: int("subtaskIndex"),
   requesterAdoptId: varchar("requesterAdoptId", { length: 64 }).notNull(),
@@ -887,10 +983,78 @@ export const clawCollabRequests = mysqlTable("claw_collab_requests", {
   constraintsApplied: text("constraintsApplied"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  requesterKeyUnique: uniqueIndex("uk_collab_requester_key").on(table.requesterAdoptId, table.requestKey),
+}));
 
 export type ClawCollabRequest = typeof clawCollabRequests.$inferSelect;
 export type InsertClawCollabRequest = typeof clawCollabRequests.$inferInsert;
+
+// Durable execution and continuation are separate from the one-exchange request.
+export const collaborationRuns = mysqlTable("collaboration_runs", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  adoptId: varchar("adopt_id", { length: 64 }).notNull(),
+  userId: int("user_id").notNull(),
+  kind: mysqlEnum("kind", ["recipient", "goal"]).notNull(),
+  taskType: varchar("task_type", { length: 64 }).default("general").notNull(),
+  requestId: bigint("request_id", { mode: "number" }),
+  requestKey: varchar("request_key", { length: 36 }),
+  parentRunId: varchar("parent_run_id", { length: 36 }),
+  budgetRootId: varchar("budget_root_id", { length: 36 }).notNull(),
+  authorizationSnapshotId: varchar("authorization_snapshot_id", { length: 64 }),
+  sourceSessionId: varchar("source_session_id", { length: 160 }),
+  sourceConversationId: varchar("source_conversation_id", { length: 160 }),
+  objective: text("objective").notNull(),
+  expectedEffect: mysqlEnum("expected_effect", ["read", "calendar_write"]).default("read").notNull(),
+  status: mysqlEnum("status", ["ready", "running", "waiting", "waiting_user", "completed", "failed", "cancelled"]).default("ready").notNull(),
+  checkpoint: text("checkpoint"),
+  wakeRequested: boolean("wake_requested").default(false).notNull(),
+  publicMessage: text("public_message"),
+  turn: int("turn").default(0).notNull(),
+  depth: int("depth").default(0).notNull(),
+  requestCount: int("request_count").default(0).notNull(),
+  leaseToken: varchar("lease_token", { length: 64 }),
+  leaseUntil: timestamp("lease_until"),
+  availableAt: timestamp("available_at").defaultNow().notNull(),
+  deadline: timestamp("deadline").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({
+  requestUnique: uniqueIndex("uk_collab_run_request").on(table.requestId),
+  keyUnique: uniqueIndex("uk_collab_run_key").on(table.adoptId, table.requestKey),
+  readyIndex: index("idx_collab_run_ready").on(table.status, table.availableAt),
+}));
+export type CollaborationRun = typeof collaborationRuns.$inferSelect;
+
+export const collaborationWaits = mysqlTable("collaboration_waits", {
+  runId: varchar("run_id", { length: 36 }).notNull(),
+  resourceKind: mysqlEnum("resource_kind", ["request", "draft", "meeting", "reschedule", "cascade", "coordination"]).notNull(),
+  resourceId: varchar("resource_id", { length: 64 }).notNull(),
+  observedState: varchar("observed_state", { length: 128 }).notNull(),
+  polledAt: timestamp("polled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, table => ({ resourceUnique: uniqueIndex("uk_collab_wait_resource").on(table.runId, table.resourceKind, table.resourceId), pollingIndex: index("idx_collab_wait_poll").on(table.polledAt) }));
+
+export const calendarCascades = mysqlTable("calendar_cascades", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  userId: int("user_id").notNull(),
+  requestKey: varchar("request_key", { length: 36 }).notNull(),
+  title: varchar("title", { length: 200 }).notNull(),
+  inputHash: varchar("input_hash", { length: 64 }).notNull(),
+  planHash: varchar("plan_hash", { length: 64 }).notNull(),
+  steps: json("steps").notNull().$type<import("../shared/scheduling-cascade").CascadeStep[]>(),
+  status: mysqlEnum("status", ["drafting", "pending", "confirmed", "running", "waiting", "completed", "partial", "compensating", "compensated", "cancelled", "failed"]).default("drafting").notNull(),
+  stopRequested: boolean("stop_requested").default(false).notNull(),
+  errorCode: varchar("error_code", { length: 64 }),
+  confirmedAt: timestamp("confirmed_at"),
+  compensationConfirmedAt: timestamp("compensation_confirmed_at"),
+  leaseToken: varchar("lease_token", { length: 64 }),
+  leaseUntil: timestamp("lease_until"),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().onUpdateNow().notNull(),
+}, table => ({ ownerKey: uniqueIndex("uk_calendar_cascade_key").on(table.userId, table.requestKey) }));
+export type CalendarCascade = typeof calendarCascades.$inferSelect;
 
 /**
  * 岗位智能体协作 V2 - 协作 session（N 人协作的父记录）

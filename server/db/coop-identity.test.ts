@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   InMemoryCoopIdentityDirectory,
+  assertCoopParticipants,
   canCollaborate,
   canViewCoopSession,
   getCoopProfile,
@@ -109,5 +110,22 @@ describe("coop identity helpers", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.role).toBe("admin");
+  });
+});
+
+describe("calendar participants use existing organization identity", () => {
+  it("allows a personal calendar without an organization", async () => {
+    await expect(assertCoopParticipants(4, [], directory())).resolves.toBeUndefined();
+  });
+  it("rejects unknown, unassigned, disabled and cross-organization participants", async () => {
+    for (const id of [3, 4, 5, 6, 7, 9, 99]) await expect(assertCoopParticipants(1, [id], directory())).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(assertCoopParticipants(4, [1], directory())).rejects.toThrow("管理员");
+    await expect(assertCoopParticipants(1, [2], directory())).resolves.toBeUndefined();
+  });
+  it("rechecks current membership after a user is moved to another organization", async () => {
+    const dir = directory();
+    await assertCoopParticipants(1, [2], dir);
+    dir.profiles.get(2)!.spaceId = 2;
+    await expect(assertCoopParticipants(1, [2], dir)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

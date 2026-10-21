@@ -20,7 +20,8 @@ export function digestSkillSourceTree(sourcePath: string): SkillArtifactDigest {
     if (stat.isDirectory()) {
       hash.update(`D\0${relative}\0`);
       for (const name of readdirSync(current).sort()) {
-        visit(path.join(current, name), path.join(relative, name));
+        // Artifact identities use portable package paths, not host separators.
+        visit(path.join(current, name), path.posix.join(relative, name));
       }
       return;
     }

@@ -1,18 +1,24 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { governanceFingerprint } from "./governance/contracts";
-import {
-  loadSkillQualityPilotContracts,
-  resolveSkillStoreRoot,
-} from "./skill-quality-evaluation-contracts";
-import {
-  buildSkillEvaluationRuntimeProfile,
-  executeSkillEvaluationRuntimeTurn,
-  nativeLoadedSkills,
-  parseRuntimeSse,
-  skillEvaluationRuntimeProfileV1Schema,
-} from "./skill-quality-evaluation-runtime";
+import { loadSkillQualityPilotContracts, resolveSkillStoreRoot, } from "./skill-quality-evaluation-contracts";
+import { buildSkillEvaluationRuntimeProfile, executeSkillEvaluationRuntimeTurn, nativeLoadedSkills, parseRuntimeSse, skillEvaluationRuntimeProfileV1Schema, } from "./skill-quality-evaluation-runtime";
+
+// Exercise the real strict contract loader against an isolated, synthetic store.
+// These unit tests must not depend on approved artifacts mounted on one developer's machine.
+const qualityFixture = vi.hoisted(() => ({ root: "" }));
+vi.mock("./skill-quality-evaluation-contracts", async importOriginal => {
+  const actual = await importOriginal<typeof import("./skill-quality-evaluation-contracts")>();
+  const { createSkillQualityTestFixture } = await import("./skill-quality-test-fixture");
+  const fixture = createSkillQualityTestFixture();
+  qualityFixture.root = fixture.root;
+  return { ...actual,
+    resolveSkillStoreRoot: () => fixture.skillStoreRoot,
+    loadSkillQualityPilotContracts: (input: Parameters<typeof actual.loadSkillQualityPilotContracts>[0]) => actual.loadSkillQualityPilotContracts({ ...input, ...fixture }),
+  };
+});
+afterAll(() => { if (qualityFixture.root) rmSync(qualityFixture.root, { recursive: true, force: true }); });
 
 const originalInternalKey = process.env.INTERNAL_API_KEY;
 

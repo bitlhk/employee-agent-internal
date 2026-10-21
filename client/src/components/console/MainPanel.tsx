@@ -6,6 +6,7 @@ import { SchedulePageV2 } from "@/components/pages/SchedulePageV2";
 import { SettingsPage } from "@/components/pages/SettingsPage";
 import { CollabPage } from "@/components/pages/CollabPage";
 import { WorkContinuityPage } from "@/components/pages/WorkContinuityPage";
+import { SchedulingWorkspace } from "@/components/pages/SchedulingWorkspace";
 import { PanelErrorBoundary } from "@/components/console/PanelErrorBoundary";
 import type { PageKey } from "@/components/console/Sidebar";
 import type { ReactNode } from "react";
@@ -23,6 +24,7 @@ const PANEL_PAGE_ORDER: PanelPageKey[] = [
   "schedule",
   "work",
   "collab",
+  "calendar",
   "settings",
 ];
 
@@ -99,6 +101,7 @@ export function MainPanel({
   }, [panelPage]);
 
   const renderPage = (page: PanelPageKey): ReactNode => {
+    if (page === "calendar") return <SchedulingWorkspace adoptId={adoptId} />;
     if (page === "skills") {
       return <SkillsPage section={capabilitySection(activePage)} skills={safeSkills.data} canEdit={safeSkills.canEdit} pending={safeSkills.pending} onToggle={safeSkills.onToggle} adoptId={safeSkills.adoptId} onChanged={safeSkills.onChanged} onAddMcp={onAddMcp} onManageMcp={onManageMcp} onTryMcp={onTryMcp} onTrySkill={onTrySkill} onMcpChanged={onMcpChanged} onAddExpert={onAddExpert} onManageExpert={onManageExpert} onTryExpert={onTryExpert} />;
     }

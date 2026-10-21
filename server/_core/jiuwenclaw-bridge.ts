@@ -1,79 +1,48 @@
-import type { Request, Response } from "express";
-import { createHash } from "crypto";
+import { asJsonObject, parseJsonFrame, pickErrorMessage, wsOriginFromUrl } from './jiuwen-frame';
+
+import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
+import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
+import type { UploadedAttachmentContextFile } from "@shared/uploaded-attachment-context";
+import { parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
 import { execFile } from "child_process";
+import { createHash } from "crypto";
+import type { Request, Response } from "express";
 import { existsSync, readdirSync, realpathSync, statSync } from "fs";
 import os from "os";
 import path from "path";
-import { WebSocket, type RawData } from "ws";
-import { sanitizePublicRuntimePaths } from "@shared/lib/public-runtime-path";
-import { parseUploadedAttachmentRuntimeMessage } from "@shared/uploaded-attachment-context";
-import type { UploadedAttachmentContextFile } from "@shared/uploaded-attachment-context";
+import { WebSocket } from "ws";
 import { auditRequest, recordAuditBestEffort } from "./audit-events";
-import { privateMessageLogFields } from "./log-privacy";
-import {
-  appendLogAsync,
-  JIUWENCLAW_HOME,
-  buildSessionRegistryScope,
-  bumpSessionEpoch,
-  lookupSessionRegistry,
-  jiuwenClawSessionsDir,
-  normalizeConversationId,
-  normalizeSessionChannel,
-  normalizeSessionPart,
-  readSessionEpoch,
-  resolveRuntimeWorkspace,
-  upsertSessionRegistry,
-} from "./helpers";
-import {
-  isUserVisibleJiuwenArtifactPath,
-  writeJiuwenSessionArtifacts,
-  type JiuwenSessionArtifactFile,
-} from "./jiuwen-session-artifacts";
-import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwenswarm-mcp-metrics";
-import {
-  buildJiuwenFinalSnapshot,
-  buildJiuwenRunDescriptor,
-  buildJiuwenTextDelta,
-} from "./jiuwenswarm-stream-contract";
-import { filterCitedKnowledgeSources, validateKnowledgeCitations } from "@shared/knowledge-citations";
-import { detectInstructionAttackSignals } from "./instruction-attack";
-import {
-  normalizeJiuwenToolPayload,
-  normalizeGovernanceApprovalToolEvent,
-  normalizeJiuwenUsageSummary,
-  stringifyJiuwenToolPayload,
-} from "./jiuwenclaw-event-normalizers";
-import {
-  isJiuwenHumanApprovalEvent,
-  normalizeJiuwenPermissionRequest,
-  summarizeJiuwenApprovalEvent,
-  type JiuwenInteractionAnswer,
-  type JiuwenInteractionQuestion,
-  type JiuwenPermissionRequest,
-} from "./jiuwen-permission-events";
-import { createResponseEvidenceCollector } from "./governance/response-evidence";
 import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
+import { createResponseEvidenceCollector } from "./governance/response-evidence";
+import { appendLogAsync, buildSessionRegistryScope, bumpSessionEpoch, JIUWENCLAW_HOME, jiuwenClawSessionsDir, lookupSessionRegistry, normalizeConversationId, normalizeSessionChannel, normalizeSessionPart, readSessionEpoch, resolveRuntimeWorkspace, upsertSessionRegistry, } from "./helpers";
+import { detectInstructionAttackSignals } from "./instruction-attack";
+import { isJiuwenHumanApprovalEvent, normalizeJiuwenPermissionRequest, summarizeJiuwenApprovalEvent, type JiuwenInteractionAnswer } from "./jiuwen-permission-events";
+import { isUserVisibleJiuwenArtifactPath, writeJiuwenSessionArtifacts, type JiuwenSessionArtifactFile, } from "./jiuwen-session-artifacts";
+import { normalizeGovernanceApprovalToolEvent, normalizeJiuwenToolPayload, normalizeJiuwenUsageSummary, stringifyJiuwenToolPayload, } from "./jiuwenclaw-event-normalizers";
 import type { JiuwenPermissionAnswerResult } from "./jiuwenswarm-gateway-client";
+import { inferMcpServerForJiuwenTool, recordJiuwenMcpMetricEvent } from "./jiuwenswarm-mcp-metrics";
+import { buildJiuwenFinalSnapshot, buildJiuwenRunDescriptor, buildJiuwenTextDelta, } from "./jiuwenswarm-stream-contract";
+import { privateMessageLogFields } from "./log-privacy";
 export { bumpSessionEpoch } from "./helpers";
+export {
+normalizeJiuwenPermissionRequest,
+type JiuwenInteractionAnswer,
+type JiuwenInteractionQuestion,
+type JiuwenPermissionRequest
+} from "./jiuwen-permission-events";
+export {
+normalizeGovernanceApprovalToolEvent,
+normalizeJiuwenToolPayload,
+normalizeJiuwenUsageSummary,
+stringifyJiuwenToolPayload
+} from "./jiuwenclaw-event-normalizers";
 export { inferMcpServerForJiuwenTool } from "./jiuwenswarm-mcp-metrics";
 export {
-  buildJiuwenFinalSnapshot,
-  buildJiuwenRunDescriptor,
-  buildJiuwenTextDelta,
-  type JiuwenRunDescriptor,
+buildJiuwenFinalSnapshot,
+buildJiuwenRunDescriptor,
+buildJiuwenTextDelta,
+type JiuwenRunDescriptor
 } from "./jiuwenswarm-stream-contract";
-export {
-  normalizeGovernanceApprovalToolEvent,
-  normalizeJiuwenToolPayload,
-  normalizeJiuwenUsageSummary,
-  stringifyJiuwenToolPayload,
-} from "./jiuwenclaw-event-normalizers";
-export {
-  normalizeJiuwenPermissionRequest,
-  type JiuwenInteractionAnswer,
-  type JiuwenInteractionQuestion,
-  type JiuwenPermissionRequest,
-} from "./jiuwen-permission-events";
 export type JiuwenClawRuntimeClaw = {
   adoptId: string;
   agentId: string;
@@ -81,6 +50,7 @@ export type JiuwenClawRuntimeClaw = {
   roleTemplate?: string;
 };
 export type JiuwenForwardOptions = {
+  collaboration?: { workspaceDir: string; sessionId: string; runtimeAgentId: string };
   model?: string;
   modelName?: string;
   req?: Request;
@@ -168,6 +138,7 @@ export function buildJiuwenAgentId(claw: JiuwenClawRuntimeClaw): string {
 }
 
 export function buildJiuwenSessionId(claw: JiuwenClawRuntimeClaw, agentId: string, opts: JiuwenForwardOptions): string {
+  if (opts.collaboration) return opts.collaboration.sessionId;
   const epoch = readSessionEpoch(claw.adoptId);
   const scope = buildSessionRegistryScope(opts.channel, opts.conversationId);
   const found = lookupSessionRegistry(claw.adoptId, agentId, epoch, scope);
@@ -193,16 +164,6 @@ function jiuwenChannelFromOption(value: unknown): string {
   return "web";
 }
 
-function wsOriginFromUrl(rawUrl: string): string {
-  try {
-    const url = new URL(rawUrl);
-    const protocol = url.protocol === "wss:" ? "https:" : "http:";
-    return `${protocol}//${url.host}`;
-  } catch {
-    return "http://127.0.0.1";
-  }
-}
-
 function initSse(res: Response): void {
   if (!res.headersSent) {
     res.setHeader("Content-Type", "text/event-stream");
@@ -212,28 +173,6 @@ function initSse(res: Response): void {
     res.flushHeaders?.();
   }
   if (res.socket) res.socket.setNoDelay(true);
-}
-
-function asJsonObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {};
-}
-
-function parseJsonFrame(raw: RawData): Record<string, unknown> | null {
-  try {
-    const text = Array.isArray(raw)
-      ? Buffer.concat(raw).toString("utf8")
-      : Buffer.isBuffer(raw)
-        ? raw.toString("utf8")
-        : String(raw);
-    const parsed: unknown = JSON.parse(text);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : null;
-  } catch {
-    return null;
-  }
 }
 
 function sha256(value: string) {
@@ -485,31 +424,6 @@ export function pickJiuwenText(value: unknown): string {
   return "";
 }
 
-function pickErrorMessage(frame: unknown): string {
-  const root = asJsonObject(frame);
-  const body = asJsonObject(root.body);
-  const delta = asJsonObject(body.delta);
-  const details = asJsonObject(body.details);
-  const raw = String(
-    body?.message
-      || body?.error
-      || body?.content
-      || body?.text
-      || delta?.error
-      || delta?.message
-      || delta?.content
-      || delta?.text
-      || details.message
-      || details.error
-      || root.message
-      || "jiuwenclaw runtime error"
-  ).slice(0, 1000);
-  if (/max(?:imum)? iterations?|iteration limit|达到.{0,8}(?:迭代|工具).{0,8}上限/i.test(raw)) {
-    return "本轮联网检索未能在限定步骤内收敛。请缩小问题范围，或提供一个明确的原始网址后重试。";
-  }
-  return raw;
-}
-
 export function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: number): Array<{ name: string; size: number; path: string }> {
   if (!workspaceDir || !existsSync(workspaceDir)) return [];
   const skipDirs = new Set(["skills", "memory", "prompt_attachment", "node_modules", ".git", ".dreams", "dist", "build", ".openclaw", ".agent_history", "context"]);
@@ -520,7 +434,7 @@ export function collectRecentWorkspaceFiles(workspaceDir: string, sinceMs: numbe
     try {
       for (const entry of readdirSync(dir)) {
         if (entry.startsWith(".")) continue;
-        if (depth === 0 && skipDirs.has(entry)) continue;
+        if (depth === 0 && (skipDirs.has(entry) || !isUserVisibleJiuwenArtifactPath(entry))) continue;
         const full = `${dir}/${entry}`;
         const rel = relBase ? `${relBase}/${entry}` : entry;
         try {
@@ -858,6 +772,7 @@ export async function forwardToJiuwenClaw(
   const enterpriseRoute = opts.enterpriseRoute === undefined
     ? await readyEnterpriseRuntimeRoute(claw.adoptId)
     : opts.enterpriseRoute;
+  if (opts.collaboration && enterpriseRoute) throw new Error("Bound enterprise runtime has no isolated collaboration workspace adapter");
   const { enterpriseRuntimeSupportsModel } = await import("./enterprise-runtime-adapter");
   if (enterpriseRoute && enterpriseRuntimeSupportsModel(opts.modelName || opts.model)) {
     const { forwardToJiuwenGateway } = await import("./jiuwenswarm-gateway-client");
@@ -922,10 +837,10 @@ export async function forwardToJiuwenClaw(
 
   const wsUrl = String(process.env.JIUWENCLAW_AGENTSERVER_WS_URL || DEFAULT_AGENTSERVER_WS_URL);
   const serviceId = buildJiuwenServiceId();
-  const agentId = buildJiuwenAgentId(claw);
+  const agentId = opts.collaboration?.runtimeAgentId || buildJiuwenAgentId(claw);
   const sessionId = buildJiuwenSessionId(claw, agentId, opts);
   const channelId = claw.adoptId;
-  const workspaceDir = resolveRuntimeWorkspace(claw, claw.adoptId);
+  const workspaceDir = opts.collaboration?.workspaceDir || resolveRuntimeWorkspace(claw, claw.adoptId);
   const rawTimeoutMs = String(process.env.JIUWENCLAW_CHAT_TIMEOUT_MS || "180000").trim().toLowerCase();
   const maxRunMs = rawTimeoutMs === "0" || rawTimeoutMs === "off" || rawTimeoutMs === "disabled"
     ? 0
@@ -1119,7 +1034,7 @@ export async function forwardToJiuwenClaw(
       const finalizedEvidence = responseEvidence.finalize(memoryAssistantText, opts.knowledgeSources || [], citationValidation.citedIndexes);
       if (finalizedEvidence) writeData({ __context_response_evidence: finalizedEvidence });
       writeData({ choices: [{ delta: {}, finish_reason: "stop", index: 0 }] });
-      if (sawText && memoryAssistantText.trim()) {
+      if (!opts.collaboration && sawText && memoryAssistantText.trim()) {
         void import("./agent-memory").then(({ enqueueAgentMemoryTurn }) => enqueueAgentMemoryTurn({
           userId: claw.userId,
           adoptId: claw.adoptId,

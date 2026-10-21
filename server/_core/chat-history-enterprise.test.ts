@@ -9,8 +9,16 @@ import {
   resolveEnterpriseHistoryMaxPages,
 } from "./enterprise-runtime-history";
 import type { EnterpriseRuntimeRoute } from "./enterprise-runtime-adapter";
+import { schedulingConfirmations } from "../../client/src/lib/scheduling-confirmations";
 
 describe("enterprise runtime chat history", () => {
+  it("restores actionable collaboration messages from persisted runtime history", () => {
+    const id = "90ee8b0f-f3da-49dd-9f1e-c15e1fb30ef2";
+    const messages = extractJiuwenChatMessagesFromRecords([{ id: "context", request_id: `ea-context-${"a".repeat(64)}`, role: "assistant", event_type: "chat.final", content: "日程草稿已就绪，请确认。", timestamp: 100, ea_conversation: { resource: "run:fixture", actions: [{ kind: "draft", id }] } }]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0].text).toBe("日程草稿已就绪，请确认。");
+    expect(schedulingConfirmations(messages[0].toolCalls || [])).toEqual([{ kind: "draft", id, adoptId: undefined }]);
+  });
   it("allows bounded compatibility paging for pre-compaction transcripts", () => {
     expect(resolveEnterpriseHistoryMaxPages(200, undefined)).toBe(20);
     expect(resolveEnterpriseHistoryMaxPages(500, "6")).toBe(10);

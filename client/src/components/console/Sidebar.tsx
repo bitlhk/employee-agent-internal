@@ -8,11 +8,12 @@ import {
   Timer,
   Users,
   ListTodo,
+  CalendarDays,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { SessionList, type SessionListConversation } from "./SessionList";
 
-export type PageKey = "chat" | "skills" | "experts" | "connectors" | "work" | "agent" | "knowledge" | "workspace" | "schedule" | "collab" | "settings";
+export type PageKey = "chat" | "skills" | "experts" | "connectors" | "work" | "agent" | "knowledge" | "workspace" | "schedule" | "collab" | "settings" | "calendar";
 
 type NavItem = { key: PageKey; label: string; icon: any; adminOnly?: boolean };
 
@@ -33,7 +34,11 @@ const secondaryItems: NavItem[] = [
   { key: "knowledge", label: "知识", icon: BookOpen },
 ];
 
-const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "work", "agent", "knowledge", "workspace", "schedule", "collab", "settings"]);
+const PAGE_KEYS = new Set<PageKey>(["chat", "skills", "experts", "connectors", "work", "agent", "knowledge", "workspace", "schedule", "collab", "settings", "calendar"]);
+
+export function sidebarPrimaryItems(calendarEnabled = false): NavItem[] {
+  return calendarEnabled ? [...primaryItems, { key: "calendar", label: "我的日历", icon: CalendarDays }] : primaryItems;
+}
 
 export function isPageKey(value: unknown): value is PageKey {
   return PAGE_KEYS.has(String(value || "") as PageKey);
@@ -64,6 +69,7 @@ export function Sidebar({
   onOpenHome,
   sessionsLoading,
   footer,
+  calendarEnabled = false,
 }: {
   activePage: PageKey;
   setActivePage: (k: PageKey) => void;
@@ -81,6 +87,7 @@ export function Sidebar({
   onOpenHome?: () => void;
   sessionsLoading?: boolean;
   footer?: ReactNode;
+  calendarEnabled?: boolean;
 }) {
   const renderItem = (it: NavItem) => {
           const Icon = it.icon;
@@ -106,8 +113,8 @@ export function Sidebar({
 
   return (
     <div className={`workbench-sidebar-content px-2 py-2 flex flex-col flex-1 min-h-0 ${collapsed ? "is-collapsed" : ""}`}>
-      <div className="flex shrink-0 flex-col gap-0">
-        {primaryItems.map((item) => renderItem(item))}
+      <div className={`workbench-sidebar-primary flex shrink-0 flex-col gap-0 ${calendarEnabled ? "has-calendar" : ""}`}>
+        {sidebarPrimaryItems(calendarEnabled).map((item) => renderItem(item))}
       </div>
 
       {!collapsed ? (

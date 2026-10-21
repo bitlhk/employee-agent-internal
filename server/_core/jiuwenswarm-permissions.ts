@@ -1,14 +1,5 @@
+import { chmodSync, chownSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync, } from "fs";
 import path from "path";
-import {
-  chmodSync,
-  chownSync,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from "fs";
 import { JIUWENCLAW_HOME } from "./helpers";
 
 const DEFAULT_JIUWENBOX_RUNTIME_GROUP = "jiuwenswarm";
@@ -79,6 +70,7 @@ export function normalizeJiuwenSwarmWorkspaceRuntimePermissions(
   workspaceDirRaw: string,
   options: { runtimeGid?: number | null } = {},
 ): boolean {
+  if (process.platform === "win32") return false; // Windows uses directory ACLs, not POSIX groups.
   const workspaceDir = path.resolve(workspaceDirRaw);
   const runtimeGid = options.runtimeGid === undefined ? resolveRuntimeGid() : options.runtimeGid;
   if (runtimeGid === null || !existsSync(workspaceDir)) return false;
@@ -136,17 +128,17 @@ function renderExternalDirectoryBlock(entries: Map<string, string>): string {
 }
 
 function permissionsBlockRange(text: string): { start: number; end: number } | null {
-  const match = /^permissions:\n/m.exec(text);
+  const match = /^permissions:\r?\n/m.exec(text);
   if (!match) return null;
   const start = match.index;
   const restStart = start + match[0].length;
-  const nextTop = text.slice(restStart).search(/^[A-Za-z_][\w-]*:\n/m);
+  const nextTop = text.slice(restStart).search(/^[A-Za-z_][\w-]*:\r?\n/m);
   const end = nextTop >= 0 ? restStart + nextTop : text.length;
   return { start, end };
 }
 
 function externalDirectoryRange(permissionsBlock: string): { start: number; end: number } | null {
-  const match = /^  external_directory:\n/m.exec(permissionsBlock);
+  const match = /^  external_directory:\r?\n/m.exec(permissionsBlock);
   if (!match) return null;
   const start = match.index;
   const restStart = start + match[0].length;

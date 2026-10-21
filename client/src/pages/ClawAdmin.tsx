@@ -1,48 +1,32 @@
-import { useState, useEffect } from "react";
+import { BrandSettingsPanel } from './BrandSettingsPanel';
+
+import { useAuth } from "@/_core/hooks/useAuth";
+import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
+import { EnterpriseAssetsPanel } from "@/components/admin/EnterpriseAssetsPanel";
+import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
+import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
+import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
+import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/MonitoringPanel";
+import { SecurityAssurancePanel } from "@/components/admin/SecurityAssurancePanel";
+import { SkillValueEvaluationDialog } from "@/components/admin/SkillValueEvaluationDialog";
 import { BrandIcon } from "@/components/BrandIcon";
-import { useLocation } from "wouter";
+import { CollaborationTab } from "@/components/pages/CollaborationTab";
+import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
 import { Button } from "@/components/ui/action-button";
 import { Card } from "@/components/ui/card";
+import { useConfirmDialog } from "@/components/ui/confirm-dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, } from "@/components/ui/confirmation-dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/confirmation-dialog";
-import { trpc } from "@/lib/trpc";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { Loader2, ArrowLeft, Search, Users, Settings, RefreshCw, Sparkles, BarChart3, ShieldCheck, Building2, Trash2, KeyRound, UserCog, Activity, Server, Database, Radio, GitBranch, Download, FileText, Eye, MessageSquareText, Gauge, Cable, PackageOpen } from "lucide-react";
-import { UsageStatsTab } from "@/components/pages/UsageStatsTab";
-import { CollaborationTab } from "@/components/pages/CollaborationTab";
-import { toast } from "sonner";
-import { useBrand, invalidateBrandClientCache } from "@/lib/useBrand";
-import { DEFAULT_BRAND } from "@shared/brand";
-import { useConfirmDialog } from "@/components/ui/confirm-dialog";
-import { ModelSettingsPanel } from "@/components/admin/ModelSettingsPanel";
-import { MessageFeedbackPanel } from "@/components/admin/MessageFeedbackPanel";
-import { AdminMfaCard } from "@/components/admin/AdminMfaCard";
-import { MonitoringPanel, useMonitoringStatus } from "@/components/admin/MonitoringPanel";
-import { EnterpriseMcpPanel } from "@/components/admin/EnterpriseMcpPanel";
-import { EnterpriseAssetsPanel } from "@/components/admin/EnterpriseAssetsPanel";
-import { SecurityAssurancePanel } from "@/components/admin/SecurityAssurancePanel";
-import { SkillValueEvaluationDialog } from "@/components/admin/SkillValueEvaluationDialog";
 import { uploadSystemSkillPackage } from "@/lib/skill-market-release";
+import { trpc } from "@/lib/trpc";
+import { Activity, ArrowLeft, BarChart3, Building2, Cable, Database, Download, Eye, FileText, Gauge, KeyRound, Loader2, MessageSquareText, PackageOpen, Radio, RefreshCw, Search, Server, Settings, ShieldCheck, Sparkles, Trash2, UserCog, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { useLocation } from "wouter";
 const STATUS_OPTIONS = [
   { value: "all", label: "全部" },
   { value: "creating", label: "创建中" },
@@ -261,197 +245,6 @@ const channelLabel = (raw: string) => {
   return text.split(":")[0] || "频道";
 };
 
-function BrandSettingsPanel() {
-  const brand = useBrand();
-  const [form, setForm] = useState({
-    name: brand.name,
-    nameEn: brand.nameEn,
-    platform: brand.platform,
-    platformEn: brand.platformEn,
-    slogan: brand.slogan,
-    accentColor: brand.accentColor,
-    logo: brand.logo,
-    favicon: brand.favicon,
-    systemPrompt: brand.systemPrompt,
-    agentIdentity: brand.agentIdentity,
-    githubUrl: brand.githubUrl,
-    pageTitle: brand.pageTitle,
-  });
-  const [saving, setSaving] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState(() => {
-    return brand.nameEn === DEFAULT_BRAND.nameEn ? "workforce-agent" : "custom";
-  });
-
-  const applyPreset = (presetId: string) => {
-    setSelectedPreset(presetId);
-    if (presetId === "custom") return;
-    setForm({ ...DEFAULT_BRAND });
-  };
-
-  // Sync from brand when loaded
-  useEffect(() => {
-    setForm({
-      name: brand.name,
-      nameEn: brand.nameEn,
-      platform: brand.platform,
-      platformEn: brand.platformEn,
-      slogan: brand.slogan,
-      accentColor: brand.accentColor,
-      logo: brand.logo,
-      favicon: brand.favicon,
-      systemPrompt: brand.systemPrompt,
-        agentIdentity: brand.agentIdentity,
-        githubUrl: brand.githubUrl,
-        pageTitle: brand.pageTitle,
-    });
-    setSelectedPreset(brand.nameEn === DEFAULT_BRAND.nameEn ? "workforce-agent" : "custom");
-  }, [brand]);
-
-  const setBrandMutation = trpc.claw.adminSetBrand.useMutation({
-    onSuccess: () => {
-      invalidateBrandClientCache();
-      toast.success("品牌设置已保存，刷新页面后生效");
-      setSaving(false);
-    },
-    onError: (e) => {
-      toast.error(e?.message || "保存失败");
-      setSaving(false);
-    },
-  });
-
-  const saveBrand = () => {
-    setSaving(true);
-    setBrandMutation.mutate(form);
-  };
-
-  const field = (key: keyof typeof form, label: string, opts?: { type?: string; rows?: number; placeholder?: string }) => (
-    <div className="space-y-1" key={key}>
-      <Label className="text-sm text-gray-700">{label}</Label>
-      {opts?.rows ? (
-        <textarea
-          className="w-full rounded-md border border-gray-200 px-3 py-2 text-sm"
-          rows={opts.rows}
-          value={form[key]}
-          onChange={(e) => {
-            setSelectedPreset("custom");
-            setForm((f) => ({ ...f, [key]: e.target.value }));
-          }}
-          placeholder={opts?.placeholder}
-        />
-      ) : (
-        <Input
-          type={opts?.type || "text"}
-          value={form[key]}
-          onChange={(e) => {
-            setSelectedPreset("custom");
-            setForm((f) => ({ ...f, [key]: e.target.value }));
-          }}
-          placeholder={opts?.placeholder}
-        />
-      )}
-    </div>
-  );
-
-  return (
-    <div className="space-y-6">
-      {/* 模板选择器 */}
-      <Card className="p-6 border-border/50 bg-white/80">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">品牌模式</h3>
-        <p className="text-xs text-muted-foreground mb-4">默认使用岗位智能体平台品牌；需要企业白标时再切换为自定义。</p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            onClick={() => applyPreset("workforce-agent")}
-            className="text-left rounded-xl border p-4 transition-all hover:bg-gray-50"
-            style={{
-              borderColor: selectedPreset === "workforce-agent" ? DEFAULT_BRAND.accentColor : "rgba(0,0,0,0.08)",
-              boxShadow: selectedPreset === "workforce-agent" ? `0 0 0 2px ${DEFAULT_BRAND.accentColor}20` : "none",
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <div className="h-4 w-4 rounded-full" style={{ background: DEFAULT_BRAND.accentColor }} />
-              <span className="text-sm font-semibold text-gray-900">默认岗位智能体</span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">恢复岗位智能体名称、Logo、主题色和默认身份。</p>
-          </button>
-          <button
-            onClick={() => setSelectedPreset("custom")}
-            className="text-left rounded-xl border p-4 transition-all hover:bg-gray-50"
-            style={{
-              borderColor: selectedPreset === "custom" ? "#6b7280" : "rgba(0,0,0,0.08)",
-              boxShadow: selectedPreset === "custom" ? "0 0 0 2px rgba(107,114,128,0.16)" : "none",
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <div className="h-4 w-4 rounded-full border border-gray-300 bg-white" />
-              <span className="text-sm font-semibold text-gray-900">自定义</span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">按企业部署需要编辑名称、视觉和 AI 身份。</p>
-          </button>
-        </div>
-      </Card>
-
-      <Card className="p-6 space-y-5 border-border/50 bg-white/80">
-        <h3 className="text-sm font-semibold text-gray-900">基本信息</h3>
-        <div className="grid grid-cols-2 gap-4">
-          {field("name", "产品名称（中文）", { placeholder: "岗位智能体" })}
-          {field("nameEn", "产品名称（英文）", { placeholder: "Enterprise Agent" })}
-          {field("platform", "平台名称（中文）", { placeholder: "岗位智能体" })}
-          {field("platformEn", "平台名称（英文）", { placeholder: "Workforce Agent" })}
-        </div>
-        {field("slogan", "标语")}
-        {field("pageTitle", "页面标题")}
-      </Card>
-
-      <Card className="p-6 space-y-5 border-border/50 bg-white/80">
-        <h3 className="text-sm font-semibold text-gray-900">视觉</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <Label className="text-sm text-gray-700">主题色</Label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={form.accentColor}
-                onChange={(e) => {
-                  setSelectedPreset("custom");
-                  setForm((f) => ({ ...f, accentColor: e.target.value }));
-                }}
-                className="w-10 h-8 rounded border cursor-pointer"
-              />
-              <Input
-                value={form.accentColor}
-                onChange={(e) => {
-                  setSelectedPreset("custom");
-                  setForm((f) => ({ ...f, accentColor: e.target.value }));
-                }}
-                className="w-28 font-mono text-sm"
-              />
-            </div>
-          </div>
-          {field("logo", "Logo 路径", { placeholder: "/images/workforce-agent.svg" })}
-        </div>
-        {field("favicon", "Favicon 路径", { placeholder: "/favicon.png" })}
-      </Card>
-
-      <Card className="p-6 space-y-5 border-border/50 bg-white/80">
-        <h3 className="text-sm font-semibold text-gray-900">AI 身份</h3>
-        {field("systemPrompt", "System Prompt（英文，安全提示首句）", { rows: 2 })}
-        {field("agentIdentity", "Agent 身份自我介绍（中文，写入 SOUL.md）", { rows: 2 })}
-      </Card>
-
-      <Card className="p-6 space-y-3 border-border/50 bg-white/80">
-        <h3 className="text-sm font-semibold text-gray-900">其他</h3>
-        {field("githubUrl", "开源仓库 URL")}
-      </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={saveBrand} disabled={saving}>
-          {saving ? "保存中..." : "保存品牌设置"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 export default function ClawAdmin() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
@@ -500,14 +293,14 @@ export default function ClawAdmin() {
 
   // ── 实例管理 ──
   const { data: listData, isLoading: listLoading, refetch: refetchList } = trpc.claw.adminList.useQuery(
-    { keyword: keyword || undefined, status: statusFilter as any },
+    { keyword: keyword || undefined, status: statusFilter as typeof STATUS_OPTIONS[number]["value"] },
     { retry: false }
   );
   const { data: roleTemplates } = trpc.claw.roleTemplates.useQuery(undefined, {
     staleTime: 60_000,
     retry: false,
   });
-  const roleOptions: any[] = ((roleTemplates as any)?.roles || [])
+  const roleOptions: any[] = ((roleTemplates)?.roles || [])
     .filter((role: any) => role?.status !== "disabled")
     .sort((a: any, b: any) => Number(a.displayOrder || 0) - Number(b.displayOrder || 0));
   const roleLabelById = new Map<string, string>(roleOptions.map((role: any) => [String(role.id), String(role.name || role.id)]));
@@ -568,8 +361,8 @@ export default function ClawAdmin() {
     enabled: activeTab === "skills",
     retry: false,
   });
-  const roleAssetGrants: any[] = Array.isArray((roleAssetCatalog as any)?.grants) ? (roleAssetCatalog as any).grants : [];
-  const mcpRoleAssets: any[] = Array.isArray((roleAssetCatalog as any)?.mcpServers) ? (roleAssetCatalog as any).mcpServers : [];
+  const roleAssetGrants: any[] = Array.isArray((roleAssetCatalog)?.grants) ? (roleAssetCatalog).grants : [];
+  const mcpRoleAssets: any[] = Array.isArray((roleAssetCatalog)?.mcpServers) ? (roleAssetCatalog).mcpServers : [];
   const roleGrantOptions = [
     { id: "*", name: "所有岗位", industry: "general", status: "mvp" },
     ...roleOptions,
@@ -654,8 +447,8 @@ export default function ClawAdmin() {
     { id: viewingSkillId! },
     { enabled: !!viewingSkillId, retry: false }
   );
-  const viewSourceFiles = Array.isArray((viewSkillSource as any)?.sourceFiles)
-    ? (viewSkillSource as any).sourceFiles
+  const viewSourceFiles = Array.isArray((viewSkillSource)?.sourceFiles)
+    ? (viewSkillSource).sourceFiles
     : [];
 
   const handleAiReview = async (skillId: number) => {
@@ -753,8 +546,8 @@ export default function ClawAdmin() {
     resourceName: auditFilters.resourceName.trim() || undefined,
     resourceType: auditFilters.resourceType === "all" ? undefined : auditFilters.resourceType,
     toolName: auditFilters.toolName.trim() || undefined,
-    result: auditFilters.result === "all" ? undefined : auditFilters.result as any,
-    severity: auditFilters.severity === "all" ? undefined : auditFilters.severity as any,
+    result: auditFilters.result === "all" ? undefined : auditFilters.result as "success" | "failed" | "warning" | "denied",
+    severity: auditFilters.severity === "all" ? undefined : auditFilters.severity as "info" | "low" | "medium" | "high" | "critical",
     from: auditFilters.from ? new Date(auditFilters.from).toISOString() : undefined,
     to: auditFilters.to ? new Date(auditFilters.to).toISOString() : undefined,
   };
@@ -778,14 +571,14 @@ export default function ClawAdmin() {
     },
     onError: (e) => toast.error(e?.message || "导出失败"),
   });
-  const auditRows = Array.isArray((auditEventsData as any)?.rows) ? (auditEventsData as any).rows : [];
-  const auditTotal = Number((auditEventsData as any)?.total || 0);
+  const auditRows = Array.isArray((auditEventsData)?.rows) ? (auditEventsData).rows : [];
+  const auditTotal = Number((auditEventsData)?.total || 0);
   const auditPageToolCount = auditRows.filter((event: any) => event.category === "mcp" || event.category === "tool" || String(event.action || "").startsWith("mcp.") || String(event.action || "").startsWith("tool.")).length;
   const auditPageFileCount = auditRows.filter((event: any) => event.category === "file" || String(event.action || "").startsWith("file.")).length;
   const auditPageRiskCount = auditRows.filter((event: any) => event.result !== "success" || ["high", "critical"].includes(String(event.severity || ""))).length;
   const auditPageModelCount = auditRows.filter((event: any) => event.category === "model" || String(event.action || "").startsWith("model.")).length;
   const auditExports = Array.isArray(auditExportsData) ? auditExportsData : [];
-  const auditOverview = auditOverviewData as any;
+  const auditOverview = auditOverviewData;
   const auditOverviewStatus = securityOverviewStatusMeta(auditOverview?.status);
   const auditOverviewCapabilities = Array.isArray(auditOverview?.capabilities) ? auditOverview.capabilities : [];
   const auditOverviewRecentRisks = Array.isArray(auditOverview?.recentRisks) ? auditOverview.recentRisks : [];
@@ -808,7 +601,7 @@ export default function ClawAdmin() {
   };
 
   // ── 权限检查 ──
-  if (!user || (user as any)?.role !== "admin") {
+  if (!user || (user)?.role !== "admin") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <p className="text-muted-foreground">无权访问管理页面</p>
@@ -818,7 +611,7 @@ export default function ClawAdmin() {
 
   const summary = listData?.summary;
   const rows = listData?.rows || [];
-  const healthData = systemHealth as any;
+  const healthData = systemHealth;
   const operationalHealth = systemHealth?.operations;
   const operationalCapacity = (operationalHealth?.capacity || {}) as Partial<Record<
     "api" | "chat_http" | "chat_ws",
@@ -844,7 +637,7 @@ export default function ClawAdmin() {
     group,
     checks: healthChecksByGroup[group] || [],
   }));
-  const healthSummary = (healthData?.summary || {}) as any;
+  const healthSummary = healthData?.summary || { error: 0, warning: 0, disabled: 0 };
   const healthHasErrors = Number(healthSummary.error || 0) > 0;
   const healthHasWarnings = Number(healthSummary.warning || 0) > 0;
   const healthOverallStatus = healthHasErrors ? "error" : healthHasWarnings ? "warning" : "ok";
@@ -1024,7 +817,7 @@ export default function ClawAdmin() {
             {selectedIds.length > 0 && (
               <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20">
                 <span className="text-sm font-medium text-gray-700">已选 {selectedIds.length} 项</span>
-                <Select onValueChange={(v) => batchUpdateMutation.mutate({ ids: selectedIds, status: v as any })}>
+                <Select onValueChange={(v) => batchUpdateMutation.mutate({ ids: selectedIds, status: v as Exclude<typeof STATUS_OPTIONS[number]["value"], "all"> })}>
                   <SelectTrigger className="w-28 h-8 text-xs">
                     <SelectValue placeholder="改状态" />
                   </SelectTrigger>
@@ -1034,7 +827,7 @@ export default function ClawAdmin() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Select onValueChange={(v) => batchUpdateMutation.mutate({ ids: selectedIds, permissionProfile: v as any })}>
+                <Select onValueChange={(v) => batchUpdateMutation.mutate({ ids: selectedIds, permissionProfile: v as "plus" | "internal" })}>
                   <SelectTrigger className="w-28 h-8 text-xs">
                     <SelectValue placeholder="改权限" />
                   </SelectTrigger>
@@ -1100,7 +893,7 @@ export default function ClawAdmin() {
                         <td className="p-3">
                           <Select
                             value={row.permissionProfile === "internal" ? "internal" : "plus"}
-                            onValueChange={(v) => updateMutation.mutate({ id: row.id, permissionProfile: v as any })}
+                            onValueChange={(v) => updateMutation.mutate({ id: row.id, permissionProfile: v as "plus" | "internal" })}
                           >
                             <SelectTrigger className="h-7 w-24 text-xs">
                               <SelectValue />
@@ -1191,7 +984,7 @@ export default function ClawAdmin() {
                   </div>
                   <Select
                     value={configData?.visibility || "internal"}
-                    onValueChange={(v) => setConfigMutation.mutate({ visibility: v as any })}
+                    onValueChange={(v) => setConfigMutation.mutate({ visibility: v as "internal" | "public" })}
                   >
                     <SelectTrigger className="w-32">
                       <SelectValue />
@@ -1212,7 +1005,7 @@ export default function ClawAdmin() {
                   </div>
                   <Select
                     value={configData?.defaultProfile === "internal" ? "internal" : "plus"}
-                    onValueChange={(v) => setConfigMutation.mutate({ defaultProfile: v as any })}
+                    onValueChange={(v) => setConfigMutation.mutate({ defaultProfile: v as "plus" | "internal" })}
                   >
                     <SelectTrigger className="w-32">
                       <SelectValue />
@@ -1666,7 +1459,7 @@ export default function ClawAdmin() {
                     <div className="flex items-center gap-3">
                       <HealthBadge {...healthStatusTone(healthOverallStatus)} label={healthStatusLabel(healthOverallStatus)} />
                       <div className="text-xs text-muted-foreground">
-                        检查时间 <span className="font-mono text-gray-700">{new Date((systemHealth as any).checkedAt).toLocaleString("zh-CN")}</span>
+                        检查时间 <span className="font-mono text-gray-700">{new Date((systemHealth).checkedAt).toLocaleString("zh-CN")}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -1687,7 +1480,7 @@ export default function ClawAdmin() {
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">专家任务</div>
-                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth as any).operations?.agentTasks?.running ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">执行 · {(systemHealth as any).operations?.agentTasks?.pending ?? 0} 排队</span></div>
+                      <div className="mt-1 text-base font-semibold text-gray-900">{(systemHealth).operations?.agentTasks?.running ?? 0}<span className="ml-1 text-xs font-normal text-muted-foreground">执行 · {(systemHealth).operations?.agentTasks?.pending ?? 0} 排队</span></div>
                     </div>
                     <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
                       <div className="text-xs text-muted-foreground">数据库延迟</div>
@@ -1738,23 +1531,23 @@ export default function ClawAdmin() {
 
                               {group === "platform" ? (
                                 <div className="mt-3 grid gap-2 text-xs md:grid-cols-2">
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">代码分支</span><div className="mt-1 font-mono text-gray-800">{(systemHealth as any).app?.git?.branch || "-"}</div></div>
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">代码提交</span><div className="mt-1 font-mono text-gray-800">{(systemHealth as any).app?.git?.commit || "-"}</div></div>
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">平台运行</span><div className="mt-1 font-mono text-gray-800">{formatUptime((systemHealth as any).app?.pm2?.uptime)}</div></div>
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">重启次数</span><div className="mt-1 font-mono text-gray-800">{(systemHealth as any).app?.pm2?.restarts ?? "-"}</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">代码分支</span><div className="mt-1 font-mono text-gray-800">{(systemHealth).app?.git?.branch || "-"}</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">代码提交</span><div className="mt-1 font-mono text-gray-800">{(systemHealth).app?.git?.commit || "-"}</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">平台运行</span><div className="mt-1 font-mono text-gray-800">{formatUptime((systemHealth).app?.pm2?.uptime)}</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">重启次数</span><div className="mt-1 font-mono text-gray-800">{(systemHealth).app?.pm2?.restarts ?? "-"}</div></div>
                                 </div>
                               ) : null}
 
                               {group === "runtime" ? (
                                 <div className="mt-3 space-y-3">
                                   <div className="grid gap-2 text-xs md:grid-cols-3">
-                                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">主 Runtime</span><div className="mt-1 font-mono text-gray-800">{(systemHealth as any).runtimes?.primary || "-"}</div></div>
-                                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">JiuwenSwarm 会话</span><div className="mt-1 font-mono text-gray-800">{(systemHealth as any).runtimes?.jiuwenswarm?.globalSessions ?? "-"}</div></div>
-                                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">模型配置</span><div className="mt-1 font-mono text-gray-800">{((systemHealth as any).models?.allowlist || []).length} 可用 · {((systemHealth as any).models?.agentModelDrift || []).length} 漂移</div></div>
+                                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">主 Runtime</span><div className="mt-1 font-mono text-gray-800">{(systemHealth).runtimes?.primary || "-"}</div></div>
+                                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">JiuwenSwarm 会话</span><div className="mt-1 font-mono text-gray-800">{(systemHealth).runtimes?.jiuwenswarm?.globalSessions ?? "-"}</div></div>
+                                    <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">模型配置</span><div className="mt-1 font-mono text-gray-800">{((systemHealth).models?.allowlist || []).length} 可用 · {((systemHealth).models?.agentModelDrift || []).length} 漂移</div></div>
                                   </div>
-                                  {((systemHealth as any).models?.agentModelDrift || []).length > 0 ? (
+                                  {((systemHealth).models?.agentModelDrift || []).length > 0 ? (
                                     <div className="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800">
-                                      有 {((systemHealth as any).models?.agentModelDrift || []).length} 个智能体保存的模型不在当前可用模型内。
+                                      有 {((systemHealth).models?.agentModelDrift || []).length} 个智能体保存的模型不在当前可用模型内。
                                     </div>
                                   ) : null}
                                 </div>
@@ -1762,21 +1555,21 @@ export default function ClawAdmin() {
 
                               {group === "database" ? (
                                 <div className="mt-3 grid gap-2 text-xs md:grid-cols-3">
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">查询延迟</span><div className="mt-1 font-mono text-gray-800">{(systemHealth as any).database?.latencyMs ?? "-"} ms</div></div>
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">关键表</span><div className="mt-1 font-mono text-gray-800">{((systemHealth as any).database?.tables || []).filter((table: any) => table.exists).length}/{((systemHealth as any).database?.tables || []).length || 4}</div></div>
-                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">业务对象</span><div className="mt-1 font-mono text-gray-800">智能体 {(systemHealth as any).database?.claws?.active ?? "-"} · 技能 {(systemHealth as any).database?.skillMarketApproved ?? "-"}</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">查询延迟</span><div className="mt-1 font-mono text-gray-800">{(systemHealth).database?.latencyMs ?? "-"} ms</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">关键表</span><div className="mt-1 font-mono text-gray-800">{((systemHealth).database?.tables || []).filter((table: any) => table.exists).length}/{((systemHealth).database?.tables || []).length || 4}</div></div>
+                                  <div className="rounded-lg border border-gray-200 bg-white px-3 py-2"><span className="text-muted-foreground">业务对象</span><div className="mt-1 font-mono text-gray-800">智能体 {(systemHealth).database?.claws?.active ?? "-"} · 技能 {(systemHealth).database?.skillMarketApproved ?? "-"}</div></div>
                                 </div>
                               ) : null}
 
                               {group === "channels" ? (
                                 <div className="mt-3 space-y-2">
-                                  {((systemHealth as any).channels?.lines || []).map((line: any, index: number) => (
+                                  {((systemHealth).channels?.lines || []).map((line: any, index: number) => (
                                     <div key={`${line.raw}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs">
                                       <span className="min-w-0 truncate text-gray-700">{channelLabel(line.raw)}</span>
                                       <HealthBadge ok={line.ok} warn={line.warn} />
                                     </div>
                                   ))}
-                                  {((systemHealth as any).channels?.lines || []).length === 0 ? (
+                                  {((systemHealth).channels?.lines || []).length === 0 ? (
                                     <div className="rounded-lg bg-white px-3 py-3 text-center text-xs text-muted-foreground">暂无频道输出</div>
                                   ) : null}
                                 </div>

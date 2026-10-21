@@ -1,5 +1,5 @@
-import { execFileSync } from "child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "fs";
+import AdmZip from "adm-zip";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import os from "os";
 import path from "path";
 import { describe, expect, it, vi } from "vitest";
@@ -78,14 +78,10 @@ function cachedRegistry(root: string, options: {
 
 function createSkillZip(zipPath: string, skillId: string, body = "# Skill\n"): void {
   mkdirSync(path.dirname(zipPath), { recursive: true });
-  const script = `
-import sys, zipfile
-zip_path, skill_id, body = sys.argv[1], sys.argv[2], sys.argv[3]
-with zipfile.ZipFile(zip_path, "w") as z:
-    z.writestr(skill_id + "/SKILL.md", body)
-    z.writestr(skill_id + "/scripts/run.py", "print('ok')\\n")
-`;
-  execFileSync("python3", ["-c", script, zipPath, skillId, body], { stdio: "pipe" });
+  const archive = new AdmZip();
+  archive.addFile(`${skillId}/SKILL.md`, Buffer.from(body));
+  archive.addFile(`${skillId}/scripts/run.py`, Buffer.from("print('ok')\n"));
+  archive.writeZip(zipPath);
 }
 
 describe("FileSkillRegistry.reconcile", () => {

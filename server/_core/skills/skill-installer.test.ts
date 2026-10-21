@@ -22,7 +22,7 @@ describe("FileSystemSkillInstaller", () => {
     }
   });
 
-  it("normalizes runtime permissions while preserving executable scripts", async () => {
+  it.skipIf(process.platform === "win32")("normalizes POSIX runtime permissions while preserving executable scripts", async () => {
     const root = mkdtempSync(path.join(os.tmpdir(), "skill-installer-mode-"));
     try {
       const source = path.join(root, "source");

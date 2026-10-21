@@ -3,7 +3,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Route, Switch, Redirect } from "wouter";
 import { lazy, Suspense, useEffect } from "react";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { AdminRoute } from "./components/ProtectedRoute";
+import { AdminRoute, ProtectedRoute } from "./components/ProtectedRoute";
 import { Loader2 } from "lucide-react";
 import { loadSettings, applySettings } from "./lib/settings";
 
@@ -13,6 +13,7 @@ const ClawHome = lazy(() => import("./pages/ClawHome"));
 const ClawAdmin = lazy(() => import("./pages/ClawAdmin"));
 const CoopSession = lazy(() => import("./pages/CoopSession"));
 const CoopNew = lazy(() => import("./pages/CoopNew"));
+const Calendar = lazy(() => import("./pages/Calendar"));
 const Login = lazy(() => import("./pages/Login"));
 const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -37,6 +38,12 @@ function Router() {
   return (
     <Suspense fallback={<LoadingFallback />}>
       <Switch>
+        <Route path="/scheduling">
+          <Redirect to="/calendar" />
+        </Route>
+        <Route path="/calendar">
+          <ProtectedRoute><Calendar /></ProtectedRoute>
+        </Route>
         {/* ── 首页 ── */}
         <Route path={"/"}>
           <ClawHome />

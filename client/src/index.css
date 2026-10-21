@@ -3476,6 +3476,10 @@
   color: var(--oc-sidebar-muted);
   transition: background-color .16s ease, border-color .16s ease;
 }
+.workbench-sidebar-content:not(.is-collapsed) .workbench-sidebar-primary.has-calendar .sidebar-item {
+  min-height: 32px;
+  height: 32px;
+}
 .sidebar-item .sidebar-item-label { font-weight: 400; letter-spacing: 0; font-size: 14px; color: var(--oc-sidebar-text); }
 .sidebar-item .sidebar-item-icon {
   width: 18px;
